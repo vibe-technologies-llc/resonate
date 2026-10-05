@@ -26,21 +26,21 @@ use rusqlite::{
 };
 
 use crate::{
-    Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
-    ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked,
-    Billed, Cancelling, Certainty, Clause, Codec, Column, Compare, Condition, Counted, CoverArt,
-    Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured,
-    Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings,
-    ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover,
-    KeptIndex, KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
-    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
-    Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease,
-    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
-    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
-    Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
-    VaultObject, Verdict, Waits, Want, Window, Word,
+    ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk,
+    Artist, ArtistDetail, ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease,
+    ArtistToAsk, ArtistTotals, Asked, Billed, Cancelling, Certainty, Clause, Codec, Column,
+    Compare, Condition, Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle,
+    EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium,
+    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
+    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, Listen,
+    LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist,
+    OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder,
+    PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
+    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
+    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
+    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
+    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
+    Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -3140,6 +3140,57 @@ impl Library {
             &words,
             reference.find_songs(&words)?,
         ))
+    }
+
+    pub fn unheld_artists_among(
+        &self,
+        matches: &[RecordingMatch],
+        text: &str,
+    ) -> Result<Vec<ArtistFound>> {
+        let mut unheld = Vec::new();
+        for named in elsewhere::artists_named_by(matches, text) {
+            if unheld.len() == ARTISTS_FOUND_ELSEWHERE_AT_MOST {
+                break;
+            }
+            let held: bool = self.inner.read(|connection| {
+                connection
+                    .query_row(
+                        "SELECT EXISTS (SELECT 1 FROM artists
+                                         WHERE found_elsewhere IS NULL
+                                           AND (mbid = ?1 OR key = ?2))",
+                        params![named.mbid.as_str(), store::folded_letters(&named.name)],
+                        |row| row.get(0),
+                    )
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })?;
+            if !held {
+                unheld.push(named);
+            }
+        }
+
+        Ok(unheld)
+    }
+
+    pub fn open_artist_found(
+        &self,
+        reference: &dyn Reference,
+        found: &ArtistFound,
+    ) -> Result<ArtistId> {
+        let artist = self
+            .inner
+            .write(|transaction| elsewhere::artist_of_found(transaction, found))?;
+        if let Some(profile) = reference.artist(&found.mbid)? {
+            self.land_artist(artist, &profile)?;
+        }
+        let discography = reference.release_groups_of(&found.mbid, 0)?;
+        let kept: Vec<ArtistRelease> = discography
+            .releases
+            .into_iter()
+            .filter(enrich::worth_keeping)
+            .collect();
+        self.land_artist_releases(artist, &kept, (discography.unread, discography.read_to))?;
+
+        Ok(artist)
     }
 
     pub fn unheld_among(&self, matches: Vec<RecordingMatch>) -> Result<Vec<Found>> {

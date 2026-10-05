@@ -3755,7 +3755,12 @@ impl RootView {
             .map(|download| library.fetching(download))
             .collect();
         let underway = fetching.iter().copied().any(Fetching::is_underway);
-        let said = downloads::summed_up(&fetching);
+        let arriving = library.downloads().iter().any(|download| {
+            library
+                .fetched(download)
+                .is_some_and(|fetched| fetched.is_arriving())
+        });
+        let said = downloads::summed_up(&fetching, arriving);
         let open = self.downloads_open;
         let mark = if underway {
             theme::accent()

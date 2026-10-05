@@ -274,6 +274,7 @@ const MIGRATIONS: &[&str] = &[
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
     "ALTER TABLE albums ADD COLUMN tagged_sort TEXT;
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
+    "ALTER TABLE artists ADD COLUMN found_elsewhere INTEGER;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

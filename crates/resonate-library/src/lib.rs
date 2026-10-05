@@ -71,8 +71,9 @@ pub use crate::{
     db::{CatalogStamp, Library, WrittenElsewhere},
     deleted::Deleted,
     elsewhere::{
-        Covering, FOUND_ELSEWHERE_AT_MOST, Found, SongsAsked, Sung, Uncovered, asks_elsewhere,
-        in_the_order_worth_offering, songs_asked, still_answering, weighed_for,
+        ARTISTS_FOUND_ELSEWHERE_AT_MOST, ArtistFound, Covering, FOUND_ELSEWHERE_AT_MOST, Found,
+        SongsAsked, Sung, Uncovered, asks_elsewhere, in_the_order_worth_offering, songs_asked,
+        still_answering, weighed_for,
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,

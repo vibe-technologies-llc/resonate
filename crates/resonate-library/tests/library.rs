@@ -24,20 +24,20 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Aged, Album, AlbumLink, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistMatch, ArtistOrder,
-    ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed,
-    Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction,
-    Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags,
-    Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept,
-    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
-    LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid,
-    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
-    PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS,
-    Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
-    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
-    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    Aged, Album, AlbumLink, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound, ArtistMatch,
+    ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch,
+    Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder,
+    Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured,
+    FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium,
+    HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
+    LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold, LyricText,
+    LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing,
+    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned,
+    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
+    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
     TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
     Wording, Written,
 };
@@ -20644,6 +20644,91 @@ fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() 
         "a reading that would find nothing is not taken"
     );
     assert_eq!(library.meant("stela cole")?, None);
+    Ok(())
+}
+
+fn credited_to_ada(id: &str, title: &str) -> RecordingMatch {
+    RecordingMatch {
+        credit: vec![Credit {
+            name: "Ada".to_owned(),
+            joined_by: String::new(),
+            mbid: Some(mbid(ADA)),
+        }],
+        ..recording_match(id, title)
+    }
+}
+
+#[test]
+fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_releases()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Fake::new(Canned {
+        artists: vec![ada()],
+        artist_releases: vec![(mbid(ADA), orbiters_groups())],
+        ..Canned::default()
+    });
+    let matches = vec![
+        credited_to_ada(RECORDING, "Echoes"),
+        credited_to_ada(ANOTHER_RECORDING, "One of These Days"),
+        recording_match(ANOTHER_RECORDING, "Ada"),
+    ];
+
+    let offered = library.unheld_artists_among(&matches, "ada")?;
+    assert_eq!(
+        offered,
+        vec![ArtistFound {
+            mbid: mbid(ADA),
+            name: "Ada".to_owned(),
+        }],
+        "one artist, once, for the credits that carry an id"
+    );
+    assert!(
+        library
+            .unheld_artists_among(&matches, "ada echoes")?
+            .is_empty()
+    );
+    assert!(
+        library
+            .unheld_artists_among(&matches, "year:1971")?
+            .is_empty()
+    );
+    let held = vec![RecordingMatch {
+        credit: vec![Credit {
+            name: "The Orbiters".to_owned(),
+            joined_by: String::new(),
+            mbid: Some(mbid(ORBITERS)),
+        }],
+        ..recording_match(RECORDING, "Echoes")
+    }];
+    assert!(
+        library.unheld_artists_among(&held, "orbiters")?.is_empty(),
+        "an artist the catalog holds is not offered"
+    );
+
+    let artist = library.open_artist_found(&fake, &offered[0])?;
+    let detail = library.artist_detail(artist)?.expect("the artist landed");
+    assert_eq!(detail.mbid, Some(mbid(ADA)));
+    assert!(
+        !library.albums_not_held_by(artist)?.is_empty(),
+        "its releases are on its page"
+    );
+    assert_eq!(
+        library.open_artist_found(&fake, &offered[0])?,
+        artist,
+        "landing it again lands the same artist"
+    );
+
+    library.settle_the_credits()?;
+    assert!(
+        library.artist_detail(artist)?.is_some(),
+        "an artist found elsewhere outlives a sweep"
+    );
+    assert_eq!(
+        library.unheld_artists_among(&matches, "ada")?,
+        offered,
+        "and is offered again until something of its own is held"
+    );
+
     Ok(())
 }
 

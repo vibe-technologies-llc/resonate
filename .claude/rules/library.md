@@ -2405,6 +2405,21 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `want_found` with `Found::from` that release, so a song wanted for its single or compilation lands
   there rather than on the album the rule would choose.
   `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first` is the claim.
+  **An artist the words name is found the same way, off the answer already in hand.**
+  `elsewhere::artists_named_by` reads the credits of the matches `find_songs` returned: a credit
+  carrying a MusicBrainz id whose folded name has a word begun by every word typed
+  (`words_asked`), once per id, so *twenty one pilots* names the band and *twenty one pilots stressed
+  out* names nobody. `Library::unheld_artists_among` drops those the catalog holds
+  (`artists.mbid` or `artists.key`, where `found_elsewhere` is null) and keeps up to
+  `ARTISTS_FOUND_ELSEWHERE_AT_MOST` (4). `Library::open_artist_found` is the press: the artist is
+  billed through `store::artist_named` under the id, stamped `artists.found_elsewhere` (a `MIGRATIONS`
+  step) where it holds no track, album or credit, its profile landed through `land_artist` and its
+  release groups through `land_artist_releases`, as the lookup pass lands them, so its page lists
+  its releases at once and a press on one is `open_album_uncovered`. **`ORPHANS` spares an artist
+  stamped `found_elsewhere`**, so a scan does not take the row away; it stays offered, not held,
+  until something of its own is scanned
+  (`an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_releases` is the
+  claim).
 - **A link to a song is followed to the recording it names, by its ISRC, and by its title and
   artist only under the strict rule.** `linked.rs` is the whole of it. `SongLink::read` takes one
   whitespace-free token and answers `MusicBrainz` for a `musicbrainz.org/recording/<mbid>` link,

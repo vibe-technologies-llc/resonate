@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
     rgb, transparent_black, uniform_list,
 };
-use resonate_library::{FollowedLink, Linked};
+use resonate_library::{ArtistFound, FollowedLink, Linked};
 
 use crate::{
     Beyond, Notice, Selection, format,
@@ -30,6 +30,8 @@ pub(crate) const FOUND_AT_THE_TOP: usize = 6;
 const STRIP_AT_MOST: usize = 24;
 
 const ARTIST_AT_THE_TOP: f32 = 72.0;
+
+const ARTISTS_NOT_HELD: &str = "Artists not in your library";
 
 const NOTHING_MATCHES: &str = "Nothing in your library matches.";
 
@@ -527,6 +529,7 @@ impl RootView {
         let albums = library.albums();
         let artists = library.artists();
         let found = library.found();
+        let artists_found = library.artists_found();
         let shared_with_a_lookup = library.is_enriching();
         let playing = self.playing_now(cx).track;
         let pane = div()
@@ -536,7 +539,12 @@ impl RootView {
             .min_w(px(0.0))
             .children(heading);
 
-        if tracks.is_empty() && albums.is_empty() && artists.is_empty() && found.is_empty() {
+        if tracks.is_empty()
+            && albums.is_empty()
+            && artists.is_empty()
+            && found.is_empty()
+            && artists_found.is_empty()
+        {
             let nothing = match matched.elsewhere {
                 Some(Beyond::Asking | Beyond::Refining(_)) => {
                     kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES))
@@ -571,6 +579,10 @@ impl RootView {
             sections = sections
                 .child(self.section_heading(SearchShows::Artists, matched.artists, None, cx))
                 .child(self.strip("search-artist-strip", cells, cx));
+        }
+
+        if !artists_found.is_empty() {
+            sections = sections.child(self.artists_found_strip(&artists_found, cx));
         }
 
         if !tracks.is_empty() {
@@ -690,6 +702,33 @@ impl RootView {
             .children(more)
     }
 
+    fn artists_found_strip(&self, found: &[ArtistFound], cx: &mut Context<Self>) -> Div {
+        let cells = found
+            .iter()
+            .map(|artist| {
+                self.artist_found_cell(artist, ARTIST_AT_THE_TOP, cx)
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .child(
+                div()
+                    .flex_none()
+                    .px_6()
+                    .pt_5()
+                    .pb_2()
+                    .text_size(px(theme::text_base()))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text()))
+                    .child(ARTISTS_NOT_HELD),
+            )
+            .child(self.strip("search-artists-found-strip", cells, cx))
+    }
+
     fn strip(&self, id: &'static str, cells: Vec<AnyElement>, cx: &mut Context<Self>) -> Div {
         let scroll = self
             .shelf_scrolls
@@ -738,6 +777,7 @@ impl RootView {
         let heading = self.search_heading(cx);
         let library = self.library.read(cx);
         let found = library.found();
+        let artists_found = library.artists_found();
         let elsewhere = library.elsewhere();
         let can_enrich = library.can_enrich();
         let held = found.len();
@@ -748,7 +788,7 @@ impl RootView {
             .min_w(px(0.0))
             .children(heading);
 
-        if found.is_empty() {
+        if found.is_empty() && artists_found.is_empty() {
             let nothing = match elsewhere {
                 Some(Beyond::Asking | Beyond::Refining(_)) => empty(Icon::Search, ASKING, None),
                 Some(Beyond::Unreached) => self.unreached(cx),
@@ -761,42 +801,46 @@ impl RootView {
             return pane.child(nothing).into_any_element();
         }
 
-        pane.child(
-            div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_h(px(0.0))
-                .pt_2()
-                .child(
-                    Scrollbars::of(cx).around(
-                        "found-scrollbar",
-                        self.found_rows.clone(),
-                        uniform_list(
-                            "found-songs",
-                            held,
-                            cx.processor(move |this, range: Range<usize>, _, cx| {
-                                let mut drawn = Vec::new();
-                                for index in range {
-                                    let Some(song) = found.get(index) else {
-                                        continue;
-                                    };
-                                    let reached =
-                                        this.reaches(Shift::Listing(Listed::Found), index);
-                                    drawn.push(reorder::marked(
-                                        this.found_row(index, song, cx),
-                                        reached,
-                                    ));
-                                }
-                                drawn
-                            }),
-                        )
-                        .track_scroll(self.found_rows.clone())
-                        .h_full()
-                        .w_full(),
+        let artists_strip =
+            (!artists_found.is_empty()).then(|| self.artists_found_strip(&artists_found, cx));
+
+        pane.children(artists_strip)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .pt_2()
+                    .child(
+                        Scrollbars::of(cx).around(
+                            "found-scrollbar",
+                            self.found_rows.clone(),
+                            uniform_list(
+                                "found-songs",
+                                held,
+                                cx.processor(move |this, range: Range<usize>, _, cx| {
+                                    let mut drawn = Vec::new();
+                                    for index in range {
+                                        let Some(song) = found.get(index) else {
+                                            continue;
+                                        };
+                                        let reached =
+                                            this.reaches(Shift::Listing(Listed::Found), index);
+                                        drawn.push(reorder::marked(
+                                            this.found_row(index, song, cx),
+                                            reached,
+                                        ));
+                                    }
+                                    drawn
+                                }),
+                            )
+                            .track_scroll(self.found_rows.clone())
+                            .h_full()
+                            .w_full(),
+                        ),
                     ),
-                ),
-        )
-        .into_any_element()
+            )
+            .into_any_element()
     }
 }

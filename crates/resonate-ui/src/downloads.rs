@@ -3,9 +3,11 @@ use std::time::SystemTime;
 use ahash::AHashMap;
 use gpui::SharedString;
 use resonate_core::{AlbumId, SourceId, TrackId, WantId};
-use resonate_library::{Found, Issued, Mbid, RecordingRelease, TRIES_BEFORE_GIVING_UP, Want};
+use resonate_library::{Found, Issued, Mbid, RecordingRelease, Want};
 
-use crate::format;
+const LOOKING_IT_UP: &str = "Looking it up…";
+
+const DOWNLOADING: &str = "Downloading…";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fetching {
@@ -72,24 +74,13 @@ impl Fetching {
 
     pub fn saying(self) -> SharedString {
         match self {
-            Self::Landing => SharedString::new_static("Adding to the catalog…"),
-            Self::Queued => {
-                SharedString::from(format!("Queued · attempt 1 of {TRIES_BEFORE_GIVING_UP}"))
-            }
-            Self::Downloading { attempt } => SharedString::from(format!(
-                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking providers…"
-            )),
-            Self::Unreached { attempt } => SharedString::from(format!(
-                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · a provider didn't answer, asking again shortly"
-            )),
+            Self::Landing
+            | Self::Queued
+            | Self::Downloading { .. }
+            | Self::Unreached { .. }
+            | Self::Retrying { .. } => SharedString::new_static(LOOKING_IT_UP),
             Self::Downloaded => SharedString::new_static("Downloaded"),
-            Self::Retrying { tries, at } => SharedString::from(format!(
-                "No match on attempt {tries} of {TRIES_BEFORE_GIVING_UP} · trying again at {}",
-                format::time_of_day(at)
-            )),
-            Self::GaveUp => {
-                SharedString::from(format!("No match after {TRIES_BEFORE_GIVING_UP} attempts"))
-            }
+            Self::GaveUp => SharedString::new_static("Not found"),
             Self::NoProvider => SharedString::new_static("No provider is set up"),
             Self::Unwanted => SharedString::new_static("Couldn't add it"),
         }
@@ -103,55 +94,30 @@ pub(crate) struct Fetched {
 }
 
 impl Fetched {
-    fn asked_of(&self) -> String {
-        match self.provider.as_str() {
-            "inbox" => "the inbox".to_owned(),
-            "subsonic" => "your Subsonic server".to_owned(),
-            "tidal" => "TIDAL".to_owned(),
-            "hifi-api" => "TIDAL through hifi-api".to_owned(),
-            "monochrome" => "Monochrome".to_owned(),
-            other => other.to_owned(),
-        }
+    pub(crate) const fn is_arriving(&self) -> bool {
+        self.received > 0
     }
 }
 
 pub(crate) fn saying_while(fetching: Fetching, fetched: Option<&Fetched>) -> SharedString {
     match (fetching, fetched) {
-        (Fetching::Downloading { attempt }, Some(fetched)) if fetched.received == 0 => {
-            SharedString::from(format!(
-                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking {}…",
-                fetched.asked_of()
-            ))
+        (Fetching::Downloading { .. }, Some(fetched)) if fetched.is_arriving() => {
+            SharedString::new_static(DOWNLOADING)
         }
-        (Fetching::Downloading { .. }, Some(fetched)) => SharedString::from(format!(
-            "Downloading from {} · {}",
-            fetched.asked_of(),
-            format::bytes(fetched.received)
-        )),
         (fetching, _) => fetching.saying(),
     }
 }
 
-pub(crate) fn summed_up(fetching: &[Fetching]) -> SharedString {
+pub(crate) fn summed_up(fetching: &[Fetching], arriving: bool) -> SharedString {
     let underway = fetching.iter().filter(|each| each.is_underway()).count();
-    let left = |said: &str| match underway {
-        0 | 1 => SharedString::from(said.to_owned()),
-        more => SharedString::from(format!("{said} · {more} left")),
-    };
-    let any = |state: fn(&Fetching) -> bool| fetching.iter().any(state);
 
-    if any(|each| matches!(each, Fetching::Downloading { .. })) {
-        left("Downloading")
-    } else if any(|each| matches!(each, Fetching::Unreached { .. })) {
-        left("Waiting for a provider")
-    } else if any(|each| matches!(each, Fetching::Landing)) {
-        SharedString::new_static("Adding to the catalog…")
-    } else if any(|each| matches!(each, Fetching::Queued)) {
-        left("Queued")
-    } else if any(|each| matches!(each, Fetching::Retrying { .. })) {
-        left("Trying again later")
-    } else {
-        finished(fetching)
+    match underway {
+        0 => finished(fetching),
+        1 => SharedString::new_static(if arriving { DOWNLOADING } else { LOOKING_IT_UP }),
+        more => SharedString::from(format!(
+            "{} · {more} left",
+            if arriving { DOWNLOADING } else { LOOKING_IT_UP }
+        )),
     }
 }
 
@@ -421,6 +387,8 @@ pub(crate) enum Fetcher {
 mod tests {
     use std::time::Duration;
 
+    use resonate_library::TRIES_BEFORE_GIVING_UP;
+
     use super::*;
 
     const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -576,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn a_download_says_which_provider_is_asked_and_how_much_has_arrived() {
+    fn a_download_says_it_is_looking_the_song_up_until_bytes_arrive_and_downloading_after() {
         let asking = Fetched {
             provider: SourceId::new("tidal").expect("a source name"),
             received: 0,
@@ -586,55 +554,60 @@ mod tests {
             ..asking.clone()
         };
         let downloading = Fetching::Downloading { attempt: 2 };
+        let retrying = Fetching::Retrying {
+            tries: 1,
+            at: SystemTime::UNIX_EPOCH,
+        };
 
-        assert_eq!(
-            saying_while(downloading, Some(&asking)),
-            "Attempt 2 of 6 · asking TIDAL…"
-        );
-        assert_eq!(
-            saying_while(downloading, Some(&arriving)),
-            "Downloading from TIDAL · 3.0 MiB"
-        );
-        assert_eq!(
-            saying_while(downloading, None),
-            "Attempt 2 of 6 · asking providers…"
-        );
+        assert_eq!(saying_while(downloading, Some(&asking)), "Looking it up…");
+        assert_eq!(saying_while(downloading, Some(&arriving)), "Downloading…");
+        assert_eq!(saying_while(downloading, None), "Looking it up…");
         assert_eq!(
             saying_while(Fetching::Queued, Some(&arriving)),
-            Fetching::Queued.saying()
+            "Looking it up…"
         );
+        for lookup in [
+            Fetching::Landing,
+            Fetching::Queued,
+            Fetching::Unreached { attempt: 3 },
+            retrying,
+        ] {
+            assert_eq!(lookup.saying(), "Looking it up…");
+        }
     }
 
     #[test]
-    fn the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left() {
+    fn the_sidebar_says_looking_it_up_or_downloading_and_how_many_songs_are_left() {
         let retrying = Fetching::Retrying {
             tries: 1,
             at: SystemTime::UNIX_EPOCH,
         };
 
         assert_eq!(
-            summed_up(&[
-                Fetching::Downloading { attempt: 1 },
-                Fetching::Queued,
-                retrying
-            ]),
-            "Downloading · 3 left"
-        );
-        assert_eq!(summed_up(&[Fetching::Queued]), "Queued");
-        assert_eq!(
-            summed_up(&[Fetching::Downloaded, retrying, Fetching::Queued]),
-            "Queued · 2 left"
+            summed_up(
+                &[
+                    Fetching::Downloading { attempt: 1 },
+                    Fetching::Queued,
+                    retrying
+                ],
+                false
+            ),
+            "Looking it up… · 3 left"
         );
         assert_eq!(
-            summed_up(&[retrying, Fetching::Unreached { attempt: 2 }]),
-            "Waiting for a provider · 2 left"
+            summed_up(&[Fetching::Downloaded, retrying, Fetching::Queued], true),
+            "Downloading… · 2 left"
         );
-        assert_eq!(summed_up(&[Fetching::Landing]), "Adding to the catalog…");
+        assert_eq!(summed_up(&[Fetching::Queued], false), "Looking it up…");
+        assert_eq!(summed_up(&[Fetching::Landing], false), "Looking it up…");
         assert_eq!(
-            summed_up(&[Fetching::Downloaded, Fetching::Downloaded, Fetching::GaveUp]),
+            summed_up(
+                &[Fetching::Downloaded, Fetching::Downloaded, Fetching::GaveUp],
+                false
+            ),
             "2 downloaded · 1 not downloaded"
         );
-        assert_eq!(summed_up(&[Fetching::GaveUp]), "1 not downloaded");
+        assert_eq!(summed_up(&[Fetching::GaveUp], false), "1 not downloaded");
     }
 
     #[test]

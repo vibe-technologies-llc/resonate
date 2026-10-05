@@ -1905,21 +1905,23 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   reads a queued download as `Downloading` while `PollProgress::asking` names its want, and
   `Downloads::followed` reads each shelves load's `WantStanding`s — a want delivered (`held` or
   `offered`) is `Downloaded`, one tried since it was queued with nothing offered
-  `Retrying { tries, at }` — *No match on attempt 2 of 6 · trying again at 14:32*, the clock time
-  (`format::time_of_day`, the listener's zone) rather than a countdown so an idle window does not
-  draw a stale one — and one the catalog gave up on `GaveUp`, *No match after 6 attempts*. A queued
-  download says *Queued · attempt 1 of 6*; while the poll asks, `Downloading { attempt }` says
-  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries — and, where
-  the poll says whom it is asking (`LibraryModel::fetched`, a `Fetched` off
-  `PollProgress::asking_provider` and `received`), `downloads::saying_while` names it — *Attempt 2 of
-  6 · asking TIDAL…* — and, once bytes arrive, *Downloading from TIDAL · 12.4 MiB*, drawn afresh on
-  every `SCAN_POLL` the poll's task notifies
-  (`a_download_says_which_provider_is_asked_and_how_much_has_arrived`). A poll that
+  `Retrying { tries, at }`, and one the catalog gave up on `GaveUp`. **A download says two things
+  while it is underway: *Looking it up…* and *Downloading…*.** `Landing`, `Queued`, `Retrying`,
+  `Unreached` and a `Downloading { attempt }` the poll has received nothing for all read *Looking it
+  up…*, so a want asked again after a miss, or one a provider did not answer, never shows an attempt
+  count, a clock time or a *No match* between polls, where several attempts read as a janky
+  alternation. `downloads::saying_while` reads *Downloading…* once `Fetched::is_arriving`
+  (`LibraryModel::fetched`, off `PollProgress::asking_provider` and `received`), drawn afresh on
+  every `SCAN_POLL` the poll's task notifies, and the sidebar's `summed_up` takes whether any
+  download is arriving and says one of the two with *· N left* beside it
+  (`a_download_says_it_is_looking_the_song_up_until_bytes_arrive_and_downloading_after`,
+  `the_sidebar_says_looking_it_up_or_downloading_and_how_many_songs_are_left`). Only an ending
+  speaks otherwise: *Downloaded*, *Not found* for `GaveUp`, *No provider is set up* and *Couldn't add
+  it*. A poll that
   ended with a provider refusing or running late (`PollStats::refused` or `late`) sets
   `LibraryModel::providers_unheard`, and while it holds a queued download, or a retrying one whose
-  clock time has passed, reads `Unreached { attempt }` — *Attempt N of 6 · a provider didn't answer,
-  asking again shortly* — since such a want is never stamped (`providers.md`) and would otherwise
-  alternate between *Downloading* while asked and a stale *No match* between polls; a poll that
+  clock time has passed, reads `Unreached { attempt }`, since such a want is never stamped
+  (`providers.md`); a poll that
   hears every provider clears it, a cancelled one leaves it (`Fetching::while_polling` is the one
   reading, shared by the song list and the album's cells). All of them count as underway. A want the
   load does not hold is left as it stood, a stale load being no evidence it went. **The standings are
@@ -2011,7 +2013,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the first `FOUND_AT_THE_TOP` (6) songs not in the library with what MusicBrainz is doing beside the
   heading, then the albums as a strip — each section headed by its name and, where more matched than
   it shows, *See all N*, which opens its tab. *Not in your library* (`not_in_the_library`) is every
-  found row in a `uniform_list` of its own. A search always begins on *Top results*, read where the box goes
+  found row in a `uniform_list` of its own. **An artist the search names that the catalog does not
+  hold is a cell of its own.** `LibraryModel::artists_found` is the `ArtistFound`s `show_answer`
+  weighed beside the songs (`Library::unheld_artists_among`, off the credits MusicBrainz answered
+  with, so no request of its own), read only while `found_for` is the query; *Artists not in your
+  library* is a strip of `artist_found_cell`s above *Not in your library*'s rows and between the
+  artists and the songs of *Top results*, and either page is empty only where this is too. A press is
+  `LibraryModel::land_artist_found`, which runs `Library::open_artist_found` on the background
+  executor and opens the artist it answers, its releases listed as an artist's page lists a held one's
+  (`library.md`). A search always begins on *Top results*, read where the box goes
   from empty to holding words (`RootView::open_the_search`): from Albums, Artists or Tracks the pane
   stays and its page is replaced, and from any other pane — Queue, Playlists, Statistics, Settings —
   the window goes to Tracks, showing everything, since the box lives in the header of every pane and

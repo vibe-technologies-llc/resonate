@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, ReleaseTrackId, WantId};
+use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, WantId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
@@ -10,6 +10,8 @@ use crate::{
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
+
+pub const ARTISTS_FOUND_ELSEWHERE_AT_MOST: usize = 4;
 
 const FEWEST_LETTERS_ASKED_ELSEWHERE: usize = 3;
 
@@ -66,6 +68,64 @@ impl Found {
             .iter()
             .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtistFound {
+    pub mbid: Mbid,
+    pub name: String,
+}
+
+pub(crate) fn artists_named_by(matches: &[RecordingMatch], text: &str) -> Vec<ArtistFound> {
+    let words: Vec<String> = words_asked(text)
+        .iter()
+        .flat_map(|word| word.split_whitespace())
+        .map(store::folded_letters)
+        .filter(|word| !word.is_empty())
+        .collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    let mut seen = AHashSet::new();
+    let mut named = Vec::new();
+    for credit in matches.iter().flat_map(|matched| &matched.credit) {
+        let Some(mbid) = &credit.mbid else {
+            continue;
+        };
+        let folded: Vec<String> = credit
+            .name
+            .split_whitespace()
+            .map(store::folded_letters)
+            .collect();
+        let answers = words
+            .iter()
+            .all(|word| folded.iter().any(|name| name.starts_with(word.as_str())));
+        if answers && seen.insert(mbid.clone()) {
+            named.push(ArtistFound {
+                mbid: mbid.clone(),
+                name: credit.name.clone(),
+            });
+        }
+    }
+
+    named
+}
+
+pub(crate) fn artist_of_found(tx: &Transaction<'_>, found: &ArtistFound) -> Result<ArtistId> {
+    let id = store::artist_named(tx, &found.name, Some(&found.mbid))?;
+    tx.execute(
+        "UPDATE artists SET found_elsewhere = ?2
+          WHERE id = ?1
+            AND found_elsewhere IS NULL
+            AND id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
+            AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
+            AND id NOT IN (SELECT artist_id FROM track_credits)",
+        params![id, store::to_nanos(SystemTime::now())],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+
+    Ok(ArtistId::new(id as u64)?)
 }
 
 pub fn in_the_order_worth_offering(releases: &[RecordingRelease]) -> Vec<&RecordingRelease> {

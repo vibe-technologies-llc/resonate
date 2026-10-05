@@ -56,7 +56,8 @@ DELETE FROM albums
         OR id NOT IN (SELECT rt.album_id FROM wants w
                         JOIN release_tracks rt ON rt.id = w.release_track_id));
 DELETE FROM artists
- WHERE id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
+ WHERE found_elsewhere IS NULL
+   AND id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM track_credits);
 DELETE FROM lyrics_kept

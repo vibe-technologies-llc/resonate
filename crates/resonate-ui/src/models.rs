@@ -18,9 +18,9 @@ use resonate_core::{
 };
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
-    Album, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery,
-    ArtistTotals, CatalogStamp, CoverArt, Covering, Cut, Day, Deleted, DeliveryFolder, Direction,
-    Drawing, Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags,
+    Album, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistFound, ArtistOrder,
+    ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut, Day, Deleted, DeliveryFolder,
+    Direction, Drawing, Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags,
     Fingerprinters, Found, GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions,
     ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept, Layout, Library, Listen,
     LookupOp, Mbid, Meant, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
@@ -622,6 +622,8 @@ pub struct LibraryModel {
     albums_not_held: Arc<[AlbumNotHeld]>,
     albums_wanted: AHashMap<Mbid, Task<()>>,
     albums_opening: AHashSet<Mbid>,
+    artists_found: Arc<[ArtistFound]>,
+    artists_opening: AHashSet<Mbid>,
     albums_missing_tracks_wanted: AHashSet<AlbumId>,
     album_songs: AHashMap<Mbid, Vec<Mbid>>,
     shown: Arc<[Found]>,
@@ -828,6 +830,8 @@ impl LibraryModel {
             albums_not_held: Arc::default(),
             albums_wanted: AHashMap::new(),
             albums_opening: AHashSet::new(),
+            artists_found: Arc::default(),
+            artists_opening: AHashSet::new(),
             albums_missing_tracks_wanted: AHashSet::new(),
             album_songs: AHashMap::new(),
             shown: Arc::default(),
@@ -1218,6 +1222,19 @@ impl LibraryModel {
         Arc::clone(&self.shown)
     }
 
+    pub fn artists_found(&self) -> Arc<[ArtistFound]> {
+        match self.found_for.as_deref() {
+            Some(asked)
+                if self.selection == Selection::Everything
+                    && !self.query.is_empty()
+                    && asked == self.query =>
+            {
+                Arc::clone(&self.artists_found)
+            }
+            Some(_) | None => Arc::default(),
+        }
+    }
+
     pub const fn sung(&self) -> Option<&Sung> {
         self.sung.as_ref()
     }
@@ -1334,9 +1351,13 @@ impl LibraryModel {
         let library = Arc::clone(&self.library);
 
         self._showing = cx.spawn(async move |this, cx| {
-            let found = cx
+            let asked = text.clone();
+            let (found, artists) = cx
                 .background_executor()
-                .spawn(async move { library.unheld_among(answered.to_vec()) })
+                .spawn(async move {
+                    let artists = library.unheld_artists_among(&answered, &asked);
+                    (library.unheld_among(answered.to_vec()), artists)
+                })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 if this.asking.as_deref() != Some(text.as_str()) {
@@ -1345,6 +1366,13 @@ impl LibraryModel {
                 this.asking = None;
                 this.narrowed = Arc::default();
                 this.unreached_for = None;
+                this.artists_found = match artists {
+                    Ok(artists) => artists.into(),
+                    Err(error) => {
+                        tracing::warn!(%error, "artists found elsewhere could not be weighed against the catalog");
+                        Arc::default()
+                    }
+                };
                 this.found = match found {
                     Ok(found) => found.into(),
                     Err(error) => {
@@ -1540,6 +1568,47 @@ impl LibraryModel {
                 .detach();
             }
             Some(opened.wanted)
+        })
+    }
+
+    pub fn land_artist_found(
+        &mut self,
+        found: ArtistFound,
+        cx: &mut Context<Self>,
+    ) -> Task<Option<ArtistId>> {
+        let Some(reference) = self.reference.clone() else {
+            return Task::ready(None);
+        };
+        if !self.artists_opening.insert(found.mbid.clone()) {
+            return Task::ready(None);
+        }
+        let library = Arc::clone(&self.library);
+
+        cx.spawn(async move |this, cx| {
+            let landed = cx
+                .background_executor()
+                .spawn({
+                    let found = found.clone();
+                    async move { library.open_artist_found(reference.as_ref(), &found) }
+                })
+                .await;
+
+            this.update(cx, |this, cx| {
+                this.artists_opening.remove(&found.mbid);
+                match landed {
+                    Ok(artist) => {
+                        this.read(Wanted::Everything, cx);
+                        Some(artist)
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "an artist found elsewhere could not be opened");
+                        toast::tell(toast::could_not("open the artist", &error), cx);
+                        None
+                    }
+                }
+            })
+            .ok()
+            .flatten()
         })
     }
 

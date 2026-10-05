@@ -13,10 +13,10 @@ use gpui::{
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
-    Album, AlbumNotHeld, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre,
-    GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack,
-    PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service, Track, UnheldRelease,
-    in_the_order_worth_offering,
+    Album, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut, Favoured,
+    Found, Genre, GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured,
+    MissingTrack, PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service, Track,
+    UnheldRelease, in_the_order_worth_offering,
 };
 use smallvec::smallvec;
 
@@ -95,6 +95,9 @@ const WANT_FOUND_HINT: &str = "Download this song: its release is added to the c
 
 const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                 providers are asked for it now, the sidebar following how it goes";
+
+const OPEN_ARTIST_FOUND_HINT: &str =
+    "Open this artist to see their releases and download the songs you want";
 
 const OPEN_ALBUM_NOT_HELD_HINT: &str = "Open this album to see its songs and download the ones you \
                                         want";
@@ -2474,6 +2477,63 @@ impl RootView {
             move |_, at, _| artist_menu(at, id).favours(Favoured::Artist(id), favourite),
             cx,
         )
+    }
+
+    pub(crate) fn artist_found_cell(
+        &self,
+        found: &ArtistFound,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let cell_id = listing::keyed_by("artist-found", &found.mbid);
+        let pointed = pointed::is_pointed_at(&cell_id);
+        let opening = found.clone();
+
+        div()
+            .id(cell_id.clone())
+            .follows_the_pointer(cell_id)
+            .group(CELL_GROUP)
+            .flex()
+            .flex_none()
+            .flex_col()
+            .items_center()
+            .gap_2p5()
+            .w(px(side))
+            .cursor_pointer()
+            .names(OPEN_ARTIST_FOUND_HINT)
+            .child(
+                kit::avatar(&found.name, false)
+                    .size(px(side))
+                    .text_size(px(theme::text_title())),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .text_size(px(theme::text_sm()))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(if pointed {
+                        theme::accent()
+                    } else {
+                        theme::text()
+                    }))
+                    .text_center()
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(SharedString::from(found.name.clone())),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let landing = opening.clone();
+                let landed = this
+                    .library
+                    .update(cx, |library, cx| library.land_artist_found(landing, cx));
+                cx.spawn(async move |this, cx| {
+                    let Some(artist) = landed.await else {
+                        return;
+                    };
+                    let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
+                })
+                .detach();
+            }))
     }
 
     pub(crate) fn orders_a_listing(
