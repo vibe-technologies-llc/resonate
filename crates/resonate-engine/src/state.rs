@@ -6,7 +6,8 @@ use std::{
 use parking_lot::RwLock;
 use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
 use resonate_core::{
-    AppliedGain, FrameSpan, Frames, MediaLocation, QueueStamp, StreamSpec, TrackId, Volume,
+    AppliedGain, FrameSpan, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
+    Volume,
 };
 use resonate_pipewire::{NodeName, SinkId, SinkInfo, Words};
 
@@ -60,11 +61,26 @@ pub struct OutputStatus {
     pub negotiated: StreamSpec,
     pub words: Option<Words>,
     pub mode: OutputMode,
+    pub graph_rate: Option<SampleRate>,
     pub latency: Frames,
     pub underruns: u64,
     pub went_without: Frames,
     pub device_turned: bool,
     pub device_muted: bool,
+}
+
+impl OutputStatus {
+    pub fn converted_by_the_graph(&self) -> bool {
+        self.graph_rate
+            .is_some_and(|graph| graph != self.negotiated.rate)
+    }
+
+    pub(crate) fn hears(&mut self, planned: OutputMode) {
+        self.mode = match self.converted_by_the_graph() {
+            true => OutputMode::Converted,
+            false => planned,
+        };
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

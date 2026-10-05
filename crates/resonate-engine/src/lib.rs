@@ -42,9 +42,10 @@ pub use resonate_dsp::{
     SincParams, Tuning,
 };
 pub use resonate_pipewire::{
-    AudioSource, CardProfile, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole,
-    NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
-    SinkStream, StreamCommand, StreamEvent, StreamRequest, StreamState, Words,
+    AudioSource, CardProfile, Error as SinkError, GraphTime, HardwareVolume, LatencyRequest,
+    MediaRole, NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats, SinkId, SinkInfo,
+    SinkPort, SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
+    Words,
 };
 
 pub use crate::{

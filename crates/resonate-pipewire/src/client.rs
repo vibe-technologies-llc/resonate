@@ -40,8 +40,8 @@ use resonate_core::{Gain, SampleRate, StreamSpec};
 use crate::{
     AudioSink, AudioSource, CaptureRequest, CaptureStream, Capturing, CardProfile, Error,
     LatencyRequest, MediaRole, Microphone, NodeName, PodParam, PwOp, Result, SinkChange,
-    SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent, StreamRequest,
-    StreamState,
+    SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamClock, StreamCommand, StreamEvent,
+    StreamRequest, StreamState,
     format::{
         AdvertisedFormat, AdvertisedRoute, RouteChange, RouteSetting, WireWord, negotiated,
         packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
@@ -70,7 +70,7 @@ const CARD_PROFILE_DEVICE: &str = "card.profile.device";
 const NODE_DONT_MOVE: &str = "node.dont-move";
 
 struct StreamSlots {
-    latency: Arc<std::sync::atomic::AtomicU64>,
+    clock: Arc<StreamClock>,
     events: Sender<StreamEvent>,
 }
 
@@ -538,7 +538,7 @@ impl PipeWire {
             .map(|node| self.node_name(node))
             .transpose()?;
         let (events, incoming) = bounded(256);
-        let latency = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let clock = Arc::new(StreamClock::default());
         let (reply, outcome) = bounded(1);
 
         self.survey
@@ -548,7 +548,7 @@ impl PipeWire {
                 target,
                 source,
                 slots: StreamSlots {
-                    latency: Arc::clone(&latency),
+                    clock: Arc::clone(&clock),
                     events,
                 },
                 reply,
@@ -562,7 +562,7 @@ impl PipeWire {
         let control = self.survey.commands.clone();
         Ok(SinkStream::new(
             incoming,
-            latency,
+            clock,
             Box::new(move |command| {
                 control
                     .send(match command {
@@ -1279,7 +1279,7 @@ fn build_stream(
     source: Box<dyn AudioSource>,
     slots: &StreamSlots,
 ) -> Result<ActiveStream> {
-    let StreamSlots { latency, events } = slots;
+    let StreamSlots { clock, events } = slots;
     let spec = request.spec;
     let role = match request.role {
         MediaRole::Music => "Music",
@@ -1313,7 +1313,7 @@ fn build_stream(
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
     let packed = Arc::new(AtomicBool::new(false));
-    let cycle = Cycle::new(spec, Arc::clone(&packed), Arc::clone(latency));
+    let cycle = Cycle::new(spec, Arc::clone(&packed), Arc::clone(clock));
     let listener = stream
         .add_local_listener_with_user_data(source)
         .process(move |stream, source| cycle.run(stream, source.as_mut()))

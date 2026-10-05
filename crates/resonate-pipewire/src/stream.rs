@@ -1,7 +1,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -26,12 +26,53 @@ impl GraphTime {
         )
     }
 
+    pub fn graph_rate(self) -> Option<SampleRate> {
+        if self.tick.numer.get() != 1 {
+            return None;
+        }
+        SampleRate::new(self.tick.denom.get()).ok()
+    }
+
     const fn ahead_of_the_device(self, stream: SampleRate) -> u64 {
         if self.delay <= 0 {
             return 0;
         }
         let seconds = (self.delay as u64).saturating_mul(self.tick.numer.get() as u64);
         seconds.saturating_mul(stream.hz() as u64) / self.tick.denom.get() as u64
+    }
+}
+
+const NO_GRAPH_RATE: u32 = 0;
+
+#[derive(Debug, Default)]
+pub struct StreamClock {
+    latency: AtomicU64,
+    graph_hz: AtomicU32,
+}
+
+impl StreamClock {
+    pub const fn behind_by(latency: Frames) -> Self {
+        Self {
+            latency: AtomicU64::new(latency.get()),
+            graph_hz: AtomicU32::new(NO_GRAPH_RATE),
+        }
+    }
+
+    pub fn note(&self, time: GraphTime, stream: SampleRate) {
+        self.latency
+            .store(time.downstream(stream).get(), Ordering::Relaxed);
+        self.graph_hz.store(
+            time.graph_rate().map_or(NO_GRAPH_RATE, SampleRate::hz),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub fn latency(&self) -> Frames {
+        Frames(self.latency.load(Ordering::Relaxed))
+    }
+
+    pub fn graph_rate(&self) -> Option<SampleRate> {
+        SampleRate::new(self.graph_hz.load(Ordering::Relaxed)).ok()
     }
 }
 
@@ -96,19 +137,19 @@ pub enum StreamEvent {
 
 pub struct SinkStream {
     events: Receiver<StreamEvent>,
-    latency: Arc<AtomicU64>,
+    clock: Arc<StreamClock>,
     control: Box<dyn Fn(StreamCommand) -> Result<()> + Send + Sync>,
 }
 
 impl SinkStream {
     pub fn new(
         events: Receiver<StreamEvent>,
-        latency: Arc<AtomicU64>,
+        clock: Arc<StreamClock>,
         control: Box<dyn Fn(StreamCommand) -> Result<()> + Send + Sync>,
     ) -> Self {
         Self {
             events,
-            latency,
+            clock,
             control,
         }
     }
@@ -122,7 +163,11 @@ impl SinkStream {
     }
 
     pub fn latency(&self) -> Frames {
-        Frames(self.latency.load(Ordering::Relaxed))
+        self.clock.latency()
+    }
+
+    pub fn graph_rate(&self) -> Option<SampleRate> {
+        self.clock.graph_rate()
     }
 
     pub const fn events(&self) -> &Receiver<StreamEvent> {
@@ -203,6 +248,26 @@ mod tests {
             Frames(64),
             "a stream ahead of the device still holds what it holds"
         );
+    }
+
+    #[test]
+    fn the_clock_says_the_rate_the_graph_ticks_at_and_only_where_a_tick_is_one_frame() {
+        let clock = StreamClock::default();
+        assert_eq!(clock.graph_rate(), None);
+
+        clock.note(ticking(48_000, 480), SampleRate::HZ_44100);
+        assert_eq!(clock.graph_rate(), Some(SampleRate::HZ_48000));
+        assert_eq!(clock.latency(), Frames(441));
+
+        let coarse = GraphTime {
+            tick: Ratio {
+                numer: NonZeroU32::new(2).expect("a tick numerator"),
+                denom: NonZeroU32::new(96_000).expect("a tick denominator"),
+            },
+            ..ticking(48_000, 0)
+        };
+        clock.note(coarse, SampleRate::HZ_48000);
+        assert_eq!(clock.graph_rate(), None);
     }
 
     #[test]

@@ -415,6 +415,7 @@ impl Output {
                 negotiated: plan.stream,
                 words: None,
                 mode: plan.mode,
+                graph_rate: None,
                 latency: Frames::ZERO,
                 underruns: 0,
                 went_without: Frames::ZERO,
@@ -492,7 +493,7 @@ impl Output {
             self.staged.set_frames(chain.max_output_frames());
         }
         self.chain = chain;
-        self.status.mode = plan.mode;
+        self.status.hears(plan.mode);
         self.plan = plan;
         self.settles_into = None;
         self.status
@@ -2697,10 +2698,12 @@ impl Engine {
         };
         let node = output.sink;
 
-        let Some(latency) = output.stream.as_ref().map(SinkStream::latency) else {
+        let Some(stream) = output.stream.as_ref() else {
             return;
         };
-        output.status.latency = latency;
+        output.status.latency = stream.latency();
+        output.status.graph_rate = stream.graph_rate();
+        output.status.hears(output.plan.mode);
         let events = Self::drain_events(output);
 
         let mut renegotiated = None;

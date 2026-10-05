@@ -10,7 +10,7 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -18,7 +18,7 @@ use libspa::utils::Fraction;
 use pipewire::stream::Stream;
 use resonate_core::{Ratio, SampleRate, StreamSpec};
 
-use crate::{AudioSink, AudioSource, GraphTime};
+use crate::{AudioSink, AudioSource, GraphTime, StreamClock};
 
 const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
@@ -53,18 +53,18 @@ pub(crate) struct Cycle {
     packed_stride: i32,
     bytes_per_frame: usize,
     packed: Arc<AtomicBool>,
-    latency: Arc<AtomicU64>,
+    clock: Arc<StreamClock>,
 }
 
 impl Cycle {
-    pub(crate) fn new(spec: StreamSpec, packed: Arc<AtomicBool>, latency: Arc<AtomicU64>) -> Self {
+    pub(crate) fn new(spec: StreamSpec, packed: Arc<AtomicBool>, clock: Arc<StreamClock>) -> Self {
         Self {
             rate: spec.rate,
             stride: spec.bytes_per_frame().get() as i32,
             packed_stride: packed_stride(spec),
             bytes_per_frame: spec.bytes_per_frame().get() as usize,
             packed,
-            latency,
+            clock,
         }
     }
 
@@ -125,8 +125,7 @@ impl Cycle {
             buffered: time.buffered(),
             tick,
         };
-        self.latency
-            .store(ahead.downstream(self.rate).get(), Ordering::Relaxed);
+        self.clock.note(ahead, self.rate);
     }
 }
 
@@ -196,7 +195,7 @@ mod tests {
         Cycle::new(
             stereo(format),
             Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicU64::new(0)),
+            Arc::new(StreamClock::default()),
         )
     }
 

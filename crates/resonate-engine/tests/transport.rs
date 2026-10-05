@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     env, fs,
     io::Cursor,
+    num::NonZeroU32,
     ops::Range,
     path::{Path, PathBuf},
     process,
@@ -17,18 +18,18 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_codec::{Error as CodecError, Result as CodecResult};
 use resonate_core::{
-    ChannelLayout, Decibels, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, SampleFormat,
-    SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
+    ChannelLayout, Decibels, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, Ratio,
+    SampleFormat, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
-    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, HardwareVolume,
-    Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement,
-    PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q, QueueItem, Reading,
-    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats,
-    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words,
-    stamp_of,
+    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, GraphTime,
+    HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode,
+    Placement, PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q, QueueItem,
+    Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkError,
+    SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId,
+    Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped,
+    Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -161,6 +162,7 @@ struct Graph {
     turned: Vec<(SinkId, Gain)>,
     muted: Vec<(SinkId, bool)>,
     away: bool,
+    clock: Option<Arc<StreamClock>>,
 }
 
 impl Graph {
@@ -265,11 +267,13 @@ impl Backend for FakeSink {
             graph.active = false;
         }
 
+        let clock = Arc::new(StreamClock::behind_by(Frames(self.latency)));
+        self.graph.lock().clock = Some(Arc::clone(&clock));
         let control = Arc::clone(&self.graph);
         let answers_drain = self.answers_drain;
         Ok(SinkStream::new(
             incoming,
-            Arc::new(AtomicU64::new(self.latency)),
+            clock,
             Box::new(move |command| {
                 let mut graph = control.lock();
                 match command {
@@ -2889,6 +2893,76 @@ fn a_run_of_paused_skips_binds_nothing_until_the_transport_is_asked_to_play() ->
         "playing did not bind the row the skips landed on"
     );
     Ok(())
+}
+
+#[test]
+fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(
+        &[SampleRate::HZ_48000, SampleRate::HZ_44100],
+        &[SampleFormat::S16],
+    )])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(
+        &player,
+        playing,
+        "the stream to open at the file's own rate",
+    );
+    assert_eq!(
+        player.state().output.map(|output| output.mode),
+        Some(OutputMode::BitPerfect)
+    );
+
+    let clock = graph.lock().clock.clone().expect("an open stream's clock");
+    clock.note(ticking_at(48_000), SampleRate::HZ_44100);
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * 4,
+        |player, _| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == OutputMode::Converted)
+        },
+        "the chip to say the graph converts the stream",
+    );
+    let status = player.state().output.expect("an output status");
+    assert!(status.converted_by_the_graph());
+    assert_eq!(status.graph_rate, Some(SampleRate::HZ_48000));
+
+    clock.note(ticking_at(44_100), SampleRate::HZ_44100);
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * 4,
+        |player, _| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == OutputMode::BitPerfect)
+        },
+        "the chip to say bit-perfect once the graph runs at the stream's rate",
+    );
+    Ok(())
+}
+
+fn ticking_at(hz: u32) -> GraphTime {
+    GraphTime {
+        delay: 0,
+        buffered: 0,
+        tick: Ratio {
+            numer: NonZeroU32::MIN,
+            denom: NonZeroU32::new(hz).expect("a graph rate"),
+        },
+    }
 }
 
 #[test]

@@ -22,8 +22,8 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
     PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Surveyor, Until,
-    Words,
+    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamClock, StreamCommand, StreamRequest,
+    Surveyor, Until, Words,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
@@ -292,7 +292,7 @@ impl Backend for RealtimeSink {
         let closer = Arc::clone(&closed);
         Ok(SinkStream::new(
             unbounded().1,
-            Arc::new(AtomicU64::new(0)),
+            Arc::new(StreamClock::default()),
             Box::new(move |command| {
                 match command {
                     StreamCommand::SetActive(playing) => setter.store(playing, Ordering::Release),

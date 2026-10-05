@@ -8,8 +8,6 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Defects
-- Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
-  client holds at a second rate is converted by the graph while the chip still says bit-perfect
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
@@ -30,7 +28,7 @@ else is open to be done.
 - `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
   the same one. Sink nodes publish a `Format` param and the registry a Profiler global that
   `client.rs` does not subscribe to; reading `ParamType::Format` of a running sink may give a
-  per-device rate, and would also serve the live-rate defect
+  per-device rate
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
 - The queued buffers' frames are not counted in the stream's delay, so the position and the

@@ -1021,6 +1021,16 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   publishes `downstream(spec.rate)` as one `AtomicU64` of stream frames (two atomics would tear and
   converting later takes a lock the RT thread may not). `SinkStream::latency` is `Frames`.
   `GraphTime::buffered` is already at the stream's rate and so added, not converted.
+- **Bit-perfect is what the graph runs at, read every cycle, not only what the stream was opened at.**
+  Another client can hold the graph at a second rate after the stream opened, and the graph then
+  converts the stream however the plan reads. `StreamClock` is what the callback writes each cycle
+  (the latency and, where a tick is one frame, `GraphTime::graph_rate`, both atomics) and `SinkStream`
+  reads; `poll_stream` copies the rate onto `OutputStatus::graph_rate` and `OutputStatus::hears`
+  demotes the published `mode` to `Converted` wherever `converted_by_the_graph` (the graph's rate is
+  known and is not the negotiated one), the plan's own mode coming back once it is again. The plan is
+  left as it was: `no_convert` and every reshape still read `OutputPlan::mode`. The inspector says
+  *→ 48 kHz by the graph* and *graph runs at*
+  (`a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect`).
 - **The callback fills the quantum the graph asked for, not the buffer it was handed.**
   `pw_buffer.requested` is that quantum in frames and `Cycle::asked_for` turns it into bytes, clamped to
   the room the pool gave and falling back to all of it where the graph names nothing (also where the

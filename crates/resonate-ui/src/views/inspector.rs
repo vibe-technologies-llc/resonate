@@ -157,7 +157,10 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
             OutputMode::BitPerfect => "untouched".to_owned(),
             OutputMode::Repacked => "repacked".to_owned(),
             OutputMode::Dithered => format!("→ {}", format::depth(output.negotiated.format)),
-            OutputMode::Converted => format!("→ {}", format::quality(output.negotiated)),
+            OutputMode::Converted => match graph_converting(output) {
+                Some(graph) => format!("→ {graph} kHz by the graph"),
+                None => format!("→ {}", format::quality(output.negotiated)),
+            },
         },
     );
     let gain = format::applied(digest.replay_gain);
@@ -297,6 +300,13 @@ fn heard_card(heard: Option<&Heard>) -> Div {
     )
 }
 
+fn graph_converting(output: OutputStatus) -> Option<String> {
+    output
+        .graph_rate
+        .filter(|_| output.converted_by_the_graph())
+        .map(SampleRate::kilohertz)
+}
+
 fn sink_card(output: Option<OutputStatus>) -> Div {
     let Some(output) = output else {
         return fields(
@@ -321,6 +331,10 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
         ),
         vec![
             ("negotiated", Some(format::quality(output.negotiated))),
+            (
+                "graph runs at",
+                graph_converting(output).map(|graph| format!("{graph} kHz")),
+            ),
             (
                 "on the wire",
                 output
