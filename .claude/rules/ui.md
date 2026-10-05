@@ -2398,9 +2398,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `RootView::album_named` reads off the catalog's album or, for an unscanned row, the tags the player
   read; an empty name is not offered. *Show in the file manager* is gpui's `reveal_path`, asking the
   portal's `OpenURI.OpenDirectory` for the folder with the file selected and falling back to opening the
-  folder. The playback bar's and inspector's names are a left click to their album or artist, so a right
-  click copies that name whole — not the cut the bar draws — through `copied_on_a_right_click`, a toast
-  saying what is on the clipboard. An album cell, an artist row, the two covers, a queue row, a playlist
+  folder. **The playback bar's cover, title, artist and album open one menu**, `what_plays_menu`:
+  the cover's whole view (cover only), the inspector, the artist and album, favouring, sharing and the
+  file group with its copies, so copying a name whole — not the cut the bar draws — is one entry away.
+  The inspector's title is a left click to its album and a right click copies it whole through
+  `copied_on_a_right_click`, a toast saying what is on the clipboard. An album cell, an artist row, the two covers, a queue row, a playlist
   row, a column header, the search box and a lyric line each carry their own. A sidebar row, a settings
   control and a missing row deliberately carry none: each would offer only what one press does.
 - **A copy is handed to the compositor over `ext-data-control`, not through gpui.** gpui 0.2.2's Wayland

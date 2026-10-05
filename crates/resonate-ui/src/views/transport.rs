@@ -32,7 +32,7 @@ use crate::{
         hint::Names,
         kit::{self, KeepsItsWidth},
         listing::Pictured,
-        menu::{self, Menu},
+        menu::{self, Called, Menu},
         root::Magnified,
         slider::Handle,
     },
@@ -616,7 +616,7 @@ impl RootView {
             .font_weight(FontWeight::MEDIUM)
             .text_color(rgb(if idle { theme::muted() } else { theme::text() }))
             .child(
-                copied_on_a_right_click(
+                opens_what_plays_menu(
                     self.opens(
                         "playing-title",
                         kit::cut_to_fit(
@@ -630,7 +630,7 @@ impl RootView {
                         playing.cover.album.map(Selection::Album),
                         cx,
                     ),
-                    playing.title.clone(),
+                    cx,
                 )
                 .keeps_its_width(),
             )
@@ -705,7 +705,7 @@ impl RootView {
             .text_size(size)
             .text_color(rgb(theme::muted()))
             .child(
-                copied_on_a_right_click(
+                opens_what_plays_menu(
                     self.opens(
                         of_the_artist,
                         kit::cut_to_fit(playing.artist.clone(), room, font.clone(), size, cx),
@@ -713,7 +713,7 @@ impl RootView {
                         playing.artist_id.map(Selection::Artist),
                         cx,
                     ),
-                    playing.artist.clone(),
+                    cx,
                 )
                 .keeps_its_width(),
             );
@@ -736,15 +736,15 @@ impl RootView {
                 .child(BY_LINE_SEPARATOR),
         )
         .child(
-            copied_on_a_right_click(
+            opens_what_plays_menu(
                 self.opens(
                     of_the_album,
-                    kit::cut_to_fit(album.clone(), album_room, font, size, cx),
+                    kit::cut_to_fit(album, album_room, font, size, cx),
                     OPEN_ALBUM_HINT,
                     playing.cover.album.map(Selection::Album),
                     cx,
                 ),
-                album,
+                cx,
             )
             .keeps_its_width(),
         )
@@ -877,24 +877,7 @@ impl RootView {
 
         menu::opens_a_menu(
             cover,
-            move |this, at, cx| {
-                let playing = this.playing_now(cx);
-
-                Menu::at(at)
-                    .does(Icon::Albums, menu::MAGNIFY, {
-                        let seen = opened.clone();
-
-                        move |this, _, cx| this.magnify(seen.clone(), cx)
-                    })
-                    .does(Icon::Inspector, menu::INSPECT, |this, _, cx| {
-                        this.set_pane(Pane::Inspector, cx);
-                    })
-                    .reaches(playing.track, playing.album, playing.artist)
-                    .when_some(playing.track, |menu, track| {
-                        menu.favours(Favoured::Track(track), playing.favourite)
-                            .shares(track)
-                    })
-            },
+            move |this, at, cx| what_plays_menu(this, at, Some(opened.clone()), cx),
             cx,
         )
         .into_any_element()
@@ -935,6 +918,23 @@ impl RootView {
             track: playing.track,
             favourite: playing.favourite,
         }
+    }
+
+    fn playing_file(&self, cx: &mut Context<Self>) -> Option<(MediaLocation, Called)> {
+        let model = self.player.read(cx);
+        let state = model.state().clone();
+        let digest = model.digest();
+        let playing = self.playing(&state, digest.as_deref(), cx);
+        let row = self.queued_row(&state, cx)?;
+
+        Some((
+            row.location,
+            Called {
+                title: playing.title.clone(),
+                artist: playing.artist.clone(),
+                album: playing.album.clone(),
+            },
+        ))
     }
 
     pub(crate) fn name_the_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1421,6 +1421,47 @@ fn nothing_playing() -> Playing {
         cover: Cover::default(),
         heard: None,
     }
+}
+
+fn what_plays_menu(
+    root: &mut RootView,
+    at: Point<Pixels>,
+    cover: Option<Magnified>,
+    cx: &mut Context<RootView>,
+) -> Menu {
+    let PlayingNow {
+        album,
+        artist,
+        track,
+        favourite,
+    } = root.playing_now(cx);
+    let file = root.playing_file(cx);
+
+    Menu::at(at)
+        .when_some(cover, |menu, seen| {
+            menu.does(Icon::Albums, menu::MAGNIFY, move |this, _, cx| {
+                this.magnify(seen.clone(), cx);
+            })
+        })
+        .does(Icon::Inspector, menu::INSPECT, |this, _, cx| {
+            this.set_pane(Pane::Inspector, cx);
+        })
+        .reaches(track, album, artist)
+        .when_some(track, |menu, track| {
+            menu.favours(Favoured::Track(track), favourite)
+                .shares(track)
+        })
+        .when_some(file, |menu, (location, names)| {
+            menu.offers_the_file(&location, names)
+        })
+}
+
+fn opens_what_plays_menu(named: Stateful<Div>, cx: &mut Context<RootView>) -> Stateful<Div> {
+    menu::opens_a_menu(
+        named,
+        |this, at, cx| what_plays_menu(this, at, None, cx),
+        cx,
+    )
 }
 
 pub(crate) fn copied_on_a_right_click(named: Stateful<Div>, name: SharedString) -> Stateful<Div> {
