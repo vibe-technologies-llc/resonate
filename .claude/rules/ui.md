@@ -1069,7 +1069,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   mark and the negotiated depth and rate too, doubling the line to say what the mode's name and the
   inspector's *Output* stage say; what a converted stream became is the inspector's to spell out. It is
   the line the inspector's three stages expand on, and a press on it opens that pane, the short reading
-  and the long one not being two unrelated places. Title, artist and album are three elements, not one
+  and the long one not being two unrelated places. **A skip never blanks the panel.** While the next
+  row opens on its thread the engine publishes no current track (`Buffering`, `between_songs`), so
+  `RootView::playing` answers the song last resolved and `name_the_window` keeps the title it set,
+  rather than flashing *Nothing playing*; and the next cover being read off the catalog,
+  `held_through_a_change` draws the last cover drawn (`RootView::shown_cover`) for up to
+  `COVER_HELD_FOR` where a cover is expected, rather than the disc. What changes fades in
+  (`faded_in`, `CHANGE_FADES_IN_OVER`, from `CHANGE_FADES_IN_FROM`), the cover keyed by what it pictures
+  and the title and by-line by their text, so the same song drawn again does not fade. Title, artist and album are three elements, not one
   truncated line: each opens the page behind it through `RootView::opens`, the title and album scoping
   the tracks pane to `Selection::Album` and the artist to `Selection::Artist`. A scope whose album or
   artist the catalog no longer holds (`Browsed::gone`) is left for `Selection::Everything` when the

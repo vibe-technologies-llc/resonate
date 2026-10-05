@@ -1,12 +1,12 @@
 use std::{
     rc::Rc,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use gpui::{
-    AnyElement, App, Context, Corners, Div, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
-    Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Svg, Window, div, img, prelude::*, px,
-    rgb,
+    Animation, AnimationExt as _, AnyElement, App, Context, Corners, Div, FontWeight, MouseButton,
+    MouseDownEvent, ObjectFit, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Svg,
+    Window, div, ease_out_quint, img, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, TrackId};
 use resonate_engine::{
@@ -19,7 +19,7 @@ use crate::{
     app::Grain,
     clipboard, format,
     icons::{self, Icon},
-    models::Notice,
+    models::{Notice, Picture},
     theme, toast,
     views::{
         Pane,
@@ -29,6 +29,7 @@ use crate::{
         kit::{self, KeepsItsWidth},
         listing::Pictured,
         menu::{self, Menu},
+        root::Magnified,
         slider::Handle,
     },
 };
@@ -152,6 +153,32 @@ pub(crate) struct Resolving {
 pub(crate) struct Resolved {
     at: Resolving,
     playing: Rc<Playing>,
+}
+
+pub(crate) struct ShownCover {
+    art: Picture,
+    magnified: Magnified,
+    waiting_since: Option<Instant>,
+}
+
+const COVER_HELD_FOR: Duration = Duration::from_millis(400);
+const CHANGE_FADES_IN_OVER: Duration = Duration::from_millis(160);
+const CHANGE_FADES_IN_FROM: f32 = 0.2;
+
+fn between_songs(state: &PlayerState) -> bool {
+    state.current.is_none() && state.playback == PlaybackState::Buffering
+}
+
+fn faded_in<E: IntoElement + Styled + 'static>(element: E, key: SharedString) -> AnyElement {
+    element
+        .with_animation(
+            key,
+            Animation::new(CHANGE_FADES_IN_OVER).with_easing(ease_out_quint()),
+            |faded, delta| {
+                faded.opacity(CHANGE_FADES_IN_FROM + (1.0 - CHANGE_FADES_IN_FROM) * delta)
+            },
+        )
+        .into_any_element()
 }
 
 #[derive(Clone, Copy)]
@@ -426,7 +453,8 @@ impl RootView {
     ) -> Div {
         let playing = self.playing(state, digest, cx);
         let cover = self.now_playing_cover(&playing.cover, cx);
-        let idle = state.current.is_none();
+        let idle = state.current.is_none() && !between_songs(state);
+        let shown = SharedString::from(format!("now-playing-{}-{}", playing.title, playing.artist));
 
         div()
             .flex()
@@ -446,15 +474,23 @@ impl RootView {
                     .min_w(px(0.0))
                     .gap_0p5()
                     .child(kit::measures_its_width(self.playing_room.clone()))
-                    .child(self.played_title(&playing, idle, cx))
-                    .child(self.by_line(
-                        "playing-artist",
-                        "playing-album",
-                        &playing,
-                        self.playing_room.get(),
-                        cx,
+                    .child(faded_in(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .min_w(px(0.0))
+                            .gap_0p5()
+                            .child(self.played_title(&playing, idle, cx))
+                            .child(self.by_line(
+                                "playing-artist",
+                                "playing-album",
+                                &playing,
+                                self.playing_room.get(),
+                                cx,
+                            )),
+                        shown,
                     ))
-                    .when(!idle, |panel| {
+                    .when(state.current.is_some(), |panel| {
                         panel.child(self.signal_path(state, &playing, sink, cx))
                     }),
             )
@@ -689,6 +725,7 @@ impl RootView {
         let drawn = cover
             .pictured()
             .and_then(|pictured| self.drawn_cover(pictured, Drawn::NowPlaying, cx));
+        let drawn = self.held_through_a_change(drawn, cover.pictured().is_some());
         let Some((art, magnified)) = drawn else {
             return frame
                 .child(icons::icon(Icon::Disc, 24.0, theme::faint()))
@@ -696,16 +733,18 @@ impl RootView {
         };
 
         let opened = magnified.clone();
+        let drawn_as = SharedString::from(format!("now-playing-cover-{magnified:?}"));
         let cover = frame
             .id("magnify-cover")
             .cursor_pointer()
             .hover(|cover| cover.opacity(kit::LIT))
-            .child(
+            .child(faded_in(
                 img(art)
                     .size(px(theme::now_playing_cover()))
                     .object_fit(ObjectFit::Cover)
                     .rounded_md(),
-            )
+                drawn_as,
+            ))
             .names(COVER_HINT)
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.magnify(magnified.clone(), cx);
@@ -736,6 +775,29 @@ impl RootView {
         .into_any_element()
     }
 
+    fn held_through_a_change(
+        &self,
+        drawn: Option<(Picture, Magnified)>,
+        expected: bool,
+    ) -> Option<(Picture, Magnified)> {
+        let mut shown = self.shown_cover.borrow_mut();
+        if let Some((art, magnified)) = drawn {
+            *shown = Some(ShownCover {
+                art: art.clone(),
+                magnified: magnified.clone(),
+                waiting_since: None,
+            });
+            return Some((art, magnified));
+        }
+        let held = shown.as_mut().filter(|_| expected)?;
+        let waiting_since = *held.waiting_since.get_or_insert_with(Instant::now);
+        if waiting_since.elapsed() < COVER_HELD_FOR {
+            return Some((held.art.clone(), held.magnified.clone()));
+        }
+        *shown = None;
+        None
+    }
+
     pub(crate) fn playing_now(&self, cx: &mut Context<Self>) -> PlayingNow {
         let model = self.player.read(cx);
         let state = model.state().clone();
@@ -753,6 +815,9 @@ impl RootView {
     pub(crate) fn name_the_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.player.read(cx);
         let state = model.state().clone();
+        if between_songs(&state) {
+            return;
+        }
         let digest = model.digest();
         let title = match state.current {
             Some(_) => {
@@ -774,6 +839,11 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Rc<Playing> {
         let Some(current) = state.current else {
+            if between_songs(state)
+                && let Some(held) = self.resolved.borrow().as_ref()
+            {
+                return Rc::clone(&held.playing);
+            }
             return Rc::new(nothing_playing());
         };
         let at = Resolving {
