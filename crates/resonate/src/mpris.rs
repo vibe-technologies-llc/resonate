@@ -113,6 +113,10 @@ impl Host for Desktop {
         self.notify.load(Ordering::Acquire)
     }
 
+    fn answers_headsets(&self) -> bool {
+        true
+    }
+
     fn quit(&self) {
         let Some(quit) = self.quit.as_ref() else {
             return;

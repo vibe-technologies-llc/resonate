@@ -150,7 +150,8 @@ Invariants the layering protects; the rules files have the rest of each:
   `resonate-listen` (`capture`, `reconnect`; the latter needs `pw-cli`), `resonate-mpris --test bus`
   (session bus), `resonate-codec --test encoded` and `resonate-library --test library` (ffmpeg, `metaflac`,
   `wavpack`, `mac`), `resonate-online --test live` (`RESONATE_ONLINE_TESTS`). The two reconnect tests
-  host a daemon of their own and the mpris notification press a bus under `dbus-run-session`.
+  host a daemon of their own and the mpris notification and headset presses a bus under
+  `dbus-run-session`.
   `resonate-subsonic`, `resonate-tidal` and `resonate-monochrome` serve fake servers on loopback.
 - `cd fuzz && cargo +nightly fuzz build`, and `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15`.

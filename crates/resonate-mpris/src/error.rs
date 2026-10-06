@@ -17,6 +17,7 @@ pub enum BusOp {
     Emit,
     Listen,
     Notify,
+    Register,
     Inhibit,
     Release,
     Shutdown,
@@ -24,7 +25,7 @@ pub enum BusOp {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("{op:?} failed on the session bus")]
+    #[error("{op:?} failed on the message bus")]
     Bus {
         op: BusOp,
         #[source]

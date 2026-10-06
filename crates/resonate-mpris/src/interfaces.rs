@@ -9,7 +9,7 @@ use resonate_engine::{
 };
 use zbus::{
     fdo, interface,
-    zvariant::{ObjectPath, OwnedValue},
+    zvariant::{ObjectPath, OwnedValue, Value},
 };
 
 use crate::{
@@ -401,6 +401,24 @@ impl PlayerInterface {
         emitter: &zbus::object_server::SignalEmitter<'_>,
         position: i64,
     ) -> zbus::Result<()>;
+}
+
+impl PlayerInterface {
+    pub(crate) fn as_registered(&self) -> HashMap<&'static str, Value<'static>> {
+        HashMap::from([
+            ("Identity", Value::from(self.shared.host.identity())),
+            ("PlaybackStatus", Value::from(self.playback_status())),
+            ("LoopStatus", Value::from(self.loop_status())),
+            ("Shuffle", Value::from(self.shuffle())),
+            ("Position", Value::from(self.position())),
+            ("Metadata", Value::from(self.metadata())),
+            ("CanPlay", Value::from(self.can_play())),
+            ("CanPause", Value::from(self.can_pause())),
+            ("CanGoNext", Value::from(self.can_go_next())),
+            ("CanGoPrevious", Value::from(self.can_go_previous())),
+            ("CanControl", Value::from(self.can_control())),
+        ])
+    }
 }
 
 pub(crate) struct OwnInterface {

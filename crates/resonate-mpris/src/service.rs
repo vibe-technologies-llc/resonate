@@ -32,6 +32,7 @@ use zbus::{
 use crate::{
     BusOp, Error, Heard, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
     art::Pictures,
+    bluez::Headsets,
     desktop::Errands,
     interfaces::{Owed, OwnInterface, PlayerInterface, Root, RowArt, Shared, waiting_to_play},
     notify::{Shown, shown},
@@ -400,6 +401,7 @@ fn announce(
     });
 
     let errands = Errands::start(shared);
+    let headsets = Headsets::start(shared);
     let heard_from = told;
     let mut told = None;
 
@@ -410,6 +412,9 @@ fn announce(
 
         let next = snapshot(shared, playlists, Some(&watched));
         publish(&player, &watched, &next);
+        if let Some(headsets) = headsets.as_ref() {
+            publish(headsets.player(), &watched, &next);
+        }
         publish_ours(&ours, &watched, &next);
         publish_tracks(&tracks, shared, &watched, &next);
         if let Some(collected) = collected.as_ref() {
@@ -432,13 +437,20 @@ fn announce(
         if watched.seeks != next.seeks
             && let Some(playhead) = next.playhead
         {
-            emit_seeked(&player, micros(playhead.position, playhead.rate));
+            let position = micros(playhead.position, playhead.rate);
+            emit_seeked(&player, position);
+            if let Some(headsets) = headsets.as_ref() {
+                emit_seeked(headsets.player(), position);
+            }
         }
         watched = next;
     }
 
     if let Some(errands) = errands {
         errands.rest();
+    }
+    if let Some(headsets) = headsets {
+        headsets.rest();
     }
 }
 
@@ -873,7 +885,7 @@ fn emit_seeked(player: &InterfaceRef<PlayerInterface>, position: i64) {
 fn report(outcome: zbus::Result<()>) {
     if let Err(source) = outcome {
         let error = Error::bus(BusOp::Emit, source);
-        tracing::debug!(%error, "a property change did not reach the session bus");
+        tracing::debug!(%error, "a property change did not reach the bus");
     }
 }
 

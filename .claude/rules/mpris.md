@@ -15,7 +15,8 @@ the playlists seam), and is the client a second `resonate` reaches a first throu
 - **The engine only through `Player`, the front end only through `Host`.** No gpui or library
   dependency, so one service serves `resonate play` and the window. A media key is the desktop's to
   grab first (it calls MPRIS, so the interface *is* the feature); the window binds the same keys only
-  as a fallback (`ui.md`). Started unconditionally; with no session bus it warns and carries on.
+  as a fallback (`ui.md`). A headset's own buttons come through BlueZ instead (*Headsets* below).
+  Started unconditionally; with no session bus it warns and carries on.
 - **A location whose source is not in `Host::sources` is refused**, and `SupportedUriSchemes` is built
   from the same list. `SupportedMimeTypes` answers the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets an interface of our own.** `org.resonate.Player1`, at the same
@@ -134,6 +135,32 @@ alike (`packaging.md`).
   of its own with no transport buttons, since it names a song that is not playing. The window never
   sees the bus: the binary's `listen::in_the_window` builds the `resonate_ui::Listens` with a `tell`
   closure over the `Teller`.
+
+## Headsets
+
+**A Bluetooth headset's buttons reach the player through BlueZ, not the desktop.** BlueZ hands an
+AVRCP press (play, pause, stop, next, previous) only to a player registered with `org.bluez.Media1`'s
+`RegisterPlayer`, and AirPods also choose between play and pause from the status that player
+reports. With none registered (no `mpris-proxy`, PipeWire's dummy player off by default), a press
+went nowhere. `bluez.rs`'s `Headsets` serves a second `PlayerInterface` at the same object path on a
+system bus connection of its own (`DEADLINE` `method_timeout`), and its thread registers it with
+every object `org.bluez`'s ObjectManager lists as carrying `Media1`, then with each one
+`InterfacesAdded` announces later, which covers an adapter plugged in and `bluetoothd` restarting.
+BlueZ is asked for its objects only where the name already has an owner, so starting the player
+never D-Bus-activates `bluetoothd`. `PlayerInterface::as_registered` is what `RegisterPlayer` is
+handed. BlueZ refuses a call while `CanControl` or the matching `Can*` flag is false, so the flags
+are passed at registration and kept current. The poll `publish`es and emits `Seeked` on this
+interface beside the session one, so BlueZ hears every status change. `Headsets::rest` closes the
+connection and BlueZ drops the player as its sender leaves. While Resonate runs, a headset's
+buttons control it rather than whatever else is playing.
+
+**Only a host that says so registers.** `Host::answers_headsets` is false by default and true for
+the binary, so no test touches the machine's BlueZ. A missing system bus or BlueZ is a debug record.
+`bus.rs`'s `a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez` runs
+under `dbus-run-session` with `DBUS_SYSTEM_BUS_ADDRESS` pointed at the session bus and a stand-in
+`org.bluez`: it registers, follows an adapter added later, tells BlueZ the status, and a Pause and a
+Next called as BlueZ calls them reach the transport. The Flatpak needs `--system-talk-name=org.bluez`
+(`packaging.md`).
 
 ## The client
 

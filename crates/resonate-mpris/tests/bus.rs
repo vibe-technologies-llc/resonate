@@ -31,7 +31,9 @@ use resonate_mpris::{
 };
 use zbus::{
     blocking::{Connection, Proxy, connection},
+    fdo::ObjectManager,
     interface,
+    message::Header,
     zvariant::{OwnedObjectPath, OwnedValue},
 };
 
@@ -58,6 +60,10 @@ const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_ON_A_BUS_OF_ITS_OWN";
 const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
 const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
 const RAISED: u32 = 41;
+const SYSTEM_BUS_TOO: &str = r#"DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" exec "$@""#;
+const BLUEZ: &str = "org.bluez";
+const FIRST_ADAPTER: &str = "/org/bluez/hci0";
+const PLUGGED_IN_LATER: &str = "/org/bluez/hci1";
 const A_BUS_WITH_NOTHING_TO_ACTIVATE: &str = r#"<!DOCTYPE busconfig PUBLIC
  "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -336,6 +342,7 @@ struct Desktop {
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
     catalog: Catalog,
+    headsets: bool,
 }
 
 impl Host for Desktop {
@@ -361,6 +368,10 @@ impl Host for Desktop {
 
     fn raise(&self) {
         self.raised.store(true, Ordering::Release);
+    }
+
+    fn answers_headsets(&self) -> bool {
+        self.headsets
     }
 
     fn mime_types(&self) -> Vec<String> {
@@ -484,7 +495,15 @@ impl Harness {
         Self::started(Arc::new(Sources::local()))
     }
 
+    fn answering_headsets() -> Option<Self> {
+        Self::begun(Arc::new(Sources::local()), true)
+    }
+
     fn started(sources: Arc<Sources>) -> Option<Self> {
+        Self::begun(sources, false)
+    }
+
+    fn begun(sources: Arc<Sources>, headsets: bool) -> Option<Self> {
         let connection = match Connection::session() {
             Ok(connection) => connection,
             Err(error) => {
@@ -513,6 +532,7 @@ impl Harness {
             raised: Arc::clone(&raised),
             opened: Arc::clone(&opened),
             catalog: Arc::clone(&catalog),
+            headsets,
         };
         let shelf = Arc::new(Shelf::new());
         let mpris = Mpris::start(
@@ -2716,6 +2736,38 @@ impl NotificationServer {
     }
 }
 
+struct Registered {
+    sender: String,
+    adapter: String,
+    player: OwnedObjectPath,
+    properties: HashMap<String, OwnedValue>,
+}
+
+struct Adapter {
+    registered: Sender<Registered>,
+}
+
+#[interface(name = "org.bluez.Media1")]
+impl Adapter {
+    fn register_player(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        player: OwnedObjectPath,
+        properties: HashMap<String, OwnedValue>,
+    ) {
+        let _ = self.registered.send(Registered {
+            sender: header.sender().map(ToString::to_string).unwrap_or_default(),
+            adapter: header.path().map(ToString::to_string).unwrap_or_default(),
+            player,
+            properties,
+        });
+    }
+}
+
+fn flag(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+    bool::try_from(fields.get(key)?.try_clone().ok()?).ok()
+}
+
 fn on_a_bus_of_its_own(test: &str) -> bool {
     if env::var_os(ON_A_BUS_OF_ITS_OWN).is_some() {
         return true;
@@ -2726,7 +2778,7 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
     fs::write(&config, A_BUS_WITH_NOTHING_TO_ACTIVATE).expect("a writable bus configuration");
     let started = Process::new("dbus-run-session")
         .arg(format!("--config-file={}", config.display()))
-        .arg("--")
+        .args(["--", "sh", "-c", SYSTEM_BUS_TOO, "sh"])
         .arg(env::current_exe().expect("the test binary names itself"))
         .args(["--exact", test, "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
@@ -2818,6 +2870,113 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
     harness.wait_for(
         |harness| harness.player.state().playback == PlaybackState::Paused,
         "a press on Play/Pause to pause",
+    );
+}
+
+#[test]
+fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez() {
+    if !on_a_bus_of_its_own(
+        "a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez",
+    ) {
+        return;
+    }
+    let (registered, registrations) = unbounded();
+    let bluez = connection::Builder::system()
+        .and_then(|builder| builder.name(BLUEZ))
+        .and_then(|builder| {
+            builder.serve_at(
+                FIRST_ADAPTER,
+                Adapter {
+                    registered: registered.clone(),
+                },
+            )
+        })
+        .and_then(|builder| builder.serve_at("/", ObjectManager))
+        .and_then(connection::Builder::build)
+        .expect("a stand-in BlueZ on the private bus");
+    let Some(harness) = Harness::answering_headsets() else {
+        return;
+    };
+    let tree = Tree::new();
+
+    let first = registrations
+        .recv_timeout(PATIENCE)
+        .expect("the player was registered with the adapter standing");
+    assert_eq!(first.adapter, FIRST_ADAPTER);
+    assert_eq!(first.player.as_str(), OBJECT_PATH);
+    assert_eq!(flag(&first.properties, "CanControl"), Some(true));
+    assert_eq!(
+        text(&first.properties, "PlaybackStatus").as_deref(),
+        Some("Stopped")
+    );
+    assert_eq!(
+        text(&first.properties, "Identity").as_deref(),
+        Some("Resonate")
+    );
+
+    bluez
+        .object_server()
+        .at(PLUGGED_IN_LATER, Adapter { registered })
+        .expect("a second adapter is served");
+    let later = registrations
+        .recv_timeout(PATIENCE)
+        .expect("an adapter plugged in later was registered with too");
+    assert_eq!(later.adapter, PLUGGED_IN_LATER);
+
+    let told = Proxy::new(&bluez, first.sender.as_str(), OBJECT_PATH, PROPERTIES)
+        .expect("the registered player answers on the bus BlueZ is on")
+        .receive_signal("PropertiesChanged")
+        .expect("the registered player announces its property changes");
+    let (statuses, heard) = unbounded();
+    thread::spawn(move || {
+        for message in told {
+            let Ok((_, mut changed, _)) =
+                message
+                    .body()
+                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+            else {
+                continue;
+            };
+            let Some(status) = changed
+                .remove("PlaybackStatus")
+                .and_then(|value| String::try_from(value).ok())
+            else {
+                continue;
+            };
+            if statuses.send(status).is_err() {
+                return;
+            }
+        }
+    });
+    harness.load_all(&[tree.wav("one.wav"), tree.wav("two.wav")]);
+    harness.wait_for(|harness| harness.status() == "Playing", "playback to start");
+    assert_eq!(
+        heard.recv_timeout(PATIENCE).as_deref(),
+        Ok("Playing"),
+        "BlueZ was not told the player started"
+    );
+
+    let pressed = Proxy::new(&bluez, first.sender.as_str(), OBJECT_PATH, PLAYER)
+        .expect("BlueZ reaches the registered player");
+    pressed
+        .call_method("Pause", &())
+        .expect("a press on the headset is answered");
+    harness.wait_for(
+        |harness| harness.player.state().playback == PlaybackState::Paused,
+        "a headset's pause to reach the transport",
+    );
+    assert_eq!(
+        heard.recv_timeout(PATIENCE).as_deref(),
+        Ok("Paused"),
+        "BlueZ was not told the player paused, so the next press would pause again"
+    );
+
+    pressed
+        .call_method("Next", &())
+        .expect("a double press on the headset is answered");
+    harness.wait_for(
+        |harness| harness.player.state().queue_position == Some(1),
+        "a headset's skip to move the transport",
     );
 }
 

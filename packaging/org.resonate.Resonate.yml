@@ -32,6 +32,7 @@ finish-args:
   - --talk-name=org.mpris.MediaPlayer2.resonate
   - "--talk-name=org.mpris.MediaPlayer2.resonate.*"
   - --talk-name=org.freedesktop.Notifications
+  - --system-talk-name=org.bluez
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   build-args:

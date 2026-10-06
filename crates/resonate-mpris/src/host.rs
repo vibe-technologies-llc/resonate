@@ -37,6 +37,10 @@ pub trait Host: Send + Sync + 'static {
         true
     }
 
+    fn answers_headsets(&self) -> bool {
+        false
+    }
+
     fn raise(&self) {}
 
     fn quit(&self) {}

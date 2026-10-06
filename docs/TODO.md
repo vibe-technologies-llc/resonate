@@ -11,12 +11,6 @@ else is open to be done.
 - Keep a delivery on a keeper thread, so a lane asks about its next want while the last one is staged,
   decoded, encoded and read back; today a long keep holds a lane the network could be using
 
-## Defects
-- A Bluetooth headset's own controls do nothing: AirPods' double press does not skip, and their
-  other presses neither pause nor go back. Nothing here reads AVRCP; a press reaches Resonate only
-  where the desktop turns it into a media key and calls MPRIS, or the focused window takes the key,
-  and which of those fails for a headset is unmeasured
-
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the

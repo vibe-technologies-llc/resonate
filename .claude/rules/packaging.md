@@ -38,8 +38,8 @@ The desktop entry and the metainfo's `<provides>` are held to the binary's `MIME
   override), `xdg-run/pipewire-0` (PipeWire, not PulseAudio), the owned and talk names
   `org.mpris.MediaPlayer2.resonate` and `org.mpris.MediaPlayer2.resonate.*` (a Flatpak name may own
   `org.mpris.MediaPlayer2.` plus its own id, and this player claims `resonate`),
-  `org.freedesktop.Notifications`, and `discord-ipc-0` to `-9` with the Discord and Vesktop runtime
-  directories. A Snap Discord lives on the host `/tmp`, outside the sandbox.
+  `org.freedesktop.Notifications`, the system bus's `org.bluez` (a headset's own controls, `mpris.md`),
+  and `discord-ipc-0` to `-9` with the Discord and Vesktop runtime directories. A Snap Discord lives on the host `/tmp`, outside the sandbox.
 
 **Every package installs the one `resonate.desktop` and `resonate.svg`, and the Flatpak renames
 them as it builds.** flatpak-builder exports only what is named after the app id, so the manifest

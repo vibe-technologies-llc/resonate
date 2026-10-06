@@ -1,4 +1,5 @@
 mod art;
+mod bluez;
 mod caret;
 mod desktop;
 mod error;
