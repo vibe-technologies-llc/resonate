@@ -1964,7 +1964,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   all is finished how many were downloaded and how many not, the attempt counts being each row's to
   say (`the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left`) — and a press opens
   `downloads_over_the_app`, a panel floating
-  `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, wide enough for a state and its percentage on one line, its list
+  `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, wide enough for a state on one line, its list
   `theme::downloads_height` at most and scrolled past that; a press anywhere outside it closes it, and the sidebar row's own click right after such a press is ignored for `DOWNLOADS_TOGGLE_PRESS` so pressing the row to hide it does not open it again), since the sidebar of a short window had
   room for one song and a half: each song's title, its artist and its state in
   `browser::fetching_colour` (accent downloading, `done` downloaded, `failure` given up, unprovided or
@@ -2080,7 +2080,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   held at all, which `songs_kept_for` answers. A found song's
   `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which
   `LibraryModel::released_cover` asks the reference for on the background executor while Online is on —
-  `FETCHES_AT_ONCE` (2) at a time, decoded on the `Drawer` and held under the release's id in
+  `FETCHES_AT_ONCE` (6) at a time, decoded on the `Drawer` and held under the release's id in
   `released_covers` (`RELEASED_COVERS_HELD`, 512 — more than a discography draws, or the grid evicts what it is still asking for) for the run, a release the archive holds nothing for held as nothing so it is not
   asked again — the matched runs lit,
   the release in the format column — and the want mark is `want_mark` over an `Asks`: a catalog row
@@ -2147,7 +2147,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   - *What the catalog already knows comes first.* `Library::songs_kept_for` — the songs of every
     library artist's releases not held, learnt in the lookup pass (`library.md`) — rides in the load
     with the text it was read for (`kept_for`), so a song by an artist the listener has is listed the
-    moment the listing is, offline too, before MusicBrainz is asked; `kept_before_the_rest` puts them
+    moment the listing is, before MusicBrainz is asked and from what the catalog holds, though only where
+    Online is on, a press on one wanting it from MusicBrainz; `kept_before_the_rest` puts them
     first and drops a MusicBrainz answer naming the same recording or the same folded title and credit
     (`songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`).
     `restate_what_was_found` builds `shown`, what `found()` answers and the rows count, from both.
