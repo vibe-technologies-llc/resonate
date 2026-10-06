@@ -4450,14 +4450,38 @@ impl Library {
         })
     }
 
-    pub(crate) fn forgotten_delivery_rows(
+    pub(crate) fn note_refused_offer(
         &self,
+        want: WantId,
+        taken_from: &MediaLocation,
+        now: SystemTime,
+    ) -> Result<()> {
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO refused_offers (want_id, taken_from, refused) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(want_id, taken_from) DO UPDATE SET refused = excluded.refused",
+                    params![want.get() as i64, taken_from.to_uri(), store::to_nanos(now)],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+                .map(|_| ())
+        })
+    }
+
+    pub(crate) fn declined_offer_rows(
+        &self,
+        now: SystemTime,
     ) -> Result<Vec<(WantId, supply::ForgottenDelivery)>> {
+        let refused_since = now
+            .checked_sub(supply::REFUSALS_REMEMBERED_FOR)
+            .unwrap_or(UNIX_EPOCH);
         self.inner.read(|connection| {
             rows(
                 connection,
-                "SELECT want_id, taken_from, forgotten FROM forgotten_deliveries",
-                Vec::new(),
+                "SELECT want_id, taken_from, forgotten FROM forgotten_deliveries
+                 UNION ALL
+                 SELECT want_id, taken_from, refused FROM refused_offers WHERE refused > ?1",
+                vec![Value::Integer(store::to_nanos(refused_since))],
                 |row| {
                     let want = row.get::<_, i64>(0)?;
                     let delivery = supply::ForgottenDelivery {

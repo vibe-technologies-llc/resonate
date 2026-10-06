@@ -569,6 +569,12 @@ pub(crate) fn want_in(
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
     tx.execute(
+        "DELETE FROM refused_offers
+          WHERE want_id = (SELECT id FROM wants WHERE release_track_id = ?1)",
+        params![row],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.execute(
         "DELETE FROM dismissed_missing
           WHERE (album_id, disc, position, folded) IN
                 (SELECT album_id, disc, position, folded FROM release_tracks WHERE id = ?1)",

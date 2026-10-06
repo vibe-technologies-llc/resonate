@@ -20801,6 +20801,107 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
     Ok(())
 }
 
+fn the_whole_of_san_tropez(provider: &str) -> Arc<Offering> {
+    Arc::new(Offering::new(
+        provider,
+        Delivering::Bytes {
+            key: "track/whole",
+            extension: "wav",
+            bytes: Wav::new().text(TITLE, "San Tropez").frames(441_000).build(),
+        },
+    ))
+}
+
+fn asking_in_turn(offerings: &[&Arc<Offering>]) -> Arc<Providers> {
+    Arc::new(
+        offerings
+            .iter()
+            .fold(Providers::none(), |providers, offering| {
+                providers.and(Arc::clone(offering) as Arc<dyn Provider>)
+            }),
+    )
+}
+
+#[test]
+fn a_delivery_refused_from_one_provider_is_asked_of_the_next() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let wrong = half_of_san_tropez();
+    let right = the_whole_of_san_tropez("store");
+
+    let summary = library
+        .poll(asking_in_turn(&[&wrong, &right]), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.unkept
+        ),
+        (2, 1, 1)
+    );
+    assert_eq!(wrong.asked.lock().len(), 1);
+    assert_eq!(right.asked.lock().len(), 1);
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_elsewhere()
+-> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let wrong = half_of_san_tropez();
+    library
+        .poll(wrong.registered(), PollOptions::default())?
+        .join()?;
+    let right = the_whole_of_san_tropez("store");
+
+    let summary = library
+        .poll(
+            asking_in_turn(&[&wrong, &right]),
+            PollOptions::ASKING_EVERY_WANT,
+        )?
+        .join()?;
+
+    assert_eq!((summary.stats.offered, summary.stats.kept), (1, 1));
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_refused_offer_is_offered_again_once_the_want_is_asked_for_again() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let wrong = half_of_san_tropez();
+    library
+        .poll(wrong.registered(), PollOptions::default())?
+        .join()?;
+    let row = library.wants()?[0].release_track;
+
+    let declined = library
+        .poll(wrong.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+    library.want(row)?;
+    let offered_again = library
+        .poll(wrong.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert_eq!(declined.stats.offered, 0);
+    assert_eq!(offered_again.stats.offered, 1);
+    Ok(())
+}
+
 #[test]
 fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_does() -> Result<()> {
     let (tree, library) = scanned_orbits()?;

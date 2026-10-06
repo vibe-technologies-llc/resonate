@@ -316,6 +316,12 @@ const MIGRATIONS: &[&str] = &[
      BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
      CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
      BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;",
+    "CREATE TABLE refused_offers (
+         want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+         taken_from TEXT NOT NULL,
+         refused    INTEGER NOT NULL,
+         PRIMARY KEY (want_id, taken_from)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

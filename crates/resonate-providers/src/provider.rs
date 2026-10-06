@@ -47,6 +47,7 @@ pub struct Asking<'a> {
     pub cancelled: &'a (dyn Fn() -> bool + Sync),
     pub turning_to: &'a (dyn Fn(&SourceId) + Sync),
     pub declined: &'a (dyn Fn(&Delivered) -> bool + Sync),
+    pub passing: &'a [SourceId],
 }
 
 #[derive(Debug, Default)]
@@ -58,6 +59,7 @@ pub struct Answer {
     pub declined: u64,
     pub narrowed: bool,
     pub cancelled: bool,
+    pub asked: Vec<SourceId>,
 }
 
 impl Answer {
@@ -163,6 +165,9 @@ impl Providers {
         };
 
         for provider in &self.providers {
+            if asking.passing.contains(provider.source()) {
+                continue;
+            }
             if away.holds(provider.source()) {
                 answer.passed_over += 1;
                 continue;
@@ -170,6 +175,7 @@ impl Providers {
             if is_a_source(provider) {
                 (asking.turning_to)(provider.source());
             }
+            answer.asked.push(provider.source().clone());
             match asked(provider, identity, asking) {
                 Asked::Answered(Ok(Obtained::Found(delivery))) => {
                     let delivered = Delivered {
@@ -383,7 +389,36 @@ mod tests {
             cancelled: &never,
             turning_to: &unheard,
             declined: &declining_nothing,
+            passing: &[],
         }
+    }
+
+    #[test]
+    fn a_provider_passed_for_the_ask_is_left_out_and_not_counted_passed_over() {
+        let providers = Providers::none()
+            .and(Fixed::registered("first", found))
+            .and(Fixed::registered("second", found));
+        let first = SourceId::new("first").expect("a nameable source");
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &Asking {
+                passing: std::slice::from_ref(&first),
+                ..patient()
+            },
+            &mut Away::default(),
+        );
+
+        assert_eq!(
+            answer
+                .delivered
+                .as_ref()
+                .map(|delivered| delivered.provider.to_string()),
+            Some("second".to_owned())
+        );
+        assert_eq!(answer.passed_over, 0);
+        assert!(answer.heard_from_every_provider());
+        assert!(!answer.asked.contains(&first));
     }
 
     #[test]

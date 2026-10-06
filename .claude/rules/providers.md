@@ -97,10 +97,23 @@ A provider does none of this, so none of it is written twice.
 - **A delivery is weighed against the length of the row it was wanted for.** Where the release row
   names a length, `Want::lasts_as_long_as` takes a delivery only within the library's
   `LENGTHS_AGREE_WITHIN` of it (the vault's `Kept::frames`; in the music folder a whole decode of the
-  landing). One further off is counted `unkept` and noted as nothing; the object is left to
-  `--prune` and the filed landing is removed. A refused delivery waits like a want that found nothing:
-  `note_tried` steps `misses` for any try that offered nothing, so a provider offering the wrong song,
-  or a file still being copied into the inbox, is asked after the retry's wait, not at every poll.
+  landing). One further off is counted `unkept`; the object is left to `--prune` and the filed
+  landing is removed. **A delivery that is not the song is passed over for the next provider.**
+  `landed` answers a `Landed`: `Kept`, `Unkept` (the vault or the folder failed, a stream stalled, the
+  row was held meanwhile) or `NotTheSong` (the wrong length, a vault `Keeping::Refused`, a filing
+  too large or undecodable). On `NotTheSong` the offer is written to `refused_offers` (a `MIGRATIONS`
+  step: want, `taken_from`, when) and the want asked again within the same claim with every provider
+  the round asked in `Asking::passing`, left out without counting as passed over, so the provider
+  registered after the one that offered the wrong song is asked at once rather than never
+  (`a_delivery_refused_from_one_provider_is_asked_of_the_next`). The rounds end at a keep, an unkept
+  delivery or a round with nothing; the want is stamped once, a miss where nothing was kept and every
+  round heard from everyone. **A refused offer is declined by the next poll too**: `declined_offer_rows`
+  reads `refused_offers` beside `forgotten_deliveries` into the same `declined`, refusals older than
+  `REFUSALS_REMEMBERED_FOR` (30 days) left out, so a provider offering the same wrong stream is passed
+  over and the next asked (`an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_elsewhere`);
+  `want_in` forgets a want's refusals, so asking for it again hears the offer again
+  (`a_refused_offer_is_offered_again_once_the_want_is_asked_for_again`). A re-landed release's wants
+  carry their forgotten deliveries but not their refusals, which the next poll learns again.
 - **Where no vault is open, a delivery is filed in the music folder instead.** `Library::deliver_into`
   names a `DeliveryFolder` (the `music-folder` path and the `organise-as` layout), set by the binary
   at open and by the window before every poll; with neither, a stream is `unkept` and a file only

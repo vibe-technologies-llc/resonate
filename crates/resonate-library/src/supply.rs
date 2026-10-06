@@ -30,6 +30,7 @@ use crate::{
 };
 
 pub const POLL_AGAIN_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
+pub(crate) const REFUSALS_REMEMBERED_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const RETRY_WAITS: [Duration; 5] = [
     Duration::from_secs(60),
     Duration::from_secs(5 * 60),
@@ -316,12 +317,18 @@ struct Landing<'a> {
     filed: &'a Mutex<Vec<Filed>>,
 }
 
+enum Landed {
+    Kept(MediaLocation),
+    NotTheSong,
+    Unkept,
+}
+
 fn landed(
     library: &Library,
     want: &Want,
     delivered: Delivered,
     landing: &mut Landing<'_>,
-) -> Result<Option<MediaLocation>> {
+) -> Result<Landed> {
     let Landing {
         options,
         progress,
@@ -361,7 +368,7 @@ fn landed(
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
                 away.lock().note(&delivered.provider);
-                return Ok(None);
+                return Ok(Landed::Unkept);
             }
             keeping
         }
@@ -376,27 +383,27 @@ fn landed(
                 "a delivery not as long as the track it was wanted for was refused"
             );
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::NotTheSong)
         }
         Ok(Keeping::Kept(kept)) => {
             if library.note_delivered(want, &kept, &taken_from)?.is_none() {
                 tracing::info!(%taken_from, want = %want.id, "a delivery landed after its wanted row was held by another and was not paired");
                 progress.unkept.fetch_add(1, Ordering::Relaxed);
-                return Ok(None);
+                return Ok(Landed::Unkept);
             }
             progress.kept.fetch_add(1, Ordering::Relaxed);
-            Ok(Some(MediaLocation::local(&kept.path)))
+            Ok(Landed::Kept(MediaLocation::local(&kept.path)))
         }
-        _ if progress.is_cancelled() => Ok(None),
+        _ if progress.is_cancelled() => Ok(Landed::Unkept),
         Err(source) => {
             tracing::warn!(%taken_from, %source, "a delivered track could not be kept");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::Unkept)
         }
         Ok(Keeping::Refused(refusal)) => {
             tracing::warn!(%taken_from, refused = refusal.as_str(), "a delivered track was refused");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::NotTheSong)
         }
     }
 }
@@ -549,16 +556,16 @@ fn filed_in_the_music_folder(
     want: &Want,
     delivered: Delivered,
     landing: &mut Landing<'_>,
-) -> Result<Option<MediaLocation>> {
+) -> Result<Landed> {
     let progress = landing.progress;
     let taken_from = delivered.taken_from();
     let Some(into) = library.delivering_into() else {
         return Ok(match delivered.delivery {
-            Delivery::File(_) => Some(taken_from),
+            Delivery::File(_) => Landed::Kept(taken_from),
             Delivery::Stream { .. } => {
                 tracing::warn!(%taken_from, "a streamed delivery has neither a vault nor a music folder to land in");
                 progress.unkept.fetch_add(1, Ordering::Relaxed);
-                None
+                Landed::Unkept
             }
         });
     };
@@ -596,7 +603,7 @@ fn filed_in_the_music_folder(
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
                 landing.away.lock().note(&delivered.provider);
-                return Ok(None);
+                return Ok(Landed::Unkept);
             }
             outcome
         }
@@ -607,14 +614,14 @@ fn filed_in_the_music_folder(
             progress.kept.fetch_add(1, Ordering::Relaxed);
             let at = MediaLocation::local(&landed.path);
             landing.filed.lock().push(landed);
-            Ok(Some(at))
+            Ok(Landed::Kept(at))
         }
-        _ if progress.is_cancelled() => Ok(None),
+        _ if progress.is_cancelled() => Ok(Landed::Unkept),
         Err(Unfiled::Catalog(error)) => Err(error),
         Err(Unfiled::Io(error)) => {
             tracing::warn!(%taken_from, %error, "a delivered track could not be written into the music folder");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::Unkept)
         }
         Err(Unfiled::NotAsLongAsWanted { heard }) => {
             tracing::warn!(
@@ -624,12 +631,17 @@ fn filed_in_the_music_folder(
                 "a delivery not as long as the track it was wanted for was refused"
             );
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::NotTheSong)
+        }
+        Err(unfiled @ (Unfiled::TooLarge | Unfiled::Undecodable)) => {
+            tracing::warn!(%taken_from, ?unfiled, "a delivered track was refused");
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(Landed::NotTheSong)
         }
         Err(unfiled) => {
             tracing::warn!(%taken_from, ?unfiled, "a delivered track could not be filed in the music folder");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
-            Ok(None)
+            Ok(Landed::Unkept)
         }
     }
 }
@@ -816,66 +828,87 @@ impl Lanes<'_> {
                 .iter()
                 .any(|forgotten| forgotten.declines(delivered))
         };
-        let mut away = self.away.lock().clone();
-        let answer = self.providers.first(
-            &want.identity(),
-            &Asking {
-                within: self.options.answers_within,
-                cancelled: &cancelled,
-                turning_to: &turning_to,
-                declined: &declined,
-            },
-            &mut away,
-        );
-        self.away.lock().join(&away);
-        self.first_answered.store(true, Ordering::Release);
-        progress
-            .refused
-            .fetch_add(answer.refused, Ordering::Relaxed);
-        progress.late.fetch_add(answer.late, Ordering::Relaxed);
-        if answer.delivered.is_none() {
-            progress.turns_to(want.id, None);
-        }
-        if answer.cancelled {
-            return Ok(Flow::Stop);
-        }
-        match answer.delivered {
-            Some(delivered) => {
-                progress.offered.fetch_add(1, Ordering::Relaxed);
-                let noted = landed(
-                    self.library,
-                    want,
-                    delivered,
-                    &mut Landing {
-                        options: self.options,
-                        progress,
-                        away: &self.away,
-                        filed: &self.filed,
-                    },
-                )?;
-                let cancelled = progress.is_cancelled();
-                if noted.is_some() || !cancelled {
-                    tried(self.library, want.id, noted.as_ref())?;
-                }
-                if cancelled {
-                    return Ok(Flow::Stop);
-                }
-                self.pair_what_was_filed()?;
+        let mut passing: Vec<SourceId> = Vec::new();
+        let mut every_provider_heard = true;
+        loop {
+            let mut away = self.away.lock().clone();
+            let answer = self.providers.first(
+                &want.identity(),
+                &Asking {
+                    within: self.options.answers_within,
+                    cancelled: &cancelled,
+                    turning_to: &turning_to,
+                    declined: &declined,
+                    passing: &passing,
+                },
+                &mut away,
+            );
+            self.away.lock().join(&away);
+            self.first_answered.store(true, Ordering::Release);
+            progress
+                .refused
+                .fetch_add(answer.refused, Ordering::Relaxed);
+            progress.late.fetch_add(answer.late, Ordering::Relaxed);
+            every_provider_heard &= answer.heard_from_every_provider();
+            if answer.delivered.is_none() {
+                progress.turns_to(want.id, None);
             }
-            None if answer.heard_from_every_provider() => {
-                progress.nothing.fetch_add(1, Ordering::Relaxed);
-                tried(self.library, want.id, None)?;
+            if answer.cancelled {
+                return Ok(Flow::Stop);
             }
-            None => tracing::debug!(
-                want = %want.id,
-                refused = answer.refused,
-                late = answer.late,
-                passed_over = answer.passed_over,
-                narrowed = answer.narrowed,
-                "not every provider answered, so the want stays due"
-            ),
+            let Some(delivered) = answer.delivered else {
+                if every_provider_heard {
+                    progress.nothing.fetch_add(1, Ordering::Relaxed);
+                    tried(self.library, want.id, None)?;
+                } else {
+                    tracing::debug!(
+                        want = %want.id,
+                        refused = answer.refused,
+                        late = answer.late,
+                        passed_over = answer.passed_over,
+                        narrowed = answer.narrowed,
+                        "not every provider answered, so the want stays due"
+                    );
+                }
+                return Ok(Flow::Onward);
+            };
+            progress.offered.fetch_add(1, Ordering::Relaxed);
+            let taken_from = delivered.taken_from();
+            let landing = landed(
+                self.library,
+                want,
+                delivered,
+                &mut Landing {
+                    options: self.options,
+                    progress,
+                    away: &self.away,
+                    filed: &self.filed,
+                },
+            )?;
+            if progress.is_cancelled() {
+                if let Landed::Kept(at) = &landing {
+                    tried(self.library, want.id, Some(at))?;
+                }
+                return Ok(Flow::Stop);
+            }
+            match landing {
+                Landed::Kept(at) => {
+                    tried(self.library, want.id, Some(&at))?;
+                    self.pair_what_was_filed()?;
+                    return Ok(Flow::Onward);
+                }
+                Landed::Unkept => {
+                    tried(self.library, want.id, None)?;
+                    return Ok(Flow::Onward);
+                }
+                Landed::NotTheSong => {
+                    self.library
+                        .note_refused_offer(want.id, &taken_from, SystemTime::now())?;
+                    passing.extend(answer.asked);
+                    tracing::info!(want = %want.id, %taken_from, "a delivery that was not the song is passed over and the next provider asked");
+                }
+            }
         }
-        Ok(Flow::Onward)
     }
 }
 
@@ -962,7 +995,7 @@ impl Library {
 
     pub(crate) fn forgotten_deliveries(&self) -> Result<AHashMap<WantId, Vec<ForgottenDelivery>>> {
         let mut forgotten: AHashMap<WantId, Vec<ForgottenDelivery>> = AHashMap::new();
-        for (want, delivery) in self.forgotten_delivery_rows()? {
+        for (want, delivery) in self.declined_offer_rows(SystemTime::now())? {
             forgotten.entry(want).or_default().push(delivery);
         }
         Ok(forgotten)

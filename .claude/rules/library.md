@@ -1491,7 +1491,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `misses` of a want already standing and not yet offered, so pressing Want, a found song or a whole
   album again — every caller is a gesture — sends the next poll for it rather than waiting out a
   retry or staying given up (`providers.md`)
-  (`a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried`).
+  (`a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried`), and forgets the offers
+  refused for it (`refused_offers`), so the listener asking again hears every provider again.
   `Library::dismissed` counts what is dismissed and still missing, and `bring_back_dismissed`
   empties both tables, answering what it brought back.
   `a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_brought_back` and
