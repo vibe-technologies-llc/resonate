@@ -131,6 +131,10 @@ else is open to be done.
   microphone
 
 ## Later: Sources and providers
+- A lane keeps a delivery (stages, decodes, encodes and reads it back) before it asks about its next
+  want, so a long keep holds a lane the network could be using
+- A provider's search and its download are one call (`Provider::obtain`), so where two providers of
+  one want answer inside the grace, the download of the offer not taken has been opened for nothing
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
