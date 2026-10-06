@@ -2,17 +2,11 @@ mod fetched;
 mod stall;
 mod trust;
 
-use std::{
-    fmt::Write as _,
-    io::Read,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{fmt::Write as _, io::Read, sync::Arc, time::Duration};
 
-use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Provider, ProviderOp, Result,
+    Delivery, Error, Extension, Identity, Obtained, Pacing, Provider, ProviderOp, Result,
 };
 use serde::Deserialize;
 use ureq::{
@@ -206,7 +200,7 @@ pub struct Monochrome {
     trusted: Trusted,
     asking: Agent,
     downloading: Agent,
-    next_asked: Mutex<Instant>,
+    pacing: Arc<Pacing>,
 }
 
 impl Monochrome {
@@ -226,7 +220,7 @@ impl Monochrome {
             trusted,
             asking: asking_agent(patience, trusted),
             downloading: downloading_agent(patience, trusted),
-            next_asked: Mutex::new(Instant::now()),
+            pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
     }
 
@@ -239,19 +233,10 @@ impl Monochrome {
         }
     }
 
-    fn paced(&self) {
-        let mut next = self.next_asked.lock();
-        let wait = next.saturating_duration_since(Instant::now());
-        if !wait.is_zero() {
-            thread::sleep(wait);
-        }
-        *next = Instant::now() + ASKED_APART;
-    }
-
     fn called(&self, agent: &Agent, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
         let mut retried = 0;
         loop {
-            self.paced();
+            self.pacing.paced();
             let response = agent
                 .get(url)
                 .call()
@@ -270,7 +255,7 @@ impl Monochrome {
                     ?op,
                     "the Monochrome server asked to be asked later"
                 );
-                thread::sleep(wait);
+                self.pacing.cool_for(wait);
                 retried += 1;
                 continue;
             }

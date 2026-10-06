@@ -1,11 +1,7 @@
-use std::{
-    thread,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
-use parking_lot::Mutex;
 use resonate_core::SourceId;
-use resonate_providers::{Error, ProviderOp, Result};
+use resonate_providers::{Error, Pacing, ProviderOp, Result};
 use serde::Deserialize;
 use ureq::{
     Agent, Body,
@@ -40,7 +36,7 @@ pub(crate) enum Sent {
 pub(crate) struct Asker {
     pub(crate) source: SourceId,
     pub(crate) agent: Agent,
-    next_asked: Mutex<Instant>,
+    pacing: Arc<Pacing>,
 }
 
 pub(crate) fn api_agent() -> Agent {
@@ -104,7 +100,7 @@ impl Asker {
         Self {
             source,
             agent: api_agent(),
-            next_asked: Mutex::new(Instant::now()),
+            pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
     }
 
@@ -113,15 +109,6 @@ impl Asker {
             agent: listeners_server_agent(),
             ..Self::new(source)
         }
-    }
-
-    fn paced(&self) {
-        let mut next = self.next_asked.lock();
-        let wait = next.saturating_duration_since(Instant::now());
-        if !wait.is_zero() {
-            thread::sleep(wait);
-        }
-        *next = Instant::now() + ASKED_APART;
     }
 
     pub(crate) fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
@@ -143,7 +130,7 @@ impl Asker {
     ) -> Result<Sent> {
         let mut retried = 0;
         loop {
-            self.paced();
+            self.pacing.paced();
             let response = send().map_err(|error| self.unreachable(op, error))?;
             if response.status().is_success() {
                 return Ok(Sent::Answered(response));
@@ -154,7 +141,7 @@ impl Asker {
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
                 tracing::debug!(status, ?wait, ?op, provider = %self.source, "a provider's server asked to be asked later");
-                thread::sleep(wait);
+                self.pacing.cool_for(wait);
                 retried += 1;
                 continue;
             }

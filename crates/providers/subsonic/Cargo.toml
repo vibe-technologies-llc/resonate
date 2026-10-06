@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 md-5.workspace = true
-parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-providers.workspace = true
 rustls.workspace = true
@@ -16,6 +15,9 @@ serde_json.workspace = true
 tracing.workspace = true
 ureq.workspace = true
 webpki-root-certs.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true
 
 [lints]
 workspace = true

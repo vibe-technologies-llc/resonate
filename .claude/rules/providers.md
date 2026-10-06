@@ -11,7 +11,7 @@ paths:
 
 A provider is a crate that turns an identity into media. `resonate-providers` is the seam, crates
 under `crates/providers/` fill it, the binary registers them, and `resonate-library`'s poll does
-everything else. The seam is on `resonate-core`, `thiserror` and `tracing` alone, so
+everything else. The seam is on `resonate-core`, `parking_lot`, `thiserror` and `tracing` alone, so
 `cargo tree -p resonate-providers` stays free of the library, codec, vault and gpui: a provider
 that depended on the catalog could not be written without it. `Providers` is the registry:
 `Providers::none()` holds the `Unprovided` stub and `and` registers one per name, as
@@ -226,7 +226,13 @@ registers it after the inbox only where all three are given and `online` is on.
   error document and a 200, so a download whose `Content-Type` names text, JSON or XML is read as that
   document and never streamed as a song.
 - **It paces itself**: requests `ASKED_APART`, a 429 or 503 asked again after `Retry-After` (capped at
-  `LONGEST_RETRY_AFTER`) up to `RETRIES_AT_MOST`, then the `Refused` it was.
+  `LONGEST_RETRY_AFTER`) up to `RETRIES_AT_MOST`, then the `Refused` it was. The seam's `Pacing` is
+  the pace: a turn is reserved under its lock and slept towards outside it, so the poll's lanes asking
+  one provider queue for turns rather than for a lock held through another's sleep, and a wait a
+  server asks for is `Pacing::cool_for`, held by every caller after it rather than slept by the one
+  that heard it (`turns_are_reserved_apart_and_nobody_waits_on_the_lock_while_another_sleeps`,
+  `a_server_asking_to_be_asked_later_holds_back_every_caller`). TIDAL's `Asker` and Monochrome pace
+  through the same type.
 - **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`, the
   MD5 of password and salt (the API's token scheme); the User-Agent is bare, and `Server`'s `Debug`
   prints `<withheld>` for the password. `status: failed` is `Error::Unwelcome` where the code is about
