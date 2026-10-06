@@ -1703,6 +1703,7 @@ impl LibraryModel {
         if !self.albums_opening.insert(group.clone()) {
             return Task::ready(None);
         }
+        cx.notify();
         let library = Arc::clone(&self.library);
         let asked = group.clone();
 
@@ -1753,6 +1754,7 @@ impl LibraryModel {
         if !self.artists_opening.insert(found.mbid.clone()) {
             return Task::ready(None);
         }
+        cx.notify();
         let library = Arc::clone(&self.library);
 
         cx.spawn(async move |this, cx| {
@@ -1808,6 +1810,14 @@ impl LibraryModel {
         });
         wanting.detach();
         cx.notify();
+    }
+
+    pub fn is_opening_album(&self, group: &Mbid) -> bool {
+        self.albums_opening.contains(group)
+    }
+
+    pub fn is_opening_artist(&self, artist: &Mbid) -> bool {
+        self.artists_opening.contains(artist)
     }
 
     pub fn fetching_album(&self, group: &Mbid) -> Option<Fetching> {

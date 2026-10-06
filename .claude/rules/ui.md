@@ -2051,7 +2051,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   artists and the songs of *Top results*, and either page is empty only where this is too. A press is
   `LibraryModel::land_artist_found`, which runs `Library::open_artist_found` on the background
   executor and opens the artist it answers, its releases listed as an artist's page lists a held one's
-  (`library.md`). A search always begins on *Top results*, read where the box goes
+  (`library.md`). Opening takes a request or two, so a pressed cell says so: while its group or id is
+  in `albums_opening` or `artists_opening` (`is_opening_album`, `is_opening_artist`) an album found
+  reads *Opening…* in the accent where its caption was and an artist found carries *Opening…* under
+  its name, and a second press is the same press. A link pasted while another is still being
+  followed is followed too, each detached with its own notice, rather than the second dropping the
+  first. A search always begins on *Top results*, read where the box goes
   from empty to holding words (`RootView::open_the_search`): from Albums, Artists or Tracks the pane
   stays and its page is replaced, and from any other pane — Queue, Playlists, Statistics, Settings —
   the window goes to Tracks, showing everything, since the box lives in the header of every pane and

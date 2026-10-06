@@ -98,6 +98,8 @@ const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the 
 
 const ARTIST_FOUND_CELL_WIDENING: f32 = 1.8;
 
+const OPENING: &str = "Opening…";
+
 const OPEN_ARTIST_FOUND_HINT: &str =
     "Open this artist to see their releases and download the songs you want";
 
@@ -2343,6 +2345,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let group = album.group.clone();
         let fetching = self.library.read(cx).fetching_album(&group);
+        let opening = self.library.read(cx).is_opening_album(&group);
         let can_ask = self.library.read(cx).can_enrich();
         let art = self.library.update(cx, |library, cx| {
             library.released_cover_with_group(
@@ -2360,6 +2363,7 @@ impl RootView {
             Some(fetching) => div()
                 .text_color(rgb(fetching_colour(fetching)))
                 .child(fetching.saying()),
+            None if opening => div().text_color(rgb(theme::accent())).child(OPENING),
             None => div()
                 .text_color(rgb(theme::faint()))
                 .child(SharedString::from(album.caption)),
@@ -2558,6 +2562,7 @@ impl RootView {
         let cell_id = listing::keyed_by("artist-found", &found.mbid);
         let pointed = pointed::is_pointed_at(&cell_id);
         let opening = found.clone();
+        let being_opened = self.library.read(cx).is_opening_artist(&found.mbid);
 
         div()
             .id(cell_id.clone())
@@ -2591,6 +2596,14 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(SharedString::from(found.name.clone())),
             )
+            .when(being_opened, |cell| {
+                cell.child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .text_color(rgb(theme::accent()))
+                        .child(OPENING),
+                )
+            })
             .on_click(cx.listener(move |this, _, _, cx| {
                 let landing = opening.clone();
                 let landed = this

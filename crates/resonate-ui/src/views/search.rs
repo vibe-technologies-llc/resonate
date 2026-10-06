@@ -330,7 +330,7 @@ impl RootView {
         let told = Told::of(&link);
         toast::tell(Notice::Noted(told.looking.to_owned()), cx);
 
-        self.following_a_link = cx.spawn_in(window, async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let followed = cx
                 .background_executor()
                 .spawn(async move {
@@ -346,7 +346,8 @@ impl RootView {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| this.followed(followed, &told, cx));
-        });
+        })
+        .detach();
     }
 
     fn followed(
