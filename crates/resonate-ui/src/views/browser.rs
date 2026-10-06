@@ -3721,7 +3721,9 @@ mod tests {
         struct MusicBrainz {
             source: SourceId,
             searched: Arc<Mutex<Vec<String>>>,
+            albums_searched: Arc<Mutex<Vec<String>>>,
             refusing: Arc<AtomicBool>,
+            refusing_albums: Arc<AtomicBool>,
         }
 
         impl MusicBrainz {
@@ -3729,7 +3731,19 @@ mod tests {
                 Self {
                     source: SourceId::new("musicbrainz").expect("a source name"),
                     searched: Arc::default(),
+                    albums_searched: Arc::default(),
                     refusing: Arc::default(),
+                    refusing_albums: Arc::default(),
+                }
+            }
+
+            fn sharing(&self) -> Self {
+                Self {
+                    source: self.source.clone(),
+                    searched: Arc::clone(&self.searched),
+                    albums_searched: Arc::clone(&self.albums_searched),
+                    refusing: Arc::clone(&self.refusing),
+                    refusing_albums: Arc::clone(&self.refusing_albums),
                 }
             }
         }
@@ -3805,7 +3819,14 @@ mod tests {
                 Ok(Vec::new())
             }
 
-            fn find_albums(&self, _: &str) -> Result<Vec<AlbumMatch>> {
+            fn find_albums(&self, words: &str) -> Result<Vec<AlbumMatch>> {
+                self.albums_searched.lock().push(words.to_owned());
+                if self.refusing_albums.load(Ordering::Relaxed) {
+                    return Err(resonate_library::Error::Refused {
+                        op: LookupOp::FindReleaseGroup,
+                        status: 503,
+                    });
+                }
                 Ok(vec![AlbumMatch {
                     group: mbid(HEROES_TONIGHT_GROUP),
                     score: 100,
@@ -4496,11 +4517,7 @@ mod tests {
         fn searching(musicbrainz: &MusicBrainz, cx: &mut TestAppContext) -> Driven {
             let folder = Folder::new();
             let reaching = Reaching {
-                reference: Arc::new(MusicBrainz {
-                    source: musicbrainz.source.clone(),
-                    searched: Arc::clone(&musicbrainz.searched),
-                    refusing: Arc::clone(&musicbrainz.refusing),
-                }),
+                reference: Arc::new(musicbrainz.sharing()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
@@ -4584,6 +4601,81 @@ mod tests {
                 musicbrainz.searched.lock().clone(),
                 ["heroes tonight", "heroes tonight"]
             );
+        }
+
+        fn asked_now(driven: &mut Driven) {
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.ask_elsewhere_now(cx));
+            });
+        }
+
+        #[gpui::test]
+        fn songs_found_stand_where_musicbrainz_refused_the_albums_which_are_asked_for_again(
+            cx: &mut TestAppContext,
+        ) {
+            let musicbrainz = MusicBrainz::new();
+            musicbrainz.refusing_albums.store(true, Ordering::Relaxed);
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "heroes tonight");
+            answered(&mut driven);
+            let refused = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                (library.found().len(), library.albums_found().len())
+            });
+            musicbrainz.refusing_albums.store(false, Ordering::Relaxed);
+            typed(&mut driven, "janji");
+            answered(&mut driven);
+            typed(&mut driven, "heroes tonight");
+            answered(&mut driven);
+
+            assert_eq!(refused, (1, 0));
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).albums_found().len()),
+                1
+            );
+            assert_eq!(
+                musicbrainz.albums_searched.lock().clone(),
+                ["heroes tonight", "janji", "heroes tonight"]
+            );
+        }
+
+        #[gpui::test]
+        fn a_search_typed_past_does_not_ask_musicbrainz_for_its_albums(cx: &mut TestAppContext) {
+            let musicbrainz = MusicBrainz::new();
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "heroes tonight");
+            asked_now(&mut driven);
+            typed(&mut driven, "janji heroes");
+            asked_now(&mut driven);
+            answered(&mut driven);
+
+            assert_eq!(
+                musicbrainz.searched.lock().clone(),
+                ["heroes tonight", "janji heroes"]
+            );
+            assert_eq!(musicbrainz.albums_searched.lock().clone(), ["janji heroes"]);
+        }
+
+        #[gpui::test]
+        fn a_search_inside_an_artist_asks_musicbrainz_nothing(cx: &mut TestAppContext) {
+            let musicbrainz = MusicBrainz::new();
+            let mut driven = searching(&musicbrainz, cx);
+            let model = driven.read(|root, _| root.library.clone());
+            let artist = resonate_core::ArtistId::new(1).expect("a non-zero id");
+
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| {
+                    library.select(Selection::Artist(artist), cx)
+                });
+            });
+            typed(&mut driven, "heroes tonight");
+            asked_now(&mut driven);
+            driven.settle();
+
+            assert!(musicbrainz.searched.lock().is_empty());
         }
 
         fn asked_to_delete(driven: &mut Driven, track: &Track) {

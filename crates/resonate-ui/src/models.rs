@@ -199,6 +199,12 @@ struct Answer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    InPart,
+    Whole,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListedRow {
     Disc(u32),
     Held(usize),
@@ -638,6 +644,7 @@ pub struct LibraryModel {
     sung: Option<Sung>,
     found: Arc<[Found]>,
     found_for: Option<String>,
+    found_in_part: bool,
     narrowed: Arc<[Found]>,
     kept_songs: Arc<[Found]>,
     kept_albums: Arc<[AlbumFound]>,
@@ -847,6 +854,7 @@ impl LibraryModel {
             sung: None,
             found: Arc::default(),
             found_for: None,
+            found_in_part: false,
             narrowed: Arc::default(),
             kept_songs: Arc::default(),
             kept_albums: Arc::default(),
@@ -1319,13 +1327,19 @@ impl LibraryModel {
     fn ask_elsewhere_after(&mut self, settling: Duration, cx: &mut Context<Self>) {
         let text = self.query.clone();
         let words = match songs_asked(&text) {
-            Some(words) if self.online && self.reference.is_some() => words,
+            Some(words)
+                if self.online
+                    && self.reference.is_some()
+                    && self.selection == Selection::Everything =>
+            {
+                words
+            }
             Some(_) | None => {
                 self.stop_asking_elsewhere();
                 return;
             }
         };
-        if self.found_for.as_deref() == Some(text.as_str()) {
+        if self.found_for.as_deref() == Some(text.as_str()) && !self.found_in_part {
             self.stop_asking_elsewhere();
             return;
         }
@@ -1334,7 +1348,7 @@ impl LibraryModel {
 
         if let Some(answered) = self.answers.get(&words).cloned() {
             self._finding = Task::ready(());
-            self.show_answer(answered, cx);
+            self.show_answer(answered, Shown::Whole, cx);
             return;
         }
         self._finding = cx.spawn(async move |this, cx| {
@@ -1361,7 +1375,7 @@ impl LibraryModel {
             return;
         };
         if let Some(answered) = self.answers.get(&words).cloned() {
-            self.show_answer(answered, cx);
+            self.show_answer(answered, Shown::Whole, cx);
             return;
         }
         let Some(reference) = self.reference.clone().filter(|_| self.online) else {
@@ -1376,65 +1390,116 @@ impl LibraryModel {
 
         self._reaching = cx.spawn(async move |this, cx| {
             let asked = words.clone();
-            let answered = cx
+            let asking = Arc::clone(&reference);
+            let songs = cx
                 .background_executor()
-                .spawn(async move {
-                    let songs = reference.find_songs(&asked)?;
-                    let albums = reference.find_albums(&asked.words).unwrap_or_else(|error| {
-                        tracing::debug!(%error, "albums could not be asked elsewhere");
-                        Vec::new()
-                    });
-                    Ok((songs, albums))
-                })
+                .spawn(async move { asking.find_songs(&asked) })
                 .await;
-            let _ = this.update(cx, |this, cx| this.reached(words, answered, cx));
+            let Ok(Some(songs)) = this.update(cx, |this, cx| this.songs_reached(&words, songs, cx))
+            else {
+                return;
+            };
+            let asked = words.words.clone();
+            let albums = cx
+                .background_executor()
+                .spawn(async move { reference.find_albums(&asked) })
+                .await;
+            let _ = this.update(cx, |this, cx| this.albums_reached(words, songs, albums, cx));
         });
     }
 
-    fn reached(
-        &mut self,
-        words: SongsAsked,
-        answered: resonate_library::Result<(Vec<RecordingMatch>, Vec<AlbumMatch>)>,
-        cx: &mut Context<Self>,
-    ) {
-        self.reaching_out = None;
-        let current = self
-            .asking
+    fn is_still_asked(&self, words: &SongsAsked) -> bool {
+        self.asking
             .as_deref()
             .filter(|text| *text == self.query)
             .and_then(songs_asked)
-            .is_some_and(|asked| asked == words);
+            .is_some_and(|asked| asked == *words)
+    }
+
+    fn songs_reached(
+        &mut self,
+        words: &SongsAsked,
+        answered: resonate_library::Result<Vec<RecordingMatch>>,
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<[RecordingMatch]>> {
+        let current = self.is_still_asked(words);
         match answered {
-            Ok((songs, albums)) => {
-                let songs = weighed_for(&words, songs);
-                self.answers.insert(
-                    words,
+            Ok(songs) if current => {
+                let songs: Arc<[RecordingMatch]> = weighed_for(words, songs).into();
+                self.show_answer(
                     Answer {
-                        songs: songs.into(),
-                        albums: albums.into(),
+                        songs: Arc::clone(&songs),
+                        albums: Arc::default(),
                     },
+                    Shown::InPart,
+                    cx,
                 );
+                Some(songs)
+            }
+            Ok(_) => {
+                self.reach_out_for_what_is_owed(cx);
+                None
             }
             Err(error) if current => {
                 tracing::warn!(%error, "a search could not be asked elsewhere");
+                self.reaching_out = None;
                 self.unreached_for = self.asking.take();
                 self.narrowed = Arc::default();
                 self.owed = None;
                 self.restate_the_listing();
                 cx.notify();
-                return;
+                None
             }
             Err(error) => {
                 tracing::debug!(%error, "a search typed past could not be asked elsewhere");
+                self.reach_out_for_what_is_owed(cx);
+                None
             }
         }
+    }
+
+    fn albums_reached(
+        &mut self,
+        words: SongsAsked,
+        songs: Arc<[RecordingMatch]>,
+        answered: resonate_library::Result<Vec<AlbumMatch>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.reaching_out = None;
+        let albums: Arc<[AlbumMatch]> = match answered {
+            Ok(albums) => {
+                let albums: Arc<[AlbumMatch]> = albums.into();
+                self.answers.insert(
+                    words.clone(),
+                    Answer {
+                        songs: Arc::clone(&songs),
+                        albums: Arc::clone(&albums),
+                    },
+                );
+                albums
+            }
+            Err(error) => {
+                tracing::debug!(%error, "albums could not be asked elsewhere");
+                Arc::default()
+            }
+        };
+        if self.is_still_asked(&words) {
+            self.owed = None;
+            self.show_answer(Answer { songs, albums }, Shown::Whole, cx);
+            return;
+        }
+        self.reach_out_for_what_is_owed(cx);
+    }
+
+    fn reach_out_for_what_is_owed(&mut self, cx: &mut Context<Self>) {
+        self.reaching_out = None;
         let owed = self.owed.take();
-        if current || owed.is_some_and(|owed| self.asking.as_ref() == Some(&owed)) {
+        if owed.is_some_and(|owed| self.asking.as_ref() == Some(&owed)) {
             self.reach_out(cx);
         }
     }
 
-    fn show_answer(&mut self, answered: Answer, cx: &mut Context<Self>) {
+    fn show_answer(&mut self, answered: Answer, shown: Shown, cx: &mut Context<Self>) {
         let Some(text) = self.asking.clone() else {
             return;
         };
@@ -1454,7 +1519,10 @@ impl LibraryModel {
                 if this.asking.as_deref() != Some(text.as_str()) {
                     return;
                 }
-                this.asking = None;
+                if shown == Shown::Whole {
+                    this.asking = None;
+                }
+                this.found_in_part = shown == Shown::InPart;
                 this.narrowed = Arc::default();
                 this.unreached_for = None;
                 this.artists_found = match artists {
@@ -3661,6 +3729,7 @@ impl LibraryModel {
         self.selection = selection;
         self.songs_not_held = Arc::default();
         self.albums_not_held = Arc::default();
+        self.ask_elsewhere_after(Duration::ZERO, cx);
         self.restate_the_listing();
         self.reach = PAGE;
         self.read(Wanted::TheSearch, cx);

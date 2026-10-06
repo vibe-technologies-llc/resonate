@@ -2092,13 +2092,22 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     leaves the list. Typing back to a remembered search shows it at once, no settle and no request
     (`words_searched_again_are_answered_from_memory_rather_than_asked_twice`).
   - *One ask in flight, the latest text winning.* `ask_elsewhere_after` waits
-    `ASKED_ELSEWHERE_AFTER` (450 ms) behind the keystroke, only where the build `can_enrich`, Online
-    is on and `songs_asked` names words worth it, then `reach_out`. While one request is out
-    (`reaching_out`) another is not queued behind it: the text is `owed`, and when the request comes
-    back its answer is remembered whatever it was for and the text still in the box is asked next —
-    so a run of pauses mid-word costs at most two turns, not one per pause, and an answer outrun by
-    the box is never drawn over what it now says. Enter in the search box (`ask_elsewhere_now`) skips
-    the settle.
+    `ASKED_ELSEWHERE_AFTER` (450 ms) behind the keystroke, only where Online is on, a reference is
+    there, the search is not scoped to an album or artist (whose page answers from what it holds, so a
+    scoped search asks MusicBrainz nothing, `a_search_inside_an_artist_asks_musicbrainz_nothing`; leaving
+    the scope asks for what the box holds) and `songs_asked` names words worth it, then `reach_out`. An
+    ask is two halves, songs then albums: `songs_reached` draws the songs at once as `Shown::InPart`,
+    `asking` still standing so the summary goes on saying more is coming, and only then is
+    `find_albums` sent, `albums_reached` drawing the whole. While a chain is out (`reaching_out`)
+    another is not queued behind it: the text is `owed`, and a chain whose text was typed past after
+    its songs drops its albums and asks the text still in the box next — so a run of pauses mid-word
+    costs at most a turn or two, not one per pause, and an answer outrun by the box is never drawn
+    over what it now says (`a_search_typed_past_does_not_ask_musicbrainz_for_its_albums`). Only a
+    whole answer is remembered; an albums half refused leaves the songs drawn, is a debug line, and is
+    asked again next time
+    (`songs_found_stand_where_musicbrainz_refused_the_albums_which_are_asked_for_again`).
+    `found_in_part` keeps a half-drawn answer from passing as one that needs no ask. Enter in the
+    search box (`ask_elsewhere_now`) skips the settle.
   - *Narrowed while asking.* From the keystroke until the answer lands, `found` stands in as
     `narrowed` — the songs the last answer found that `still_answering` the new words — under
     `Beyond::Refining`, the summary reading *N songs not in it so far, asking MusicBrainz for the
@@ -2111,7 +2120,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     (`a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press`). A failure for a text typed
     past is a debug line and nothing more. Turning Online on asks for what the box holds; turning it
     off drops the ask.
-  The answer drawn is kept against the text it answered (`found_for`), so a reload does not ask again.
+  The answer drawn is kept against the text it answered (`found_for`), so a reload does not ask again
+  unless only its songs half had come.
   - *What the catalog already knows comes first.* `Library::songs_kept_for` — the songs of every
     library artist's releases not held, learnt in the lookup pass (`library.md`) — rides in the load
     with the text it was read for (`kept_for`), so a song by an artist the listener has is listed the
