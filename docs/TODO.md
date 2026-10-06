@@ -21,9 +21,6 @@ else is open to be done.
   other presses neither pause nor go back. Nothing here reads AVRCP; a press reaches Resonate only
   where the desktop turns it into a media key and calls MPRIS, or the focused window takes the key,
   and which of those fails for a headset is unmeasured
-- The now-playing cover's top right corner is drawn square while its other three are rounded;
-  `now_playing_cover` rounds its frame (`rounded_md`, `overflow_hidden`) and why the picture escapes
-  that one corner is unmeasured
 
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
