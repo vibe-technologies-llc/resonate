@@ -49,7 +49,12 @@ A provider does none of this, so none of it is written twice.
   before the other lanes begin; each lane then claims the next due want, ask and landing together.
   Idle lanes wait for the pool to drain. A want marked while a poll runs is picked up by that poll:
   `PollProgress::wants_changed` makes the next claim read the wants again (newest first) and answers
-  false once the poll has closed, which the window reads as *owe a poll*. `PollProgress` keeps a lane
+  false once the poll has closed or been cancelled, which the window reads as *owe a poll*. **Every way
+  out of a poll closes it**: `supply::start`'s thread runs `PollProgress::close` after `run` whatever it
+  answered, so a want nudged into a poll that was then cancelled, or whose lane failed, before any
+  claim read it is `owes_a_poll`, and the window owes one when the poll ends
+  (`a_cancelled_poll_is_not_nudged_and_owes_nothing`, `a_poll_nudged_before_it_was_cancelled_owes_another`).
+  Cancelling one download once dropped every other want to the timer. `PollProgress` keeps a lane
   per want being asked (`asking_all`, `provider_of`, `received_for`), so each download row says its own
   provider and bytes.
 - **Due wants, in registration order, the first delivery winning.** `wants.misses` counts the tries
@@ -149,7 +154,10 @@ A provider does none of this, so none of it is written twice.
 (`Shelves::next_try`, `LibraryModel::ask_when_due`, bounded by `FIRST_ASKED_AFTER`,
 `RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`) and as soon as a want is marked, each only where a
 provider is registered and `Library::is_a_want_due`. A want marked while another pass holds the
-library is owed (`LibraryModel::poll_owed`) and asked about when `take_up_what_waited` finds it free. *Poll now* and `resonate poll --again` poll
+library is owed (`LibraryModel::poll_owed`) and asked about when `take_up_what_waited` finds it free.
+A poll refused because another process holds the poll lock (`resonate poll`, the MCP server) is owed
+too and looked at again `OWED_ASKED_AGAIN_AFTER` (30 s) later, no pass of this window's ending to take
+it up; only *Poll now* says the providers are busy. *Poll now* and `resonate poll --again` poll
 under `PollOptions::ASKING_EVERY_WANT`, because somebody who just dropped a file in the inbox means
 *now*; the timer and a bare `resonate poll` keep to `Want::due_at`, which spares a network service.
 `PollProgress::{asking, asking_provider, received}` carry the want, provider and bytes landed for the

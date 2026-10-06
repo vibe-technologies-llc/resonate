@@ -73,6 +73,8 @@ const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
 const FETCHES_AT_ONCE: usize = 6;
 
+const OWED_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
+
 const SCAN_POLL: Duration = Duration::from_millis(100);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
 const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(450);
@@ -789,6 +791,7 @@ pub struct LibraryModel {
     pressings: Option<(AlbumId, Pressings)>,
     roots_waiting: Vec<RootWaiting>,
     poll_owed: Option<PollOptions>,
+    _owed: Task<()>,
     downloads: Downloads,
     downloads_restored: bool,
     to_file: Option<ToFile>,
@@ -999,6 +1002,7 @@ impl LibraryModel {
             pressings: None,
             roots_waiting: Vec::new(),
             poll_owed: None,
+            _owed: Task::ready(()),
             downloads: Downloads::default(),
             downloads_restored: false,
             to_file: None,
@@ -4753,6 +4757,15 @@ impl LibraryModel {
         self.library.deliver_into(delivery_folder(cx));
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
+            Err(resonate_library::Error::AlreadyAsking { .. }) => {
+                tracing::debug!("another process is asking the providers; this poll waits for it");
+                if prompted == Prompted::ByHand {
+                    toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+                    cx.notify();
+                }
+                self.ask_what_is_owed_after(OWED_ASKED_AGAIN_AFTER, cx);
+                return false;
+            }
             Err(error) => {
                 tracing::error!(%error, "the providers could not be asked");
                 toast::tell(toast::could_not("ask the providers", &error), cx);
@@ -4783,6 +4796,9 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                if handle.progress().owes_a_poll() {
+                    this.poll_owed.get_or_insert(PollOptions::default());
+                }
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
@@ -4808,6 +4824,17 @@ impl LibraryModel {
             let _ = finished;
         });
         true
+    }
+
+    fn ask_what_is_owed_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
+        self._owed = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(waiting).await;
+            let _ = this.update(cx, |this, cx| {
+                if !this.work.is_busy() {
+                    this.take_up_what_waited(cx);
+                }
+            });
+        });
     }
 
     fn worth_asking_on_its_own(&self, providers: &Providers, options: PollOptions) -> bool {

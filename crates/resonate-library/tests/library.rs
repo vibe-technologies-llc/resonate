@@ -33,13 +33,14 @@ use resonate_library::{
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium,
     Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
-    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated,
+    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
+    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
+    Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
+    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -20267,6 +20268,48 @@ fn a_poll_cancelled_mid_delivery_stops_reading_and_leaves_the_want_untried() -> 
     );
     let wants = library.wants()?;
     assert_eq!(wants[0].tried, None);
+    Ok(())
+}
+
+fn polling_endlessly() -> Result<(Tree, Tree, Library, PollHandle)> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let shop = Arc::new(Offering::new("shop", Delivering::Endless));
+    let polling = library.poll(shop.registered(), PollOptions::default())?;
+    thread::sleep(Duration::from_millis(100));
+    Ok((held, orbits, library, polling))
+}
+
+#[test]
+fn a_cancelled_poll_is_not_nudged_and_owes_nothing() -> Result<()> {
+    let (_held, _orbits, _library, polling) = polling_endlessly()?;
+    let progress = Arc::clone(polling.progress());
+
+    polling.cancel();
+    let nudged = progress.wants_changed();
+    polling.join()?;
+
+    assert!(
+        !nudged,
+        "a cancelled poll took a want it will never ask about"
+    );
+    assert!(!progress.owes_a_poll());
+    Ok(())
+}
+
+#[test]
+fn a_poll_nudged_before_it_was_cancelled_owes_another() -> Result<()> {
+    let (_held, _orbits, _library, polling) = polling_endlessly()?;
+    let progress = Arc::clone(polling.progress());
+
+    assert!(progress.wants_changed());
+    polling.cancel();
+    polling.join()?;
+
+    assert!(progress.owes_a_poll());
     Ok(())
 }
 

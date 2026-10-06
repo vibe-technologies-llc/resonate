@@ -166,6 +166,7 @@ struct Lane {
 struct Rereading {
     wanted: bool,
     closed: bool,
+    owed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -256,7 +257,7 @@ impl PollProgress {
 
     pub fn wants_changed(&self) -> bool {
         let mut rereading = self.rereading.lock();
-        if rereading.closed {
+        if rereading.closed || self.is_cancelled() {
             return false;
         }
         rereading.wanted = true;
@@ -278,6 +279,19 @@ impl PollProgress {
 
     fn is_closed(&self) -> bool {
         self.rereading.lock().closed
+    }
+
+    fn close(&self) {
+        let mut rereading = self.rereading.lock();
+        if rereading.closed {
+            return;
+        }
+        rereading.owed = std::mem::take(&mut rereading.wanted);
+        rereading.closed = true;
+    }
+
+    pub fn owes_a_poll(&self) -> bool {
+        self.rereading.lock().owed
     }
 
     pub fn cancel(&self) {
@@ -521,7 +535,9 @@ pub(crate) fn start(
         .name("resonate-poll".to_owned())
         .spawn(move || {
             let _asking = asking;
-            run(&library, &providers, options, &progress)
+            let outcome = run(&library, &providers, options, &progress);
+            progress.close();
+            outcome
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
