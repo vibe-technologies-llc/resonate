@@ -4592,7 +4592,8 @@ mod tests {
             let mut driven = searching(&musicbrainz, cx);
 
             typed(&mut driven, "heroes tonight");
-            driven.until(|root, cx| root.library.read(cx).elsewhere() == Some(Beyond::Unreached));
+            driven
+                .until(|root, cx| root.library.read(cx).elsewhere() == Some(Beyond::Unreached(0)));
             musicbrainz.refusing.store(false, Ordering::Relaxed);
             driven.click("ask-elsewhere-again");
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());

@@ -219,7 +219,7 @@ pub enum Beyond {
     Elsewhere(usize),
     Refining(usize),
     Asking,
-    Unreached,
+    Unreached(usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -5361,7 +5361,7 @@ fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
 const fn elsewhere_standing(found: usize, asking: bool, unreached: bool) -> Option<Beyond> {
     match (found, asking) {
         (0, true) => Some(Beyond::Asking),
-        (0, false) if unreached => Some(Beyond::Unreached),
+        (found, false) if unreached => Some(Beyond::Unreached(found)),
         (0, false) => None,
         (found, true) => Some(Beyond::Refining(found)),
         (found, false) => Some(Beyond::Elsewhere(found)),
@@ -6496,7 +6496,18 @@ mod tests {
 
     #[test]
     fn a_search_musicbrainz_did_not_answer_says_so() {
-        assert_eq!(elsewhere_standing(0, false, true), Some(Beyond::Unreached));
+        assert_eq!(
+            elsewhere_standing(0, false, true),
+            Some(Beyond::Unreached(0))
+        );
+    }
+
+    #[test]
+    fn a_search_musicbrainz_did_not_answer_says_so_beside_the_songs_kept() {
+        assert_eq!(
+            elsewhere_standing(2, false, true),
+            Some(Beyond::Unreached(2))
+        );
     }
 
     #[test]

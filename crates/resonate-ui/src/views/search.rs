@@ -254,8 +254,10 @@ impl Matched {
 
     fn songs_found(self) -> usize {
         match self.elsewhere {
-            Some(Beyond::Elsewhere(found) | Beyond::Refining(found)) => found,
-            Some(Beyond::Asking | Beyond::Unreached) | None => 0,
+            Some(Beyond::Elsewhere(found) | Beyond::Refining(found) | Beyond::Unreached(found)) => {
+                found
+            }
+            Some(Beyond::Asking) | None => 0,
         }
     }
 
@@ -278,7 +280,8 @@ impl Matched {
             }
             Beyond::Asking if found.is_empty() => "asking MusicBrainz for more…".to_owned(),
             Beyond::Asking => format!("{found} not in it so far, asking MusicBrainz for more…"),
-            Beyond::Unreached => "MusicBrainz could not be reached".to_owned(),
+            Beyond::Unreached(_) if found.is_empty() => UNREACHED.to_owned(),
+            Beyond::Unreached(_) => format!("{found} not in it so far; {UNREACHED}"),
         })
     }
 
@@ -439,7 +442,8 @@ impl RootView {
             }))
         });
         let sung = self.sung_offer(Tone::Ghost, cx);
-        let again = (matched.elsewhere == Some(Beyond::Unreached)).then(|| self.ask_again(cx));
+        let again =
+            matches!(matched.elsewhere, Some(Beyond::Unreached(_))).then(|| self.ask_again(cx));
         let saves = naming.is_none().then(|| {
             kit::button(
                 "save-search",
@@ -607,7 +611,7 @@ impl RootView {
                 Some(Beyond::Asking | Beyond::Refining(_)) => {
                     kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES))
                 }
-                Some(Beyond::Unreached) => Self::unreached(),
+                Some(Beyond::Unreached(_)) => Self::unreached(),
                 Some(Beyond::Elsewhere(_)) | None => {
                     self.nothing_matched(Icon::Search, NOTHING_MATCHES, None, cx)
                 }
@@ -668,7 +672,7 @@ impl RootView {
             let said = match beyond {
                 Beyond::Elsewhere(_) => PRESS_TO_DOWNLOAD,
                 Beyond::Refining(_) | Beyond::Asking => ASKING,
-                Beyond::Unreached => UNREACHED,
+                Beyond::Unreached(_) => UNREACHED,
             };
             let mut rows = div().flex().flex_col();
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
@@ -849,7 +853,7 @@ impl RootView {
             Beyond::Asking | Beyond::Refining(_) => {
                 Some(kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES)))
             }
-            Beyond::Unreached => Some(Self::unreached()),
+            Beyond::Unreached(_) => Some(Self::unreached()),
             Beyond::Elsewhere(_) => None,
         }
     }

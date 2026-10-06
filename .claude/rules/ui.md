@@ -2123,7 +2123,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   - *A failure says so.* A request refused or unreachable for the text in the box is not
     remembered; its text is `unreached_for` and `elsewhere` answers `Beyond::Unreached`, *MusicBrainz
     could not be reached* with *Try again* (`ask_elsewhere_again`) beside it
-    (`a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press`). A failure for a text typed
+    (`a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press`). `Unreached` carries the
+    songs still listed — those the catalog kept — so a failure is said beside them, *N songs not in
+    it so far; MusicBrainz could not be reached*, rather than hidden behind *Press a song to download
+    it* (`a_search_musicbrainz_did_not_answer_says_so_beside_the_songs_kept`). A failure for a text typed
     past is a debug line and nothing more. Turning Online on asks for what the box holds; turning it
     off drops the ask.
   The answer drawn is kept against the text it answered (`found_for`), so a reload does not ask again
