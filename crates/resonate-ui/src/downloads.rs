@@ -369,6 +369,7 @@ impl Unfinished {
                 length: want.length,
                 release,
                 releases: Vec::new(),
+                performer: None,
             },
             want: want.id,
             queued: want.wanted,
@@ -402,6 +403,7 @@ mod tests {
             length: None,
             release: None,
             releases: Vec::new(),
+            performer: None,
         }
     }
 

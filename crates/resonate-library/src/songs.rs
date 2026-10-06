@@ -1,11 +1,12 @@
 use std::{cmp::Reverse, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
+use resonate_core::ArtistId;
 use rusqlite::{Row, Transaction, params};
 
 use crate::{
-    Error, Found, Issued, Mbid, RecordingRelease, Release, Result, StoreOp, UnheldRelease,
-    elsewhere, store,
+    Error, Found, Issued, Mbid, Performer, RecordingRelease, Release, Result, StoreOp,
+    UnheldRelease, elsewhere, store,
 };
 
 const OFFICIAL: &str = "Official";
@@ -138,7 +139,9 @@ pub(crate) fn sought_words(text: &str) -> Vec<String> {
 
 pub(crate) const SONG_COLUMNS: &str = "s.recording_mbid, s.title, s.artist, s.length_ms, \
                                        s.release_mbid, s.release_title, s.released, s.kind, \
-                                       s.disc, s.position";
+                                       s.disc, s.position, \
+                                       (SELECT min(r.artist_id) FROM artist_releases r \
+                                         WHERE r.mbid = s.release_group)";
 
 pub(crate) struct RawSong {
     recording: String,
@@ -151,6 +154,7 @@ pub(crate) struct RawSong {
     kind: Option<String>,
     disc: Option<i64>,
     position: Option<i64>,
+    performer: Option<i64>,
 }
 
 impl RawSong {
@@ -166,6 +170,7 @@ impl RawSong {
             kind: row.get(7)?,
             disc: row.get(8)?,
             position: row.get(9)?,
+            performer: row.get(10)?,
         })
     }
 
@@ -195,6 +200,11 @@ impl RawSong {
                 .map(Duration::from_millis),
             release: Some(release.clone()),
             releases: vec![release],
+            performer: self
+                .performer
+                .map(|artist| ArtistId::new(artist as u64))
+                .transpose()?
+                .map(Performer::Held),
         })
     }
 }

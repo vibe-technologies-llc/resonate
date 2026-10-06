@@ -554,7 +554,7 @@ const SONGS_SOUGHT_AT_MOST: i64 = 200;
 
 const MISSING_FROM_AN_ARTISTS_ALBUMS: &str =
     "SELECT rt.recording_mbid, rt.title, coalesce(rt.artist, ar.name), rt.length_ms, a.mbid,
-            a.title, NULL, NULL, rt.disc, rt.position
+            a.title, NULL, NULL, rt.disc, rt.position, a.artist_id
        FROM release_tracks rt
        JOIN albums a ON a.id = rt.album_id
        JOIN artists ar ON ar.id = a.artist_id

@@ -23,8 +23,8 @@ use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlayerState, QueueItem, RepeatMode, stamp_of,
 };
 use resonate_library::{
-    Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, TokenHeld, Track, is_a_followed_link,
+    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
+    SavedQuery, SortOrder, TokenHeld, Track, is_a_followed_link,
 };
 
 use crate::{
@@ -2644,6 +2644,21 @@ impl RootView {
         selection: Option<Selection>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let press = selection.map(|selection| {
+            move |this: &mut Self, cx: &mut Context<Self>| this.opened(selection, cx)
+        });
+
+        self.pressed_to(id, label, saying, press, cx)
+    }
+
+    pub(crate) fn pressed_to(
+        &self,
+        id: impl Into<ElementId>,
+        label: impl IntoElement,
+        saying: &'static str,
+        press: Option<impl Fn(&mut Self, &mut Context<Self>) + 'static>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let id = id.into();
 
         div()
@@ -2652,7 +2667,7 @@ impl RootView {
             .truncate()
             .ends_in_an_ellipsis()
             .child(label)
-            .when_some(selection, |named, selection| {
+            .when_some(press, |named, press| {
                 named
                     .cursor_pointer()
                     .lit_under_the_pointer(id, |named| {
@@ -2664,9 +2679,22 @@ impl RootView {
                     .names(saying)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        this.opened(selection, cx);
+                        press(this, cx);
                     }))
             })
+    }
+
+    pub(crate) fn open_artist_found(&mut self, found: ArtistFound, cx: &mut Context<Self>) {
+        let landed = self
+            .library
+            .update(cx, |library, cx| library.land_artist_found(found, cx));
+        cx.spawn(async move |this, cx| {
+            let Some(artist) = landed.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
+        })
+        .detach();
     }
 
     pub(crate) fn opened(&mut self, selection: Selection, cx: &mut Context<Self>) {

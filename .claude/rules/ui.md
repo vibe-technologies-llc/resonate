@@ -2059,7 +2059,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (`library.md`). Opening takes a request or two, so a pressed cell says so: while its group or id is
   in `albums_opening` or `artists_opening` (`is_opening_album`, `is_opening_artist`) an album found
   reads *Opening…* in the accent where its caption was and an artist found carries *Opening…* under
-  its name, and a second press is the same press. A link pasted while another is still being
+  its name, and a second press is the same press. **A song not held names its artist as a link
+  too.** `unheld_row` draws a `Found`'s artist through `performed_by`: a `Performer::Held` opens that
+  artist as a held row's name does, a `Performer::Elsewhere` is pressed into `open_artist_found`, the
+  one land-then-open an artist cell and a followed artist link share, and a song with no performer
+  keeps a plain name. The press stops at the name, so it never wants the song; pressing the rest of
+  the row still does
+  (`pressing_the_artist_of_a_song_found_on_musicbrainz_opens_the_artist_and_wants_nothing`). A link pasted while another is still being
   followed is followed too, each detached with its own notice, rather than the second dropping the
   first. A search always begins on *Top results*, read where the box goes
   from empty to holding words (`RootView::open_the_search`): from Albums, Artists or Tracks the pane

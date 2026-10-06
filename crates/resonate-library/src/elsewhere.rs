@@ -5,8 +5,8 @@ use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, WantId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
-    AlbumMatch, ByArtist, Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release,
-    Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, store,
+    AlbumMatch, ByArtist, Column, Credit, Error, Issued, Mbid, RecordingMatch, RecordingRelease,
+    Release, Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, store,
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
@@ -46,6 +46,13 @@ pub struct Found {
     pub length: Option<Duration>,
     pub release: Option<RecordingRelease>,
     pub releases: Vec<RecordingRelease>,
+    pub performer: Option<Performer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Performer {
+    Held(ArtistId),
+    Elsewhere(ArtistFound),
 }
 
 impl Found {
@@ -410,6 +417,7 @@ pub(crate) fn found_among(
             continue;
         }
         found.push(Found {
+            performer: leading_performer(&matched.credit),
             release: meant_release(&matched.releases).cloned(),
             releases: matched.releases,
             recording: matched.recording,
@@ -423,6 +431,17 @@ pub(crate) fn found_among(
     }
 
     found
+}
+
+fn leading_performer(credit: &[Credit]) -> Option<Performer> {
+    credit.iter().find_map(|credit| {
+        credit.mbid.clone().map(|mbid| {
+            Performer::Elsewhere(ArtistFound {
+                mbid,
+                name: credit.name.clone(),
+            })
+        })
+    })
 }
 
 const AN_ALBUM: &str = "Album";
@@ -673,6 +692,36 @@ mod tests {
         assert_eq!(found[0].artist, "Pink Floyd");
     }
 
+    #[test]
+    fn a_found_song_is_performed_by_the_first_credited_artist_musicbrainz_identifies() {
+        let mut collaboration = matched(ONE, "Heroes Tonight", "Janji", Vec::new());
+        collaboration.credit = vec![
+            Credit {
+                name: "Janji".to_owned(),
+                joined_by: " & ".to_owned(),
+                mbid: None,
+            },
+            Credit {
+                name: "Johnning".to_owned(),
+                joined_by: String::new(),
+                mbid: Some(mbid(TWO)),
+            },
+        ];
+        let unidentified = matched(THREE, "Echoes", "Pink Floyd", Vec::new());
+
+        let found = found_among(vec![collaboration, unidentified], |_| false);
+
+        assert_eq!(found[0].artist, "Janji & Johnning");
+        assert_eq!(
+            found[0].performer,
+            Some(Performer::Elsewhere(ArtistFound {
+                mbid: mbid(TWO),
+                name: "Johnning".to_owned(),
+            }))
+        );
+        assert_eq!(found[1].performer, None);
+    }
+
     fn issued(
         id: &str,
         date: &str,
@@ -880,6 +929,7 @@ mod tests {
             length: None,
             release: Some(released.clone()),
             releases: vec![released],
+            performer: None,
         }
     }
 

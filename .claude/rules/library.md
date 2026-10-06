@@ -2369,8 +2369,9 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `a_song_is_placed_on_its_album_before_a_single_or_a_compilation_that_came_out_first` is the claim.
 - **A song the catalog has never heard of is found elsewhere and wanted by landing its release.**
   `Library::found_elsewhere` sends the words a search asks by name to `Reference::find_songs` and
-  answers `Found`s: a recording, its title, credit, length and the release it was meant for
-  (`meant_release`), leaving out every recording the catalog names in `tracks.mbid` or
+  answers `Found`s: a recording, its title, credit, length, the release it was meant for
+  (`meant_release`) and its `performer`, the first credited artist MusicBrainz names by id as a
+  `Performer::Elsewhere` (no request of its own), leaving out every recording the catalog names in `tracks.mbid` or
   `release_tracks.recording_mbid` and dropping a second recording of the same folded title by the same
   folded credit, up to `FOUND_ELSEWHERE_AT_MOST` (12). The two halves are public apart, because the
   window keeps the reference's answer and weighs it again: `songs_asked` is the words as sent —
@@ -2441,7 +2442,9 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   (`the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_again`). Three readers:
   `songs_kept_for` is a search's — every folded word a word start in `folded`, held nowhere by recording
   and the group still unheld and no track of its artist the same `words_of`, albums first, one per
-  folded title and credit, up to `FOUND_ELSEWHERE_AT_MOST`; `songs_not_held_by` is an artist page's —
+  folded title and credit, up to `FOUND_ELSEWHERE_AT_MOST`, each a `Performer::Held` by the lowest
+  `artist_releases.artist_id` holding its group (read under `artist_releases_by_group`);
+  `songs_not_held_by` is an artist page's —
   the rows the artist's own albums are short of (not dismissed, no held track of that title) and then
   the songs of the artist's unheld groups, one per title and credit; `albums_not_held_by` answers an
   `AlbumNotHeld` per release group of the artist's with no album holding a track of it — so one landed

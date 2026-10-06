@@ -387,16 +387,7 @@ impl RootView {
             }
             Ok(Linked::Artist(found)) => {
                 toast::dismiss(cx);
-                let landed = self
-                    .library
-                    .update(cx, |library, cx| library.land_artist_found(found, cx));
-                cx.spawn(async move |this, cx| {
-                    let Some(artist) = landed.await else {
-                        return;
-                    };
-                    let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
-                })
-                .detach();
+                self.open_artist_found(found, cx);
             }
             Ok(Linked::Unnamed) => {
                 toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);

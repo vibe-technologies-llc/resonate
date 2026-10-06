@@ -29,13 +29,14 @@ use resonate_library::{
     HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept,
     Layout, Learning, Library, Listen, LookupOp, Mbid, Meant, Measured, Missing, MissingTrack,
     MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
-    PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked,
-    ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
-    Shared, SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
-    TrackQuery, Undoable, UnheldRelease, Window, Wording, albums_still_answering,
-    artists_still_answering, folded_letters, songs_asked, still_answering, weighed_for,
+    Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
+    PollStats, PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference,
+    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
+    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
+    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording,
+    albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
+    weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -2192,6 +2193,11 @@ impl LibraryModel {
             .as_ref()
             .map(|album| album.title.clone())
             .unwrap_or_default();
+        let performer = self
+            .album
+            .as_ref()
+            .and_then(|album| album.artist_id)
+            .map(Performer::Held);
         let pressing = self.release.as_ref();
 
         for (release_track, want) in wanted {
@@ -2225,6 +2231,7 @@ impl LibraryModel {
                 length: row.length,
                 release,
                 releases: Vec::new(),
+                performer: performer.clone(),
             };
             self.downloads.landing(found, now);
             self.downloads.wanted(&recording, *want, fetched_by);
@@ -6522,6 +6529,7 @@ mod tests {
             length: None,
             release: None,
             releases: Vec::new(),
+            performer: None,
         }
     }
 

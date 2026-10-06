@@ -15,8 +15,8 @@ use resonate_engine::Placement;
 use resonate_library::{
     Album, AlbumFound, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut,
     Favoured, Found, Genre, GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured,
-    MissingTrack, PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service, Track,
-    in_the_order_worth_offering,
+    MissingTrack, Performer, PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service,
+    Track, in_the_order_worth_offering,
 };
 use smallvec::smallvec;
 
@@ -1137,6 +1137,10 @@ impl RootView {
             (_, true) => TRACK_ADD_CONTROLS,
             (_, false) => TRACK_CONTROLS,
         };
+        let performer = match &asks {
+            Asks::Found(found) => found.performer.clone(),
+            Asks::Row(_) => None,
+        };
         let mark = self.want_mark(asks, cx);
         let fitted = self.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
@@ -1170,18 +1174,17 @@ impl RootView {
                     Sleeve::Unknown => unheld_cover(theme::row_cover()),
                 })
             })
-            .child(listing::title_cell(title, lit_title, false).text_color(rgb(theme::faint())))
+            .child(
+                listing::title_cell(title, lit_title, false)
+                    .debug_selector(move || format!("unheld-title-{index}"))
+                    .text_color(rgb(theme::faint())),
+            )
             .child(
                 listing::artist_cell(
-                    self.opens(
-                        ("missing-artist", index),
-                        artist,
-                        OPEN_ARTIST_HINT,
-                        None,
-                        cx,
-                    )
-                    .flex_shrink()
-                    .ends_in_an_ellipsis(),
+                    self.performed_by(("missing-artist", index), artist, performer, cx)
+                        .debug_selector(move || format!("unheld-artist-{index}"))
+                        .flex_shrink()
+                        .ends_in_an_ellipsis(),
                 )
                 .text_color(rgb(theme::faint())),
             )
@@ -1263,6 +1266,34 @@ impl RootView {
                         .update(cx, |library, cx| library.want(release_track, cx));
                 }))
         })
+    }
+
+    fn performed_by(
+        &self,
+        id: impl Into<ElementId>,
+        label: impl IntoElement,
+        performer: Option<Performer>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        match performer {
+            Some(Performer::Held(artist)) => self.opens(
+                id,
+                label,
+                OPEN_ARTIST_HINT,
+                Some(Selection::Artist(artist)),
+                cx,
+            ),
+            Some(Performer::Elsewhere(found)) => self.pressed_to(
+                id,
+                label,
+                OPEN_ARTIST_FOUND_HINT,
+                Some(move |this: &mut Self, cx: &mut Context<Self>| {
+                    this.open_artist_found(found.clone(), cx);
+                }),
+                cx,
+            ),
+            None => self.opens(id, label, OPEN_ARTIST_HINT, None, cx),
+        }
     }
 
     pub(crate) fn found_row(
@@ -2609,17 +2640,7 @@ impl RootView {
                 )
             })
             .on_click(cx.listener(move |this, _, _, cx| {
-                let landing = opening.clone();
-                let landed = this
-                    .library
-                    .update(cx, |library, cx| library.land_artist_found(landing, cx));
-                cx.spawn(async move |this, cx| {
-                    let Some(artist) = landed.await else {
-                        return;
-                    };
-                    let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
-                })
-                .detach();
+                this.open_artist_found(opening.clone(), cx);
             }))
     }
 
@@ -3709,6 +3730,7 @@ mod tests {
         const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
         const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
         const HEROES_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
+        const JANJI: &str = "0b3c6f5d-2e1a-4c8b-9d7e-6f5a4b3c2d1e";
 
         fn mbid(id: &str) -> Mbid {
             Mbid::new(id).expect("an mbid")
@@ -3718,7 +3740,7 @@ mod tests {
             vec![Credit {
                 name: "Janji".to_owned(),
                 joined_by: " & Johnning".to_owned(),
-                mbid: None,
+                mbid: Some(mbid(JANJI)),
             }]
         }
 
@@ -4035,7 +4057,7 @@ mod tests {
             });
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());
 
-            driven.click("found-0");
+            driven.click("unheld-title-0");
             driven.until(|_, _| !asked.lock().is_empty());
             driven.until(|root, cx| {
                 let library = root.library.read(cx);
@@ -4096,6 +4118,39 @@ mod tests {
         }
 
         #[gpui::test]
+        fn pressing_the_artist_of_a_song_found_on_musicbrainz_opens_the_artist_and_wants_nothing(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+            driven.click("unheld-artist-0");
+            driven.until(|root, cx| {
+                matches!(root.library.read(cx).selection(), Selection::Artist(_))
+            });
+
+            let janji = library
+                .artist_named("Janji")
+                .expect("the artist read")
+                .expect("the artist landed");
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).selection()),
+                Selection::Artist(janji)
+            );
+            assert!(
+                library.wants().expect("the wants read").is_empty(),
+                "pressing the artist wanted the song"
+            );
+        }
+
+        #[gpui::test]
         fn a_found_song_that_landed_is_listed_once_as_the_held_track(cx: &mut TestAppContext) {
             let folder = Folder::new();
             let music = Folder::new();
@@ -4120,7 +4175,7 @@ mod tests {
 
             typed(&mut driven, "Heroes Tonight");
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());
-            driven.click("found-0");
+            driven.click("unheld-title-0");
             driven.until(|root, cx| {
                 let library = root.library.read(cx);
                 !library.listing().is_empty() && library.found().is_empty()
@@ -4288,7 +4343,7 @@ mod tests {
             driven.click("search-top");
             driven.bounds_of("found-0");
 
-            driven.click("found-0");
+            driven.click("unheld-title-0");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
         }
 
@@ -4436,6 +4491,7 @@ mod tests {
                 length: None,
                 release: matched.releases.first().cloned(),
                 releases: matched.releases,
+                performer: None,
             }
         }
 

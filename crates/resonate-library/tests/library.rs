@@ -32,13 +32,13 @@ use resonate_library::{
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium,
-    Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
-    PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated,
-    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
-    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
-    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
+    PlaylistFormat, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
+    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
+    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
     TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
     Wording, Written,
 };
@@ -11604,6 +11604,7 @@ fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_ask
     assert_eq!(daybreak[0].recording, mbid(DAYBREAK));
     assert_eq!(daybreak[0].title, "Daybreak");
     assert_eq!(daybreak[0].artist, "The Orbiters");
+    assert_eq!(daybreak[0].performer, Some(Performer::Held(artist.id)));
     assert_eq!(
         daybreak[0]
             .release
