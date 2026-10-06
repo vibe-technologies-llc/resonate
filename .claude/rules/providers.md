@@ -271,6 +271,13 @@ is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a
 - **A segment that breaks off is asked for again from where it stopped** with `Range`, up to
   `RESUMES_AT_MOST` times running. The first segment is opened inside `obtain`, so a CDN refusing it
   is the provider's `Refused` under `ProviderOp::Download`, not a failed keep.
+- **The segments after the first are fetched ahead of the reader.** `Fetched` streams the first and
+  keeps `SEGMENTS_AHEAD` (3) more coming whole, each on a `resonate-tidal-segment` thread of its own
+  handing its bytes over a channel of one, read in order and topped up as each is drained, so a
+  segment's request and its round trip overlap the reading of the one before rather than following
+  it (`a_dash_stream_is_fetched_segments_ahead_and_read_in_order`). A segment read ahead is resumed as
+  one read in turn is, is bounded by `LARGEST_SEGMENT`, and fails the stream with its own error;
+  dropping the stream drops the channels, and a thread ends with its one request.
 - **What lands is a FLAC file, never an MP4.** A DASH stream is FLAC frames in fragmented MP4, and
   `remux.rs` repacks it decoding nothing: `fLaC` and the metadata blocks from the `dfLa` box, then
   every `mdat` payload, STREAMINFO's total sample count (zero in a fragmented file) filled in from the

@@ -447,6 +447,34 @@ fn media_named_off_the_audio_hosts_is_never_fetched() {
 }
 
 #[test]
+fn a_dash_stream_is_fetched_segments_ahead_and_read_in_order() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+    let last = segmented().len() - 1;
+    let ahead = last.min(3);
+
+    let obtained = fake.tidal().obtain(&by_isrc()).expect("an answer");
+    let began = std::time::Instant::now();
+    while !(1..=ahead).all(|nth| fake.paths().iter().any(|path| segment(path) == Some(nth))) {
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "the segments ahead of the reader were never asked for: {:?}",
+            fake.paths()
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    let delivered = streamed(obtained).expect("a delivery");
+
+    assert_native_flac(&delivered.2);
+    let mut asked: Vec<usize> = fake
+        .paths()
+        .iter()
+        .filter_map(|path| segment(path))
+        .collect();
+    asked.sort_unstable();
+    assert_eq!(asked, (0..=last).collect::<Vec<_>>());
+}
+
+#[test]
 fn a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped() {
     let fake = tidal_server("FULL", on_itself, |asked, nth, before| {
         let whole = &segmented()[nth];

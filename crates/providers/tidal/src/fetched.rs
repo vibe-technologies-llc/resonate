@@ -1,6 +1,8 @@
 use std::{
+    collections::VecDeque,
     io::{self, ErrorKind, Read},
-    vec,
+    sync::mpsc::{self, Receiver},
+    thread, vec,
 };
 
 use ureq::{
@@ -9,6 +11,9 @@ use ureq::{
 };
 
 const RESUMES_AT_MOST: u32 = 3;
+const SEGMENTS_AHEAD: usize = 3;
+const CHUNK_BYTES: usize = 64 * 1024;
+const LARGEST_SEGMENT: usize = 64 * 1024 * 1024;
 const WHOLE: u16 = 200;
 const PARTIAL: u16 = 206;
 const FORBIDDEN: u16 = 403;
@@ -107,11 +112,44 @@ impl Piece {
     }
 }
 
+fn fetched_whole(agent: &Agent, url: String) -> io::Result<Vec<u8>> {
+    let mut piece = Piece::opened(agent, url, 0).map_err(Unfetched::into_io)?;
+    let mut whole = Vec::new();
+    let mut chunk = vec![0; CHUNK_BYTES];
+    let mut broken = 0;
+    loop {
+        match piece.reader.read(&mut chunk) {
+            Ok(0) => return Ok(whole),
+            Ok(read) => {
+                whole.extend_from_slice(&chunk[..read]);
+                piece.read += read as u64;
+                broken = 0;
+                if whole.len() > LARGEST_SEGMENT {
+                    return Err(io::Error::from(ErrorKind::FileTooLarge));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) if broken < RESUMES_AT_MOST => {
+                broken += 1;
+                tracing::debug!(%error, read = piece.read, "a Tidal segment read ahead broke off and is asked for again from where it stopped");
+                let url = std::mem::take(&mut piece.url);
+                let from = piece.read;
+                piece = Piece::resumed(agent, url, from)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+type Ahead = Receiver<io::Result<Vec<u8>>>;
+
 pub(crate) struct Fetched {
     agent: Agent,
     left: vec::IntoIter<String>,
     piece: Option<Piece>,
     broken: u32,
+    ahead: VecDeque<Ahead>,
+    held: io::Cursor<Vec<u8>>,
 }
 
 impl Fetched {
@@ -121,24 +159,46 @@ impl Fetched {
             .next()
             .map(|url| Piece::opened(&agent, url, 0))
             .transpose()?;
-        Ok(Self {
+        let mut fetched = Self {
             agent,
             left,
             piece,
             broken: 0,
-        })
+            ahead: VecDeque::new(),
+            held: io::Cursor::new(Vec::new()),
+        };
+        fetched.read_ahead();
+        Ok(fetched)
     }
-}
 
-impl Read for Fetched {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read_ahead(&mut self) {
+        while self.ahead.len() < SEGMENTS_AHEAD {
+            let Some(url) = self.left.next() else {
+                return;
+            };
+            let (told, ahead) = mpsc::sync_channel(1);
+            let agent = self.agent.clone();
+            let fetching = thread::Builder::new()
+                .name("resonate-tidal-segment".to_owned())
+                .spawn({
+                    let told = told.clone();
+                    let url = url.clone();
+                    move || {
+                        let _ = told.send(fetched_whole(&agent, url));
+                    }
+                });
+            if let Err(error) = fetching {
+                tracing::debug!(%error, "a Tidal segment is fetched in turn, no thread starting for it");
+                let _ = told.send(fetched_whole(&self.agent, url));
+            }
+            self.ahead.push_back(ahead);
+        }
+    }
+
+    fn read_the_first(&mut self, buf: &mut [u8]) -> io::Result<Option<usize>> {
         loop {
             let Some(piece) = self.piece.as_mut() else {
-                let Some(url) = self.left.next() else {
-                    return Ok(0);
-                };
-                self.piece = Some(Piece::opened(&self.agent, url, 0).map_err(Unfetched::into_io)?);
-                continue;
+                return Ok(None);
             };
             match piece.reader.read(buf) {
                 Ok(0) => {
@@ -148,7 +208,7 @@ impl Read for Fetched {
                 Ok(read) => {
                     piece.read += read as u64;
                     self.broken = 0;
-                    return Ok(read);
+                    return Ok(Some(read));
                 }
                 Err(error) if error.kind() == ErrorKind::Interrupted => {}
                 Err(error) if self.broken < RESUMES_AT_MOST => {
@@ -160,6 +220,28 @@ impl Read for Fetched {
                 }
                 Err(error) => return Err(error),
             }
+        }
+    }
+}
+
+impl Read for Fetched {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Some(read) = self.read_the_first(buf)? {
+            return Ok(read);
+        }
+        loop {
+            let read = self.held.read(buf)?;
+            if read > 0 || buf.is_empty() {
+                return Ok(read);
+            }
+            let Some(ahead) = self.ahead.pop_front() else {
+                return Ok(0);
+            };
+            let segment = ahead
+                .recv()
+                .unwrap_or_else(|_| Err(io::Error::from(ErrorKind::BrokenPipe)))?;
+            self.held = io::Cursor::new(segment);
+            self.read_ahead();
         }
     }
 }
