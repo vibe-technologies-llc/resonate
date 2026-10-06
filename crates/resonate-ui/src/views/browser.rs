@@ -4660,6 +4660,22 @@ mod tests {
         }
 
         #[gpui::test]
+        fn albums_found_stay_listed_while_the_words_are_edited(cx: &mut TestAppContext) {
+            let musicbrainz = MusicBrainz::new();
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "heroes tonight");
+            answered(&mut driven);
+            typed(&mut driven, "heroes tonigh");
+            let while_asked = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                (library.albums_found().len(), library.is_asking_elsewhere())
+            });
+
+            assert_eq!(while_asked, (1, true));
+        }
+
+        #[gpui::test]
         fn a_search_inside_an_artist_asks_musicbrainz_nothing(cx: &mut TestAppContext) {
             let musicbrainz = MusicBrainz::new();
             let mut driven = searching(&musicbrainz, cx);

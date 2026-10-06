@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fs, mem,
     num::{NonZeroU32, NonZeroUsize},
     os::unix::fs::MetadataExt as _,
@@ -31,8 +32,8 @@ use resonate_library::{
     ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
     RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
     Shared, SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
-    TrackQuery, Undoable, UnheldRelease, Window, Wording, folded_letters, songs_asked,
-    still_answering, weighed_for,
+    TrackQuery, Undoable, UnheldRelease, Window, Wording, albums_still_answering,
+    artists_still_answering, folded_letters, songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -1226,10 +1227,10 @@ impl LibraryModel {
 
     fn restate_what_was_found(&mut self) {
         self.albums_shown =
-            albums_kept_before_the_rest(self.kept_albums_here(), self.albums_found_here()).into();
+            albums_kept_before_the_rest(&self.kept_albums_here(), &self.albums_found_here()).into();
         self.shown = match self.selection {
             Selection::Everything => {
-                kept_before_the_rest(self.kept_here(), self.found_elsewhere_here()).into()
+                kept_before_the_rest(&self.kept_here(), self.found_elsewhere_here()).into()
             }
             Selection::Artist(_) if self.query.is_empty() => Arc::clone(&self.songs_not_held),
             Selection::Artist(_) => still_answering(&self.songs_not_held, &self.query).into(),
@@ -1237,28 +1238,32 @@ impl LibraryModel {
         };
     }
 
-    fn kept_here(&self) -> &[Found] {
+    fn kept_here(&self) -> Cow<'_, [Found]> {
         match self.kept_for.as_deref() {
-            Some(asked) if self.can_enrich() && !self.query.is_empty() && asked == self.query => {
-                &self.kept_songs
-            }
-            Some(_) | None => &[],
+            Some(_) if !self.can_enrich() || self.query.is_empty() => Cow::Borrowed(&[]),
+            Some(asked) if asked == self.query => Cow::Borrowed(&self.kept_songs),
+            Some(_) => Cow::Owned(still_answering(&self.kept_songs, &self.query)),
+            None => Cow::Borrowed(&[]),
         }
     }
 
-    fn kept_albums_here(&self) -> &[AlbumFound] {
+    fn kept_albums_here(&self) -> Cow<'_, [AlbumFound]> {
         match self.kept_for.as_deref() {
-            Some(asked) if self.can_enrich() && !self.query.is_empty() && asked == self.query => {
-                &self.kept_albums
-            }
-            Some(_) | None => &[],
+            Some(_) if !self.can_enrich() || self.query.is_empty() => Cow::Borrowed(&[]),
+            Some(asked) if asked == self.query => Cow::Borrowed(&self.kept_albums),
+            Some(_) => Cow::Owned(albums_still_answering(&self.kept_albums, &self.query)),
+            None => Cow::Borrowed(&[]),
         }
     }
 
-    fn albums_found_here(&self) -> &[AlbumFound] {
+    fn albums_found_here(&self) -> Cow<'_, [AlbumFound]> {
         match self.found_for.as_deref() {
-            Some(asked) if !self.query.is_empty() && asked == self.query => &self.albums_found,
-            Some(_) | None => &[],
+            _ if self.query.is_empty() => Cow::Borrowed(&[]),
+            Some(asked) if asked == self.query => Cow::Borrowed(&self.albums_found),
+            Some(_) | None if self.is_asking_elsewhere() => {
+                Cow::Owned(albums_still_answering(&self.albums_found, &self.query))
+            }
+            Some(_) | None => Cow::Borrowed(&[]),
         }
     }
 
@@ -1289,22 +1294,20 @@ impl LibraryModel {
     }
 
     pub fn artists_found(&self) -> Arc<[ArtistFound]> {
+        if self.selection != Selection::Everything || self.query.is_empty() {
+            return Arc::default();
+        }
         match self.found_for.as_deref() {
-            Some(asked)
-                if self.selection == Selection::Everything
-                    && !self.query.is_empty()
-                    && asked == self.query =>
-            {
-                Arc::clone(&self.artists_found)
+            Some(asked) if asked == self.query => Arc::clone(&self.artists_found),
+            Some(_) | None if self.is_asking_elsewhere() => {
+                artists_still_answering(&self.artists_found, &self.query).into()
             }
             Some(_) | None => Arc::default(),
         }
     }
 
     pub fn albums_found(&self) -> Arc<[AlbumFound]> {
-        let answering = |asked: &Option<String>| asked.as_deref() == Some(self.query.as_str());
-        let current = answering(&self.kept_for) || answering(&self.found_for);
-        match self.selection == Selection::Everything && !self.query.is_empty() && current {
+        match self.selection == Selection::Everything && !self.query.is_empty() {
             true => Arc::clone(&self.albums_shown),
             false => Arc::default(),
         }

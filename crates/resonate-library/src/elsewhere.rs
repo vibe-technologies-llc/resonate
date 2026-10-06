@@ -365,6 +365,32 @@ pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
         .collect()
 }
 
+pub fn albums_still_answering(albums: &[AlbumFound], text: &str) -> Vec<AlbumFound> {
+    let words = folded_words_asked(text);
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    albums
+        .iter()
+        .filter(|album| answered_by_name(&album.title, &album.artist, &words))
+        .cloned()
+        .collect()
+}
+
+pub fn artists_still_answering(artists: &[ArtistFound], text: &str) -> Vec<ArtistFound> {
+    let words = folded_words_asked(text);
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    artists
+        .iter()
+        .filter(|artist| answered_by_name("", &artist.name, &words))
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn found_among(
     matches: Vec<RecordingMatch>,
     held: impl Fn(&Mbid) -> bool,
@@ -868,5 +894,35 @@ mod tests {
         assert_eq!(accented, vec![answered[1].clone()]);
         assert!(still_answering(&answered, "").is_empty());
         assert!(still_answering(&answered, "radiohead").is_empty());
+    }
+
+    #[test]
+    fn albums_and_artists_found_for_fewer_words_are_narrowed_to_those_still_answering_more() {
+        let album = |title: &str, artist: &str| AlbumFound {
+            group: Mbid::new(ONE).expect("an mbid"),
+            title: title.to_owned(),
+            artist: artist.to_owned(),
+            kind: Some("Album".to_owned()),
+            first_released: None,
+        };
+        let albums = [
+            album("Meddle", "Pink Floyd"),
+            album("Pink Moon", "Nick Drake"),
+        ];
+        let artists = [ArtistFound {
+            mbid: Mbid::new(TWO).expect("an mbid"),
+            name: "Pink Floyd".to_owned(),
+        }];
+
+        assert_eq!(
+            albums_still_answering(&albums, "pink medd"),
+            vec![albums[0].clone()]
+        );
+        assert_eq!(
+            artists_still_answering(&artists, "pink fl"),
+            artists.to_vec()
+        );
+        assert!(artists_still_answering(&artists, "pink floyd echoes").is_empty());
+        assert!(albums_still_answering(&albums, "").is_empty());
     }
 }

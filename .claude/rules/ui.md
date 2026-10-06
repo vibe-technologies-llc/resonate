@@ -2113,7 +2113,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     `Beyond::Refining`, the summary reading *N songs not in it so far, asking MusicBrainz for the
     rest…* and the tab counting *N…*; only where none still answers does `Beyond::Asking` stand alone,
     *Asking MusicBrainz…* where the found songs would be
-    (`songs_found_for_fewer_words_stay_listed_while_more_are_asked_for`).
+    (`songs_found_for_fewer_words_stay_listed_while_more_are_asked_for`). Everything else found is
+    held the same way rather than dropped and drawn again: the kept songs and albums read for the
+    last settled text narrow through `still_answering` and `albums_still_answering` until the load
+    for the new text lands, and the albums and artists MusicBrainz named through
+    `albums_still_answering` and `artists_still_answering` while it is asked — so tab counts and
+    strips do not fall to nothing and climb back on every key
+    (`albums_found_stay_listed_while_the_words_are_edited`).
   - *A failure says so.* A request refused or unreachable for the text in the box is not
     remembered; its text is `unreached_for` and `elsewhere` answers `Beyond::Unreached`, *MusicBrainz
     could not be reached* with *Try again* (`ask_elsewhere_again`) beside it
