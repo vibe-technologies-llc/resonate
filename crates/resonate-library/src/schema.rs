@@ -735,6 +735,14 @@ pub fn configure(connection: &Connection, role: Role) -> Result<()> {
         )
         .map_err(|source| Error::store(StoreOp::Open, source))?;
     connection
+        .create_scalar_function(
+            store::SPREAD_OF,
+            1,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| Ok(store::spread_of(context.get(0)?)),
+        )
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+    connection
         .execute_batch(&format!(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;

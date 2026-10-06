@@ -22,8 +22,8 @@ use rusqlite::{
 };
 
 use crate::{
-    Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn, Relation,
-    Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
+    Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
+    REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -1280,6 +1280,15 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
 
 pub(crate) const WORDS_OF: &str = "words_of";
 
+pub(crate) const SPREAD_OF: &str = "spread_of";
+
+const FIBONACCI_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
+
+pub(crate) fn spread_of(artist: i64) -> i64 {
+    let mixed = u128::from(artist.cast_unsigned().wrapping_mul(FIBONACCI_MULTIPLIER) >> 32);
+    i64::try_from((mixed * REFRESH_SPREAD.as_nanos()) >> 32).unwrap_or_default()
+}
+
 pub(crate) fn words_of(text: &str) -> String {
     folded_letters(text)
         .split(|glyph: char| !glyph.is_alphanumeric())
@@ -2365,6 +2374,24 @@ mod tests {
 
         tx.query_row("SELECT year FROM albums", [], |row| row.get(0))
             .expect("one album was grouped")
+    }
+
+    #[test]
+    fn an_artists_songs_fall_due_again_together_and_another_artists_on_another_day() {
+        let spread = i64::try_from(REFRESH_SPREAD.as_nanos()).expect("a spread in range");
+        let spreads: Vec<i64> = (1..=64).map(spread_of).collect();
+
+        assert_eq!(spread_of(7), spread_of(7));
+        assert!(spreads.iter().all(|one| (0..spread).contains(one)));
+        assert!(
+            spreads.windows(2).all(|pair| pair[0] != pair[1]),
+            "two artists next to each other fall due together: {spreads:?}"
+        );
+        let first_half = spreads.iter().filter(|one| **one < spread / 2).count();
+        assert!(
+            (16..=48).contains(&first_half),
+            "the artists bunch at one end of the spread: {first_half} of 64"
+        );
     }
 
     #[test]

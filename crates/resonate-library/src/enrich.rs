@@ -36,6 +36,8 @@ pub const REFUSED_AGAIN_AFTER: Duration = Duration::from_secs(60 * 60);
 
 pub const REFRESH_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
+pub const REFRESH_SPREAD: Duration = Duration::from_secs(10 * 24 * 60 * 60);
+
 pub const WAITS: Waits = Waits {
     retry_after: RETRY_AFTER,
     refused_again_after: REFUSED_AGAIN_AFTER,
@@ -1552,25 +1554,32 @@ impl Pass<'_> {
     }
 
     fn learn_the_songs(&self, options: &EnrichOptions) -> Result<()> {
-        let due = self.library.groups_whose_songs_are_due(
-            SystemTime::now(),
-            options.at_most.map(NonZeroUsize::get),
-        )?;
+        let mut left = options.at_most.map(NonZeroUsize::get);
 
-        for group in due {
-            if self.progress.is_cancelled() {
-                return Ok(());
-            }
-            let now = SystemTime::now();
-            match self.heard(self.reference.releases_of_group(&group))? {
-                Heard::Answered(pressings) => {
-                    let pressing = songs::pressing_of(pressings);
-                    let landed = self.library.land_songs_of(&group, pressing.as_ref(), now)?;
-                    self.progress
-                        .songs
-                        .fetch_add(landed as u64, Ordering::Relaxed);
+        for artist in self
+            .library
+            .artists_whose_songs_are_due(SystemTime::now())?
+        {
+            let due = self.library.songs_due_for(artist, SystemTime::now())?;
+            for group in due.groups {
+                if self.progress.is_cancelled() || left == Some(0) {
+                    return Ok(());
                 }
-                Heard::Refused => self.library.songs_of_refused(&group, now)?,
+                let now = SystemTime::now();
+                if !self.library.songs_still_due(&group, now)? {
+                    continue;
+                }
+                left = left.map(|left| left - 1);
+                match self.heard(self.reference.releases_of_group(&group))? {
+                    Heard::Answered(pressings) => {
+                        let pressing = songs::pressing_of(pressings);
+                        let landed = self.library.land_songs_of(&group, pressing.as_ref(), now)?;
+                        self.progress
+                            .songs
+                            .fetch_add(landed as u64, Ordering::Relaxed);
+                    }
+                    Heard::Refused => self.library.songs_of_refused(&group, now)?,
+                }
             }
         }
         Ok(())

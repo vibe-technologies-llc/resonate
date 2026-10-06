@@ -2379,10 +2379,18 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   asks the catalog about those recordings alone, `WHERE mbid IN (…)` under `tracks_by_recording` and
   `release_tracks_by_recording` — a `MIGRATIONS` step — rather than reading every recording id the
   catalog names. **The songs of a library artist's releases not held are learnt in the lookup pass.**
-  `Pass::learn_the_songs` runs last in every pass, after the covers and portraits: every release group
-  `groups_whose_songs_are_due` answers — unheld by the `unheld_by_any_album!` predicate, never read or
-  read longer ago than `REFRESH_AFTER`, refused longer ago than `REFUSED_AGAIN_AFTER`, the most played
-  artist's first, `at_most` capping it — is asked `Reference::releases_of_group`, and
+  `Pass::learn_the_songs` runs after the album, track and artist lookups and before
+  `cover_the_unheld`, **artist by artist**: `artists_whose_songs_are_due` names every artist with a
+  group due, the most played first, and each artist's due groups are read again as that artist is
+  reached (`songs_due_for`), and each group once more just before it is asked (`songs_still_due`), so a
+  group an artist's page landed while the pass ran is not asked twice
+  (`a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again`); `at_most` caps the
+  groups asked. A group is due where it is unheld by the `unheld_by_any_album!` predicate and never
+  read, refused longer ago than `REFUSED_AGAIN_AFTER`, or read longer ago than `REFRESH_AFTER` less
+  `spread_of` its artist — a deterministic SQL function `schema::configure` registers, a Fibonacci hash
+  of the artist's id into `[0, REFRESH_SPREAD)` (ten days) — so a first pass that read every group in
+  one hour does not fall due again all at once a month later, while one artist's groups still fall due
+  together and can be read off one browse. Each is asked `Reference::releases_of_group`, and
   `songs::pressing_of` takes the pressing whose track count most pressings share (fewer tracks on a
   tie: the original over a deluxe), the earliest of those, a full date before a bare year. `songs::land`
   replaces the group's rows in `discography_songs` — group, recording, the pressing's id, title, date and
@@ -2393,7 +2401,7 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   (`the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking`,
   `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). **An artist's page does not
   wait for the pass**: `Library::learn_the_songs_of_artist` walks the same due rule over that artist's
-  groups alone (`SONGS_DUE_FOR_AN_ARTIST`, earliest first), landing and stamping each as the pass would,
+  groups alone (`songs_due_for`, earliest first, each weighed again by `songs_still_due`), landing and stamping each as the pass would,
   a refusal or an unreadable answer stamped and an unreachable reference answered as the error
   (`an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_reaches_them`).
   **The sleeves of those releases are kept in the same pass.** `Pass::cover_the_unheld` runs after `learn_the_songs`: every release

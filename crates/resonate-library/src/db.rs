@@ -448,31 +448,48 @@ const UNHELD_COUNTED: &str = concat!(
     unheld_by_any_album!()
 );
 
-const SONGS_DUE: &str = concat!(
-    "SELECT r.mbid FROM artist_releases r
+macro_rules! songs_read_since {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM discography_songs_read k
+                      WHERE k.release_group = r.mbid
+                        AND k.read > CASE WHEN k.refusals > 0 THEN ?1
+                                          ELSE ?2 + spread_of(r.artist_id) END)"
+    };
+}
+
+const ARTISTS_WITH_SONGS_DUE: &str = concat!(
+    "SELECT r.artist_id FROM artist_releases r
       WHERE ",
     unheld_by_any_album!(),
+    " AND ",
+    songs_read_since!(),
     "
-        AND NOT EXISTS (SELECT 1 FROM discography_songs_read k
-                         WHERE k.release_group = r.mbid
-                           AND k.read > CASE WHEN k.refusals > 0 THEN ?1 ELSE ?2 END)
-      GROUP BY r.mbid
-      ORDER BY max((SELECT coalesce(sum(t.plays), 0) FROM tracks t
-                     WHERE t.artist_id = r.artist_id)) DESC,
-               min(r.first_released IS NULL), min(r.first_released)
-      LIMIT ?3"
+      GROUP BY r.artist_id
+      ORDER BY (SELECT coalesce(sum(t.plays), 0) FROM tracks t
+                 WHERE t.artist_id = r.artist_id) DESC,
+               r.artist_id"
 );
 
 const SONGS_DUE_FOR_AN_ARTIST: &str = concat!(
     "SELECT r.mbid FROM artist_releases r
       WHERE r.artist_id = ?3 AND ",
     unheld_by_any_album!(),
+    " AND ",
+    songs_read_since!(),
     "
-        AND NOT EXISTS (SELECT 1 FROM discography_songs_read k
-                         WHERE k.release_group = r.mbid
-                           AND k.read > CASE WHEN k.refusals > 0 THEN ?1 ELSE ?2 END)
       ORDER BY r.first_released IS NULL, r.first_released, r.mbid"
 );
+
+const SONG_GROUP_STILL_DUE: &str = concat!(
+    "SELECT EXISTS (SELECT 1 FROM artist_releases r
+                     WHERE r.mbid = ?3 AND ",
+    unheld_by_any_album!(),
+    " AND ",
+    songs_read_since!(),
+    ")"
+);
+
+const ARTIST_MBID: &str = "SELECT mbid FROM artists WHERE id = ?1";
 
 const UNHELD_COVERS_DUE: &str = concat!(
     "SELECT r.mbid,
@@ -3632,8 +3649,11 @@ impl Library {
         artist: ArtistId,
     ) -> Result<usize> {
         let mut landed = 0;
-        for group in self.groups_whose_songs_are_due_for(artist, SystemTime::now())? {
+        for group in self.songs_due_for(artist, SystemTime::now())?.groups {
             let now = SystemTime::now();
+            if !self.songs_still_due(&group, now)? {
+                continue;
+            }
             match reference.releases_of_group(&group) {
                 Ok(pressings) => {
                     landed +=
@@ -3653,44 +3673,60 @@ impl Library {
         Ok(landed)
     }
 
-    fn groups_whose_songs_are_due_for(
+    fn songs_due_binds(now: SystemTime) -> Vec<Value> {
+        let refused_before = now.checked_sub(REFUSED_AGAIN_AFTER).unwrap_or(UNIX_EPOCH);
+        let read_before = now.checked_sub(REFRESH_AFTER).unwrap_or(UNIX_EPOCH);
+        vec![
+            Value::Integer(store::to_nanos(refused_before)),
+            Value::Integer(store::to_nanos(read_before)),
+        ]
+    }
+
+    pub(crate) fn songs_due_for(
         &self,
         artist: ArtistId,
         now: SystemTime,
-    ) -> Result<Vec<Mbid>> {
-        let refused_before = now.checked_sub(REFUSED_AGAIN_AFTER).unwrap_or(UNIX_EPOCH);
-        let read_before = now.checked_sub(REFRESH_AFTER).unwrap_or(UNIX_EPOCH);
-        let binds = vec![
-            Value::Integer(store::to_nanos(refused_before)),
-            Value::Integer(store::to_nanos(read_before)),
-            Value::Integer(artist.get() as i64),
-        ];
+    ) -> Result<songs::SongsDue> {
+        let mut binds = Self::songs_due_binds(now);
+        binds.push(Value::Integer(artist.get() as i64));
 
         self.inner.read(|connection| {
-            rows(connection, SONGS_DUE_FOR_AN_ARTIST, binds, |row| {
+            let groups = rows(connection, SONGS_DUE_FOR_AN_ARTIST, binds, |row| {
                 row.get::<_, String>(0)
                     .map(|mbid| Mbid::new(&mbid).map_err(Error::from))
-            })
+            })?;
+            let artist = connection
+                .query_row(ARTIST_MBID, [artist.get() as i64], |row| {
+                    row.get::<_, Option<String>>(0)
+                })
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))?
+                .flatten()
+                .and_then(|mbid| Mbid::new(&mbid).ok());
+            Ok(songs::SongsDue { artist, groups })
         })
     }
 
-    pub(crate) fn groups_whose_songs_are_due(
-        &self,
-        now: SystemTime,
-        at_most: Option<usize>,
-    ) -> Result<Vec<Mbid>> {
-        let refused_before = now.checked_sub(REFUSED_AGAIN_AFTER).unwrap_or(UNIX_EPOCH);
-        let read_before = now.checked_sub(REFRESH_AFTER).unwrap_or(UNIX_EPOCH);
-        let binds = vec![
-            Value::Integer(store::to_nanos(refused_before)),
-            Value::Integer(store::to_nanos(read_before)),
-            Value::Integer(limit(at_most)),
-        ];
+    pub(crate) fn songs_still_due(&self, group: &Mbid, now: SystemTime) -> Result<bool> {
+        let mut binds = Self::songs_due_binds(now);
+        binds.push(Value::Text(group.as_str().to_owned()));
 
         self.inner.read(|connection| {
-            rows(connection, SONGS_DUE, binds, |row| {
-                row.get::<_, String>(0)
-                    .map(|mbid| Mbid::new(&mbid).map_err(Error::from))
+            connection
+                .query_row(SONG_GROUP_STILL_DUE, params_from_iter(binds), |row| {
+                    row.get::<_, bool>(0)
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+    }
+
+    pub(crate) fn artists_whose_songs_are_due(&self, now: SystemTime) -> Result<Vec<ArtistId>> {
+        let binds = Self::songs_due_binds(now);
+
+        self.inner.read(|connection| {
+            rows(connection, ARTISTS_WITH_SONGS_DUE, binds, |row| {
+                row.get::<_, i64>(0)
+                    .map(|id| ArtistId::new(id as u64).map_err(Error::from))
             })
         })
     }

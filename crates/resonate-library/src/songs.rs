@@ -10,6 +10,12 @@ use crate::{
 
 const OFFICIAL: &str = "Official";
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SongsDue {
+    pub(crate) artist: Option<Mbid>,
+    pub(crate) groups: Vec<Mbid>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlbumNotHeld {
     pub release: UnheldRelease,

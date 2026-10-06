@@ -77,7 +77,7 @@ pub use crate::{
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,
-        REFRESH_AFTER, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS, Waits,
+        REFRESH_AFTER, REFRESH_SPREAD, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS, Waits,
     },
     error::{
         EncodedColumn, Error, FieldName, LayoutFault, MoveOp, OrderedColumn, PlaylistName, Result,

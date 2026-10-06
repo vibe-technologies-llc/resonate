@@ -11610,6 +11610,36 @@ fn an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_re
 }
 
 #[test]
+fn a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let (fake, has_started, go) =
+        Fake::new(learnt_canned()).gated_on(Some(LookupOp::ReleasesOfGroup));
+    let fake = Arc::new(fake);
+    let handle = library.enrich(
+        Arc::clone(&fake) as Arc<dyn Reference>,
+        Arc::new(Fingerprinters::none()),
+        EnrichOptions::default(),
+    )?;
+
+    has_started
+        .recv()
+        .expect("the lookup reaches the songs of a group");
+    let artist = artist_named(&library, "The Orbiters")?;
+    let page = Fake::new(learnt_canned());
+    library.learn_the_songs_of_artist(&page, artist.id)?;
+    go.send(()).expect("the lookup is still waiting");
+    handle.join()?;
+
+    assert_eq!(page.called(LookupOp::ReleasesOfGroup), 3);
+    assert_eq!(
+        fake.called(LookupOp::ReleasesOfGroup),
+        1,
+        "the lookup asked again for the songs the page had read"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake =
