@@ -650,7 +650,7 @@ impl RootView {
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
-                let reached = self.reaches(Shift::Listing(Listed::Tracks), index);
+                let reached = self.reaches(Shift::Listing(Listed::Top), index);
                 rows = rows.child(reorder::marked(
                     self.track_row(
                         &tracks,
@@ -675,8 +675,9 @@ impl RootView {
                 Beyond::Unreached(_) => UNREACHED,
             };
             let mut rows = div().flex().flex_col();
+            let held_above = tracks.len().min(SONGS_AT_THE_TOP);
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
-                let reached = self.reaches(Shift::Listing(Listed::Found), index);
+                let reached = self.reaches(Shift::Listing(Listed::Top), held_above + index);
                 rows = rows.child(reorder::marked(self.found_row(index, song, cx), reached));
             }
             sections = sections

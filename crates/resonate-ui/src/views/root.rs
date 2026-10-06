@@ -585,7 +585,6 @@ pub struct RootView {
     pub(crate) search_shows: SearchShows,
     pub(crate) following_a_link: Task<()>,
     pub(crate) search_scroll: ScrollHandle,
-    pub(crate) found_rows: UniformListScrollHandle,
     pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
     pub(crate) playlists_drawn: PlaylistsDrawn,
@@ -1038,7 +1037,6 @@ impl RootView {
             search_shows: SearchShows::default(),
             following_a_link: Task::ready(()),
             search_scroll: ScrollHandle::default(),
-            found_rows: UniformListScrollHandle::default(),
             artists_drawn: cx.global::<ResonateApp>().artists_drawn,
             missing_shows: MissingShows::default(),
             playlists_drawn: PlaylistsDrawn::default(),
@@ -2058,7 +2056,9 @@ impl RootView {
             Shift::Listing(Listed::Favourites) => &self.favourite_rows,
             Shift::Listing(Listed::Missing) => &self.missing_rows,
             Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
-            Shift::Listing(Listed::Found) => &self.found_rows,
+            Shift::Listing(Listed::Top) => {
+                return search::SONGS_AT_THE_TOP + search::FOUND_AT_THE_TOP;
+            }
             Shift::Listing(Listed::Offered) => return self.cards_a_page(),
             Shift::Listing(Listed::Heard) => return self.heard_a_page(),
         };
@@ -2185,12 +2185,21 @@ impl RootView {
                 self.play(&tracks, row, cx);
             }
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
-            Shift::Listing(Listed::Found) => {
-                let Some(found) = self.library.read(cx).found().get(row).cloned() else {
+            Shift::Listing(Listed::Top) => {
+                let library = self.library.read(cx);
+                let held = library.listing().len().min(search::SONGS_AT_THE_TOP);
+                if row >= held {
+                    let Some(found) = library.found().get(row - held).cloned() else {
+                        return;
+                    };
+                    self.library
+                        .update(cx, |library, cx| library.want_found(found, cx));
+                    return;
+                }
+                let Some((played, start)) = library.played_from(row) else {
                     return;
                 };
-                self.library
-                    .update(cx, |library, cx| library.want_found(found, cx));
+                self.play_the_listing_from(&played, start, window, cx);
             }
             Shift::Listing(Listed::Suggested) => {
                 let Some(tracks) = self
@@ -2371,11 +2380,8 @@ impl RootView {
                 let library = self.library.read(cx);
                 let songs = library.listing().len().min(search::SONGS_AT_THE_TOP);
                 let found = library.found().len().min(search::FOUND_AT_THE_TOP);
-                return match (songs, found) {
-                    (0, 0) => None,
-                    (0, found) => Some((Shift::Listing(Listed::Found), found)),
-                    (songs, _) => Some((Shift::Listing(Listed::Tracks), songs)),
-                };
+                let rows = songs + found;
+                return (rows > 0).then_some((Shift::Listing(Listed::Top), rows));
             }
             Some(SearchShows::Songs | SearchShows::Albums | SearchShows::Artists) | None => {}
         }
@@ -2507,9 +2513,7 @@ impl RootView {
                 self.suggestion_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
-            Shift::Listing(Listed::Found) => {
-                self.found_rows.scroll_to_item(row, ScrollStrategy::Center);
-            }
+            Shift::Listing(Listed::Top) => {}
             Shift::Listing(Listed::Offered | Listed::Heard) => self.reached_unseen.set(true),
         }
     }
@@ -3317,7 +3321,6 @@ impl RootView {
             self.open_the_search(cx);
         }
         self.search_scroll.set_offset(point(px(0.0), px(0.0)));
-        self.found_rows.scroll_to_item(0, ScrollStrategy::Top);
         self.read_from_the_top(cx);
         if self
             .reach

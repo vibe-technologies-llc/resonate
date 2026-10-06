@@ -63,7 +63,7 @@ pub(crate) enum Listed {
     Suggested,
     Offered,
     Heard,
-    Found,
+    Top,
 }
 
 impl Shift {

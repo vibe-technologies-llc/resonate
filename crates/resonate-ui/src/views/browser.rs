@@ -3682,6 +3682,7 @@ mod tests {
             models::Selection,
             toast,
             views::{
+                reorder::{Listed, Shift},
                 root::{Deleting, Pane},
                 search::SearchShows,
             },
@@ -4674,6 +4675,36 @@ mod tests {
             });
 
             assert_eq!(while_asked, (1, true));
+        }
+
+        #[gpui::test]
+        fn every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard(
+            cx: &mut TestAppContext,
+        ) {
+            let musicbrainz = MusicBrainz::new();
+            let folder = Folder::new();
+            folder.tone("Heroes Tonight.wav", 1);
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let reaching = Reaching {
+                reference: Arc::new(musicbrainz.sharing()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let mut driven = Driven::reaching(cx, library, &folder, reaching);
+
+            typed(&mut driven, "heroes tonight");
+            answered(&mut driven);
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                !library.listing().is_empty() && !library.found().is_empty()
+            });
+            driven.focus(|root| &root.search);
+            driven.cx.simulate_keystrokes("down down");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.reaches(Shift::Listing(Listed::Top), 1)));
+            driven.cx.simulate_keystrokes("enter");
+            driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
         }
 
         #[gpui::test]

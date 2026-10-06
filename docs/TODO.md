@@ -89,6 +89,8 @@ else is open to be done.
   open upstream (zed #62455)
 
 ## Keyboard and accessibility
+- The album and artist strips on a search's *Top results*, held and found, are not reached by the
+  keys; only its songs are
 - `End`, select-all and the scrollbar act on the 2 000 rows loaded so far, so `End` in a
   50 000-track library lands on row 2 000
 - Only Settings and the search field are tab stops: the transport buttons, the sidebar entries, the

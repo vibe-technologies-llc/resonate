@@ -193,6 +193,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   row holding the album, `enter` opens it, and the reached cell wears `reached_ring` — an accent border
   laid over its cover, costing the grid no room.
   `down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows` pins the two bindings.
+  On *Top results* the songs are one run, `Listed::Top`: the held songs the page draws
+  (`SONGS_AT_THE_TOP`) and then the songs found beyond the library (`FOUND_AT_THE_TOP`), so `down` steps
+  from the last held song onto the first found one and `enter` there wants it as a press does
+  (`every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard`). It was one or the other,
+  the found rows reachable only where nothing was held.
   `Listed::Favourites`, `Listed::Missing` and `Listed::Suggested` carry the reach into the favourite
   tracks, the Missing pane's rows and an opened suggestion's rows: `enter` plays a favourite or suggested
   track from there, and on a Missing row opens the album it is short of or the artist whose release it
