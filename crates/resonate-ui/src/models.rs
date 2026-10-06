@@ -13,7 +13,9 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
 use futures_channel::mpsc::{UnboundedSender, unbounded};
-use gpui::{App, AsyncApp, Context, Image, Pixels, RenderImage, Task, WeakEntity, px};
+use gpui::{
+    App, AsyncApp, Context, Image, Pixels, RenderImage, SharedString, Task, WeakEntity, px,
+};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
     TrackId, WantId,
@@ -40,7 +42,7 @@ use resonate_providers::Providers;
 use crate::{
     ResonateApp, clipboard,
     downloads::{
-        Download, Downloads, Fetched, Fetcher, Fetching, Polling, Unfinished, WantStanding,
+        self, Download, Downloads, Fetched, Fetcher, Fetching, Polling, Unfinished, WantStanding,
     },
     drawing::Drawer,
     format,
@@ -1888,12 +1890,7 @@ impl LibraryModel {
     }
 
     pub(crate) fn fetched(&self, download: &Download) -> Option<Fetched> {
-        let progress = self.work.polling()?;
-        let want = download.want()?;
-        Some(Fetched {
-            provider: progress.provider_of(want)?,
-            received: progress.received_for(want),
-        })
+        self.fetched_for(download.want()?)
     }
 
     fn polling(&self) -> Polling {
@@ -2070,6 +2067,31 @@ impl LibraryModel {
 
     pub fn wanted(&self, release_track: ReleaseTrackId) -> Option<WantId> {
         self.wanted.get(&release_track).copied()
+    }
+
+    pub(crate) fn told_want(&self, release_track: ReleaseTrackId) -> Option<SharedString> {
+        let want = self.wanted(release_track)?;
+        let fetching = self.fetching_want(release_track)?;
+        Some(downloads::saying_while(
+            fetching,
+            self.fetched_for(want).as_ref(),
+        ))
+    }
+
+    pub(crate) fn told_found(&self, found: &Found) -> Option<SharedString> {
+        let download = self.downloads.of(&found.recording)?;
+        Some(downloads::saying_while(
+            self.fetching(download),
+            self.fetched(download).as_ref(),
+        ))
+    }
+
+    fn fetched_for(&self, want: WantId) -> Option<Fetched> {
+        let progress = self.work.polling()?;
+        Some(Fetched {
+            provider: progress.provider_of(want)?,
+            received: progress.received_for(want),
+        })
     }
 
     pub fn fetching_want(&self, release_track: ReleaseTrackId) -> Option<Fetching> {

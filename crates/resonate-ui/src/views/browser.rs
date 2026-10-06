@@ -1128,6 +1128,10 @@ impl RootView {
             }
             _ => None,
         };
+        let told = match &asks {
+            Asks::Row(release_track) => self.library.read(cx).told_want(*release_track),
+            Asks::Found(found) => self.library.read(cx).told_found(found),
+        };
         let controls = match (&beside, self.adding_songs_to.is_some()) {
             (Beside::ARun, _) => ROW_CONTROLS,
             (_, true) => TRACK_ADD_CONTROLS,
@@ -1192,7 +1196,7 @@ impl RootView {
                                     .text_color(rgb(fetching_colour(fetching)))
                                     .truncate()
                                     .ends_in_an_ellipsis()
-                                    .child(fetching.saying()),
+                                    .child(told.clone().unwrap_or_else(|| fetching.saying())),
                             )
                         },
                     )),
@@ -1217,7 +1221,7 @@ impl RootView {
                                 .text_color(rgb(fetching_colour(fetching)))
                                 .truncate()
                                 .ends_in_an_ellipsis()
-                                .child(fetching.saying()),
+                                .child(told.unwrap_or_else(|| fetching.saying())),
                         ),
                     ),
                 },

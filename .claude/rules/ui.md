@@ -1932,7 +1932,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   count, a clock time or a *No match* between polls, where several attempts read as a janky
   alternation. `downloads::saying_while` reads *Downloading…* once `Fetched::is_arriving`
   (`LibraryModel::fetched`, off `PollProgress::asking_provider` and `received`), drawn afresh on
-  every `SCAN_POLL` the poll's task notifies, and the sidebar's `summed_up` takes whether any
+  every `SCAN_POLL` the poll's task notifies — in the downloads panel, and on the song's own row as
+  well, a found song (`told_found`) and an album's missing row (`told_want`) reading the same words
+  rather than *Looking it up…* to the end — and the sidebar's `summed_up` takes whether any
   download is arriving and says one of the two with *· N left* beside it
   (`a_download_says_it_is_looking_the_song_up_until_bytes_arrive_and_downloading_after`,
   `the_sidebar_says_looking_it_up_or_downloading_and_how_many_songs_are_left`). Only an ending
