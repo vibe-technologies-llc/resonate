@@ -2111,6 +2111,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     first and drops a MusicBrainz answer naming the same recording or the same folded title and credit
     (`songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`).
     `restate_what_was_found` builds `shown`, what `found()` answers and the rows count, from both.
+    Albums are the same shape: `Library::albums_kept_for` rides in the load beside the songs
+    (`kept_albums`), and `albums_kept_before_the_rest` puts them ahead of `find_albums`' answer into
+    `albums_shown`, what `albums_found()` answers while the box holds the text either was read for
+    (`albums_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`).
   A search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in
   the load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
   nothing else matched, as a `search_instead`.

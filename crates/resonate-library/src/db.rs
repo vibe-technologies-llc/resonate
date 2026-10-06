@@ -431,6 +431,18 @@ const UNHELD_IN_ORDER: &str =
                r.title COLLATE NOCASE
       LIMIT ?";
 
+const UNHELD_ALBUMS_KEPT: &str = concat!(
+    "SELECT r.mbid, r.title, ar.name, r.kind, r.first_released
+       FROM artist_releases r
+       JOIN artists ar ON ar.id = r.artist_id
+      WHERE r.kind IN (?, ?) AND ",
+    unheld_by_any_album!(),
+    " AND "
+);
+
+const UNHELD_ALBUMS_KEPT_IN_ORDER: &str =
+    " ORDER BY r.first_released IS NULL, r.first_released, r.title COLLATE NOCASE, r.mbid";
+
 const UNHELD_COUNTED: &str = concat!(
     "SELECT count(*) FROM artist_releases r JOIN artists ar ON ar.id = r.artist_id WHERE ",
     unheld_by_any_album!()
@@ -3651,6 +3663,38 @@ impl Library {
         let read = store::to_nanos(now);
         self.inner
             .write(|transaction| songs::refused(transaction, group, read))
+    }
+
+    pub fn albums_kept_for(&self, text: &str) -> Result<Vec<AlbumFound>> {
+        let words = elsewhere::folded_words_asked(text);
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sought = vec!["instr(r.folded || ' ' || ar.key, ?) > 0"; words.len()].join(" AND ");
+        let sql = format!("{UNHELD_ALBUMS_KEPT}{sought}{UNHELD_ALBUMS_KEPT_IN_ORDER}");
+        let binds: Vec<Value> = elsewhere::ALBUM_KINDS
+            .into_iter()
+            .map(|kind| Value::Text(kind.to_owned()))
+            .chain(words.into_iter().map(Value::Text))
+            .collect();
+
+        let kept = self.inner.read(|connection| {
+            rows(connection, &sql, binds, |row| {
+                let group: String = row.get(0)?;
+                let (title, artist, kind, first_released) =
+                    (row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?);
+                Ok(Mbid::new(&group)
+                    .map_err(Error::from)
+                    .map(|group| AlbumFound {
+                        group,
+                        title,
+                        artist,
+                        kind,
+                        first_released,
+                    }))
+            })
+        })?;
+        Ok(elsewhere::albums_kept_named_by(kept, text))
     }
 
     pub fn songs_kept_for(&self, text: &str) -> Result<Vec<Found>> {

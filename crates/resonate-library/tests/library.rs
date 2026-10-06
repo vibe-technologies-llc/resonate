@@ -11440,6 +11440,46 @@ fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_ask
 }
 
 #[test]
+fn the_albums_of_a_library_artist_not_held_answer_a_search_without_asking() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &fake, false)?;
+
+    let kept = |text| -> Result<Vec<(Mbid, String, String)>> {
+        Ok(library
+            .albums_kept_for(text)?
+            .into_iter()
+            .map(|album| (album.group, album.title, album.artist))
+            .collect())
+    };
+
+    assert_eq!(
+        kept("orbit")?,
+        [
+            (
+                mbid(HOURS_GROUP),
+                "Hours".to_owned(),
+                "The Orbiters".to_owned()
+            ),
+            (
+                mbid(SCORE_GROUP),
+                "The Orbit".to_owned(),
+                "The Orbiters".to_owned()
+            ),
+        ],
+        "an artist's word answers each album and EP of theirs nobody holds"
+    );
+    assert_eq!(kept("orbiters hours")?.len(), 1);
+    assert!(kept("orbits")?.is_empty(), "a held album was offered");
+    assert!(
+        kept("tropez")?.is_empty(),
+        "a single was offered as an album"
+    );
+    assert!(kept("year:1996")?.is_empty(), "a term was read as a word");
+    Ok(())
+}
+
+#[test]
 fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake =

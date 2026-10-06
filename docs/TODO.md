@@ -48,9 +48,6 @@ else is open to be done.
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- The albums a search finds beyond the library come from MusicBrainz alone: a library artist's
-  releases not held, learnt in the lookup pass, answer a search for their songs offline and none for
-  their albums
 - The songs of an artist's releases not held are read only when the lookup pass reaches them, so an
   artist page opened before then lists the albums and none of their songs, and a large library's
   first pass runs on for an hour or more reading them, one release group a second

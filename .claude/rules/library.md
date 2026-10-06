@@ -2425,9 +2425,15 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `ALBUMS_FOUND_ELSEWHERE_AT_MOST` (12), dropping one the catalog holds by `albums.release_group` or by
   folded title under an artist of the same key (an album found elsewhere and landed is not held)
   (`an_album_the_words_name_is_offered_unless_the_catalog_holds_it`). Opening or wanting one is
-  `open_album_uncovered` and `want_album`, which read the group's songs themselves. Nothing offline
-  answers it: the lookup pass learns the songs of a library artist's unheld releases, not a search for
-  their albums.
+  `open_album_uncovered` and `want_album`, which read the group's songs themselves. **What the lookup
+  kept answers first, offline**: `Library::albums_kept_for` reads the albums and EPs of library
+  artists' discographies held by no album (`artist_releases` under `unheld_by_any_album!`, an
+  `instr` per folded word over the release's `folded` and the artist's key narrowing in SQL), and
+  `elsewhere::albums_kept_named_by` keeps those every folded word of which begins a word of the title
+  or the artist's name, once per folded title and name, earliest first, up to
+  `ALBUMS_FOUND_ELSEWHERE_AT_MOST`; the window lists them ahead of what MusicBrainz answers, dropping
+  an answer of the same group or folded title and name
+  (`the_albums_of_a_library_artist_not_held_answer_a_search_without_asking`).
   **An artist the words name is found the same way, off the answer already in hand.**
   `elsewhere::artists_named_by` reads the credits of the matches `find_songs` returned: a credit
   carrying a MusicBrainz id whose folded name has a word begun by every word typed

@@ -13,7 +13,7 @@ pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
 
 pub const ALBUMS_FOUND_ELSEWHERE_AT_MOST: usize = 12;
 
-const ALBUM_KINDS: [&str; 2] = [AN_ALBUM, AN_EP];
+pub(crate) const ALBUM_KINDS: [&str; 2] = [AN_ALBUM, AN_EP];
 
 pub const ARTISTS_FOUND_ELSEWHERE_AT_MOST: usize = 4;
 
@@ -80,7 +80,7 @@ pub struct ArtistFound {
     pub name: String,
 }
 
-fn folded_words_asked(text: &str) -> Vec<String> {
+pub(crate) fn folded_words_asked(text: &str) -> Vec<String> {
     words_asked(text)
         .iter()
         .flat_map(|word| word.split_whitespace())
@@ -110,19 +110,39 @@ impl AlbumMatch {
     }
 
     fn answers(&self, words: &[String]) -> bool {
-        let named: Vec<String> = std::iter::once(self.title.clone())
-            .chain(std::iter::once(self.credited_as()))
-            .flat_map(|text| {
-                text.split_whitespace()
-                    .map(store::folded_letters)
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-
-        words
-            .iter()
-            .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+        answered_by_name(&self.title, &self.credited_as(), words)
     }
+}
+
+fn answered_by_name(title: &str, artist: &str, words: &[String]) -> bool {
+    let named: Vec<String> = [title, artist]
+        .into_iter()
+        .flat_map(str::split_whitespace)
+        .map(store::folded_letters)
+        .collect();
+
+    words
+        .iter()
+        .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+}
+
+pub(crate) fn albums_kept_named_by(kept: Vec<AlbumFound>, text: &str) -> Vec<AlbumFound> {
+    let words = folded_words_asked(text);
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    let mut seen = AHashSet::new();
+    kept.into_iter()
+        .filter(|album| answered_by_name(&album.title, &album.artist, &words))
+        .filter(|album| {
+            seen.insert((
+                store::folded_letters(&album.title),
+                store::folded_letters(&album.artist),
+            ))
+        })
+        .take(ALBUMS_FOUND_ELSEWHERE_AT_MOST)
+        .collect()
 }
 
 pub(crate) fn albums_named_by(matches: &[AlbumMatch], text: &str) -> Vec<AlbumFound> {
