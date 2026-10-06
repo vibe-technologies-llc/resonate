@@ -183,14 +183,38 @@ struct Shelves {
     pinned: Vec<NamedPlaylist>,
     held: Option<Playlist>,
     entries: Vec<PlaylistEntry>,
-    wanted: AHashMap<ReleaseTrackId, WantId>,
-    standings: AHashMap<WantId, WantStanding>,
-    unfinished: Vec<Unfinished>,
-    next_try: Option<SystemTime>,
+    wants: Option<WantsRead>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
     missing: Missing,
     dismissed: Missing,
+}
+
+struct WantsRead {
+    wanted: AHashMap<ReleaseTrackId, WantId>,
+    standings: AHashMap<WantId, WantStanding>,
+    unfinished: Vec<Unfinished>,
+    next_try: Option<SystemTime>,
+}
+
+impl WantsRead {
+    fn of(wants: &[resonate_library::Want]) -> Self {
+        Self {
+            wanted: wants
+                .iter()
+                .map(|want| (want.release_track, want.id))
+                .collect(),
+            standings: wants
+                .iter()
+                .map(|want| (want.id, WantStanding::of(want)))
+                .collect(),
+            unfinished: wants.iter().rev().filter_map(Unfinished::of).collect(),
+            next_try: wants
+                .iter()
+                .filter_map(resonate_library::Want::due_at)
+                .min(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -289,8 +313,13 @@ impl Wanted {
             (Self::Everything, _) | (_, Self::Everything) => Self::Everything,
             (Self::ThePage, Self::ThePage) => Self::ThePage,
             (Self::ThePlaylists, Self::ThePlaylists) => Self::ThePlaylists,
-            _ => Self::TheSearch,
+            (Self::TheSearch | Self::ThePage, Self::TheSearch | Self::ThePage) => Self::TheSearch,
+            (Self::ThePlaylists, _) | (_, Self::ThePlaylists) => Self::Everything,
         }
+    }
+
+    const fn reads_the_wants(self) -> bool {
+        matches!(self, Self::Everything | Self::ThePlaylists)
     }
 
     const fn reads_the_listing(self) -> bool {
@@ -3930,14 +3959,20 @@ impl LibraryModel {
         }
     }
 
-    fn take_the_shelves(&mut self, shelves: Shelves) {
-        self.wanted = shelves.wanted;
-        self.next_try = shelves.next_try;
+    fn take_the_wants(&mut self, wants: WantsRead) {
+        self.wanted = wants.wanted;
+        self.next_try = wants.next_try;
         if !mem::replace(&mut self.downloads_restored, true) {
-            self.downloads.restored(shelves.unfinished);
+            self.downloads.restored(wants.unfinished);
         }
-        self.downloads.followed(&shelves.standings);
-        self.standings = shelves.standings;
+        self.downloads.followed(&wants.standings);
+        self.standings = wants.standings;
+    }
+
+    fn take_the_shelves(&mut self, shelves: Shelves) {
+        if let Some(wants) = shelves.wants {
+            self.take_the_wants(wants);
+        }
         if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
             self.missing_track_rows = missing_track_rows(
                 self.missing_tracks
@@ -5733,7 +5768,12 @@ fn load(library: &Library, mut asked: Asked, wanted: Wanted) -> resonate_library
         _ => (None, None),
     };
     let shelves = match wanted.reads_the_shelves() {
-        true => Some(shelves(library, &asked, narrowing)?),
+        true => Some(shelves(
+            library,
+            &asked,
+            narrowing,
+            wanted.reads_the_wants(),
+        )?),
         false => None,
     };
 
@@ -5749,6 +5789,7 @@ fn shelves(
     library: &Library,
     asked: &Asked,
     narrowing: Option<&str>,
+    reads_the_wants: bool,
 ) -> resonate_library::Result<Shelves> {
     let (held, entries) = match asked.opened {
         Some(opened) => (
@@ -5757,16 +5798,9 @@ fn shelves(
         ),
         None => (None, Vec::new()),
     };
-    let wants = library.wants()?;
-    let wanted = wants
-        .iter()
-        .map(|want| (want.release_track, want.id))
-        .collect();
-    let standings = wants
-        .iter()
-        .map(|want| (want.id, WantStanding::of(want)))
-        .collect();
-    let unfinished = wants.iter().rev().filter_map(Unfinished::of).collect();
+    let wants = reads_the_wants
+        .then(|| library.wants().map(|wants| WantsRead::of(&wants)))
+        .transpose()?;
 
     let playlists = library.playlists(asked.order, asked.reading, narrowing)?;
     let pictured = pictures_of(library, playlists.iter().chain(held.as_ref()))?;
@@ -5778,13 +5812,7 @@ fn shelves(
         pinned: library.pinned_playlists(PINNED_IN_THE_SIDEBAR)?,
         held,
         entries,
-        wanted,
-        standings,
-        unfinished,
-        next_try: wants
-            .iter()
-            .filter_map(resonate_library::Want::due_at)
-            .min(),
+        wants,
         missing_tracks: library.missing_tracks(narrowing, Some(MISSING_AT_MOST))?,
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,
         missing: library.missing_counted(narrowing)?,
@@ -6291,6 +6319,7 @@ mod tests {
                     assert!(!part.reads_the_listing() || both.reads_the_listing());
                     assert!(!part.reads_what_stands() || both.reads_what_stands());
                     assert!(!part.reads_the_shelves() || both.reads_the_shelves());
+                    assert!(!part.reads_the_wants() || both.reads_the_wants());
                     assert!(
                         part != Wanted::ThePage
                             || both.reads_the_listing()
@@ -6302,6 +6331,7 @@ mod tests {
         }
         assert_eq!(Wanted::ThePage.with(Wanted::ThePage), Wanted::ThePage);
         assert!(!Wanted::TheSearch.reads_what_stands());
+        assert!(!Wanted::TheSearch.reads_the_wants());
     }
 
     #[test]

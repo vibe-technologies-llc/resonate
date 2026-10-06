@@ -967,9 +967,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   listened, the days, the suggestions and the roots (`Standing`) — and the shelves: the playlists, the
   wants and the missing (`Shelves`). `TheSearch` reads the browse panes and the shelves and leaves the
   standing — a keystroke, a selection, a sort and a favourite, none of which move it, so a search no
-  longer asks for the week's statistics each time. `ThePage` reads the four lists `reach` bounds —
+  longer asks for the week's statistics each time — and the wants too (`reads_the_wants`, a
+  `WantsRead` riding in `Shelves` as an `Option`), which no keystroke moves and which read every want
+  and its links on each settled key. `ThePage` reads the four lists `reach` bounds —
   albums, artists, tracks, the scoped tracks (`Paged`) — alone, for `reach_further`, their counts and
-  every other pane standing still. `ThePlaylists` reads the shelves alone. Every gesture behind
+  every other pane standing still. `ThePlaylists` reads the shelves alone, wants included. A read merged
+  with a `ThePlaylists` one is `Everything`, the one shape reading both the listing and the wants. Every gesture behind
   `LibraryModel::edit` writes to `playlists`, `playlist_entries` or `playlist_queries` and nothing
   else, so an edit, a listing-order change and opening a playlist take that; a scan, a counted play,
   a window of time and forgetting a root take the whole. `Loaded` carries each part as an `Option`, so
