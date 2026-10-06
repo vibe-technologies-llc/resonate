@@ -840,9 +840,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   not counted against one — `Library::track_played` answers `None` rather than refusing where a
   non-local location has no row — **but the play is kept against the path.** `unheld_listens` holds
   the path, the span's start, the moment and how long it was heard, and `history::credit_the_unheld`
-  runs after the prune of every scan a row arrived in: a play whose path and start now name a row becomes a `listens` row
-  stamped when heard, the row's `plays` and `played` follow, and the unheld play goes, so files played
-  before their folder was ever scanned are counted the moment it is
+  runs after the prune of every scan a row arrived in: a play whose path and start now name a row
+  becomes a `listens` row stamped when heard, the row's `plays` and `played` follow, and the unheld
+  play goes, so files played before their folder was ever scanned are counted the moment it is
   (`a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does`).
   A `Counted` carries a `Listen` — `Held` naming a `listens` row, `Unheld` the rowid of an
   `unheld_listens` one — and `Library::listened` spends either, so a settle keeps what it heard: the
