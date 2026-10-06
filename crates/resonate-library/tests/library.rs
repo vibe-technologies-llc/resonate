@@ -9221,6 +9221,15 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
             .collect::<Vec<_>>(),
         vec![Service::Spotify]
     );
+    let standing = library.wants_as_they_stand()?;
+    assert_eq!(
+        standing.iter().map(|want| want.id).collect::<Vec<_>>(),
+        [want]
+    );
+    assert!(
+        standing[0].links.is_empty(),
+        "the wants read for how they stand read every link too"
+    );
 
     assert!(library.unwant(want)?);
     assert!(!library.unwant(want)?);

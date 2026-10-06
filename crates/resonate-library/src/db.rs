@@ -343,18 +343,34 @@ const ALBUM_DISCS: &str = "SELECT album_id, max(disc_number) FROM tracks
       WHERE album_id IS NOT NULL AND disc_number IS NOT NULL
       GROUP BY album_id";
 
-const WANTS: &str = concat!(
-    "SELECT w.id, w.release_track_id, rt.album_id, ",
-    album_title!(),
-    ", rt.title, coalesce(rt.artist, ar.name),
-            w.wanted, w.tried, w.offered, w.misses,
-            rt.recording_mbid, rt.track_mbid, a.mbid, rt.isrc, rt.length_ms, rt.disc, rt.position,
-            rt.track_id
-       FROM wants w
-       JOIN release_tracks rt ON rt.id = w.release_track_id
-       JOIN albums a ON a.id = rt.album_id
-       LEFT JOIN artists ar ON ar.id = a.artist_id
-      ORDER BY w.wanted DESC, w.id DESC"
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Linking {
+    WithTheirLinks,
+    Without,
+}
+
+macro_rules! wants_selected {
+    () => {
+        concat!(
+            "SELECT w.id, w.release_track_id, rt.album_id, ",
+            album_title!(),
+            ", rt.title, coalesce(rt.artist, ar.name),
+                    w.wanted, w.tried, w.offered, w.misses,
+                    rt.recording_mbid, rt.track_mbid, a.mbid, rt.isrc, rt.length_ms, rt.disc,
+                    rt.position, rt.track_id
+               FROM wants w
+               JOIN release_tracks rt ON rt.id = w.release_track_id
+               JOIN albums a ON a.id = rt.album_id
+               LEFT JOIN artists ar ON ar.id = a.artist_id"
+        )
+    };
+}
+
+const WANTS: &str = concat!(wants_selected!(), " ORDER BY w.wanted DESC, w.id DESC");
+
+const WANTS_UNHELD: &str = concat!(
+    wants_selected!(),
+    " WHERE rt.track_id IS NULL ORDER BY w.wanted DESC, w.id DESC"
 );
 
 const REMEMBER_THE_DELIVERY_FORGOTTEN: &str =
@@ -4400,12 +4416,29 @@ impl Library {
     }
 
     pub fn wants(&self) -> Result<Vec<Want>> {
+        self.wants_read(WANTS, Linking::WithTheirLinks)
+    }
+
+    pub fn wants_as_they_stand(&self) -> Result<Vec<Want>> {
+        self.wants_read(WANTS, Linking::Without)
+    }
+
+    pub(crate) fn wants_unheld(&self) -> Result<Vec<Want>> {
+        self.wants_read(WANTS_UNHELD, Linking::WithTheirLinks)
+    }
+
+    fn wants_read(&self, sql: &str, linking: Linking) -> Result<Vec<Want>> {
         self.inner.read(|connection| {
-            let held = rows(connection, WANTS, Vec::new(), |row| {
+            let held = rows(connection, sql, Vec::new(), |row| {
                 RawWant::read(row).map(Ok)
             })?;
-            let mut links = grouped_links(connection, LINKS_OF_WANTS, Vec::new())?;
-            let release_links = grouped_links(connection, LINKS_OF_WANTED_RELEASES, Vec::new())?;
+            let (mut links, release_links) = match linking {
+                Linking::WithTheirLinks => (
+                    grouped_links(connection, LINKS_OF_WANTS, Vec::new())?,
+                    grouped_links(connection, LINKS_OF_WANTED_RELEASES, Vec::new())?,
+                ),
+                Linking::Without => (AHashMap::new(), AHashMap::new()),
+            };
 
             held.into_iter()
                 .map(|raw| {

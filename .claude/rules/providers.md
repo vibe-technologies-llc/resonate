@@ -62,7 +62,11 @@ A provider does none of this, so none of it is written twice.
   `RETRY_WAITS` after the last try for the miss it is on, `POLL_AGAIN_AFTER` after an offer the
   catalog does not hold yet, and `None` once misses reach `TRIES_BEFORE_GIVING_UP`
   (`Want::gave_up`). `want_in` (`library.md`) puts the count back and `ASKING_EVERY_WANT` asks a
-  given-up want too (*Poll now*). `Library::next_want_due` is what the window wakes for.
+  given-up want too (*Poll now*). `Library::next_want_due` is what the window wakes for. Each reader
+  reads what it uses: a poll's claims read `wants_unheld` (the held ones never due, and the links a
+  provider is asked by), while `is_a_want_due`, `next_want_due`, `last_tried` and the window's shelves
+  read `wants_as_they_stand`, every want with no links grouped, `Library::wants` being the whole read
+  for the `wants` command.
 - **A want is tried only when every provider answered it.** `Answer::heard_from_every_provider` is
   false where any provider refused, ran late or was passed over; such a want is not stamped and not
   counted `nothing`, so a server that was down or a wrong password is asked again by the next poll

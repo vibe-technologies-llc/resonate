@@ -699,7 +699,7 @@ impl Lanes<'_> {
         queue.read = true;
         queue.pending = self
             .library
-            .wants()?
+            .wants_unheld()?
             .into_iter()
             .filter(|want| !queue.claimed.contains(&want.id) && due(want, self.options, now))
             .collect();
@@ -918,11 +918,18 @@ fn tried(library: &Library, want: WantId, offered: Option<&MediaLocation>) -> Re
 impl Library {
     pub fn is_a_want_due(&self, options: PollOptions) -> Result<bool> {
         let now = SystemTime::now();
-        Ok(self.wants()?.iter().any(|want| due(want, options, now)))
+        Ok(self
+            .wants_as_they_stand()?
+            .iter()
+            .any(|want| due(want, options, now)))
     }
 
     pub fn next_want_due(&self) -> Result<Option<SystemTime>> {
-        Ok(self.wants()?.iter().filter_map(Want::due_at).min())
+        Ok(self
+            .wants_as_they_stand()?
+            .iter()
+            .filter_map(Want::due_at)
+            .min())
     }
 
     pub(crate) fn forgotten_deliveries(&self) -> Result<AHashMap<WantId, Vec<ForgottenDelivery>>> {
@@ -935,7 +942,7 @@ impl Library {
 
     pub fn last_tried(&self) -> Result<Option<SystemTime>> {
         Ok(self
-            .wants()?
+            .wants_as_they_stand()?
             .iter()
             .filter(|want| want.held.is_none())
             .filter_map(|want| want.tried)

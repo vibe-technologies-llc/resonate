@@ -5826,7 +5826,11 @@ fn shelves(
         None => (None, Vec::new()),
     };
     let wants = reads_the_wants
-        .then(|| library.wants().map(|wants| WantsRead::of(&wants)))
+        .then(|| {
+            library
+                .wants_as_they_stand()
+                .map(|wants| WantsRead::of(&wants))
+        })
         .transpose()?;
 
     let playlists = library.playlists(asked.order, asked.reading, narrowing)?;
