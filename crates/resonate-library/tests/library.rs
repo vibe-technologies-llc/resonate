@@ -20438,7 +20438,7 @@ fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> R
 struct WatchesTheWants {
     source: SourceId,
     library: Arc<Library>,
-    held_when_asked: Mutex<Vec<usize>>,
+    held_when_opened: Arc<Mutex<Vec<usize>>>,
 }
 
 impl Provider for WatchesTheWants {
@@ -20447,24 +20447,28 @@ impl Provider for WatchesTheWants {
     }
 
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
-        let held = self
-            .library
-            .wants()
-            .expect("the wants read")
-            .iter()
-            .filter(|want| want.held.is_some())
-            .count();
-        self.held_when_asked.lock().push(held);
+        let library = Arc::clone(&self.library);
+        let held_when_opened = Arc::clone(&self.held_when_opened);
         Ok(Obtained::Found(Delivery::Stream {
             key: "track/55391743".into(),
             extension: Extension::new("wav")?,
-            opening: Opening::ready(std::io::Cursor::new(Wav::new().frames(8_820).build())),
+            opening: Opening::new(move || {
+                let held = library
+                    .wants()
+                    .expect("the wants read")
+                    .iter()
+                    .filter(|want| want.held.is_some())
+                    .count();
+                held_when_opened.lock().push(held);
+                Ok(Opened::Reading(Box::new(io::Cursor::new(
+                    Wav::new().frames(8_820).build(),
+                ))))
+            }),
         }))
     }
 }
 
-#[test]
-fn a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want() -> Result<()> {
+fn two_wants_filed_in_the_music_folder() -> Result<(Tree, Arc<Library>)> {
     let (tree, library) = scanned_orbits()?;
     let library = Arc::new(library);
     let album = only_album(&library)?;
@@ -20481,10 +20485,16 @@ fn a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want() -
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
     }));
+    Ok((tree, library))
+}
+
+#[test]
+fn a_delivery_with_no_vault_is_held_before_the_lane_opens_the_next() -> Result<()> {
+    let (_tree, library) = two_wants_filed_in_the_music_folder()?;
     let provider = Arc::new(WatchesTheWants {
         source: SourceId::new("shop").expect("a nameable source"),
         library: Arc::clone(&library),
-        held_when_asked: Mutex::new(Vec::new()),
+        held_when_opened: Arc::new(Mutex::new(Vec::new())),
     });
 
     let summary = library
@@ -20498,8 +20508,92 @@ fn a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want() -
         .join()?;
 
     assert_eq!(summary.stats.kept, 2);
-    assert_eq!(*provider.held_when_asked.lock(), [0, 1]);
+    assert_eq!(*provider.held_when_opened.lock(), [0, 1]);
     assert!(library.wants()?.iter().all(|want| want.held.is_some()));
+    Ok(())
+}
+
+struct HeldUntilAskedAgain {
+    asked_again: Arc<AtomicBool>,
+    overlapped: Arc<AtomicBool>,
+    bytes: io::Cursor<Vec<u8>>,
+    waited: bool,
+}
+
+impl io::Read for HeldUntilAskedAgain {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        if !self.waited {
+            self.waited = true;
+            let began = Instant::now();
+            while !self.asked_again.load(Ordering::SeqCst)
+                && began.elapsed() < Duration::from_secs(5)
+            {
+                thread::sleep(Duration::from_millis(10));
+            }
+            self.overlapped
+                .store(self.asked_again.load(Ordering::SeqCst), Ordering::SeqCst);
+        }
+        self.bytes.read(into)
+    }
+}
+
+struct OffersOnceThenWatches {
+    source: SourceId,
+    asked: AtomicUsize,
+    asked_again: Arc<AtomicBool>,
+    overlapped: Arc<AtomicBool>,
+}
+
+impl Provider for OffersOnceThenWatches {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        if self.asked.fetch_add(1, Ordering::SeqCst) > 0 {
+            self.asked_again.store(true, Ordering::SeqCst);
+            return Ok(Obtained::Nothing);
+        }
+        Ok(Obtained::Found(Delivery::Stream {
+            key: "track/55391743".into(),
+            extension: Extension::new("wav")?,
+            opening: Opening::ready(HeldUntilAskedAgain {
+                asked_again: Arc::clone(&self.asked_again),
+                overlapped: Arc::clone(&self.overlapped),
+                bytes: io::Cursor::new(Wav::new().frames(8_820).build()),
+                waited: false,
+            }),
+        }))
+    }
+}
+
+#[test]
+fn a_lane_asks_about_its_next_want_while_the_last_delivery_is_kept() -> Result<()> {
+    let (_tree, library) = two_wants_filed_in_the_music_folder()?;
+    let provider = Arc::new(OffersOnceThenWatches {
+        source: SourceId::new("shop").expect("a nameable source"),
+        asked: AtomicUsize::new(0),
+        asked_again: Arc::new(AtomicBool::new(false)),
+        overlapped: Arc::new(AtomicBool::new(false)),
+    });
+
+    let summary = library
+        .poll(
+            Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
+            PollOptions {
+                lanes: NonZeroUsize::MIN,
+                ..PollOptions::default()
+            },
+        )?
+        .join()?;
+
+    assert!(
+        provider.overlapped.load(Ordering::SeqCst),
+        "the lane waited for the keep before asking about the next want"
+    );
+    assert_eq!(summary.stats.asked, 2);
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(summary.stats.nothing, 1);
     Ok(())
 }
 

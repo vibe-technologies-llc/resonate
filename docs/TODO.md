@@ -7,10 +7,6 @@ Everything under a `Later:` heading is a nice-to-have no listener is waiting on.
 or a format) and sits at the end of its category; it is not worked until that moves. Everything
 else is open to be done.
 
-## Next
-- Keep a delivery on a keeper thread, so a lane asks about its next want while the last one is staged,
-  decoded, encoded and read back; today a long keep holds a lane the network could be using
-
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the

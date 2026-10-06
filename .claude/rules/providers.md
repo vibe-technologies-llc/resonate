@@ -54,8 +54,18 @@ A provider does none of this, so none of it is written twice.
 
 - **Wants are asked side by side, `PollOptions::lanes` (three) at a time.** The first want is asked
   alone, so a provider that is away or refuses a login is met once and noted in the shared `Away`
-  before the other lanes begin; each lane then claims the next due want, ask and landing together.
-  Idle lanes wait for the pool to drain. A want marked while a poll runs is picked up by that poll:
+  before the other lanes begin; each lane then claims the next due want and asks about it.
+  **A lane hands what it was offered to a keeper of its own and goes on to the next want**: each lane
+  starts a `resonate-keeper` thread and passes it a `Keep` (the claimed want, the rounds asked so far
+  and the offers) over a channel of none, so the keeper opens, downloads, keeps or files and reads back
+  one delivery while its lane searches for the next, and a lane offered a second while the first is
+  still kept waits for its keeper rather than queueing deliveries
+  (`a_lane_asks_about_its_next_want_while_the_last_delivery_is_kept`). The keeper owns the want to the
+  end: it falls through to the offers held back and asks the providers again after a refused offer, so
+  a lane may have two wants asked at once, its own and its keeper's. A want stays claimed until the
+  keeper settles it (`Claimed` releases it on drop, a panicking keeper included, which fails the poll
+  as `Error::Stopped`); a lane whose keeper did not start keeps its own offers. Idle lanes wait for the
+  pool to drain. A want marked while a poll runs is picked up by that poll:
   `PollProgress::wants_changed` makes the next claim read the wants again (newest first) and answers
   false once the poll has closed or been cancelled, which the window reads as *owe a poll*. **Every way
   out of a poll closes it**: `supply::start`'s thread runs `PollProgress::close` after `run` whatever it
@@ -159,8 +169,8 @@ A provider does none of this, so none of it is written twice.
   `Library::claim_album_keys` names the album by the keys the scan will compute, before any scan reads
   it. As each filing is noted, the lane scans the roots it landed under (incrementally) and
   `Library::pair_what_landed` pairs each unheld want with the rooted row at the path it was offered,
-  so the row is an ordinary library track, never a vault object, and is playable before the poll asks
-  about the next want (`a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want`).
+  so the row is an ordinary library track, never a vault object, and is playable before the lane's
+  keeper opens the next delivery (`a_delivery_with_no_vault_is_held_before_the_lane_opens_the_next`).
   A filing whose scan cannot start, another lane or pass walking the tree, waits for the scan the
   poll runs as it ends (pairing runs as a poll starts too, for a scan another pass refused).
 - **Turning what was kept into a track row.** `Library::note_delivered` writes the `vault_objects`

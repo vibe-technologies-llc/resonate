@@ -9,7 +9,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+        mpsc::{self, Receiver, RecvTimeoutError, SendError, SyncSender},
     },
     thread,
     time::{Duration, Instant, SystemTime},
@@ -750,7 +750,45 @@ enum Flow {
     Stop,
 }
 
-impl Lanes<'_> {
+struct Claimed<'l, 'a> {
+    lanes: &'l Lanes<'a>,
+    want: Box<Want>,
+    forgotten: Arc<Forgotten>,
+}
+
+impl Drop for Claimed<'_, '_> {
+    fn drop(&mut self) {
+        self.lanes.progress.done_asking_about(self.want.id);
+        self.lanes.released();
+    }
+}
+
+struct Rounds {
+    passing: Vec<SourceId>,
+    every_provider_heard: bool,
+}
+
+impl Rounds {
+    const fn first() -> Self {
+        Self {
+            passing: Vec::new(),
+            every_provider_heard: true,
+        }
+    }
+}
+
+enum Asked {
+    Settled(Flow),
+    Offered(Vec<Delivered>),
+}
+
+struct Keep<'l, 'a> {
+    claimed: Claimed<'l, 'a>,
+    rounds: Rounds,
+    offers: Vec<Delivered>,
+}
+
+impl<'a> Lanes<'a> {
     fn refill(&self, queue: &mut Queue) -> Result<()> {
         let now = SystemTime::now();
         queue.forgotten = Arc::new(self.library.forgotten_deliveries()?);
@@ -787,6 +825,16 @@ impl Lanes<'_> {
         }
     }
 
+    fn claimed<'l>(&'l self, want: Box<Want>, forgotten: Arc<Forgotten>) -> Claimed<'l, 'a> {
+        self.progress.asked.fetch_add(1, Ordering::Relaxed);
+        self.progress.asks_about(want.id);
+        Claimed {
+            lanes: self,
+            want,
+            forgotten,
+        }
+    }
+
     fn released(&self) {
         self.queue.lock().busy -= 1;
     }
@@ -803,6 +851,29 @@ impl Lanes<'_> {
     }
 
     fn lane(&self, leads: bool) {
+        let (handing, handed) = mpsc::sync_channel::<Keep<'_, 'a>>(0);
+        thread::scope(|scope| {
+            let keeper = thread::Builder::new()
+                .name("resonate-keeper".to_owned())
+                .spawn_scoped(scope, move || self.keep_what_is_handed(&handed))
+                .map_err(|error| {
+                    tracing::warn!(%error, "a poll lane's keeper did not start, so the lane keeps what it is offered itself");
+                })
+                .ok();
+            let handing = keeper.is_some().then_some(handing);
+            self.ask_until_done(leads, handing.as_ref());
+            drop(handing);
+            if let Some(keeper) = keeper
+                && keeper.join().is_err()
+            {
+                self.fail(Error::Stopped {
+                    pass: PassKind::Poll,
+                });
+            }
+        });
+    }
+
+    fn ask_until_done<'l>(&'l self, leads: bool, keeper: Option<&SyncSender<Keep<'l, 'a>>>) {
         loop {
             if self.progress.is_cancelled() || self.has_failed() || self.progress.is_closed() {
                 return;
@@ -813,9 +884,27 @@ impl Lanes<'_> {
             }
             match self.claim() {
                 Ok(Claim::Want(want, forgotten)) => {
-                    let flow = self.ask_and_land(&want, &forgotten);
-                    self.progress.done_asking_about(want.id);
-                    self.released();
+                    let claimed = self.claimed(want, forgotten);
+                    let mut rounds = Rounds::first();
+                    let flow = match self.asked(&claimed, &mut rounds) {
+                        Ok(Asked::Offered(offers)) => {
+                            let keep = Keep {
+                                claimed,
+                                rounds,
+                                offers,
+                            };
+                            let unhanded = match keeper {
+                                Some(keeper) => keeper.send(keep).err().map(|SendError(keep)| keep),
+                                None => Some(keep),
+                            };
+                            match unhanded {
+                                Some(keep) => self.kept(keep),
+                                None => continue,
+                            }
+                        }
+                        Ok(Asked::Settled(flow)) => Ok(flow),
+                        Err(error) => Err(error),
+                    };
                     match flow {
                         Ok(Flow::Onward) => {}
                         Ok(Flow::Stop) => return,
@@ -831,6 +920,14 @@ impl Lanes<'_> {
                     self.fail(error);
                     return;
                 }
+            }
+        }
+    }
+
+    fn keep_what_is_handed(&self, handed: &Receiver<Keep<'_, 'a>>) {
+        for keep in handed {
+            if let Err(error) = self.kept(keep) {
+                self.fail(error);
             }
         }
     }
@@ -855,70 +952,86 @@ impl Lanes<'_> {
         }
     }
 
-    fn ask_and_land(&self, want: &Want, forgotten: &Forgotten) -> Result<Flow> {
+    fn asked(&self, claimed: &Claimed<'_, 'a>, rounds: &mut Rounds) -> Result<Asked> {
         let progress = self.progress;
-        progress.asked.fetch_add(1, Ordering::Relaxed);
-        progress.asks_about(want.id);
+        let want = &claimed.want;
         let cancelled = || progress.is_cancelled();
         let turning_to = |provider: &SourceId| progress.turns_to(want.id, Some(provider));
-        let forgotten_for_it = forgotten.get(&want.id).map_or(&[][..], Vec::as_slice);
+        let forgotten_for_it = claimed
+            .forgotten
+            .get(&want.id)
+            .map_or(&[][..], Vec::as_slice);
         let declined = |delivered: &Delivered| {
             forgotten_for_it
                 .iter()
                 .any(|forgotten| forgotten.declines(delivered))
         };
-        let mut passing: Vec<SourceId> = Vec::new();
-        let mut every_provider_heard = true;
+        let mut away = self.away.lock().clone();
+        let answer = self.providers.first(
+            &want.identity(),
+            &Asking {
+                within: self.options.answers_within,
+                cancelled: &cancelled,
+                turning_to: &turning_to,
+                declined: &declined,
+                passing: &rounds.passing,
+                apart: TURNED_TO_APART,
+                grace: WAITED_ON_AFTER_AN_OFFER,
+            },
+            &mut away,
+        );
+        self.away.lock().join(&away);
+        self.first_answered.store(true, Ordering::Release);
+        progress
+            .refused
+            .fetch_add(answer.refused, Ordering::Relaxed);
+        progress.late.fetch_add(answer.late, Ordering::Relaxed);
+        rounds.every_provider_heard &= answer.heard_from_every_provider();
+        if answer.delivered.is_none() {
+            progress.turns_to(want.id, None);
+        }
+        if answer.cancelled {
+            return Ok(Asked::Settled(Flow::Stop));
+        }
+        let Some(delivered) = answer.delivered else {
+            if rounds.every_provider_heard {
+                progress.nothing.fetch_add(1, Ordering::Relaxed);
+                tried(self.library, want.id, None)?;
+            } else {
+                tracing::debug!(
+                    want = %want.id,
+                    refused = answer.refused,
+                    late = answer.late,
+                    passed_over = answer.passed_over,
+                    narrowed = answer.narrowed,
+                    "not every provider answered, so the want stays due"
+                );
+            }
+            return Ok(Asked::Settled(Flow::Onward));
+        };
+        rounds.passing.extend(answer.heard);
+
+        Ok(Asked::Offered(
+            std::iter::once(delivered).chain(answer.held_back).collect(),
+        ))
+    }
+
+    fn kept(&self, keep: Keep<'_, 'a>) -> Result<Flow> {
+        let Keep {
+            claimed,
+            mut rounds,
+            mut offers,
+        } = keep;
         loop {
-            let mut away = self.away.lock().clone();
-            let answer = self.providers.first(
-                &want.identity(),
-                &Asking {
-                    within: self.options.answers_within,
-                    cancelled: &cancelled,
-                    turning_to: &turning_to,
-                    declined: &declined,
-                    passing: &passing,
-                    apart: TURNED_TO_APART,
-                    grace: WAITED_ON_AFTER_AN_OFFER,
-                },
-                &mut away,
-            );
-            self.away.lock().join(&away);
-            self.first_answered.store(true, Ordering::Release);
-            progress
-                .refused
-                .fetch_add(answer.refused, Ordering::Relaxed);
-            progress.late.fetch_add(answer.late, Ordering::Relaxed);
-            every_provider_heard &= answer.heard_from_every_provider();
-            if answer.delivered.is_none() {
-                progress.turns_to(want.id, None);
-            }
-            if answer.cancelled {
-                return Ok(Flow::Stop);
-            }
-            let Some(delivered) = answer.delivered else {
-                if every_provider_heard {
-                    progress.nothing.fetch_add(1, Ordering::Relaxed);
-                    tried(self.library, want.id, None)?;
-                } else {
-                    tracing::debug!(
-                        want = %want.id,
-                        refused = answer.refused,
-                        late = answer.late,
-                        passed_over = answer.passed_over,
-                        narrowed = answer.narrowed,
-                        "not every provider answered, so the want stays due"
-                    );
-                }
-                return Ok(Flow::Onward);
-            };
-            passing.extend(answer.heard);
-            for delivered in std::iter::once(delivered).chain(answer.held_back) {
-                match self.offer_landed(want, delivered)? {
+            for delivered in offers {
+                match self.offer_landed(&claimed.want, delivered)? {
                     Offer::Settled(flow) => return Ok(flow),
-                    Offer::FellThrough { heard } => every_provider_heard &= heard,
+                    Offer::FellThrough { heard } => rounds.every_provider_heard &= heard,
                 }
+            }
+            match self.asked(&claimed, &mut rounds)? {
+                Asked::Settled(flow) => return Ok(flow),
+                Asked::Offered(again) => offers = again,
             }
         }
     }
