@@ -1,17 +1,18 @@
 use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
-    AlbumMatch, ArtistMatch, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch, ByArtist, Credit,
-    Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Isrc, Issued, LifeSpan, Link,
-    LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, SongsAsked, Wording,
+    AlbumMatch, ArtistMatch, ArtistPressings, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch,
+    ByArtist, Credit, Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Isrc, Issued,
+    LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
+    RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, SongsAsked,
+    Wording,
 };
 use serde::Deserialize;
 
 use crate::{
     Client, Error, Host, Result,
     lrclib::folded,
-    query::{Params, lucene_quoted},
+    query::{Params, escape_query, lucene_quoted},
 };
 
 const FOUND_AT_MOST: u32 = 5;
@@ -30,6 +31,7 @@ const ISRC_INCLUDES: &str = "artist-credits+releases+isrcs+media";
 const RELEASE_GROUP_INCLUDES: &str = "artist-credits+releases+media+url-rels";
 const PRESSING_INCLUDES: &str = "recordings+artist-credits+media+release-groups+isrcs";
 const PRESSINGS_READ: u32 = 25;
+const ARTIST_PRESSINGS_PAGE: u32 = 100;
 const OFFICIAL: &str = "official";
 const LENGTH_MAY_DIFFER_BY_MS: u64 = 10_000;
 
@@ -364,6 +366,32 @@ struct PressingsDoc {
 }
 
 #[derive(Deserialize)]
+struct ArtistPressingsDoc {
+    #[serde(default, rename = "release-count")]
+    release_count: u32,
+    #[serde(default, rename = "release-offset")]
+    release_offset: u32,
+    #[serde(default)]
+    releases: Vec<ReleaseDoc>,
+}
+
+impl ArtistPressingsDoc {
+    fn into_pressings(self) -> ArtistPressings {
+        let read = u32::try_from(self.releases.len()).unwrap_or(u32::MAX);
+
+        ArtistPressings {
+            pressings: self
+                .releases
+                .into_iter()
+                .filter_map(|pressing| pressing.into_release(LookupOp::ReleasesOfArtist).ok())
+                .collect(),
+            credited: self.release_count,
+            read_to: self.release_offset.saturating_add(read),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct AreaDoc {
     #[serde(default)]
     name: Option<String>,
@@ -575,6 +603,29 @@ pub(crate) fn releases_of_group(client: &Client, group: &Mbid) -> Result<Vec<Rel
         .into_iter()
         .filter_map(|pressing| pressing.into_release(op).ok())
         .collect())
+}
+
+pub(crate) fn releases_of_artist(
+    client: &Client,
+    artist: &Mbid,
+    from: u32,
+) -> Result<ArtistPressings> {
+    Ok(client
+        .json::<ArtistPressingsDoc>(
+            Host::MusicBrainz,
+            LookupOp::ReleasesOfArtist,
+            &artist_pressings_path(artist, from),
+        )?
+        .map(ArtistPressingsDoc::into_pressings)
+        .unwrap_or_default())
+}
+
+fn artist_pressings_path(artist: &Mbid, offset: u32) -> String {
+    format!(
+        "/release?artist={artist}&status={OFFICIAL}&type={}&inc={PRESSING_INCLUDES}\
+         &limit={ARTIST_PRESSINGS_PAGE}&offset={offset}&fmt=json",
+        escape_query(DISCOGRAPHY_KINDS)
+    )
 }
 
 fn pressings_path(group: &Mbid) -> String {
@@ -2158,6 +2209,34 @@ mod tests {
             pressings_path(&group),
             "/release?release-group=6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60&status=official\
              &inc=recordings+artist-credits+media+release-groups+isrcs&limit=25&fmt=json"
+        );
+    }
+
+    #[test]
+    fn an_artists_pressings_are_browsed_official_a_page_at_a_time() {
+        let artist = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
+
+        assert_eq!(
+            artist_pressings_path(&artist, 100),
+            "/release?artist=83d91898-7763-47d7-b03b-b92132375c47&status=official\
+             &type=album%7Cep%7Csingle&inc=recordings+artist-credits+media+release-groups+isrcs\
+             &limit=100&offset=100&fmt=json"
+        );
+    }
+
+    #[test]
+    fn an_artists_release_browse_says_how_many_it_holds_and_where_the_page_ends() {
+        let page: ArtistPressingsDoc =
+            serde_json::from_str(RELEASE_BROWSE).expect("the fixture parses");
+
+        let pressings = page.into_pressings();
+
+        assert_eq!(pressings.credited, 65);
+        assert_eq!(pressings.read_to, 3);
+        assert_eq!(pressings.pressings.len(), 3);
+        assert_eq!(
+            pressings.pressings[0].group.as_ref().map(Mbid::as_str),
+            Some("6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60")
         );
     }
 

@@ -3666,12 +3666,12 @@ mod tests {
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
-            AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistProfile, Barcode,
-            BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked,
-            GroupMatch, Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid,
-            Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-            Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink,
-            SongsAsked, StreamAsked, Track, TrackQuery,
+            AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
+            ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
+            Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames, LookupOp,
+            LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
+            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3841,6 +3841,10 @@ mod tests {
                     })
                     .into_iter()
                     .collect())
+            }
+
+            fn releases_of_artist(&self, _: &Mbid, _: u32) -> Result<ArtistPressings> {
+                Ok(ArtistPressings::default())
             }
 
             fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> Result<Option<CoverArt>> {

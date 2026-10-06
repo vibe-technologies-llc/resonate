@@ -12,13 +12,13 @@ use std::{
 
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
-    Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistProfile, Barcode,
-    BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions, EnrichSummary, Error,
-    Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc, Library, Link,
-    LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked,
-    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources, StreamAsked,
-    StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
+    Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
+    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
+    EnrichSummary, Error, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions,
+    Isrc, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Printed,
+    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded,
+    Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -275,6 +275,10 @@ impl Reference for Silent {
 
     fn releases_of_group(&self, _group: &Mbid) -> Result<Vec<resonate_library::Release>> {
         Ok(Vec::new())
+    }
+
+    fn releases_of_artist(&self, _artist: &Mbid, _from: u32) -> Result<ArtistPressings> {
+        Ok(ArtistPressings::default())
     }
 
     fn cover(&self, _release: &Mbid, _group: Option<&Mbid>) -> Result<Option<CoverArt>> {

@@ -22,10 +22,10 @@ use crate::{
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording, credits, elsewhere,
     enriched::{folded_title, stripped_title},
+    learning::{self, Learner},
     model::CoverFrom,
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
     reference::credited_as,
-    songs,
     studies::{self, Agreement, Claims, HEARD_AT_LEAST, HeardAs, Studies, ToStudy},
     sung,
 };
@@ -1468,6 +1468,42 @@ struct Pass<'a> {
     unheld_covered: RefCell<AHashSet<Mbid>>,
 }
 
+struct PassLearning<'p, 'a> {
+    pass: &'p Pass<'a>,
+    left: Cell<Option<usize>>,
+}
+
+impl PassLearning<'_, '_> {
+    fn may_go_on(&self) -> bool {
+        !self.pass.progress.is_cancelled() && self.left.get() != Some(0)
+    }
+}
+
+impl Learner for PassLearning<'_, '_> {
+    fn take_a_turn(&self) -> bool {
+        if !self.may_go_on() {
+            return false;
+        }
+        self.left.set(self.left.get().map(|left| left - 1));
+        true
+    }
+
+    fn weigh<T>(&self, answered: Result<T>) -> Result<Option<T>> {
+        Ok(match self.pass.heard(answered)? {
+            Heard::Answered(value) => Some(value),
+            Heard::Refused => None,
+        })
+    }
+
+    fn landed(&self, group: &Mbid, pressing: Option<&Release>, songs: usize) -> Result<()> {
+        self.pass
+            .progress
+            .songs
+            .fetch_add(songs as u64, Ordering::Relaxed);
+        self.pass.cover_as_landed(group, pressing)
+    }
+}
+
 impl Pass<'_> {
     fn run(&self, options: &EnrichOptions) -> Result<()> {
         let albums = self.library.albums_to_ask(WAITS, options.refresh)?;
@@ -1572,34 +1608,20 @@ impl Pass<'_> {
     }
 
     fn learn_the_songs(&self, options: &EnrichOptions) -> Result<()> {
-        let mut left = options.at_most.map(NonZeroUsize::get);
+        let learning = PassLearning {
+            pass: self,
+            left: Cell::new(options.at_most.map(NonZeroUsize::get)),
+        };
 
         for artist in self
             .library
             .artists_whose_songs_are_due(SystemTime::now())?
         {
-            let due = self.library.songs_due_for(artist, SystemTime::now())?;
-            for group in due.groups {
-                if self.progress.is_cancelled() || left == Some(0) {
-                    return Ok(());
-                }
-                let now = SystemTime::now();
-                if !self.library.songs_still_due(&group, now)? {
-                    continue;
-                }
-                left = left.map(|left| left - 1);
-                match self.heard(self.reference.releases_of_group(&group))? {
-                    Heard::Answered(pressings) => {
-                        let pressing = songs::pressing_of(pressings);
-                        let landed = self.library.land_songs_of(&group, pressing.as_ref(), now)?;
-                        self.progress
-                            .songs
-                            .fetch_add(landed as u64, Ordering::Relaxed);
-                        self.cover_as_landed(&group, pressing.as_ref())?;
-                    }
-                    Heard::Refused => self.library.songs_of_refused(&group, now)?,
-                }
+            if !learning.may_go_on() {
+                return Ok(());
             }
+            let due = self.library.songs_due_for(artist, SystemTime::now())?;
+            learning::learn_the_songs_of(self.library, self.reference, &due, &learning)?;
         }
         Ok(())
     }

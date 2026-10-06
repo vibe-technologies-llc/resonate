@@ -407,6 +407,13 @@ pub struct ArtistRelease {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ArtistPressings {
+    pub pressings: Vec<Release>,
+    pub credited: u32,
+    pub read_to: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Discography {
     pub releases: Vec<ArtistRelease>,
     pub unread: u32,
@@ -436,6 +443,7 @@ pub enum LookupOp {
     FindArtist,
     ReleaseGroupsOfArtist,
     ReleasesOfGroup,
+    ReleasesOfArtist,
     Cover,
     Portrait,
     Lyrics,
@@ -481,6 +489,8 @@ pub trait Reference: Send + Sync {
     fn release_groups_of(&self, artist: &Mbid, from: u32) -> Result<Discography>;
 
     fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>>;
+
+    fn releases_of_artist(&self, artist: &Mbid, from: u32) -> Result<ArtistPressings>;
 
     fn cover(&self, release: &Mbid, group: Option<&Mbid>) -> Result<Option<CoverArt>>;
 

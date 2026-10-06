@@ -11,6 +11,7 @@ mod fingerprint;
 mod hinted;
 mod history;
 mod import;
+mod learning;
 mod likeness;
 mod linked;
 mod loose;
@@ -115,12 +116,13 @@ pub use crate::{
         SavedQuery, SearchResults, SortOrder, TrackQuery,
     },
     reference::{
-        AlbumMatch, ArtistMatch, ArtistProfile, ArtistRelease, BarcodeMatch, Credit, Discography,
-        Genre, GroupAsked, GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail,
-        LyricText, LyricsAsked, Medium, Recording, RecordingAsked, RecordingMatch,
-        RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-        ReleaseTrack, StreamAsked, Wording, apple_music_urls, deezer_urls, may_be_pictured,
-        portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls, wikipedia_urls,
+        AlbumMatch, ArtistMatch, ArtistPressings, ArtistProfile, ArtistRelease, BarcodeMatch,
+        Credit, Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Issued, LifeSpan,
+        LookupOp, LyricDetail, LyricText, LyricsAsked, Medium, Recording, RecordingAsked,
+        RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
+        ReleaseMatch, ReleaseTrack, StreamAsked, Wording, apple_music_urls, deezer_urls,
+        may_be_pictured, portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls,
+        wikipedia_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,

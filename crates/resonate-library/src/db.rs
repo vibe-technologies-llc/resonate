@@ -46,7 +46,7 @@ use crate::{
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
-    history, import, likeness,
+    history, import, learning, likeness,
     linked::{self, AlbumLink, ArtistHeldBy, ArtistLink, HeldBy, Linked, SongLink},
     meant::{ByArtist, Meant},
     model::CoverWanted,
@@ -3658,29 +3658,10 @@ impl Library {
         reference: &dyn Reference,
         artist: ArtistId,
     ) -> Result<usize> {
-        let mut landed = 0;
-        for group in self.songs_due_for(artist, SystemTime::now())?.groups {
-            let now = SystemTime::now();
-            if !self.songs_still_due(&group, now)? {
-                continue;
-            }
-            match reference.releases_of_group(&group) {
-                Ok(pressings) => {
-                    landed +=
-                        self.land_songs_of(&group, songs::pressing_of(pressings).as_ref(), now)?;
-                }
-                Err(Error::Refused { op, status }) => {
-                    tracing::warn!(?op, status, %group, "the songs of a release group were refused");
-                    self.songs_of_refused(&group, now)?;
-                }
-                Err(Error::Unreadable { op } | Error::TooLarge { op, .. }) => {
-                    tracing::warn!(?op, %group, "the songs of a release group could not be read");
-                    self.songs_of_refused(&group, now)?;
-                }
-                Err(other) => return Err(other),
-            }
-        }
-        Ok(landed)
+        let due = self.songs_due_for(artist, SystemTime::now())?;
+        let page = learning::PageLearning::default();
+        learning::learn_the_songs_of(self, reference, &due, &page)?;
+        Ok(page.landed.get())
     }
 
     fn songs_due_binds(now: SystemTime) -> Vec<Value> {

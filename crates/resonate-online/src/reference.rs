@@ -3,8 +3,8 @@ use std::sync::Arc;
 use resonate_codec::CoverArt;
 use resonate_core::SourceId;
 use resonate_library::{
-    AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistProfile, Barcode,
-    BarcodeMatch, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText,
+    AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
+    Barcode, BarcodeMatch, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText,
     LyricsAsked, Mbid, Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
 };
@@ -103,6 +103,14 @@ impl Reference for Online {
 
     fn releases_of_group(&self, group: &Mbid) -> resonate_library::Result<Vec<Release>> {
         Ok(musicbrainz::releases_of_group(&self.client, group)?)
+    }
+
+    fn releases_of_artist(
+        &self,
+        artist: &Mbid,
+        from: u32,
+    ) -> resonate_library::Result<ArtistPressings> {
+        Ok(musicbrainz::releases_of_artist(&self.client, artist, from)?)
     }
 
     fn cover(

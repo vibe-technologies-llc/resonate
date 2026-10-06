@@ -2390,7 +2390,21 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `spread_of` its artist — a deterministic SQL function `schema::configure` registers, a Fibonacci hash
   of the artist's id into `[0, REFRESH_SPREAD)` (ten days) — so a first pass that read every group in
   one hour does not fall due again all at once a month later, while one artist's groups still fall due
-  together and can be read off one browse. Each is asked `Reference::releases_of_group`, and
+  together and can be read off one browse. **An artist's groups are read off one browse of the
+  artist's pressings where that costs fewer requests.** `learning::learn_the_songs_of` is the one walk
+  the pass and an artist's page share (`Learner` says whether it may take another turn, how a refusal
+  is weighed and what a landing does): where the artist has an mbid and `BROWSED_FROM_GROUPS_DUE` (3)
+  or more groups are due, `Reference::releases_of_artist` is read page by page, keeping only the due
+  groups' pressings, while the pages left are fewer than the due groups not yet seen; every group
+  gathered is landed through `pressing_of` as though read alone, and each one the browse never reached
+  — credited to another spelling, no official pressing, or left past the cost rule — is asked by
+  itself after `songs_still_due`. A browse refused or unreadable lands nothing and falls back to the
+  groups. The worst case is one request more an artist; the usual one a page for twenty groups
+  (`an_artists_songs_are_read_off_one_browse_of_their_releases_rather_than_a_request_a_group`,
+  `a_group_the_browse_never_reached_is_read_on_its_own`,
+  `a_browse_longer_than_the_groups_it_would_save_is_left_for_the_groups_themselves`,
+  `a_browse_refused_falls_back_to_reading_each_group`). A group read by itself is asked
+  `Reference::releases_of_group`, and
   `songs::pressing_of` takes the pressing whose track count most pressings share (fewer tracks on a
   tie: the original over a deluxe), the earliest of those, a full date before a bare year. `songs::land`
   replaces the group's rows in `discography_songs` — group, recording, the pressing's id, title, date and

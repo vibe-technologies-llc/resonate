@@ -328,6 +328,31 @@ fn the_reference_answers_pink_floyd_with_every_album_and_ep_it_is_credited_on() 
 }
 
 #[test]
+fn the_reference_answers_an_artists_pressings_a_page_at_a_time() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    let first = online
+        .releases_of_artist(&mbid(PINK_FLOYD), 0)
+        .expect("musicbrainz answered");
+    let second = online
+        .releases_of_artist(&mbid(PINK_FLOYD), first.read_to)
+        .expect("musicbrainz answered");
+
+    assert!(first.credited > first.read_to, "{first:?}");
+    assert!(!first.pressings.is_empty());
+    assert!(second.read_to > first.read_to);
+    assert!(
+        first
+            .pressings
+            .iter()
+            .all(|pressing| pressing.group.is_some() && !pressing.media.is_empty())
+    );
+}
+
+#[test]
 fn lrclib_answers_echoes_with_a_synced_set() {
     let Some(client) = reached() else {
         return;

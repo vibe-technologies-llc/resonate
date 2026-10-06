@@ -25,21 +25,21 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
-    ArtistLink, ArtistMatch, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, CoverArt, CoverSource, Credit,
-    Cut, Deleted, DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions,
-    EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch,
-    GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued,
-    Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love,
-    LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions,
-    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress,
-    Popularity, Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch,
-    RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup,
-    ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery,
-    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
-    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
-    Unwritten, Vault, Waits, Window, Wording, Written,
+    ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
+    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, CoverArt,
+    CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit, Encoding,
+    EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
+    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
+    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked,
+    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
+    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
+    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -86,6 +86,10 @@ const LIVE_GROUP: &str = "1b2c3d4e-5f6a-4b7c-8d8e-0f1a2b3c4d5e";
 const BEST_OF_GROUP: &str = "2c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f";
 const SCORE_GROUP: &str = "3d4e5f6a-7b8c-4d9e-8fa0-2b3c4d5e6f7a";
 const SINGLE_GROUP: &str = "4e5f6a7b-8c9d-4eaf-8ab1-3c4d5e6f7a8b";
+const SCORE_PRESSING: &str = "5f6a7b8c-9d0e-4fa1-9bc2-4d5e6f7a8b9c";
+const SINGLE_PRESSING: &str = "6a7b8c9d-0e1f-4ab2-8cd3-5e6f7a8b9c0d";
+const ORBIT_THEME: &str = "7b8c9d0e-1f2a-4bc3-9de4-6f7a8b9c0d1e";
+const SAN_TROPEZ_SONG: &str = "8c9d0e1f-2a3b-4cd4-8ef5-7a8b9c0d1e2f";
 const BROADCAST_GROUP: &str = "5f6a7b8c-9dae-4fb0-8bc2-4d5e6f7a8b9c";
 const NIGHTFALL_GROUP: &str = "6a7b8c9d-aebf-4ac1-8cd3-5e6f7a8b9cad";
 const RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
@@ -9378,6 +9382,7 @@ enum Called {
     FindArtist(String),
     ReleaseGroupsOf(Mbid),
     ReleasesOfGroup(Mbid),
+    ReleasesOfArtist(Mbid, u32),
     Cover(Mbid, Option<Mbid>),
     GroupCover(Mbid),
     Portrait(String),
@@ -9402,6 +9407,7 @@ impl Called {
             Self::FindArtist(_) => LookupOp::FindArtist,
             Self::ReleaseGroupsOf(_) => LookupOp::ReleaseGroupsOfArtist,
             Self::ReleasesOfGroup(_) => LookupOp::ReleasesOfGroup,
+            Self::ReleasesOfArtist(..) => LookupOp::ReleasesOfArtist,
             Self::Cover(..) => LookupOp::Cover,
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
@@ -9441,6 +9447,7 @@ struct Canned {
     releases_unread: u32,
     further_releases: Vec<ArtistRelease>,
     pressings: Vec<(Mbid, Vec<Release>)>,
+    artist_pressings: Vec<(Mbid, Vec<ArtistPressings>)>,
     covers: Vec<(Mbid, CoverArt)>,
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
@@ -9656,6 +9663,23 @@ impl Reference for Fake {
     fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>> {
         self.note(Called::FindArtist(name.to_owned()))?;
         Ok(self.canned.found_artists.clone())
+    }
+
+    fn releases_of_artist(&self, artist: &Mbid, from: u32) -> Result<ArtistPressings> {
+        self.note(Called::ReleasesOfArtist(artist.clone(), from))?;
+        let pages = self
+            .canned
+            .artist_pressings
+            .iter()
+            .find(|(held, _)| held == artist)
+            .map(|(_, pages)| pages.as_slice())
+            .unwrap_or_default();
+        let mut starts = std::iter::once(0).chain(pages.iter().map(|page| page.read_to));
+        Ok(pages
+            .iter()
+            .find(|_| starts.next() == Some(from))
+            .cloned()
+            .unwrap_or_default())
     }
 
     fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>> {
@@ -11379,6 +11403,7 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
             Called::Release(mbid(RELEASE)),
             Called::Artist(mbid(ORBITERS)),
             Called::ReleaseGroupsOf(mbid(ORBITERS)),
+            Called::ReleasesOfArtist(mbid(ORBITERS), 0),
             Called::ReleasesOfGroup(mbid(HOURS_GROUP)),
             Called::ReleasesOfGroup(mbid(SCORE_GROUP)),
             Called::ReleasesOfGroup(mbid(SINGLE_GROUP)),
@@ -11644,6 +11669,142 @@ fn a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again() ->
         1,
         "the lookup asked again for the songs the page had read"
     );
+    Ok(())
+}
+
+fn pressed_for(group: &str, id: &str, title: &str, song: (&str, &str)) -> Release {
+    Release {
+        group: Some(mbid(group)),
+        title: title.to_owned(),
+        ..hours_pressed(id, "2003-11-01", &[song])
+    }
+}
+
+fn score_and_single() -> Vec<Release> {
+    vec![
+        pressed_for(
+            SCORE_GROUP,
+            SCORE_PRESSING,
+            "The Orbit",
+            ("Orbit Theme", ORBIT_THEME),
+        ),
+        pressed_for(
+            SINGLE_GROUP,
+            SINGLE_PRESSING,
+            "San Tropez",
+            ("San Tropez", SAN_TROPEZ_SONG),
+        ),
+    ]
+}
+
+fn browsed_in(pages: Vec<ArtistPressings>) -> Canned {
+    Canned {
+        artist_pressings: vec![(mbid(ORBITERS), pages)],
+        ..learnt_canned()
+    }
+}
+
+#[test]
+fn an_artists_songs_are_read_off_one_browse_of_their_releases_rather_than_a_request_a_group()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(browsed_in(vec![
+        ArtistPressings {
+            pressings: hours_pressings(),
+            credited: 4,
+            read_to: 2,
+        },
+        ArtistPressings {
+            pressings: score_and_single(),
+            credited: 4,
+            read_to: 4,
+        },
+    ])));
+
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(fake.called(LookupOp::ReleasesOfArtist), 2);
+    assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 0);
+    assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
+    assert_eq!(library.songs_kept_for("orbit theme")?.len(), 1);
+    assert_eq!(library.songs_kept_for("san tropez")?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_group_the_browse_never_reached_is_read_on_its_own() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(browsed_in(vec![ArtistPressings {
+        pressings: hours_pressings(),
+        credited: 2,
+        read_to: 2,
+    }])));
+
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(fake.called(LookupOp::ReleasesOfArtist), 1);
+    assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 2);
+    assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_browse_longer_than_the_groups_it_would_save_is_left_for_the_groups_themselves() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(browsed_in(vec![ArtistPressings {
+        pressings: hours_pressings(),
+        credited: 100,
+        read_to: 2,
+    }])));
+
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(fake.called(LookupOp::ReleasesOfArtist), 1);
+    assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 2);
+    assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn an_artist_with_few_groups_due_is_asked_for_each_group_alone() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let cut_short = Arc::new(Fake::new(learnt_canned()).faulting(
+        LookupOp::ReleasesOfGroup,
+        1,
+        Fault::Unreachable,
+    ));
+    let _ = enrich(&library, &cut_short, false);
+    let artist = artist_named(&library, "The Orbiters")?;
+
+    let page = Fake::new(browsed_in(vec![ArtistPressings {
+        pressings: score_and_single(),
+        credited: 2,
+        read_to: 2,
+    }]));
+    library.learn_the_songs_of_artist(&page, artist.id)?;
+
+    assert_eq!(page.called(LookupOp::ReleasesOfArtist), 0);
+    assert_eq!(page.called(LookupOp::ReleasesOfGroup), 2);
+    Ok(())
+}
+
+#[test]
+fn a_browse_refused_falls_back_to_reading_each_group() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(
+        Fake::new(browsed_in(vec![ArtistPressings {
+            pressings: hours_pressings(),
+            credited: 2,
+            read_to: 2,
+        }]))
+        .faulting(LookupOp::ReleasesOfArtist, 0, Fault::Refused),
+    );
+
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(fake.called(LookupOp::ReleasesOfArtist), 1);
+    assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 3);
+    assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
     Ok(())
 }
 

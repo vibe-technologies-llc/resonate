@@ -5128,6 +5128,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::FindArtist => "an artist search",
         LookupOp::ReleaseGroupsOfArtist => "the releases of an artist",
         LookupOp::ReleasesOfGroup => "the pressings of a release",
+        LookupOp::ReleasesOfArtist => "the pressings of an artist",
         LookupOp::Cover => "a cover",
         LookupOp::Portrait => "a portrait",
         LookupOp::Lyrics => "lyrics",

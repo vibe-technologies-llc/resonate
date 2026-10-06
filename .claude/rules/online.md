@@ -154,6 +154,13 @@ the loose `dismax` shape; the `a_*_query_names_only_what_was_asked` tests pin ea
   `PRESSINGS_READ`; a pressing that will not map is left out). The browse caps a page at 500 tracks,
   so a box set answers fewer pressings, never none. Which pressing speaks for the group is the
   library's (`songs::pressing_of`).
+- **An artist's pressings are browsed a page at a time, every group at once** (`releases_of_artist`:
+  `/release?artist=…&status=official&type=album|ep|single` with the pressings' includes, 100 asked a
+  page). The service cuts a page with recordings at about 500 tracks, so a page holds what fits —
+  Daughter's 58 releases in one, twenty one pilots' 173 in four, The Beatles' 2 217 in 28 — and
+  `ArtistPressings` carries `credited` (the `release-count`) and `read_to`, counted from the offset
+  before any release that will not map is dropped, so the next page starts where this one did end.
+  Whether one browse is worth more than a request a group is the library's (`learning.rs`).
 - **An artist's profile, genres and links come from one request.** `genres` are tags with a positive
   count, heaviest first, so a single-editor tag does not outrank a hundred votes. `aliases` keep each
   spelling once by its `folded` form and drop any folding to the billed name. `portrait_urls` walks
