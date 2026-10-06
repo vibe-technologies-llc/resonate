@@ -2415,7 +2415,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   (`the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking`,
   `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). **An artist's page does not
   wait for the pass**: `Library::learn_the_songs_of_artist` walks the same due rule over that artist's
-  groups alone (`songs_due_for`, earliest first, each weighed again by `songs_still_due`), landing and stamping each as the pass would,
+  groups alone (`songs_due_for`, earliest first, each weighed again by `songs_still_due`, through the
+  same `learning` walk), telling the `Learning` it is handed of each group as it lands and asking
+  nothing more once it says `abandoned`
+  (`an_artists_page_is_told_of_each_batch_of_songs_as_it_lands`,
+  `an_artists_page_left_asks_nothing_more`), landing and stamping each as the pass would,
   a refusal or an unreadable answer stamped and an unreachable reference answered as the error
   (`an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_reaches_them`).
   **The sleeves of those releases are kept in the same pass, each as soon as its songs land.**

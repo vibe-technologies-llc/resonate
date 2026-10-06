@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     fs::{self, File, OpenOptions, TryLockError},
     num::NonZeroU32,
     ops::Deref,
@@ -33,14 +34,14 @@ use crate::{
     CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured,
-    Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions,
-    PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
-    PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch,
-    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
-    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
-    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
-    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
+    KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid,
+    Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle,
+    OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle,
+    PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
+    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
+    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
+    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
+    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
     Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
@@ -3657,9 +3658,13 @@ impl Library {
         &self,
         reference: &dyn Reference,
         artist: ArtistId,
+        told: &dyn Learning,
     ) -> Result<usize> {
         let due = self.songs_due_for(artist, SystemTime::now())?;
-        let page = learning::PageLearning::default();
+        let page = learning::PageLearning {
+            told,
+            landed: Cell::new(0),
+        };
         learning::learn_the_songs_of(self, reference, &due, &page)?;
         Ok(page.landed.get())
     }

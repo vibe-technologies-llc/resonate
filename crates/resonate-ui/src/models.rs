@@ -11,6 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
+use futures_channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{App, AsyncApp, Context, Image, Pixels, RenderImage, Task, WeakEntity, px};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
@@ -23,15 +24,15 @@ use resonate_library::{
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
     HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept,
-    Layout, Library, Listen, LookupOp, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
-    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
-    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
-    Raster, Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail,
-    ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
-    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
-    SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery,
-    Undoable, UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering,
-    weighed_for,
+    Layout, Learning, Library, Listen, LookupOp, Mbid, Meant, Measured, Missing, MissingTrack,
+    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
+    PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked,
+    ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
+    Shared, SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
+    TrackQuery, Undoable, UnheldRelease, Window, Wording, folded_letters, songs_asked,
+    still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -594,6 +595,20 @@ impl Work {
 pub struct Consulted {
     pub reference: Option<Arc<dyn Reference>>,
     pub fingerprinters: Arc<Fingerprinters>,
+}
+
+struct PageLearning {
+    told: UnboundedSender<usize>,
+}
+
+impl Learning for PageLearning {
+    fn abandoned(&self) -> bool {
+        self.told.is_closed()
+    }
+
+    fn landed(&self, songs: usize) {
+        let _ = self.told.unbounded_send(songs);
+    }
 }
 
 pub struct LibraryModel {
@@ -3656,24 +3671,36 @@ impl LibraryModel {
             return;
         };
         let library = Arc::clone(&self.library);
+        let (told, mut heard) = unbounded::<usize>();
 
         self._learning = cx.spawn(async move |this, cx| {
-            let landed = cx
-                .background_executor()
-                .spawn(async move { library.learn_the_songs_of_artist(reference.as_ref(), artist) })
-                .await;
-            let _ = this.update(cx, |this, cx| match landed {
-                Ok(0) => {}
-                Ok(_) if this.selection == Selection::Artist(artist) => {
-                    this.read(Wanted::TheSearch, cx);
+            let learning = cx.background_executor().spawn(async move {
+                library.learn_the_songs_of_artist(
+                    reference.as_ref(),
+                    artist,
+                    &PageLearning { told },
+                )
+            });
+            while let Ok(songs) = heard.recv().await {
+                let mut landed = songs;
+                while let Ok(more) = heard.try_recv() {
+                    landed += more;
                 }
-                Ok(_) => {}
-                Err(error) => tracing::debug!(
+                if landed > 0 {
+                    let _ = this.update(cx, |this, cx| {
+                        if this.selection == Selection::Artist(artist) {
+                            this.read(Wanted::TheSearch, cx);
+                        }
+                    });
+                }
+            }
+            if let Err(error) = learning.await {
+                tracing::debug!(
                     %error,
                     %artist,
                     "the songs of an artist's releases not held could not be read"
-                ),
-            });
+                );
+            }
         });
     }
 

@@ -91,6 +91,7 @@ pub use crate::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
     },
+    learning::Learning,
     linked::{
         AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, LinkNames, Linked, SongLink,
         is_a_followed_link,

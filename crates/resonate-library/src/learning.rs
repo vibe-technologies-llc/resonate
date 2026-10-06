@@ -91,14 +91,20 @@ fn browsed(
     }
 }
 
-#[derive(Default)]
-pub(crate) struct PageLearning {
+pub trait Learning: Send + Sync {
+    fn abandoned(&self) -> bool;
+
+    fn landed(&self, songs: usize);
+}
+
+pub(crate) struct PageLearning<'a> {
+    pub(crate) told: &'a dyn Learning,
     pub(crate) landed: Cell<usize>,
 }
 
-impl Learner for PageLearning {
+impl Learner for PageLearning<'_> {
     fn take_a_turn(&self) -> bool {
-        true
+        !self.told.abandoned()
     }
 
     fn weigh<T>(&self, answered: Result<T>) -> Result<Option<T>> {
@@ -122,6 +128,7 @@ impl Learner for PageLearning {
 
     fn landed(&self, _group: &Mbid, _pressing: Option<&Release>, songs: usize) -> Result<()> {
         self.landed.set(self.landed.get() + songs);
+        self.told.landed(songs);
         Ok(())
     }
 }

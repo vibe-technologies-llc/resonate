@@ -54,8 +54,6 @@ else is open to be done.
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- A large library's first lookup pass runs on for an hour or more reading the songs of its artists'
-  releases not held, one release group a second; an artist's page reads its own when opened
 - A pasted link to a playlist, or to an artist anywhere but MusicBrainz and Deezer, is taken as words
   to search, not followed to what it names
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes

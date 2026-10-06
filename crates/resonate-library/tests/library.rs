@@ -30,9 +30,9 @@ use resonate_library::{
     CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit, Encoding,
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked,
-    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
-    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
+    ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
+    Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium,
+    Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
     PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
     Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
@@ -11623,7 +11623,7 @@ fn an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_re
     );
 
     let page = Fake::new(learnt_canned());
-    let landed = library.learn_the_songs_of_artist(&page, artist.id)?;
+    let landed = library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?;
     let songs: Vec<Mbid> = library
         .songs_not_held_by(artist.id)?
         .into_iter()
@@ -11633,7 +11633,10 @@ fn an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_re
     assert_eq!(landed, 2);
     assert_eq!(songs, [mbid(DAYBREAK)]);
     assert_eq!(page.called(LookupOp::ReleasesOfGroup), 3);
-    assert_eq!(library.learn_the_songs_of_artist(&page, artist.id)?, 0);
+    assert_eq!(
+        library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?,
+        0
+    );
     assert_eq!(
         page.called(LookupOp::ReleasesOfGroup),
         3,
@@ -11659,7 +11662,7 @@ fn a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again() ->
         .expect("the lookup reaches the songs of a group");
     let artist = artist_named(&library, "The Orbiters")?;
     let page = Fake::new(learnt_canned());
-    library.learn_the_songs_of_artist(&page, artist.id)?;
+    library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?;
     go.send(()).expect("the lookup is still waiting");
     handle.join()?;
 
@@ -11781,7 +11784,7 @@ fn an_artist_with_few_groups_due_is_asked_for_each_group_alone() -> Result<()> {
         credited: 2,
         read_to: 2,
     }]));
-    library.learn_the_songs_of_artist(&page, artist.id)?;
+    library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?;
 
     assert_eq!(page.called(LookupOp::ReleasesOfArtist), 0);
     assert_eq!(page.called(LookupOp::ReleasesOfGroup), 2);
@@ -11806,6 +11809,66 @@ fn a_browse_refused_falls_back_to_reading_each_group() -> Result<()> {
     assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 3);
     assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
     Ok(())
+}
+
+#[derive(Default)]
+struct PageTold {
+    batches: Mutex<Vec<usize>>,
+    leaves_after: Option<usize>,
+}
+
+impl Learning for PageTold {
+    fn abandoned(&self) -> bool {
+        self.leaves_after
+            .is_some_and(|after| self.batches.lock().len() >= after)
+    }
+
+    fn landed(&self, songs: usize) {
+        self.batches.lock().push(songs);
+    }
+}
+
+#[test]
+fn an_artists_page_is_told_of_each_batch_of_songs_as_it_lands() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let artist = scanned_artist_with_its_discography(&library)?;
+    let page = Fake::new(learnt_canned());
+    let told = PageTold::default();
+
+    let landed = library.learn_the_songs_of_artist(&page, artist, &told)?;
+
+    let batches = told.batches.lock().clone();
+    assert_eq!(batches.len(), 3, "{batches:?}");
+    assert_eq!(batches.iter().sum::<usize>(), landed);
+    assert_eq!(batches[0], 2, "the earliest group was not told first");
+    Ok(())
+}
+
+#[test]
+fn an_artists_page_left_asks_nothing_more() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let artist = scanned_artist_with_its_discography(&library)?;
+    let page = Fake::new(learnt_canned());
+    let told = PageTold {
+        leaves_after: Some(1),
+        ..PageTold::default()
+    };
+
+    library.learn_the_songs_of_artist(&page, artist, &told)?;
+
+    assert_eq!(page.called(LookupOp::ReleasesOfGroup), 1);
+    assert_eq!(told.batches.lock().len(), 1);
+    Ok(())
+}
+
+fn scanned_artist_with_its_discography(library: &Library) -> Result<resonate_core::ArtistId> {
+    let cut_short = Arc::new(Fake::new(learnt_canned()).faulting(
+        LookupOp::ReleasesOfArtist,
+        0,
+        Fault::Unreachable,
+    ));
+    let _ = enrich(library, &cut_short, false);
+    Ok(artist_named(library, "The Orbiters")?.id)
 }
 
 #[test]
