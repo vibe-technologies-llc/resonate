@@ -18,12 +18,6 @@ else is open to be done.
 - **Blocked on hardware:** Nothing has proved a forced graph rate change against hardware (the only
   card here offers 48 kHz alone) nor DoP against a DAC that decodes it
 
-## Playback speed
-- There is no playback speed: nothing plays a track faster or slower, and no setting, key or bus
-  property (MPRIS `Rate` is fixed at 1) offers one
-- Holding the next or previous key skips once rather than running through the song faster, forwards
-  or back, while it is held. After the item above
-
 ## Formats
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio, integers or floats, is refused,
   because `ape-decoder` 0.3.2 narrows the side channel to 32 bits before undoing it
