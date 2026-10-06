@@ -43,7 +43,8 @@ use resonate_library::{
     Wording, Written,
 };
 use resonate_providers::{
-    Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
+    Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
+    ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART,
 };
 
 const RATE: u32 = 44_100;
@@ -9844,6 +9845,8 @@ enum Delivering {
     },
     Endless,
     Stalling,
+    Unopenable,
+    GoneWhenOpened,
 }
 
 struct Trickle;
@@ -9879,6 +9882,8 @@ struct Offering {
     source: SourceId,
     delivering: Delivering,
     asked: Mutex<Vec<Identity>>,
+    opened: Arc<AtomicUsize>,
+    answers_after: Duration,
 }
 
 impl Offering {
@@ -9887,7 +9892,28 @@ impl Offering {
             source: SourceId::new(source).expect("a nameable source"),
             delivering,
             asked: Mutex::new(Vec::new()),
+            opened: Arc::new(AtomicUsize::new(0)),
+            answers_after: Duration::ZERO,
         }
+    }
+
+    fn answering_after(self, wait: Duration) -> Self {
+        Self {
+            answers_after: wait,
+            ..self
+        }
+    }
+
+    fn opened(&self) -> usize {
+        self.opened.load(Ordering::SeqCst)
+    }
+
+    fn counted(&self, opening: Opening) -> Opening {
+        let opened = Arc::clone(&self.opened);
+        Opening::new(move || {
+            opened.fetch_add(1, Ordering::SeqCst);
+            opening.open()
+        })
     }
 
     fn asked(&self) -> Vec<Identity> {
@@ -9904,8 +9930,9 @@ impl Provider for Offering {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         self.asked.lock().push(identity.clone());
+        thread::sleep(self.answers_after);
         Ok(match self.delivering.clone() {
             Delivering::Nothing => Obtained::Nothing,
             Delivering::File(path) => Obtained::Found(Delivery::File(path)),
@@ -9916,17 +9943,36 @@ impl Provider for Offering {
             } => Obtained::Found(Delivery::Stream {
                 key: key.into(),
                 extension: Extension::new(extension)?,
-                reader: Box::new(std::io::Cursor::new(bytes)),
+                opening: self.counted(Opening::ready(std::io::Cursor::new(bytes))),
             }),
             Delivering::Endless => Obtained::Found(Delivery::Stream {
                 key: "endless".into(),
                 extension: Extension::new("wav")?,
-                reader: Box::new(Trickle),
+                opening: Opening::ready(Trickle),
             }),
             Delivering::Stalling => Obtained::Found(Delivery::Stream {
                 key: "stalling".into(),
                 extension: Extension::new("wav")?,
-                reader: Box::new(Stall { began: false }),
+                opening: Opening::ready(Stall { began: false }),
+            }),
+            Delivering::Unopenable => {
+                let provider = self.source.clone();
+                Obtained::Found(Delivery::Stream {
+                    key: "unopenable".into(),
+                    extension: Extension::new("wav")?,
+                    opening: self.counted(Opening::new(move || {
+                        Err(ProvidedError::Refused {
+                            provider,
+                            op: ProviderOp::Download,
+                            status: 500,
+                        })
+                    })),
+                })
+            }
+            Delivering::GoneWhenOpened => Obtained::Found(Delivery::Stream {
+                key: "gone".into(),
+                extension: Extension::new("wav")?,
+                opening: self.counted(Opening::new(|| Ok(Opened::Gone))),
             }),
         })
     }
@@ -19978,7 +20024,7 @@ impl Provider for CancelledAsItAnswers {
         &self.source
     }
 
-    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs(5) {
             if let Some(poll) = self.poll.lock().as_ref() {
@@ -20003,7 +20049,7 @@ impl Provider for WatchedAsItAnswers {
         &self.source
     }
 
-    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs(5) {
             if let Some(poll) = self.poll.lock().as_ref() {
@@ -20399,7 +20445,7 @@ impl Provider for WatchesTheWants {
         &self.source
     }
 
-    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let held = self
             .library
             .wants()
@@ -20411,7 +20457,7 @@ impl Provider for WatchesTheWants {
         Ok(Obtained::Found(Delivery::Stream {
             key: "track/55391743".into(),
             extension: Extension::new("wav")?,
-            reader: Box::new(std::io::Cursor::new(Wav::new().frames(8_820).build())),
+            opening: Opening::ready(std::io::Cursor::new(Wav::new().frames(8_820).build())),
         }))
     }
 }
@@ -20576,7 +20622,7 @@ impl Provider for Watching {
         &self.source
     }
 
-    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let progress = handed_over(&self.poll);
         self.named.lock().push(progress.asking_provider());
 
@@ -20585,7 +20631,7 @@ impl Provider for Watching {
             Some(bytes) => Obtained::Found(Delivery::Stream {
                 key: "track/1".into(),
                 extension: Extension::new("wav")?,
-                reader: Box::new(ReadWatched {
+                opening: Opening::ready(ReadWatched {
                     bytes: io::Cursor::new(bytes.clone()),
                     progress,
                     received: Arc::clone(&self.received),
@@ -20851,6 +20897,93 @@ fn a_delivery_refused_from_one_provider_is_asked_of_the_next() -> Result<()> {
 }
 
 #[test]
+fn an_offer_that_cannot_be_opened_falls_through_to_the_next_provider() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let broken = Arc::new(Offering::new("broken", Delivering::Unopenable));
+    let gone = Arc::new(Offering::new("gone", Delivering::GoneWhenOpened));
+    let right = the_whole_of_san_tropez("store");
+
+    let summary = library
+        .poll(
+            asking_in_turn(&[&broken, &gone, &right]),
+            PollOptions::default(),
+        )?
+        .join()?;
+
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.refused
+        ),
+        (3, 1, 1)
+    );
+    assert_eq!((broken.opened(), gone.opened(), right.opened()), (1, 1, 1));
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn an_offer_the_race_did_not_take_is_never_opened() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let first = Arc::new(
+        Arc::into_inner(the_whole_of_san_tropez("first"))
+            .expect("one holder")
+            .answering_after(TURNED_TO_APART + Duration::from_millis(500)),
+    );
+    let second = the_whole_of_san_tropez("second");
+
+    let summary = library
+        .poll(asking_in_turn(&[&first, &second]), PollOptions::default())?
+        .join()?;
+
+    assert_eq!((summary.stats.offered, summary.stats.kept), (1, 1));
+    assert_eq!(
+        second.asked().len(),
+        1,
+        "the later provider was never raced"
+    );
+    assert_eq!((first.opened(), second.opened()), (1, 0));
+    Ok(())
+}
+
+#[test]
+fn an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let first = Arc::new(
+        Offering::new("first", Delivering::Unopenable)
+            .answering_after(TURNED_TO_APART + Duration::from_millis(500)),
+    );
+    let second = the_whole_of_san_tropez("second");
+
+    let summary = library
+        .poll(asking_in_turn(&[&first, &second]), PollOptions::default())?
+        .join()?;
+
+    assert_eq!((summary.stats.offered, summary.stats.kept), (2, 1));
+    assert_eq!(
+        (first.asked().len(), second.asked().len()),
+        (1, 1),
+        "a provider was asked again for an offer it had made"
+    );
+    assert_eq!((first.opened(), second.opened()), (1, 1));
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
 fn an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_elsewhere()
 -> Result<()> {
     let held = Tree::new();
@@ -20953,7 +21086,7 @@ impl Provider for PairedAsItAnswers {
         &self.source
     }
 
-    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         scan(&self.library, &self.scanning).expect("the listener's own file is scanned");
         let album = only_album(&self.library).expect("the album the file joined");
         let paired = self
@@ -23153,7 +23286,7 @@ impl Provider for Withdrawing {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         *self.asked.lock() += 1;
         let asked_about = self
             .library
@@ -23214,7 +23347,7 @@ impl Provider for Unanswering {
         &self.source
     }
 
-    fn obtain(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
         *self.asked.lock() += 1;
         Err((self.failure)(self.source.clone()))
     }
@@ -23429,7 +23562,7 @@ impl Provider for Slow {
         &self.source
     }
 
-    fn obtain(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
         let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.most_at_once.fetch_max(now, Ordering::SeqCst);
         thread::sleep(self.held_for);
@@ -23493,7 +23626,7 @@ impl Provider for WantsOneMore {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+    fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         self.asked.lock().push(identity.title.clone());
         if !self.pressed.swap(true, Ordering::SeqCst) {
             let album = only_album(&self.library).expect("one album");

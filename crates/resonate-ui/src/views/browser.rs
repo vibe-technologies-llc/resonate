@@ -3998,7 +3998,7 @@ mod tests {
                 &self.source
             }
 
-            fn obtain(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
+            fn find(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
                 self.asked.lock().push(Asked {
                     recording: identity.recording.clone(),
                     isrc: identity.isrc.clone(),
@@ -4088,7 +4088,7 @@ mod tests {
                 &self.source
             }
 
-            fn obtain(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
+            fn find(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
                 Ok(Obtained::Found(resonate_providers::Delivery::File(
                     self.file.clone(),
                 )))

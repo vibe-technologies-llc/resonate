@@ -2,11 +2,12 @@ mod fetched;
 mod stall;
 mod trust;
 
-use std::{fmt::Write as _, io::Read, sync::Arc, time::Duration};
+use std::{fmt::Write as _, sync::Arc, time::Duration};
 
 use resonate_core::{Isrc, SourceId};
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Pacing, Provider, ProviderOp, Result,
+    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
+    Result,
 };
 use serde::Deserialize;
 use ureq::{
@@ -194,6 +195,7 @@ fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
+#[derive(Clone)]
 pub struct Monochrome {
     source: SourceId,
     server: String,
@@ -331,19 +333,19 @@ impl Monochrome {
         Ok(None)
     }
 
-    fn downloaded(&self, track: &TrackId) -> Result<Option<Box<dyn Read + Send>>> {
+    fn downloaded(&self, track: &TrackId) -> Result<Opened> {
         let op = ProviderOp::Download;
         let url = self.track_url(track);
         let response = match self.called(&self.downloading, op, &url) {
             Err(Error::Refused { status, .. }) if GONE_FROM_THE_SERVER.contains(&status) => {
-                return Ok(None);
+                return Ok(Opened::Gone);
             }
             called => called?,
         };
         if is_a_document(response.body().mime_type()) {
             return Err(self.unreadable(op));
         }
-        Ok(Some(Box::new(Fetched::continuing(
+        Ok(Opened::Reading(Box::new(Fetched::continuing(
             self.downloading.clone(),
             url,
             response,
@@ -356,20 +358,18 @@ impl Provider for Monochrome {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained> {
+    fn find(&self, identity: &Identity) -> Result<Obtained> {
         let Some(isrc) = &identity.isrc else {
             return Ok(Obtained::Nothing);
         };
         let Some(track) = self.found(identity, isrc)? else {
             return Ok(Obtained::Nothing);
         };
-        let Some(reader) = self.downloaded(&track)? else {
-            return Ok(Obtained::Nothing);
-        };
+        let downloading = self.clone();
         Ok(Obtained::Found(Delivery::Stream {
             key: format!("track/{}", track.0).into_boxed_str(),
             extension: Extension::new(DELIVERED_AS)?,
-            reader,
+            opening: Opening::new(move || downloading.downloaded(&track)),
         }))
     }
 }
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn a_want_with_no_isrc_is_not_searched_for() {
         assert!(matches!(
-            Monochrome::at("http://127.0.0.1:9").obtain(&Identity::named("Echoes")),
+            Monochrome::at("http://127.0.0.1:9").find(&Identity::named("Echoes")),
             Ok(Obtained::Nothing)
         ));
     }

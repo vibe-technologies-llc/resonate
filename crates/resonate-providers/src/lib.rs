@@ -6,7 +6,7 @@ mod provider;
 mod sign_in;
 
 pub use crate::{
-    delivery::{Delivered, Delivery, Extension, Obtained},
+    delivery::{Delivered, Delivery, Extension, Obtained, Opened, Opening},
     error::{Error, ProviderOp, Result},
     identity::Identity,
     pacing::Pacing,

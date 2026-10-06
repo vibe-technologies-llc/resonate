@@ -18,7 +18,7 @@ pub const WAITED_ON_AFTER_AN_OFFER: Duration = Duration::from_secs(3);
 pub trait Provider: Send + Sync {
     fn source(&self) -> &SourceId;
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained>;
+    fn find(&self, identity: &Identity) -> Result<Obtained>;
 }
 
 pub struct Unprovided {
@@ -38,7 +38,7 @@ impl Provider for Unprovided {
         &self.source
     }
 
-    fn obtain(&self, _identity: &Identity) -> Result<Obtained> {
+    fn find(&self, _identity: &Identity) -> Result<Obtained> {
         Ok(Obtained::Nothing)
     }
 }
@@ -62,10 +62,18 @@ pub struct Answer {
     pub declined: u64,
     pub narrowed: bool,
     pub cancelled: bool,
-    pub asked: Vec<SourceId>,
+    pub heard: Vec<SourceId>,
+    pub held_back: Vec<Delivered>,
 }
 
 impl Answer {
+    fn taking(mut self, offers: Vec<Option<Delivered>>) -> Self {
+        let mut offered = offers.into_iter().flatten();
+        self.delivered = offered.next();
+        self.held_back = offered.collect();
+        self
+    }
+
     pub fn heard_from_every_provider(&self) -> bool {
         !self.narrowed
             && self.refused == 0
@@ -162,7 +170,7 @@ impl Providers {
         let asked_of: Vec<&Arc<dyn Provider>> = self
             .providers
             .iter()
-            .filter(|provider| !asking.passing.contains(provider.source()))
+            .filter(|provider| is_a_source(provider) && !asking.passing.contains(provider.source()))
             .collect();
         let mut turns: Vec<Turn> = asked_of
             .iter()
@@ -183,11 +191,8 @@ impl Providers {
         loop {
             let best = offers.iter().position(Option::is_some);
             if (asking.cancelled)() {
-                match best {
-                    Some(best) => answer.delivered = offers[best].take(),
-                    None => answer.cancelled = true,
-                }
-                return answer;
+                answer.cancelled = best.is_none();
+                return answer.taking(offers);
             }
             let now = Instant::now();
             for at in 0..asked_of.len() {
@@ -200,15 +205,13 @@ impl Providers {
                     continue;
                 }
                 let provider = asked_of[at];
-                if is_a_source(provider) {
-                    (asking.turning_to)(provider.source());
-                }
-                answer.asked.push(provider.source().clone());
+                (asking.turning_to)(provider.source());
                 turns[at] = match asked(provider, identity, at, &told) {
                     Ok(()) => Turn::Asked { since: now },
                     Err(error) => {
                         tracing::warn!(%error, provider = %provider.source(), "a provider could not be given a thread to answer on");
                         answer.refused += 1;
+                        answer.heard.push(provider.source().clone());
                         Turn::Over
                     }
                 };
@@ -218,8 +221,7 @@ impl Providers {
                 let earlier_still_asked = turns[..best].iter().any(|turn| *turn != Turn::Over);
                 let grace_spent = grace_ends.is_some_and(|ends| now >= ends);
                 if !earlier_still_asked || grace_spent {
-                    answer.delivered = offers[best].take();
-                    return answer;
+                    return answer.taking(offers);
                 }
             } else if turns.iter().all(|turn| *turn == Turn::Over) {
                 return answer;
@@ -232,6 +234,7 @@ impl Providers {
                     let provider = asked_of[at];
                     tracing::warn!(provider = %provider.source(), title = %identity.title, within = ?asking.within, "a provider did not answer in time and was left behind");
                     answer.late += 1;
+                    answer.heard.push(provider.source().clone());
                     away.note(provider.source());
                     *turn = Turn::Over;
                 }
@@ -245,6 +248,7 @@ impl Providers {
             }
             turns[at] = Turn::Over;
             let provider = asked_of[at];
+            answer.heard.push(provider.source().clone());
             match obtained {
                 Ok(Obtained::Found(delivery)) => {
                     let delivered = Delivered {
@@ -299,7 +303,7 @@ fn asked(
     thread::Builder::new()
         .name(format!("resonate-provider-{}", provider.source()))
         .spawn(move || {
-            let _ = told.send((at, asking_of.obtain(&about)));
+            let _ = told.send((at, asking_of.find(&about)));
         })
         .map(|_| ())
 }
@@ -315,7 +319,7 @@ mod tests {
     use std::{io, path::PathBuf};
 
     use super::*;
-    use crate::{Delivery, Error, ProviderOp};
+    use crate::{Delivery, Error, Extension, Opened, Opening, ProviderOp};
 
     struct Fixed {
         source: SourceId,
@@ -336,7 +340,7 @@ mod tests {
             &self.source
         }
 
-        fn obtain(&self, _identity: &Identity) -> Result<Obtained> {
+        fn find(&self, _identity: &Identity) -> Result<Obtained> {
             (self.answer)()
         }
     }
@@ -418,7 +422,7 @@ mod tests {
             &self.source
         }
 
-        fn obtain(&self, _identity: &Identity) -> Result<Obtained> {
+        fn find(&self, _identity: &Identity) -> Result<Obtained> {
             self.asked.store(true, std::sync::atomic::Ordering::SeqCst);
             thread::sleep(self.after);
             (self.answer)()
@@ -478,6 +482,95 @@ mod tests {
     }
 
     #[test]
+    fn the_second_provider_registered_is_turned_to_one_pace_in_and_not_two() {
+        const APART: u64 = 300;
+
+        let providers = Providers::none()
+            .and(Slow::registered("slow", Duration::from_secs(2), nothing))
+            .and(Fixed::registered("shop", found));
+        let started = Instant::now();
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(APART, 100),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("shop"));
+        assert!(
+            started.elapsed() < Duration::from_millis(APART * 2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    struct Offers {
+        source: SourceId,
+        after: Duration,
+        opened: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl Offers {
+        fn registered(name: &str, after: Duration) -> Arc<Self> {
+            Arc::new(Self {
+                source: SourceId::new(name).expect("a nameable source"),
+                after,
+                opened: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            })
+        }
+
+        fn was_opened(&self) -> bool {
+            self.opened.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl Provider for Offers {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn find(&self, _identity: &Identity) -> Result<Obtained> {
+            thread::sleep(self.after);
+            let opened = Arc::clone(&self.opened);
+            Ok(Obtained::Found(Delivery::Stream {
+                key: self.source.as_str().into(),
+                extension: Extension::new("flac")?,
+                opening: Opening::new(move || {
+                    opened.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok(Opened::Reading(Box::new(io::empty())))
+                }),
+            }))
+        }
+    }
+
+    #[test]
+    fn an_offer_not_taken_is_handed_back_unopened_behind_the_one_taken() {
+        let inbox = Offers::registered("inbox", Duration::from_millis(300));
+        let shop = Offers::registered("shop", Duration::ZERO);
+        let providers = Providers::none()
+            .and(Arc::clone(&inbox) as Arc<dyn Provider>)
+            .and(Arc::clone(&shop) as Arc<dyn Provider>);
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(100, 2_000),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("inbox"));
+        assert_eq!(
+            answer
+                .held_back
+                .iter()
+                .map(|offer| offer.provider.as_str())
+                .collect::<Vec<_>>(),
+            ["shop"]
+        );
+        assert_eq!(answer.heard.len(), 2);
+        assert!(!inbox.was_opened() && !shop.was_opened());
+    }
+
+    #[test]
     fn a_later_offer_is_taken_once_the_grace_runs_out() {
         let providers = Providers::none()
             .and(Slow::registered("slow", Duration::from_secs(2), found))
@@ -532,7 +625,7 @@ mod tests {
             &self.source
         }
 
-        fn obtain(&self, _identity: &Identity) -> Result<Obtained> {
+        fn find(&self, _identity: &Identity) -> Result<Obtained> {
             thread::sleep(Duration::from_secs(5));
             found()
         }
@@ -595,7 +688,7 @@ mod tests {
         );
         assert_eq!(answer.passed_over, 0);
         assert!(answer.heard_from_every_provider());
-        assert!(!answer.asked.contains(&first));
+        assert!(!answer.heard.contains(&first));
     }
 
     #[test]

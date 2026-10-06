@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
 use resonate_providers::{
-    Asking, Away, Delivered, Delivery, Identity, Providers, TURNED_TO_APART,
+    Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers, TURNED_TO_APART,
     WAITED_ON_AFTER_AN_OFFER,
 };
 use resonate_vault::{Keeping, Taking};
@@ -323,7 +323,13 @@ struct Landing<'a> {
 enum Landed {
     Kept(MediaLocation),
     NotTheSong,
+    Unopened(Unopened),
     Unkept,
+}
+
+enum Unopened {
+    Gone,
+    Refused(resonate_providers::Error),
 }
 
 fn landed(
@@ -360,13 +366,17 @@ fn landed(
             })
         }
         Delivery::Stream {
-            extension, reader, ..
+            extension, opening, ..
         } => {
-            let mut pumped = match Pumped::from(reader, progress, want.id, options.answers_within) {
+            let mut pumped = match Pumped::from(opening, progress, want.id, options.answers_within)
+            {
                 Ok(pumped) => pumped,
                 Err(source) => return Err(Error::ThreadSpawn { source }),
             };
             let keeping = vault.keep_delivered(&mut pumped, extension.as_str());
+            if let Some(unopened) = pumped.unopened.take() {
+                return Ok(Landed::Unopened(unopened));
+            }
             if pumped.stalled {
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
@@ -413,20 +423,26 @@ fn landed(
 
 type Chunk = io::Result<Vec<u8>>;
 
+enum Pumping {
+    Read(Chunk),
+    Unopened(Unopened),
+}
+
 struct Pumped<'a> {
     want: WantId,
-    chunks: Receiver<Chunk>,
+    chunks: Receiver<Pumping>,
     held: Vec<u8>,
     read: usize,
     ended: bool,
     stalled: bool,
+    unopened: Option<Unopened>,
     stalls_after: Duration,
     progress: &'a PollProgress,
 }
 
 impl<'a> Pumped<'a> {
     fn from(
-        mut reader: Box<dyn Read + Send>,
+        opening: Opening,
         progress: &'a PollProgress,
         want: WantId,
         stalls_after: Duration,
@@ -434,7 +450,7 @@ impl<'a> Pumped<'a> {
         let (sender, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
         thread::Builder::new()
             .name("resonate-delivery".to_owned())
-            .spawn(move || pump(&mut *reader, &sender))?;
+            .spawn(move || opened_and_pumped(opening, &sender))?;
 
         Ok(Self {
             want,
@@ -443,6 +459,7 @@ impl<'a> Pumped<'a> {
             read: 0,
             ended: false,
             stalled: false,
+            unopened: None,
             stalls_after,
             progress,
         })
@@ -452,7 +469,11 @@ impl<'a> Pumped<'a> {
         let began = Instant::now();
         loop {
             match self.chunks.recv_timeout(HEEDED_EVERY) {
-                Ok(chunk) => return chunk,
+                Ok(Pumping::Read(chunk)) => return chunk,
+                Ok(Pumping::Unopened(unopened)) => {
+                    self.unopened = Some(unopened);
+                    return Err(io::Error::from(io::ErrorKind::NotFound));
+                }
                 Err(RecvTimeoutError::Disconnected) => {
                     return Err(io::Error::from(io::ErrorKind::BrokenPipe));
                 }
@@ -508,7 +529,19 @@ impl<R: Read> Read for Counted<'_, R> {
     }
 }
 
-fn pump(reader: &mut dyn Read, into: &SyncSender<Chunk>) {
+fn opened_and_pumped(opening: Opening, into: &SyncSender<Pumping>) {
+    match opening.open() {
+        Ok(Opened::Reading(mut reader)) => pump(&mut *reader, into),
+        Ok(Opened::Gone) => {
+            let _ = into.send(Pumping::Unopened(Unopened::Gone));
+        }
+        Err(refused) => {
+            let _ = into.send(Pumping::Unopened(Unopened::Refused(refused)));
+        }
+    }
+}
+
+fn pump(reader: &mut dyn Read, into: &SyncSender<Pumping>) {
     loop {
         let mut chunk = vec![0; CHUNK_BYTES];
         let answered = match reader.read(&mut chunk) {
@@ -520,7 +553,7 @@ fn pump(reader: &mut dyn Read, into: &SyncSender<Chunk>) {
             Err(error) => Err(error),
         };
         let last = answered.as_ref().map_or(true, Vec::is_empty);
-        if into.send(answered).is_err() || last {
+        if into.send(Pumping::Read(answered)).is_err() || last {
             return;
         }
     }
@@ -596,12 +629,15 @@ fn filed_in_the_music_folder(
             }
         }
         Delivery::Stream {
-            extension, reader, ..
+            extension, opening, ..
         } => {
             let mut pumped =
-                Pumped::from(reader, progress, want.id, landing.options.answers_within)
+                Pumped::from(opening, progress, want.id, landing.options.answers_within)
                     .map_err(|source| Error::ThreadSpawn { source })?;
             let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
+            if let Some(unopened) = pumped.unopened.take() {
+                return Ok(Landed::Unopened(unopened));
+            }
             if pumped.stalled {
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
@@ -877,44 +913,74 @@ impl Lanes<'_> {
                 }
                 return Ok(Flow::Onward);
             };
-            progress.offered.fetch_add(1, Ordering::Relaxed);
-            let taken_from = delivered.taken_from();
-            let landing = landed(
-                self.library,
-                want,
-                delivered,
-                &mut Landing {
-                    options: self.options,
-                    progress,
-                    away: &self.away,
-                    filed: &self.filed,
-                },
-            )?;
-            if progress.is_cancelled() {
-                if let Landed::Kept(at) = &landing {
-                    tried(self.library, want.id, Some(at))?;
-                }
-                return Ok(Flow::Stop);
-            }
-            match landing {
-                Landed::Kept(at) => {
-                    tried(self.library, want.id, Some(&at))?;
-                    self.pair_what_was_filed()?;
-                    return Ok(Flow::Onward);
-                }
-                Landed::Unkept => {
-                    tried(self.library, want.id, None)?;
-                    return Ok(Flow::Onward);
-                }
-                Landed::NotTheSong => {
-                    self.library
-                        .note_refused_offer(want.id, &taken_from, SystemTime::now())?;
-                    passing.extend(answer.asked);
-                    tracing::info!(want = %want.id, %taken_from, "a delivery that was not the song is passed over and the next provider asked");
+            passing.extend(answer.heard);
+            for delivered in std::iter::once(delivered).chain(answer.held_back) {
+                match self.offer_landed(want, delivered)? {
+                    Offer::Settled(flow) => return Ok(flow),
+                    Offer::FellThrough { heard } => every_provider_heard &= heard,
                 }
             }
         }
     }
+
+    fn offer_landed(&self, want: &Want, delivered: Delivered) -> Result<Offer> {
+        let progress = self.progress;
+        progress.turns_to(want.id, Some(&delivered.provider));
+        progress.offered.fetch_add(1, Ordering::Relaxed);
+        let taken_from = delivered.taken_from();
+        let provider = delivered.provider.clone();
+        let landing = landed(
+            self.library,
+            want,
+            delivered,
+            &mut Landing {
+                options: self.options,
+                progress,
+                away: &self.away,
+                filed: &self.filed,
+            },
+        )?;
+        if progress.is_cancelled() {
+            if let Landed::Kept(at) = &landing {
+                tried(self.library, want.id, Some(at))?;
+            }
+            return Ok(Offer::Settled(Flow::Stop));
+        }
+        match landing {
+            Landed::Kept(at) => {
+                tried(self.library, want.id, Some(&at))?;
+                self.pair_what_was_filed()?;
+                Ok(Offer::Settled(Flow::Onward))
+            }
+            Landed::Unkept => {
+                tried(self.library, want.id, None)?;
+                Ok(Offer::Settled(Flow::Onward))
+            }
+            Landed::NotTheSong => {
+                self.library
+                    .note_refused_offer(want.id, &taken_from, SystemTime::now())?;
+                tracing::info!(want = %want.id, %taken_from, "a delivery that was not the song is passed over and the next offer taken");
+                Ok(Offer::FellThrough { heard: true })
+            }
+            Landed::Unopened(Unopened::Gone) => {
+                tracing::info!(want = %want.id, %taken_from, "an offer was gone by the time it was opened, and the next is taken");
+                Ok(Offer::FellThrough { heard: true })
+            }
+            Landed::Unopened(Unopened::Refused(error)) => {
+                tracing::warn!(%error, want = %want.id, %taken_from, "an offer could not be opened, and the next is taken");
+                progress.refused.fetch_add(1, Ordering::Relaxed);
+                if error.is_the_provider_away() {
+                    self.away.lock().note(&provider);
+                }
+                Ok(Offer::FellThrough { heard: false })
+            }
+        }
+    }
+}
+
+enum Offer {
+    Settled(Flow),
+    FellThrough { heard: bool },
 }
 
 fn run(

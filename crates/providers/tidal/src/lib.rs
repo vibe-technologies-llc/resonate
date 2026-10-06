@@ -369,8 +369,8 @@ impl Provider for Tidal {
         &self.asker.source
     }
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained> {
-        played::obtained(self, identity)
+    fn find(&self, identity: &Identity) -> Result<Obtained> {
+        played::found(self, identity)
     }
 }
 
@@ -393,7 +393,7 @@ mod tests {
         );
 
         assert!(matches!(
-            tidal.obtain(&Identity::named("Echoes")),
+            tidal.find(&Identity::named("Echoes")),
             Ok(Obtained::Nothing)
         ));
     }

@@ -9,7 +9,9 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::Isrc;
 use resonate_monochrome::{Monochrome, Patience};
-use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp};
+use resonate_providers::{
+    Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
+};
 
 const ECHOES_ISRC: &str = "GBN9Y1100065";
 const ECHOES: &str = "154140652551016448";
@@ -268,13 +270,21 @@ fn track(id: &str, from: Option<usize>) -> Asked {
     }
 }
 
+fn opened(opening: Opening) -> Box<dyn Read + Send> {
+    match opening.open().expect("the offer opens") {
+        Opened::Reading(reader) => reader,
+        Opened::Gone => panic!("the offer was gone when opened"),
+    }
+}
+
 fn streamed(obtained: Obtained) -> Option<(String, String, Vec<u8>)> {
     match obtained {
         Obtained::Found(Delivery::Stream {
             key,
             extension,
-            mut reader,
+            opening,
         }) => {
+            let mut reader = opened(opening);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), extension.as_str().to_owned(), bytes))
@@ -297,7 +307,7 @@ fn the_listing_holding_the_wants_isrc_is_delivered_whole_as_flac() {
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.monochrome().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.monochrome().find(&echoes()).expect("an answer"));
 
     assert_eq!(
         delivered,
@@ -317,7 +327,7 @@ fn a_track_is_searched_for_by_title_and_artist_and_then_by_title_alone() {
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.monochrome().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.monochrome().find(&echoes()).expect("an answer"));
 
     assert!(delivered.is_some());
     assert_eq!(
@@ -334,7 +344,7 @@ fn a_track_is_searched_for_by_title_and_artist_and_then_by_title_alone() {
 fn a_same_titled_listing_under_another_isrc_is_never_delivered() {
     let fake = Fake::serving(|_, _| found(&[listing("176742690942394368", "USSM12409270")]));
 
-    let obtained = fake.monochrome().obtain(&echoes()).expect("an answer");
+    let obtained = fake.monochrome().find(&echoes()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
     assert_eq!(
@@ -349,7 +359,7 @@ fn a_want_with_no_isrc_asks_the_server_nothing() {
 
     let obtained = fake
         .monochrome()
-        .obtain(&Identity {
+        .find(&Identity {
             artist: Some("Pink Floyd".to_owned()),
             ..Identity::named("Echoes")
         })
@@ -366,7 +376,7 @@ fn a_track_id_that_is_not_digits_is_never_asked_for() {
         _ => Canned::audio(),
     });
 
-    let obtained = fake.monochrome().obtain(&echoes()).expect("an answer");
+    let obtained = fake.monochrome().find(&echoes()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
     assert!(
@@ -384,7 +394,7 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.monochrome().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.monochrome().find(&echoes()).expect("an answer"));
 
     assert!(delivered.is_some());
     assert_eq!(fake.heard().len(), 3);
@@ -394,7 +404,7 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
 fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries_and_the_provider_away() {
     let fake = Fake::serving(|_, _| Canned::status(503));
 
-    let refused = fake.monochrome().obtain(&echoes());
+    let refused = fake.monochrome().find(&echoes());
 
     assert!(matches!(
         &refused,
@@ -408,16 +418,46 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries_and_the_provid
     assert_eq!(fake.heard().len(), 4);
 }
 
+fn offered(obtained: Obtained) -> Opening {
+    match obtained {
+        Obtained::Found(Delivery::Stream { opening, .. }) => opening,
+        Obtained::Found(Delivery::File(_)) | Obtained::Nothing => panic!("nothing was offered"),
+    }
+}
+
 #[test]
-fn a_track_gone_from_the_server_is_nothing_delivered() {
+fn a_search_is_answered_without_the_download_being_asked_for() {
+    let fake = Fake::serving(|asked, _| match asked {
+        Asked::Search(_) => echoes_found(),
+        _ => Canned::audio(),
+    });
+
+    let opening = offered(fake.monochrome().find(&echoes()).expect("an answer"));
+    let asked_before_opening = fake.heard();
+    let mut bytes = Vec::new();
+    opened(opening)
+        .read_to_end(&mut bytes)
+        .expect("the stream reads");
+
+    assert!(
+        asked_before_opening
+            .iter()
+            .all(|asked| matches!(asked, Asked::Search(_))),
+        "{asked_before_opening:?}"
+    );
+    assert_eq!(bytes, AUDIO);
+}
+
+#[test]
+fn a_track_gone_from_the_server_by_the_time_it_is_opened_is_gone() {
     let fake = Fake::serving(|asked, _| match asked {
         Asked::Search(_) => echoes_found(),
         _ => Canned::status(404),
     });
 
-    let obtained = fake.monochrome().obtain(&echoes()).expect("an answer");
+    let opening = offered(fake.monochrome().find(&echoes()).expect("an answer"));
 
-    assert!(matches!(obtained, Obtained::Nothing));
+    assert!(matches!(opening.open(), Ok(Opened::Gone)));
 }
 
 #[test]
@@ -427,8 +467,10 @@ fn a_document_answering_a_download_is_unreadable_and_never_a_song() {
         _ => Canned::json(r#"{"error":"busy"}"#.to_owned()),
     });
 
+    let opening = offered(fake.monochrome().find(&echoes()).expect("an answer"));
+
     assert!(matches!(
-        fake.monochrome().obtain(&echoes()),
+        opening.open(),
         Err(Error::Unreadable {
             op: ProviderOp::Download,
             ..
@@ -447,7 +489,7 @@ fn a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
         _ => Canned::audio().sent(Sent::CutAfter(half)),
     });
 
-    let delivered = streamed(fake.monochrome().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.monochrome().find(&echoes()).expect("an answer"));
 
     assert_eq!(delivered.map(|(_, _, bytes)| bytes), Some(AUDIO.to_vec()));
     assert_eq!(
@@ -469,7 +511,7 @@ fn a_server_resending_the_whole_file_to_a_resume_is_read_past_what_was_held() {
         _ => Canned::audio().sent(Sent::CutAfter(half)),
     });
 
-    let delivered = streamed(fake.monochrome().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.monochrome().find(&echoes()).expect("an answer"));
 
     assert_eq!(delivered.map(|(_, _, bytes)| bytes), Some(AUDIO.to_vec()));
 }
@@ -484,11 +526,12 @@ fn a_download_that_stalls_and_stays_stalled_is_broken_off_rather_than_held() {
     });
     let started = Instant::now();
 
-    let Obtained::Found(Delivery::Stream { mut reader, .. }) =
-        fake.impatient().obtain(&echoes()).expect("an answer")
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.impatient().find(&echoes()).expect("an answer")
     else {
         panic!("no stream was delivered");
     };
+    let mut reader = opened(opening);
     let mut bytes = Vec::new();
     let broken_off = reader.read_to_end(&mut bytes);
 
@@ -508,7 +551,7 @@ fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
     });
     let started = Instant::now();
 
-    let delivered = streamed(fake.impatient().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.impatient().find(&echoes()).expect("an answer"));
 
     assert!(started.elapsed() > IMPATIENT);
     assert_eq!(delivered.map(|(_, _, bytes)| bytes), Some(AUDIO.to_vec()));
@@ -520,7 +563,7 @@ fn an_unreachable_server_is_the_provider_away() {
     let url = format!("http://{}", listener.local_addr().expect("a bound address"));
     drop(listener);
 
-    let refused = Monochrome::at(&url).obtain(&echoes());
+    let refused = Monochrome::at(&url).find(&echoes());
 
     assert!(matches!(
         &refused,

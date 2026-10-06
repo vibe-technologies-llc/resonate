@@ -3,7 +3,6 @@ mod trust;
 
 use std::{
     fmt::{self, Write as _},
-    io::Read,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -14,7 +13,8 @@ use std::{
 use md5::{Digest, Md5};
 use resonate_core::{Isrc, Mbid, SourceId};
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Pacing, Provider, ProviderOp, Result,
+    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
+    Result,
 };
 use serde::Deserialize;
 use ureq::{
@@ -116,12 +116,13 @@ fn downloading_agent(patience: Patience) -> Agent {
     )
 }
 
+#[derive(Clone)]
 pub struct Subsonic {
     source: SourceId,
     server: Server,
     asking: Agent,
     downloading: Agent,
-    salted: AtomicU64,
+    salted: Arc<AtomicU64>,
     pacing: Arc<Pacing>,
 }
 
@@ -264,7 +265,7 @@ impl Subsonic {
             server,
             asking: asking_agent(Patience::default()),
             downloading: downloading_agent(Patience::default()),
-            salted: AtomicU64::new(0),
+            salted: Arc::new(AtomicU64::new(0)),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
     }
@@ -427,15 +428,16 @@ impl Subsonic {
         }
     }
 
-    fn downloaded(&self, song: &Song) -> Result<Box<dyn Read + Send>> {
+    fn downloaded(&self, url: &str) -> Result<Opened> {
         let op = ProviderOp::Download;
-        let url = self.url("download", &[("id", &song.id)]);
-        let response = self.called(&self.downloading, op, &url)?;
+        let response = self.called(&self.downloading, op, url)?;
         if is_a_document(response.body().mime_type()) {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
         }
-        Ok(Box::new(response.into_body().into_reader()))
+        Ok(Opened::Reading(Box::new(
+            response.into_body().into_reader(),
+        )))
     }
 }
 
@@ -456,7 +458,7 @@ impl Provider for Subsonic {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained> {
+    fn find(&self, identity: &Identity) -> Result<Obtained> {
         if identity.recording.is_none() && identity.isrc.is_none() {
             return Ok(Obtained::Nothing);
         }
@@ -470,10 +472,12 @@ impl Provider for Subsonic {
         else {
             return Ok(Obtained::Nothing);
         };
+        let url = self.url("download", &[("id", &song.id)]);
+        let downloading = self.clone();
         Ok(Obtained::Found(Delivery::Stream {
-            key: song.id.clone().into_boxed_str(),
+            key: song.id.into_boxed_str(),
             extension,
-            reader: self.downloaded(&song)?,
+            opening: Opening::new(move || downloading.downloaded(&url)),
         }))
     }
 }
@@ -590,7 +594,7 @@ mod tests {
     #[test]
     fn a_want_with_no_identifier_is_not_searched_for() {
         assert!(matches!(
-            subsonic().obtain(&Identity::named("Echoes")),
+            subsonic().find(&Identity::named("Echoes")),
             Ok(Obtained::Nothing)
         ));
     }

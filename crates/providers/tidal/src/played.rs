@@ -1,7 +1,7 @@
-use std::io::Read;
-
 use resonate_core::{Isrc, Service, SourceId};
-use resonate_providers::{Delivery, Error, Extension, Identity, Obtained, ProviderOp, Result};
+use resonate_providers::{
+    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, ProviderOp, Result,
+};
 use serde::Deserialize;
 use ureq::Agent;
 
@@ -42,7 +42,7 @@ pub(crate) trait Finds {
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>>;
 }
 
-pub(crate) fn obtained(finds: &impl Finds, identity: &Identity) -> Result<Obtained> {
+pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained> {
     let linked = identity.track_on(Service::Tidal).and_then(TrackId::linked);
     if linked.is_none() && identity.isrc.is_none() {
         return Ok(Obtained::Nothing);
@@ -131,40 +131,6 @@ impl Player<'_> {
         Ok(Some(media))
     }
 
-    fn downloaded(&self, media: Media) -> Result<Box<dyn Read + Send>> {
-        let op = ProviderOp::Download;
-        let fetched =
-            Fetched::opened(self.media.clone(), media.urls).map_err(
-                |unfetched| match unfetched {
-                    Unfetched::Io(source) => Error::Io {
-                        provider: self.source.clone(),
-                        op,
-                        source,
-                    },
-                    Unfetched::Refused(status) => Error::Refused {
-                        provider: self.source.clone(),
-                        op,
-                        status,
-                    },
-                },
-            )?;
-        match media.container {
-            Container::Flac => Ok(Box::new(fetched)),
-            Container::Mp4 => match Remuxed::opened(fetched, media.timeline) {
-                Ok(remuxed) => Ok(Box::new(remuxed)),
-                Err(Unremuxable::Io(source)) => Err(Error::Io {
-                    provider: self.source.clone(),
-                    op,
-                    source,
-                }),
-                Err(unremuxable) => {
-                    tracing::debug!(?unremuxable, provider = %self.source, "a stream held no FLAC track to take");
-                    Err(self.unreadable(op))
-                }
-            },
-        }
-    }
-
     pub(crate) fn delivered(
         &self,
         track: TrackId,
@@ -196,11 +162,47 @@ impl Player<'_> {
     }
 
     fn delivery(&self, track: TrackId, media: Media) -> Result<Delivery> {
+        let provider = self.source.clone();
+        let agent = self.media.clone();
         Ok(Delivery::Stream {
             key: format!("track/{}", track.0).into_boxed_str(),
             extension: Extension::new(DELIVERED_AS)?,
-            reader: self.downloaded(media)?,
+            opening: Opening::new(move || downloaded(&provider, agent, media)),
         })
+    }
+}
+
+fn downloaded(provider: &SourceId, agent: Agent, media: Media) -> Result<Opened> {
+    let op = ProviderOp::Download;
+    let fetched = Fetched::opened(agent, media.urls).map_err(|unfetched| match unfetched {
+        Unfetched::Io(source) => Error::Io {
+            provider: provider.clone(),
+            op,
+            source,
+        },
+        Unfetched::Refused(status) => Error::Refused {
+            provider: provider.clone(),
+            op,
+            status,
+        },
+    })?;
+    match media.container {
+        Container::Flac => Ok(Opened::Reading(Box::new(fetched))),
+        Container::Mp4 => match Remuxed::opened(fetched, media.timeline) {
+            Ok(remuxed) => Ok(Opened::Reading(Box::new(remuxed))),
+            Err(Unremuxable::Io(source)) => Err(Error::Io {
+                provider: provider.clone(),
+                op,
+                source,
+            }),
+            Err(unremuxable) => {
+                tracing::debug!(?unremuxable, %provider, "a stream held no FLAC track to take");
+                Err(Error::Unreadable {
+                    provider: provider.clone(),
+                    op,
+                })
+            }
+        },
     }
 }
 

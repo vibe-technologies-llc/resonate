@@ -513,8 +513,8 @@ impl Provider for HifiApi {
         &self.asker.source
     }
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained> {
-        played::obtained(self, identity)
+    fn find(&self, identity: &Identity) -> Result<Obtained> {
+        played::found(self, identity)
     }
 }
 

@@ -195,7 +195,7 @@ impl Provider for Inbox {
         &self.source
     }
 
-    fn obtain(&self, identity: &Identity) -> Result<Obtained> {
+    fn find(&self, identity: &Identity) -> Result<Obtained> {
         let keys = keys_most_exact_first(identity);
         if keys.is_empty() {
             return Ok(Obtained::Nothing);
@@ -303,7 +303,7 @@ mod tests {
         ]);
         let inbox = settled_at(&folder);
 
-        let found = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
         assert_eq!(
             found,
             Some(
@@ -317,7 +317,7 @@ mod tests {
             recording: None,
             ..echoes()
         };
-        let found = delivered(inbox.obtain(&without_recording).expect("a readable inbox"));
+        let found = delivered(inbox.find(&without_recording).expect("a readable inbox"));
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES_TRACK}.flac"))));
 
         let isrc_alone = Identity {
@@ -325,7 +325,7 @@ mod tests {
             track: None,
             ..echoes()
         };
-        let found = delivered(inbox.obtain(&isrc_alone).expect("a readable inbox"));
+        let found = delivered(inbox.find(&isrc_alone).expect("a readable inbox"));
         assert_eq!(
             found,
             Some(
@@ -348,7 +348,7 @@ mod tests {
 
         let found = delivered(
             settled_at(&folder)
-                .obtain(&echoes())
+                .find(&echoes())
                 .expect("a readable inbox"),
         );
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.WAV"))));
@@ -356,7 +356,7 @@ mod tests {
         fs::remove_file(folder.0.join(format!("{ECHOES}.WAV"))).expect("a scratch file");
         let found = delivered(
             settled_at(&folder)
-                .obtain(&echoes())
+                .find(&echoes())
                 .expect("a readable inbox"),
         );
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.m4a"))));
@@ -369,7 +369,7 @@ mod tests {
 
         let found = delivered(
             settled_at(&folder)
-                .obtain(&echoes())
+                .find(&echoes())
                 .expect("a readable inbox"),
         );
 
@@ -381,15 +381,15 @@ mod tests {
         let folder = Folder::new().holding(&[&format!("{ECHOES}.flac"), "unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        let first = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+        let first = delivered(inbox.find(&echoes()).expect("a readable inbox"));
         let read_at = listed_at(&inbox);
         for nth in 0..WANTS_IN_A_POLL {
             let answered = inbox
-                .obtain(&recording_numbered(nth))
+                .find(&recording_numbered(nth))
                 .expect("a readable inbox");
             assert!(delivered(answered).is_none());
         }
-        let last = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+        let last = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
         assert!(first.is_some());
         assert_eq!(first, last);
@@ -402,9 +402,9 @@ mod tests {
         let folder = Folder::new().holding(&["unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        let before = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+        let before = delivered(inbox.find(&echoes()).expect("a readable inbox"));
         fs::write(folder.0.join(format!("{ECHOES}.flac")), b"audio").expect("a scratch file");
-        let after = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+        let after = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
         assert!(before.is_none());
         assert_eq!(after, Some(folder.0.join(format!("{ECHOES}.flac"))));
@@ -418,9 +418,9 @@ mod tests {
             ..settled_at(&folder)
         };
 
-        let _ = inbox.obtain(&echoes()).expect("a readable inbox");
+        let _ = inbox.find(&echoes()).expect("a readable inbox");
         let first = listed_at(&inbox);
-        let _ = inbox.obtain(&echoes()).expect("a readable inbox");
+        let _ = inbox.find(&echoes()).expect("a readable inbox");
 
         assert_ne!(listed_at(&inbox), first);
     }
@@ -434,7 +434,7 @@ mod tests {
             ..Inbox::at(&folder.0)
         };
 
-        let Err(error) = inbox.obtain(&echoes()) else {
+        let Err(error) = inbox.find(&echoes()) else {
             panic!("a file still arriving was delivered");
         };
 
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(
             delivered(
                 settled_at(&folder)
-                    .obtain(&echoes())
+                    .find(&echoes())
                     .expect("a readable inbox")
             ),
             Some(arriving)
@@ -467,7 +467,7 @@ mod tests {
         };
 
         assert!(matches!(
-            inbox.obtain(&echoes()),
+            inbox.find(&echoes()),
             Err(Error::StillArriving { .. })
         ));
     }
@@ -502,8 +502,8 @@ mod tests {
         let folder = Folder::new().holding(&["Echoes.flac", "unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        assert!(delivered(inbox.obtain(&Identity::named("Echoes")).expect("no read")).is_none());
-        assert!(delivered(inbox.obtain(&echoes()).expect("a readable inbox")).is_none());
+        assert!(delivered(inbox.find(&Identity::named("Echoes")).expect("no read")).is_none());
+        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_none());
     }
 
     #[test]
@@ -517,7 +517,7 @@ mod tests {
 
         let found = delivered(
             settled_at(&folder)
-                .obtain(&echoes())
+                .find(&echoes())
                 .expect("a readable inbox"),
         );
 
@@ -531,7 +531,7 @@ mod tests {
         assert!(
             delivered(
                 settled_at(&folder)
-                    .obtain(&echoes())
+                    .find(&echoes())
                     .expect("a readable inbox")
             )
             .is_none()
@@ -552,7 +552,7 @@ mod tests {
         assert!(
             delivered(
                 settled_at(&folder)
-                    .obtain(&echoes())
+                    .find(&echoes())
                     .expect("a readable inbox")
             )
             .is_none()
@@ -565,7 +565,7 @@ mod tests {
         let missing = folder.0.join("not-there");
 
         assert!(matches!(
-            Inbox::at(&missing).obtain(&echoes()),
+            Inbox::at(&missing).find(&echoes()),
             Err(Error::Io {
                 op: ProviderOp::ReadFolder,
                 ..
@@ -579,7 +579,7 @@ mod tests {
         let before = fs::read(folder.0.join(format!("{ECHOES}.flac"))).expect("the file");
 
         let _ = settled_at(&folder)
-            .obtain(&echoes())
+            .find(&echoes())
             .expect("a readable inbox");
 
         let after = fs::read(folder.0.join(format!("{ECHOES}.flac"))).expect("the file");

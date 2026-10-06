@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Link};
 use resonate_providers::{
-    Client, Delivery, Error, Identity, Obtained, Provider, ProviderOp, SignsIn,
+    Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp, SignsIn,
 };
 use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal, TidalSignIn};
 
@@ -324,13 +324,21 @@ fn ncs_song() -> Identity {
     }
 }
 
+fn opened(opening: Opening) -> Box<dyn Read + Send> {
+    match opening.open().expect("the offer opens") {
+        Opened::Reading(reader) => reader,
+        Opened::Gone => panic!("the offer was gone when opened"),
+    }
+}
+
 fn streamed(obtained: Obtained) -> Option<(String, String, Vec<u8>)> {
     match obtained {
         Obtained::Found(Delivery::Stream {
             key,
             extension,
-            mut reader,
+            opening,
         }) => {
+            let mut reader = opened(opening);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), extension.to_string(), bytes))
@@ -352,7 +360,7 @@ fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
     let fake = tidal_server("FULL", on_itself, whole_segment);
 
     let (key, extension, bytes) =
-        streamed(fake.tidal().obtain(&by_isrc()).expect("an answer")).expect("a delivery");
+        streamed(fake.tidal().find(&by_isrc()).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
@@ -381,6 +389,25 @@ fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
 }
 
 #[test]
+fn a_search_is_answered_without_the_download_being_asked_for() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.tidal().find(&by_isrc()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+    let fetched_before_opening = fake.paths().iter().any(|path| segment(path).is_some());
+    let mut bytes = Vec::new();
+    opened(opening)
+        .read_to_end(&mut bytes)
+        .expect("the stream reads");
+
+    assert!(!fetched_before_opening, "{:?}", fake.paths());
+    assert_native_flac(&bytes);
+}
+
+#[test]
 fn a_track_musicbrainz_links_to_tidal_is_taken_without_a_search() {
     let fake = tidal_server("FULL", on_itself, whole_segment);
     let linked = Identity {
@@ -391,7 +418,7 @@ fn a_track_musicbrainz_links_to_tidal_is_taken_without_a_search() {
         ..Identity::named("Echoes")
     };
 
-    let delivered = streamed(fake.tidal().obtain(&linked).expect("an answer"));
+    let delivered = streamed(fake.tidal().find(&linked).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
     assert!(!fake.paths().iter().any(|path| path == "/openapi/tracks"));
@@ -406,7 +433,7 @@ fn a_track_whose_isrc_is_not_the_wanted_one_is_never_taken() {
     });
 
     assert!(matches!(
-        fake.tidal().obtain(&by_isrc()),
+        fake.tidal().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
     assert!(
@@ -422,7 +449,7 @@ fn a_preview_is_never_delivered_for_the_track() {
     let fake = tidal_server("PREVIEW", on_itself, whole_segment);
 
     assert!(matches!(
-        fake.tidal().obtain(&by_isrc()),
+        fake.tidal().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
     assert!(fake.paths().iter().all(|path| segment(path).is_none()));
@@ -437,7 +464,7 @@ fn media_named_off_the_audio_hosts_is_never_fetched() {
     );
 
     assert!(matches!(
-        fake.tidal().obtain(&by_isrc()),
+        fake.tidal().find(&by_isrc()),
         Err(Error::OffItsHosts {
             op: ProviderOp::Playback,
             ..
@@ -452,7 +479,12 @@ fn a_dash_stream_is_fetched_segments_ahead_and_read_in_order() {
     let last = segmented().len() - 1;
     let ahead = last.min(3);
 
-    let obtained = fake.tidal().obtain(&by_isrc()).expect("an answer");
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.tidal().find(&by_isrc()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+    let mut reader = opened(opening);
     let began = std::time::Instant::now();
     while !(1..=ahead).all(|nth| fake.paths().iter().any(|path| segment(path) == Some(nth))) {
         assert!(
@@ -462,9 +494,10 @@ fn a_dash_stream_is_fetched_segments_ahead_and_read_in_order() {
         );
         thread::sleep(Duration::from_millis(5));
     }
-    let delivered = streamed(obtained).expect("a delivery");
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).expect("the stream reads");
 
-    assert_native_flac(&delivered.2);
+    assert_native_flac(&bytes);
     let mut asked: Vec<usize> = fake
         .paths()
         .iter()
@@ -504,7 +537,7 @@ fn a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped() {
         }
     });
 
-    let delivered = streamed(fake.tidal().obtain(&by_isrc()).expect("an answer"));
+    let delivered = streamed(fake.tidal().find(&by_isrc()).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
     let resumed = fake
@@ -529,7 +562,7 @@ fn a_refresh_token_turned_away_is_the_account_and_not_the_want() {
         _ => Canned::refused(500, "{}"),
     });
 
-    let refused = fake.tidal().obtain(&by_isrc());
+    let refused = fake.tidal().find(&by_isrc());
 
     let Err(error) = refused else {
         panic!("a refused sign-in delivered");
@@ -567,7 +600,7 @@ fn a_session_that_lapsed_signs_in_again_once() {
     });
 
     assert!(matches!(
-        fake.tidal().obtain(&by_isrc()),
+        fake.tidal().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
     assert_eq!(
@@ -589,7 +622,7 @@ fn a_session_turned_away_after_signing_in_again_is_unwelcome() {
     });
 
     assert!(matches!(
-        fake.tidal().obtain(&by_isrc()),
+        fake.tidal().find(&by_isrc()),
         Err(Error::Unwelcome {
             op: ProviderOp::Search,
             code: 11003,
@@ -622,7 +655,7 @@ fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_the
         .tidal()
         .telling(move |renewed| noted.lock().push(renewed.into_string()));
 
-    assert!(matches!(tidal.obtain(&by_isrc()), Ok(Obtained::Nothing)));
+    assert!(matches!(tidal.find(&by_isrc()), Ok(Obtained::Nothing)));
 
     let signed_in = fake
         .heard()
@@ -650,7 +683,7 @@ fn a_refresh_token_tidal_keeps_is_never_handed_back() {
         .tidal()
         .telling(move |renewed| noted.lock().push(renewed.into_string()));
 
-    assert!(matches!(tidal.obtain(&by_isrc()), Ok(Obtained::Nothing)));
+    assert!(matches!(tidal.find(&by_isrc()), Ok(Obtained::Nothing)));
     assert!(told.lock().is_empty());
 }
 
@@ -809,7 +842,7 @@ fn a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac
     });
 
     let (key, extension, bytes) =
-        streamed(fake.hifi().obtain(&by_isrc()).expect("an answer")).expect("a delivery");
+        streamed(fake.hifi().find(&by_isrc()).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
@@ -834,7 +867,7 @@ fn a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for() {
     });
 
     assert!(matches!(
-        fake.hifi().obtain(&by_isrc()),
+        fake.hifi().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
     assert_eq!(fake.paths(), vec!["/search/".to_owned()]);
@@ -858,7 +891,7 @@ fn a_hifi_api_request_held_in_its_queue_is_waited_for() {
         _ => Canned::refused(404, "{}"),
     });
 
-    let delivered = streamed(fake.hifi().obtain(&by_isrc()).expect("an answer"));
+    let delivered = streamed(fake.hifi().find(&by_isrc()).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
     let looked: Vec<_> = fake
@@ -880,7 +913,7 @@ fn a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_count
     let answer = fake
         .hifi()
         .queued_for_at_most(Duration::ZERO)
-        .obtain(&by_isrc());
+        .find(&by_isrc());
 
     let Err(error) = answer else {
         panic!("a queue never reached is an error");
@@ -903,12 +936,12 @@ fn a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_count
 fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome() {
     let missing = hifi_server(|_, _, _| Canned::refused(404, r#"{"detail":"Upstream API error"}"#));
     assert!(matches!(
-        missing.hifi().obtain(&by_isrc()),
+        missing.hifi().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
 
     let refused = hifi_server(|_, _, _| Canned::refused(401, r#"{"detail":"Upstream API error"}"#));
-    let Err(error) = refused.hifi().obtain(&by_isrc()) else {
+    let Err(error) = refused.hifi().find(&by_isrc()) else {
         panic!("a server turned away is an error");
     };
     assert!(matches!(
@@ -932,7 +965,7 @@ fn the_hosted_hifi_service_downloads_ncs_heroes_tonight_by_isrc() {
 
     let (key, extension, bytes) = streamed(
         HifiApi::hosted()
-            .obtain(&ncs_song())
+            .find(&ncs_song())
             .expect("the hosted hifi service answers"),
     )
     .expect("the NCS track is delivered");

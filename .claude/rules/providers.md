@@ -28,8 +28,13 @@ first). A provider needing an identifier (a row the enrichment has not answered 
 `Nothing` without one rather than guessing: **a guess is never written**, which is why
 `resonate-inbox` never matches on a title.
 
-`Provider::obtain` answers `Obtained::Nothing` or `Obtained::Found(Delivery)`, or an `Err` where it
-could not be asked, which `Providers::first` logs, counts `refused` and carries on past.
+`Provider::find` answers `Obtained::Nothing` or `Obtained::Found(Delivery)`, or an `Err` where it
+could not be asked, which `Providers::first` logs, counts `refused` and carries on past. **Finding is
+not downloading**: `find` searches, and a stream it offers carries an `Opening`, the download not
+yet asked for, which the poll opens only for the offer it takes, so the providers of one want race
+their searches and an offer not taken costs nothing more
+(`a_search_is_answered_without_the_download_being_asked_for` in each hosted provider's tests,
+`an_offer_the_race_did_not_take_is_never_opened`).
 `Error::is_the_provider_away` says which errors are about the provider rather than the want (`Io`,
 `Unwelcome`, `StillQueued`, `Untrusted`, a `Refused` of 500 or over); `TurnedAway` and a 404 are the
 want's alone. **A file still arriving is neither a miss nor the provider away**: `StillArriving` is
@@ -37,8 +42,11 @@ counted `refused`, the want stays unstamped and due, and the provider is still a
 
 - **`Delivery::File(PathBuf)`** is audio already on disk, copied by the vault and left where it
   stood: a provider's folder is never written to.
-- **`Delivery::Stream { key, extension, reader }`** is bytes from anywhere; the object is recorded as
+- **`Delivery::Stream { key, extension, opening }`** is bytes from anywhere; the object is recorded as
   taken from `<provider>:<key>`, and `Extension` is the format hint the decoder probes with.
+  `Opening::open` answers `Opened::Reading(reader)`, `Opened::Gone` where the track went between
+  the search and the download (Monochrome's 404 or 410), or the provider's `Err`; `Opening::ready`
+  wraps a reader already open.
 
 ## What the infrastructure owns
 
@@ -85,7 +93,9 @@ A provider does none of this, so none of it is written twice.
 - **How long a provider is waited on.** `Providers::first` takes an `Asking`: `within`
   (`ANSWERS_WITHIN` by default), a `cancelled` read off the poll's progress, a `turning_to` called with
   each real provider's name as it is asked, a `declined` every delivery is weighed against, the
-  `passing` left out of this ask, and `apart` and `grace`. Each provider is asked on a thread of its
+  `passing` left out of this ask, and `apart` and `grace`. Only real providers race: the
+  `Unprovided` stub is never asked, so the first registered is rank 0 and the second is turned to
+  one `apart` in (`the_second_provider_registered_is_turned_to_one_pace_in_and_not_two`). Each provider is asked on a thread of its
   own; one not answered by the deadline is left behind and counted `late`, not `refused`, its answer
   dropped. A cancel ends the wait at once and the want is not stamped, unless an offer is already
   held, which is taken.
@@ -99,9 +109,18 @@ A provider does none of this, so none of it is written twice.
   `an_earlier_provider_answering_within_the_grace_is_taken_over_a_later_one_that_offered_first`,
   `a_later_offer_is_taken_once_the_grace_runs_out`,
   `a_provider_is_not_asked_before_its_turn_while_one_before_it_may_still_answer`). A provider still
-  asked when the offer is taken is abandoned on its thread, its answer, and any download it opened,
-  dropped. `Answer::asked` names who this ask reached, what a refused delivery's next round passes.
-- **How long a stream is read.** `Pumped` reads a delivery's reader on a `resonate-delivery` thread,
+  asked when the offer is taken is abandoned on its thread and its answer dropped. `Answer::held_back`
+  hands back, unopened and in rank order, the other offers held when the best was taken
+  (`an_offer_not_taken_is_handed_back_unopened_behind_the_one_taken`), and `Answer::heard` names the
+  providers whose answer came in, what a later round passes; one still being asked is asked again.
+- **An offer that cannot be opened falls through to the next.** `Pumped` opens the offer on the
+  `resonate-delivery` thread, under the same stall deadline and cancel as its bytes. `Gone` passes to
+  the next offer as a provider answering nothing does; an `Err` is counted `refused`, notes the
+  provider `Away` where `is_the_provider_away`, and leaves the want unstamped unless a later offer
+  is kept (`an_offer_that_cannot_be_opened_falls_through_to_the_next_provider`). The offers held back
+  are tried before any provider is asked again
+  (`an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be`).
+- **How long a stream is read.** `Pumped` opens and reads a delivery on a `resonate-delivery` thread,
   `CHUNK_BYTES` at a time and at most `CHUNKS_AHEAD` ahead, the keep looking at the cancel. A cancel
   throws the staging away and leaves the want untried; a stream yielding nothing for `answers_within`
   is given up the same way, counted `late`, with the want stamped as tried (the provider answered and
@@ -116,9 +135,10 @@ A provider does none of this, so none of it is written twice.
   `landed` answers a `Landed`: `Kept`, `Unkept` (the vault or the folder failed, a stream stalled, the
   row was held meanwhile) or `NotTheSong` (the wrong length, a vault `Keeping::Refused`, a filing
   too large or undecodable). On `NotTheSong` the offer is written to `refused_offers` (a `MIGRATIONS`
-  step: want, `taken_from`, when) and the want asked again within the same claim with every provider
-  the round asked in `Asking::passing`, left out without counting as passed over, so the provider
-  registered after the one that offered the wrong song is asked at once rather than never
+  step: want, `taken_from`, when) and the next offer held back is taken; once they are spent the want
+  is asked again within the same claim with every provider heard in `Asking::passing`, left out
+  without counting as passed over, so the provider registered after the one that offered the wrong
+  song is asked at once rather than never
   (`a_delivery_refused_from_one_provider_is_asked_of_the_next`). The rounds end at a keep, an unkept
   delivery or a round with nothing; the want is stamped once, a miss where nothing was kept and every
   round heard from everyone. **A refused offer is declined by the next poll too**: `declined_offer_rows`
@@ -296,8 +316,9 @@ is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a
   and a host merely ending in the name; one URL off them fails the whole manifest as
   `Error::OffItsHosts` before a byte is fetched. The media agent follows no redirect.
 - **A segment that breaks off is asked for again from where it stopped** with `Range`, up to
-  `RESUMES_AT_MOST` times running. The first segment is opened inside `obtain`, so a CDN refusing it
-  is the provider's `Refused` under `ProviderOp::Download`, not a failed keep.
+  `RESUMES_AT_MOST` times running. `find` reads the playback answer and its manifest and offers the
+  media; the first segment is fetched when the offer is opened, so a CDN refusing it is the
+  provider's `Refused` under `ProviderOp::Download`, an offer falling through, not a failed keep.
 - **The segments after the first are fetched ahead of the reader.** `Fetched` streams the first and
   keeps `SEGMENTS_AHEAD` (3) more coming whole, each on a `resonate-tidal-segment` thread of its own
   handing its bytes over a channel of one, read in order and topped up as each is drained, so a
@@ -321,7 +342,7 @@ is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a
   (`a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked`).
 - **It paces and identifies itself as the Subsonic client does**, and `Account`'s `Debug` prints neither
   secret nor token. `asker.rs` is the pacing, retrying and reading both TIDAL providers share, and
-  `played.rs` what follows a playback answer, with `played::obtained`, the link-then-ISRC order,
+  `played.rs` what follows a playback answer, with `played::found`, the link-then-ISRC order,
   written once over the `Finds` trait each implements.
 
 ## A hifi-api server
@@ -334,7 +355,7 @@ search and playback tokens are cached until shortly before expiry and sent only 
 API. `played.rs` reads the manifest through the same checks as a TIDAL account; the manifest URL the
 service returns must be HTTPS on `manifest.tidal.com` or a subdomain.
 
-- **Asked by the link and the ISRC, never by a title**, through `played::obtained`: the linked track
+- **Asked by the link and the ISRC, never by a title**, through `played::found`: the linked track
   first; otherwise the hosted flow searches TIDAL's web API by title and artist and takes only listings
   whose own `isrc` is the want's, up to `TRACKS_TRIED_AT_MOST`. A custom server keeps the hifi-api
   routes with `data.items` checked by ISRC.
@@ -369,9 +390,9 @@ answers `tracks` listings (`trackId`, `isrc`, `playable`), and `/track/<trackId>
   `Isrc::new`, is the want's and it is not `playable: false`. A `trackId` is used only where it is
   all digits, since it goes into the path.
 - **What lands is the server's FLAC**, keyed `track/<trackId>` with the extension `flac`, opened
-  inside `obtain` so a refused download is the provider's `Refused` under `ProviderOp::Download`. A
-  404 or 410 there is the track gone, `Nothing`; a download whose `Content-Type` names text, JSON or
-  XML is `Unreadable`, never streamed as a song.
+  only when the offer is taken, so a refused download is the provider's `Refused` under
+  `ProviderOp::Download`. A 404 or 410 there is the track gone, `Opened::Gone`; a download whose
+  `Content-Type` names text, JSON or XML is `Unreadable`, never streamed as a song.
 - **A download that breaks off is asked for again from where it stopped** (`fetched.rs`) with
   `Range: bytes=<read>-`, up to `RESUMES_AT_MOST` times running: a `206` whose `Content-Range`
   starts there is read on, a `200` is read past what was already held. A file runs to hundreds of

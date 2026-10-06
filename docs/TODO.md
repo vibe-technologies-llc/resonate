@@ -8,13 +8,8 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Next
-- Split a provider's answer into finding an offer and opening it (`Provider::find` beside
-  `obtain`), so the providers of one want race their searches and only the offer taken is downloaded;
-  a provider's search and its download are one call today, so where two answer inside the grace the
-  download of the offer not taken has been opened for nothing
 - Keep a delivery on a keeper thread, so a lane asks about its next want while the last one is staged,
-  decoded, encoded and read back; today a long keep holds a lane the network could be using. After
-  the item above
+  decoded, encoded and read back; today a long keep holds a lane the network could be using
 
 ## Defects
 - A Bluetooth headset's own controls do nothing: AirPods' double press does not skip, and their

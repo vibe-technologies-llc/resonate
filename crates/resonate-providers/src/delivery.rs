@@ -32,12 +32,35 @@ impl fmt::Display for Extension {
     }
 }
 
+pub enum Opened {
+    Reading(Box<dyn Read + Send>),
+    Gone,
+}
+
+type Open = Box<dyn FnOnce() -> Result<Opened> + Send>;
+
+pub struct Opening(Open);
+
+impl Opening {
+    pub fn new(open: impl FnOnce() -> Result<Opened> + Send + 'static) -> Self {
+        Self(Box::new(open))
+    }
+
+    pub fn ready(reader: impl Read + Send + 'static) -> Self {
+        Self::new(move || Ok(Opened::Reading(Box::new(reader))))
+    }
+
+    pub fn open(self) -> Result<Opened> {
+        (self.0)()
+    }
+}
+
 pub enum Delivery {
     File(PathBuf),
     Stream {
         key: Box<str>,
         extension: Extension,
-        reader: Box<dyn Read + Send>,
+        opening: Opening,
     },
 }
 
@@ -106,7 +129,7 @@ mod tests {
             delivery: Delivery::Stream {
                 key: "track/42".into(),
                 extension: Extension::new("flac").expect("an extension"),
-                reader: Box::new(std::io::empty()),
+                opening: Opening::ready(std::io::empty()),
             },
         };
         assert_eq!(delivered.taken_from().to_uri(), "shop:track/42");

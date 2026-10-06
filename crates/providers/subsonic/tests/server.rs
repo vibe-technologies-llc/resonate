@@ -8,7 +8,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid};
-use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp};
+use resonate_providers::{
+    Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
+};
 use resonate_subsonic::{Patience, Server, Subsonic};
 
 const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -215,17 +217,50 @@ fn echoes() -> Identity {
     }
 }
 
+fn opened(opening: Opening) -> Box<dyn Read + Send> {
+    match opening.open().expect("the offer opens") {
+        Opened::Reading(reader) => reader,
+        Opened::Gone => panic!("the offer was gone when opened"),
+    }
+}
+
 fn streamed(obtained: Obtained) -> Option<(String, Vec<u8>)> {
     match obtained {
-        Obtained::Found(Delivery::Stream {
-            key, mut reader, ..
-        }) => {
+        Obtained::Found(Delivery::Stream { key, opening, .. }) => {
+            let mut reader = opened(opening);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), bytes))
         }
         Obtained::Found(Delivery::File(_)) | Obtained::Nothing => None,
     }
+}
+
+#[test]
+fn a_search_is_answered_without_the_download_being_asked_for() {
+    let fake = Fake::serving(|asked, _| match asked.method.as_str() {
+        "search3" => found(&[song("floyd", ECHOES, "")]),
+        _ => Canned::audio(),
+    });
+
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.subsonic().find(&echoes()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+    let asked_before_opening = fake.heard();
+    let mut bytes = Vec::new();
+    opened(opening)
+        .read_to_end(&mut bytes)
+        .expect("the stream reads");
+
+    assert!(
+        asked_before_opening
+            .iter()
+            .all(|(method, _, _)| method == "search3"),
+        "{asked_before_opening:?}"
+    );
+    assert_eq!(bytes, AUDIO);
 }
 
 #[test]
@@ -239,7 +274,7 @@ fn a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page(
         },
     );
 
-    let delivered = streamed(fake.subsonic().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
 
     assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
     assert_eq!(
@@ -265,14 +300,14 @@ fn a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page(
 fn a_short_page_ends_the_search_and_nothing_found_is_nothing_delivered() {
     let fake = Fake::serving(|_, _| found(&tributes(3)));
 
-    let obtained = fake.subsonic().obtain(&echoes()).expect("an answer");
+    let obtained = fake.subsonic().find(&echoes()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
     assert_eq!(fake.heard().len(), 2);
 }
 
 #[test]
-fn an_error_document_answering_a_download_is_a_refusal_and_never_a_song() {
+fn an_error_document_answering_a_download_is_a_refusal_when_the_offer_is_opened() {
     let fake = Fake::serving(|asked, _| {
         match asked.method.as_str() {
         "search3" => found(&[song("floyd", ECHOES, "")]),
@@ -283,8 +318,14 @@ fn an_error_document_answering_a_download_is_a_refusal_and_never_a_song() {
     }
     });
 
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.subsonic().find(&echoes()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+
     assert!(matches!(
-        fake.subsonic().obtain(&echoes()),
+        opening.open(),
         Err(Error::TurnedAway {
             op: ProviderOp::Download,
             code: 70,
@@ -304,7 +345,7 @@ fn an_isrc_written_with_dashes_is_the_same_code() {
         ..Identity::named("Echoes")
     };
 
-    let delivered = streamed(fake.subsonic().obtain(&by_isrc).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&by_isrc).expect("an answer"));
 
     assert_eq!(delivered.map(|(key, _)| key), Some("floyd".to_owned()));
 }
@@ -317,7 +358,7 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.subsonic().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
 
     assert_eq!(delivered.map(|(key, _)| key), Some("floyd".to_owned()));
     assert_eq!(fake.heard().len(), 3);
@@ -328,7 +369,7 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries() {
     let fake = Fake::serving(|_, _| Canned::unavailable());
 
     assert!(matches!(
-        fake.subsonic().obtain(&echoes()),
+        fake.subsonic().find(&echoes()),
         Err(Error::Refused {
             op: ProviderOp::Search,
             status: 503,
@@ -344,7 +385,7 @@ fn an_answer_that_stalls_part_way_is_given_up_within_its_deadline() {
         Fake::serving(|_, _| found(&[song("floyd", ECHOES, "")]).sent(Sent::StallingAfter(8)));
     let started = Instant::now();
 
-    let refused = fake.impatient().obtain(&echoes());
+    let refused = fake.impatient().find(&echoes());
 
     assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
     assert!(matches!(
@@ -364,11 +405,12 @@ fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
     });
     let started = Instant::now();
 
-    let Obtained::Found(Delivery::Stream { mut reader, .. }) =
-        fake.impatient().obtain(&echoes()).expect("an answer")
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.impatient().find(&echoes()).expect("an answer")
     else {
         panic!("no stream was delivered");
     };
+    let mut reader = opened(opening);
     let mut bytes = Vec::new();
     let broken_off = reader.read_to_end(&mut bytes);
 
@@ -388,7 +430,7 @@ fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
     });
     let started = Instant::now();
 
-    let delivered = streamed(fake.impatient().obtain(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.impatient().find(&echoes()).expect("an answer"));
 
     assert!(started.elapsed() > IMPATIENT);
     assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
