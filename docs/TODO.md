@@ -64,8 +64,8 @@ else is open to be done.
   written from the documentation and `tests/live.rs` has no AcoustID test
 
 ## Performance and scale
-- A scan that changed nothing still regroups alternatives, gathers loose files and prunes over the
-  whole catalog, so one watched file added pays for the library
+- One watched file added still regroups the alternatives of the whole catalog and gathers the loose
+  albums of its whole root; a scan that changed nothing does neither
 - An incremental scan writes every unchanged row only to stamp it seen, and a change under one root
   stats every file of every other
 - Scrolling a large library to the end reads the whole prefix of tracks, albums and artists again at

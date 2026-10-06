@@ -110,6 +110,16 @@ impl Held {
     }
 }
 
+pub(crate) fn settle_if_owed(tx: &Transaction<'_>) -> crate::Result<u64> {
+    let owed: bool = tx
+        .query_row("SELECT owed FROM regroup_owed", [], |row| row.get(0))
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    match owed {
+        true => settle(tx),
+        false => Ok(0),
+    }
+}
+
 pub(crate) fn settle(tx: &Transaction<'_>) -> crate::Result<u64> {
     let copies: Vec<Held> = tx
         .prepare(EVERY_COPY)
@@ -134,6 +144,8 @@ pub(crate) fn settle(tx: &Transaction<'_>) -> crate::Result<u64> {
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
         }
     }
+    tx.execute("UPDATE regroup_owed SET owed = 0", [])
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
     Ok(moved as u64)
 }
 

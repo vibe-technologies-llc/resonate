@@ -579,6 +579,8 @@ fn run(
     }
 
     let cancelled = progress.is_cancelled();
+    let arrived = progress.added.load(Ordering::Relaxed);
+    let mut changed = arrived + progress.updated.load(Ordering::Relaxed);
     if !cancelled {
         let asked = inner.read(|connection| moves::to_be_heard(connection, &ids, generation))?;
         let prints: AHashMap<PathBuf, String> = asked
@@ -593,20 +595,26 @@ fn run(
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
+        inner.write(store::sweep_orphans_if_owed)?;
         inner.write(|transaction| volumes::settle(transaction, &walked_roots, &mounted))?;
-        inner.write(history::credit_the_unheld)?;
+        if arrived > 0 {
+            inner.write(history::credit_the_unheld)?;
+        }
         let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
         progress.removed.store(removed + tidied, Ordering::Relaxed);
-        let gathered = inner.write(|transaction| loose::gather_the_loose(transaction, &ids))?;
-        if gathered > 0 {
-            tracing::debug!(
-                gathered,
-                "albums loose in a root and split by their artists were gathered into one"
-            );
+        if changed > 0 {
+            let gathered = inner.write(|transaction| loose::gather_the_loose(transaction, &ids))?;
+            if gathered > 0 {
+                tracing::debug!(
+                    gathered,
+                    "albums loose in a root and split by their artists were gathered into one"
+                );
+            }
         }
+        changed += removed + tidied;
     }
-    inner.write(alternatives::settle)?;
-    if !cancelled {
+    inner.write(alternatives::settle_if_owed)?;
+    if changed > 0 && !cancelled {
         inner.restate_the_statistics();
     }
 

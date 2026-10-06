@@ -1060,8 +1060,6 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
     let superseded = superseded_in_the_vault(tx, &scoped, generation)?;
 
-    sweep_orphans(tx)?;
-
     Ok(removed as u64 + superseded)
 }
 
@@ -1104,6 +1102,16 @@ pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
     sweep_orphans(&tx)?;
     tx.commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))
+}
+
+pub fn sweep_orphans_if_owed(tx: &Transaction<'_>) -> Result<()> {
+    let owed: bool = tx
+        .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    match owed {
+        true => sweep_orphans(tx),
+        false => Ok(()),
+    }
 }
 
 pub fn sweep_orphans(tx: &Transaction<'_>) -> Result<()> {

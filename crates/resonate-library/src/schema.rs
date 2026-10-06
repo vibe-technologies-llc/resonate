@@ -298,6 +298,24 @@ const MIGRATIONS: &[&str] = &[
      CREATE INDEX tracks_by_favourite ON tracks(favourite DESC, title_filed COLLATE NOCASE);
      CREATE INDEX tracks_by_title ON tracks(title_filed COLLATE NOCASE);
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
+    "CREATE TABLE regroup_owed (
+         id   INTEGER PRIMARY KEY CHECK (id = 1),
+         owed INTEGER NOT NULL
+     ) STRICT;
+     INSERT INTO regroup_owed (id, owed) VALUES (1, 1);
+     CREATE TRIGGER tracks_owe_a_regroup_when_added AFTER INSERT ON tracks
+     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
+     CREATE TRIGGER tracks_owe_a_regroup_when_gone AFTER DELETE ON tracks
+     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
+     CREATE TRIGGER tracks_owe_a_regroup_when_moved AFTER UPDATE OF
+         album_id, artist, disc_number, track_number, title, duration, sample_rate,
+         sample_format, codec, file_size, span_frames ON tracks
+     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
+     CREATE TRIGGER albums_owe_a_regroup_when_named AFTER UPDATE OF
+         title, release_title, artist_id ON albums
+     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
+     CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
+     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1250,6 +1268,52 @@ mod tests {
                 ("scanned.flac".to_owned(), 1)
             ]
         );
+    }
+
+    #[test]
+    fn only_a_write_to_what_the_grouping_reads_owes_a_regroup() {
+        let connection = opened();
+        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO albums (id, title) VALUES (1, 'Meddle');
+                 INSERT INTO tracks (id, path, title, album_id, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'echoes.flac', 'Echoes', 1, 44100, 2, 1, 1, 10, 1, 1, 1);
+                 UPDATE regroup_owed SET owed = 0;",
+            )
+            .expect("the rows are stored");
+        let owed = || -> bool {
+            connection
+                .query_row("SELECT owed FROM regroup_owed", [], |row| row.get(0))
+                .expect("the flag reads back")
+        };
+
+        connection
+            .execute_batch(
+                "UPDATE tracks SET plays = 3, played = 2, favourite = 1, seen = 2 WHERE id = 1;
+                 UPDATE albums SET cover_asked = 1 WHERE id = 1;",
+            )
+            .expect("the counts are written");
+        assert!(
+            !owed(),
+            "a play, a favourite or a scan's stamp owed a regroup"
+        );
+
+        connection
+            .execute(
+                "UPDATE albums SET release_title = 'Meddle' WHERE id = 1",
+                [],
+            )
+            .expect("the release is billed");
+        assert!(owed(), "an album billed under its release owed nothing");
+
+        connection
+            .execute_batch(
+                "UPDATE regroup_owed SET owed = 0;
+                 DELETE FROM tracks WHERE id = 1;",
+            )
+            .expect("the track goes");
+        assert!(owed(), "a track gone owed nothing");
     }
 
     #[test]

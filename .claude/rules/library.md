@@ -614,7 +614,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   a key an album holds fills that album and a key nothing holds makes a new one. `ORPHANS` is
   unchanged, an unreferenced album's keys going with it on the cascade.
 - **One song held more than once is listed once, as the best copy.** `alternatives.rs` runs at the end
-  of every scan: it groups rows by the fold of the album title, the album's owner or else the track's
+  of every scan that owes it (below): it groups rows by the fold of the album title, the album's owner or else the track's
   artist, the disc, the track number and the title — the album's *title* rather than its row, so two
   folders of one album meet — and within a group gathers rows whose lengths are within
   `THE_SAME_LENGTH_WITHIN` (2 s) of one another, or both lengthless. An album is named both ways a row
@@ -663,7 +663,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   artist. **A record filed loose in a root is gathered back once the scan has written it.** A
   compilation with no `ALBUMARTIST` or `COMPILATION` flag, filed with the root as its folder, would
   otherwise stand as one album per track artist. `loose::gather_the_loose` runs after the prune on every
-  walked root: it takes the albums whose tracks all sit in that root and whose keys are all the fallback
+  walked root, where the scan wrote a row: it takes the albums whose tracks all sit in that root and whose keys are all the fallback
   tier — none a folder's or release's — groups them by lowercased title, and gathers a group through
   `enriched::gather` only where `one_record` says the numbering makes one: every track numbered, no disc
   and number taken twice, the years and declared `TRACKTOTAL`s agreeing where stated, and no more tracks
@@ -840,7 +840,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   not counted against one — `Library::track_played` answers `None` rather than refusing where a
   non-local location has no row — **but the play is kept against the path.** `unheld_listens` holds
   the path, the span's start, the moment and how long it was heard, and `history::credit_the_unheld`
-  runs after every scan's prune: a play whose path and start now name a row becomes a `listens` row
+  runs after the prune of every scan a row arrived in: a play whose path and start now name a row becomes a `listens` row
   stamped when heard, the row's `plays` and `played` follow, and the unheld play goes, so files played
   before their folder was ever scanned are counted the moment it is
   (`a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does`).
@@ -1366,7 +1366,17 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   renamed or removed and an album removed, and cleared by the end of every `sweep_orphans`; `build`
   asks `settle_the_credits_if_owed`, so a process that only reads — `resonate stats`, a second window — writes
   nothing, takes no write lock and does not make the first window reload its vocabulary
-  (`a_catalog_with_nothing_to_settle_is_opened_again_without_a_write`).
+  (`a_catalog_with_nothing_to_settle_is_opened_again_without_a_write`). A scan asks the same
+  question (`sweep_orphans_if_owed`), and **regroups the copies only where something owes that
+  too**: `regroup_owed` is a second row, set by triggers on a track added or removed, a write to a
+  column `EVERY_COPY` groups or ranks by, an album's title, release title or owner and an artist's
+  name, and cleared by the end of every `alternatives::settle`, which a scan reaches through
+  `settle_if_owed` — so a scan that changed nothing sweeps and regroups nothing, while a lookup
+  billing an album under its release still has the next scan meet its copies
+  (`only_a_write_to_what_the_grouping_reads_owes_a_regroup`,
+  `a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same`). `restate_the_statistics`
+  and the loose gathering run only where the scan wrote or removed a row, and `credit_the_unheld`
+  only where one arrived.
 - **A collaboration is listed under every artist it credits, never as an artist of its own.**
   `track_credits` — a migration step — holds each member of a track's credit, and
   `credits::credit_the_members` rebuilds it from `tracks.artist` whenever the orphans are swept, each credit's
