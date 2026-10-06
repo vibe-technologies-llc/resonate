@@ -36,7 +36,8 @@ high-performance playback as the guiding constraint:
 - A **GPUI** front end running natively on Wayland.
 
 `docs/TODO.md` is the roadmap and holds **open work only** (defects, gaps, what is not built) as
-`## Category` headings with `- Item` bullets, most to least important, `Defects` first, and
+`## Category` headings with `- Item` bullets, most to least important, `Next` (the work chosen to
+come next) first and `Defects` after it, and
 categories no listener is waiting on headed `Later:` below the rest. An item waiting on something
 outside this tree is marked **Blocked on …** with the blocker. Drop an item as it lands and add what
 the work uncovers; what a landed item became belongs in `.claude/rules/`.

@@ -7,6 +7,15 @@ Everything under a `Later:` heading is a nice-to-have no listener is waiting on.
 or a format) and sits at the end of its category; it is not worked until that moves. Everything
 else is open to be done.
 
+## Next
+- Split a provider's answer into finding an offer and opening it (`Provider::find` beside
+  `obtain`), so the providers of one want race their searches and only the offer taken is downloaded;
+  a provider's search and its download are one call today, so where two answer inside the grace the
+  download of the offer not taken has been opened for nothing
+- Keep a delivery on a keeper thread, so a lane asks about its next want while the last one is staged,
+  decoded, encoded and read back; today a long keep holds a lane the network could be using. After
+  the item above
+
 ## Defects
 - A Bluetooth headset's own controls do nothing: AirPods' double press does not skip, and their
   other presses neither pause nor go back. Nothing here reads AVRCP; a press reaches Resonate only
@@ -131,10 +140,6 @@ else is open to be done.
   microphone
 
 ## Later: Sources and providers
-- A lane keeps a delivery (stages, decodes, encodes and reads it back) before it asks about its next
-  want, so a long keep holds a lane the network could be using
-- A provider's search and its download are one call (`Provider::obtain`), so where two providers of
-  one want answer inside the grace, the download of the offer not taken has been opened for nothing
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
