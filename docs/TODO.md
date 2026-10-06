@@ -48,9 +48,8 @@ else is open to be done.
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- The songs of an artist's releases not held are read only when the lookup pass reaches them, so an
-  artist page opened before then lists the albums and none of their songs, and a large library's
-  first pass runs on for an hour or more reading them, one release group a second
+- A large library's first lookup pass runs on for an hour or more reading the songs of its artists'
+  releases not held, one release group a second; an artist's page reads its own when opened
 - A pasted link to an artist or a playlist is taken as words to search, not followed to what it
   names; only a link to a song or an album is downloaded
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes

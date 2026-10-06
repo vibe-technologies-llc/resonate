@@ -11531,6 +11531,42 @@ fn the_albums_of_a_library_artist_not_held_answer_a_search_without_asking() -> R
 }
 
 #[test]
+fn an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_reaches_them()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let cut_short = Arc::new(Fake::new(learnt_canned()).faulting(
+        LookupOp::ReleasesOfGroup,
+        0,
+        Fault::Unreachable,
+    ));
+    let _ = enrich(&library, &cut_short, false);
+    let artist = artist_named(&library, "The Orbiters")?;
+    assert!(
+        library.songs_not_held_by(artist.id)?.is_empty(),
+        "the songs were read before the page asked"
+    );
+
+    let page = Fake::new(learnt_canned());
+    let landed = library.learn_the_songs_of_artist(&page, artist.id)?;
+    let songs: Vec<Mbid> = library
+        .songs_not_held_by(artist.id)?
+        .into_iter()
+        .map(|song| song.recording)
+        .collect();
+
+    assert_eq!(landed, 2);
+    assert_eq!(songs, [mbid(DAYBREAK)]);
+    assert_eq!(page.called(LookupOp::ReleasesOfGroup), 3);
+    assert_eq!(library.learn_the_songs_of_artist(&page, artist.id)?, 0);
+    assert_eq!(
+        page.called(LookupOp::ReleasesOfGroup),
+        3,
+        "a group read was asked about again"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake =

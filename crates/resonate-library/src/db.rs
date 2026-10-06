@@ -463,6 +463,17 @@ const SONGS_DUE: &str = concat!(
       LIMIT ?3"
 );
 
+const SONGS_DUE_FOR_AN_ARTIST: &str = concat!(
+    "SELECT r.mbid FROM artist_releases r
+      WHERE r.artist_id = ?3 AND ",
+    unheld_by_any_album!(),
+    "
+        AND NOT EXISTS (SELECT 1 FROM discography_songs_read k
+                         WHERE k.release_group = r.mbid
+                           AND k.read > CASE WHEN k.refusals > 0 THEN ?1 ELSE ?2 END)
+      ORDER BY r.first_released IS NULL, r.first_released, r.mbid"
+);
+
 const UNHELD_COVERS_DUE: &str = concat!(
     "SELECT r.mbid,
             (SELECT s.release_mbid FROM discography_songs s WHERE s.release_group = r.mbid LIMIT 1)
@@ -3575,6 +3586,54 @@ impl Library {
             songs::pressing_of(pressings).as_ref(),
             SystemTime::now(),
         )
+    }
+
+    pub fn learn_the_songs_of_artist(
+        &self,
+        reference: &dyn Reference,
+        artist: ArtistId,
+    ) -> Result<usize> {
+        let mut landed = 0;
+        for group in self.groups_whose_songs_are_due_for(artist, SystemTime::now())? {
+            let now = SystemTime::now();
+            match reference.releases_of_group(&group) {
+                Ok(pressings) => {
+                    landed +=
+                        self.land_songs_of(&group, songs::pressing_of(pressings).as_ref(), now)?;
+                }
+                Err(Error::Refused { op, status }) => {
+                    tracing::warn!(?op, status, %group, "the songs of a release group were refused");
+                    self.songs_of_refused(&group, now)?;
+                }
+                Err(Error::Unreadable { op } | Error::TooLarge { op, .. }) => {
+                    tracing::warn!(?op, %group, "the songs of a release group could not be read");
+                    self.songs_of_refused(&group, now)?;
+                }
+                Err(other) => return Err(other),
+            }
+        }
+        Ok(landed)
+    }
+
+    fn groups_whose_songs_are_due_for(
+        &self,
+        artist: ArtistId,
+        now: SystemTime,
+    ) -> Result<Vec<Mbid>> {
+        let refused_before = now.checked_sub(REFUSED_AGAIN_AFTER).unwrap_or(UNIX_EPOCH);
+        let read_before = now.checked_sub(REFRESH_AFTER).unwrap_or(UNIX_EPOCH);
+        let binds = vec![
+            Value::Integer(store::to_nanos(refused_before)),
+            Value::Integer(store::to_nanos(read_before)),
+            Value::Integer(artist.get() as i64),
+        ];
+
+        self.inner.read(|connection| {
+            rows(connection, SONGS_DUE_FOR_AN_ARTIST, binds, |row| {
+                row.get::<_, String>(0)
+                    .map(|mbid| Mbid::new(&mbid).map_err(Error::from))
+            })
+        })
     }
 
     pub(crate) fn groups_whose_songs_are_due(

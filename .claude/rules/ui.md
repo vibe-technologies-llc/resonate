@@ -1833,7 +1833,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **What an artist's discography holds that the library does not is on the artist's page, greyed.**
   It rides in the load beside the artist's albums — `Library::albums_not_held_by` and
   `songs_not_held_by` (`library.md`) — whether the Missing tab is shown or not, the page being where the
-  listener looks for an artist's work. *Albums* follows the held cells with `not_held_heading`, *Not in
+  listener looks for an artist's work. Selecting the artist also starts
+  `LibraryModel::learn_the_songs_of` where Online is on, reading the songs of any of its unheld releases
+  the lookup pass has not reached, and the page is read again once one lands, so the songs arrive a
+  release group a second rather than whenever the pass gets to the artist. *Albums* follows the held cells with `not_held_heading`, *Not in
   your library · N releases*, a full-width line breaking the grid, then an `album_not_held_cell` per
   release: the pressing's front through `released_cover_with_group` at `UNHELD_COVER` — read from `Library::unheld_cover`, which the lookup pass fills (`library.md`), before the archive is asked live, and drawn offline from what is kept — with the
   release-group id as its fallback and as the lookup where no pressing is known, or `unheld_cover` at

@@ -2380,8 +2380,12 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   answer with no pressing stamps it read with nothing, a refusal counts in `refusals`, and an
   unreachable reference ends the pass as every other lookup does. `EnrichStats::songs` counts the rows
   (`the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking`,
-  `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). **The sleeves of those releases
-  are kept in the same pass.** `Pass::cover_the_unheld` runs after `learn_the_songs`: every release
+  `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). **An artist's page does not
+  wait for the pass**: `Library::learn_the_songs_of_artist` walks the same due rule over that artist's
+  groups alone (`SONGS_DUE_FOR_AN_ARTIST`, earliest first), landing and stamping each as the pass would,
+  a refusal or an unreadable answer stamped and an unreachable reference answered as the error
+  (`an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_reaches_them`).
+  **The sleeves of those releases are kept in the same pass.** `Pass::cover_the_unheld` runs after `learn_the_songs`: every release
   group `unheld_covers_due` answers — unheld by the same predicate, with no cover held and none asked
   within `COVERS_ASKED_AGAIN_AFTER`, the most played artist's first, `at_most` capping it — goes to the
   picture readers as `Picture::OfAnUnheldRelease`, asked as `Reference::cover` for the pressing its

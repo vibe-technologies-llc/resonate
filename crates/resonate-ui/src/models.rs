@@ -745,6 +745,7 @@ pub struct LibraryModel {
     _finding: Task<()>,
     _reaching: Task<()>,
     _showing: Task<()>,
+    _learning: Task<()>,
     _previewing: Task<()>,
 }
 
@@ -956,6 +957,7 @@ impl LibraryModel {
             _finding: Task::ready(()),
             _reaching: Task::ready(()),
             _showing: Task::ready(()),
+            _learning: Task::ready(()),
             _previewing: Task::ready(()),
         };
         model.reload(cx);
@@ -3638,7 +3640,10 @@ impl LibraryModel {
                 let owner = self.album_anywhere(album).and_then(|held| held.artist_id);
                 self.ask_about(Some(album), owner);
             }
-            Selection::Artist(artist) => self.ask_about(None, Some(artist)),
+            Selection::Artist(artist) => {
+                self.ask_about(None, Some(artist));
+                self.learn_the_songs_of(artist, cx);
+            }
         }
         self.selection = selection;
         self.songs_not_held = Arc::default();
@@ -3646,6 +3651,32 @@ impl LibraryModel {
         self.restate_the_listing();
         self.reach = PAGE;
         self.read(Wanted::TheSearch, cx);
+    }
+
+    fn learn_the_songs_of(&mut self, artist: ArtistId, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        let library = Arc::clone(&self.library);
+
+        self._learning = cx.spawn(async move |this, cx| {
+            let landed = cx
+                .background_executor()
+                .spawn(async move { library.learn_the_songs_of_artist(reference.as_ref(), artist) })
+                .await;
+            let _ = this.update(cx, |this, cx| match landed {
+                Ok(0) => {}
+                Ok(_) if this.selection == Selection::Artist(artist) => {
+                    this.read(Wanted::TheSearch, cx);
+                }
+                Ok(_) => {}
+                Err(error) => tracing::debug!(
+                    %error,
+                    %artist,
+                    "the songs of an artist's releases not held could not be read"
+                ),
+            });
+        });
     }
 
     pub fn ask_about(&self, album: Option<AlbumId>, artist: Option<ArtistId>) {
