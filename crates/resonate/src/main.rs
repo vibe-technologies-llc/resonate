@@ -2470,6 +2470,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let (asked_to_raise, raising) = bounded(1);
     let notify = Arc::new(AtomicBool::new(config.notifies()));
     let by_sound = online::by_sound(&config);
+    let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
     let mpris = mpris::start(
         &player,
         &sources,
@@ -2489,7 +2490,11 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         Arc::clone(&player),
         Arc::clone(&library),
         resonate_ui::Lookups {
-            lyricists: Arc::new(online::lyricists(&config, Some(Arc::clone(&library)))),
+            lyricists: Arc::new(online::lyricists(
+                &config,
+                Some(Arc::clone(&library)),
+                &lyrics_by_the_locale,
+            )),
             fingerprinters: Arc::new(online::fingerprinters(
                 &config,
                 Arc::new(library.sources()),
@@ -2533,6 +2538,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             organise_as: config.organise_as().to_string(),
             notify,
             by_sound,
+            lyrics_by_the_locale,
             convolution: config.convolution.clone(),
             music_folder: config.music_folder.clone(),
             file_dropped: config.files_what_is_dropped(),

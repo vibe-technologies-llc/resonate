@@ -103,10 +103,13 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   arrived at (file stem, whole name, stem and a language such as `Echoes.pt-BR.lrc`, then
   `<artist> - <title>` and `<title>` off `Wanted`), then for a sheet in a language how early that
   language stands among those the listener reads, and only then where it was found. **The languages
-  are the listener's locale's**: `Sidecar::default` reads `LANGUAGE`'s colon list (unless the locale
-  is `C` or `POSIX`) and then the first of `LC_ALL`, `LC_MESSAGES` and `LANG`, each through
-  `language_of`, so beside `Song.en.lrc` a listener reading Japanese is handed `Song.ja.lrc`, and one
-  reading neither the first in name order
+  are the listener's locale's, and only where asked**: `Sidecar::choosing_by_the_locale` reads
+  `LANGUAGE`'s colon list (unless the locale is `C` or `POSIX`) and then the first of `LC_ALL`,
+  `LC_MESSAGES` and `LANG`, each through `language_of`, and weighs them only while the
+  `Arc<AtomicBool>` it is handed holds (`lyrics-language-from-locale`, off by default;
+  `Sidecar::default` and `Lyricists::local` hold one that never does). Asked, a listener reading
+  Japanese is handed `Song.ja.lrc` beside `Song.en.lrc`; otherwise, and for a listener reading
+  neither, the first in name order
   (`of_two_sheets_in_a_language_the_one_the_listener_reads_answers`). Tag spellings
   are compared for equality after `lrc::folded`, not containment, which would hand every sheet holding
   the title to every track. A candidate is read to `LARGEST_SIDECAR` (the reader's `LARGEST_SHEET`),

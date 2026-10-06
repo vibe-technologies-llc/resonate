@@ -125,6 +125,10 @@ pub fn by_sound(config: &Config) -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(config.identifies_by_sound()))
 }
 
+pub fn lyrics_by_the_locale(config: &Config) -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(config.chooses_lyrics_by_the_locale()))
+}
+
 #[cfg(feature = "online")]
 pub fn fingerprinters(
     config: &Config,
@@ -221,8 +225,12 @@ pub fn corrections_asked_for(config: &Config, library: Option<Arc<Library>>) -> 
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]
-pub fn lyricists(config: &Config, library: Option<Arc<Library>>) -> Lyricists {
-    let local = Lyricists::local();
+pub fn lyricists(
+    config: &Config,
+    library: Option<Arc<Library>>,
+    by_the_locale: &Arc<AtomicBool>,
+) -> Lyricists {
+    let local = Lyricists::local_choosing_by_the_locale(Arc::clone(by_the_locale));
     if !config.online_enabled() {
         return local;
     }
@@ -240,8 +248,12 @@ pub fn reference_asked_for(_config: &Config) -> Result<Arc<dyn Reference>> {
 }
 
 #[cfg(all(not(feature = "online"), feature = "ui"))]
-pub fn lyricists(_config: &Config, _library: Option<Arc<Library>>) -> Lyricists {
-    Lyricists::local()
+pub fn lyricists(
+    _config: &Config,
+    _library: Option<Arc<Library>>,
+    by_the_locale: &Arc<AtomicBool>,
+) -> Lyricists {
+    Lyricists::local_choosing_by_the_locale(Arc::clone(by_the_locale))
 }
 
 #[cfg(all(not(feature = "online"), feature = "ui"))]

@@ -4,7 +4,10 @@ use std::{
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, SystemTime},
 };
 
@@ -38,11 +41,12 @@ pub struct Sidecar {
     source: SourceId,
     walked: Mutex<Walked>,
     read_in: Vec<String>,
+    by_the_locale: Arc<AtomicBool>,
 }
 
 impl Default for Sidecar {
     fn default() -> Self {
-        Self::read_in(languages_the_listener_reads())
+        Self::choosing_by_the_locale(Arc::new(AtomicBool::new(false)))
     }
 }
 
@@ -79,11 +83,23 @@ fn language_of(locale: &str) -> Option<String> {
 }
 
 impl Sidecar {
-    fn read_in(languages: Vec<String>) -> Self {
+    pub fn choosing_by_the_locale(by_the_locale: Arc<AtomicBool>) -> Self {
+        Self::read_in(languages_the_listener_reads(), by_the_locale)
+    }
+
+    fn read_in(languages: Vec<String>, by_the_locale: Arc<AtomicBool>) -> Self {
         Self {
             source: SourceId::new(SIDECAR).unwrap_or_else(|_| SourceId::local()),
             walked: Mutex::new(Walked::default()),
             read_in: languages,
+            by_the_locale,
+        }
+    }
+
+    fn languages_chosen_by(&self) -> &[String] {
+        match self.by_the_locale.load(Ordering::Acquire) {
+            true => &self.read_in,
+            false => &[],
         }
     }
 
@@ -170,7 +186,7 @@ impl Sidecar {
         let Some(path) = wanted.location.as_path() else {
             return Ok(Vec::new());
         };
-        let Some(named) = Named::after(path, wanted, &self.read_in) else {
+        let Some(named) = Named::after(path, wanted, self.languages_chosen_by()) else {
             return Ok(Vec::new());
         };
         let folder = match path.parent() {
@@ -971,19 +987,27 @@ mod tests {
         tree.write("Song.en.lrc", "[00:01.00]all that you distrust");
         tree.write("Song.ja.lrc", LRC);
         let wanted = tree.track("Song.flac");
-        let lines_read_in = |languages: &[&str]| {
-            Sidecar::read_in(languages.iter().map(|read| (*read).to_owned()).collect())
-                .lyrics(&wanted)
-                .expect("nothing failed")
-                .map(|lyrics| lyrics.lines().len())
+        let lines_read_in = |languages: &[&str], chosen: bool| {
+            Sidecar::read_in(
+                languages.iter().map(|read| (*read).to_owned()).collect(),
+                Arc::new(AtomicBool::new(chosen)),
+            )
+            .lyrics(&wanted)
+            .expect("nothing failed")
+            .map(|lyrics| lyrics.lines().len())
         };
 
-        assert_eq!(lines_read_in(&["ja", "en"]), Some(2));
-        assert_eq!(lines_read_in(&["en", "ja"]), Some(1));
+        assert_eq!(lines_read_in(&["ja", "en"], true), Some(2));
+        assert_eq!(lines_read_in(&["en", "ja"], true), Some(1));
         assert_eq!(
-            lines_read_in(&["fr"]),
+            lines_read_in(&["fr"], true),
             Some(1),
             "a listener reading neither is given the first in name order"
+        );
+        assert_eq!(
+            lines_read_in(&["ja", "en"], false),
+            Some(1),
+            "the locale chose though the listener said not to"
         );
     }
 

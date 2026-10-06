@@ -293,6 +293,7 @@ impl Driven {
                 organise_as: String::new(),
                 notify: Arc::new(AtomicBool::new(false)),
                 by_sound: Arc::new(AtomicBool::new(false)),
+                lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),
                 convolution: None,
                 music_folder: None,
                 file_dropped: true,

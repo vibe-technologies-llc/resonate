@@ -545,7 +545,10 @@ impl RootView {
                 self.set_studies(defaults::STUDY, cx);
                 self.set_by_sound(defaults::BY_SOUND, cx);
             }
-            Group::Lyrics => self.set_lyrics(defaults::FETCH_LYRICS, cx),
+            Group::Lyrics => {
+                self.set_lyrics(defaults::FETCH_LYRICS, cx);
+                self.set_lyrics_by_the_locale(defaults::LYRICS_BY_THE_LOCALE, cx);
+            }
             Group::Resuming => self.set_resume(defaults::RESUME, cx),
             Group::History => self.keep_the_history(defaults::HISTORY_KEPT, cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
@@ -603,6 +606,10 @@ impl RootView {
         let previous_restarts = self.player.read(cx).state().previous_restarts;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
         let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
+        let lyrics_by_the_locale = cx
+            .global::<ResonateApp>()
+            .lyrics_by_the_locale
+            .load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
@@ -641,6 +648,7 @@ impl RootView {
             studies,
             by_sound,
             lyrics,
+            lyrics_by_the_locale,
             contact_given,
             key_given,
             token_given,

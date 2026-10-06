@@ -39,6 +39,7 @@ pub enum ConfigKey {
     EnrichAfterScan,
     Study,
     FetchLyrics,
+    LyricsLanguageFromLocale,
     IdentifyBySound,
     Contact,
     Equaliser,
@@ -107,7 +108,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 79] = [
+    pub const ALL: [Self; 80] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -137,6 +138,7 @@ impl ConfigKey {
         Self::EnrichAfterScan,
         Self::Study,
         Self::FetchLyrics,
+        Self::LyricsLanguageFromLocale,
         Self::IdentifyBySound,
         Self::Contact,
         Self::Equaliser,
@@ -220,6 +222,7 @@ impl ConfigKey {
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::Study => "study",
             Self::FetchLyrics => "fetch-lyrics",
+            Self::LyricsLanguageFromLocale => "lyrics-language-from-locale",
             Self::IdentifyBySound => "identify-by-sound",
             Self::SkipRepeatsQueue => "skip-repeats-queue",
             Self::PreviousRestarts => "previous-restarts",

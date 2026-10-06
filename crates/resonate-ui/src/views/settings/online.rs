@@ -196,18 +196,42 @@ impl RootView {
 
     pub(super) fn lyrics_group(&mut self, cx: &mut Context<Self>) -> Div {
         let lyrics = self.library.read(cx).fetches_lyrics();
+        let by_the_locale = cx
+            .global::<ResonateApp>()
+            .lyrics_by_the_locale
+            .load(Ordering::Acquire);
 
-        kit::section_body().child(self.in_the_ring(
-            "fetching-lyrics",
-            switch_row(
-                "Fetch lyrics for every track as a lookup runs",
-                "Off, words are asked for only as a track plays",
-                lyrics,
+        kit::section_body()
+            .child(self.in_the_ring(
                 "fetching-lyrics",
-            ),
-            move |this, _, cx| this.set_lyrics(!lyrics, cx),
-            cx,
-        ))
+                switch_row(
+                    "Fetch lyrics for every track as a lookup runs",
+                    "Off, words are asked for only as a track plays",
+                    lyrics,
+                    "fetching-lyrics",
+                ),
+                move |this, _, cx| this.set_lyrics(!lyrics, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                "lyrics-by-the-locale",
+                switch_row(
+                    "Choose a lyric sheet in the language the system is set to",
+                    "Off, of sheets in several languages the first by name is read",
+                    by_the_locale,
+                    "lyrics-by-the-locale",
+                ),
+                move |this, _, cx| this.set_lyrics_by_the_locale(!by_the_locale, cx),
+                cx,
+            ))
+    }
+
+    pub(crate) fn set_lyrics_by_the_locale(&mut self, by_the_locale: bool, cx: &mut Context<Self>) {
+        cx.global::<ResonateApp>()
+            .lyrics_by_the_locale
+            .store(by_the_locale, Ordering::Release);
+        self.store(&Setting::LyricsByTheLocale(by_the_locale), cx);
+        cx.notify();
     }
 
     pub(super) fn contact_group(&mut self, cx: &mut Context<Self>) -> Div {

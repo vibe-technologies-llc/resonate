@@ -15,6 +15,7 @@ pub(crate) const ENRICH_AFTER_SCAN: bool = true;
 pub(crate) const STUDY: bool = true;
 pub(crate) const BY_SOUND: bool = false;
 pub(crate) const FETCH_LYRICS: bool = true;
+pub(crate) const LYRICS_BY_THE_LOCALE: bool = false;
 pub(crate) const RESUME: bool = true;
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
 pub(crate) const NOTIFY: bool = true;
@@ -38,6 +39,7 @@ pub(crate) struct Standing {
     pub(crate) studies: bool,
     pub(crate) by_sound: bool,
     pub(crate) lyrics: bool,
+    pub(crate) lyrics_by_the_locale: bool,
     pub(crate) contact_given: bool,
     pub(crate) key_given: bool,
     pub(crate) token_given: bool,
@@ -77,6 +79,7 @@ impl Standing {
             studies: STUDY,
             by_sound: BY_SOUND,
             lyrics: FETCH_LYRICS,
+            lyrics_by_the_locale: LYRICS_BY_THE_LOCALE,
             contact_given: false,
             key_given: false,
             token_given: false,
@@ -136,7 +139,9 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Lookups => standing.online != ONLINE,
         Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
         Group::Studies => standing.studies != STUDY || standing.by_sound != BY_SOUND,
-        Group::Lyrics => standing.lyrics != FETCH_LYRICS,
+        Group::Lyrics => {
+            standing.lyrics != FETCH_LYRICS || standing.lyrics_by_the_locale != LYRICS_BY_THE_LOCALE
+        }
         Group::Resuming => standing.resume != RESUME,
         Group::History => standing.history_kept != HISTORY_KEPT,
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
@@ -449,6 +454,13 @@ mod tests {
             Group::Lyrics,
             &Standing {
                 lyrics: false,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Lyrics,
+            &Standing {
+                lyrics_by_the_locale: true,
                 ..built.clone()
             }
         ));

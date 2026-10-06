@@ -128,6 +128,7 @@ pub struct Config {
     pub enrich_after_scan: Option<bool>,
     pub study: Option<bool>,
     pub fetch_lyrics: Option<bool>,
+    pub lyrics_language_from_locale: Option<bool>,
     pub identify_by_sound: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
     pub previous_restarts: Option<bool>,
@@ -224,6 +225,7 @@ impl fmt::Debug for Config {
             enrich_after_scan,
             study,
             fetch_lyrics,
+            lyrics_language_from_locale,
             identify_by_sound,
             skip_repeats_queue,
             previous_restarts,
@@ -306,6 +308,7 @@ impl fmt::Debug for Config {
             .field("enrich_after_scan", enrich_after_scan)
             .field("study", study)
             .field("fetch_lyrics", fetch_lyrics)
+            .field("lyrics_language_from_locale", lyrics_language_from_locale)
             .field("identify_by_sound", identify_by_sound)
             .field("skip_repeats_queue", skip_repeats_queue)
             .field("previous_restarts", previous_restarts)
@@ -433,6 +436,10 @@ impl Config {
 
     pub fn fetches_lyrics(&self) -> bool {
         self.fetch_lyrics.unwrap_or(true)
+    }
+
+    pub fn chooses_lyrics_by_the_locale(&self) -> bool {
+        self.lyrics_language_from_locale.unwrap_or(false)
     }
 
     pub fn identifies_by_sound(&self) -> bool {
@@ -703,6 +710,9 @@ impl Config {
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
             ConfigKey::Study => config.study = Some(at.boolean(value)?),
             ConfigKey::FetchLyrics => config.fetch_lyrics = Some(at.boolean(value)?),
+            ConfigKey::LyricsLanguageFromLocale => {
+                config.lyrics_language_from_locale = Some(at.boolean(value)?);
+            }
             ConfigKey::IdentifyBySound => config.identify_by_sound = Some(at.boolean(value)?),
             ConfigKey::SkipRepeatsQueue => {
                 config.skip_repeats_queue = Some(at.boolean(value)?);
@@ -1553,6 +1563,20 @@ mod tests {
         assert_eq!(config.acoustid_key, None);
 
         assert_eq!(Config::default().acoustid_key, None);
+    }
+
+    #[test]
+    fn a_lyric_sheet_is_chosen_by_the_locale_only_once_asked_to_be() {
+        assert!(
+            !read("")
+                .expect("empty is valid")
+                .chooses_lyrics_by_the_locale()
+        );
+        assert!(
+            read("lyrics-language-from-locale = true")
+                .expect("a well formed document")
+                .chooses_lyrics_by_the_locale()
+        );
     }
 
     #[test]

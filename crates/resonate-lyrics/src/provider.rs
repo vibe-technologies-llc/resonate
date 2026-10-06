@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use resonate_core::{FrameSpan, MediaLocation, SampleRate, SourceId};
 
@@ -88,8 +91,12 @@ impl Lyricists {
     }
 
     pub fn local() -> Self {
+        Self::local_choosing_by_the_locale(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn local_choosing_by_the_locale(by_the_locale: Arc<AtomicBool>) -> Self {
         Self::unsourced()
-            .and(Arc::new(Sidecar::default()))
+            .and(Arc::new(Sidecar::choosing_by_the_locale(by_the_locale)))
             .and(Arc::new(Embedded::default()))
     }
 

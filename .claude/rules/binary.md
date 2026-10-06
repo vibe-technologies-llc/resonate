@@ -188,7 +188,11 @@ password, key and the `contact` (`no_key_holding_a_secret_or_the_contact_is_prin
   Online card's *Look up*. `study` off starts no pool of studies from a lookup. `fetch-lyrics` off
   asks LRCLIB only as a track plays. `identify-by-sound` on registers `online::fingerprinters`'
   `ByEar` behind the AcoustID printer, sending twelve seconds of sound to Shazam; it is an
-  `Arc<AtomicBool>` shared with the fingerprinter, so it is live.
+  `Arc<AtomicBool>` shared with the fingerprinter, so it is live. `lyrics-language-from-locale`,
+  off unless set, has the sidecar lyric reader choose among sheets named for languages by the
+  locale (`lyrics.md`); `online::lyrics_by_the_locale` is the same kind of shared flag, held by the
+  `Sidecar` inside `online::lyricists` and flipped by the settings pane's *Lyrics* group, so it too
+  is live.
 - **A vault is made only where it is asked for** (`made_where_asked`: the default place
   `$XDG_DATA_HOME/resonate/vault`, or a path `--vault` names on this command line) through
   `Vault::make`. The `vault` key's path is opened with `Vault::open`, which refuses a missing root

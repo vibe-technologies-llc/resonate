@@ -453,7 +453,9 @@ impl Group {
                 "analyse analysis decode fake lossless transcode verdict loudness true peak \
                  fingerprint cpu cores shazam sound identify unnamed untagged"
             }
-            Self::Lyrics => "lyrics lrclib lyricsfile synced karaoke words voices cache upgrade",
+            Self::Lyrics => {
+                "lyrics lrclib lyricsfile synced karaoke words voices cache upgrade language locale"
+            }
             Self::Contact => "user-agent email identity request",
             Self::Recognition => {
                 "acoustid audd key token fingerprint chromaprint identify recognise unnamed \
@@ -550,7 +552,7 @@ impl Group {
             Self::Lookups => &[SettingKey::Online],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
             Self::Studies => &[SettingKey::Study, SettingKey::IdentifyBySound],
-            Self::Lyrics => &[SettingKey::FetchLyrics],
+            Self::Lyrics => &[SettingKey::FetchLyrics, SettingKey::LyricsByTheLocale],
             Self::Contact => &[SettingKey::Contact],
             Self::Recognition => &[SettingKey::AcoustidKey, SettingKey::AuddToken],
             Self::Listening => &[SettingKey::ListenFrom, SettingKey::ListenFor],
@@ -948,7 +950,10 @@ pub(crate) const LYRICS_HINT: &str = "Whether a lookup also asks LRCLIB for the 
                                       and line-synced sets are asked about again after a month in \
                                       case a better set has been written since, and a set timed \
                                       word by word is kept for good. Off, words are asked for \
-                                      only when a track is played.";
+                                      only when a track is played. Choosing by the system's \
+                                      language hands a track whose sheets beside it are named for \
+                                      several languages the one LANGUAGE or LANG names; off, as \
+                                      built, the first of them by name.";
 
 pub(crate) const RECOGNITION_HINT: &str = "An AcoustID client key, which lets the lookup and the \
                                            Analysis pane send a fingerprint of the audio and hear \

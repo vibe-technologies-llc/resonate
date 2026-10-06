@@ -166,6 +166,7 @@ pub enum SettingKey {
     EnrichAfterScan,
     Study,
     FetchLyrics,
+    LyricsByTheLocale,
     IdentifyBySound,
     Contact,
     AcoustidKey,
@@ -219,7 +220,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 77] = [
+    pub const ALL: [Self; 78] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -247,6 +248,7 @@ impl SettingKey {
         Self::EnrichAfterScan,
         Self::Study,
         Self::FetchLyrics,
+        Self::LyricsByTheLocale,
         Self::IdentifyBySound,
         Self::Contact,
         Self::AcoustidKey,
@@ -329,6 +331,7 @@ pub enum Setting {
     EnrichAfterScan(bool),
     Study(bool),
     FetchLyrics(bool),
+    LyricsByTheLocale(bool),
     IdentifyBySound(bool),
     Contact(String),
     AcoustidKey(String),
@@ -414,6 +417,7 @@ impl Setting {
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
             Self::Study(_) => SettingKey::Study,
             Self::FetchLyrics(_) => SettingKey::FetchLyrics,
+            Self::LyricsByTheLocale(_) => SettingKey::LyricsByTheLocale,
             Self::IdentifyBySound(_) => SettingKey::IdentifyBySound,
             Self::Contact(_) => SettingKey::Contact,
             Self::AcoustidKey(_) => SettingKey::AcoustidKey,
@@ -630,6 +634,7 @@ pub struct Stored {
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
+    pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
