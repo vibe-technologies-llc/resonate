@@ -2088,8 +2088,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the release in the format column — and the want mark is `want_mark` over an `Asks`: a catalog row
   wants its `ReleaseTrackId` as ever; a found song calls `LibraryModel::want_found`, landing its release
   and wanting the row on the background executor, greying the mark meanwhile, then asking the providers
-  and MusicBrainz again, so the song leaves the remote results and appears among held tracks after
-  delivery. **A found song's whole row is that press**: `found_row` lays the row `unheld_row` draws
+  and MusicBrainz again, so the song appears among held tracks after delivery and leaves the remote
+  results: `restate_what_was_found` passes over a found song whose download's want holds a track the
+  held listing draws (`is_listed_as_held`), so it is listed once, as the held track, the moment the
+  catalog's next read carries it (`a_found_song_that_landed_is_listed_once_as_the_held_track`). A
+  re-weigh through `unheld_among` would drop it the moment it was wanted, its release landing first. **A found song's whole row is that press**: `found_row` lays the row `unheld_row` draws
   under an id of its recording with the pointer, a hover wash and `FETCH_FOUND_HINT`, so pressing anywhere on it wants
   the song and sends the providers for it, the mark's own press inside it finding the recording
   already `wanting` and doing nothing twice; while it is asked for the row takes no press

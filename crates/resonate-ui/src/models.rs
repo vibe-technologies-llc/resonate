@@ -1265,12 +1265,28 @@ impl LibraryModel {
             albums_kept_before_the_rest(&self.kept_albums_here(), &self.albums_found_here()).into();
         self.shown = match self.selection {
             Selection::Everything => {
-                kept_before_the_rest(&self.kept_here(), self.found_elsewhere_here()).into()
+                kept_before_the_rest(&self.kept_here(), self.found_elsewhere_here())
+                    .into_iter()
+                    .filter(|found| !self.is_listed_as_held(found))
+                    .collect()
             }
             Selection::Artist(_) if self.query.is_empty() => Arc::clone(&self.songs_not_held),
             Selection::Artist(_) => still_answering(&self.songs_not_held, &self.query).into(),
             Selection::Album(_) => Arc::default(),
         };
+    }
+
+    fn is_listed_as_held(&self, found: &Found) -> bool {
+        let Some(held) = self
+            .downloads
+            .of(&found.recording)
+            .and_then(Download::want)
+            .and_then(|want| self.standings.get(&want))
+            .and_then(|standing| standing.held())
+        else {
+            return false;
+        };
+        self.tracks.iter().any(|track| track.id == held)
     }
 
     fn kept_here(&self) -> Cow<'_, [Found]> {

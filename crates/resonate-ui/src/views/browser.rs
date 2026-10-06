@@ -4078,6 +4078,60 @@ mod tests {
             assert!(library.wants().expect("the wants read").is_empty());
         }
 
+        struct Delivers {
+            source: SourceId,
+            file: std::path::PathBuf,
+        }
+
+        impl Provider for Delivers {
+            fn source(&self) -> &SourceId {
+                &self.source
+            }
+
+            fn obtain(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
+                Ok(Obtained::Found(resonate_providers::Delivery::File(
+                    self.file.clone(),
+                )))
+            }
+        }
+
+        #[gpui::test]
+        fn a_found_song_that_landed_is_listed_once_as_the_held_track(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let music = Folder::new();
+            let file = folder.tone("delivered.wav", 1);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Delivers {
+                        source: SourceId::new("shop").expect("a source name"),
+                        file: file.clone(),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+            let music_folder = music.path().to_path_buf();
+            driven.cx.update(|_, cx| {
+                gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
+                    global.music_folder = Some(music_folder);
+                });
+            });
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+            driven.click("found-0");
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                !library.listing().is_empty() && library.found().is_empty()
+            });
+
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).listing().len()),
+                1
+            );
+        }
+
         #[gpui::test]
         fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAppContext) {
             let folder = Folder::new();
