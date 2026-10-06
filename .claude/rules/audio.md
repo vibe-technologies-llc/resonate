@@ -1165,6 +1165,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `S24LE` and `S16LE` alone was dithered to 16 bits.
 ## Fixtures
 
+- **Capture and playback tests using the desktop graph skip when no daemon is connected.**
+  `PipeWire::start` starts a client even before a daemon exists, so `tests/capture.rs` and
+  `tests/stream.rs` also read `Error::Disconnected` from the first sink discovery as a skip.
+  Other discovery failures still fail the test, and the reconnect tests host their own daemon.
 - **A test asserting which row plays pauses the transport first.** The fake graph is pulled by the test
   thread alone, but a decode failing on a loaded machine reaches `Engine::fail`, which skips. `stand_still`
   is the pause; the queue-order tests take it before reading a row and again after any command starting

@@ -146,8 +146,8 @@ Invariants the layering protects; the rules files have the rest of each:
   500 000-track catalog; asserts nothing.
 - `cargo build --profile profiling`: release with the symbols `perf` and `cargo flamegraph` need.
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`),
-  `resonate-listen` (`reconnect`; needs `pw-cli`), `resonate-mpris --test bus` (session bus),
-  `resonate-codec --test encoded` and `resonate-library --test library` (ffmpeg, `metaflac`,
+  `resonate-listen` (`capture`, `reconnect`; the latter needs `pw-cli`), `resonate-mpris --test bus`
+  (session bus), `resonate-codec --test encoded` and `resonate-library --test library` (ffmpeg, `metaflac`,
   `wavpack`, `mac`), `resonate-online --test live` (`RESONATE_ONLINE_TESTS`). The two reconnect tests
   host a daemon of their own and the mpris notification press a bus under `dbus-run-session`.
   `resonate-subsonic`, `resonate-tidal` and `resonate-monochrome` serve fake servers on loopback.

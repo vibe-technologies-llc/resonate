@@ -40,6 +40,10 @@ fn daemon() -> Option<(PipeWire, SinkInfo)> {
     };
     match pipewire.default_sink(DISCOVERY) {
         Ok(Some(sink)) => Some((pipewire, sink)),
+        Err(Error::Disconnected) => {
+            eprintln!("skipped: no PipeWire daemon to talk to");
+            None
+        }
         Ok(None) | Err(Error::NoSink) => {
             eprintln!("skipped: the daemon advertises no sink");
             None
