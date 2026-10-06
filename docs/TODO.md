@@ -113,7 +113,6 @@ else is open to be done.
   unfuzzed; its seeds also lack Matroska lacing and unknown-size clusters, fragmented MP4, m4b
   chapters, FLAC `CHAPTER` comments and a variable-packet CAF, and `cue` reaches none of the file
   resolution
-- The EqualizerAPO and GraphicEQ readers and the MCP line reader have no fuzz target
 - No test records from a microphone node, though the reconnect test's hosted daemon could serve a
   virtual source
 - Nothing drives `play`'s signal paths or its terminal restore; only `mcp`'s hang-up is driven

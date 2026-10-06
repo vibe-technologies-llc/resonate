@@ -163,15 +163,18 @@ RPMs are kept as a downloadable workflow artifact. A runnable command added abov
 workflow too, and a crate added to the layering refusals into its `refuse` lines.
 
 **The hand-rolled parsers are fuzzed from outside the workspace.** `fuzz/`'s `[workspace]` table
-detaches it, so the workspace lints do not reach libfuzzer's macros. Nine targets (`probe`, `boxes`,
-`cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`); `probe` reaches the container readers through the public
-API over bytes a `MediaProvider` of its own serves. `lrc`, `lyricsfile` and `playlist` use seams
-compiled only under `#[cfg(fuzzing)]`. `fuzz/seeds/<target>` holds the smallest file of each thing a
-target reads and is handed to a run as a second corpus folder; a grown `corpus/` is gitignored. A
-seed is added by hand when a run finds something worth starting from; nothing runs the targets but a
-person. `ape-decoder` and `symphonia-codec-wavpack` wrap on malformed input by design, so their
-overflow checks are off in `[profile.dev]`; an overflow panic inside either is their wrapping, not a
-finding, and `fuzz run -O` says what a release build would do.
+detaches it, so the workspace lints do not reach libfuzzer's macros. Eleven targets (`probe`,
+`boxes`, `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`);
+`probe` reaches the container readers through the public API over bytes a `MediaProvider` of its own
+serves. `equaliser` reads an EqualizerAPO profile, its `GraphicEQ` line included, and holds what it
+writes back to reading as the same profile. `lrc`, `lyricsfile`, `playlist` and `mcp` use seams
+compiled only under `#[cfg(fuzzing)]`, `mcp` reading lines and envelopes and never dispatching, a
+tool being free to walk or write the filesystem. `fuzz/seeds/<target>` holds the smallest file of
+each thing a target reads and is handed to a run as a second corpus folder; a grown `corpus/` is
+gitignored. A seed is added by hand when a run finds something worth starting from; nothing runs the
+targets but a person. `ape-decoder` and `symphonia-codec-wavpack` wrap on malformed input by design,
+so their overflow checks are off in `[profile.dev]`; an overflow panic inside either is their
+wrapping, not a finding, and `fuzz run -O` says what a release build would do.
 
 **A debug build is optimised**, because an unoptimised resampler cannot keep up with the music:
 `[profile.dev]` is `opt-level = 1`, with the DSP, codec, analysis, vault crates and their heavy

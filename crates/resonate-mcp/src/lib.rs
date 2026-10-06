@@ -11,6 +11,11 @@ mod tools;
 mod transport;
 mod written;
 
+#[cfg(fuzzing)]
+pub fn read_the_lines(bytes: &[u8]) {
+    crate::server::read_every_line(bytes);
+}
+
 pub use crate::{
     controlling::{Controlling, OnTheBus, Reach, Row},
     error::{

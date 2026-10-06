@@ -12,8 +12,10 @@ cargo-fuzz = true
 libfuzzer-sys = { version = "0.4.11", default-features = false, features = ["link_libfuzzer"] }
 resonate-core.path = "../crates/resonate-core"
 resonate-codec.path = "../crates/resonate-codec"
+resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
+resonate-mcp.path = "../crates/resonate-mcp"
 
 [workspace]
 
@@ -79,6 +81,20 @@ bench = false
 [[bin]]
 name = "decoded"
 path = "fuzz_targets/decoded.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "equaliser"
+path = "fuzz_targets/equaliser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp"
+path = "fuzz_targets/mcp.rs"
 test = false
 doc = false
 bench = false

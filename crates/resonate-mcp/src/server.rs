@@ -493,6 +493,28 @@ fn read_into(mut input: impl BufRead, sender: &SyncSender<Heard>) {
     }
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_every_line(bytes: &[u8]) {
+    let mut input = io::Cursor::new(bytes);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match next_line(&mut input, &mut line) {
+            Ok(Line::Ended) | Err(_) => return,
+            Ok(Line::TooLong) => {}
+            Ok(Line::Held) => match serde_json::from_slice(&line) {
+                Ok(Value::Array(batch)) => batch.into_iter().for_each(|message| {
+                    let _ = read(message);
+                }),
+                Ok(message) => {
+                    let _ = read(message);
+                }
+                Err(_) => {}
+            },
+        }
+    }
+}
+
 fn next_line(input: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> {
     let read = input
         .by_ref()
