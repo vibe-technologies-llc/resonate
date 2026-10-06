@@ -570,7 +570,7 @@ fn run(
     let walked = walker.join().unwrap_or(Err(Error::Stopped {
         pass: PassKind::Scan,
     }));
-    written?;
+    let reached = written?;
     let mounted = walked?;
     if lost {
         return Err(Error::Stopped {
@@ -582,6 +582,9 @@ fn run(
     let arrived = progress.added.load(Ordering::Relaxed);
     let mut changed = arrived + progress.updated.load(Ordering::Relaxed);
     if !cancelled {
+        inner.write(|transaction| {
+            store::mark_the_unreached(transaction, &ids, generation, &reached)
+        })?;
         let asked = inner.read(|connection| moves::to_be_heard(connection, &ids, generation))?;
         let prints: AHashMap<PathBuf, String> = asked
             .into_iter()
@@ -1678,17 +1681,35 @@ fn write_all(
     done: &Receiver<Outcome>,
     progress: &ScanProgress,
     generation: i64,
-) -> Result<()> {
+) -> Result<store::Reached> {
     let mut cache = Cache::default();
     let mut batch = Vec::with_capacity(BATCH);
+    let mut reached = Vec::new();
 
     for outcome in done {
         batch.push(outcome);
         if batch.len() >= BATCH {
-            commit(inner, options, &mut cache, &mut batch, progress, generation)?;
+            commit(
+                inner,
+                options,
+                &mut cache,
+                &mut batch,
+                progress,
+                generation,
+                &mut reached,
+            )?;
         }
     }
-    commit(inner, options, &mut cache, &mut batch, progress, generation)
+    commit(
+        inner,
+        options,
+        &mut cache,
+        &mut batch,
+        progress,
+        generation,
+        &mut reached,
+    )?;
+    Ok(store::Reached::of(reached))
 }
 
 fn commit(
@@ -1698,6 +1719,7 @@ fn commit(
     batch: &mut Vec<Outcome>,
     progress: &ScanProgress,
     generation: i64,
+    reached: &mut Vec<i64>,
 ) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
@@ -1705,33 +1727,42 @@ fn commit(
     let mut added = 0;
     let mut updated = 0;
 
-    inner.write(|transaction| {
-        for outcome in batch.iter() {
-            match outcome {
-                Outcome::Seen(id) | Outcome::Kept(id) => {
-                    store::touch(transaction, *id, generation)?;
-                }
-                Outcome::Store(record) => {
-                    let stored = store::apply(
-                        transaction,
-                        cache,
-                        record,
-                        generation,
-                        options.extract_cover_art,
-                    )?;
-                    if !stored {
-                        continue;
-                    }
-                    if record.existing.is_some() {
-                        updated += 1;
-                    } else {
-                        added += 1;
+    for outcome in batch.iter() {
+        if let Outcome::Seen(id) | Outcome::Kept(id) = outcome {
+            reached.push(id.get() as i64);
+        }
+    }
+    let stores = batch
+        .iter()
+        .any(|outcome| matches!(outcome, Outcome::Store(_)));
+
+    if stores {
+        inner.write(|transaction| {
+            for outcome in batch.iter() {
+                match outcome {
+                    Outcome::Seen(_) | Outcome::Kept(_) => {}
+                    Outcome::Store(record) => {
+                        let stored = store::apply(
+                            transaction,
+                            cache,
+                            record,
+                            generation,
+                            options.extract_cover_art,
+                        )?;
+                        if !stored {
+                            continue;
+                        }
+                        if record.existing.is_some() {
+                            updated += 1;
+                        } else {
+                            added += 1;
+                        }
                     }
                 }
             }
-        }
-        Ok(())
-    })?;
+            Ok(())
+        })?;
+    }
 
     let counted = batch.iter().filter(|outcome| outcome.is_counted()).count();
     progress

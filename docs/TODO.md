@@ -65,8 +65,7 @@ else is open to be done.
 ## Performance and scale
 - One watched file added still regroups the alternatives of the whole catalog and gathers the loose
   albums of its whole root; a scan that changed nothing does neither
-- An incremental scan writes every unchanged row only to stamp it seen, and a change under one root
-  stats every file of every other
+- A change under one root stats every file of every other, the tidy reading each other root's paths
 - Scrolling a large library to the end reads the whole prefix of tracks, albums and artists again at
   every page, quadratic in its length; design it with the `End` item under Keyboard
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is

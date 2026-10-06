@@ -1029,30 +1029,74 @@ pub(crate) fn queried<T>(
     connection.prepare_cached(sql)?.query_row(bound, read)
 }
 
-pub fn touch(tx: &Transaction<'_>, id: TrackId, generation: i64) -> Result<()> {
-    cached(
-        tx,
-        "UPDATE tracks SET seen = ?1 WHERE id = ?2",
-        params![generation, id.get() as i64],
-    )
-    .map(drop)
-    .map_err(|source| Error::store(StoreOp::Update, source))
+pub struct Reached(Vec<i64>);
+
+impl Reached {
+    pub fn of(mut ids: Vec<i64>) -> Self {
+        ids.sort_unstable();
+        Self(ids)
+    }
+
+    fn holds(&self, id: i64) -> bool {
+        self.0.binary_search(&id).is_ok()
+    }
+}
+
+const fn unreached_in(generation: i64) -> i64 {
+    -generation
+}
+
+fn scoped(roots: &[i64]) -> String {
+    roots
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub fn mark_the_unreached(
+    tx: &Transaction<'_>,
+    roots: &[i64],
+    generation: i64,
+    reached: &Reached,
+) -> Result<u64> {
+    if roots.is_empty() {
+        return Ok(0);
+    }
+    let unwritten: Vec<i64> = tx
+        .prepare(&format!(
+            "SELECT id FROM tracks WHERE root_id IN ({}) AND seen != ?1",
+            scoped(roots)
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![generation], |row| row.get(0))
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    let mut marked = 0;
+    for id in unwritten.into_iter().filter(|id| !reached.holds(*id)) {
+        marked += cached(
+            tx,
+            "UPDATE tracks SET seen = ?1 WHERE id = ?2",
+            params![unreached_in(generation), id],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+    Ok(marked as u64)
 }
 
 pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64> {
     if roots.is_empty() {
         return Ok(0);
     }
-    let scoped = roots
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
+    let scoped = scoped(roots);
 
     let removed = tx
         .execute(
             &format!(
-                "DELETE FROM tracks WHERE seen != ?1 AND root_id IN ({scoped})
+                "DELETE FROM tracks WHERE seen = -?1 AND root_id IN ({scoped})
                     AND vault_key IS NULL"
             ),
             params![generation],
@@ -1066,7 +1110,7 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
 fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) -> Result<u64> {
     let unseen: Vec<(i64, String)> = tx
         .prepare(&format!(
-            "SELECT id, path FROM tracks WHERE seen != ?1 AND root_id IN ({scoped})
+            "SELECT id, path FROM tracks WHERE seen = -?1 AND root_id IN ({scoped})
                 AND vault_key IS NOT NULL"
         ))
         .and_then(|mut statement| {

@@ -168,7 +168,7 @@ fn wholes_moved(
 ) -> Result<Vec<Paired>> {
     let gone: Vec<Row> = rows(
         tx,
-        &format!("seen != ?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
+        &format!("seen = -?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
         generation,
     )?
     .into_iter()
@@ -191,7 +191,7 @@ fn wholes_moved(
 fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
     let gone: Vec<Cut> = cuts(rows(
         tx,
-        &format!("seen != ?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
+        &format!("seen = -?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
         generation,
     )?)
     .into_iter()

@@ -10756,6 +10756,39 @@ fn orbits_in_two_folders() -> Tree {
 }
 
 #[test]
+fn a_rescan_writes_no_row_whose_file_it_found_unchanged_and_still_prunes_the_one_gone() -> Result<()>
+{
+    let tree = Tree::new();
+    let tone = Wav::new().frames(16).build();
+    for nth in 0..3 {
+        tree.write(&format!("{nth}.wav"), &tone);
+    }
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    beside(&database)
+        .execute_batch(
+            "CREATE TABLE written (id INTEGER NOT NULL);
+             CREATE TRIGGER note_a_write AFTER UPDATE ON tracks
+             BEGIN INSERT INTO written (id) VALUES (new.id); END;",
+        )
+        .expect("a trigger noting every row written");
+
+    fs::remove_file(tree.path().join("2.wav")).expect("the file is taken away");
+    let summary = scan(&library, &options(&tree))?;
+
+    let written: i64 = beside(&database)
+        .query_row("SELECT count(DISTINCT id) FROM written", [], |row| {
+            row.get(0)
+        })
+        .expect("the notes read back");
+    assert_eq!(summary.removed, 1);
+    assert_eq!(all(&library)?.len(), 2);
+    assert_eq!(written, 1, "a row whose file was unchanged was written");
+    Ok(())
+}
+
+#[test]
 fn a_scan_whose_write_fails_answers_the_failure_and_hands_the_tree_back() -> Result<()> {
     const FILES: usize = 2_400;
     const WAITS_AT_MOST: Duration = Duration::from_secs(60);
@@ -10773,7 +10806,8 @@ fn a_scan_whose_write_fails_answers_the_failure_and_hands_the_tree_back() -> Res
 
     beside(&database)
         .execute_batch(
-            "CREATE TRIGGER refuse_a_touch BEFORE UPDATE OF seen ON tracks
+            "UPDATE tracks SET probe_again = 1;
+             CREATE TRIGGER refuse_a_write BEFORE UPDATE OF seen ON tracks
              BEGIN SELECT RAISE(ABORT, 'the disc is full'); END;",
         )
         .expect("a trigger that refuses every write");
@@ -10789,7 +10823,7 @@ fn a_scan_whose_write_fails_answers_the_failure_and_hands_the_tree_back() -> Res
     assert!(matches!(answered, Err(Error::Store { .. })));
 
     beside(&database)
-        .execute_batch("DROP TRIGGER refuse_a_touch")
+        .execute_batch("DROP TRIGGER refuse_a_write")
         .expect("the trigger taken away");
     scan(&library, &wide)?;
     Ok(())

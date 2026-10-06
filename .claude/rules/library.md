@@ -389,8 +389,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `Known::under`: the snapshot is taken before the walker starts, so an organise committing a path
   rewrite after it and before the walker reaches that directory left the walker probing the file as new
   and the prune taking the rewritten row — its `id`, `added`, counts and `listens` — away. Two scans at
-  once are worse: each stamps its own `generation` and prunes `WHERE seen != ?`, so the first to finish
-  deletes every row the second wrote. `enrich` and `poll` stay outside it, neither walking the tree nor
+  once are worse: each marks what its own walk did not reach and prunes those, so the first to finish
+  deletes every row the second's walk had not yet come to. `enrich` and `poll` stay outside it, neither walking the tree nor
   rewriting a path. **The guard holds across processes.** `resonate scan` beside the window's scan,
   or `resonate vault --prune` beside its import, are two `Inner`s and two flags, so a catalog on disc
   also takes an exclusive `File::try_lock` on `<catalog>.walk` (`locked_across_processes`), held by
@@ -472,15 +472,26 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `roots` — re-parented, not deleted, because `tracks.root_id` cascades and widening a root must not
   cost a play counted under it. Nesting was never only untidy: the overlap was walked twice with
   `root_id` flipping on the second upsert.
-- **What the scan could not read, it keeps.** The prune takes every row the pass did not stamp, so a
-  row is stamped wherever the pass could not tell a file gone from a file it failed to read. A file
+- **A row the walk reached unchanged is not written, and only what it did not reach is marked.** An
+  upsert stamps `tracks.seen` with the scan's `generation`; an unchanged row — `Outcome::Seen` — and
+  a kept one only lend their ids to `store::Reached`, which the writer holds in memory (a batch
+  holding nothing to store opens no transaction), and once the walk is whole
+  `store::mark_the_unreached` reads the ids under the walked roots not stamped this generation off
+  `tracks_by_root` and writes `seen = -generation` on those `Reached` does not hold. The prune and
+  `moves` read that mark, so an incremental scan of 500 000 unchanged files writes the rows whose
+  files went and nothing else
+  (`a_rescan_writes_no_row_whose_file_it_found_unchanged_and_still_prunes_the_one_gone`). A mark a
+  scan killed before its prune left is never read again, the next scan marking with its own
+  generation.
+- **What the scan could not read, it keeps.** The prune takes every row the pass did not reach, so a
+  row is reached wherever the pass could not tell a file gone from a file it failed to read. A file
   whose size or mtime moved and which then would not probe — a torn write, a transient `EIO` — is
-  counted failed and its `Candidate::existing` rows stamped as `Outcome::Kept`, which touches the row
+  counted failed and its `Candidate::existing` rows kept as `Outcome::Kept`, which reaches the row
   without counting it processed a second time; so is a cue-cut file. A directory `read_dir` refuses —
   `EACCES`, `EIO`, an automount not answering — or whose listing an error cuts short (the entries are
   gathered whole before any is read, so a folder half listed is kept whole rather than half pruned),
   an entry whose kind cannot be read, and an entry whose `stat` fails, a link into an
-  unplugged drive among them, stamp every row `Known::at_or_under` names at or below the path, a range
+  unplugged drive among them, keep every row `Known::at_or_under` names at or below the path, a range
   over the `BTreeMap` the rows are held in. Before, each was stepped past and the prune deleted the rows,
   and their plays, listens and favourites with them
   (`a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it`,
@@ -493,7 +504,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   against its parent — as a volume; a followed link into another filesystem is one too.
   `volumes::settle` writes them to `volumes` after the prune and drops a row for one no longer
   mounted that no track and no playlist row sits under. A noted volume whose device is its parent's — the empty mount
-  point — or whose directory has gone stamps every row `Known::at_or_under` names as `Outcome::Kept`
+  point — or whose directory has gone keeps every row `Known::at_or_under` names as `Outcome::Kept`
   and is not walked, and `tidy_the_roots_beside` and `forget_the_gone` skip a path on one
   (`a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone`,
   `a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted`). Nothing moves
@@ -526,7 +537,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   channel under the walker, and the scan answers the store's error and hands the `Walk` guard back
   rather than waiting on a pipeline nothing drains.
 - **Every root is tidied by a scan and only the walked ones pruned, and a root not there is neither.**
-  The prune is `WHERE seen != ?` over the roots the walk stamped, so `resonate scan <root>` used to
+  The prune is the unreached mark over the roots the walk walked, so `resonate scan <root>` used to
   leave every other root holding rows for vanished files. `tidy_the_roots_beside` is the other half: for
   each registered root this scan did not walk it reads the distinct paths under it through
   `store::paths_under`, keeps those no longer there and hands them to `store::forget_paths`, and
@@ -543,7 +554,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   window takes a root off what it owes only once a scan has taken it.
 - **A statement run once a row is prepared once a connection.** `store::cached` runs literal SQL
   through `prepare_cached`, and every per-row write goes through it — the scan's store writes
-  (`touch`, the index row, the album's key, year and cover among them), the resumption's and
+  (the unreached mark, the index row, the album's key, year and cover among them), the resumption's and
   queue order's rows and a playlist's inserts — so an incremental scan of 500 000 tracks parses its
   `UPDATE` once rather than 500 000 times. The per-row reads and the 37-column track upsert go
   through `store::queried`, the same cache for a statement returning a row. A scan cycles through
