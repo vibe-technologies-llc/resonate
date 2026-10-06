@@ -10621,6 +10621,57 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
 }
 
 #[test]
+fn an_album_naming_no_owner_is_not_taken_for_a_release_by_somebody_none_of_its_tracks_bill()
+-> Result<()> {
+    let tree = Tree::new();
+    for (file, title, artist) in [
+        ("dawn.wav", "Dawn", "Ada"),
+        ("noon.wav", "Noon", "Ben"),
+        ("dusk.wav", "Dusk", "Cleo"),
+    ] {
+        tree.write(
+            file,
+            &Wav::new()
+                .text(TITLE, title)
+                .text(ARTIST, artist)
+                .text(ALBUM, "Hours")
+                .text(COMPILATION, "1")
+                .build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let hit = |artist| ReleaseMatch {
+        release: mbid(HOURS),
+        group: None,
+        score: 100,
+        title: "Hours".to_owned(),
+        credit: credited(Some(artist), None),
+        track_count: Some(3),
+        date: None,
+    };
+    let elsewhere = Arc::new(Fake::new(Canned {
+        found_releases: vec![hit("The Orbiters")],
+        releases: vec![hours()],
+        ..Canned::default()
+    }));
+    let performed = Arc::new(Fake::new(Canned {
+        found_releases: vec![hit("Ben")],
+        releases: vec![hours()],
+        ..Canned::default()
+    }));
+
+    enrich(&library, &elsewhere, false)?;
+    assert_eq!(elsewhere.called(LookupOp::Release), 0);
+    assert_eq!(only_album(&library)?.mbid, None);
+
+    enrich(&library, &performed, true)?;
+    assert_eq!(performed.called(LookupOp::Release), 1);
+    assert_eq!(only_album(&library)?.mbid, Some(mbid(HOURS)));
+    Ok(())
+}
+
+#[test]
 fn a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_strict_rule()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;

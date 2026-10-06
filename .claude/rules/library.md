@@ -1068,7 +1068,13 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   landed as the bullet below says — and anything short is `Nothing`
   (`a_hit_is_weighed_on_its_owner_its_count_its_year_and_then_its_score`,
   `a_strict_hit_of_the_wrong_count_names_its_group_and_one_without_a_group_names_nothing` in
-  `enrich.rs`). An album with no owner is weighed on score and count alone — what a compilation offers.
+  `enrich.rs`). **An album with no owner is weighed on its performers**: `AlbumToAsk::performers` is the distinct
+  artists its tracks bill (`performers_of`, up to `PERFORMERS_WEIGHED_AT_MOST`), and `owned_by` agrees
+  a hit credited to Various Artists (by MusicBrainz's id or name) or to one of them through
+  `same_credit`, so a compilation is not taken for another artist's release of the same title and
+  count (`an_album_with_no_owner_is_taken_only_where_the_hit_credits_its_performers_or_various_artists`,
+  `an_album_naming_no_owner_is_not_taken_for_a_release_by_somebody_none_of_its_tracks_bill`); one
+  whose tracks bill nobody is still weighed on score and count alone.
   An artist is `profile_of`: a tagged `artists.mbid` is asked for directly and falls through to
   `find_artist` where the reference holds nothing
   (`a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands`), and a search hit

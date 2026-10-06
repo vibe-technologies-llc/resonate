@@ -312,6 +312,7 @@ pub struct AlbumToAsk {
     pub catalog_number: Option<String>,
     pub tagged_tracks: Option<u32>,
     pub owner_mbid: Option<Mbid>,
+    pub performers: Vec<String>,
     pub has_cover: bool,
     pub has_release_rows: bool,
     pub rematch_only: bool,

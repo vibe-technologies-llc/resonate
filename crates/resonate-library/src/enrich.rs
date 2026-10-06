@@ -76,6 +76,10 @@ const RECORDING_MAY_DIFFER_BY: Duration = Duration::from_secs(5);
 
 const A_VIDEO_MAY_RUN_LONGER_THAN_ITS_SONG_BY: Duration = Duration::from_secs(240);
 
+const VARIOUS_ARTISTS: &str = "89ad4ac3-39f7-470e-963a-56509c546377";
+
+const VARIOUS_ARTISTS_NAMED: &str = "Various Artists";
+
 const REFUSALS_THAT_END_A_PASS: u32 = 10;
 
 const RECOGNITIONS_REFUSED_BEFORE_GIVING_UP: u32 = 5;
@@ -999,9 +1003,26 @@ fn names_it(found: &ArtistMatch, named: &str) -> Option<Spelling> {
 
 fn owned_by(credit: &[Credit], album: &AlbumToAsk) -> Option<Spelling> {
     match album.owner.as_deref() {
-        None => Some(Spelling::Marked),
         Some(owner) => same_credit(credit, owner, album.owner_mbid.as_ref()),
+        None if album.performers.is_empty() || credited_to_various_artists(credit) => {
+            Some(Spelling::Marked)
+        }
+        None => album
+            .performers
+            .iter()
+            .filter_map(|performer| same_credit(credit, performer, None))
+            .max(),
     }
+}
+
+fn credited_to_various_artists(credit: &[Credit]) -> bool {
+    credit.iter().any(|credited| {
+        credited
+            .mbid
+            .as_ref()
+            .is_some_and(|mbid| mbid.as_str() == VARIOUS_ARTISTS)
+            || same_name(Some(&credited.name), VARIOUS_ARTISTS_NAMED).is_some()
+    })
 }
 
 fn declared_count(album: &AlbumToAsk) -> u32 {
@@ -2373,6 +2394,7 @@ mod tests {
             catalog_number: None,
             tagged_tracks: None,
             owner_mbid: None,
+            performers: Vec::new(),
             has_cover: false,
             has_release_rows: false,
             rematch_only: false,
@@ -2483,6 +2505,34 @@ mod tests {
         assert!(
             matches_strictly(&release(100, Some("Various Artists"), Some(2)), &various).is_none()
         );
+    }
+
+    #[test]
+    fn an_album_with_no_owner_is_taken_only_where_the_hit_credits_its_performers_or_various_artists()
+     {
+        let performed = AlbumToAsk {
+            performers: vec!["Ada".to_owned(), "Ben feat. Cleo".to_owned()],
+            ..album(None)
+        };
+        let various_by_id = ReleaseMatch {
+            credit: vec![credit_of("Various", "", Some(VARIOUS_ARTISTS))],
+            ..release(100, None, Some(3))
+        };
+
+        assert!(matches_strictly(&release(100, Some("Ada"), Some(3)), &performed).is_some());
+        assert!(
+            matches_strictly(&release(100, Some("Ben feat. Cleo"), Some(3)), &performed).is_some()
+        );
+        assert!(
+            matches_strictly(&release(100, Some("Various Artists"), Some(3)), &performed).is_some()
+        );
+        assert!(matches_strictly(&various_by_id, &performed).is_some());
+        assert!(
+            matches_strictly(&release(100, Some("The Orbiters"), Some(3)), &performed).is_none(),
+            "a release of the same title and count by somebody else was taken"
+        );
+        assert!(matches_strictly(&release(100, None, Some(3)), &performed).is_none());
+        assert!(matches_as_a_group(&group_match(100, Some("The Orbiters")), &performed).is_none());
     }
 
     #[test]

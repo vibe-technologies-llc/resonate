@@ -1511,7 +1511,10 @@ pub(crate) fn albums_to_ask(
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    found.into_iter().map(RawAlbumToAsk::into_album).collect()
+    found
+        .into_iter()
+        .map(|raw| raw.into_album(connection))
+        .collect()
 }
 
 pub(crate) fn album_to_ask(connection: &Connection, id: AlbumId) -> Result<Option<AlbumToAsk>> {
@@ -1525,7 +1528,7 @@ pub(crate) fn album_to_ask(connection: &Connection, id: AlbumId) -> Result<Optio
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    found.map(RawAlbumToAsk::into_album).transpose()
+    found.map(|raw| raw.into_album(connection)).transpose()
 }
 
 pub(crate) fn album_if_due(
@@ -1546,7 +1549,24 @@ pub(crate) fn album_if_due(
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    found.map(RawAlbumToAsk::into_album).transpose()
+    found.map(|raw| raw.into_album(connection)).transpose()
+}
+
+const PERFORMERS_WEIGHED_AT_MOST: i64 = 32;
+
+fn performers_of(connection: &Connection, album: i64) -> Result<Vec<String>> {
+    connection
+        .prepare_cached(
+            "SELECT DISTINCT artist FROM tracks
+              WHERE album_id = ?1 AND artist IS NOT NULL
+              ORDER BY artist LIMIT ?2",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![album, PERFORMERS_WEIGHED_AT_MOST], |row| row.get(0))
+                .and_then(Iterator::collect)
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 struct RawAlbumToAsk {
@@ -1586,7 +1606,12 @@ impl RawAlbumToAsk {
         })
     }
 
-    fn into_album(self) -> Result<AlbumToAsk> {
+    fn into_album(self, connection: &Connection) -> Result<AlbumToAsk> {
+        let performers = match self.owner {
+            Some(_) => Vec::new(),
+            None => performers_of(connection, self.id)?,
+        };
+
         Ok(AlbumToAsk {
             id: AlbumId::new(self.id as u64)?,
             title: self.title,
@@ -1599,6 +1624,7 @@ impl RawAlbumToAsk {
             catalog_number: self.catalog_number,
             tagged_tracks: self.tagged_tracks,
             owner_mbid: owner_mbid_held(self.owner_mbid.as_deref()),
+            performers,
             has_cover: self.has_cover,
             has_release_rows: self.has_release_rows,
             rematch_only: !self.due,

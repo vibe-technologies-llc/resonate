@@ -57,8 +57,6 @@ else is open to be done.
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- An album whose tracks name no album artist is taken by a release search on its title and track
-  count alone
 - An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
   measured the same as its source by every spectral feature `analysis.md` lists, and no FhG encode
   was weighed
