@@ -51,8 +51,6 @@ else is open to be done.
 - The albums a search finds beyond the library come from MusicBrainz alone: a library artist's
   releases not held, learnt in the lookup pass, answer a search for their songs offline and none for
   their albums
-- An official music video longer than its song by more than five seconds names nothing when its
-  page carries no ISRC, the title search holding a recording to the length the video ran
 - The songs of an artist's releases not held are read only when the lookup pass reaches them, so an
   artist page opened before then lists the albums and none of their songs, and a large library's
   first pass runs on for an hour or more reading them, one release group a second

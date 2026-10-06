@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
+    cmp::Reverse,
     num::NonZeroUsize,
     sync::{
         Arc,
@@ -72,6 +73,8 @@ const STRICT_SCORE: u8 = 95;
 const EXACT_SCORE: u8 = 100;
 
 const RECORDING_MAY_DIFFER_BY: Duration = Duration::from_secs(5);
+
+const A_VIDEO_MAY_RUN_LONGER_THAN_ITS_SONG_BY: Duration = Duration::from_secs(240);
 
 const REFUSALS_THAT_END_A_PASS: u32 = 10;
 
@@ -1266,6 +1269,33 @@ pub(crate) fn the_recording_named(
     }
 
     Some(top)
+}
+
+pub(crate) fn the_recording_a_video_names(
+    found: Vec<RecordingMatch>,
+    named: &NamedAs<'_>,
+    ran: Duration,
+) -> Option<RecordingMatch> {
+    let unmeasured = NamedAs {
+        title: named.title,
+        artist: named.artist,
+        length: None,
+    };
+
+    found
+        .into_iter()
+        .filter_map(|found| {
+            let length = found.length.filter(|length| played_through(*length, ran))?;
+            let spelling = matches_a_recording_named(&found, &unmeasured)?;
+            Some(((spelling, Reverse(apart(length, ran)), found.score), found))
+        })
+        .max_by(|(one, _), (other, _)| one.cmp(other))
+        .map(|(_, found)| found)
+}
+
+fn played_through(length: Duration, ran: Duration) -> bool {
+    length <= ran.saturating_add(RECORDING_MAY_DIFFER_BY)
+        && ran.saturating_sub(length) <= A_VIDEO_MAY_RUN_LONGER_THAN_ITS_SONG_BY
 }
 
 pub(crate) fn names_agree(found: &str, named: &str) -> bool {

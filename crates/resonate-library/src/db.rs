@@ -3295,7 +3295,9 @@ impl Library {
                 }
                 match taken {
                     Some(take) => reference.recording(&take.id)?.or(Some(take)),
-                    None => linked::the_song_searched_for(reference, &song)?,
+                    None => {
+                        linked::the_song_searched_for(reference, &song, linked::Footage::of(link))?
+                    }
                 }
             }
         };

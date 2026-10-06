@@ -21068,6 +21068,10 @@ fn linked_to_youtube() -> SongLink {
     SongLink::read(A_YOUTUBE_LINK).expect("a song link")
 }
 
+fn linked_to_youtube_music() -> SongLink {
+    SongLink::read("https://music.youtube.com/watch?v=dQw4w9WgXcQ").expect("a song link")
+}
+
 fn titled_on_the_page(title: &str, artist: &str, seconds: u64) -> LinkNames {
     LinkNames {
         isrcs: Vec::new(),
@@ -21086,6 +21090,64 @@ fn echoes_asked(wording: Wording) -> RecordingAsked {
         length: Some(Duration::from_secs(1_410)),
         wording,
     }
+}
+
+fn echoes_asked_at_any_length(wording: Wording) -> RecordingAsked {
+    RecordingAsked {
+        length: None,
+        ..echoes_asked(wording)
+    }
+}
+
+fn echoes_lasting(seconds: u64) -> RecordingMatch {
+    RecordingMatch {
+        length: Some(Duration::from_secs(seconds)),
+        ..echoes_found()
+    }
+}
+
+#[test]
+fn a_music_video_running_past_its_song_is_followed_to_the_take_it_plays() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let mut live = echoes_lasting(1_402);
+    live.recording = mbid(HOURS_BONUS);
+    live.title = "Echoes (live)".to_owned();
+    let mut demo = echoes_lasting(900);
+    demo.recording = mbid(DAYBREAK);
+    let video = Fake::new(Canned {
+        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
+        found_recordings: vec![demo, echoes_lasting(1_330), live, echoes_lasting(1_500)],
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    });
+    let page_of_a_song = Fake::new(Canned {
+        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
+        found_recordings: vec![echoes_lasting(1_330)],
+        ..Canned::default()
+    });
+
+    let Linked::Found(found) = library.follow_link(&video, &linked_to_youtube())? else {
+        panic!("the video named no song to want");
+    };
+
+    assert_eq!(found.recording, mbid(ECHOES));
+    assert_eq!(
+        video.calls(),
+        vec![
+            Called::SongLinked(linked_to_youtube()),
+            Called::FindRecording(echoes_asked(Wording::Phrase)),
+            Called::FindRecording(echoes_asked(Wording::Words)),
+            Called::FindRecording(echoes_asked_at_any_length(Wording::Phrase)),
+            Called::Recording(mbid(ECHOES)),
+        ],
+        "the length the video ran bounded the take from above alone"
+    );
+    assert_eq!(
+        library.follow_link(&page_of_a_song, &linked_to_youtube_music())?,
+        Linked::Unnamed,
+        "a page of the song itself still holds a take to its own length"
+    );
+    Ok(())
 }
 
 #[test]
@@ -21157,7 +21219,10 @@ fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Resul
             Called::SongLinked(linked_to_youtube()),
             Called::FindRecording(echoes_asked(Wording::Phrase)),
             Called::FindRecording(echoes_asked(Wording::Words)),
-        ]
+            Called::FindRecording(echoes_asked_at_any_length(Wording::Phrase)),
+            Called::FindRecording(echoes_asked_at_any_length(Wording::Words)),
+        ],
+        "a take longer than the video it was filmed for is no take of it"
     );
     assert_eq!(
         library.follow_link(&nameless, &linked_to_youtube())?,

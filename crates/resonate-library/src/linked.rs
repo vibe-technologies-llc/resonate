@@ -1,12 +1,12 @@
 use std::{fmt, time::Duration};
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, Isrc, Mbid};
+use resonate_core::{AlbumId, Isrc, Mbid, Service};
 use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{
-    BarcodeMatch, Credit, Error, Found, Recording, RecordingAsked, Reference, Result, StoreOp,
-    Wording,
+    BarcodeMatch, Credit, Error, Found, Recording, RecordingAsked, RecordingMatch, Reference,
+    Result, StoreOp, Wording,
     enrich::{self, NamedAs},
     enriched::folded_title,
     reference::credited_as,
@@ -473,18 +473,56 @@ fn readings_of(title: &str, artist: Option<&str>) -> Vec<Reading> {
     readings
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Footage {
+    Heard,
+    Filmed,
+}
+
+impl Footage {
+    pub(crate) fn of(link: &SongLink) -> Self {
+        match link {
+            SongLink::Elsewhere(page) if Service::of_url(page) == Service::Youtube => Self::Filmed,
+            SongLink::MusicBrainz(_) | SongLink::Deezer(_) | SongLink::Elsewhere(_) => Self::Heard,
+        }
+    }
+}
+
 pub(crate) fn the_song_searched_for(
     reference: &dyn Reference,
     song: &LinkNames,
+    footage: Footage,
 ) -> Result<Option<Recording>> {
     let Some(title) = song.title.as_deref() else {
         return Ok(None);
     };
-    for reading in readings_of(title, song.artist.as_deref()) {
+    let readings = readings_of(title, song.artist.as_deref());
+
+    if let Some(heard) = the_first_named(reference, &readings, song.length, |found, named| {
+        enrich::the_recording_named(found, named)
+    })? {
+        return Ok(Some(heard));
+    }
+    let Some(ran) = song.length.filter(|_| footage == Footage::Filmed) else {
+        return Ok(None);
+    };
+
+    the_first_named(reference, &readings, None, |found, named| {
+        enrich::the_recording_a_video_names(found, named, ran)
+    })
+}
+
+fn the_first_named(
+    reference: &dyn Reference,
+    readings: &[Reading],
+    length: Option<Duration>,
+    taken: impl Fn(Vec<RecordingMatch>, &NamedAs<'_>) -> Option<RecordingMatch>,
+) -> Result<Option<Recording>> {
+    for reading in readings {
         let named = NamedAs {
             title: &reading.title,
             artist: Some((&reading.artist, None)),
-            length: song.length,
+            length,
         };
         for wording in [Wording::Phrase, Wording::Words] {
             let found = reference.find_recording(&RecordingAsked {
@@ -492,10 +530,10 @@ pub(crate) fn the_song_searched_for(
                 artist: Some(reading.artist.clone()),
                 artist_mbid: None,
                 release: None,
-                length: song.length,
+                length,
                 wording,
             })?;
-            if let Some(top) = enrich::the_recording_named(found, &named) {
+            if let Some(top) = taken(found, &named) {
                 return Ok(Some(
                     reference
                         .recording(&top.recording)?

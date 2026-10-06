@@ -2473,7 +2473,14 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   and the rest — taken off a title's end in brackets through `enrich::without_brackets_that`, the
   same stripper `dequalified` runs, so *(Live)*, *(Remix)* or *(4K Remaster)* stay and stop the
   stripping, naming another recording or nothing on the list. A strict answer is asked for whole
-  through `Reference::recording`, as an ISRC's take is; nothing strict names nothing. The take is
+  through `Reference::recording`, as an ISRC's take is; nothing strict names nothing. **A video may
+  run past its song**: where the link is a YouTube page (`linked::Footage::of`, `Service::Youtube`; a
+  YouTube Music page is the song's own) and the strict search named nothing, the readings are asked
+  again with no length, and `enrich::the_recording_a_video_names` takes a take agreeing on title and
+  credit that the video could have played whole — no longer than it by more than
+  `RECORDING_MAY_DIFFER_BY` and no shorter by more than `A_VIDEO_MAY_RUN_LONGER_THAN_ITS_SONG_BY`
+  (four minutes) — the better spelling first, then the length nearest the video's, then the score
+  (`a_music_video_running_past_its_song_is_followed_to_the_take_it_plays`). The take is
   placed by `elsewhere::found_among`, `meant_release` choosing the album as for a search. A recording
   only a release row names — wanted, or missing from a held album — is `Found`, `want_found` landing
   it as it would anything else. `RecordingMatch: From<Recording>` scores such a match whole, the
