@@ -9454,6 +9454,7 @@ struct Canned {
 
 struct Gate {
     op: Option<LookupOp>,
+    at: usize,
     started: Sender<()>,
     go: Receiver<()>,
 }
@@ -9489,10 +9490,15 @@ impl Fake {
     }
 
     fn gated_on(self, op: Option<LookupOp>) -> (Self, Receiver<()>, Sender<()>) {
+        self.gated_on_the(op, 0)
+    }
+
+    fn gated_on_the(self, op: Option<LookupOp>, at: usize) -> (Self, Receiver<()>, Sender<()>) {
         let (started, has_started) = mpsc::channel();
         let (go, may_go) = mpsc::channel();
         *self.gate.lock() = Some(Gate {
             op,
+            at,
             started,
             go: may_go,
         });
@@ -9519,7 +9525,9 @@ impl Fake {
         let gate = {
             let mut held = self.gate.lock();
             match held.as_ref() {
-                Some(gate) if gate.op.is_none_or(|wanted| wanted == op) => held.take(),
+                Some(gate) if gate.op.is_none_or(|wanted| wanted == op) && gate.at == nth => {
+                    held.take()
+                }
                 Some(_) | None => None,
             }
         };
@@ -11651,6 +11659,36 @@ fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Resul
 
     assert!(library.songs_kept_for("daybreak")?.is_empty());
     assert_eq!(again.called(LookupOp::ReleasesOfGroup), 0);
+    Ok(())
+}
+
+#[test]
+fn the_sleeve_of_a_release_not_held_is_asked_for_as_soon_as_its_songs_land() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let mut canned = learnt_canned();
+    canned.covers.push((mbid(HOURS), png_art(8)));
+    let (fake, has_started, go) =
+        Fake::new(canned).gated_on_the(Some(LookupOp::ReleasesOfGroup), 1);
+    let fake = Arc::new(fake);
+    let handle = library.enrich(
+        Arc::clone(&fake) as Arc<dyn Reference>,
+        Arc::new(Fingerprinters::none()),
+        EnrichOptions::default(),
+    )?;
+
+    has_started
+        .recv()
+        .expect("the lookup reaches the songs of a second group");
+    let asked_while_held = waited_for(|| fake.called(LookupOp::Cover) >= 1);
+    go.send(()).expect("the lookup is still waiting");
+    handle.join()?;
+
+    assert!(
+        asked_while_held,
+        "the sleeve waited for every group's songs: {:?}",
+        fake.calls()
+    );
+    assert_eq!(library.unheld_cover(&mbid(HOURS_GROUP))?, Some(png_art(8)));
     Ok(())
 }
 

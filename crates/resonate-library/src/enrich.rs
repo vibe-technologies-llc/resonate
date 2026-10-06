@@ -333,6 +333,7 @@ fn run(
         refused_in_a_row: Cell::new(0),
         pictured: RefCell::new(AHashSet::new()),
         covered: RefCell::new(AHashSet::new()),
+        unheld_covered: RefCell::new(AHashSet::new()),
     };
     let stopped_by = match pass.run(options) {
         Ok(()) => None,
@@ -1464,6 +1465,7 @@ struct Pass<'a> {
     refused_in_a_row: Cell<u32>,
     pictured: RefCell<AHashSet<ArtistId>>,
     covered: RefCell<AHashSet<AlbumId>>,
+    unheld_covered: RefCell<AHashSet<Mbid>>,
 }
 
 impl Pass<'_> {
@@ -1545,11 +1547,27 @@ impl Pass<'_> {
             if self.progress.is_cancelled() {
                 return Ok(());
             }
+            if self.unheld_covered.borrow().contains(&due.group) {
+                continue;
+            }
             self.want(Picture::OfAnUnheldRelease {
                 group: due.group,
                 pressing: due.pressing,
             });
         }
+        Ok(())
+    }
+
+    fn cover_as_landed(&self, group: &Mbid, pressing: Option<&Release>) -> Result<()> {
+        if !self.unheld_covered.borrow_mut().insert(group.clone())
+            || !self.library.unheld_cover_is_due(group, SystemTime::now())?
+        {
+            return Ok(());
+        }
+        self.want(Picture::OfAnUnheldRelease {
+            group: group.clone(),
+            pressing: pressing.map(|pressing| pressing.id.clone()),
+        });
         Ok(())
     }
 
@@ -1577,6 +1595,7 @@ impl Pass<'_> {
                         self.progress
                             .songs
                             .fetch_add(landed as u64, Ordering::Relaxed);
+                        self.cover_as_landed(&group, pressing.as_ref())?;
                     }
                     Heard::Refused => self.library.songs_of_refused(&group, now)?,
                 }

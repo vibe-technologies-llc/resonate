@@ -2404,7 +2404,13 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   groups alone (`songs_due_for`, earliest first, each weighed again by `songs_still_due`), landing and stamping each as the pass would,
   a refusal or an unreadable answer stamped and an unreachable reference answered as the error
   (`an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_reaches_them`).
-  **The sleeves of those releases are kept in the same pass.** `Pass::cover_the_unheld` runs after `learn_the_songs`: every release
+  **The sleeves of those releases are kept in the same pass, each as soon as its songs land.**
+  `Pass::cover_as_landed` hands a group whose songs just landed to the picture readers there and then,
+  where `unheld_cover_is_due` (the one-row form of `UNHELD_COVERS_DUE`) says so, the Cover Art Archive
+  being another host on its own pace and threads, so sleeves arrive beside the songs rather than an
+  hour after them (`the_sleeve_of_a_release_not_held_is_asked_for_as_soon_as_its_songs_land`);
+  `unheld_covered` remembers what was handed over. `Pass::cover_the_unheld` runs after `learn_the_songs`
+  for the rest, passing over what `unheld_covered` holds: every release
   group `unheld_covers_due` answers — unheld by the same predicate, with no cover held and none asked
   within `COVERS_ASKED_AGAIN_AFTER`, the most played artist's first, `at_most` capping it — goes to the
   picture readers as `Picture::OfAnUnheldRelease`, asked as `Reference::cover` for the pressing its

@@ -508,6 +508,16 @@ const UNHELD_COVERS_DUE: &str = concat!(
       LIMIT ?2"
 );
 
+const UNHELD_COVER_DUE: &str = concat!(
+    "SELECT EXISTS (SELECT 1 FROM artist_releases r
+                     WHERE r.mbid = ?2 AND ",
+    unheld_by_any_album!(),
+    "
+                       AND NOT EXISTS (SELECT 1 FROM unheld_covers c
+                                        WHERE c.release_group = r.mbid
+                                          AND (c.cover IS NOT NULL OR c.asked > ?1)))"
+);
+
 const SONG_HELD_NOWHERE: &str = concat!(
     "NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = s.recording_mbid)
      AND NOT EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.recording_mbid = s.recording_mbid)
@@ -3728,6 +3738,22 @@ impl Library {
                 row.get::<_, i64>(0)
                     .map(|id| ArtistId::new(id as u64).map_err(Error::from))
             })
+        })
+    }
+
+    pub(crate) fn unheld_cover_is_due(&self, group: &Mbid, now: SystemTime) -> Result<bool> {
+        let asked_before = now
+            .checked_sub(enriched::COVERS_ASKED_AGAIN_AFTER)
+            .unwrap_or(UNIX_EPOCH);
+
+        self.inner.read(|connection| {
+            connection
+                .query_row(
+                    UNHELD_COVER_DUE,
+                    params![store::to_nanos(asked_before), group.as_str()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Query, source))
         })
     }
 
