@@ -172,8 +172,7 @@ else is open to be done.
   1 024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- An unrelated `<stem>.txt` is read as words, and of `Song.en.lrc` and `Song.ja.lrc` the first in
-  name order answers whatever the listener reads
+- An unrelated `<stem>.txt` is read as words
 - There is no offset of the listener's own for a sheet that runs early or late
 - **Blocked on gpui:** The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a
   whole pixel vertically (`SUBPIXEL_VARIANTS_Y = 1`) and cosmic-text hints every size, so a type size

@@ -101,7 +101,13 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
 - **The sidecar walks folders rather than trying fixed names** (`Place::Beside`, `Place::Within`;
   `WITHIN` is `lyrics`, `lyric`, `lrc`, matched case-insensitively). `Rank` is the whole precedence, in order: `.lrc` over `.txt`, then how the name was
   arrived at (file stem, whole name, stem and a language such as `Echoes.pt-BR.lrc`, then
-  `<artist> - <title>` and `<title>` off `Wanted`), and only then where it was found. Tag spellings
+  `<artist> - <title>` and `<title>` off `Wanted`), then for a sheet in a language how early that
+  language stands among those the listener reads, and only then where it was found. **The languages
+  are the listener's locale's**: `Sidecar::default` reads `LANGUAGE`'s colon list (unless the locale
+  is `C` or `POSIX`) and then the first of `LC_ALL`, `LC_MESSAGES` and `LANG`, each through
+  `language_of`, so beside `Song.en.lrc` a listener reading Japanese is handed `Song.ja.lrc`, and one
+  reading neither the first in name order
+  (`of_two_sheets_in_a_language_the_one_the_listener_reads_answers`). Tag spellings
   are compared for equality after `lrc::folded`, not containment, which would hand every sheet holding
   the title to every track. A candidate is read to `LARGEST_SIDECAR` (the reader's `LARGEST_SHEET`),
   keeping the whole lines that fitted. An unreadable candidate is logged and the walk goes on, so an

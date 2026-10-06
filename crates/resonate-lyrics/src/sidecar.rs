@@ -1,4 +1,5 @@
 use std::{
+    env,
     ffi::OsStr,
     fs::{self, File},
     io::{self, Read},
@@ -29,22 +30,63 @@ const TIMESTAMPS_SETTLE_IN: Duration = Duration::from_secs(1);
 const SPELLED_AFTER_THE_FILE: usize = 2;
 const SPELLED_IN_A_LANGUAGE: usize = SPELLED_AFTER_THE_FILE;
 const NAMED_AFTER_THE_FILE: usize = SPELLED_IN_A_LANGUAGE + 1;
+const LANGUAGES_LISTED_IN: &str = "LANGUAGE";
+const LOCALE_NAMED_IN: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
+const THE_PLAIN_LOCALES: [&str; 2] = ["c", "posix"];
 
 pub struct Sidecar {
     source: SourceId,
     walked: Mutex<Walked>,
+    read_in: Vec<String>,
 }
 
 impl Default for Sidecar {
     fn default() -> Self {
-        Self {
-            source: SourceId::new(SIDECAR).unwrap_or_else(|_| SourceId::local()),
-            walked: Mutex::new(Walked::default()),
-        }
+        Self::read_in(languages_the_listener_reads())
     }
 }
 
+fn languages_the_listener_reads() -> Vec<String> {
+    let named = |variable: &str| env::var(variable).ok().filter(|value| !value.is_empty());
+    let locale = LOCALE_NAMED_IN.into_iter().find_map(named);
+    let plain = locale
+        .as_deref()
+        .and_then(language_of)
+        .is_none_or(|language| THE_PLAIN_LOCALES.contains(&language.as_str()));
+    let listed = named(LANGUAGES_LISTED_IN).filter(|_| !plain);
+
+    let mut languages: Vec<String> = Vec::new();
+    for language in listed
+        .iter()
+        .flat_map(|listed| listed.split(':'))
+        .chain(locale.as_deref())
+        .filter_map(language_of)
+    {
+        if !languages.contains(&language) {
+            languages.push(language);
+        }
+    }
+    languages
+}
+
+fn language_of(locale: &str) -> Option<String> {
+    let language = locale
+        .split(['_', '-', '.', '@'])
+        .next()?
+        .to_ascii_lowercase();
+
+    (!language.is_empty()).then_some(language)
+}
+
 impl Sidecar {
+    fn read_in(languages: Vec<String>) -> Self {
+        Self {
+            source: SourceId::new(SIDECAR).unwrap_or_else(|_| SourceId::local()),
+            walked: Mutex::new(Walked::default()),
+            read_in: languages,
+        }
+    }
+
     fn head(&self, path: &Path, bound: u64) -> Result<Option<Vec<u8>>> {
         let file = match File::open(path) {
             Ok(file) => file,
@@ -128,7 +170,7 @@ impl Sidecar {
         let Some(path) = wanted.location.as_path() else {
             return Ok(Vec::new());
         };
-        let Some(named) = Named::after(path, wanted) else {
+        let Some(named) = Named::after(path, wanted, &self.read_in) else {
             return Ok(Vec::new());
         };
         let folder = match path.parent() {
@@ -278,6 +320,7 @@ enum Place {
 struct Rank {
     extension: usize,
     name: usize,
+    understood: usize,
     place: Place,
 }
 
@@ -309,18 +352,20 @@ struct Candidate {
     written: Written,
 }
 
-struct Named {
+struct Named<'a> {
     stem: String,
     whole: String,
     tagged: Vec<String>,
+    read_in: &'a [String],
 }
 
-impl Named {
-    fn after(path: &Path, wanted: &Wanted) -> Option<Self> {
+impl<'a> Named<'a> {
+    fn after(path: &Path, wanted: &Wanted, read_in: &'a [String]) -> Option<Self> {
         let named = Self {
             stem: lowered(path.file_stem())?,
             whole: lowered(path.file_name())?,
             tagged: tagged(wanted),
+            read_in,
         };
 
         (!named.stem.is_empty()).then_some(named)
@@ -342,8 +387,29 @@ impl Named {
         Some(Rank {
             extension,
             name: self.names(stem)?,
+            understood: self.understood(stem),
             place,
         })
+    }
+
+    fn understood(&self, stem: &str) -> usize {
+        let Some(language) = self.language_of(stem) else {
+            return 0;
+        };
+
+        self.read_in
+            .iter()
+            .position(|read| *read == language)
+            .unwrap_or(self.read_in.len())
+    }
+
+    fn language_of(&self, stem: &str) -> Option<String> {
+        let tag = stem
+            .strip_prefix(self.stem.as_str())?
+            .strip_prefix('.')
+            .filter(|tag| a_language_tag(tag))?;
+
+        language_of(tag)
     }
 
     fn names(&self, stem: &str) -> Option<usize> {
@@ -361,9 +427,7 @@ impl Named {
     }
 
     fn in_a_language(&self, stem: &str) -> bool {
-        stem.strip_prefix(self.stem.as_str())
-            .and_then(|rest| rest.strip_prefix('.'))
-            .is_some_and(a_language_tag)
+        self.language_of(stem).is_some()
     }
 }
 
@@ -899,6 +963,37 @@ mod tests {
         let lyrics = found(&tree.track("Echoes.flac")).expect("the sheet named after the file");
 
         assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    #[test]
+    fn of_two_sheets_in_a_language_the_one_the_listener_reads_answers() {
+        let tree = Tree::new();
+        tree.write("Song.en.lrc", "[00:01.00]all that you distrust");
+        tree.write("Song.ja.lrc", LRC);
+        let wanted = tree.track("Song.flac");
+        let lines_read_in = |languages: &[&str]| {
+            Sidecar::read_in(languages.iter().map(|read| (*read).to_owned()).collect())
+                .lyrics(&wanted)
+                .expect("nothing failed")
+                .map(|lyrics| lyrics.lines().len())
+        };
+
+        assert_eq!(lines_read_in(&["ja", "en"]), Some(2));
+        assert_eq!(lines_read_in(&["en", "ja"]), Some(1));
+        assert_eq!(
+            lines_read_in(&["fr"]),
+            Some(1),
+            "a listener reading neither is given the first in name order"
+        );
+    }
+
+    #[test]
+    fn a_locale_is_read_as_the_language_it_names() {
+        assert_eq!(language_of("ja_JP.UTF-8"), Some("ja".to_owned()));
+        assert_eq!(language_of("pt-BR"), Some("pt".to_owned()));
+        assert_eq!(language_of("de_DE@euro"), Some("de".to_owned()));
+        assert_eq!(language_of("C.UTF-8"), Some("c".to_owned()));
+        assert_eq!(language_of(""), None);
     }
 
     #[test]
