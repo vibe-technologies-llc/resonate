@@ -1,16 +1,16 @@
 use std::{fmt, time::Duration};
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, Isrc, Mbid, Service};
+use resonate_core::{AlbumId, ArtistId, Isrc, Mbid, Service};
 use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{
-    BarcodeMatch, Credit, Error, Found, Recording, RecordingAsked, RecordingMatch, Reference,
-    Result, StoreOp, Wording,
+    ArtistFound, BarcodeMatch, Credit, Error, Found, Recording, RecordingAsked, RecordingMatch,
+    Reference, Result, StoreOp, Wording,
     enrich::{self, NamedAs},
     enriched::folded_title,
     reference::credited_as,
-    share,
+    share, store,
 };
 
 const SECURE: &str = "https://";
@@ -96,9 +96,16 @@ pub enum AlbumLink {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ArtistLink {
+    MusicBrainz(Mbid),
+    Deezer(u64),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FollowedLink {
     Song(SongLink),
     Album(AlbumLink),
+    Artist(ArtistLink),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -136,6 +143,11 @@ pub enum Linked {
         title: String,
         artist: Option<String>,
     },
+    HeldArtist {
+        artist: ArtistId,
+        name: String,
+    },
+    Artist(ArtistFound),
     Unnamed,
 }
 
@@ -267,12 +279,59 @@ impl AlbumLink {
     }
 }
 
+impl ArtistLink {
+    pub fn read(text: &str) -> Option<Self> {
+        let address = Address::read(one_token(text)?)?;
+
+        if address.is_on_musicbrainz() {
+            return match address.segments.as_slice() {
+                ["artist", id, ..] => Mbid::new(id).ok().map(Self::MusicBrainz),
+                _ => None,
+            };
+        }
+        if address.host == "deezer.com" {
+            return address.after("artist")?.parse().ok().map(Self::Deezer);
+        }
+        None
+    }
+}
+
 impl FollowedLink {
     pub fn read(text: &str) -> Option<Self> {
         SongLink::read(text)
             .map(Self::Song)
             .or_else(|| AlbumLink::read(text).map(Self::Album))
+            .or_else(|| ArtistLink::read(text).map(Self::Artist))
     }
+}
+
+const HELD_UNDER_THE_ID: &str = "SELECT id, name FROM artists WHERE mbid = ?1 ORDER BY id LIMIT 1";
+
+const HELD_UNDER_THE_NAME: &str = "SELECT id, name FROM artists WHERE key = ?1";
+
+pub(crate) enum ArtistHeldBy<'a> {
+    Id(&'a Mbid),
+    Name(&'a str),
+}
+
+pub(crate) fn artist_held(connection: &Connection, by: ArtistHeldBy<'_>) -> Result<Option<Linked>> {
+    let (sql, asked) = match by {
+        ArtistHeldBy::Id(mbid) => (HELD_UNDER_THE_ID, mbid.as_str().to_owned()),
+        ArtistHeldBy::Name(name) => (HELD_UNDER_THE_NAME, store::folded_letters(name)),
+    };
+    connection
+        .query_row(sql, params![asked], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .map(|(id, name)| {
+            Ok(Linked::HeldArtist {
+                artist: ArtistId::new(id as u64)?,
+                name,
+            })
+        })
+        .transpose()
 }
 
 pub fn is_a_followed_link(text: &str) -> bool {
@@ -808,6 +867,33 @@ mod tests {
             "https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4 too",
         ] {
             assert_eq!(AlbumLink::read(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_link_to_an_artist_on_musicbrainz_or_deezer_is_read_as_one_and_nothing_else_is() {
+        const ARTIST: &str = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3";
+
+        assert_eq!(
+            ArtistLink::read(&format!("https://musicbrainz.org/artist/{ARTIST}/releases")),
+            Some(ArtistLink::MusicBrainz(mbid(ARTIST)))
+        );
+        assert_eq!(
+            ArtistLink::read("https://www.deezer.com/fr/artist/7307038?utm_source=x"),
+            Some(ArtistLink::Deezer(7_307_038))
+        );
+        assert_eq!(
+            FollowedLink::read(&format!("https://musicbrainz.org/artist/{ARTIST}")),
+            Some(FollowedLink::Artist(ArtistLink::MusicBrainz(mbid(ARTIST))))
+        );
+        for text in [
+            "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt",
+            "https://musicbrainz.org/artist/not-an-id",
+            "https://www.deezer.com/artist/a-name",
+            "https://www.deezer.com/track/781592622",
+            "https://musicbrainz.org/artist/0383dadf-2a4e-4d10-a46a-e9e041da8eb3 too",
+        ] {
+            assert_eq!(ArtistLink::read(text), None, "{text}");
         }
     }
 

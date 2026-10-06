@@ -2537,8 +2537,14 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   a named pressing is read whole and its songs landed as the group's in place of the usual pressing's,
   so a deluxe edition linked is wanted as the deluxe track list, and only a link naming a group alone
   is wanted from the pressing most of its pressings share
-  (`an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing`). An artist or a playlist
-  link is still words to search.
+  (`an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing`). **A link to an artist
+  is followed to the artist it names**: `ArtistLink::read` takes a `musicbrainz.org/artist/<mbid>` and
+  a `deezer.com/[lang/]artist/<n>` link, and `Library::follow_artist_link` answers `Linked::HeldArtist`
+  for an artist the catalog holds — by `artists.mbid` for the first, by the fold of the name
+  `Reference::artist_linked` reads off Deezer for the second — else `Linked::Artist` with the
+  `ArtistFound` MusicBrainz names, its profile for an id and `enrich::top_artist`'s exact rule over
+  `find_artist` for a name (`a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactly`).
+  A playlist link, and an artist link on any other service, is still words to search.
   `a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want`,
   `an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing` and
   `a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_lacks` are the claims.

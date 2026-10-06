@@ -59,6 +59,10 @@ const NO_SONG_AT_THE_LINK: &str = "No service could tell which song that link na
 
 const NO_ALBUM_AT_THE_LINK: &str = "No service could tell which album that link names";
 
+const LOOKING_THE_ARTIST_UP: &str = "Looking up the artist that link names…";
+
+const NO_ARTIST_AT_THE_LINK: &str = "No service could tell which artist that link names";
+
 const FOLLOWING_THE_LINK: &str = "look up what that link names";
 
 struct Told {
@@ -76,6 +80,10 @@ impl Told {
             FollowedLink::Album(_) => Self {
                 looking: LOOKING_THE_ALBUM_UP,
                 nothing: NO_ALBUM_AT_THE_LINK,
+            },
+            FollowedLink::Artist(_) => Self {
+                looking: LOOKING_THE_ARTIST_UP,
+                nothing: NO_ARTIST_AT_THE_LINK,
             },
         }
     }
@@ -331,6 +339,9 @@ impl RootView {
                         FollowedLink::Album(album) => {
                             library.follow_album_link(reference.as_ref(), album)
                         }
+                        FollowedLink::Artist(artist) => {
+                            library.follow_artist_link(reference.as_ref(), artist)
+                        }
                     }
                 })
                 .await;
@@ -368,6 +379,23 @@ impl RootView {
                 toast::dismiss(cx);
                 self.library
                     .update(cx, |library, cx| library.want_album(group, release, cx));
+            }
+            Ok(Linked::HeldArtist { artist, .. }) => {
+                toast::dismiss(cx);
+                self.opened(Selection::Artist(artist), cx);
+            }
+            Ok(Linked::Artist(found)) => {
+                toast::dismiss(cx);
+                let landed = self
+                    .library
+                    .update(cx, |library, cx| library.land_artist_found(found, cx));
+                cx.spawn(async move |this, cx| {
+                    let Some(artist) = landed.await else {
+                        return;
+                    };
+                    let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
+                })
+                .detach();
             }
             Ok(Linked::Unnamed) => {
                 toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);

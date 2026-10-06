@@ -47,7 +47,7 @@ use crate::{
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, likeness,
-    linked::{self, AlbumLink, HeldBy, Linked, SongLink},
+    linked::{self, AlbumLink, ArtistHeldBy, ArtistLink, HeldBy, Linked, SongLink},
     meant::{ByArtist, Meant},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
@@ -3354,6 +3354,44 @@ impl Library {
         }
 
         Ok(named.linked())
+    }
+
+    pub fn follow_artist_link(
+        &self,
+        reference: &dyn Reference,
+        link: &ArtistLink,
+    ) -> Result<Linked> {
+        match link {
+            ArtistLink::MusicBrainz(mbid) => {
+                if let Some(held) = self
+                    .inner
+                    .read(|connection| linked::artist_held(connection, ArtistHeldBy::Id(mbid)))?
+                {
+                    return Ok(held);
+                }
+                Ok(reference.artist(mbid)?.map_or(Linked::Unnamed, |profile| {
+                    Linked::Artist(ArtistFound {
+                        mbid: profile.mbid,
+                        name: profile.name,
+                    })
+                }))
+            }
+            ArtistLink::Deezer(_) => {
+                let Some(name) = reference.artist_linked(link)? else {
+                    return Ok(Linked::Unnamed);
+                };
+                if let Some(held) = self
+                    .inner
+                    .read(|connection| linked::artist_held(connection, ArtistHeldBy::Name(&name)))?
+                {
+                    return Ok(held);
+                }
+                Ok(enrich::top_artist(reference.find_artist(&name)?, &name)
+                    .map_or(Linked::Unnamed, |mbid| {
+                        Linked::Artist(ArtistFound { mbid, name })
+                    }))
+            }
+        }
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {

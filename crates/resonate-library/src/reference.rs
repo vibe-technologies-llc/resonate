@@ -3,8 +3,8 @@ use std::time::Duration;
 use resonate_core::SourceId;
 
 use crate::{
-    AlbumLink, AlbumNames, Barcode, CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result,
-    Service, SongLink, SongsAsked,
+    AlbumLink, AlbumNames, ArtistLink, Barcode, CoverArt, Isrc, Link, LinkNames, Mbid, Relation,
+    Result, Service, SongLink, SongsAsked,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -493,6 +493,8 @@ pub trait Reference: Send + Sync {
     fn song_linked(&self, link: &SongLink) -> Result<Option<LinkNames>>;
 
     fn album_linked(&self, link: &AlbumLink) -> Result<Option<AlbumNames>>;
+
+    fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>>;
 }
 
 #[cfg(test)]

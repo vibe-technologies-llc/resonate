@@ -1434,7 +1434,7 @@ fn best_release<'a>(
     the_albums_own.or_else(|| elsewhere::meant_release(&recording.releases))
 }
 
-fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
+pub(crate) fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
     let top = top_of(found, |found| (matches_exactly(found, name), found.score))?;
     if matches_exactly(&top, name).is_some() {
         return Some(top.mbid);

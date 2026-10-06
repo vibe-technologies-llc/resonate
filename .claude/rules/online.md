@@ -218,6 +218,9 @@ enriched before a source joined is asked again by `look_again_for_portraits`.
   thirteen-digit EAN. The Deezer twin's `upc` is added unless it is the same code a leading zero
   apart; both are offered, since Deezer may answer a reissue under another UPC. The library weighs
   the barcode rather than the score (`Library::follow_album_link`); a MusicBrainz link asks neither.
+- **`Reference::artist_linked` is the name Deezer's `/artist/<n>` bills**, read off the same
+  `ArtistDoc` a portrait is; a MusicBrainz artist link asks nothing, its id being in hand
+  (`an_artist_page_names_the_artist_it_is_of_and_an_empty_answer_names_nobody`).
 
 ## ListenBrainz
 

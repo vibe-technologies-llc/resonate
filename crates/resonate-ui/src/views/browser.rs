@@ -3666,12 +3666,12 @@ mod tests {
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
-            AlbumLink, AlbumMatch, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch,
-            CoverArt, Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked, GroupMatch,
-            Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
-            Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
-            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked,
-            StreamAsked, Track, TrackQuery,
+            AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistProfile, Barcode,
+            BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked,
+            GroupMatch, Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid,
+            Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+            Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink,
+            SongsAsked, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3869,6 +3869,10 @@ mod tests {
             }
 
             fn album_linked(&self, _: &AlbumLink) -> Result<Option<AlbumNames>> {
+                Ok(None)
+            }
+
+            fn artist_linked(&self, _: &ArtistLink) -> Result<Option<String>> {
                 Ok(None)
             }
         }

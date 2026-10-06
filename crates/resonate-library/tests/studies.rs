@@ -12,7 +12,7 @@ use std::{
 
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
-    Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistMatch, ArtistProfile, Barcode,
+    Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistProfile, Barcode,
     BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions, EnrichSummary, Error,
     Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc, Library, Link,
     LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked,
@@ -298,6 +298,10 @@ impl Reference for Silent {
     }
 
     fn album_linked(&self, _link: &AlbumLink) -> Result<Option<AlbumNames>> {
+        Ok(None)
+    }
+
+    fn artist_linked(&self, _link: &ArtistLink) -> Result<Option<String>> {
         Ok(None)
     }
 

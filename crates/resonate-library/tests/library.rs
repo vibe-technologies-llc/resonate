@@ -25,21 +25,21 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
-    ArtistMatch, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode,
-    BarcodeMatch, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted,
-    DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error,
-    Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
-    HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout,
-    Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold,
-    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
-    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
-    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
-    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought,
-    Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink,
-    TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits,
-    Window, Wording, Written,
+    ArtistLink, ArtistMatch, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease,
+    BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, CoverArt, CoverSource, Credit,
+    Cut, Deleted, DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions,
+    EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch,
+    GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued,
+    Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love,
+    LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions,
+    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress,
+    Popularity, Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch,
+    RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery,
+    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
+    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
+    Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -9384,6 +9384,7 @@ enum Called {
     StreamedAt(StreamAsked),
     SongLinked(SongLink),
     AlbumLinked(AlbumLink),
+    ArtistLinked(ArtistLink),
     ByBarcode(Barcode),
 }
 
@@ -9405,7 +9406,9 @@ impl Called {
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
             Self::StreamedAt(_) => LookupOp::StreamLink,
-            Self::SongLinked(_) | Self::AlbumLinked(_) => LookupOp::FollowLink,
+            Self::SongLinked(_) | Self::AlbumLinked(_) | Self::ArtistLinked(_) => {
+                LookupOp::FollowLink
+            }
             Self::ByBarcode(_) => LookupOp::FindRelease,
         }
     }
@@ -9445,6 +9448,7 @@ struct Canned {
     lyrics: Vec<(&'static str, LyricText)>,
     linked: Option<LinkNames>,
     album_linked: Option<AlbumNames>,
+    artist_linked: Option<String>,
     barcoded: Vec<BarcodeMatch>,
 }
 
@@ -9735,6 +9739,11 @@ impl Reference for Fake {
     fn album_linked(&self, link: &AlbumLink) -> Result<Option<AlbumNames>> {
         self.note(Called::AlbumLinked(link.clone()))?;
         Ok(self.canned.album_linked.clone())
+    }
+
+    fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>> {
+        self.note(Called::ArtistLinked(link.clone()))?;
+        Ok(self.canned.artist_linked.clone())
     }
 
     fn releases_by_barcode(&self, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
@@ -21472,6 +21481,52 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
         fake.called(LookupOp::Release),
         1,
         "the pressing the link named was asked for once"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactly() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let on_deezer = ArtistLink::Deezer(7_307_038);
+    let held = Fake::new(Canned {
+        artist_linked: Some("the orbiters".to_owned()),
+        ..Canned::default()
+    });
+    let elsewhere = Fake::new(Canned {
+        artist_linked: Some("Rick Astley".to_owned()),
+        found_artists: vec![ArtistMatch {
+            mbid: mbid(ECHOES),
+            name: "Rick Astley".to_owned(),
+            score: 100,
+            kind: None,
+            disambiguation: None,
+            aliases: Vec::new(),
+        }],
+        ..Canned::default()
+    });
+    let nobody = Fake::new(Canned::default());
+
+    let Linked::HeldArtist { artist, name } = library.follow_artist_link(&held, &on_deezer)? else {
+        panic!("the artist the catalog holds was not named");
+    };
+    assert_eq!(artist, artist_named(&library, "The Orbiters")?.id);
+    assert_eq!(name, "The Orbiters");
+    assert_eq!(held.called(LookupOp::FindArtist), 0);
+    assert_eq!(
+        library.follow_artist_link(&elsewhere, &on_deezer)?,
+        Linked::Artist(ArtistFound {
+            mbid: mbid(ECHOES),
+            name: "Rick Astley".to_owned(),
+        })
+    );
+    assert_eq!(
+        library.follow_artist_link(&nobody, &on_deezer)?,
+        Linked::Unnamed
+    );
+    assert_eq!(
+        library.follow_artist_link(&nobody, &ArtistLink::MusicBrainz(mbid(ECHOES)))?,
+        Linked::Unnamed
     );
     Ok(())
 }

@@ -91,7 +91,7 @@ pub use crate::{
         Vaulted, Wanted,
     },
     linked::{
-        AlbumLink, AlbumNames, Barcode, FollowedLink, LinkNames, Linked, SongLink,
+        AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, LinkNames, Linked, SongLink,
         is_a_followed_link,
     },
     meant::{ByArtist, Meant},

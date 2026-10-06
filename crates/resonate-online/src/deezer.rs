@@ -113,6 +113,13 @@ pub(crate) fn album_named(client: &Client, album: u64) -> Result<Option<Barcode>
     Ok(held.and_then(AlbumDoc::barcode))
 }
 
+pub(crate) fn artist_named(client: &Client, artist: u64) -> Result<Option<String>> {
+    let asked = format!("{ARTIST}{artist}");
+    let held = client.json::<ArtistDoc>(Host::Deezer, LookupOp::FollowLink, &asked)?;
+
+    Ok(held.and_then(|doc| named(doc.name.as_deref())))
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -230,6 +237,7 @@ fn stripped(name: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct ArtistDoc {
+    name: Option<String>,
     picture_big: Option<String>,
 }
 
@@ -252,6 +260,22 @@ mod tests {
 
     fn read(document: &str) -> ArtistDoc {
         serde_json::from_str(document).expect("the captured answer reads back")
+    }
+
+    #[test]
+    fn an_artist_page_names_the_artist_it_is_of_and_an_empty_answer_names_nobody() {
+        assert_eq!(
+            named(
+                read(include_str!("../tests/fixtures/deezer_artist.json"))
+                    .name
+                    .as_deref()
+            ),
+            Some("Mikolai Stroinski".to_owned())
+        );
+        assert_eq!(
+            read(include_str!("../tests/fixtures/deezer_no_data.json")).name,
+            None
+        );
     }
 
     fn echoes(length: Option<u64>) -> StreamAsked {
@@ -419,6 +443,7 @@ mod tests {
             None
         );
         let elsewhere = ArtistDoc {
+            name: None,
             picture_big: Some("https://example.com/picture.jpg".to_owned()),
         };
         assert_eq!(elsewhere.pictured(), None);
