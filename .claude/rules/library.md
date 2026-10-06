@@ -2587,7 +2587,20 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `Reference::artist_linked` reads off Deezer for the second — else `Linked::Artist` with the
   `ArtistFound` MusicBrainz names, its profile for an id and `enrich::top_artist`'s exact rule over
   `find_artist` for a name (`a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactly`).
-  A playlist link, and an artist link on any other service, is still words to search.
+  **An artist link anywhere else is followed by its page, not its name.** `ArtistLink::Elsewhere`
+  holds the page an artist link names as MusicBrainz stores it (`artist_page`: Spotify's
+  `open.spotify.com/artist/<id>` from any locale or a `spotify:artist:` URI, Apple Music's
+  `music.apple.com/<storefront>/artist/<id>` with the slug dropped, TIDAL's `tidal.com/artist/<id>`
+  from `listen.` or `browse/`, a YouTube or YouTube Music channel, a SoundCloud account with nothing
+  under it and none of `SOUNDCLOUD_PAGES_NAMING_NO_ARTIST`, a Bandcamp site, an Amazon Music artist),
+  and `ArtistLink::pages` the pages to ask, an Apple Music page in another storefront asked as the
+  `us` one second, MusicBrainz filing most under it. `Reference::artist_at` asks which artist
+  MusicBrainz files a page under, and the artist is taken only where exactly one is; it is then
+  followed as a MusicBrainz link is. A Deezer artist is asked that way first and by its name only where
+  MusicBrainz files its page under nobody. Nothing filed names nothing — never a guess by the name the
+  page shows
+  (`an_artist_link_on_spotify_is_followed_through_musicbrainz_to_the_artist_it_names`,
+  `an_artist_page_is_written_as_musicbrainz_stores_it`). A playlist link is still words to search.
   `a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want`,
   `an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing` and
   `a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_lacks` are the claims.

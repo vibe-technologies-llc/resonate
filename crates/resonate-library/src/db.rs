@@ -3389,37 +3389,45 @@ impl Library {
         reference: &dyn Reference,
         link: &ArtistLink,
     ) -> Result<Linked> {
-        match link {
-            ArtistLink::MusicBrainz(mbid) => {
-                if let Some(held) = self
-                    .inner
-                    .read(|connection| linked::artist_held(connection, ArtistHeldBy::Id(mbid)))?
-                {
-                    return Ok(held);
-                }
-                Ok(reference.artist(mbid)?.map_or(Linked::Unnamed, |profile| {
-                    Linked::Artist(ArtistFound {
-                        mbid: profile.mbid,
-                        name: profile.name,
-                    })
-                }))
-            }
-            ArtistLink::Deezer(_) => {
-                let Some(name) = reference.artist_linked(link)? else {
-                    return Ok(Linked::Unnamed);
-                };
-                if let Some(held) = self
-                    .inner
-                    .read(|connection| linked::artist_held(connection, ArtistHeldBy::Name(&name)))?
-                {
-                    return Ok(held);
-                }
-                Ok(enrich::top_artist(reference.find_artist(&name)?, &name)
-                    .map_or(Linked::Unnamed, |mbid| {
-                        Linked::Artist(ArtistFound { mbid, name })
-                    }))
+        if let ArtistLink::MusicBrainz(mbid) = link {
+            return self.follow_artist_named(reference, mbid);
+        }
+        for page in link.pages() {
+            if let Some(mbid) = reference.artist_at(&page)? {
+                return self.follow_artist_named(reference, &mbid);
             }
         }
+        if !matches!(link, ArtistLink::Deezer(_)) {
+            return Ok(Linked::Unnamed);
+        }
+        let Some(name) = reference.artist_linked(link)? else {
+            return Ok(Linked::Unnamed);
+        };
+        if let Some(held) = self
+            .inner
+            .read(|connection| linked::artist_held(connection, ArtistHeldBy::Name(&name)))?
+        {
+            return Ok(held);
+        }
+        Ok(enrich::top_artist(reference.find_artist(&name)?, &name)
+            .map_or(Linked::Unnamed, |mbid| {
+                Linked::Artist(ArtistFound { mbid, name })
+            }))
+    }
+
+    fn follow_artist_named(&self, reference: &dyn Reference, mbid: &Mbid) -> Result<Linked> {
+        if let Some(held) = self
+            .inner
+            .read(|connection| linked::artist_held(connection, ArtistHeldBy::Id(mbid)))?
+        {
+            return Ok(held);
+        }
+        Ok(reference.artist(mbid)?.map_or(Linked::Unnamed, |profile| {
+            Linked::Artist(ArtistFound {
+                mbid: profile.mbid,
+                name: profile.name,
+            })
+        }))
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {

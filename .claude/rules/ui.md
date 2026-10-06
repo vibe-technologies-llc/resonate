@@ -2180,8 +2180,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   nothing is searched for — so a paste starts the download and nothing else. A link nothing names is
   a toast saying whether it was a song, an album or an artist nothing could name. An artist link
   (`library.md`) opens the artist's page: one the catalog holds at once, one MusicBrainz names
-  through `land_artist_found`, as pressing an artist found by a search does. A playlist link, and an
-  artist link on any service but MusicBrainz and Deezer, is not caught and is typed as words.
+  through `land_artist_found`, as pressing an artist found by a search does. An artist link on Spotify,
+  Apple Music, TIDAL, YouTube, SoundCloud, Bandcamp or Amazon Music is caught too, followed by the
+  artist MusicBrainz files its page under. A playlist link is not caught and is typed as words.
   `a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was`,
   `an_album_link_pasted_into_the_search_wants_every_song_of_the_album_it_names` and
   `pasting_at_the_window_puts_the_words_in_the_search` are the claims; `library.md` has which links are

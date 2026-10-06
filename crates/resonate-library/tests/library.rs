@@ -9390,6 +9390,7 @@ enum Called {
     SongLinked(SongLink),
     AlbumLinked(AlbumLink),
     ArtistLinked(ArtistLink),
+    ArtistAt(String),
     ByBarcode(Barcode),
 }
 
@@ -9412,9 +9413,10 @@ impl Called {
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
             Self::StreamedAt(_) => LookupOp::StreamLink,
-            Self::SongLinked(_) | Self::AlbumLinked(_) | Self::ArtistLinked(_) => {
-                LookupOp::FollowLink
-            }
+            Self::SongLinked(_)
+            | Self::AlbumLinked(_)
+            | Self::ArtistLinked(_)
+            | Self::ArtistAt(_) => LookupOp::FollowLink,
             Self::ByBarcode(_) => LookupOp::FindRelease,
         }
     }
@@ -9456,6 +9458,7 @@ struct Canned {
     linked: Option<LinkNames>,
     album_linked: Option<AlbumNames>,
     artist_linked: Option<String>,
+    artists_at: Vec<(String, Mbid)>,
     barcoded: Vec<BarcodeMatch>,
 }
 
@@ -9776,6 +9779,16 @@ impl Reference for Fake {
     fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>> {
         self.note(Called::ArtistLinked(link.clone()))?;
         Ok(self.canned.artist_linked.clone())
+    }
+
+    fn artist_at(&self, page: &str) -> Result<Option<Mbid>> {
+        self.note(Called::ArtistAt(page.to_owned()))?;
+        Ok(self
+            .canned
+            .artists_at
+            .iter()
+            .find(|(held, _)| held == page)
+            .map(|(_, artist)| artist.clone()))
     }
 
     fn releases_by_barcode(&self, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
@@ -21853,6 +21866,54 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
     assert_eq!(
         library.follow_artist_link(&nobody, &ArtistLink::MusicBrainz(mbid(ECHOES)))?,
         Linked::Unnamed
+    );
+    Ok(())
+}
+
+#[test]
+fn an_artist_link_on_spotify_is_followed_through_musicbrainz_to_the_artist_it_names() -> Result<()>
+{
+    const PAGE: &str = "https://open.spotify.com/artist/3YQKmKGau1PzlVlkL1iodx";
+    let library = Library::open_in_memory()?;
+    let link = ArtistLink::read(&format!("{PAGE}?si=shared")).expect("an artist link");
+    let named = Fake::new(Canned {
+        artists_at: vec![(PAGE.to_owned(), mbid(ORBITERS))],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    });
+    let nobody = Fake::new(Canned::default());
+    let on_deezer = Fake::new(Canned {
+        artists_at: vec![(
+            "https://www.deezer.com/artist/7307038".to_owned(),
+            mbid(ORBITERS),
+        )],
+        artists: vec![orbiters()],
+        artist_linked: Some("Somebody Else".to_owned()),
+        ..Canned::default()
+    });
+
+    assert_eq!(
+        library.follow_artist_link(&named, &link)?,
+        Linked::Artist(ArtistFound {
+            mbid: mbid(ORBITERS),
+            name: "The Orbiters".to_owned(),
+        })
+    );
+    assert_eq!(library.follow_artist_link(&nobody, &link)?, Linked::Unnamed);
+    assert_eq!(nobody.called(LookupOp::FindArtist), 0);
+    assert_eq!(
+        library.follow_artist_link(&on_deezer, &ArtistLink::Deezer(7_307_038))?,
+        Linked::Artist(ArtistFound {
+            mbid: mbid(ORBITERS),
+            name: "The Orbiters".to_owned(),
+        })
+    );
+    assert!(
+        !on_deezer
+            .calls()
+            .iter()
+            .any(|called| matches!(called, Called::ArtistLinked(_))),
+        "a Deezer artist MusicBrainz files was still asked for by name"
     );
     Ok(())
 }

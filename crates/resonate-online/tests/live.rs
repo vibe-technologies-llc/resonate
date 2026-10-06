@@ -353,6 +353,20 @@ fn the_reference_answers_an_artists_pressings_a_page_at_a_time() {
 }
 
 #[test]
+fn musicbrainz_names_the_artist_a_spotify_page_belongs_to() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    let artist = online
+        .artist_at("https://open.spotify.com/artist/0k17h0D3J5VfsdmQ1iZtE9")
+        .expect("musicbrainz answered");
+
+    assert_eq!(artist, Some(mbid(PINK_FLOYD)));
+}
+
+#[test]
 fn lrclib_answers_echoes_with_a_synced_set() {
     let Some(client) = reached() else {
         return;

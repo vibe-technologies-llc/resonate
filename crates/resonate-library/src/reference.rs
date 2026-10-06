@@ -505,6 +505,8 @@ pub trait Reference: Send + Sync {
     fn album_linked(&self, link: &AlbumLink) -> Result<Option<AlbumNames>>;
 
     fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>>;
+
+    fn artist_at(&self, page: &str) -> Result<Option<Mbid>>;
 }
 
 #[cfg(test)]

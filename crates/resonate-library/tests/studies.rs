@@ -309,6 +309,10 @@ impl Reference for Silent {
         Ok(None)
     }
 
+    fn artist_at(&self, _page: &str) -> Result<Option<Mbid>> {
+        Ok(None)
+    }
+
     fn releases_by_barcode(&self, _barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
         Ok(Vec::new())
     }

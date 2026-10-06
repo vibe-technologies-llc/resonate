@@ -19,6 +19,9 @@ const SPOTIFY_TRACK: &str = "spotify:track:";
 const SPOTIFY_TRACK_PAGE: &str = "https://open.spotify.com/track/";
 const SPOTIFY_ALBUM: &str = "spotify:album:";
 const SPOTIFY_ALBUM_PAGE: &str = "https://open.spotify.com/album/";
+const SPOTIFY_ARTIST: &str = "spotify:artist:";
+const DEEZER_ARTIST_PAGE: &str = "https://www.deezer.com/artist/";
+const APPLE_MUSIC_IN_EVERY_STOREFRONT: &str = "us";
 const SONG_LINK_PAGES: &str = "https://song.link/";
 const ALBUM_LINK_PAGES: &str = "https://album.link/";
 const YOUTUBE_MUSIC_ALBUMS: &str = "OLAK5uy_";
@@ -33,6 +36,22 @@ const HELD_ALBUM: &str = "SELECT a.id, coalesce(a.release_title, a.title),
   ORDER BY coalesce(a.mbid = ?2, 0) DESC, a.id
   LIMIT 1";
 pub(crate) const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(5);
+const SOUNDCLOUD_PAGES_NAMING_NO_ARTIST: [&str; 14] = [
+    "discover",
+    "search",
+    "stream",
+    "you",
+    "upload",
+    "charts",
+    "pages",
+    "settings",
+    "messages",
+    "notifications",
+    "people",
+    "tags",
+    "stations",
+    "feed",
+];
 const SOUNDCLOUD_PAGES_NAMING_NO_SONG: [&str; 9] = [
     "sets",
     "likes",
@@ -99,6 +118,7 @@ pub enum AlbumLink {
 pub enum ArtistLink {
     MusicBrainz(Mbid),
     Deezer(u64),
+    Elsewhere(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -281,7 +301,12 @@ impl AlbumLink {
 
 impl ArtistLink {
     pub fn read(text: &str) -> Option<Self> {
-        let address = Address::read(one_token(text)?)?;
+        let text = one_token(text)?;
+        if let Some(id) = text.strip_prefix(SPOTIFY_ARTIST) {
+            return names_an_id(id)
+                .then(|| Self::Elsewhere(format!("https://open.spotify.com/artist/{id}")));
+        }
+        let address = Address::read(text)?;
 
         if address.is_on_musicbrainz() {
             return match address.segments.as_slice() {
@@ -292,7 +317,85 @@ impl ArtistLink {
         if address.host == "deezer.com" {
             return address.after("artist")?.parse().ok().map(Self::Deezer);
         }
-        None
+        artist_page(&address).map(Self::Elsewhere)
+    }
+
+    pub fn pages(&self) -> Vec<String> {
+        match self {
+            Self::MusicBrainz(_) => Vec::new(),
+            Self::Deezer(artist) => vec![format!("{DEEZER_ARTIST_PAGE}{artist}")],
+            Self::Elsewhere(page) => {
+                let in_every_storefront = apple_music_storefront(page)
+                    .filter(|storefront| *storefront != APPLE_MUSIC_IN_EVERY_STOREFRONT)
+                    .map(|storefront| {
+                        page.replacen(
+                            &format!("/{storefront}/"),
+                            &format!("/{APPLE_MUSIC_IN_EVERY_STOREFRONT}/"),
+                            1,
+                        )
+                    });
+                std::iter::once(page.clone())
+                    .chain(in_every_storefront)
+                    .collect()
+            }
+        }
+    }
+}
+
+fn apple_music_storefront(page: &str) -> Option<&str> {
+    page.strip_prefix("https://music.apple.com/")?
+        .split('/')
+        .next()
+}
+
+fn artist_page(address: &Address<'_>) -> Option<String> {
+    let segments = address.segments.as_slice();
+    let id_after = |page: &str| address.after(page).filter(|id| names_an_id(id));
+
+    match address.host.as_str() {
+        "open.spotify.com" | "play.spotify.com" => {
+            id_after("artist").map(|id| format!("https://open.spotify.com/artist/{id}"))
+        }
+        "tidal.com" | "listen.tidal.com" => {
+            id_after("artist").map(|id| format!("https://tidal.com/artist/{id}"))
+        }
+        "music.apple.com" | "itunes.apple.com" => {
+            let storefront = segments
+                .first()
+                .filter(|storefront| storefront.len() == 2)
+                .unwrap_or(&APPLE_MUSIC_IN_EVERY_STOREFRONT);
+            segments
+                .iter()
+                .position(|segment| *segment == "artist")
+                .and_then(|at| segments[at + 1..].last())
+                .map(|id| id.trim_start_matches("id"))
+                .filter(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+                .map(|id| format!("https://music.apple.com/{storefront}/artist/{id}"))
+        }
+        "music.youtube.com" => {
+            id_after("channel").map(|id| format!("https://music.youtube.com/channel/{id}"))
+        }
+        "youtube.com" | "m.youtube.com" => {
+            id_after("channel").map(|id| format!("https://www.youtube.com/channel/{id}"))
+        }
+        "soundcloud.com" | "m.soundcloud.com" => match segments {
+            [account]
+                if !SOUNDCLOUD_PAGES_NAMING_NO_ARTIST.contains(account) && names_an_id(account) =>
+            {
+                Some(format!(
+                    "https://soundcloud.com/{}",
+                    account.to_ascii_lowercase()
+                ))
+            }
+            _ => None,
+        },
+        host if host.ends_with(".bandcamp.com") && segments.is_empty() => {
+            Some(format!("https://{host}/"))
+        }
+        host if host.starts_with("music.amazon.") => {
+            id_after("artists").map(|id| format!("https://music.amazon.com/artists/{id}"))
+        }
+        _ => None,
     }
 }
 
@@ -871,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn a_link_to_an_artist_on_musicbrainz_or_deezer_is_read_as_one_and_nothing_else_is() {
+    fn a_link_to_an_artist_on_any_service_is_read_as_one_and_nothing_else_is() {
         const ARTIST: &str = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3";
 
         assert_eq!(
@@ -886,8 +989,16 @@ mod tests {
             FollowedLink::read(&format!("https://musicbrainz.org/artist/{ARTIST}")),
             Some(FollowedLink::Artist(ArtistLink::MusicBrainz(mbid(ARTIST))))
         );
+        assert_eq!(
+            FollowedLink::read("https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt"),
+            Some(FollowedLink::Artist(ArtistLink::Elsewhere(
+                "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt".to_owned()
+            )))
+        );
         for text in [
-            "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt",
+            "https://open.spotify.com/artist/",
+            "https://soundcloud.com/discover",
+            "https://music.apple.com/us/artist/a-name",
             "https://musicbrainz.org/artist/not-an-id",
             "https://www.deezer.com/artist/a-name",
             "https://www.deezer.com/track/781592622",
@@ -895,6 +1006,67 @@ mod tests {
         ] {
             assert_eq!(ArtistLink::read(text), None, "{text}");
         }
+    }
+
+    #[test]
+    fn an_artist_page_is_written_as_musicbrainz_stores_it() {
+        let page = |text: &str| match ArtistLink::read(text) {
+            Some(ArtistLink::Elsewhere(page)) => page,
+            other => panic!("{text} read as {other:?}"),
+        };
+
+        for (text, stored) in [
+            (
+                "https://open.spotify.com/intl-de/artist/3YQKmKGau1PzlVlkL1iodx?si=x1",
+                "https://open.spotify.com/artist/3YQKmKGau1PzlVlkL1iodx",
+            ),
+            (
+                "spotify:artist:3YQKmKGau1PzlVlkL1iodx",
+                "https://open.spotify.com/artist/3YQKmKGau1PzlVlkL1iodx",
+            ),
+            (
+                "https://music.apple.com/gb/artist/twenty-one-pilots/349736311",
+                "https://music.apple.com/gb/artist/349736311",
+            ),
+            (
+                "https://listen.tidal.com/artist/4664877",
+                "https://tidal.com/artist/4664877",
+            ),
+            (
+                "https://tidal.com/browse/artist/4664877?u",
+                "https://tidal.com/artist/4664877",
+            ),
+            (
+                "https://music.youtube.com/channel/UCBnZ16ahKA2DZ_T5W0FPUXg",
+                "https://music.youtube.com/channel/UCBnZ16ahKA2DZ_T5W0FPUXg",
+            ),
+            (
+                "https://m.youtube.com/channel/UCBnZ16ahKA2DZ_T5W0FPUXg",
+                "https://www.youtube.com/channel/UCBnZ16ahKA2DZ_T5W0FPUXg",
+            ),
+            (
+                "https://soundcloud.com/TwentyOnePilots",
+                "https://soundcloud.com/twentyonepilots",
+            ),
+            (
+                "https://twentyonepilots.bandcamp.com/",
+                "https://twentyonepilots.bandcamp.com/",
+            ),
+        ] {
+            assert_eq!(page(text), stored, "{text}");
+        }
+        assert_eq!(
+            ArtistLink::read("https://music.apple.com/gb/artist/x/349736311")
+                .map(|link| link.pages()),
+            Some(vec![
+                "https://music.apple.com/gb/artist/349736311".to_owned(),
+                "https://music.apple.com/us/artist/349736311".to_owned(),
+            ])
+        );
+        assert_eq!(
+            ArtistLink::Deezer(7_307_038).pages(),
+            ["https://www.deezer.com/artist/7307038"]
+        );
     }
 
     #[test]
@@ -910,8 +1082,11 @@ mod tests {
             Some(true)
         );
         assert!(is_a_followed_link("https://www.deezer.com/album/12345"));
-        assert!(!is_a_followed_link(
+        assert!(is_a_followed_link(
             "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt"
+        ));
+        assert!(!is_a_followed_link(
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
         ));
         assert!(!is_a_followed_link("deezer album"));
     }

@@ -143,9 +143,13 @@ impl Reference for Online {
 
     fn artist_linked(&self, link: &ArtistLink) -> resonate_library::Result<Option<String>> {
         match link {
-            ArtistLink::MusicBrainz(_) => Ok(None),
+            ArtistLink::MusicBrainz(_) | ArtistLink::Elsewhere(_) => Ok(None),
             ArtistLink::Deezer(artist) => Ok(deezer::artist_named(&self.client, *artist)?),
         }
+    }
+
+    fn artist_at(&self, page: &str) -> resonate_library::Result<Option<Mbid>> {
+        Ok(musicbrainz::artist_at(&self.client, page)?)
     }
 
     fn portrait(&self, links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {

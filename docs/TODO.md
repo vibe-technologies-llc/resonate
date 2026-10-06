@@ -57,8 +57,7 @@ else is open to be done.
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- A pasted link to a playlist, or to an artist anywhere but MusicBrainz and Deezer, is taken as words
-  to search, not followed to what it names
+- A pasted link to a playlist is taken as words to search, not followed to what it names
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 

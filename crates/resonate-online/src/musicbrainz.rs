@@ -1,4 +1,4 @@
-use std::{fmt::Write, time::Duration};
+use std::{collections::BTreeSet, fmt::Write, time::Duration};
 
 use resonate_library::{
     AlbumMatch, ArtistMatch, ArtistPressings, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch,
@@ -49,6 +49,32 @@ struct CreditDoc {
 struct ArtistRefDoc {
     #[serde(default)]
     id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LinkedUrlDoc {
+    #[serde(default)]
+    relations: Vec<UrlOwnerDoc>,
+}
+
+#[derive(Deserialize)]
+struct UrlOwnerDoc {
+    #[serde(default)]
+    artist: Option<ArtistRefDoc>,
+}
+
+impl LinkedUrlDoc {
+    fn the_artist(self) -> Option<Mbid> {
+        let artists: BTreeSet<String> = self
+            .relations
+            .into_iter()
+            .filter_map(|relation| relation.artist?.id)
+            .collect();
+        match artists.len() {
+            1 => artists.first().and_then(|id| Mbid::new(id).ok()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -603,6 +629,16 @@ pub(crate) fn releases_of_group(client: &Client, group: &Mbid) -> Result<Vec<Rel
         .into_iter()
         .filter_map(|pressing| pressing.into_release(op).ok())
         .collect())
+}
+
+pub(crate) fn artist_at(client: &Client, page: &str) -> Result<Option<Mbid>> {
+    let path = format!(
+        "/url?resource={}&inc=artist-rels&fmt=json",
+        escape_query(page)
+    );
+    Ok(client
+        .json::<LinkedUrlDoc>(Host::MusicBrainz, LookupOp::FollowLink, &path)?
+        .and_then(LinkedUrlDoc::the_artist))
 }
 
 pub(crate) fn releases_of_artist(
@@ -2210,6 +2246,31 @@ mod tests {
             "/release?release-group=6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60&status=official\
              &inc=recordings+artist-credits+media+release-groups+isrcs&limit=25&fmt=json"
         );
+    }
+
+    #[test]
+    fn a_page_musicbrainz_files_under_one_artist_names_that_artist_and_one_two_share_names_neither()
+    {
+        let one: LinkedUrlDoc = serde_json::from_str(
+            r#"{"resource":"https://open.spotify.com/artist/3YQKmKGau1PzlVlkL1iodx",
+                "relations":[{"target-type":"artist",
+                              "artist":{"id":"a6c6897a-7415-4f8d-b5a5-3a5e05f3be67"}}]}"#,
+        )
+        .expect("the document parses");
+        let two: LinkedUrlDoc = serde_json::from_str(
+            r#"{"relations":[{"artist":{"id":"a6c6897a-7415-4f8d-b5a5-3a5e05f3be67"}},
+                             {"artist":{"id":"83d91898-7763-47d7-b03b-b92132375c47"}}]}"#,
+        )
+        .expect("the document parses");
+        let none: LinkedUrlDoc =
+            serde_json::from_str(r#"{"relations":[]}"#).expect("the document parses");
+
+        assert_eq!(
+            one.the_artist().as_ref().map(Mbid::as_str),
+            Some("a6c6897a-7415-4f8d-b5a5-3a5e05f3be67")
+        );
+        assert_eq!(two.the_artist(), None);
+        assert_eq!(none.the_artist(), None);
     }
 
     #[test]

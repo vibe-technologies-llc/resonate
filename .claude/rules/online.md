@@ -161,6 +161,10 @@ the loose `dismax` shape; the `a_*_query_names_only_what_was_asked` tests pin ea
   `ArtistPressings` carries `credited` (the `release-count`) and `read_to`, counted from the offset
   before any release that will not map is dropped, so the next page starts where this one did end.
   Whether one browse is worth more than a request a group is the library's (`learning.rs`).
+- **A page is looked up for the artist MusicBrainz files it under** (`artist_at`:
+  `/url?resource=<page>&inc=artist-rels`, the page escaped whole). A page MusicBrainz does not know is a
+  404 and so `None`; one filed under two artists names neither (`LinkedUrlDoc::the_artist`). Which
+  spelling of a page to ask is the library's (`ArtistLink::pages`).
 - **An artist's profile, genres and links come from one request.** `genres` are tags with a positive
   count, heaviest first, so a single-editor tag does not outrank a hundred votes. `aliases` keep each
   spelling once by its `folded` form and drop any folding to the billed name. `portrait_urls` walks

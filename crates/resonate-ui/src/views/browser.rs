@@ -3914,6 +3914,10 @@ mod tests {
             fn artist_linked(&self, _: &ArtistLink) -> Result<Option<String>> {
                 Ok(None)
             }
+
+            fn artist_at(&self, _: &str) -> Result<Option<Mbid>> {
+                Ok(None)
+            }
         }
 
         fn heroes_tonight_release() -> Release {
