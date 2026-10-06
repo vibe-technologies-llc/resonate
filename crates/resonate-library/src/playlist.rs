@@ -1894,15 +1894,15 @@ const fn sorted_by(order: RowOrder) -> &'static [&'static str] {
             "tracks.album_id",
             "tracks.disc_number",
             "tracks.track_number",
-            "tracks.title COLLATE NOCASE",
+            "tracks.title_filed COLLATE NOCASE",
         ],
         RowOrder::Artist => &[
-            "tracks.artist COLLATE NOCASE",
+            "tracks.artist_filed COLLATE NOCASE",
             "tracks.album_id",
             "tracks.disc_number",
             "tracks.track_number",
         ],
-        RowOrder::Title => &["tracks.title COLLATE NOCASE"],
+        RowOrder::Title => &["tracks.title_filed COLLATE NOCASE"],
         RowOrder::Length => &["tracks.duration * 1.0 / tracks.sample_rate"],
         RowOrder::File => &["e.path COLLATE NOCASE"],
     }

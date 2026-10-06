@@ -57,6 +57,7 @@ const ARTIST_SORT: &[u8; 4] = b"TSOP";
 const ALBUM_ARTIST_SORT: &[u8; 4] = b"TSO2";
 const ALBUM: &[u8; 4] = b"TALB";
 const ALBUM_SORT: &[u8; 4] = b"TSOA";
+const TITLE_SORT: &[u8; 4] = b"TSOT";
 const TRACK: &[u8; 4] = b"TRCK";
 const YEAR: &[u8; 4] = b"TDRC";
 const GENRE: &[u8; 4] = b"TCON";
@@ -894,6 +895,66 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
     assert_eq!(
         titled(Direction::Descending)?,
         ["Revolver", "The Black Album", "Abbey Road"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result<()> {
+    let tree = Tree::new();
+    for (file, title, title_sort, artist, artist_sort) in [
+        ("end.wav", "The End", Some("End, The"), "Doves", None),
+        ("abba.wav", "Angel Eyes", None, "ABBA", None),
+        (
+            "beatles.wav",
+            "Help!",
+            None,
+            "The Beatles",
+            Some("Beatles, The"),
+        ),
+        ("fade.wav", "Fade", None, "Blur", None),
+    ] {
+        let wav = Wav::new().text(TITLE, title).text(ARTIST, artist);
+        let wav = match title_sort {
+            Some(sort) => wav.text(TITLE_SORT, sort),
+            None => wav,
+        };
+        let wav = match artist_sort {
+            Some(sort) => wav.text(ARTIST_SORT, sort),
+            None => wav,
+        };
+        tree.write(file, &wav.build());
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let listed = |sort, reading| -> Result<Vec<String>> {
+        Ok(library
+            .tracks(&TrackQuery {
+                sort,
+                reading,
+                ..TrackQuery::default()
+            })?
+            .into_iter()
+            .map(|track| track.title)
+            .collect())
+    };
+    assert_eq!(
+        listed(SortOrder::Title, Direction::Ascending)?,
+        ["Angel Eyes", "The End", "Fade", "Help!"]
+    );
+    assert_eq!(
+        listed(SortOrder::Title, Direction::Descending)?,
+        ["Help!", "Fade", "The End", "Angel Eyes"]
+    );
+    assert_eq!(
+        listed(SortOrder::Artist, Direction::Ascending)?,
+        ["Angel Eyes", "Help!", "Fade", "The End"]
+    );
+    assert_eq!(
+        listed(SortOrder::Artist, Direction::Descending)?,
+        ["The End", "Fade", "Help!", "Angel Eyes"]
     );
     Ok(())
 }

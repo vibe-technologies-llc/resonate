@@ -5810,27 +5810,30 @@ const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static
         SortOrder::Relevance | SortOrder::AlbumThenTrack => Reading {
             up: concat!(
                 "tracks.album_id, tracks.disc_number, tracks.track_number, \
-                 tracks.title COLLATE NOCASE",
+                 tracks.title_filed COLLATE NOCASE",
                 track_ids_rising!()
             ),
             down: concat!(
                 "tracks.album_id DESC, tracks.disc_number DESC, tracks.track_number DESC, \
-                   tracks.title COLLATE NOCASE DESC",
+                   tracks.title_filed COLLATE NOCASE DESC",
                 track_ids_falling!()
             ),
         },
         SortOrder::Title => Reading {
-            up: concat!("tracks.title COLLATE NOCASE", track_ids_rising!()),
-            down: concat!("tracks.title COLLATE NOCASE DESC", track_ids_falling!()),
+            up: concat!("tracks.title_filed COLLATE NOCASE", track_ids_rising!()),
+            down: concat!(
+                "tracks.title_filed COLLATE NOCASE DESC",
+                track_ids_falling!()
+            ),
         },
         SortOrder::Artist => Reading {
             up: concat!(
-                "tracks.artist COLLATE NOCASE, tracks.album_id, tracks.disc_number, \
+                "tracks.artist_filed COLLATE NOCASE, tracks.album_id, tracks.disc_number, \
                  tracks.track_number",
                 track_ids_rising!()
             ),
             down: concat!(
-                "tracks.artist COLLATE NOCASE DESC, tracks.album_id DESC, \
+                "tracks.artist_filed COLLATE NOCASE DESC, tracks.album_id DESC, \
                    tracks.disc_number DESC, tracks.track_number DESC",
                 track_ids_falling!()
             ),
@@ -5845,43 +5848,43 @@ const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static
         },
         SortOrder::Plays => Reading {
             up: concat!(
-                "tracks.plays, tracks.title COLLATE NOCASE DESC",
+                "tracks.plays, tracks.title_filed COLLATE NOCASE DESC",
                 track_ids_falling!()
             ),
             down: concat!(
-                "tracks.plays DESC, tracks.title COLLATE NOCASE",
+                "tracks.plays DESC, tracks.title_filed COLLATE NOCASE",
                 track_ids_rising!()
             ),
         },
         SortOrder::Played => Reading {
             up: concat!(
-                "tracks.played, tracks.title COLLATE NOCASE DESC",
+                "tracks.played, tracks.title_filed COLLATE NOCASE DESC",
                 track_ids_falling!()
             ),
             down: concat!(
-                "tracks.played DESC, tracks.title COLLATE NOCASE",
+                "tracks.played DESC, tracks.title_filed COLLATE NOCASE",
                 track_ids_rising!()
             ),
         },
         SortOrder::Favourited => Reading {
             up: concat!(
-                "tracks.favourite, tracks.title COLLATE NOCASE DESC",
+                "tracks.favourite, tracks.title_filed COLLATE NOCASE DESC",
                 track_ids_falling!()
             ),
             down: concat!(
-                "tracks.favourite DESC, tracks.title COLLATE NOCASE",
+                "tracks.favourite DESC, tracks.title_filed COLLATE NOCASE",
                 track_ids_rising!()
             ),
         },
         SortOrder::PlaysThisMonth => Reading {
             up: concat!(
                 heard_this_month!(),
-                ", tracks.plays, tracks.title COLLATE NOCASE DESC",
+                ", tracks.plays, tracks.title_filed COLLATE NOCASE DESC",
                 track_ids_falling!()
             ),
             down: concat!(
                 heard_this_month!(),
-                " DESC, tracks.plays DESC, tracks.title COLLATE NOCASE",
+                " DESC, tracks.plays DESC, tracks.title_filed COLLATE NOCASE",
                 track_ids_rising!()
             ),
         },

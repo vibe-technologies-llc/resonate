@@ -561,6 +561,8 @@ pub(crate) struct Followed {
     pub track: TrackId,
     pub title: Option<Option<String>>,
     pub artist: Option<Option<String>>,
+    pub title_sort: Option<Option<String>>,
+    pub artist_sort: Option<Option<String>>,
     pub file_size: u64,
     pub modified: SystemTime,
 }
@@ -778,6 +780,8 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
         track: write.track,
         title: wrote(write, TagField::Title),
         artist: wrote(write, TagField::Artist),
+        title_sort: wrote(write, TagField::TitleSort),
+        artist_sort: wrote(write, TagField::ArtistSort),
         file_size: stamped.len(),
         modified: stamped.modified().unwrap_or_else(|_| SystemTime::now()),
     })
@@ -805,6 +809,8 @@ pub(crate) fn files_retagged(
             "UPDATE tracks
                 SET tagged_title = CASE WHEN ?2 THEN ?3 ELSE tagged_title END,
                     tagged_artist = CASE WHEN ?4 THEN ?5 ELSE tagged_artist END,
+                    title_sort = CASE WHEN ?8 THEN ?9 ELSE title_sort END,
+                    artist_sort = CASE WHEN ?10 THEN ?11 ELSE artist_sort END,
                     file_size = ?6,
                     modified = ?7
               WHERE id = ?1",
@@ -822,7 +828,11 @@ pub(crate) fn files_retagged(
                 follow.artist.is_some(),
                 follow.artist.clone().flatten(),
                 follow.file_size as i64,
-                store::to_nanos(follow.modified)
+                store::to_nanos(follow.modified),
+                follow.title_sort.is_some(),
+                follow.title_sort.clone().flatten(),
+                follow.artist_sort.is_some(),
+                follow.artist_sort.clone().flatten()
             ])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
         kept.put_back(follow.track)?;

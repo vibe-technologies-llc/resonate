@@ -37,8 +37,9 @@ else is open to be done.
   reader, and families 2 and 3 would also need projection decoding
 
 ## Tagging
-- The tracks pane's title and artist orders read the billed name, so a file's `TITLESORT` and artist
-  sort name file only the artists and albums panes; they are held to indexes on `title` and `artist`
+- The tracks pane files a track under its artist's sort name only where its own file carries one,
+  so an artist sorted by MusicBrainz or by another file's `ARTISTSORT` still files its untagged
+  tracks under *The*
 - On a filesystem that cannot clone a file (ext4) a tag write that grows past the tag's room, and
   every write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) or an Ogg, still
   copies the whole file, and one with a second name twice

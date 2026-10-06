@@ -275,6 +275,29 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE albums ADD COLUMN tagged_sort TEXT;
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
     "ALTER TABLE artists ADD COLUMN found_elsewhere INTEGER;",
+    "ALTER TABLE tracks ADD COLUMN title_sort TEXT;
+     ALTER TABLE tracks ADD COLUMN artist_sort TEXT;
+     ALTER TABLE tracks ADD COLUMN title_filed TEXT GENERATED ALWAYS AS (
+         CASE WHEN title_sort IS NOT NULL AND title IS tagged_title THEN title_sort ELSE title END
+     ) VIRTUAL;
+     ALTER TABLE tracks ADD COLUMN artist_filed TEXT GENERATED ALWAYS AS (
+         CASE WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort ELSE artist END
+     ) VIRTUAL;
+     DROP INDEX tracks_by_album;
+     DROP INDEX tracks_by_artist_name;
+     DROP INDEX tracks_by_plays;
+     DROP INDEX tracks_by_played;
+     DROP INDEX tracks_by_favourite;
+     DROP INDEX tracks_by_title;
+     CREATE INDEX tracks_by_album ON tracks(album_id, disc_number, track_number,
+                                            title_filed COLLATE NOCASE);
+     CREATE INDEX tracks_by_artist_name ON tracks(artist_filed COLLATE NOCASE, album_id,
+                                                  disc_number, track_number);
+     CREATE INDEX tracks_by_plays ON tracks(plays DESC, title_filed COLLATE NOCASE);
+     CREATE INDEX tracks_by_played ON tracks(played DESC, title_filed COLLATE NOCASE);
+     CREATE INDEX tracks_by_favourite ON tracks(favourite DESC, title_filed COLLATE NOCASE);
+     CREATE INDEX tracks_by_title ON tracks(title_filed COLLATE NOCASE);
+     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1188,6 +1211,88 @@ mod tests {
         assert_eq!(
             marked,
             [("albumed.flac".to_owned(), 1), ("loose.flac".to_owned(), 0)]
+        );
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_reads_every_scanned_file_again_for_the_title_and_artist_it_sorts_by()
+     {
+        let connection = opened();
+        let sorting = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("tracks ADD COLUMN title_sort"))
+            .expect("the step that keeps a track's sort names");
+        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'scanned.flac', NULL, 'Scanned', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the rows are stored");
+
+        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64)> = connection
+            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        assert_eq!(
+            marked,
+            [
+                ("delivered.flac".to_owned(), 0),
+                ("scanned.flac".to_owned(), 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_track_is_filed_by_its_sort_names_only_while_it_is_billed_as_its_file_names_it() {
+        let connection = opened();
+        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (path, title, artist, tagged_title, tagged_artist, title_sort, artist_sort, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES ('as-tagged.flac', 'The End', 'The Doors', 'The End', 'The Doors', 'End, The', 'Doors, The', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        ('renamed.flac', 'The Wall', 'Pink Floyd', 'the wal', 'pink floid', 'Wal, The', 'Floid, Pink', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        ('unsorted.flac', 'Angel', 'Massive Attack', 'Angel', 'Massive Attack', NULL, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the rows are stored");
+
+        let filed: Vec<(String, String, String)> = connection
+            .prepare("SELECT path, title_filed, artist_filed FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+
+        assert_eq!(
+            filed,
+            [
+                (
+                    "as-tagged.flac".to_owned(),
+                    "End, The".to_owned(),
+                    "Doors, The".to_owned()
+                ),
+                (
+                    "renamed.flac".to_owned(),
+                    "The Wall".to_owned(),
+                    "Pink Floyd".to_owned()
+                ),
+                (
+                    "unsorted.flac".to_owned(),
+                    "Angel".to_owned(),
+                    "Massive Attack".to_owned()
+                ),
+            ]
         );
     }
 

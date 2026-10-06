@@ -87,8 +87,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   the write is guarded on the column standing the other way, so favouring a favourite keeps its stamp
   — and its place in *recently favourited* — writes nothing and answers false, as does an id no row
   holds. `is:favourite` is a `Shape` beside `is:hires`; `SortOrder::Favourited` needs
-  `tracks_by_favourite` declared `favourite DESC, title COLLATE NOCASE`, exactly as its `ORDER BY`
-  reads, while `AlbumOrder::Favourited` and `ArtistOrder::Favourited` need nothing, those orders having
+  `tracks_by_favourite` declared `favourite DESC, title_filed COLLATE NOCASE`, exactly as its
+  `ORDER BY` reads, while `AlbumOrder::Favourited` and `ArtistOrder::Favourited` need nothing, those orders having
   no indexes by design.
 - **A genre is the track's and its artist's at once, folded into one column.** `tracks.genre` is what
   the scan always read into `TagSet::genre` and dropped; the fourth `tracks_fts` column is that,
@@ -236,7 +236,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   gesture made once. Failing all that it is the MusicBrainz recording, and failing that nothing to
   copy.
 - **Every order a pane offers is read off an index, and what the planner knows is written after a
-  scan.** `tracks_by_album` carries the trailing `title COLLATE NOCASE` the album order ends on, and
+  scan.** `tracks_by_album` carries the trailing `title_filed COLLATE NOCASE` the album order ends on, and
   `tracks_by_title`, `tracks_by_artist_name`, `tracks_by_added`, `tracks_by_duration`,
   `tracks_by_plays`, `tracks_by_played` and `tracks_by_favourite` serve the other `SortOrder`s
   (`SortOrder::HELD_BY_AN_INDEX` lists the nine, `Relevance` needing none), each declared as its
@@ -275,10 +275,19 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `coalesce(a.tagged_sort, a.release_title, a.title)`, what every `AlbumOrder` ties on
   (`an_album_is_listed_under_the_title_its_files_sort_it_by`); `gather` keeps the survivor's own,
   else the one it took in, and the step adding the column marks every scanned row with an album
-  `probe_again`. A file's `TITLESORT` (`TSOT`, `sonm`) is read into the `TagSet` and round-tripped by
-  tag writing but kept by no column: the tracks' title orders are held to indexes on `title`, and a
-  sort name there would be an expression index per order. Neither is held to the index
-  guard: those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
+  `probe_again`. **A track is filed under the title and artist its file sorts it by**:
+  `tracks.title_sort` is the file's `TITLESORT` (`TSOT`, `sonm`) and `tracks.artist_sort` its
+  `ARTISTSORT` for the whole credit `tracks.artist` holds, both written by every upsert and followed
+  by a tag write (`files_retagged`), and `title_filed` and `artist_filed` are generated `VIRTUAL`
+  columns reading the sort name only while the row is billed as the file names it (`title IS
+  tagged_title`, `artist IS tagged_artist`), so a title a lookup corrected is not filed under the
+  file's sort of the old one. Every track order reads the two filed columns and every order index is
+  declared on them, which a plain column allows where an expression would want an index per spelling
+  (`a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by`,
+  `a_track_is_filed_by_its_sort_names_only_while_it_is_billed_as_its_file_names_it`); the step adding
+  them rebuilt the six indexes and marked every scanned row `probe_again`. A sort name only a lookup or
+  another file gave the artist does not file the tracks pane. The albums and artists orders are not
+  held to the index guard: those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
   B-tree over one is cheaper than an index — and `SCHEMA_FINGERPRINT` covers the index list, so adding
   one is a `MIGRATIONS` step and a rebuild in every catalog. There is no `resonate albums` or `resonate
   artists`, so neither enum has a CLI argument: a variant nothing constructs is one to leave out.
