@@ -110,9 +110,12 @@ A provider does none of this, so none of it is written twice.
   `FileTags`. A landing the decoder cannot probe, or whose decode disagrees with the wanted length, is
   removed and counted `unkept`. **It joins the album it was wanted for, not one of its own**:
   `Library::claim_album_keys` names the album by the keys the scan will compute, before any scan reads
-  it. After the poll the roots a filing landed under are scanned and `Library::pair_what_landed` pairs
-  each unheld want with the rooted row at the path it was offered, so the row is an ordinary library
-  track, never a vault object (pairing runs as a poll starts too, for a scan another pass refused).
+  it. As each filing is noted, the lane scans the roots it landed under (incrementally) and
+  `Library::pair_what_landed` pairs each unheld want with the rooted row at the path it was offered,
+  so the row is an ordinary library track, never a vault object, and is playable before the poll asks
+  about the next want (`a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want`).
+  A filing whose scan cannot start, another lane or pass walking the tree, waits for the scan the
+  poll runs as it ends (pairing runs as a poll starts too, for a scan another pass refused).
 - **Turning what was kept into a track row.** `Library::note_delivered` writes the `vault_objects`
   row and a `tracks` row in one transaction and pairs the want's release track with it, so a delivery
   is playable, searchable and held the moment it lands. The row is named by the object's own path with

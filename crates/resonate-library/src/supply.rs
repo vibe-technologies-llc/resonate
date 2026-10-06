@@ -634,16 +634,27 @@ fn filed_in_the_music_folder(
     }
 }
 
+fn scanning(filed: &[Filed]) -> ScanOptions {
+    ScanOptions {
+        roots: filed::roots_of(filed),
+        incremental: true,
+        follow_symlinks: false,
+        extract_cover_art: true,
+        workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+    }
+}
+
+fn paired(library: &Library) -> Result<()> {
+    let paired = library.pair_what_landed()?;
+    if paired > 0 {
+        tracing::info!(paired, "wants were paired with the tracks filed for them");
+    }
+    Ok(())
+}
+
 fn scanned_and_paired(library: &Library, filed: &[Filed]) -> Result<()> {
     if !filed.is_empty() {
-        let options = ScanOptions {
-            roots: filed::roots_of(filed),
-            incremental: true,
-            follow_symlinks: false,
-            extract_cover_art: true,
-            workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
-        };
-        match library.scan(options).and_then(PassHandle::join) {
+        match library.scan(scanning(filed)).and_then(PassHandle::join) {
             Ok(summary) => {
                 tracing::debug!(?summary, "the folders deliveries were filed in were read")
             }
@@ -652,11 +663,7 @@ fn scanned_and_paired(library: &Library, filed: &[Filed]) -> Result<()> {
             }
         }
     }
-    let paired = library.pair_what_landed()?;
-    if paired > 0 {
-        tracing::info!(paired, "wants were paired with the tracks filed for them");
-    }
-    Ok(())
+    paired(library)
 }
 
 type Forgotten = AHashMap<WantId, Vec<ForgottenDelivery>>;
@@ -777,6 +784,26 @@ impl Lanes<'_> {
         }
     }
 
+    fn pair_what_was_filed(&self) -> Result<()> {
+        let filed = std::mem::take(&mut *self.filed.lock());
+        if filed.is_empty() {
+            return Ok(());
+        }
+        match self.library.scan(scanning(&filed)) {
+            Ok(scanning) => {
+                if let Err(error) = scanning.join() {
+                    tracing::warn!(%error, "the folder a delivery was filed in could not be read yet");
+                }
+                paired(self.library)
+            }
+            Err(error) => {
+                tracing::debug!(%error, "a delivery is paired when the poll ends, the tree being walked");
+                self.filed.lock().extend(filed);
+                Ok(())
+            }
+        }
+    }
+
     fn ask_and_land(&self, want: &Want, forgotten: &Forgotten) -> Result<Flow> {
         let progress = self.progress;
         progress.asked.fetch_add(1, Ordering::Relaxed);
@@ -833,6 +860,7 @@ impl Lanes<'_> {
                 if cancelled {
                     return Ok(Flow::Stop);
                 }
+                self.pair_what_was_filed()?;
             }
             None if answer.heard_from_every_provider() => {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);

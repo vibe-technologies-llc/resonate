@@ -20388,6 +20388,74 @@ fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> R
     Ok(())
 }
 
+struct WatchesTheWants {
+    source: SourceId,
+    library: Arc<Library>,
+    held_when_asked: Mutex<Vec<usize>>,
+}
+
+impl Provider for WatchesTheWants {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        let held = self
+            .library
+            .wants()
+            .expect("the wants read")
+            .iter()
+            .filter(|want| want.held.is_some())
+            .count();
+        self.held_when_asked.lock().push(held);
+        Ok(Obtained::Found(Delivery::Stream {
+            key: "track/55391743".into(),
+            extension: Extension::new("wav")?,
+            reader: Box::new(std::io::Cursor::new(Wav::new().frames(8_820).build())),
+        }))
+    }
+}
+
+#[test]
+fn a_delivery_with_no_vault_is_held_before_the_poll_asks_about_the_next_want() -> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    let library = Arc::new(library);
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    for row in library.release_tracks(album.id)? {
+        if row.title == "San Tropez" || row.title == "Seamus" {
+            library.want(row.id)?;
+        }
+    }
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+    let provider = Arc::new(WatchesTheWants {
+        source: SourceId::new("shop").expect("a nameable source"),
+        library: Arc::clone(&library),
+        held_when_asked: Mutex::new(Vec::new()),
+    });
+
+    let summary = library
+        .poll(
+            Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
+            PollOptions {
+                lanes: NonZeroUsize::MIN,
+                ..PollOptions::default()
+            },
+        )?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 2);
+    assert_eq!(*provider.held_when_asked.lock(), [0, 1]);
+    assert!(library.wants()?.iter().all(|want| want.held.is_some()));
+    Ok(())
+}
+
 #[test]
 fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_was_wanted_for()
 -> Result<()> {
