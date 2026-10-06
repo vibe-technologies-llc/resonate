@@ -19,7 +19,10 @@ use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
-use resonate_providers::{Asking, Away, Delivered, Delivery, Identity, Providers};
+use resonate_providers::{
+    Asking, Away, Delivered, Delivery, Identity, Providers, TURNED_TO_APART,
+    WAITED_ON_AFTER_AN_OFFER,
+};
 use resonate_vault::{Keeping, Taking};
 
 use crate::{
@@ -840,6 +843,8 @@ impl Lanes<'_> {
                     turning_to: &turning_to,
                     declined: &declined,
                     passing: &passing,
+                    apart: TURNED_TO_APART,
+                    grace: WAITED_ON_AFTER_AN_OFFER,
                 },
                 &mut away,
             );

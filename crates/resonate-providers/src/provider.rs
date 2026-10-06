@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        mpsc::{self, RecvTimeoutError},
-    },
+    sync::{Arc, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -13,6 +10,10 @@ use crate::{Delivered, Identity, Obtained, Result};
 
 const UNPROVIDED: &str = "unprovided";
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
+
+pub const TURNED_TO_APART: Duration = Duration::from_millis(1_500);
+
+pub const WAITED_ON_AFTER_AN_OFFER: Duration = Duration::from_secs(3);
 
 pub trait Provider: Send + Sync {
     fn source(&self) -> &SourceId;
@@ -48,6 +49,8 @@ pub struct Asking<'a> {
     pub turning_to: &'a (dyn Fn(&SourceId) + Sync),
     pub declined: &'a (dyn Fn(&Delivered) -> bool + Sync),
     pub passing: &'a [SourceId],
+    pub apart: Duration,
+    pub grace: Duration,
 }
 
 #[derive(Debug, Default)]
@@ -96,13 +99,6 @@ impl Away {
             }
         }
     }
-}
-
-enum Asked {
-    Answered(Result<Obtained>),
-    Unasked,
-    Late,
-    Cancelled,
 }
 
 pub struct Providers {
@@ -163,21 +159,94 @@ impl Providers {
             narrowed: self.narrowed,
             ..Answer::default()
         };
+        let asked_of: Vec<&Arc<dyn Provider>> = self
+            .providers
+            .iter()
+            .filter(|provider| !asking.passing.contains(provider.source()))
+            .collect();
+        let mut turns: Vec<Turn> = asked_of
+            .iter()
+            .map(|provider| {
+                if away.holds(provider.source()) {
+                    answer.passed_over += 1;
+                    Turn::Over
+                } else {
+                    Turn::Waiting
+                }
+            })
+            .collect();
+        let mut offers: Vec<Option<Delivered>> = asked_of.iter().map(|_| None).collect();
+        let (told, answers) = mpsc::channel();
+        let began = Instant::now();
+        let mut grace_ends: Option<Instant> = None;
 
-        for provider in &self.providers {
-            if asking.passing.contains(provider.source()) {
+        loop {
+            let best = offers.iter().position(Option::is_some);
+            if (asking.cancelled)() {
+                match best {
+                    Some(best) => answer.delivered = offers[best].take(),
+                    None => answer.cancelled = true,
+                }
+                return answer;
+            }
+            let now = Instant::now();
+            for at in 0..asked_of.len() {
+                let turned_to = began + asking.apart.saturating_mul(rank(at));
+                let every_one_before_answered = turns[..at].iter().all(|turn| *turn == Turn::Over);
+                if turns[at] != Turn::Waiting
+                    || best.is_some_and(|best| at > best)
+                    || !(every_one_before_answered || now >= turned_to)
+                {
+                    continue;
+                }
+                let provider = asked_of[at];
+                if is_a_source(provider) {
+                    (asking.turning_to)(provider.source());
+                }
+                answer.asked.push(provider.source().clone());
+                turns[at] = match asked(provider, identity, at, &told) {
+                    Ok(()) => Turn::Asked { since: now },
+                    Err(error) => {
+                        tracing::warn!(%error, provider = %provider.source(), "a provider could not be given a thread to answer on");
+                        answer.refused += 1;
+                        Turn::Over
+                    }
+                };
+            }
+
+            if let Some(best) = best {
+                let earlier_still_asked = turns[..best].iter().any(|turn| *turn != Turn::Over);
+                let grace_spent = grace_ends.is_some_and(|ends| now >= ends);
+                if !earlier_still_asked || grace_spent {
+                    answer.delivered = offers[best].take();
+                    return answer;
+                }
+            } else if turns.iter().all(|turn| *turn == Turn::Over) {
+                return answer;
+            }
+
+            for (at, turn) in turns.iter_mut().enumerate() {
+                if let Turn::Asked { since } = *turn
+                    && now >= since + asking.within
+                {
+                    let provider = asked_of[at];
+                    tracing::warn!(provider = %provider.source(), title = %identity.title, within = ?asking.within, "a provider did not answer in time and was left behind");
+                    answer.late += 1;
+                    away.note(provider.source());
+                    *turn = Turn::Over;
+                }
+            }
+
+            let Ok((at, obtained)) = answers.recv_timeout(LOOKED_AT_EVERY) else {
+                continue;
+            };
+            if !matches!(turns[at], Turn::Asked { .. }) {
                 continue;
             }
-            if away.holds(provider.source()) {
-                answer.passed_over += 1;
-                continue;
-            }
-            if is_a_source(provider) {
-                (asking.turning_to)(provider.source());
-            }
-            answer.asked.push(provider.source().clone());
-            match asked(provider, identity, asking) {
-                Asked::Answered(Ok(Obtained::Found(delivery))) => {
+            turns[at] = Turn::Over;
+            let provider = asked_of[at];
+            match obtained {
+                Ok(Obtained::Found(delivery)) => {
                     let delivered = Delivered {
                         provider: provider.source().clone(),
                         delivery,
@@ -187,70 +256,52 @@ impl Providers {
                         answer.declined += 1;
                         continue;
                     }
-                    answer.delivered = Some(delivered);
-                    return answer;
+                    offers[at] = Some(delivered);
+                    grace_ends.get_or_insert_with(|| Instant::now() + asking.grace);
                 }
-                Asked::Answered(Ok(Obtained::Nothing)) => {}
-                Asked::Answered(Err(error)) => {
+                Ok(Obtained::Nothing) => {}
+                Err(error) => {
                     tracing::warn!(%error, provider = %provider.source(), title = %identity.title, "a provider refused");
                     answer.refused += 1;
                     if error.is_the_provider_away() {
                         away.note(provider.source());
                     }
                 }
-                Asked::Unasked => answer.refused += 1,
-                Asked::Late => {
-                    tracing::warn!(provider = %provider.source(), title = %identity.title, within = ?asking.within, "a provider did not answer in time and was left behind");
-                    answer.late += 1;
-                    away.note(provider.source());
-                }
-                Asked::Cancelled => {
-                    answer.cancelled = true;
-                    return answer;
-                }
             }
         }
-
-        answer
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Turn {
+    Waiting,
+    Asked { since: Instant },
+    Over,
+}
+
+fn rank(at: usize) -> u32 {
+    u32::try_from(at).unwrap_or(u32::MAX)
 }
 
 fn is_a_source(provider: &Arc<dyn Provider>) -> bool {
     provider.source().as_str() != UNPROVIDED
 }
 
-fn asked(provider: &Arc<dyn Provider>, identity: &Identity, asking: &Asking<'_>) -> Asked {
-    let (told, answered) = mpsc::sync_channel(1);
+fn asked(
+    provider: &Arc<dyn Provider>,
+    identity: &Identity,
+    at: usize,
+    told: &mpsc::Sender<(usize, Result<Obtained>)>,
+) -> std::io::Result<()> {
     let asking_of = Arc::clone(provider);
     let about = identity.clone();
-    let spawned = thread::Builder::new()
+    let told = told.clone();
+    thread::Builder::new()
         .name(format!("resonate-provider-{}", provider.source()))
         .spawn(move || {
-            let _ = told.send(asking_of.obtain(&about));
-        });
-    if let Err(error) = spawned {
-        tracing::warn!(%error, provider = %provider.source(), "a provider could not be given a thread to answer on");
-        return Asked::Unasked;
-    }
-
-    let deadline = Instant::now() + asking.within;
-    loop {
-        if (asking.cancelled)() {
-            return Asked::Cancelled;
-        }
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Asked::Late;
-        }
-        match answered.recv_timeout(left.min(LOOKED_AT_EVERY)) {
-            Ok(obtained) => return Asked::Answered(obtained),
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => {
-                tracing::warn!(provider = %provider.source(), "a provider stopped without answering");
-                return Asked::Unasked;
-            }
-        }
-    }
+            let _ = told.send((at, asking_of.obtain(&about)));
+        })
+        .map(|_| ())
 }
 
 impl Default for Providers {
@@ -340,6 +391,130 @@ mod tests {
         assert!(matches!(delivered.delivery, Delivery::File(_)));
     }
 
+    struct Slow {
+        source: SourceId,
+        after: Duration,
+        answer: fn() -> Result<Obtained>,
+        asked: std::sync::atomic::AtomicBool,
+    }
+
+    impl Slow {
+        fn registered(name: &str, after: Duration, answer: fn() -> Result<Obtained>) -> Arc<Self> {
+            Arc::new(Self {
+                source: SourceId::new(name).expect("a nameable source"),
+                after,
+                answer,
+                asked: std::sync::atomic::AtomicBool::new(false),
+            })
+        }
+
+        fn was_asked(&self) -> bool {
+            self.asked.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl Provider for Slow {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn obtain(&self, _identity: &Identity) -> Result<Obtained> {
+            self.asked.store(true, std::sync::atomic::Ordering::SeqCst);
+            thread::sleep(self.after);
+            (self.answer)()
+        }
+    }
+
+    fn racing(apart: u64, grace: u64) -> Asking<'static> {
+        Asking {
+            apart: Duration::from_millis(apart),
+            grace: Duration::from_millis(grace),
+            ..patient()
+        }
+    }
+
+    fn delivered_by(answer: &Answer) -> Option<&str> {
+        answer
+            .delivered
+            .as_ref()
+            .map(|delivered| delivered.provider.as_str())
+    }
+
+    #[test]
+    fn a_slow_provider_does_not_hold_back_one_registered_after_it() {
+        let providers = Providers::none()
+            .and(Slow::registered("slow", Duration::from_secs(2), nothing))
+            .and(Fixed::registered("shop", found));
+        let started = Instant::now();
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(100, 200),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("shop"));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn an_earlier_provider_answering_within_the_grace_is_taken_over_a_later_one_that_offered_first()
+    {
+        let providers = Providers::none()
+            .and(Slow::registered("inbox", Duration::from_millis(300), found))
+            .and(Fixed::registered("shop", found));
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(100, 2_000),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("inbox"));
+    }
+
+    #[test]
+    fn a_later_offer_is_taken_once_the_grace_runs_out() {
+        let providers = Providers::none()
+            .and(Slow::registered("slow", Duration::from_secs(2), found))
+            .and(Fixed::registered("shop", found));
+        let started = Instant::now();
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(100, 200),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("shop"));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_provider_is_not_asked_before_its_turn_while_one_before_it_may_still_answer() {
+        let later = Slow::registered("later", Duration::ZERO, found);
+        let providers = Providers::none()
+            .and(Slow::registered("inbox", Duration::from_millis(200), found))
+            .and(Arc::clone(&later) as Arc<dyn Provider>);
+
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &racing(2_000, 2_000),
+            &mut Away::default(),
+        );
+
+        assert_eq!(delivered_by(&answer), Some("inbox"));
+        assert!(!later.was_asked(), "a provider was asked before its turn");
+    }
+
     #[test]
     fn nothing_registered_delivers_nothing() {
         let answer =
@@ -390,6 +565,8 @@ mod tests {
             turning_to: &unheard,
             declined: &declining_nothing,
             passing: &[],
+            apart: TURNED_TO_APART,
+            grace: WAITED_ON_AFTER_AN_OFFER,
         }
     }
 

@@ -57,7 +57,7 @@ A provider does none of this, so none of it is written twice.
   Cancelling one download once dropped every other want to the timer. `PollProgress` keeps a lane
   per want being asked (`asking_all`, `provider_of`, `received_for`), so each download row says its own
   provider and bytes.
-- **Due wants, in registration order, the first delivery winning.** `wants.misses` counts the tries
+- **Due wants, in registration order, the earliest registered offer winning.** `wants.misses` counts the tries
   in a row that every provider answered with nothing. `Want::due_at` is at once where never tried,
   `RETRY_WAITS` after the last try for the miss it is on, `POLL_AGAIN_AFTER` after an offer the
   catalog does not hold yet, and `None` once misses reach `TRIES_BEFORE_GIVING_UP`
@@ -84,9 +84,23 @@ A provider does none of this, so none of it is written twice.
   lock the listener out. The wants it was not asked about stay due.
 - **How long a provider is waited on.** `Providers::first` takes an `Asking`: `within`
   (`ANSWERS_WITHIN` by default), a `cancelled` read off the poll's progress, a `turning_to` called with
-  each real provider's name and a `declined` every delivery is weighed against. Each provider is asked
-  on a thread of its own; one not answered by the deadline is left behind and counted `late`, not
-  `refused`, its answer dropped. A cancel ends the wait at once and the want is not stamped.
+  each real provider's name as it is asked, a `declined` every delivery is weighed against, the
+  `passing` left out of this ask, and `apart` and `grace`. Each provider is asked on a thread of its
+  own; one not answered by the deadline is left behind and counted `late`, not `refused`, its answer
+  dropped. A cancel ends the wait at once and the want is not stamped, unless an offer is already
+  held, which is taken.
+- **The providers of one want are asked side by side, registration order still deciding.** The
+  provider at rank *n* is asked `n × apart` (`TURNED_TO_APART`, 1.5 s) after the ask began, or at once
+  where every provider before it has answered; none after the best offer held is asked. An offer is
+  taken where no provider before it is still being asked, or once `grace` (`WAITED_ON_AFTER_AN_OFFER`,
+  3 s) has passed since the first offer, so the inbox or a listener's server still wins over a hosted
+  service answering faster, and a provider that hangs costs the next one `apart`, not `within`
+  (`a_slow_provider_does_not_hold_back_one_registered_after_it`,
+  `an_earlier_provider_answering_within_the_grace_is_taken_over_a_later_one_that_offered_first`,
+  `a_later_offer_is_taken_once_the_grace_runs_out`,
+  `a_provider_is_not_asked_before_its_turn_while_one_before_it_may_still_answer`). A provider still
+  asked when the offer is taken is abandoned on its thread, its answer, and any download it opened,
+  dropped. `Answer::asked` names who this ask reached, what a refused delivery's next round passes.
 - **How long a stream is read.** `Pumped` reads a delivery's reader on a `resonate-delivery` thread,
   `CHUNK_BYTES` at a time and at most `CHUNKS_AHEAD` ahead, the keep looking at the cancel. A cancel
   throws the staging away and leaves the want untried; a stream yielding nothing for `answers_within`
