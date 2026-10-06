@@ -37,9 +37,6 @@ const NOTHING_MATCHES: &str = "Nothing in your library matches.";
 
 const ASKING: &str = "Asking MusicBrainz…";
 
-const ASKING_BESIDE_A_LOOKUP: &str = "Asking MusicBrainz, which answers one request a second and \
-                                      is answering the running lookup too…";
-
 const UNREACHED: &str = "MusicBrainz could not be reached";
 
 const AS_TYPED_HINT: &str =
@@ -591,7 +588,6 @@ impl RootView {
         let found = library.found();
         let artists_found = library.artists_found();
         let albums_found = library.albums_found();
-        let shared_with_a_lookup = library.is_enriching();
         let playing = self.playing_now(cx).track;
         let pane = div()
             .flex()
@@ -671,9 +667,6 @@ impl RootView {
         if let Some(beyond) = matched.elsewhere {
             let said = match beyond {
                 Beyond::Elsewhere(_) => PRESS_TO_DOWNLOAD,
-                Beyond::Refining(_) | Beyond::Asking if shared_with_a_lookup => {
-                    ASKING_BESIDE_A_LOOKUP
-                }
                 Beyond::Refining(_) | Beyond::Asking => ASKING,
                 Beyond::Unreached => UNREACHED,
             };

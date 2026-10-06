@@ -590,6 +590,7 @@ impl Work {
     }
 }
 
+#[derive(Clone)]
 pub struct Consulted {
     pub reference: Option<Arc<dyn Reference>>,
     pub fingerprinters: Arc<Fingerprinters>,
@@ -599,7 +600,7 @@ pub struct LibraryModel {
     first_read: Option<FirstRead>,
     library: Arc<Library>,
     reference: Option<Arc<dyn Reference>>,
-    fingerprinters: Arc<Fingerprinters>,
+    for_the_pass: Consulted,
     online: bool,
     after_scan: bool,
     studies: bool,
@@ -783,16 +784,13 @@ fn delivery_folder(cx: &App) -> Option<DeliveryFolder> {
 impl LibraryModel {
     pub fn new(
         library: Arc<Library>,
-        consulted: Consulted,
+        reference: Option<Arc<dyn Reference>>,
+        for_the_pass: Consulted,
         online: &Online,
         resume: bool,
         sourcing: Sourcing,
         cx: &mut Context<Self>,
     ) -> Self {
-        let Consulted {
-            reference,
-            fingerprinters,
-        } = consulted;
         let first_read = cx
             .has_global::<ResonateApp>()
             .then(|| cx.global_mut::<ResonateApp>().first_read.take())
@@ -811,7 +809,7 @@ impl LibraryModel {
             first_read,
             library,
             reference,
-            fingerprinters,
+            for_the_pass,
             online: online.enabled,
             after_scan: online.after_scan,
             studies: online.studies,
@@ -4281,7 +4279,7 @@ impl LibraryModel {
     }
 
     pub fn can_enrich(&self) -> bool {
-        self.online && self.reference.is_some()
+        self.online && self.for_the_pass.reference.is_some()
     }
 
     pub(crate) fn follows_links(&self) -> Option<(Arc<Library>, Arc<dyn Reference>)> {
@@ -4304,7 +4302,7 @@ impl LibraryModel {
         if self.enriching.is_some() || !self.online {
             return;
         }
-        let Some(reference) = self.reference.clone() else {
+        let Some(reference) = self.for_the_pass.reference.clone() else {
             return;
         };
         let asked = EnrichOptions {
@@ -4314,10 +4312,11 @@ impl LibraryModel {
             studies: self.studies,
             lyrics: self.lyrics,
         };
-        let handle = match self
-            .library
-            .enrich(reference, Arc::clone(&self.fingerprinters), asked)
-        {
+        let handle = match self.library.enrich(
+            reference,
+            Arc::clone(&self.for_the_pass.fingerprinters),
+            asked,
+        ) {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the lookup could not be started");

@@ -28,8 +28,8 @@ use resonate_lyrics::Lyricists;
 use resonate_providers::Providers;
 
 use crate::{
-    AppIcon, Bindings, Ephemeral, Launcher, Listens, Online, Places, Present, ResonateApp,
-    RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app,
+    AppIcon, Bindings, Consulted, Ephemeral, Launcher, Listens, Online, Places, Present,
+    ResonateApp, RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app,
     drawing::Drawer,
     settings::{Registering, Supplying},
     theme,
@@ -279,6 +279,10 @@ impl Driven {
                 settings: Arc::new(Ephemeral),
                 online,
                 bindings: Bindings::default(),
+                for_the_pass: Consulted {
+                    reference: reference.clone(),
+                    fingerprinters: Arc::new(Fingerprinters::none()),
+                },
                 reference,
                 scrobblers: None,
                 signs_in: None,

@@ -64,6 +64,12 @@ every counted play, and only under a token.
   (`a_listener_asks_back_to_back_while_a_yielding_client_waits_for_it`,
   `a_yielding_client_waits_a_whole_interval_after_the_listeners_answer`). The switch is re-read after
   the wait, so a client switched off while waiting sends nothing.
+  The binary's `online::Asking` says which a caller is: `client_for(config, InTheBackground)` is
+  the one yielding twin of the process client, and `reference`, `reference_asked_for` and
+  `fingerprinters` take an `Asking`. A lookup pass is handed the yielding pair wherever it starts — the
+  window's `Lookups::for_the_pass`, `resonate enrich`, the lookup after `resonate scan` and the MCP
+  server — so its pictures and studies yield too; everything a listener waits on (a search, an
+  artist's page, a want, a followed link, `share`, `analyse --recognise`) asks as the listener.
 - **A busy answer is asked three more times with the wait doubling, and `Retry-After` is read in
   seconds and capped.** `busy` is 503 (MusicBrainz's answer to going too fast), 429, 502 and 504;
   `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT` doubling, `RETRY_AFTER_AT_MOST` since a pass must not

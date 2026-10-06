@@ -28,8 +28,8 @@ use resonate_library::{
 };
 
 use crate::{
-    Consulted, Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp,
-    Selection, Setting, SettingChange, SettingKey, Tabs, WindowSize,
+    Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp, Selection,
+    Setting, SettingChange, SettingKey, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
@@ -702,6 +702,7 @@ impl RootView {
         let online = global.online.clone();
         let presence = global.presence.clone();
         let reference = global.reference.clone();
+        let for_the_pass = global.for_the_pass.clone();
         let corrections = Arc::clone(&global.corrections);
         let bindings = global.bindings.clone();
         let places = global.places.clone();
@@ -716,10 +717,8 @@ impl RootView {
         let library = cx.new(|cx| {
             LibraryModel::new(
                 library,
-                Consulted {
-                    reference,
-                    fingerprinters: Arc::clone(&fingerprinters),
-                },
+                reference,
+                for_the_pass,
                 &online,
                 resume,
                 sourcing,

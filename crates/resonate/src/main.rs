@@ -89,6 +89,7 @@ use crate::{
     error::{ArtistName, ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
     input::{Action, Pressed},
+    online::Asking,
     readout::Readout,
     table::Table,
 };
@@ -191,6 +192,7 @@ fn run() -> Result<()> {
                         &config,
                         sources_over(vault_already_kept(&cli, &config).as_ref()),
                         &online::by_sound(&config),
+                        Asking::ForTheListener,
                     )
                 }),
             )
@@ -310,7 +312,7 @@ fn run() -> Result<()> {
         }
         Some(Sub::Share { file }) => share::print(
             &open_library(&cli, &config)?,
-            online::reference(&config).as_deref(),
+            online::reference(&config, Asking::ForTheListener).as_deref(),
             file.as_deref().map(local_path).as_deref(),
         ),
         Some(Sub::Mcp { player }) => mcp::serve(&cli, &config, player.as_deref()),
@@ -619,7 +621,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
     let scanned = none_failed(PassKind::Scan, stats.failed.total());
 
     if config.enriches_after_scan()
-        && let Some(reference) = online::reference(config)
+        && let Some(reference) = online::reference(config, Asking::InTheBackground)
     {
         let summary = until_told(library.enrich(
             reference,
@@ -627,6 +629,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
                 config,
                 Arc::new(library.sources()),
                 &online::by_sound(config),
+                Asking::InTheBackground,
             )),
             carrying_on(
                 library,
@@ -654,7 +657,7 @@ fn scan_options(wanted: &ScanArgs, workers: NonZeroUsize) -> ScanOptions {
 }
 
 fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<()> {
-    let reference = online::reference_asked_for(config)?;
+    let reference = online::reference_asked_for(config, Asking::InTheBackground)?;
     let options = carrying_on(library, options)?;
     let summary = until_told(library.enrich(
         reference,
@@ -662,6 +665,7 @@ fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<
             config,
             Arc::new(library.sources()),
             &online::by_sound(config),
+            Asking::InTheBackground,
         )),
         options,
     )?)?;
@@ -836,7 +840,7 @@ fn read_the_rest_of(
     named: &str,
     artist: ArtistId,
 ) -> Result<()> {
-    let reference = online::reference_asked_for(config)?;
+    let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
     said!(
         "read {} more of {named}'s discography",
@@ -2499,8 +2503,18 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 &config,
                 Arc::new(library.sources()),
                 &by_sound,
+                Asking::ForTheListener,
             )),
-            reference: online::reference(&config),
+            reference: online::reference(&config, Asking::ForTheListener),
+            for_the_pass: resonate_ui::Consulted {
+                reference: online::reference(&config, Asking::InTheBackground),
+                fingerprinters: Arc::new(online::fingerprinters(
+                    &config,
+                    Arc::new(library.sources()),
+                    &by_sound,
+                    Asking::InTheBackground,
+                )),
+            },
             scrobblers: online::scrobblers(&config),
             signs_in: providers::signs_in(),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),

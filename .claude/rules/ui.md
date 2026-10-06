@@ -465,7 +465,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   added in one scan. Before, a scan greyed both while it ran, so the second of two folders could not be
   added until the first was read. A forget mark is keyed by its root — an `ElementId::Path` under a
   `"forget"` child — not by one id every row shared. An enrichment is deliberately not a `Work`:
-  `LibraryModel::enriching` is a slot of its own, so a running lookup greys the Online card's *Look up*
+  `LibraryModel::enriching` is a slot of its own, started with `for_the_pass` — the reference and
+  fingerprinters that yield to the window's own requests (`online.md`) — never the model's `reference`, so a running lookup greys the Online card's *Look up*
   and *Refresh all* and the Library card's *Enrich* through `held_back`, and a scan can still start under
   one. The run is visible from every pane: `RootView::enrichment_status` sits above the sidebar's
   *Settings* row only while `LibraryModel::is_enriching`, drawing the globe in `theme::faint()`,

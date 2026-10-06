@@ -11,6 +11,8 @@ use resonate_mpris::PlayerName;
 
 #[cfg(not(feature = "mcp"))]
 use crate::Error;
+#[cfg(feature = "mcp")]
+use crate::online::Asking;
 use crate::{Result, cli::Cli, config::Config};
 
 #[cfg(feature = "mcp")]
@@ -19,11 +21,12 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
     let sources = library.sources();
     let server = Server::new(library, OnTheBus::named(player.map(PlayerName::new)))
         .looking_up_with(Lookups {
-            reference: crate::online::reference(config),
+            reference: crate::online::reference(config, Asking::InTheBackground),
             fingerprinters: Arc::new(crate::online::fingerprinters(
                 config,
                 Arc::new(sources),
                 &crate::online::by_sound(config),
+                Asking::InTheBackground,
             )),
             providers: Arc::new(crate::providers::registered(
                 config,

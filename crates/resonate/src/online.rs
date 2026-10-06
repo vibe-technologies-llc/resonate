@@ -30,6 +30,15 @@ static INTRODUCTION: OnceLock<Introduction> = OnceLock::new();
 static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
 
 #[cfg(feature = "online")]
+static YIELDING: OnceLock<Arc<Client>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asking {
+    ForTheListener,
+    InTheBackground,
+}
+
+#[cfg(feature = "online")]
 fn identity(contact: Option<String>) -> Identity {
     Identity {
         contact,
@@ -40,6 +49,16 @@ fn identity(contact: Option<String>) -> Identity {
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
     Arc::clone(CLIENT.get_or_init(|| Arc::new(Client::introduced(introduction(config).clone()))))
+}
+
+#[cfg(feature = "online")]
+fn client_for(config: &Config, asking: Asking) -> Arc<Client> {
+    match asking {
+        Asking::ForTheListener => client(config),
+        Asking::InTheBackground => {
+            Arc::clone(YIELDING.get_or_init(|| Arc::new(client(config).yielding())))
+        }
+    }
 }
 
 #[cfg(feature = "online")]
@@ -110,15 +129,15 @@ pub fn reach(on: bool) {
 pub fn reach(_on: bool) {}
 
 #[cfg(feature = "online")]
-pub fn reference(config: &Config) -> Option<Arc<dyn Reference>> {
+pub fn reference(config: &Config, asking: Asking) -> Option<Arc<dyn Reference>> {
     config
         .online_enabled()
-        .then(|| Arc::new(Online::with_client(client(config))) as Arc<dyn Reference>)
+        .then(|| Arc::new(Online::with_client(client_for(config, asking))) as Arc<dyn Reference>)
 }
 
 #[cfg(feature = "online")]
-pub fn reference_asked_for(config: &Config) -> Result<Arc<dyn Reference>> {
-    reference(config).ok_or(Error::OnlineOff)
+pub fn reference_asked_for(config: &Config, asking: Asking) -> Result<Arc<dyn Reference>> {
+    reference(config, asking).ok_or(Error::OnlineOff)
 }
 
 pub fn by_sound(config: &Config) -> Arc<AtomicBool> {
@@ -135,17 +154,18 @@ pub fn fingerprinters(
     config: &Config,
     sources: Arc<Sources>,
     by_sound: &Arc<AtomicBool>,
+    asking: Asking,
 ) -> Fingerprinters {
     let local = Fingerprinters::none();
     if !config.online_enabled() {
         return local;
     }
     let printed = match config.acoustid_key.clone() {
-        Some(key) => local.and(Arc::new(AcoustId::new(client(config), key))),
+        Some(key) => local.and(Arc::new(AcoustId::new(client_for(config, asking), key))),
         None => local,
     };
     printed.and(Arc::new(ByEar::new(
-        client(config),
+        client_for(config, asking),
         sources,
         Arc::clone(by_sound),
     )))
@@ -185,6 +205,7 @@ pub fn fingerprinters(
     _config: &Config,
     _sources: Arc<Sources>,
     _by_sound: &Arc<AtomicBool>,
+    _asking: Asking,
 ) -> Fingerprinters {
     Fingerprinters::none()
 }
@@ -239,12 +260,12 @@ pub fn lyricists(
 }
 
 #[cfg(not(feature = "online"))]
-pub fn reference(_config: &Config) -> Option<Arc<dyn Reference>> {
+pub fn reference(_config: &Config, _asking: Asking) -> Option<Arc<dyn Reference>> {
     None
 }
 
 #[cfg(not(feature = "online"))]
-pub fn reference_asked_for(_config: &Config) -> Result<Arc<dyn Reference>> {
+pub fn reference_asked_for(_config: &Config, _asking: Asking) -> Result<Arc<dyn Reference>> {
     Err(Error::NoReference)
 }
 
