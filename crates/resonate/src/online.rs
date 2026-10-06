@@ -125,6 +125,7 @@ pub fn by_sound(config: &Config) -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(config.identifies_by_sound()))
 }
 
+#[cfg(feature = "ui")]
 pub fn lyrics_by_the_locale(config: &Config) -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(config.chooses_lyrics_by_the_locale()))
 }

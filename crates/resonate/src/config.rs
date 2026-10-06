@@ -438,6 +438,7 @@ impl Config {
         self.fetch_lyrics.unwrap_or(true)
     }
 
+    #[cfg(feature = "ui")]
     pub fn chooses_lyrics_by_the_locale(&self) -> bool {
         self.lyrics_language_from_locale.unwrap_or(false)
     }
@@ -1565,6 +1566,7 @@ mod tests {
         assert_eq!(Config::default().acoustid_key, None);
     }
 
+    #[cfg(feature = "ui")]
     #[test]
     fn a_lyric_sheet_is_chosen_by_the_locale_only_once_asked_to_be() {
         assert!(
