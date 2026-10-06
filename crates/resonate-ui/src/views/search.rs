@@ -364,10 +364,10 @@ impl RootView {
                 self.library
                     .update(cx, |library, cx| library.want_missing_tracks(album, cx));
             }
-            Ok(Linked::Album { group, .. }) => {
+            Ok(Linked::Album { group, release, .. }) => {
                 toast::dismiss(cx);
                 self.library
-                    .update(cx, |library, cx| library.want_album(group, cx));
+                    .update(cx, |library, cx| library.want_album(group, release, cx));
             }
             Ok(Linked::Unnamed) => {
                 toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);

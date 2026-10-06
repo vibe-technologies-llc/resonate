@@ -132,6 +132,7 @@ pub enum Linked {
     },
     Album {
         group: Mbid,
+        release: Option<Mbid>,
         title: String,
         artist: Option<String>,
     },
@@ -525,6 +526,7 @@ impl NamedAlbum {
         Linked::Album {
             artist: Self::billed(&self.credit),
             group: self.group,
+            release: self.release,
             title: self.title,
         }
     }
@@ -860,6 +862,7 @@ mod tests {
             taken,
             Some(Linked::Album {
                 group: mbid(GROUP),
+                release: Some(mbid(RELEASE)),
                 title: "Whenever You Need Somebody".to_owned(),
                 artist: Some("Rick Astley".to_owned()),
             })

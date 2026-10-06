@@ -1520,7 +1520,7 @@ impl LibraryModel {
         self.wanting.insert(recording, wanting);
     }
 
-    pub fn want_album(&mut self, group: Mbid, cx: &mut Context<Self>) {
+    pub fn want_album(&mut self, group: Mbid, pressing: Option<Mbid>, cx: &mut Context<Self>) {
         let Some(reference) = self.reference.clone() else {
             return;
         };
@@ -1536,7 +1536,9 @@ impl LibraryModel {
             let covering_with = Arc::clone(&reference);
             let wanted = cx
                 .background_executor()
-                .spawn(async move { library.want_album_uncovered(reference.as_ref(), &asked) })
+                .spawn(async move {
+                    library.want_album_uncovered(reference.as_ref(), &asked, pressing.as_ref())
+                })
                 .await;
             let covering = wanted
                 .as_ref()

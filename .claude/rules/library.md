@@ -2500,8 +2500,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   to fourteen digits and nothing else. Where an album the catalog holds a track of carries that group
   or release (`album_held`), the answer is `Linked::HeldAlbum` with the album, its billed title and
   owner, and how many of its release rows have no file (`missing`); otherwise `Linked::Album` with
-  the group, which the window hands to `want_album` (above) — the songs read off the pressing most of
-  the group's pressings share, not necessarily the one the barcode named. An artist or a playlist
+  the group and the release the link named, both of which the window hands to `want_album` (above):
+  a named pressing is read whole and its songs landed as the group's in place of the usual pressing's,
+  so a deluxe edition linked is wanted as the deluxe track list, and only a link naming a group alone
+  is wanted from the pressing most of its pressings share
+  (`an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing`). An artist or a playlist
   link is still words to search.
   `a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want`,
   `an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing` and

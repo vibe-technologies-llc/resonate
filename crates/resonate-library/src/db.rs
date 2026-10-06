@@ -3375,8 +3375,10 @@ impl Library {
         &self,
         reference: &dyn Reference,
         group: &Mbid,
+        pressing: Option<&Mbid>,
     ) -> Result<Vec<(Found, WantId)>> {
-        let Uncovered { wanted, covering } = self.want_album_uncovered(reference, group)?;
+        let Uncovered { wanted, covering } =
+            self.want_album_uncovered(reference, group, pressing)?;
         if let Some(covering) = covering {
             self.cover_what_was_wanted(reference, &covering);
         }
@@ -3387,13 +3389,23 @@ impl Library {
         &self,
         reference: &dyn Reference,
         group: &Mbid,
+        pressing: Option<&Mbid>,
     ) -> Result<Uncovered<Vec<(Found, WantId)>>> {
+        let named = pressing
+            .map(|release| Self::release_named(reference, release))
+            .transpose()?;
+        if let Some(named) = &named {
+            self.land_songs_of(group, Some(named), SystemTime::now())?;
+        }
         let songs = self.songs_read_for(reference, group)?;
         let release = Self::pressing_of_songs(&songs, group)?;
         let recordings: Vec<Mbid> = songs.iter().map(|song| song.recording.clone()).collect();
+        let landed = match named {
+            Some(named) if named.id == release => named,
+            _ => Self::release_named(reference, &release)?,
+        };
 
-        let Uncovered { wanted, covering } =
-            self.want_from_release(reference, &release, &recordings)?;
+        let Uncovered { wanted, covering } = self.want_from_landed(&landed, &recordings)?;
         let wanted: AHashMap<Mbid, WantId> = wanted.into_iter().collect();
         Ok(Uncovered {
             wanted: songs
@@ -3486,21 +3498,34 @@ impl Library {
         }
     }
 
+    fn release_named(reference: &dyn Reference, release: &Mbid) -> Result<Release> {
+        reference
+            .release(release)?
+            .ok_or_else(|| Error::UnknownRelease {
+                release: release.clone(),
+            })
+    }
+
     fn want_from_release(
         &self,
         reference: &dyn Reference,
         release: &Mbid,
         recordings: &[Mbid],
     ) -> Result<Uncovered<Vec<(Mbid, WantId)>>> {
-        let landed = reference
-            .release(release)?
-            .ok_or_else(|| Error::UnknownRelease {
-                release: release.clone(),
-            })?;
+        let landed = Self::release_named(reference, release)?;
+        self.want_from_landed(&landed, recordings)
+    }
+
+    fn want_from_landed(
+        &self,
+        landed: &Release,
+        recordings: &[Mbid],
+    ) -> Result<Uncovered<Vec<(Mbid, WantId)>>> {
+        let release = &landed.id;
         let now = SystemTime::now();
 
         let (wanted, album) = self.inner.write(|transaction| {
-            let album = elsewhere::album_of_release(transaction, &landed, now)?;
+            let album = elsewhere::album_of_release(transaction, landed, now)?;
             let mut wanted = Vec::new();
             for recording in recordings {
                 let Some(row) = elsewhere::release_track_of(transaction, album, recording)? else {
@@ -3520,7 +3545,7 @@ impl Library {
             Ok((wanted, album))
         })?;
 
-        let covering = self.covering_of(album, &landed)?;
+        let covering = self.covering_of(album, landed)?;
 
         Ok(Uncovered { wanted, covering })
     }

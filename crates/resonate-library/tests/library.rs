@@ -11490,7 +11490,7 @@ fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off()
     enrich(&library, &fake, false)?;
     let artist = artist_named(&library, "The Orbiters")?;
 
-    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP))?;
+    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP), None)?;
 
     assert_eq!(
         wanted
@@ -11541,7 +11541,7 @@ fn an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted() -
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));
 
-    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP))?;
+    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP), None)?;
 
     assert_eq!(wanted.len(), 2);
     assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 1);
@@ -21210,6 +21210,7 @@ fn a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want() 
         followed,
         Linked::Album {
             group: mbid(HOURS_GROUP),
+            release: Some(mbid(HOURS)),
             title: "Hours".to_owned(),
             artist: Some("The Orbiters".to_owned()),
         }
@@ -21224,9 +21225,62 @@ fn a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want() 
         "each code was asked in turn until one named a release, a leading zero apart"
     );
 
-    let wanted = library.want_album(&fake, &mbid(HOURS_GROUP))?;
+    let wanted = library.want_album(&fake, &mbid(HOURS_GROUP), Some(&mbid(HOURS)))?;
     assert_eq!(wanted.len(), 2);
     assert_eq!(library.wants()?.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing()
+-> Result<()> {
+    let library = Library::open_in_memory()?;
+    let mut canned = learnt_canned();
+    canned.album_linked = Some(AlbumNames {
+        barcodes: vec![barcode(ON_THE_PAGE)],
+    });
+    canned.barcoded = vec![BarcodeMatch {
+        release: mbid(HOURS_REISSUE),
+        ..hours_barcoded(ON_THE_PAGE)
+    }];
+    canned.releases.push(hours_pressed(
+        HOURS_REISSUE,
+        "2011",
+        &[
+            ("Daybreak", DAYBREAK),
+            ("Fearless", HOURS_FEARLESS),
+            ("Daybreak (demo)", HOURS_BONUS),
+        ],
+    ));
+    let fake = Fake::new(canned);
+
+    let Linked::Album { group, release, .. } =
+        library.follow_album_link(&fake, &linked_to_an_album())?
+    else {
+        panic!("the link names an album");
+    };
+    let wanted = library.want_album(&fake, &group, release.as_ref())?;
+
+    let songs: Vec<Mbid> = wanted
+        .iter()
+        .map(|(song, _)| song.recording.clone())
+        .collect();
+    assert_eq!(release, Some(mbid(HOURS_REISSUE)));
+    assert_eq!(
+        songs,
+        [mbid(DAYBREAK), mbid(HOURS_FEARLESS), mbid(HOURS_BONUS)]
+    );
+    assert_eq!(library.wants()?.len(), 3);
+    assert_eq!(
+        fake.called(LookupOp::ReleasesOfGroup),
+        0,
+        "the group's usual pressing was read though the link named one"
+    );
+    assert_eq!(
+        fake.called(LookupOp::Release),
+        1,
+        "the pressing the link named was asked for once"
+    );
     Ok(())
 }
 
