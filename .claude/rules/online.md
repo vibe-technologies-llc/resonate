@@ -49,9 +49,21 @@ every counted play, and only under a token.
   any other `Online` take turns at MusicBrainz in one queue; only a test's `Client::on_clock` gets
   its own. The `*_INTERVAL` constants in `client.rs` are the per-host decisions (MusicBrainz and
   AcoustID at the rates those services ask for). Pacing is asserted on a `Faked` `Clock`'s record of
-  sleeps. A lookup's pass reserves one slot at a time,
-  so a song searched from the window waits at most an interval and the request in flight (or a busy
-  service's cooling-off); the search page says so with `ASKING_BESIDE_A_LOOKUP`.
+  sleeps.
+- **The listener goes first; a client made to yield waits for them.** A client is a `Listener` or,
+  built by `Client::yielding`, its `Yielding` twin sharing the agent, the introduction, the queue and
+  the `reach` switch, so *Reach the network* off stops both. A listener's `exchange` holds a
+  `Listening` guard on the host from before its first slot through every busy retry, counted in
+  `Turns::listening`; dropping it stamps `listener_answered` and wakes the `Paced::answered` condvar. A
+  yielding caller waits on that condvar while any listener is counted, then asks only once the host
+  is free — the later of the last slot plus the interval, any `cooling`, and the listener's answer plus
+  the interval — and reserves nothing ahead, so a listener waits at most what is left of one
+  interval and never queues behind the pass. The interval after the answer lets a listener's next
+  ask (`find_albums` after `find_songs`, an artist page's next group) take the next slot. The cost is
+  that a lookup pass stands still for as long as the listener keeps a host busy; that is meant
+  (`a_listener_asks_back_to_back_while_a_yielding_client_waits_for_it`,
+  `a_yielding_client_waits_a_whole_interval_after_the_listeners_answer`). The switch is re-read after
+  the wait, so a client switched off while waiting sends nothing.
 - **A busy answer is asked three more times with the wait doubling, and `Retry-After` is read in
   seconds and capped.** `busy` is 503 (MusicBrainz's answer to going too fast), 429, 502 and 504;
   `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT` doubling, `RETRY_AFTER_AT_MOST` since a pass must not

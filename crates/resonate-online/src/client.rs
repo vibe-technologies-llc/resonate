@@ -11,7 +11,7 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Condvar, Mutex, RwLock};
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
 use ureq::{
@@ -285,16 +285,93 @@ struct Turns {
     next: BTreeMap<Host, Instant>,
     stayed_busy: BTreeSet<Host>,
     cooling: BTreeMap<Host, Instant>,
+    listening: BTreeMap<Host, usize>,
+    listener_answered: BTreeMap<Host, Instant>,
+}
+
+impl Turns {
+    fn is_listened_to(&self, host: Host) -> bool {
+        self.listening
+            .get(&host)
+            .is_some_and(|waiting| *waiting > 0)
+    }
+
+    fn free_for_one_yielding(&self, host: Host, now: Instant) -> Instant {
+        [
+            self.next.get(&host).map(|last| *last + host.interval()),
+            self.cooling.get(&host).copied(),
+            self.listener_answered
+                .get(&host)
+                .map(|answered| *answered + host.interval()),
+        ]
+        .into_iter()
+        .flatten()
+        .fold(now, Instant::max)
+    }
+}
+
+#[derive(Default)]
+struct Paced {
+    turns: Mutex<Turns>,
+    answered: Condvar,
 }
 
 #[derive(Clone, Default)]
-struct Pacing(Arc<Mutex<Turns>>);
+struct Pacing(Arc<Paced>);
 
 static EVERY_CLIENT_IN_THE_PROCESS: LazyLock<Pacing> = LazyLock::new(Pacing::default);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Standing {
+    Listener,
+    Yielding,
+}
+
+struct Listening<'a> {
+    pacing: &'a Pacing,
+    host: Host,
+    clock: &'a dyn Clock,
+}
+
+impl Drop for Listening<'_> {
+    fn drop(&mut self) {
+        let now = self.clock.now();
+        let mut turns = self.pacing.0.turns.lock();
+        if let Some(waiting) = turns.listening.get_mut(&self.host) {
+            *waiting = waiting.saturating_sub(1);
+        }
+        turns.listener_answered.insert(self.host, now);
+        drop(turns);
+        self.pacing.0.answered.notify_all();
+    }
+}
+
 impl Pacing {
+    fn listening<'a>(&'a self, host: Host, clock: &'a dyn Clock) -> Listening<'a> {
+        *self.0.turns.lock().listening.entry(host).or_default() += 1;
+        Listening {
+            pacing: self,
+            host,
+            clock,
+        }
+    }
+
+    fn yielded(&self, host: Host, clock: &dyn Clock) -> Option<Instant> {
+        let mut turns = self.0.turns.lock();
+        while turns.is_listened_to(host) {
+            self.0.answered.wait(&mut turns);
+        }
+        let now = clock.now();
+        let free = turns.free_for_one_yielding(host, now);
+        if free > now {
+            return Some(free);
+        }
+        turns.next.insert(host, now);
+        None
+    }
+
     fn reserve(&self, host: Host, now: Instant) -> Instant {
-        let mut turns = self.0.lock();
+        let mut turns = self.0.turns.lock();
         let slot = turns
             .next
             .get(&host)
@@ -308,7 +385,7 @@ impl Pacing {
     }
 
     fn retries_owed(&self, host: Host) -> u32 {
-        if self.0.lock().stayed_busy.contains(&host) {
+        if self.0.turns.lock().stayed_busy.contains(&host) {
             0
         } else {
             BUSY_RETRIES
@@ -316,7 +393,7 @@ impl Pacing {
     }
 
     fn heard(&self, host: Host, status: StatusCode, asked_for: Option<Duration>, now: Instant) {
-        let mut turns = self.0.lock();
+        let mut turns = self.0.turns.lock();
         if busy(status) {
             turns.stayed_busy.insert(host);
             if let Some(wait) = asked_for {
@@ -334,7 +411,8 @@ pub struct Client {
     introduction: Introduction,
     pacing: Pacing,
     clock: Arc<dyn Clock>,
-    reaching: AtomicBool,
+    reaching: Arc<AtomicBool>,
+    standing: Standing,
 }
 
 impl Client {
@@ -379,7 +457,19 @@ impl Client {
             introduction,
             pacing,
             clock,
-            reaching: AtomicBool::new(true),
+            reaching: Arc::new(AtomicBool::new(true)),
+            standing: Standing::Listener,
+        }
+    }
+
+    pub fn yielding(&self) -> Self {
+        Self {
+            agent: self.agent.clone(),
+            introduction: self.introduction.clone(),
+            pacing: self.pacing.clone(),
+            clock: Arc::clone(&self.clock),
+            reaching: Arc::clone(&self.reaching),
+            standing: Standing::Yielding,
         }
     }
 
@@ -512,6 +602,8 @@ impl Client {
         url: &str,
         sending: Sending<'_>,
     ) -> Result<Response<Body>> {
+        let _listening = (self.standing == Standing::Listener)
+            .then(|| self.pacing.listening(host, self.clock.as_ref()));
         let owed = self.pacing.retries_owed(host);
         let mut retried = 0;
         let mut by_default = RETRY_AFTER_BY_DEFAULT;
@@ -520,6 +612,9 @@ impl Client {
                 return Err(Error::Offline { host, op });
             }
             self.pace(host);
+            if !self.is_reaching() {
+                return Err(Error::Offline { host, op });
+            }
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
                 Sending::Get { authorization } => {
@@ -576,11 +671,21 @@ impl Client {
     }
 
     fn pace(&self, host: Host) {
-        let now = self.clock.now();
-        let slot = self.pacing.reserve(host, now);
+        match self.standing {
+            Standing::Listener => {
+                let now = self.clock.now();
+                let slot = self.pacing.reserve(host, now);
 
-        if slot > now {
-            self.clock.sleep(slot - now);
+                if slot > now {
+                    self.clock.sleep(slot - now);
+                }
+            }
+            Standing::Yielding => {
+                while let Some(free) = self.pacing.yielded(host, self.clock.as_ref()) {
+                    self.clock
+                        .sleep(free.saturating_duration_since(self.clock.now()));
+                }
+            }
         }
     }
 }
@@ -1113,6 +1218,122 @@ mod tests {
         let first = Client::new(identity(None));
         let second = Client::introduced(Introduction::as_(&identity(Some("a contact"))));
         assert!(Arc::ptr_eq(&first.pacing.0, &second.pacing.0));
+        assert!(Arc::ptr_eq(&first.pacing.0, &first.yielding().pacing.0));
+    }
+
+    fn listener_and_its_yielding_twin(clock: &Arc<Faked>) -> (Client, Client) {
+        let listener = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
+        let yielding = listener.yielding();
+        (listener, yielding)
+    }
+
+    #[test]
+    fn a_yielding_client_waits_a_whole_interval_after_the_listeners_answer() {
+        const IN_FLIGHT: Duration = Duration::from_millis(300);
+
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+
+        yielding.pace(Host::MusicBrainz);
+        let asking = listener
+            .pacing
+            .listening(Host::MusicBrainz, listener.clock.as_ref());
+        listener.pace(Host::MusicBrainz);
+        clock.sleep(IN_FLIGHT);
+        drop(asking);
+        yielding.pace(Host::MusicBrainz);
+
+        assert_eq!(
+            clock.slept(),
+            vec![MUSICBRAINZ_INTERVAL, IN_FLIGHT, MUSICBRAINZ_INTERVAL]
+        );
+    }
+
+    #[test]
+    fn a_listener_asks_back_to_back_while_a_yielding_client_waits_for_it() {
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+        let (told, paced) = std::sync::mpsc::channel();
+
+        let asking = listener
+            .pacing
+            .listening(Host::MusicBrainz, listener.clock.as_ref());
+        let waiting = thread::spawn(move || {
+            yielding.pace(Host::MusicBrainz);
+            told.send(()).expect("the test listening");
+        });
+
+        assert!(paced.recv_timeout(Duration::from_millis(50)).is_err());
+        listener.pace(Host::MusicBrainz);
+        listener.pace(Host::MusicBrainz);
+        assert_eq!(clock.slept(), vec![MUSICBRAINZ_INTERVAL]);
+        assert!(
+            paced.try_recv().is_err(),
+            "the yielding client asked while a listener was asking"
+        );
+
+        drop(asking);
+        paced
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the yielding client to ask once the listener was answered");
+        waiting.join().expect("the yielding client");
+        assert_eq!(
+            clock.slept(),
+            vec![MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
+        );
+    }
+
+    #[test]
+    fn a_yielding_client_never_holds_a_slot_a_listener_must_queue_behind() {
+        const ELAPSED: Duration = Duration::from_millis(400);
+
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+
+        yielding.pace(Host::MusicBrainz);
+        clock.sleep(ELAPSED);
+        listener.pace(Host::MusicBrainz);
+
+        assert_eq!(clock.slept(), vec![ELAPSED, MUSICBRAINZ_INTERVAL - ELAPSED]);
+    }
+
+    #[test]
+    fn a_host_cooling_off_is_waited_on_by_a_yielding_client_too() {
+        const ASKED_FOR: Duration = Duration::from_secs(5);
+
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+
+        listener.pacing.heard(
+            Host::MusicBrainz,
+            StatusCode::SERVICE_UNAVAILABLE,
+            Some(ASKED_FOR),
+            clock.now(),
+        );
+        yielding.pace(Host::MusicBrainz);
+
+        assert_eq!(clock.slept(), vec![ASKED_FOR]);
+    }
+
+    #[test]
+    fn the_yielding_twin_shares_the_queue_the_switch_and_the_introduction() {
+        let introduction = Introduction::as_(&identity(None));
+        let listener = Client::on_clock(introduction.clone(), Faked::new(), Carried::Plain);
+        let yielding = listener.yielding();
+
+        assert!(Arc::ptr_eq(&listener.pacing.0, &yielding.pacing.0));
+
+        introduction.change_to(&identity(Some("someone who typed a contact")));
+        assert_eq!(yielding.user_agent(), listener.user_agent());
+
+        listener.reach(false);
+        assert!(!yielding.is_reaching());
+        listener.reach(true);
+        assert!(yielding.is_reaching());
     }
 
     #[test]
