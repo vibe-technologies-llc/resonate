@@ -1635,7 +1635,10 @@ is never named.
     (`a_folder_that_never_goes_quiet_is_handed_out_once_it_has_been_deferred_long_enough`).
   - A watch that cannot be made (inotify out of watches) is a warning; one that cannot cover a root
     (`RootsWatch::leaves_a_root_uncovered`) is laid again every `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER`
-    (5 minutes); a root it never covers waits for a scan by hand.
+    (5 minutes); a root it never covers waits for a scan by hand. Proved past the limit itself
+    (`a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears`
+    reruns its binary under `unshare --user` with `max_inotify_watches` lowered to eight: the
+    limit is the user namespace's, so the desktop's own watches are never spent).
 
 - **Closed-window changes are caught up on open; a missing root is watched once it appears.** A
   watch hears only while it stands (files added between runs waited for a manual scan). First look

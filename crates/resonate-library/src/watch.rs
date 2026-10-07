@@ -315,6 +315,75 @@ mod tests {
         assert!(watch.leaves_a_root_uncovered());
     }
 
+    const CAPPED_AT: &str = "RESONATE_INOTIFY_CAPPED";
+    const WATCHES_LEFT: usize = 8;
+    const FOLDERS_PAST_THE_CAP: usize = 3 * WATCHES_LEFT;
+
+    fn ran_under_a_capped_namespace(this_test: &str) -> bool {
+        if env::var_os(CAPPED_AT).is_some() {
+            return false;
+        }
+        let capped = format!(
+            "echo {WATCHES_LEFT} > /proc/sys/user/max_inotify_watches && exec \"$0\" \"$@\""
+        );
+        let ran = process::Command::new("unshare")
+            .args(["--user", "--map-root-user", "sh", "-c", &capped])
+            .arg(env::current_exe().expect("the test binary"))
+            .args([this_test, "--exact", "--nocapture"])
+            .env(CAPPED_AT, "1")
+            .status();
+        match ran {
+            Ok(status) if status.code() == Some(0) => true,
+            Ok(status) => {
+                assert!(
+                    status.code().is_some(),
+                    "the run under a capped namespace died: {status}"
+                );
+                let refused = process::Command::new("unshare")
+                    .args(["--user", "--map-root-user", "true"])
+                    .status()
+                    .is_ok_and(|status| !status.success());
+                assert!(refused, "the run under a capped namespace failed");
+                eprintln!("skipped: no user namespace to cap inotify in");
+                true
+            }
+            Err(_) => {
+                eprintln!("skipped: no unshare to cap inotify with");
+                true
+            }
+        }
+    }
+
+    #[test]
+    fn a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears()
+    {
+        if ran_under_a_capped_namespace(
+            "watch::tests::a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears",
+        ) {
+            return;
+        }
+        let covered = Scratch::new("under-the-cap");
+        let crowded = Scratch::new("past-the-cap");
+        for folder in 0..FOLDERS_PAST_THE_CAP {
+            fs::create_dir_all(crowded.path.join(format!("disc {folder}"))).expect("a folder");
+        }
+
+        let watch = RootsWatch::over(&[covered.path.clone(), crowded.path.clone()])
+            .expect("a watch with watches left to lay");
+        assert!(
+            watch.leaves_a_root_uncovered(),
+            "a root of {FOLDERS_PAST_THE_CAP} folders fit under a cap of {WATCHES_LEFT} watches"
+        );
+        assert_eq!(watch.uncovered, std::slice::from_ref(&crowded.path));
+
+        fs::write(covered.path.join("album/echoes.flac"), b"fLaC").expect("a file");
+        assert_eq!(
+            settled_within(&watch, HEARD_WITHIN),
+            vec![covered.path.clone()],
+            "the root watched before the cap stopped hearing"
+        );
+    }
+
     #[test]
     fn a_file_dropped_under_a_root_names_that_root_once_the_folder_is_quiet() {
         let scratch = Scratch::new("taken");
