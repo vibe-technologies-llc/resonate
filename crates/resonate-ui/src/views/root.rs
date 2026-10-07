@@ -65,7 +65,7 @@ use crate::{
         part::{Parts, Region},
         playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
         pointed::{self, LitUnderThePointer},
-        queue::{QueueMeasure, QueueNames, TakenBack, took_out},
+        queue::{Named, QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
         search::{self, SearchShows},
         settings::{
@@ -3079,12 +3079,11 @@ impl RootView {
         true
     }
 
-    fn jumped_to(&mut self, shift: Shift, from: usize, names: &[String], cx: &mut Context<Self>) {
+    fn jumped_to(&mut self, shift: Shift, from: usize, names: &[Named], cx: &mut Context<Self>) {
         let Some(typed) = self.type_ahead.typed() else {
             return;
         };
-        let rows: Vec<&str> = names.iter().map(String::as_str).collect();
-        let landing = jumped(&rows, from, typed);
+        let landing = jumped(names, from, typed);
 
         self.type_ahead.landed(landing.is_some());
         let Some(row) = landing else {

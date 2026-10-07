@@ -52,10 +52,7 @@ sits last in its category, not worked until it moves. Everything else is open.
 - A change under one root stats every file of every other; the tidy reads each other root's paths
 - Scrolling a large library to the end re-reads the whole prefix of tracks, albums and artists at
   every page (quadratic); design with the `End` item under Keyboard
-- Each queue edit and catalog revision re-reads every queued track while the queue pane is open;
-  each type-ahead key folds every row's name on the UI thread
-- Taking a large run out of a long queue freezes the queue pane for as long as it can be put back:
-  each frame checks every taken row against every queued row
+- Each catalog revision re-reads every queued track's name while the queue pane is open
 - Dragging files from a file manager stats every path on entering and dropping; the drop overlay and
   Library settings stat the music folder every frame: a folder on a stalled network mount freezes
   the window

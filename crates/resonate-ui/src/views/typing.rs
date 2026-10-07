@@ -55,17 +55,17 @@ impl TypeAhead {
     }
 }
 
-pub(crate) fn jumped(rows: &[&str], from: usize, typed: &str) -> Option<usize> {
+pub(crate) fn jumped(folded: &[impl AsRef<str>], from: usize, typed: &str) -> Option<usize> {
     let wanted = folded_letters(typed);
-    if wanted.is_empty() || rows.is_empty() {
+    if wanted.is_empty() || folded.is_empty() {
         return None;
     }
 
-    let start = from % rows.len();
+    let start = from % folded.len();
     let mut holding = None;
-    for step in 0..rows.len() {
-        let at = (start + step) % rows.len();
-        let row = folded_letters(rows[at]);
+    for step in 0..folded.len() {
+        let at = (start + step) % folded.len();
+        let row = folded[at].as_ref();
         if row.starts_with(&wanted) {
             return Some(at);
         }
@@ -80,6 +80,11 @@ pub(crate) fn jumped(rows: &[&str], from: usize, typed: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn jumped(rows: &[&str], from: usize, typed: &str) -> Option<usize> {
+        let folded: Vec<String> = rows.iter().map(|row| folded_letters(row)).collect();
+        super::jumped(&folded, from, typed)
+    }
 
     const ROWS: [&str; 5] = [
         "Astronomy Domine",

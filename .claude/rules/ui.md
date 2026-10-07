@@ -229,7 +229,11 @@ is never named.
     revision asks again but still hands out what it holds for the same rows meanwhile; another
     queue revision hands out nothing. Asking is the background executor: `queued_rows` reads by id in one
     `Library::tracks_with_ids` pass (500-id batches; a row whose id names another file falls to its
-    path), then `Player::media`, then the stem, in queue row order. A keystroke before they land
+    path), then `Player::media`, then the stem, in queue row order. Each name is held folded
+    (`Named`: the row and its `folded_letters`), so a key weighs strings, never folds one on the UI
+    thread; where only the queue moved (library and media revisions as they were) `named_again`
+    keeps every row already named and reads only those the edit brought
+    (`a_queue_edit_names_only_the_rows_it_brought`). A keystroke before they land
     still counts as a jump (`jump_where_typed` makes it once they do). The queue pane asks as it
     draws, so names are usually ready before the first letter (once read on the first keystroke on
     the render thread, up to two SQLite reads a row through a cache smaller than a long queue).
@@ -586,7 +590,8 @@ is never named.
   a `Command::Insert` at the row after the one they followed (`TakenOut::after`, the id of the row
   before them when taken), which `landing_in` finds wherever it now stands: the front where they
   were the front, where they came out where that row is gone too. A step stands while none of its
-  rows is back in the queue (`stands_over` weighs their ids, which `Unclaimed::claim` hands back to
+  rows is back in the queue (`stands_over` weighs the queue against a set of their ids, which
+  `Unclaimed::claim` hands back to
   a row on its way in): an album queued, a row dragged or a track played between a *Clear* and a
   *Put back* leaves the offer standing, and a row already queued again is not put back twice.
   `KEPT_GESTURES` bounds the walk at sixteen, oldest out first; the button's hint says how many are

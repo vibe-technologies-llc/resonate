@@ -179,7 +179,7 @@ impl Launcher for Unseen {
     fn show(&self, _: AppIcon) {}
 }
 
-fn unplugged_player() -> Arc<Player> {
+pub(crate) fn unplugged_player() -> Arc<Player> {
     let (announcing, changes) = unbounded();
     Arc::new(
         Player::with_backend(EngineConfig::default(), move |_| {

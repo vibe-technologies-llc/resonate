@@ -5,7 +5,7 @@ use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, Span, Trac
 
 use crate::{RepeatMode, seed};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QueueItem {
     pub id: TrackId,
     pub location: MediaLocation,
