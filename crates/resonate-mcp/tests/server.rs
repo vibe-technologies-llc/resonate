@@ -1935,9 +1935,15 @@ fn a_prompt_embeds_the_reading_its_resource_answers() {
     assert!(asked.contains("over the last year"), "{asked}");
     assert_eq!(embedded["uri"], "resonate://library/statistics/year");
     assert_eq!(
-        serde_json::from_str::<Value>(embedded["text"].as_str().expect("text"))
-            .expect("the text to be JSON"),
-        called(&server, "listening_statistics", json!({ "window": "year" }))
+        without_the_clock(
+            serde_json::from_str::<Value>(embedded["text"].as_str().expect("text"))
+                .expect("the text to be JSON")
+        ),
+        without_the_clock(called(
+            &server,
+            "listening_statistics",
+            json!({ "window": "year" })
+        ))
     );
 
     let (_, embedded) = prompted(&server, "review_my_listening", json!({}));
