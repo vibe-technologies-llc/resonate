@@ -103,6 +103,13 @@ dependency (tested without a window).
   cut inside a letter is not guessed a legacy code page
   (`a_sidecar_in_utf8_cut_inside_a_letter_still_reads_as_utf8`). An unreadable candidate is logged, walk
   goes on (an oversized `Echoes.lrc` does not stop `Echoes.txt`).
+- **A `.txt` is words only where it reads as words** (`Written::Text`, `reads_as_sung`): an unsynced
+  set from one is passed over (debug record, walk goes on) unless fewer than one line in
+  `UNSUNG_LINES_AT_MOST_ONE_IN` is unsung: past `LONGEST_SUNG_LINE`, under half letters, holding a
+  link, or a `name: value`/`name = value` field of at most `LONGEST_FIELD_NAME_IN_WORDS` words. A
+  rip log or a liner note named like the track is no lyric
+  (`a_text_file_that_reads_as_a_document_is_not_taken_for_words`); a `.txt` carrying stamps, and
+  every `.lrc`, is read as always.
 - **Languages are the locale's, only where asked.** `Sidecar::choosing_by_the_locale` reads
   `LANGUAGE`'s colon list (unless locale is `C`/`POSIX`), then the first of `LC_ALL`,
   `LC_MESSAGES`, `LANG`, each through `language_of`; weighed only while its `Arc<AtomicBool>` holds

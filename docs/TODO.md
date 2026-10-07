@@ -170,7 +170,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   1 024-frame window, leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- An unrelated `<stem>.txt` is read as words
 - No listener-set offset for a sheet that runs early or late
 - **Blocked on gpui:** the sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on
   a whole pixel vertically (`SUBPIXEL_VARIANTS_Y = 1`) and cosmic-text hints every size, so a type

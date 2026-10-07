@@ -15,7 +15,8 @@ use parking_lot::Mutex;
 use resonate_core::{SourceId, text};
 
 use crate::{
-    Error, LARGEST_LYRICSFILE, LyricOp, LyricProvider, Lyrics, Result, Wanted, lrc, read_lyricsfile,
+    Detail, Error, LARGEST_LYRICSFILE, LyricOp, LyricProvider, Lyrics, Result, Wanted, lrc,
+    read_lyricsfile,
 };
 
 const SIDECAR: &str = "sidecar";
@@ -23,7 +24,7 @@ const BESIDE: [(&str, Written); 4] = [
     (".lyricsfile.yaml", Written::Lyricsfile),
     (".lyricsfile.yml", Written::Lyricsfile),
     (".lrc", Written::Lrc),
-    (".txt", Written::Lrc),
+    (".txt", Written::Text),
 ];
 const WITHIN: [&str; 3] = ["lyrics", "lyric", "lrc"];
 const LARGEST_SIDECAR: u64 = lrc::LARGEST_SHEET as u64;
@@ -36,6 +37,10 @@ const NAMED_AFTER_THE_FILE: usize = SPELLED_IN_A_LANGUAGE + 1;
 const LANGUAGES_LISTED_IN: &str = "LANGUAGE";
 const LOCALE_NAMED_IN: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
 const THE_PLAIN_LOCALES: [&str; 2] = ["c", "posix"];
+const LONGEST_SUNG_LINE: usize = 150;
+const LONGEST_FIELD_NAME_IN_WORDS: usize = 3;
+const UNSUNG_LINES_AT_MOST_ONE_IN: usize = 4;
+const A_LINK: &str = "://";
 
 pub struct Sidecar {
     source: SourceId,
@@ -145,12 +150,22 @@ impl Sidecar {
 
     fn read(&self, candidate: &Candidate, wanted: &Wanted) -> Result<Option<Lyrics>> {
         let (declared, lyrics) = match candidate.written {
-            Written::Lrc => {
+            Written::Lrc | Written::Text => {
                 let Some(head) = self.head(&candidate.path, LARGEST_SIDECAR)? else {
                     return Ok(None);
                 };
                 let sheet = lrc::read(self.source.clone(), &whole_lines_within_a_sheet(head))?;
-                (sheet.declared, sheet.lyrics)
+                let lyrics = sheet.lyrics.filter(|lyrics| {
+                    let sung = candidate.written == Written::Lrc || reads_as_sung(lyrics);
+                    if !sung {
+                        tracing::debug!(
+                            sidecar = %candidate.path.display(),
+                            "a text beside the track reads as a document, not words to sing"
+                        );
+                    }
+                    sung
+                });
+                (sheet.declared, lyrics)
             }
             Written::Lyricsfile => {
                 let Some(head) = self.head(&candidate.path, LARGEST_LYRICSFILE as u64)? else {
@@ -360,6 +375,7 @@ enum NamedAfter {
 enum Written {
     Lyricsfile,
     Lrc,
+    Text,
 }
 
 struct Candidate {
@@ -494,6 +510,40 @@ fn nothing_to_walk(error: &io::Error) -> bool {
 
 fn lowered(name: Option<&OsStr>) -> Option<String> {
     Some(name?.to_string_lossy().to_lowercase())
+}
+
+fn reads_as_sung(lyrics: &Lyrics) -> bool {
+    if lyrics.detail() != Detail::Unsynced {
+        return true;
+    }
+    let lines: Vec<&str> = lyrics
+        .lines()
+        .iter()
+        .map(|line| line.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect();
+    let unsung = lines.iter().filter(|line| !a_sung_line(line)).count();
+
+    unsung * UNSUNG_LINES_AT_MOST_ONE_IN < lines.len()
+}
+
+fn a_sung_line(line: &str) -> bool {
+    let glyphs = line.chars().filter(|glyph| !glyph.is_whitespace()).count();
+    let letters = line.chars().filter(|glyph| glyph.is_alphabetic()).count();
+
+    line.chars().count() <= LONGEST_SUNG_LINE
+        && letters * 2 >= glyphs
+        && !line.contains(A_LINK)
+        && !a_field(line)
+}
+
+fn a_field(line: &str) -> bool {
+    let Some((name, value)) = line.split_once([':', '=']) else {
+        return false;
+    };
+    let words = name.split_whitespace().count();
+
+    !value.trim().is_empty() && (1..=LONGEST_FIELD_NAME_IN_WORDS).contains(&words)
 }
 
 fn whole_lines_within_a_sheet(mut head: Vec<u8>) -> String {
@@ -740,6 +790,44 @@ mod tests {
         let lyrics = found(&tree.track("Echoes.flac")).expect("the file beside it");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
+    }
+
+    #[test]
+    fn a_text_file_that_reads_as_a_document_is_not_taken_for_words() {
+        let tree = Tree::new();
+        tree.write(
+            "Echoes.txt",
+            "Exact Audio Copy V1.6 from 23. November 2020\n\
+             Used drive  : HL-DT-STBD-RE  WH16NS40\n\
+             Read mode   : Secure\n\
+             Peak level 98.8 %\n\
+             Copy CRC 4A1E5B21\n",
+        );
+        tree.write(
+            "Info.txt",
+            "Recorded live in the amphitheatre of Pompeii over four days in October 1971, \
+             without an audience, the band playing to the stones and the film crew alone while \
+             the light moved across the ruins and the sound carried out over the empty seats.\n\
+             See https://example.org/pompeii for the whole story.\n",
+        );
+        tree.write(
+            "Coda.txt",
+            "all that you touch\nall that you see\nall that you taste\nall you feel\nTime: 3:41\n",
+        );
+        tree.write(
+            "Breathe.txt",
+            "Breathe, breathe in the air\nDon't be afraid to care\n",
+        );
+
+        let titled = |file: &str, title: &str| Wanted {
+            title: Some(title.to_owned()),
+            ..tree.track(file)
+        };
+
+        assert!(found(&tree.track("Echoes.flac")).is_none());
+        assert!(found(&titled("01.flac", "Info")).is_none());
+        assert!(found(&tree.track("Coda.flac")).is_some());
+        assert!(found(&tree.track("Breathe.flac")).is_some());
     }
 
     #[test]
