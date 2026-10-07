@@ -37,6 +37,7 @@ pub(crate) fn keyed_by(name: &'static str, held: &impl Hash) -> ElementId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sortable {
     Number,
+    Marked,
     Title,
     Artist,
     Heard,
@@ -45,6 +46,7 @@ pub(crate) enum Sortable {
 
 #[derive(Clone, Copy)]
 pub(crate) struct Sorted {
+    pub(crate) number: Sortable,
     pub(crate) by: Option<Sortable>,
     pub(crate) reading: Direction,
     pub(crate) offers: &'static [Sortable],
@@ -427,7 +429,7 @@ pub(crate) fn columns(
     fitting.shown.set(shown);
 
     let number = heads(
-        Sortable::Number,
+        sorted.number,
         numbered,
         div().w(px(theme::row_number())).flex_none(),
         sorted,
@@ -529,6 +531,7 @@ fn heads(
 const fn sorts_by(column: Sortable) -> &'static str {
     match column {
         Sortable::Number => "Sort by album order",
+        Sortable::Marked => "Sort by when it was marked a favourite",
         Sortable::Title => "Sort by title",
         Sortable::Artist => "Sort by artist",
         Sortable::Heard => "Sort by how often it is heard",

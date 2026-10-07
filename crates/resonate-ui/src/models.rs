@@ -442,7 +442,7 @@ impl FirstRead {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sorting {
     pub tracks: SortOrder,
     pub tracks_read: Direction,
@@ -450,6 +450,23 @@ pub struct Sorting {
     pub albums_read: Direction,
     pub artists: ArtistOrder,
     pub artists_read: Direction,
+    pub favourites: SortOrder,
+    pub favourites_read: Direction,
+}
+
+impl Default for Sorting {
+    fn default() -> Self {
+        Self {
+            tracks: SortOrder::default(),
+            tracks_read: SortOrder::default().reads(),
+            albums: AlbumOrder::default(),
+            albums_read: AlbumOrder::default().reads(),
+            artists: ArtistOrder::default(),
+            artists_read: ArtistOrder::default().reads(),
+            favourites: SortOrder::Favourited,
+            favourites_read: SortOrder::Favourited.reads(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2871,6 +2888,23 @@ impl LibraryModel {
             return;
         }
         self.sorting.tracks_read = reading;
+        self.read_listings_again(cx);
+    }
+
+    pub fn order_favourites(&mut self, sort: SortOrder, cx: &mut Context<Self>) {
+        if self.sorting.favourites == sort {
+            return;
+        }
+        self.sorting.favourites = sort;
+        self.sorting.favourites_read = sort.reads();
+        self.read_listings_again(cx);
+    }
+
+    pub fn read_favourites(&mut self, reading: Direction, cx: &mut Context<Self>) {
+        if self.sorting.favourites_read == reading {
+            return;
+        }
+        self.sorting.favourites_read = reading;
         self.read_listings_again(cx);
     }
 
@@ -6050,8 +6084,8 @@ fn browsed(
         ..artists_asked.clone()
     };
     let favourite_tracks_asked = TrackQuery {
-        sort: SortOrder::Favourited,
-        reading: SortOrder::Favourited.reads(),
+        sort: asked.sorting.favourites,
+        reading: asked.sorting.favourites_read,
         ..asked.listing(None, None, Some(FAVOURITES_AT_MOST))
     };
 

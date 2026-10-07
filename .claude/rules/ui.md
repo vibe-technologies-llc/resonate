@@ -1504,8 +1504,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   place in `Pane::BROWSE`, arms in `label`, `about`, `section` and `icon`, an arm in
   `RootView::content`, a sidebar count and a `mod` line. Favourites stacks the three kinds — a shelf of
   artists, a shelf of albums and the ordinary track rows — and its sidebar count is all three, a pane of
-  only favourite albums otherwise reading as empty. Its order is fixed at *Favourited*, so its column
-  header is unsorted: reusing the tracks pane's would light that pane's order and sort the wrong list.
+  only favourite albums otherwise reading as empty. Its track rows hold an order of their own on
+  `Sorting::favourites`, *Favourited* newest first until a header is pressed: reusing the tracks
+  pane's would light that pane's order and sort the wrong list, so `sorting::favourites_sorted` is its
+  own `Sorted`, whose `#` column is `Sortable::Marked` (when it was marked) rather than album order.
+  The shelves of artists and albums stay in the order marked.
 - **The statistics chart is `div`s, not a canvas.** `inspector::traced` and the equaliser curve are
   continuous series where this is a few dozen discrete bars, and a `div` carries a `hint::Names` hover
   for free where a canvas needs hand-written hit-testing. A day nothing was played still draws its

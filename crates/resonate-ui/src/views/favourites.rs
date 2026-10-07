@@ -103,7 +103,7 @@ impl RootView {
                 "#",
                 true,
                 TRACK_CONTROLS,
-                sorting::unsorted(),
+                sorting::favourites_sorted(self, cx),
                 &self.columns_fit,
                 cx,
             ))

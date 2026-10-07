@@ -244,6 +244,14 @@ const TRACK_COLUMNS: &[Sortable] = &[
     Sortable::Length,
 ];
 
+const FAVOURITE_COLUMNS: &[Sortable] = &[
+    Sortable::Marked,
+    Sortable::Title,
+    Sortable::Artist,
+    Sortable::Heard,
+    Sortable::Length,
+];
+
 const ROW_COLUMNS: &[Sortable] = &[
     Sortable::Number,
     Sortable::Title,
@@ -256,6 +264,7 @@ const COLUMN_HINT: &str = "Put the listing in this order, or press again to turn
 const fn track_order(column: Sortable) -> SortOrder {
     match column {
         Sortable::Number => SortOrder::AlbumThenTrack,
+        Sortable::Marked => SortOrder::Favourited,
         Sortable::Title => SortOrder::Title,
         Sortable::Artist => SortOrder::Artist,
         Sortable::Heard => SortOrder::Plays,
@@ -265,7 +274,7 @@ const fn track_order(column: Sortable) -> SortOrder {
 
 const fn row_order(column: Sortable) -> RowOrder {
     match column {
-        Sortable::Number | Sortable::Heard => RowOrder::Album,
+        Sortable::Number | Sortable::Marked | Sortable::Heard => RowOrder::Album,
         Sortable::Title => RowOrder::Title,
         Sortable::Artist => RowOrder::Artist,
         Sortable::Length => RowOrder::Length,
@@ -287,6 +296,21 @@ const fn track_column(sort: SortOrder) -> Option<Sortable> {
     }
 }
 
+const fn favourite_column(sort: SortOrder) -> Option<Sortable> {
+    match sort {
+        SortOrder::Favourited => Some(Sortable::Marked),
+        SortOrder::Title => Some(Sortable::Title),
+        SortOrder::Artist => Some(Sortable::Artist),
+        SortOrder::Plays => Some(Sortable::Heard),
+        SortOrder::Duration => Some(Sortable::Length),
+        SortOrder::Relevance
+        | SortOrder::AlbumThenTrack
+        | SortOrder::DateAdded
+        | SortOrder::Played
+        | SortOrder::PlaysThisMonth => None,
+    }
+}
+
 const fn row_column(order: RowOrder) -> Option<Sortable> {
     match order {
         RowOrder::Album => Some(Sortable::Number),
@@ -299,6 +323,7 @@ const fn row_column(order: RowOrder) -> Option<Sortable> {
 
 pub(crate) const fn unsorted() -> Sorted {
     Sorted {
+        number: Sortable::Number,
         by: None,
         reading: Direction::Ascending,
         offers: &[],
@@ -311,6 +336,7 @@ pub(crate) fn tracks_sorted(this: &RootView, cx: &Context<RootView>) -> Sorted {
     let sorting = this.library.read(cx).sorting();
 
     Sorted {
+        number: Sortable::Number,
         by: track_column(sorting.tracks),
         reading: sorting.tracks_read,
         offers: TRACK_COLUMNS,
@@ -328,8 +354,31 @@ pub(crate) fn tracks_sorted(this: &RootView, cx: &Context<RootView>) -> Sorted {
     }
 }
 
+pub(crate) fn favourites_sorted(this: &RootView, cx: &Context<RootView>) -> Sorted {
+    let sorting = this.library.read(cx).sorting();
+
+    Sorted {
+        number: Sortable::Marked,
+        by: favourite_column(sorting.favourites),
+        reading: sorting.favourites_read,
+        offers: FAVOURITE_COLUMNS,
+        saying: COLUMN_HINT,
+        press: |this, column, cx| {
+            let wanted = track_order(column);
+            this.library.update(cx, |library, cx| {
+                if library.sorting().favourites == wanted {
+                    library.read_favourites(library.sorting().favourites_read.flipped(), cx);
+                } else {
+                    library.order_favourites(wanted, cx);
+                }
+            });
+        },
+    }
+}
+
 pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
     Sorted {
+        number: Sortable::Number,
         by: row_column(this.row_order),
         reading: this.row_reading,
         offers: ROW_COLUMNS,
@@ -352,6 +401,7 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
 
 pub(crate) fn queue_sorted(this: &RootView) -> Sorted {
     Sorted {
+        number: Sortable::Number,
         by: row_column(this.queue_order),
         reading: this.queue_reading,
         offers: ROW_COLUMNS,
@@ -398,6 +448,22 @@ mod tests {
                 order.named()
             );
         }
+    }
+
+    #[test]
+    fn every_column_the_favourites_offer_is_held_by_the_order_it_puts_the_rows_in() {
+        for column in FAVOURITE_COLUMNS {
+            assert_eq!(favourite_column(track_order(*column)), Some(*column));
+        }
+    }
+
+    #[test]
+    fn favourites_open_in_the_order_they_were_marked_newest_first() {
+        let sorting = crate::models::Sorting::default();
+
+        assert_eq!(sorting.favourites, SortOrder::Favourited);
+        assert_eq!(sorting.favourites_read, Direction::Descending);
+        assert_eq!(favourite_column(sorting.favourites), Some(Sortable::Marked));
     }
 
     #[test]
