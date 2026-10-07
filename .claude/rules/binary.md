@@ -87,8 +87,11 @@ gives them no type). Decoders: `audio.md`.
   echo via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
   `signals::leave` (restores first), and the first `KeyAtATime` installs a panic hook restoring the
-  modes (via `try_lock`). `input::keys` reads what one terminal read holds: an Escape ending the
-  read is lone (cancels the typed line), one with more behind opens an arrow or Alt sequence. A
+  modes (via `try_lock`). `input::keys` reads byte by byte with the escape state kept across reads
+  (`Keyed::escaping`): an Escape cancels the typed line; `ESC [` reads a whole control sequence
+  through its parameters to the final byte (Ctrl or Shift with an arrow is the arrow; F5 to F12,
+  Delete and the rest are nothing), `ESC O` one byte more (F1 to F4); a key after a lone Escape is
+  that key (`a_key_sending_a_longer_sequence_is_read_whole_and_leaves_nothing_typed`). A
   digit or `:` starts a line read through the `parse` a piped line uses. With stdout a terminal,
   `readout::Readout` redraws one line each 500 ms sample (`HEARD_SAMPLE`) and after every key,
   cleared before other output, cut by display width with `…` to a column short of the terminal's

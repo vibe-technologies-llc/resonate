@@ -46,6 +46,8 @@ pub const KEYS: &str = "\
 
 const ESCAPE: u8 = 0x1b;
 const INTRODUCER: u8 = b'[';
+const SINGLE_SHIFT: u8 = b'O';
+const FINAL_BYTES: std::ops::RangeInclusive<u8> = 0x40..=0x7e;
 const UP: u8 = b'A';
 const DOWN: u8 = b'B';
 const RIGHT: u8 = b'C';
@@ -237,31 +239,49 @@ fn listening(read: impl FnOnce(Sender<Pressed>) + Send + 'static) -> Receiver<Pr
 #[derive(Default)]
 struct Keyed {
     typing: Option<String>,
+    escaping: Option<Escaping>,
+}
+
+#[derive(Clone, Copy)]
+enum Escaping {
+    Escaped,
+    ControlSequence,
+    SingleShift,
 }
 
 impl Keyed {
     fn read(&mut self, read: &[u8]) -> Vec<Pressed> {
-        let mut rest = read.iter().copied();
-        let mut pressed = Vec::new();
-        while let Some(byte) = rest.next() {
-            pressed.extend(self.pressed(byte, &mut rest));
-        }
-        pressed
+        read.iter().flat_map(|byte| self.pressed(*byte)).collect()
     }
 
-    fn pressed(&mut self, byte: u8, rest: &mut impl Iterator<Item = u8>) -> Vec<Pressed> {
+    fn pressed(&mut self, byte: u8) -> Vec<Pressed> {
+        match self.escaping.take() {
+            Some(Escaping::Escaped) if byte == INTRODUCER => {
+                self.escaping = Some(Escaping::ControlSequence);
+                return Vec::new();
+            }
+            Some(Escaping::Escaped) if byte == SINGLE_SHIFT => {
+                self.escaping = Some(Escaping::SingleShift);
+                return Vec::new();
+            }
+            Some(Escaping::ControlSequence) if !FINAL_BYTES.contains(&byte) => {
+                self.escaping = Some(Escaping::ControlSequence);
+                return Vec::new();
+            }
+            Some(Escaping::ControlSequence | Escaping::SingleShift) => {
+                return arrowed(byte).map(Pressed::Acted).into_iter().collect();
+            }
+            Some(Escaping::Escaped) | None => {}
+        }
+
         if byte == ESCAPE {
-            let cancelled = self.typing.take().map(|_| Pressed::Typing(String::new()));
-            let after = rest.next();
-            if after == Some(INTRODUCER) {
-                let arrow = rest.next().and_then(arrowed).map(Pressed::Acted);
-                return cancelled.into_iter().chain(arrow).collect();
-            }
-            let mut pressed: Vec<Pressed> = cancelled.into_iter().collect();
-            if let Some(after) = after {
-                pressed.extend(self.pressed(after, rest));
-            }
-            return pressed;
+            self.escaping = Some(Escaping::Escaped);
+            return self
+                .typing
+                .take()
+                .map(|_| Pressed::Typing(String::new()))
+                .into_iter()
+                .collect();
         }
 
         if let Some(typed) = self.typing.as_mut() {
@@ -457,6 +477,26 @@ mod tests {
                 Pressed::Acted(Action::VolumeBy(VOLUME_STEP)),
                 Pressed::Acted(Action::VolumeBy(-VOLUME_STEP)),
             ]
+        );
+    }
+
+    #[test]
+    fn a_key_sending_a_longer_sequence_is_read_whole_and_leaves_nothing_typed() {
+        assert_eq!(
+            keyed(b"\x1b[1;5C\x1b[1;2D"),
+            vec![
+                Pressed::Acted(Action::SeekForward(SEEK_STEP)),
+                Pressed::Acted(Action::SeekBack(SEEK_STEP)),
+            ]
+        );
+        assert!(keyed(b"\x1b[15~\x1b[24~\x1bOP\x1b[3~").is_empty());
+        assert_eq!(keyed(b"\x1b[17~n"), vec![Pressed::Acted(Action::Next)]);
+
+        let mut split = Keyed::default();
+        assert!(split.read(b"\x1b[1").is_empty());
+        assert_eq!(
+            split.read(b";5A"),
+            vec![Pressed::Acted(Action::VolumeBy(VOLUME_STEP))]
         );
     }
 
