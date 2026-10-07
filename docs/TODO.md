@@ -6,9 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A poll killed while filing a streamed delivery into the music folder leaves its hidden
-  `.resonate-delivery` file (up to 4 GiB); nothing sweeps it as the vault, organise and take-in do
-  for theirs
 - The queue's type-ahead matches titles read when the queue last changed (names keyed by queue
   revision alone): a retagged or enriched queued track is still found by its old name
 - The analysis pane remembers a refused or unreachable recognition for the session: a track looked

@@ -29,6 +29,7 @@ use crate::{
     Error, Library, Result, ScanOptions, Want,
     filed::{self, Filed, Unfiled},
     linked::LENGTHS_AGREE_WITHIN,
+    organise,
     pass::{Cancelling, PassHandle, PassKind, PollHandle},
 };
 
@@ -1102,6 +1103,7 @@ fn run(
     options: PollOptions,
     progress: &PollProgress,
 ) -> Result<PollSummary> {
+    organise::sweep_what_a_killed_process_staged(library);
     scanned_and_paired(library, &[])?;
     let lanes = Lanes {
         library,

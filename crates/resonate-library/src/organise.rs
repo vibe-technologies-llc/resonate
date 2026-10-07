@@ -27,6 +27,7 @@ use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, param
 use crate::{
     Library, StoreOp,
     error::{Error, FieldName, LayoutFault, MoveOp, Result},
+    filed,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
     scan, store, volumes,
@@ -2080,11 +2081,11 @@ fn staged_left(library: &Library, staged: &Path) {
     }
 }
 
-fn swept(staged: &Path) -> io::Result<()> {
+pub(crate) fn swept(staged: &Path) -> io::Result<()> {
     let names_a_staging_file = staged
         .file_name()
         .and_then(OsStr::to_str)
-        .is_some_and(|name| name.ends_with(STAGED));
+        .is_some_and(|name| name.ends_with(STAGED) || name.ends_with(filed::STAGED_SUFFIX));
     match fs::symlink_metadata(staged) {
         Ok(held) if held.is_file() && names_a_staging_file => fs::remove_file(staged),
         Ok(_) => Ok(()),
@@ -2094,6 +2095,20 @@ fn swept(staged: &Path) -> io::Result<()> {
 }
 
 fn sweep_what_a_killed_run_staged(library: &Library) {
+    sweep_what_was_staged(library, Sparing::Others);
+}
+
+pub(crate) fn sweep_what_a_killed_process_staged(library: &Library) {
+    sweep_what_was_staged(library, Sparing::OthersAndThisProcess);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sparing {
+    Others,
+    OthersAndThisProcess,
+}
+
+fn sweep_what_was_staged(library: &Library, sparing: Sparing) {
     let left = match library.staged_writes() {
         Ok(left) => left,
         Err(error) => {
@@ -2103,10 +2118,14 @@ fn sweep_what_a_killed_run_staged(library: &Library) {
     };
 
     for write in left {
-        let still_writing = write.pid != process::id()
-            && Path::new(RUNNING_PROCESSES)
+        let ours = write.pid == process::id();
+        let still_writing = if ours {
+            sparing == Sparing::OthersAndThisProcess
+        } else {
+            Path::new(RUNNING_PROCESSES)
                 .join(write.pid.to_string())
-                .exists();
+                .exists()
+        };
         if still_writing {
             continue;
         }
@@ -3739,6 +3758,37 @@ mod tests {
             .map(|write| write.path)
             .collect();
         assert_eq!(noted, vec![still_writing]);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn what_a_killed_poll_staged_in_the_music_folder_is_taken_away_by_the_next_poll() {
+        let folder = a_folder_of_its_own();
+        let catalog = folder.join("library.db");
+        let library = Library::open(&catalog).expect("a catalog");
+
+        let killed = folder.join(format!(".01 Echoes.flac.7-0.{}", filed::STAGED_SUFFIX));
+        let this_process = folder.join(format!(".02 Fearless.flac.8-0.{}", filed::STAGED_SUFFIX));
+        for left in [&killed, &this_process] {
+            fs::write(left, b"part of a stream").expect("a writable folder");
+            library.staging(left).expect("it is noted");
+        }
+        Connection::open(&catalog)
+            .expect("the same catalog")
+            .execute(
+                "UPDATE staged_writes SET pid = ?2 WHERE path = ?1",
+                params![store::path_text(&killed).expect("a path"), u32::MAX],
+            )
+            .expect("the pid a poll wrote under");
+
+        sweep_what_a_killed_process_staged(&library);
+
+        assert!(!killed.exists(), "what a killed poll staged is still there");
+        assert!(
+            this_process.exists(),
+            "a delivery this process is still writing lost its staging file"
+        );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

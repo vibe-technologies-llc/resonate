@@ -15,11 +15,11 @@ use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming
 
 use crate::{
     Error, Library, Want,
-    organise::{Layout, Named, Naming},
+    organise::{self, Layout, Named, Naming},
     scan, store, take_in,
 };
 
-const STAGED_SUFFIX: &str = "resonate-delivery";
+pub(crate) const STAGED_SUFFIX: &str = "resonate-delivery";
 const LARGEST_FILED: u64 = 4 * 1024 * 1024 * 1024;
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
@@ -102,8 +102,9 @@ pub(crate) fn filed(
     fs::create_dir_all(parent)?;
 
     let staged = staged_beside(&whole);
+    library.staging(&staged).map_err(Unfiled::Catalog)?;
     let landed = staged_from(reader, &staged).and_then(|()| placed(&staged, &whole));
-    let _ = fs::remove_file(&staged);
+    staged_away(library, &staged);
     let path = landed?;
 
     if let Err(unfiled) = weighed(&path, want) {
@@ -145,6 +146,19 @@ fn heard_whole(location: &MediaLocation) -> Option<(Frames, SampleRate)> {
         match decoder.next_block(&mut block).ok()? {
             DecodeStatus::Decoded => frames += block.frames() as u64,
             DecodeStatus::EndOfStream => return Some((Frames(frames), info.spec.rate)),
+        }
+    }
+}
+
+fn staged_away(library: &Library, staged: &Path) {
+    match organise::swept(staged) {
+        Ok(()) => {
+            if let Err(error) = library.staged_away(staged) {
+                tracing::warn!(%error, "a delivery's staging file taken away is still noted as left behind");
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, staged = %staged.display(), "a delivery's staging file could not be taken away");
         }
     }
 }
