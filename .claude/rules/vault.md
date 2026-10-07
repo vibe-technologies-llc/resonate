@@ -212,7 +212,7 @@ gaining `Vault`, a `vault_objects` table; changes are `MIGRATIONS` steps (`libra
   only where the survivor holds neither: never both, never a source without the picture.
 - **A cover moves into the vault once per album**: `enriched::vault_the_cover` clears `cover_art` in
   the statement writing `cover_path`, only where `cover_art` is still the bytes the import encoded.
-  `land_archive_cover` and the scan's `store::cover` carry `AND cover_path IS NULL`. Import asks
+  `land_archive_cover` and the scan's `store::land_covers` carry `AND cover_path IS NULL`. Import asks
   `cover_the_vault_lacks`, not `cover_art`; a cover `image` cannot read, or whose format code names
   nothing (`UntypedCoverArt`, `UnknownImageFormat`), is a warning and a `covers_passed` count, not
   the end of the import.

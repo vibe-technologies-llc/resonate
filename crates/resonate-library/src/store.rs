@@ -205,6 +205,66 @@ pub struct Cache {
     albums: HashMap<String, Grouped>,
     covered: AHashSet<i64>,
     sorted_albums: AHashSet<i64>,
+    owed_covers: Vec<(i64, PathBuf)>,
+}
+
+impl Cache {
+    pub fn take_owed_covers(&mut self) -> OwedCovers {
+        OwedCovers(std::mem::take(&mut self.owed_covers))
+    }
+}
+
+pub struct OwedCovers(Vec<(i64, PathBuf)>);
+
+pub struct ReadCovers(Vec<(i64, CoverArt)>);
+
+impl OwedCovers {
+    pub fn read(self) -> ReadCovers {
+        let mut read: Vec<(i64, CoverArt)> = Vec::new();
+        for (album, path) in self.0 {
+            if read.iter().any(|(held, _)| *held == album) {
+                continue;
+            }
+            match probe_cover_art(&Sources::local(), &MediaLocation::local(&path)) {
+                Ok(Some(art)) => read.push((album, art)),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::debug!(%error, path = %path.display(), "no cover art could be read");
+                }
+            }
+        }
+        ReadCovers(read)
+    }
+}
+
+impl ReadCovers {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+pub fn land_covers(tx: &Transaction<'_>, cache: &mut Cache, read: ReadCovers) -> Result<()> {
+    for (album, art) in read.0 {
+        let bettered = held_picture(tx, album, Some(CoverSource::Archive))?
+            .is_some_and(|archived| betters(&archived, &art));
+        if !cover_present(tx, album)? && !bettered {
+            cached(
+                tx,
+                "UPDATE albums SET cover_art = ?1, cover_format = ?2, cover_source = ?3
+                  WHERE id = ?4 AND cover_path IS NULL",
+                params![
+                    art.bytes,
+                    image_format_code(art.format),
+                    cover_source_code(CoverSource::File),
+                    album
+                ],
+            )
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+        }
+        cache.covered.insert(album);
+    }
+    Ok(())
 }
 
 pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
@@ -1521,7 +1581,7 @@ fn album(
         note_the_album_tagged_sort(tx, id, sort)?;
     }
 
-    if extract_cover_art && !cache.covered.contains(&id) && cover(tx, id, record)? {
+    if extract_cover_art && !cache.covered.contains(&id) && owe_a_cover(tx, cache, id, record)? {
         cache.covered.insert(id);
     }
     Ok(id)
@@ -1841,52 +1901,32 @@ pub(crate) fn held_picture(
     }))
 }
 
-fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool> {
-    let present = queried(
+fn cover_present(tx: &Transaction<'_>, album: i64) -> Result<bool> {
+    queried(
         tx,
         "SELECT (cover_art IS NOT NULL AND cover_source = ?2) OR cover_path IS NOT NULL
                FROM albums WHERE id = ?1",
         params![album, cover_source_code(CoverSource::File)],
         |row| row.get::<_, bool>(0),
     )
-    .map_err(|source| Error::store(StoreOp::Query, source))?;
-    if present {
+    .optional()
+    .map(|present| present.unwrap_or(true))
+    .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn owe_a_cover(
+    tx: &Transaction<'_>,
+    cache: &mut Cache,
+    album: i64,
+    record: &TrackRecord,
+) -> Result<bool> {
+    if cover_present(tx, album)? {
         return Ok(true);
     }
-
-    if !record.embeds_a_picture {
-        return Ok(false);
+    if record.embeds_a_picture {
+        cache.owed_covers.push((album, record.path.clone()));
     }
-
-    let art = match probe_cover_art(&Sources::local(), &MediaLocation::local(&record.path)) {
-        Ok(Some(art)) => art,
-        Ok(None) => return Ok(false),
-        Err(error) => {
-            tracing::debug!(%error, path = %record.path.display(), "no cover art could be read");
-            return Ok(false);
-        }
-    };
-    if held_picture(tx, album, Some(CoverSource::Archive))?
-        .is_some_and(|archived| betters(&archived, &art))
-    {
-        return Ok(true);
-    }
-
-    cached(
-        tx,
-        "UPDATE albums SET cover_art = ?1, cover_format = ?2, cover_source = ?3
-          WHERE id = ?4 AND cover_path IS NULL",
-        params![
-            art.bytes,
-            image_format_code(art.format),
-            cover_source_code(CoverSource::File),
-            album
-        ],
-    )
-    .map(drop)
-    .map_err(|source| Error::store(StoreOp::Update, source))?;
-
-    Ok(true)
+    Ok(false)
 }
 
 const RETAGGED: &str = "(NOT (tracks.named_by_its_stem AND excluded.named_by_its_stem)
@@ -2394,6 +2434,55 @@ mod tests {
             named_by_its_stem: false,
             packets: None,
         }
+    }
+
+    #[test]
+    fn a_cover_is_owed_inside_the_write_and_read_only_once_it_is_over() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        let tx = connection.transaction().expect("a transaction");
+        let mut cache = Cache::default();
+        let pictured = |path: &str| TrackRecord {
+            path: PathBuf::from(path),
+            embeds_a_picture: true,
+            ..dated(None)
+        };
+
+        let id = album(
+            &tx,
+            &mut cache,
+            ALBUM,
+            None,
+            None,
+            &pictured("/nowhere/one.flac"),
+            true,
+        )
+        .expect("the album is stored");
+        album(
+            &tx,
+            &mut cache,
+            ALBUM,
+            None,
+            None,
+            &pictured("/nowhere/two.flac"),
+            true,
+        )
+        .expect("the album is stored");
+        album(&tx, &mut cache, ALBUM, None, None, &dated(None), true).expect("the album is stored");
+        let owed = cache.take_owed_covers();
+
+        assert_eq!(
+            owed.0,
+            [
+                (id, PathBuf::from("/nowhere/one.flac")),
+                (id, PathBuf::from("/nowhere/two.flac"))
+            ]
+        );
+        assert!(cache.take_owed_covers().0.is_empty());
+        let read = owed.read();
+        assert!(read.is_empty(), "a file that is not there gave a cover");
+        land_covers(&tx, &mut cache, read).expect("nothing to land lands");
+        assert!(!cache.covered.contains(&id));
     }
 
     fn year_of(scanned: [Option<&str>; 2]) -> Option<i64> {

@@ -59,8 +59,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - Dragging files from a file manager stats every path on entering and dropping; the drop overlay and
   Library settings stat the music folder every frame: a folder on a stalled network mount freezes
   the window
-- A first scan reads each album's embedded cover inside the transaction holding the catalog's write
-  lock: every other write waits behind file reads
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first; the Xing table of
   contents is never used
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU

@@ -1763,6 +1763,10 @@ fn commit(
             }
             Ok(())
         })?;
+        let covers = cache.take_owed_covers().read();
+        if !covers.is_empty() {
+            inner.write(|transaction| store::land_covers(transaction, cache, covers))?;
+        }
     }
 
     let counted = batch.iter().filter(|outcome| outcome.is_counted()).count();

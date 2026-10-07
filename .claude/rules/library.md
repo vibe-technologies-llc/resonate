@@ -696,7 +696,7 @@ rows read via `Player::media` like any unscanned row.
   (`tracks.album_id` is the only membership): four moving `UPDATE`s, one filling `UPDATE`, one
   `DELETE`.
 - **An album takes the cover and year any track carries, not the first's.** `Cache::covered` holds
-  albums holding a picture, so `store::cover` is asked per track until one lands. Reads
+  albums holding a picture, so `store::owe_a_cover` is asked per track until one lands. Reads
   `cover_art IS NOT NULL AND cover_source = 0` (or `cover_path`) first: file's own picture costs a
   query, no probe; archive's (`CoverSource::Archive`, code 1) is probed again, file's replaces it
   (deliberate vs stand-in). **A thumbnail isn't deliberate**: where `store::betters` finds the
@@ -705,10 +705,15 @@ rows read via `Player::media` like any unscanned row.
   carries it; a cache hit whose album has none runs `fill_year` instead of skipping the upsert that
   would have coalesced it. `store::year` reads separator-less dates (`19750601`, `197506` = 1975;
   formerly only `1975-06-01`, `1975`).
-- **A file's picture is learnt on the open its tags came off; the picture is read at commit.** Scan
-  uses `probe_scanned` (`Scanned { info, carries_a_picture, packets }`);
-  `TrackRecord::embeds_a_picture` carries it; `store::cover` reopens only where there's something to
-  find. Removed: a `probe_cover_art` per track of an album embedding none (uncovered albums never
+- **A file's picture is learnt on the open its tags came off; the picture is read after the
+  commit, outside the write lock.** Scan uses `probe_scanned` (`Scanned { info, carries_a_picture,
+  packets }`); `TrackRecord::embeds_a_picture` carries it. Inside the batch's transaction
+  `store::owe_a_cover` reads nothing: it notes `(album, path)` in `Cache::owed_covers` where the
+  album holds no file picture; once the batch commits, `OwedCovers::read` opens the owed files
+  (first one answering per album) with no lock held, and `store::land_covers` writes what was read
+  in a second short transaction, weighing the archive's picture and the album's standing again
+  there (`a_cover_is_owed_inside_the_write_and_read_only_once_it_is_over`): every other write waits
+  on a batch's rows, never on file reads. Removed: a `probe_cover_art` per track of an album embedding none (uncovered albums never
   set `Cache::covered`: every track). An album that *does* embed one costs one extra open at its
   first committed row, deliberately: carrying bytes out of the probe was measured and rejected
   (copy per file, claimed once per album key: 1 200-track, 120-album scan 41 MiB to 111 MiB peak
