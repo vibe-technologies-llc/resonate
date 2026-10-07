@@ -52,8 +52,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   (zed #62455)
 
 ## Keyboard and accessibility
-- The album and artist strips on a search's *Top results*, held and found, are not reached by the
-  keys; only its songs are
 - Heading buttons and every row control (favourite star, ✕, pin) are no tab stops; the seek and
   volume rails are reached only by their keys
 - A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row alone;

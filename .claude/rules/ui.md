@@ -182,11 +182,17 @@ is never named.
   - `Listed::Albums`: reach keys step albums in reading order, a page = as many whole grid rows as
     shown; `show_row` scrolls the grid row holding the album; `enter` opens it; reached cell wears
     `reached_ring` (accent border over the cover, costing no room).
-  - *Top results* songs are one run, `Listed::Top`: held songs drawn (`SONGS_AT_THE_TOP`), then
-    songs found beyond the library (`FOUND_AT_THE_TOP`); `down` steps from the last held onto the
-    first found, `enter` there wants it as a press does
-    (`every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard`; it was one or the
-    other: found rows reachable only where nothing was held).
+  - *Top results* is one run, `Listed::Top`, in the order the page draws it: held artists
+    (`STRIP_AT_MOST`), artists not held, held songs (`SONGS_AT_THE_TOP`), songs found beyond the
+    library (`FOUND_AT_THE_TOP`), held albums, albums not held. `search::TopRun` is the arithmetic
+    (`at` a row's `TopEntry`, `row_of` an entry's row, `len`); `RootView::press_at_the_top` presses
+    what `enter` reaches as a press would (open the artist or album, land and open one not held,
+    play a song, want a found one); a reached cell wears `reached_ring` round the whole cell
+    (`at_the_top`). `show_row` sets `reached_unseen`, and the reached element's
+    `kit::brought_into_view_within` moves the page's scroll down and the strip's across
+    (`shelf_scrolls`) just far enough
+    (`the_artists_songs_and_albums_on_the_top_results_are_one_run_the_keys_walk_and_press`,
+    `every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard`).
   - `Listed::Favourites`, `Missing`, `Suggested` carry the reach into favourite tracks, Missing's
     rows, an opened suggestion's rows: `enter` plays a favourite/suggested track; on a Missing row
     opens the album it is short of or the artist whose release it is (a disc heading answers

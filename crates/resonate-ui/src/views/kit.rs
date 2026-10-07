@@ -909,27 +909,52 @@ pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElemen
 }
 
 pub(crate) fn brought_into_view(scroll: ScrollHandle, asked: Rc<Cell<bool>>) -> impl IntoElement {
+    brought_into_view_within(scroll, None, asked)
+}
+
+pub(crate) fn brought_into_view_within(
+    down: ScrollHandle,
+    across: Option<ScrollHandle>,
+    asked: Rc<Cell<bool>>,
+) -> impl IntoElement {
     canvas(
         move |bounds, window, _| {
             if !asked.replace(false) {
                 return;
             }
-            let seen = scroll.bounds();
-            let moved = if bounds.top() < seen.top() {
-                seen.top() - bounds.top()
-            } else if bounds.bottom() > seen.bottom() {
-                (seen.bottom() - bounds.bottom()).max(seen.top() - bounds.top())
-            } else {
-                return;
-            };
-            let offset = scroll.offset();
-            scroll.set_offset(point(offset.x, offset.y + moved));
-            window.refresh();
+            let seen = down.bounds();
+            let lowered = moved_into(bounds.top(), bounds.bottom(), seen.top(), seen.bottom());
+            let slid = across.as_ref().and_then(|across| {
+                let seen = across.bounds();
+                moved_into(bounds.left(), bounds.right(), seen.left(), seen.right())
+                    .map(|moved| (across, moved))
+            });
+            if let Some(moved) = lowered {
+                let offset = down.offset();
+                down.set_offset(point(offset.x, offset.y + moved));
+            }
+            if let Some((across, moved)) = slid {
+                let offset = across.offset();
+                across.set_offset(point(offset.x + moved, offset.y));
+            }
+            if lowered.is_some() || slid.is_some() {
+                window.refresh();
+            }
         },
         |_, _, _, _| {},
     )
     .absolute()
     .inset_0()
+}
+
+fn moved_into(start: Pixels, end: Pixels, seen_start: Pixels, seen_end: Pixels) -> Option<Pixels> {
+    if start < seen_start {
+        Some(seen_start - start)
+    } else if end > seen_end {
+        Some((seen_end - end).max(seen_start - start))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn action_row() -> Div {

@@ -320,13 +320,13 @@ impl RootView {
     fn albums_found_beyond(&self, cx: &mut Context<Self>) -> Option<Div> {
         let found = self.library.read(cx).albums_found();
         (self.search_in_front(cx).is_some() && !found.is_empty())
-            .then(|| self.albums_found_strip(&found, cx))
+            .then(|| self.albums_found_strip(&found, None, cx))
     }
 
     fn artists_found_beyond(&self, cx: &mut Context<Self>) -> Option<Div> {
         let found = self.library.read(cx).artists_found();
         (self.search_in_front(cx).is_some() && !found.is_empty())
-            .then(|| self.artists_found_strip(&found, cx))
+            .then(|| self.artists_found_strip(&found, None, cx))
     }
 
     pub(crate) fn grid_columns(&self) -> usize {
@@ -2489,18 +2489,21 @@ impl RootView {
         cell.cursor_pointer()
             .names(OPEN_ALBUM_NOT_HELD_HINT)
             .on_click(cx.listener(move |this, _, _, cx| {
-                let landing = group.clone();
-                let landed = this
-                    .library
-                    .update(cx, |library, cx| library.land_album_not_held(landing, cx));
-                cx.spawn(async move |this, cx| {
-                    let Some(album) = landed.await else {
-                        return;
-                    };
-                    let _ = this.update(cx, |this, cx| this.opened(Selection::Album(album), cx));
-                })
-                .detach();
+                this.open_album_not_held(group.clone(), cx);
             }))
+    }
+
+    pub(crate) fn open_album_not_held(&mut self, group: Mbid, cx: &mut Context<Self>) {
+        let landed = self
+            .library
+            .update(cx, |library, cx| library.land_album_not_held(group, cx));
+        cx.spawn(async move |this, cx| {
+            let Some(album) = landed.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| this.opened(Selection::Album(album), cx));
+        })
+        .detach();
     }
 
     pub(crate) fn album_shelf(
@@ -3754,7 +3757,7 @@ mod tests {
             views::{
                 reorder::{Listed, Shift},
                 root::{Deleting, Pane},
-                search::SearchShows,
+                search::{SearchShows, TopEntry, TopRun},
             },
         };
 
@@ -4861,13 +4864,71 @@ mod tests {
                 let library = root.library.read(cx);
                 !library.listing().is_empty() && !library.found().is_empty()
             });
+            let found = driven
+                .read(|root, cx| TopRun::of(root.library.read(cx)).row_of(TopEntry::Found(0)));
             driven.focus(|root| &root.search);
-            driven.cx.simulate_keystrokes("down down");
+            for _ in 0..=found {
+                driven.cx.simulate_keystrokes("down");
+            }
             driven.settle();
 
-            assert!(driven.read(|root, _| root.reaches(Shift::Listing(Listed::Top), 1)));
+            assert!(driven.read(|root, _| root.reaches(Shift::Listing(Listed::Top), found)));
             driven.cx.simulate_keystrokes("enter");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+        }
+
+        #[gpui::test]
+        fn the_artists_songs_and_albums_on_the_top_results_are_one_run_the_keys_walk_and_press(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tagged(
+                "echoes.wav",
+                1,
+                &[
+                    (b"INAM", "Echoes"),
+                    (b"IART", "Echoes"),
+                    (b"IPRD", "Echoes"),
+                ],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::opened_in(cx, library, &folder);
+            driven.click("tab-tracks");
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+            });
+            driven.until(|_, cx| {
+                let library = model.read(cx);
+                !library.listing().is_empty()
+                    && !library.albums().is_empty()
+                    && !library.artists().is_empty()
+            });
+            let run = driven.read(|root, cx| TopRun::of(root.library.read(cx)));
+            let top = Shift::Listing(Listed::Top);
+
+            assert_eq!(run.len(), 3);
+            driven.focus(|root| &root.search);
+            driven.cx.simulate_keystrokes("down");
+            driven.settle();
+            assert!(
+                driven.read(|root, _| root.reaches(top, 0)),
+                "the artist is not reached first"
+            );
+            driven.cx.simulate_keystrokes("down down");
+            driven.settle();
+            assert!(
+                driven.read(|root, _| root.reaches(top, 2)),
+                "the album is not reached last"
+            );
+
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+            assert!(matches!(
+                driven.read(|_, cx| model.read(cx).selection()),
+                Selection::Album(_)
+            ));
         }
 
         #[gpui::test]

@@ -67,7 +67,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{Named, QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
-        search::{self, SearchShows},
+        search::{self, SearchShows, TopEntry, TopRun},
         settings::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
         },
@@ -2248,22 +2248,7 @@ impl RootView {
                 self.play(&tracks, row, cx);
             }
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
-            Shift::Listing(Listed::Top) => {
-                let library = self.library.read(cx);
-                let held = library.listing().len().min(search::SONGS_AT_THE_TOP);
-                if row >= held {
-                    let Some(found) = library.found().get(row - held).cloned() else {
-                        return;
-                    };
-                    self.library
-                        .update(cx, |library, cx| library.want_found(found, cx));
-                    return;
-                }
-                let Some((played, start)) = library.played_from(row) else {
-                    return;
-                };
-                self.play_the_listing_from(&played, start, window, cx);
-            }
+            Shift::Listing(Listed::Top) => self.press_at_the_top(row, window, cx),
             Shift::Listing(Listed::Suggested) => {
                 let Some(tracks) = self
                     .library
@@ -2419,6 +2404,50 @@ impl RootView {
         });
     }
 
+    fn press_at_the_top(&mut self, row: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let library = self.library.read(cx);
+        let Some(entry) = TopRun::of(library).at(row) else {
+            return;
+        };
+        match entry {
+            TopEntry::Artist(at) => {
+                if let Some(artist) = library.artists().get(at).map(|held| held.id) {
+                    self.opened(Selection::Artist(artist), cx);
+                }
+            }
+            TopEntry::ArtistFound(at) => {
+                if let Some(found) = library.artists_found().get(at).cloned() {
+                    self.open_artist_found(found, cx);
+                }
+            }
+            TopEntry::Song(at) => {
+                if let Some((played, start)) = library.played_from(at) {
+                    self.play_the_listing_from(&played, start, window, cx);
+                }
+            }
+            TopEntry::Found(at) => {
+                if let Some(found) = library.found().get(at).cloned() {
+                    self.library
+                        .update(cx, |library, cx| library.want_found(found, cx));
+                }
+            }
+            TopEntry::Album(at) => {
+                if let Some(album) = library.albums().get(at).map(|held| held.id) {
+                    self.opened(Selection::Album(album), cx);
+                }
+            }
+            TopEntry::AlbumFound(at) => {
+                if let Some(group) = library
+                    .albums_found()
+                    .get(at)
+                    .map(|found| found.group.clone())
+                {
+                    self.open_album_not_held(group, cx);
+                }
+            }
+        }
+    }
+
     pub(crate) fn reach_further(&mut self, drawn_to: usize, held: usize, cx: &mut Context<Self>) {
         self.library.update(cx, |library, cx| {
             library.reach_further(drawn_to, held, cx);
@@ -2446,10 +2475,7 @@ impl RootView {
     fn reachable(&self, cx: &App) -> Option<(Shift, usize)> {
         match self.search_in_front(cx) {
             Some(SearchShows::Top) => {
-                let library = self.library.read(cx);
-                let songs = library.listing().len().min(search::SONGS_AT_THE_TOP);
-                let found = library.found().len().min(search::FOUND_AT_THE_TOP);
-                let rows = songs + found;
+                let rows = TopRun::of(self.library.read(cx)).len();
                 return (rows > 0).then_some((Shift::Listing(Listed::Top), rows));
             }
             Some(SearchShows::Songs | SearchShows::Albums | SearchShows::Artists) | None => {}
@@ -2582,8 +2608,9 @@ impl RootView {
                 self.suggestion_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
-            Shift::Listing(Listed::Top) => {}
-            Shift::Listing(Listed::Offered | Listed::Heard) => self.reached_unseen.set(true),
+            Shift::Listing(Listed::Top | Listed::Offered | Listed::Heard) => {
+                self.reached_unseen.set(true);
+            }
         }
     }
 

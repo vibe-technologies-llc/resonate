@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
     rgb, transparent_black,
@@ -5,11 +7,11 @@ use gpui::{
 use resonate_library::{AlbumFound, ArtistFound, FollowedLink, Linked};
 
 use crate::{
-    Beyond, Notice, Selection, format,
+    Beyond, LibraryModel, Notice, Selection, format,
     icons::Icon,
     theme, toast,
     views::{
-        browser::{Plays, Rowed},
+        browser::{Plays, Rowed, reached_ring},
         hint::Names,
         kit::{self, Found as _, Tone},
         listing,
@@ -61,6 +63,80 @@ const LOOKING_THE_ARTIST_UP: &str = "Looking up the artist that link names…";
 const NO_ARTIST_AT_THE_LINK: &str = "No service could tell which artist that link names";
 
 const FOLLOWING_THE_LINK: &str = "look up what that link names";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TopEntry {
+    Artist(usize),
+    ArtistFound(usize),
+    Song(usize),
+    Found(usize),
+    Album(usize),
+    AlbumFound(usize),
+}
+
+type Entered = fn(usize) -> TopEntry;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TopRun {
+    artists: usize,
+    artists_found: usize,
+    songs: usize,
+    found: usize,
+    albums: usize,
+    albums_found: usize,
+}
+
+impl TopRun {
+    pub(crate) fn of(library: &LibraryModel) -> Self {
+        Self {
+            artists: library.artists().len().min(STRIP_AT_MOST),
+            artists_found: library.artists_found().len(),
+            songs: library.listing().len().min(SONGS_AT_THE_TOP),
+            found: library.found().len().min(FOUND_AT_THE_TOP),
+            albums: library.albums().len().min(STRIP_AT_MOST),
+            albums_found: library.albums_found().len(),
+        }
+    }
+
+    const fn runs(self) -> [(usize, Entered); 6] {
+        [
+            (self.artists, TopEntry::Artist),
+            (self.artists_found, TopEntry::ArtistFound),
+            (self.songs, TopEntry::Song),
+            (self.found, TopEntry::Found),
+            (self.albums, TopEntry::Album),
+            (self.albums_found, TopEntry::AlbumFound),
+        ]
+    }
+
+    pub(crate) fn len(self) -> usize {
+        self.runs().iter().map(|(rows, _)| rows).sum()
+    }
+
+    pub(crate) fn at(self, row: usize) -> Option<TopEntry> {
+        let mut before = 0;
+        for (rows, entry) in self.runs() {
+            if row < before + rows {
+                return Some(entry(row - before));
+            }
+            before += rows;
+        }
+        None
+    }
+
+    pub(crate) const fn row_of(self, wanted: TopEntry) -> usize {
+        let to_songs = self.artists + self.artists_found;
+        let to_albums = to_songs + self.songs + self.found;
+        match wanted {
+            TopEntry::Artist(at) => at,
+            TopEntry::ArtistFound(at) => self.artists + at,
+            TopEntry::Song(at) => to_songs + at,
+            TopEntry::Found(at) => to_songs + self.songs + at,
+            TopEntry::Album(at) => to_albums + at,
+            TopEntry::AlbumFound(at) => to_albums + self.albums + at,
+        }
+    }
+}
 
 struct Told {
     looking: &'static str,
@@ -584,6 +660,7 @@ impl RootView {
         let found = library.found();
         let artists_found = library.artists_found();
         let albums_found = library.albums_found();
+        let run = TopRun::of(library);
         let playing = self.playing_now(cx).track;
         let pane = div()
             .flex()
@@ -625,9 +702,14 @@ impl RootView {
             let cells = artists
                 .iter()
                 .take(STRIP_AT_MOST)
-                .map(|artist| {
-                    self.artist_cell_at(artist, ARTIST_AT_THE_TOP, cx)
-                        .into_any_element()
+                .enumerate()
+                .map(|(at, artist)| {
+                    let cell = self.artist_cell_at(artist, ARTIST_AT_THE_TOP, cx);
+                    self.at_the_top(
+                        cell,
+                        run.row_of(TopEntry::Artist(at)),
+                        Some("search-artist-strip"),
+                    )
                 })
                 .collect();
             sections = sections
@@ -636,27 +718,31 @@ impl RootView {
         }
 
         if !artists_found.is_empty() {
-            sections = sections.child(self.artists_found_strip(&artists_found, cx));
+            sections = sections.child(self.artists_found_strip(&artists_found, Some(run), cx));
         }
 
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
-                let reached = self.reaches(Shift::Listing(Listed::Top), index);
-                rows = rows.child(reorder::marked(
-                    self.track_row(
-                        &tracks,
-                        index,
-                        track,
-                        Rowed {
-                            playing: playing == Some(track.id),
-                            plays: Plays::AsTheListingIsDrawn { in_an_album: false },
-                            reach: self.at_the_reach(Shift::Listing(Listed::Top), index),
-                        },
-                        cx,
-                    ),
-                    reached,
-                ));
+                let row = run.row_of(TopEntry::Song(index));
+                let reached = self.reaches(Shift::Listing(Listed::Top), row);
+                rows = rows.child(
+                    reorder::marked(
+                        self.track_row(
+                            &tracks,
+                            index,
+                            track,
+                            Rowed {
+                                playing: playing == Some(track.id),
+                                plays: Plays::AsTheListingIsDrawn { in_an_album: false },
+                                reach: self.at_the_reach(Shift::Listing(Listed::Top), row),
+                            },
+                            cx,
+                        ),
+                        reached,
+                    )
+                    .when(reached, |row| row.child(self.brought_into_view(None))),
+                );
             }
             sections = sections
                 .child(self.section_heading(Section::Songs, matched.songs, None, cx))
@@ -670,10 +756,13 @@ impl RootView {
                 Beyond::Unreached(_) => UNREACHED,
             };
             let mut rows = div().flex().flex_col();
-            let held_above = tracks.len().min(SONGS_AT_THE_TOP);
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
-                let reached = self.reaches(Shift::Listing(Listed::Top), held_above + index);
-                rows = rows.child(reorder::marked(self.found_row(index, song, cx), reached));
+                let row = run.row_of(TopEntry::Found(index));
+                let reached = self.reaches(Shift::Listing(Listed::Top), row);
+                rows = rows.child(
+                    reorder::marked(self.found_row(index, song, cx), reached)
+                        .when(reached, |row| row.child(self.brought_into_view(None))),
+                );
             }
             sections = sections
                 .child(self.section_heading(Section::Found, found.len(), Some(said), cx))
@@ -684,9 +773,14 @@ impl RootView {
             let cells = albums
                 .iter()
                 .take(STRIP_AT_MOST)
-                .map(|album| {
-                    self.album_cell_at(album, theme::shelf_cover(), cx)
-                        .into_any_element()
+                .enumerate()
+                .map(|(at, album)| {
+                    let cell = self.album_cell_at(album, theme::shelf_cover(), cx);
+                    self.at_the_top(
+                        cell,
+                        run.row_of(TopEntry::Album(at)),
+                        Some("search-album-strip"),
+                    )
                 })
                 .collect();
             sections = sections
@@ -695,7 +789,7 @@ impl RootView {
         }
 
         if !albums_found.is_empty() {
-            sections = sections.child(self.albums_found_strip(&albums_found, cx));
+            sections = sections.child(self.albums_found_strip(&albums_found, Some(run), cx));
         }
 
         pane.child(Scrollbars::of(cx).around(
@@ -754,28 +848,85 @@ impl RootView {
             .children(more)
     }
 
-    pub(crate) fn artists_found_strip(&self, found: &[ArtistFound], cx: &mut Context<Self>) -> Div {
+    pub(crate) fn artists_found_strip(
+        &self,
+        found: &[ArtistFound],
+        in_the_top: Option<TopRun>,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        const STRIP: &str = "search-artists-found-strip";
         let cells = found
             .iter()
-            .map(|artist| {
-                self.artist_found_cell(artist, ARTIST_AT_THE_TOP, cx)
-                    .into_any_element()
+            .enumerate()
+            .map(|(at, artist)| {
+                let cell = self.artist_found_cell(artist, ARTIST_AT_THE_TOP, cx);
+                match in_the_top {
+                    Some(run) => {
+                        self.at_the_top(cell, run.row_of(TopEntry::ArtistFound(at)), Some(STRIP))
+                    }
+                    None => cell.into_any_element(),
+                }
             })
             .collect();
 
-        self.found_strip(ARTISTS_NOT_HELD, "search-artists-found-strip", cells, cx)
+        self.found_strip(ARTISTS_NOT_HELD, STRIP, cells, cx)
     }
 
-    pub(crate) fn albums_found_strip(&self, found: &[AlbumFound], cx: &mut Context<Self>) -> Div {
+    pub(crate) fn albums_found_strip(
+        &self,
+        found: &[AlbumFound],
+        in_the_top: Option<TopRun>,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        const STRIP: &str = "search-albums-found-strip";
         let cells = found
             .iter()
-            .map(|album| {
-                self.album_found_cell(album, theme::shelf_cover(), cx)
-                    .into_any_element()
+            .enumerate()
+            .map(|(at, album)| {
+                let cell = self.album_found_cell(album, theme::shelf_cover(), cx);
+                match in_the_top {
+                    Some(run) => {
+                        self.at_the_top(cell, run.row_of(TopEntry::AlbumFound(at)), Some(STRIP))
+                    }
+                    None => cell.into_any_element(),
+                }
             })
             .collect();
 
-        self.found_strip(ALBUMS_NOT_HELD, "search-albums-found-strip", cells, cx)
+        self.found_strip(ALBUMS_NOT_HELD, STRIP, cells, cx)
+    }
+
+    fn at_the_top(
+        &self,
+        cell: Stateful<Div>,
+        row: usize,
+        strip: Option<&'static str>,
+    ) -> AnyElement {
+        let reached = self.reaches(Shift::Listing(Listed::Top), row);
+        div()
+            .relative()
+            .flex_none()
+            .child(cell)
+            .when(reached, |held| {
+                held.child(reached_ring())
+                    .child(self.brought_into_view(strip))
+            })
+            .into_any_element()
+    }
+
+    fn brought_into_view(&self, strip: Option<&'static str>) -> impl IntoElement {
+        let across = strip.map(|strip| {
+            self.shelf_scrolls
+                .borrow_mut()
+                .entry(strip)
+                .or_default()
+                .clone()
+        });
+        kit::brought_into_view_within(
+            self.search_scroll.clone(),
+            across,
+            Rc::clone(&self.reached_unseen),
+        )
     }
 
     fn found_strip(
