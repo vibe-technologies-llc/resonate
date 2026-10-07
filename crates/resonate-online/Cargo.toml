@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 flate2.workspace = true
+md-5.workspace = true
 parking_lot.workspace = true
 resonate-analysis.workspace = true
 resonate-codec.workspace = true

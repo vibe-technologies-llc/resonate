@@ -16,11 +16,12 @@ use resonate_lyrics::Lyricists;
 use resonate_online::Lrclib;
 #[cfg(feature = "online")]
 use resonate_online::{
-    AcoustId, Audd, AutoEq, ByEar, Client, Identity, Introduction, ListenBrainz, Online, Shazam,
+    AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
+    ListenBrainz, Online, Session, Shazam,
 };
 
 #[cfg(feature = "online")]
-use crate::config;
+use crate::config::{self, LastfmAccount};
 use crate::{Error, Result, config::Config};
 
 #[cfg(feature = "online")]
@@ -174,6 +175,30 @@ pub fn fingerprinters(
 #[cfg(feature = "online")]
 pub fn listenbrainz(config: &Config, token: String) -> Arc<dyn Scrobbler> {
     Arc::new(ListenBrainz::new(client(config), token))
+}
+
+#[cfg(feature = "online")]
+pub fn lastfm(config: &Config, account: LastfmAccount) -> Arc<dyn Scrobbler> {
+    let LastfmAccount {
+        key,
+        secret,
+        session,
+    } = account;
+    Arc::new(LastFm::new(
+        client(config),
+        Application { key, secret },
+        session,
+    ))
+}
+
+#[cfg(feature = "online")]
+pub fn lastfm_signed_in(
+    config: &Config,
+    application: &Application,
+    user: &str,
+    password: &str,
+) -> resonate_library::Result<Session> {
+    resonate_online::signed_in(&client(config), application, user, password)
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]

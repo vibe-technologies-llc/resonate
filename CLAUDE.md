@@ -170,7 +170,8 @@ grammar (`binary.md`). By area:
   `mcp`.
 - **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`, `tidal` (the device sign-in).
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (the device sign-in), `lastfm` (the scrobbling
+  sign-in).
 - `cargo run -- <files>` opens the window with those queued (`Exec=resonate %U`); a bare `cargo run`
   opens it on the queue the last run left, unless `resume` is off.
 

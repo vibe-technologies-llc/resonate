@@ -739,6 +739,28 @@ pub enum Sub {
     )]
     Tidal,
 
+    #[command(
+        about = "Sign in to Last.fm so what is heard is scrobbled there: read the account's \
+                 password from standard input, keep the session key in the settings file and \
+                 nothing of the password. Needs lastfm-key and lastfm-secret, an API account's"
+    )]
+    Lastfm {
+        #[arg(
+            long,
+            value_name = "NAME",
+            required_unless_present = "forget",
+            help = "The Last.fm account to sign in"
+        )]
+        user: Option<String>,
+
+        #[arg(
+            long,
+            conflicts_with = "user",
+            help = "Forget the session key, so nothing more is scrobbled to Last.fm"
+        )]
+        forget: bool,
+    },
+
     #[command(about = "Ask every registered provider for each wanted track not tried lately")]
     Poll {
         #[arg(long, help = "Ask about the wanted tracks tried lately as well")]

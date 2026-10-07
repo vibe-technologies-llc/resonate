@@ -137,6 +137,9 @@ pub struct Config {
     pub acoustid_key: Option<String>,
     pub audd_token: Option<String>,
     pub listenbrainz_token: Option<String>,
+    pub lastfm_key: Option<String>,
+    pub lastfm_secret: Option<String>,
+    pub lastfm_session: Option<String>,
     pub listen_from: Option<Listening>,
     pub listen_for: Option<Duration>,
     pub equaliser: Option<bool>,
@@ -236,6 +239,9 @@ impl fmt::Debug for Config {
             acoustid_key,
             audd_token,
             listenbrainz_token,
+            lastfm_key,
+            lastfm_secret,
+            lastfm_session,
             listen_from,
             listen_for,
             equaliser,
@@ -321,6 +327,9 @@ impl fmt::Debug for Config {
             .field("acoustid_key", &withheld(acoustid_key.as_ref()))
             .field("audd_token", &withheld(audd_token.as_ref()))
             .field("listenbrainz_token", &withheld(listenbrainz_token.as_ref()))
+            .field("lastfm_key", &withheld(lastfm_key.as_ref()))
+            .field("lastfm_secret", &withheld(lastfm_secret.as_ref()))
+            .field("lastfm_session", &withheld(lastfm_session.as_ref()))
             .field("listen_from", listen_from)
             .field("listen_for", listen_for)
             .field("equaliser", equaliser)
@@ -426,10 +435,18 @@ impl Config {
     }
 
     #[cfg(feature = "online")]
-    pub fn submits_to(&self) -> Option<&str> {
-        self.online_enabled()
-            .then_some(self.listenbrainz_token.as_deref())
-            .flatten()
+    pub fn submits_to(&self) -> Accounts {
+        if !self.online_enabled() {
+            return Accounts::default();
+        }
+        Accounts {
+            listenbrainz: self.listenbrainz_token.clone(),
+            lastfm: LastfmAccount::of(
+                self.lastfm_key.clone(),
+                self.lastfm_secret.clone(),
+                self.lastfm_session.clone(),
+            ),
+        }
     }
 
     pub fn enriches_after_scan(&self) -> bool {
@@ -616,17 +633,77 @@ pub fn contact_in(path: &Path) -> Result<Option<String>> {
 }
 
 #[cfg(feature = "online")]
-pub fn submitting_in(path: &Path) -> Result<Option<String>> {
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Accounts {
+    pub listenbrainz: Option<String>,
+    pub lastfm: Option<LastfmAccount>,
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, PartialEq, Eq)]
+pub struct LastfmAccount {
+    pub key: String,
+    pub secret: String,
+    pub session: String,
+}
+
+#[cfg(feature = "online")]
+impl LastfmAccount {
+    fn of(key: Option<String>, secret: Option<String>, session: Option<String>) -> Option<Self> {
+        Some(Self {
+            key: key?,
+            secret: secret?,
+            session: session?,
+        })
+    }
+}
+
+#[cfg(feature = "online")]
+impl fmt::Debug for LastfmAccount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LastfmAccount")
+            .field("key", &Withheld)
+            .field("secret", &Withheld)
+            .field("session", &Withheld)
+            .finish()
+    }
+}
+
+#[cfg(feature = "online")]
+impl fmt::Debug for Accounts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Accounts")
+            .field("listenbrainz", &withheld(self.listenbrainz.as_ref()))
+            .field("lastfm", &self.lastfm.as_ref().map(|_| Withheld))
+            .finish()
+    }
+}
+
+#[cfg(feature = "online")]
+pub fn submitting_in(path: &Path) -> Result<Accounts> {
     let online = ConfigKey::Online;
     let switched_on = match item_in(path, online)? {
         Some(value) => At { path, key: online }.boolean(&value)?,
         None => true,
     };
-    let key = ConfigKey::ListenbrainzToken;
-    match item_in(path, key)? {
-        Some(value) if switched_on => Ok(given(At { path, key }.string(&value)?)),
-        Some(_) | None => Ok(None),
+    if !switched_on {
+        return Ok(Accounts::default());
     }
+    let read = |key: ConfigKey| -> Result<Option<String>> {
+        match item_in(path, key)? {
+            Some(value) => Ok(given(At { path, key }.string(&value)?)),
+            None => Ok(None),
+        }
+    };
+
+    Ok(Accounts {
+        listenbrainz: read(ConfigKey::ListenbrainzToken)?,
+        lastfm: LastfmAccount::of(
+            read(ConfigKey::LastfmKey)?,
+            read(ConfigKey::LastfmSecret)?,
+            read(ConfigKey::LastfmSession)?,
+        ),
+    })
 }
 
 #[cfg(feature = "online")]
@@ -738,6 +815,9 @@ impl Config {
             ConfigKey::AcoustidKey => config.acoustid_key = given(at.string(value)?),
             ConfigKey::AuddToken => config.audd_token = given(at.string(value)?),
             ConfigKey::ListenbrainzToken => config.listenbrainz_token = given(at.string(value)?),
+            ConfigKey::LastfmKey => config.lastfm_key = given(at.string(value)?),
+            ConfigKey::LastfmSecret => config.lastfm_secret = given(at.string(value)?),
+            ConfigKey::LastfmSession => config.lastfm_session = given(at.string(value)?),
             ConfigKey::ListenFrom => {
                 config.listen_from = Some(Listening::named(at.string(value)?));
             }
@@ -1556,14 +1636,36 @@ mod tests {
     fn a_listenbrainz_token_is_submitted_to_only_while_online_is_on() {
         let config = read("listenbrainz-token = \" a token \"").expect("a well formed document");
         assert_eq!(config.listenbrainz_token.as_deref(), Some("a token"));
-        assert_eq!(config.submits_to(), Some("a token"));
+        assert_eq!(config.submits_to().listenbrainz.as_deref(), Some("a token"));
 
         let off = read("online = false\nlistenbrainz-token = \"a token\"").expect("well formed");
-        assert_eq!(off.submits_to(), None);
+        assert_eq!(off.submits_to(), Accounts::default());
 
         let blank = read("listenbrainz-token = \"  \"").expect("well formed");
         assert_eq!(blank.listenbrainz_token, None);
-        assert_eq!(Config::default().submits_to(), None);
+        assert_eq!(Config::default().submits_to(), Accounts::default());
+    }
+
+    #[test]
+    #[cfg(feature = "online")]
+    fn a_lastfm_account_is_submitted_to_only_where_its_key_secret_and_session_are_all_given() {
+        let whole =
+            read("lastfm-key = \"key\"\nlastfm-secret = \"secret\"\nlastfm-session = \"session\"")
+                .expect("a well formed document");
+        let unsigned =
+            read("lastfm-key = \"key\"\nlastfm-secret = \"secret\"").expect("well formed");
+
+        assert_eq!(
+            whole.submits_to().lastfm,
+            Some(LastfmAccount {
+                key: "key".to_owned(),
+                secret: "secret".to_owned(),
+                session: "session".to_owned(),
+            })
+        );
+        assert_eq!(unsigned.submits_to().lastfm, None);
+        assert!(!format!("{whole:?}").contains("secret\""));
+        assert!(!format!("{:?}", whole.submits_to()).contains("session"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ mod error;
 mod favourites;
 mod info;
 mod input;
+mod lastfm;
 mod lasting;
 #[cfg(feature = "ui")]
 mod launcher;
@@ -257,6 +258,9 @@ fn run() -> Result<()> {
             )
         }
         Some(Sub::Tidal) => providers::sign_in_to_tidal(&config, &settings_path(&cli)?),
+        Some(Sub::Lastfm { user, forget }) => {
+            lastfm::sign_in(&config, &settings_path(&cli)?, user.as_deref(), *forget)
+        }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
         Some(Sub::Tag { root, apply, undo }) => {
             tag(&open_library(&cli, &config)?, root, *apply, *undo)

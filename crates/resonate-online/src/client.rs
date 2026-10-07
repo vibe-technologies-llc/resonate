@@ -172,7 +172,8 @@ impl Host {
             | Self::SpotifyPictures
             | Self::SoundCloud
             | Self::SoundCloudPictures
-            | Self::SongLink => false,
+            | Self::SongLink
+            | Self::LastFm => false,
         }
     }
 }
@@ -265,7 +266,7 @@ impl Host {
             Self::MusicBrainz => MUSICBRAINZ_INTERVAL,
             Self::AcoustId => ACOUSTID_INTERVAL,
             Self::Shazam => SHAZAM_INTERVAL,
-            Self::ListenBrainz => LISTENBRAINZ_INTERVAL,
+            Self::ListenBrainz | Self::LastFm => LISTENBRAINZ_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
             Self::CoverArtArchive => COVER_ARCHIVE_INTERVAL,
             Self::AppleArtwork

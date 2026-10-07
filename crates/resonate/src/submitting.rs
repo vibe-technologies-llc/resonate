@@ -20,7 +20,10 @@ use resonate_library::{Error as LibraryError, LookupOp, Scrobbler};
 
 use crate::config::Config;
 #[cfg(feature = "online")]
-use crate::{config, online};
+use crate::{
+    config::{self, Accounts, LastfmAccount},
+    online,
+};
 
 #[cfg(feature = "online")]
 const FIRST_AFTER: Duration = Duration::from_secs(5);
@@ -50,6 +53,86 @@ impl Drop for Submitting {
 }
 
 #[cfg(feature = "online")]
+#[derive(Clone, PartialEq, Eq)]
+enum Account {
+    ListenBrainz(String),
+    LastFm(LastfmAccount),
+}
+
+#[cfg(feature = "online")]
+impl Account {
+    fn every(accounts: Accounts) -> [Option<Self>; 2] {
+        [
+            accounts.listenbrainz.map(Self::ListenBrainz),
+            accounts.lastfm.map(Self::LastFm),
+        ]
+    }
+
+    fn scrobbler(&self, config: &Config) -> Arc<dyn Scrobbler> {
+        match self {
+            Self::ListenBrainz(token) => online::listenbrainz(config, token.clone()),
+            Self::LastFm(account) => online::lastfm(config, account.clone()),
+        }
+    }
+}
+
+#[cfg(feature = "online")]
+struct Telling {
+    listens: Pace,
+    loves: Pace,
+    refused: Option<Account>,
+    told_playing: Option<Row>,
+    scrobbling: Option<(Account, Arc<dyn Scrobbler>)>,
+}
+
+#[cfg(feature = "online")]
+impl Telling {
+    fn new() -> Self {
+        Self {
+            listens: Pace::after(FIRST_AFTER),
+            loves: Pace::after(FIRST_AFTER),
+            refused: None,
+            told_playing: None,
+            scrobbling: None,
+        }
+    }
+
+    fn tell(&mut self, account: Account, config: &Config, library: &Library, player: &Player) {
+        if self.refused.as_ref() == Some(&account) {
+            return;
+        }
+        let scrobbler = match &self.scrobbling {
+            Some((kept, scrobbler)) if *kept == account => Arc::clone(scrobbler),
+            _ => {
+                let made = account.scrobbler(config);
+                self.scrobbling = Some((account.clone(), Arc::clone(&made)));
+                made
+            }
+        };
+
+        let playing = playing_row(player);
+        if lapses(self.told_playing.as_ref(), playing.as_ref())
+            && let Some(row) = playing.as_ref()
+        {
+            tell_what_is_playing(library, &*scrobbler, row);
+        }
+        self.told_playing = playing;
+
+        let outcomes = [
+            self.listens.settle(|| told_listens(library, &*scrobbler)),
+            self.loves.settle(|| told_loves(library, &*scrobbler)),
+        ];
+        if outcomes.contains(&Outcome::TokenRefused) {
+            tracing::warn!(
+                service = scrobbler.service().name(),
+                "the service refused what it was signed in with; nothing is submitted until it changes"
+            );
+            self.refused = Some(account);
+        }
+    }
+}
+
+#[cfg(feature = "online")]
 pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player>) -> Submitting {
     let (stop, stopped) = bounded(1);
     let config = config.clone();
@@ -59,49 +142,17 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
         .name("resonate-submit".to_owned())
         .spawn(move || {
             let mut token = Token::of(&config);
-            let mut listens = Pace::after(FIRST_AFTER);
-            let mut loves = Pace::after(FIRST_AFTER);
-            let mut refused: Option<String> = None;
-            let mut told_playing: Option<Row> = None;
-            let mut scrobbling: Option<(String, Arc<dyn Scrobbler>)> = None;
+            let mut services = [Telling::new(), Telling::new()];
             loop {
                 match stopped.recv_timeout(PLAYING_LOOKED_AT_EVERY) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                let Some(held) = token.current() else {
-                    continue;
-                };
-                if refused.as_deref() == Some(held) {
-                    continue;
-                }
-                let held = held.to_owned();
-                let scrobbler = match &scrobbling {
-                    Some((kept, scrobbler)) if *kept == held => Arc::clone(scrobbler),
-                    _ => {
-                        let made = online::listenbrainz(&config, held.clone());
-                        scrobbling = Some((held.clone(), Arc::clone(&made)));
-                        made
+                let held = Account::every(token.current().clone());
+                for (telling, account) in services.iter_mut().zip(held) {
+                    if let Some(account) = account {
+                        telling.tell(account, &config, &library, &player);
                     }
-                };
-
-                let playing = playing_row(&player);
-                if lapses(told_playing.as_ref(), playing.as_ref())
-                    && let Some(row) = playing.as_ref()
-                {
-                    tell_what_is_playing(&library, &*scrobbler, row);
-                }
-                told_playing = playing;
-
-                let outcomes = [
-                    listens.settle(|| told_listens(&library, &*scrobbler)),
-                    loves.settle(|| told_loves(&library, &*scrobbler)),
-                ];
-                if outcomes.contains(&Outcome::TokenRefused) {
-                    tracing::warn!(
-                        "ListenBrainz refused the token; nothing is submitted until it changes"
-                    );
-                    refused = Some(held);
                 }
             }
         });
@@ -120,7 +171,8 @@ fn told_listens(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_librar
             submitted = submitted.submitted,
             refused = submitted.refused,
             unnamed = submitted.unnamed,
-            "ListenBrainz was told what was heard"
+            service = scrobbler.service().name(),
+            "the service was told what was heard"
         );
     }
     Ok(())
@@ -134,7 +186,8 @@ fn told_loves(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library:
             loved = loves.loved,
             taken_back = loves.taken_back,
             refused = loves.refused,
-            "ListenBrainz was told what is a favourite"
+            service = scrobbler.service().name(),
+            "the service was told what is a favourite"
         );
     }
     Ok(())
@@ -232,18 +285,18 @@ fn tell_what_is_playing(library: &Library, scrobbler: &dyn Scrobbler, row: &Row)
         Ok(Some(billed)) => billed,
         Ok(None) => return,
         Err(error) => {
-            tracing::debug!(%error, "what is playing could not be read to tell ListenBrainz");
+            tracing::debug!(%error, "what is playing could not be read to tell the service");
             return;
         }
     };
     if let Err(error) = scrobbler.playing_now(&billed) {
-        tracing::debug!(%error, "ListenBrainz was not told what is playing");
+        tracing::debug!(%error, "the service was not told what is playing");
     }
 }
 
 #[cfg(not(feature = "online"))]
 pub(crate) fn start(config: &Config, _library: &Arc<Library>, _player: &Arc<Player>) -> Submitting {
-    if config.listenbrainz_token.is_some() {
+    if config.listenbrainz_token.is_some() || config.lastfm_session.is_some() {
         tracing::warn!("this build reaches no network, so nothing heard is submitted");
     }
     Submitting {}
@@ -260,7 +313,7 @@ fn backed_off(failed: u32) -> Duration {
 struct Token {
     path: Option<PathBuf>,
     seen: Option<SystemTime>,
-    held: Option<String>,
+    held: Accounts,
 }
 
 #[cfg(feature = "online")]
@@ -270,25 +323,25 @@ impl Token {
         Self {
             seen: path.as_deref().and_then(modified),
             path,
-            held: config.submits_to().map(str::to_owned),
+            held: config.submits_to(),
         }
     }
 
-    fn current(&mut self) -> Option<&str> {
+    fn current(&mut self) -> &Accounts {
         if let Some(path) = self.path.as_deref() {
             let stamp = modified(path);
             if stamp != self.seen {
                 self.seen = stamp;
                 match config::submitting_in(path) {
-                    Ok(token) => self.held = token,
+                    Ok(accounts) => self.held = accounts,
                     Err(error) => tracing::warn!(
                         %error,
-                        "the ListenBrainz token in the settings went unread, so the one held is kept"
+                        "the accounts in the settings went unread, so the ones held are kept"
                     ),
                 }
             }
         }
-        self.held.as_deref()
+        &self.held
     }
 }
 
@@ -379,18 +432,18 @@ mod tests {
         let mut token = Token {
             path: Some(path.clone()),
             seen: None,
-            held: None,
+            held: Accounts::default(),
         };
-        assert_eq!(token.current(), None);
+        assert_eq!(token.current(), &Accounts::default());
 
         fs::write(&path, "listenbrainz-token = \"a token\"\n").expect("a writable settings file");
         token.seen = None;
-        assert_eq!(token.current(), Some("a token"));
+        assert_eq!(token.current().listenbrainz.as_deref(), Some("a token"));
 
         fs::write(&path, "online = false\nlistenbrainz-token = \"a token\"\n")
             .expect("a writable settings file");
         token.seen = None;
-        assert_eq!(token.current(), None);
+        assert_eq!(token.current(), &Accounts::default());
 
         let _ = fs::remove_dir_all(&folder);
     }

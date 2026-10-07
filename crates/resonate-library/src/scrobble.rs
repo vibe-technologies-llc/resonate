@@ -81,12 +81,14 @@ const THE_TRACK_BILLED: &str = concat!(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ListeningService {
     ListenBrainz,
+    LastFm,
 }
 
 impl ListeningService {
     pub const fn name(self) -> &'static str {
         match self {
             Self::ListenBrainz => "listenbrainz",
+            Self::LastFm => "lastfm",
         }
     }
 }

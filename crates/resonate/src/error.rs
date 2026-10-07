@@ -83,6 +83,9 @@ pub enum ConfigKey {
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
+    LastfmKey,
+    LastfmSecret,
+    LastfmSession,
     ListenFrom,
     ListenFor,
     Discord,
@@ -110,7 +113,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 82] = [
+    pub const ALL: [Self; 85] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -184,6 +187,9 @@ impl ConfigKey {
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
+        Self::LastfmKey,
+        Self::LastfmSecret,
+        Self::LastfmSession,
         Self::ListenFrom,
         Self::ListenFor,
         Self::Discord,
@@ -270,6 +276,9 @@ impl ConfigKey {
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",
+            Self::LastfmKey => "lastfm-key",
+            Self::LastfmSecret => "lastfm-secret",
+            Self::LastfmSession => "lastfm-session",
             Self::ListenFrom => "listen-from",
             Self::ListenFor => "listen-for",
             Self::Discord => "discord",
@@ -487,6 +496,28 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("the TIDAL sign-in was cancelled before it was approved")]
     SignInCancelled,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "lastfm-key and lastfm-secret are not both set, and Last.fm signs in only the \
+         application they name"
+    )]
+    NoLastfmApplication,
+
+    #[cfg(feature = "online")]
+    #[error("no Last.fm account was named to sign in")]
+    NoLastfmUser,
+
+    #[cfg(feature = "online")]
+    #[error("Last.fm turned down the name and password")]
+    LastfmRefused,
+
+    #[cfg(feature = "online")]
+    #[error("the password could not be read from standard input")]
+    ReadPassword {
+        #[source]
+        source: io::Error,
+    },
 
     #[cfg(not(feature = "mcp"))]
     #[error(

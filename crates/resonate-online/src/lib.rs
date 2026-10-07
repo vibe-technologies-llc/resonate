@@ -8,6 +8,7 @@ mod commons;
 mod coverart;
 mod deezer;
 mod error;
+mod lastfm;
 mod linked;
 mod listenbrainz;
 mod lrclib;
@@ -28,6 +29,7 @@ pub use crate::{
     by_ear::ByEar,
     client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
+    lastfm::{Application, LastFm, Session, signed_in},
     listenbrainz::ListenBrainz,
     lrclib::Lrclib,
     reference::Online,

@@ -115,6 +115,29 @@ fn restore_the_terminal_on_a_panic() {
     });
 }
 
+#[cfg(feature = "online")]
+pub fn a_line_unechoed() -> io::Result<String> {
+    let stdin = io::stdin();
+    let unechoed = termios::isatty(&stdin)
+        .then(|| termios::tcgetattr(&stdin).ok())
+        .flatten()
+        .and_then(|saved| {
+            let mut quiet = saved.clone();
+            quiet.local_modes.remove(LocalModes::ECHO);
+            termios::tcsetattr(&stdin, OptionalActions::Now, &quiet).ok()?;
+            *SAVED.lock() = Some(saved);
+            restore_the_terminal_on_a_panic();
+            Some(())
+        });
+
+    let mut line = String::new();
+    let read = stdin.read_line(&mut line);
+    if unechoed.is_some() {
+        restore_the_terminal();
+    }
+    read.map(|_| line.trim_end_matches(['\r', '\n']).to_owned())
+}
+
 pub fn restore_the_terminal() {
     if let Some(saved) = SAVED.lock().take()
         && let Err(error) = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved)

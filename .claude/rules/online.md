@@ -14,11 +14,12 @@ the binary depends on it, behind the `online` feature (`--exclude resonate-ui
 **Nothing about the listener leaves without their say.** `Config::online_enabled` (`online`, default
 true) gates every request: `online::reference` is `None` when off, so `resonate enrich` says
 `Error::OnlineOff` (build without the feature: `Error::NoReference`). `contact`, `acoustid-key`,
-`audd-token`, `listenbrainz-token` are empty by default, listener-set only. No AcoustID key: no
+`audd-token`, `listenbrainz-token` and the `lastfm-` keys are empty by default, listener-set only.
+No AcoustID key: no
 fingerprint leaves. AudD: a clip only with a token. Shazam: no key, only a signature (peaks of what
 was heard), when the listener asks to listen or `identify-by-sound` is on and a lookup has nothing
-else to name a track by. ListenBrainz alone sends something about the listener (every counted play),
-only under a token.
+else to name a track by. ListenBrainz and Last.fm alone send something about the listener (every
+counted play), only under a token or a session the listener signed in for.
 
 ## The client
 
@@ -276,14 +277,38 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
 - **The binary's half is a thread following the file.** `submitting.rs` starts `resonate-submit` for
   the window and every playing command: after `FIRST_AFTER`, then every `SUBMITTED_EVERY`, it asks
   `Library::submit_listens`, doubling the wait per failure up to `WAITED_AT_MOST`; loves have their
-  own `Pace` (a failing love backs off alone). Every `PLAYING_LOOKED_AT_EVERY` it looks at the
+  own `Pace` (a failing love backs off alone). Each service the settings hold an account for is a
+  `Telling` of its own (paces, refused account, what it was told plays), so a refused or failing
+  Last.fm session holds back nothing told to ListenBrainz. Every `PLAYING_LOOKED_AT_EVERY` it looks at the
   player and tells a new row via `Library::billed_as` as playing now: once per row, not while
   paused, never for a file the catalog names nothing for; `lapses` tells again after a resume, a
-  repeat coming round or a seek back (the service's *playing now* does not run out). The token
-  follows the file as `Followed` does (`config::submitting_in` reads `online` and
-  `listenbrainz-token`); the `ListenBrainz` client is built once per token (connections and pacing
+  repeat coming round or a seek back (the service's *playing now* does not run out). The accounts
+  follow the file as `Followed` does (`config::submitting_in` reads `online`,
+  `listenbrainz-token` and the three `lastfm-` keys into `Accounts`); a client is built once per
+  account (connections and pacing
   outlive the looks). A 401 or 403 to listens or loves (`TOKEN_REFUSED`) holds that token back until
   the file names another.
+
+## Last.fm
+
+- **What was heard is scrobbled under a session the listener signed in for, signed by an
+  application the listener registered.** `LastFm` is the second `Scrobbler`
+  (`ListeningService::LastFm`, `lastfm`: the catalog's `submissions` and `loves_told` rows are
+  per service, so neither service's mark moves the other's). Every call is a form POST to
+  `Host::LastFm` signed as the API asks: `api_sig` = MD5 of every field but `format`, sorted by
+  name, written name then value, then the application's secret (`Fields::signature`), `format=json`
+  after. `track.scrobble` in batches of `SCROBBLED_AT_ONCE` (50), each listen numbered (`artist[i]`,
+  `track[i]`, `timestamp[i]` when it began, album, number, recording, length);
+  `track.updateNowPlaying` for what plays; `user.getInfo` answers who holds the session. An error
+  in the answer is read by its code (`refused`): an invalid session, key or authentication is
+  `Refused` 401 (the submitter holds that session back, as a refused ListenBrainz token), a rate
+  limit 429, the service down 503, the rest unreadable. **A favourite is not loved there**:
+  `track.love` names a track by artist and title and the catalog tells loves by recording, so
+  `love` answers done and sends nothing.
+- **A session is asked once, by name and password, and the password is not kept.**
+  `resonate_online::signed_in` asks `auth.getMobileSession`; `resonate lastfm --user` reads the
+  password from standard input (echo off on a terminal, `input::a_line_unechoed`) and stores only
+  the session key (`lastfm-session`); `--forget` clears it.
 
 ## LRCLIB
 
