@@ -2729,6 +2729,8 @@ starts.
   (`an_export_that_fails_leaves_nothing_staged_beside_its_target`). Writing picks the format by
   the target's extension (M3U where it declares nothing); reading picks by content, so a wrong
   extension still reads.
+  - **XSPF text is unescaped in one pass**: an `&` looks for its `;` only within
+    `LONGEST_ENTITY` bytes (`a_value_of_ampersands_never_closed_is_read_in_one_pass`).
   - **Track facts are never believed**: a `playlist_entries` row is a path, so `#EXTINF:`,
     `TitleN`/`LengthN`, `<title>`/`<creator>`/`<duration>` are written, never read.
   - **Non-`file://` rows** are counted, not refused (one stream must not cost the other fifty

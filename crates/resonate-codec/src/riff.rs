@@ -65,6 +65,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
 
     let mut found = Riff::default();
     let mut sizes = Sizes::default();
+    let mut info_left = MAX_INFO_BYTES;
     for walked in 0..MAX_CHUNKS {
         let Some(chunk) = layout.next_chunk(source, &sizes) else {
             break;
@@ -78,7 +79,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
             sizes = Sizes::read(&read_bounded(source, size, MOST_DS64_BYTES));
         }
         if chunk.is(LIST) && size >= FORM_BYTES {
-            read_info_list(source, size - FORM_BYTES, &mut found.info);
+            read_info_list(source, size - FORM_BYTES, &mut info_left, &mut found.info);
         }
         if chunk.is(FMT)
             && layout == Layout::Riff
@@ -230,7 +231,12 @@ fn field(fields: &[u8], at: usize) -> Option<u16> {
     Some(u16::from_le_bytes(pair))
 }
 
-fn read_info_list<S: Read + Seek + ?Sized>(source: &mut S, size: u64, into: &mut Vec<InfoTag>) {
+fn read_info_list<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    size: u64,
+    left: &mut u64,
+    into: &mut Vec<InfoTag>,
+) {
     let Some(form) = read_exact::<4, S>(source) else {
         return;
     };
@@ -240,7 +246,8 @@ fn read_info_list<S: Read + Seek + ?Sized>(source: &mut S, size: u64, into: &mut
 
     let mut entries = Vec::new();
     let mut read = 0;
-    while read < size.min(MAX_INFO_BYTES) {
+    let within = size.min(*left);
+    while read < within {
         let Some(header) = read_exact::<8, S>(source) else {
             break;
         };
@@ -270,6 +277,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(source: &mut S, size: u64, into: &mut
         };
         entries.push((name, value));
     }
+    *left = left.saturating_sub(read);
 
     let encoding = detected(&entries.iter().fold(Vec::new(), |mut all, (_, value)| {
         all.extend_from_slice(value);
@@ -472,6 +480,28 @@ mod tests {
         assert_eq!(
             named(&read(&mut Cursor::new(file)).info),
             [("INAM", "odd"), ("IGNR", "Rock")]
+        );
+    }
+
+    #[test]
+    fn every_info_list_together_is_read_to_one_ceiling() {
+        let value = "a".repeat(4_000);
+        let entries: Vec<(&[u8; 4], &str)> = (0..150).map(|_| (b"ICMT", value.as_str())).collect();
+        let list = info_list(&entries);
+        let file = wave(&[
+            (b"LIST", list.clone()),
+            (b"LIST", list.clone()),
+            (b"LIST", list),
+        ]);
+
+        let found = read(&mut Cursor::new(file)).info;
+
+        let entry_bytes = 8 + padded(value.len() as u64 + 1);
+        assert!(!found.is_empty());
+        assert!(
+            found.len() as u64 * entry_bytes <= MAX_INFO_BYTES + entry_bytes,
+            "{} values were read",
+            found.len()
         );
     }
 

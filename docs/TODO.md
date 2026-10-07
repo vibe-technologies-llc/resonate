@@ -6,11 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- Text from a file or service is read in quadratic time or unbounded in places: an enhanced-LRC
-  line of thousands of `<` takes a minute (512 KiB, measured); an XSPF value of `&` with no `;`
-  rescans the rest for each; a WAVE `LIST`/`INFO` ceiling of 1 MiB holds per list, not over the
-  4 096 chunks; LRCLIB's plain lyrics and a Lyricsfile's `plain` text are split into lines with no
-  `MOST_LINES`
 - A UTF-8 lyric sidecar over 512 KiB is cut mid-character before its encoding is weighed: guessed as
   a legacy code page, mojibake instead of the whole lines that fitted
 - A TIDAL token answer with an enormous `expires_in`, or a DASH manifest with `startNumber` near

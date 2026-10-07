@@ -459,6 +459,8 @@ const fn is_an_xml_character(character: char) -> bool {
     )
 }
 
+const LONGEST_ENTITY: usize = 16;
+
 fn plain_text(text: &str) -> String {
     if !text.contains('&') {
         return text.to_owned();
@@ -471,7 +473,8 @@ fn plain_text(text: &str) -> String {
         written.push_str(&rest[..at]);
         rest = &rest[at..];
 
-        let Some(ends) = rest.find(';') else {
+        let reach = rest.floor_char_boundary(LONGEST_ENTITY + 2);
+        let Some(ends) = rest[..reach].find(';') else {
             written.push('&');
             rest = &rest[1..];
             continue;
@@ -510,6 +513,21 @@ fn entity(named: &str) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_value_of_ampersands_never_closed_is_read_in_one_pass() {
+        let opened = "&".repeat(512 * 1024);
+        let started = std::time::Instant::now();
+
+        let read = plain_text(&format!("{opened}&amp;&#x41;"));
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(read, format!("{opened}&A"));
+    }
 
     fn read_at(location: &str) -> Vec<PathBuf> {
         let text = format!(

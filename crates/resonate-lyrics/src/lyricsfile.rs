@@ -7,13 +7,12 @@ use serde_saphyr::{Budget, Options};
 use crate::{
     LyricLine, Lyrics, SungWord, Voice,
     lrc::{Declared, lines_of},
+    model::MOST_LINES,
 };
 
 const VERSION: &str = "1.0";
 
 pub const LARGEST_LYRICSFILE: usize = 4 * 1024 * 1024;
-
-const MOST_LINES: usize = 20_000;
 
 const MOST_WORDS: usize = 200_000;
 
@@ -126,11 +125,8 @@ pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unrea
         .filter(|lyrics| !lyrics.is_empty());
     let lyrics = synced.or_else(|| {
         let plain = document.plain?;
-        Some(Lyrics::plain(
-            source,
-            lines_of(&plain).map(str::to_owned).collect(),
-        ))
-        .filter(|lyrics| !lyrics.is_empty())
+        Some(Lyrics::plain(source, lines_of(&plain).map(str::to_owned)))
+            .filter(|lyrics| !lyrics.is_empty())
     });
 
     Ok(Lyricsfile {

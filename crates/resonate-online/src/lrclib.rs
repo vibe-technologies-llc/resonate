@@ -239,7 +239,7 @@ fn set_of(told: &LyricText) -> resonate_lyrics::Result<Option<Lyrics>> {
 
     Ok(Some(Lyrics::plain(
         source(),
-        told.text.lines().map(str::to_owned).collect(),
+        told.text.lines().map(str::to_owned),
     )))
 }
 

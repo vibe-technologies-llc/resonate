@@ -4,6 +4,8 @@ use resonate_core::SourceId;
 
 use crate::{Error, Result};
 
+pub const MOST_LINES: usize = 20_000;
+
 const LIT_AT_MOST: Duration = Duration::from_secs(10);
 
 const SUNG_AT_LEAST: Duration = Duration::from_secs(3);
@@ -239,11 +241,15 @@ impl Lyrics {
         })
     }
 
-    pub fn plain(source: SourceId, lines: Vec<String>) -> Self {
+    pub fn plain(source: SourceId, lines: impl IntoIterator<Item = String>) -> Self {
         Self {
             source,
             timing: Timing::Unsynced,
-            lines: lines.into_iter().map(LyricLine::untimed).collect(),
+            lines: lines
+                .into_iter()
+                .take(MOST_LINES)
+                .map(LyricLine::untimed)
+                .collect(),
             credits: Credits::default(),
         }
     }
@@ -954,5 +960,14 @@ mod tests {
 
         assert!(lyrics.is_empty());
         assert!(Lyrics::plain(source(), Vec::new()).is_empty());
+        assert_eq!(
+            Lyrics::plain(
+                source(),
+                std::iter::repeat_n("la".to_owned(), MOST_LINES * 4)
+            )
+            .lines()
+            .len(),
+            MOST_LINES
+        );
     }
 }

@@ -128,9 +128,13 @@ dependency (tested without a window).
   only where that fails.
 - **A line repeats once per timestamp on it**, hence `LARGEST_SHEET`, `LARGEST_SET`, `MOST_LINES`;
   past any: `Error::Unreadable { op: Parse }`. In the reader because `Embedded` is handed a tag from
-  an untrusted file.
+  an untrusted file. `model::MOST_LINES` is the one count: a Lyricsfile's `lines` past it are
+  refused, and `Lyrics::plain` keeps no more than it of any plain text (LRCLIB's, a Lyricsfile's
+  `plain`).
 - **A stamp inside a line times the word after it (enhanced LRC).** `Stamped::read` splits a line on
-  every `<…>` that reads as a moment; others (`I <3 you`, `<b>`) stay text. Each stamp opens a word
+  every `<…>` that reads as a moment; others (`I <3 you`, `<b>`) stay text. A `>` is looked for
+  only within `LONGEST_WORD_STAMP` bytes of its `<`, so a line of unclosed brackets is one pass
+  (`a_line_of_nothing_but_opened_stamps_is_read_in_one_pass`). Each stamp opens a word
   running to the next; text before the first stamp folds into the first word; a stamp with nothing
   after is the line's end. Words go through `[offset:]` with the line; a multi-moment line carries
   its words to each moment. In the one reader, so every source yields word timing; the search index

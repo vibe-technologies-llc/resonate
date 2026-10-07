@@ -2,7 +2,9 @@ use std::{iter, time::Duration};
 
 use resonate_core::{SourceId, folded_letters};
 
-use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted};
+use crate::{
+    Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted, model::MOST_LINES,
+};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -10,7 +12,7 @@ const COLONS_WHEN_HOURS_ARE_WRITTEN: usize = 2;
 const NANOSECOND_DIGITS: usize = 9;
 pub(crate) const LARGEST_SHEET: usize = 512 * 1024;
 const LARGEST_SET: usize = 1024 * 1024;
-const MOST_LINES: usize = 20_000;
+const LONGEST_WORD_STAMP: usize = 32;
 const LENGTH_MAY_DIFFER_BY: Duration = Duration::from_secs(30);
 
 pub(crate) struct Sheet {
@@ -195,9 +197,13 @@ impl Stamped {
         while let Some(opens) = rest.find('<') {
             let (before, after) = rest.split_at(opens);
             gathering.push_str(before);
-            let stamp = after[1..]
-                .split_once('>')
-                .and_then(|(inside, tail)| Some((moment(inside).or_else(|| span(inside))?, tail)));
+            let opened = &after[1..];
+            let reach = opened.floor_char_boundary(LONGEST_WORD_STAMP + 1);
+            let stamp = opened[..reach].find('>').and_then(|closes| {
+                let inside = &opened[..closes];
+                let tail = &opened[closes + 1..];
+                Some((moment(inside).or_else(|| span(inside))?, tail))
+            });
             let Some((at, tail)) = stamp else {
                 gathering.push('<');
                 rest = &after[1..];
@@ -554,6 +560,34 @@ mod tests {
 
     fn sheet(text: &str) -> Sheet {
         read(source(), text).expect("nothing failed")
+    }
+
+    #[test]
+    fn a_line_of_nothing_but_opened_stamps_is_read_in_one_pass() {
+        let opened = "<".repeat(512 * 1024);
+        let started = std::time::Instant::now();
+
+        let read = Stamped::read(&format!("<00:01.00>{opened}"));
+
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(read.map(|stamped| stamped.text.len()), Some(opened.len()));
+    }
+
+    #[test]
+    fn a_word_stamp_is_still_read_where_a_bracket_was_left_open_before_it() {
+        let read = Stamped::read("<00:01.00>a < b <00:02.50>c").expect("a stamped line");
+
+        assert_eq!(
+            read.words,
+            vec![
+                (Duration::from_secs(1), "a < b ".to_owned()),
+                (Duration::from_millis(2_500), "c".to_owned()),
+            ]
+        );
     }
 
     fn lyrics(text: &str) -> Option<Lyrics> {

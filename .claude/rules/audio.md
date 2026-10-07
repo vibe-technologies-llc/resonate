@@ -28,7 +28,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   What a reader never exposes is taken off the source first (`riff.rs`: WAV `INFO`, `id3 ` chunk;
   `matroska.rs`: segment `Title`, filling a track only if the container holds one audio track);
   `Prescan` bundles both. A WAV's `id3 ` revision is appended *last*, outranking `INFO` and a
-  leading tag. `IDIT`/`DTIM` are not read from `INFO` (digitisation dates, not release).
+  leading tag. `IDIT`/`DTIM` are not read from `INFO` (digitisation dates, not release). Every
+  `LIST`/`INFO` of a file together is read to one `MAX_INFO_BYTES` (1 MiB), not one per list
+  (`every_info_list_together_is_read_to_one_ceiling`).
 - **`TagSet` is the vocabulary; other names stay `RawTag`.** Every well-known name has a typed
   field, all three naming paths land on them. Omitted on purpose: RIFF `ISRC` (names the *source*),
   `EncodedBy` (who, not what: `encoder` takes `Encoder` alone), album artist from `INFO` alone
