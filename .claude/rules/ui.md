@@ -2701,13 +2701,19 @@ is never named.
   (`Spectrum::new(rate, spectral)`, a bar's `Falling` carrying floor and rates; the stereo meters
   keep `Falling::METERED`). Window sized by rate, about 85 ms
   (`ANALYSED_FOR`): 4 096 points at 44.1 and 48 kHz, up to 32 768 at 384. Scope = 20 ms of left over
-  right, from the first rising zero crossing of their mid in the first span of a window twice that
-  long (a steady tone stands still).
+  right, from the first rising zero crossing, in the first span of a window twice that long, of
+  their mid, or their side where that carries more energy (`spectrum::louder_of`: an out-of-phase
+  pair still stands still), armed only once the trace has fallen a tenth of the window's loudest
+  below zero (`ARMED_UNDER_THE_LOUDEST`: noise wobbling about zero ahead of the swing does not
+  start it).
 - **The visualiser's third view is the stereo picture.** *Stereo* (`Showing::Stereo`) reads the
   spectrum's window of left and right (about 85 ms) into `stereo.rs`, gpui-free and tested as
   `spectrum.rs` is: each channel's mean square in dBFS folded into the spectrum's `Bar` (rises at
-  once, falls at its rate) and its highest sample into another, whose held peak is the meter's
-  mark and the figure over the plot, and the channels' correlation (Pearson's,
+  once, falls at its rate) and its true peak into another, whose held peak is the meter's mark and
+  the figure over the plot (*dBTP*: a `TruePeakMeter` per channel, the analysis's interpolator,
+  `take`n only the frames that crossed the window's centre since the last frame, by
+  `Caught::heard`, so the cost follows the rate, not the display; an over between the samples
+  reads past 0), and the channels' correlation (Pearson's,
   `None` over silence) settled towards each reading over `CORRELATION_SETTLES_OVER` (300 ms). The
   canvas draws a goniometer (side across, mid up: `sides_and_mids`, at most `DOTS_AT_MOST` dots, the
   mid, side and both channels' axes as guides) in the largest square the plot leaves, two level

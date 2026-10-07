@@ -40,6 +40,7 @@ impl Tapped {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Caught {
     pub tapped: usize,
+    pub heard: u64,
 }
 
 pub struct Tap {
@@ -134,7 +135,10 @@ impl Tap {
         let valid_from = self.valid_from.load(Ordering::Relaxed);
         let Some(fixed) = self.anchor.fixed() else {
             silence(left, right);
-            return Caught { tapped: 0 };
+            return Caught {
+                tapped: 0,
+                heard: 0,
+            };
         };
 
         let heard = fixed.frame.saturating_add(self.run_on(fixed, now));
@@ -143,7 +147,7 @@ impl Tap {
         let before = wanted.saturating_sub((end - start) as usize);
 
         silence(left, right);
-        let heard = self.heard_now();
+        let level = self.heard_now();
         let frames = left
             .iter_mut()
             .zip(right.iter_mut())
@@ -151,8 +155,8 @@ impl Tap {
             .zip(start..end);
         for ((on_the_left, on_the_right), frame) in frames {
             let slot = (frame as usize & self.mask) * TAPPED_CHANNELS;
-            *on_the_left = self.level_at(slot) * heard;
-            *on_the_right = self.level_at(slot + 1) * heard;
+            *on_the_left = self.level_at(slot) * level;
+            *on_the_right = self.level_at(slot + 1) * level;
         }
 
         fence(Ordering::Acquire);
@@ -174,6 +178,7 @@ impl Tap {
 
         Caught {
             tapped: (end - first_sound) as usize,
+            heard,
         }
     }
 
@@ -385,7 +390,13 @@ mod tests {
 
         let (left, right, caught) = read(&tapping.tap, 100);
 
-        assert_eq!(caught, Caught { tapped: 100 });
+        assert_eq!(
+            caught,
+            Caught {
+                tapped: 100,
+                heard: 2_000,
+            }
+        );
         assert_eq!(left.first().copied(), Some(level_of(1_950)));
         assert_eq!(left.last().copied(), Some(level_of(2_049)));
         assert_eq!(right.first().copied(), Some(-level_of(1_950)));

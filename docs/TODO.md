@@ -117,10 +117,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - **Blocked on Shazam:** reached through an undocumented endpoint (`amp.shazam.com`); a change on
   its side stops recognition
 
-## Later: Visualiser
-- The scope triggers on the mid's rising edge alone; the stereo view's meters hold the highest
-  sample, not the oversampled true peak
-
 ## Later: Scrobbling
 - Last.fm is signed in to from the command line alone (`resonate lastfm`); the window has no group
   for it, and a favourite is not loved there (its API names a track by its names)

@@ -40,7 +40,7 @@ pub use resonate_core::{
 };
 pub use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
-    SincParams, Tuning,
+    SincParams, TruePeakMeter, Tuning,
 };
 pub use resonate_pipewire::{
     AudioSource, CardProfile, Error as SinkError, GraphTime, HardwareVolume, LatencyRequest,

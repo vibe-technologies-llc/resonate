@@ -6741,7 +6741,13 @@ fn what_the_tap_says_is_heard_is_what_the_graph_is_playing_at_that_moment() -> R
     let played = graph.lock().played.len() / stride;
     let (heard, caught) = heard_now(&player);
 
-    assert_eq!(caught, Caught { tapped: LOOKED_AT });
+    assert_eq!(
+        caught,
+        Caught {
+            tapped: LOOKED_AT,
+            heard: played as u64,
+        }
+    );
     assert_eq!(heard, levels_of(&source.stream[around_the_played(played)]));
     Ok(())
 }

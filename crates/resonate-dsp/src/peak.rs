@@ -206,6 +206,12 @@ impl TruePeakMeter {
         }
     }
 
+    pub fn take(&mut self, interleaved: &[f32]) -> f64 {
+        self.loudest = 0.0;
+        self.note(interleaved);
+        self.loudest
+    }
+
     pub fn finish(mut self) -> f64 {
         let silence = vec![0.0; self.frame.len()];
         for _ in 0..TAPS {
@@ -572,6 +578,30 @@ mod tests {
             read.abs() < READS_WITHIN_DB,
             "the meter read {read:.3} dBTP"
         );
+    }
+
+    #[test]
+    fn a_meter_taken_a_block_at_a_time_reads_each_block_alone_and_carries_its_history() {
+        let straddled: Vec<f32> = faded(sine(12_000.0, 1.0, FRAC_PI_4, 4_800))
+            .iter()
+            .map(|sample| *sample as f32)
+            .collect();
+        let silence = vec![0.0_f32; 2 * BLOCK];
+        let mut meter = TruePeakMeter::new(NonZeroUsize::new(2).expect("two channels"));
+
+        let halves: Vec<f64> = straddled
+            .chunks(straddled.len() / 2)
+            .map(|half| meter.take(half))
+            .collect();
+        let tail = meter.take(&silence);
+        let after = meter.take(&silence);
+
+        assert!(
+            halves.iter().all(|read| decibels(*read) > -1.0),
+            "{halves:?}"
+        );
+        assert!(decibels(tail) < -40.0, "the faded tail read {tail}");
+        assert_eq!(after, 0.0);
     }
 
     #[test]

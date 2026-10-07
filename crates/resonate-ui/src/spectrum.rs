@@ -22,6 +22,7 @@ const MARKED_DECADES_HZ: [f64; 4] = [100.0, 1_000.0, 10_000.0, 100_000.0];
 const PEAK_HELD_FOR: Duration = Duration::from_millis(700);
 const METERS_FALL_DB_PER_SECOND: f32 = 40.0;
 pub(crate) const LONGEST_STEP: Duration = Duration::from_millis(100);
+const ARMED_UNDER_THE_LOUDEST: f32 = 0.1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Complex {
@@ -498,11 +499,30 @@ fn bands_for(rate: SampleRate, points: usize, spectral: Spectral) -> Box<[Band]>
 }
 
 pub(crate) fn rising_edge(levels: &[f32], within: usize) -> usize {
-    levels
-        .windows(2)
-        .take(within)
-        .position(|pair| matches!(pair, [before, after] if *before < 0.0 && *after >= 0.0))
-        .map_or(0, |at| at + 1)
+    let loudest = levels
+        .iter()
+        .fold(0.0_f32, |loudest, level| loudest.max(level.abs()));
+    let armed_under = -loudest * ARMED_UNDER_THE_LOUDEST;
+    let mut armed = false;
+    for (at, pair) in levels.windows(2).take(within).enumerate() {
+        let [before, after] = pair else {
+            continue;
+        };
+        armed |= *before < armed_under;
+        if armed && *before < 0.0 && *after >= 0.0 {
+            return at + 1;
+        }
+    }
+    0
+}
+
+pub(crate) fn louder_of<'a>(mid: &'a [f32], side: &'a [f32]) -> &'a [f32] {
+    let energy = |levels: &[f32]| levels.iter().map(|level| level * level).sum::<f32>();
+    if energy(side) > energy(mid) {
+        side
+    } else {
+        mid
+    }
 }
 
 #[cfg(test)]
@@ -820,5 +840,17 @@ mod tests {
             "a crossing past the reach was taken"
         );
         assert_eq!(rising_edge(&[0.5; 64], 32), 0);
+    }
+
+    #[test]
+    fn a_trace_is_not_started_by_noise_wobbling_about_zero_ahead_of_the_swing() {
+        let mut wave: Vec<f32> = vec![-0.01, 0.01, -0.01, 0.01];
+        wave.extend((0..400).map(|at| -(TAU * f64::from(at) / 100.0).sin() as f32));
+        let side: Vec<f32> = wave.iter().map(|level| level * 0.5).collect();
+
+        let at = rising_edge(&wave, 200);
+        assert_eq!(at, 55);
+        assert!(std::ptr::eq(louder_of(&side, &wave), wave.as_slice()));
+        assert!(std::ptr::eq(louder_of(&wave, &side), wave.as_slice()));
     }
 }

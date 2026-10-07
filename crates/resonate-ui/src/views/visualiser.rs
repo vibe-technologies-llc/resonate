@@ -13,7 +13,7 @@ use crate::{
     PlayerModel, ResonateApp,
     icons::Icon,
     spectrum::{self, CEILING_DB, Column, MARKED_EVERY_DB, Spectrum, height_within, rising_edge},
-    stereo::{self, Meter, Metered, Stereo},
+    stereo::{self, Heard, Meter, Metered, Stereo},
     theme,
     views::{
         hint::{self, Names},
@@ -41,13 +41,14 @@ const READS_HINT: &str = "What reaches the device — after the equaliser, the v
 const SPECTRUM_HINT: &str =
     "Sixth-octave bands from 20 Hz to what the rate carries, with each band's peak held";
 
-const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising edge";
+const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising edge of the mid, \
+                          or of the side where that is the louder";
 
 const STEREO_HINT: &str = "Where the sound stands between the speakers: a goniometer, mid up and \
                            side across, beside each channel's level and how alike the two are";
 
-const LEVEL_HINT: &str =
-    "Each channel's loudness over the last moment, its highest sample held above it";
+const LEVEL_HINT: &str = "Each channel's loudness over the last moment, its true peak held above it: read between \
+     the samples, so an over a DAC's reconstruction would make shows past full scale";
 
 const CORRELATION_HINT: &str = "How alike the two channels are: +1 the same sound in each, 0 \
                                 unrelated, below 0 out of phase";
@@ -119,6 +120,7 @@ pub(crate) struct Visualiser {
     left: Vec<f32>,
     right: Vec<f32>,
     mid: Vec<f32>,
+    side: Vec<f32>,
     traced: Option<usize>,
     drawn_at: Option<Instant>,
     settling: Task<()>,
@@ -136,6 +138,7 @@ impl Visualiser {
             left: Vec::new(),
             right: Vec::new(),
             mid: Vec::new(),
+            side: Vec::new(),
             traced: None,
             drawn_at: None,
             settling: Task::ready(()),
@@ -173,7 +176,10 @@ impl Visualiser {
             None => {
                 self.left.fill(0.0);
                 self.right.fill(0.0);
-                Caught { tapped: 0 }
+                Caught {
+                    tapped: 0,
+                    heard: 0,
+                }
             }
         };
 
@@ -198,7 +204,14 @@ impl Visualiser {
     fn read_the_stereo(&mut self, tap: Option<&Tap>, now: Instant, step: Duration) -> bool {
         let points = self.spectrum.points();
         let caught = self.catch(tap, now, points);
-        self.stereo.take(&self.left, &self.right, step);
+        self.stereo.take(
+            Heard {
+                left: &self.left,
+                right: &self.right,
+                heard: caught.heard,
+            },
+            step,
+        );
 
         caught.tapped == 0 && !self.stereo.is_at_rest()
     }
@@ -213,7 +226,11 @@ impl Visualiser {
     fn read_the_scope(&mut self, tap: Option<&Tap>, now: Instant) {
         let span = spanned(self.spectrum.rate());
         let caught = self.catch(tap, now, span * 2);
-        self.traced = (caught.tapped > 0).then(|| rising_edge(&self.mid, span));
+        self.side.clear();
+        self.side
+            .extend(stereo::sides_and_mids(&self.left, &self.right).map(|(side, _)| side));
+        self.traced = (caught.tapped > 0)
+            .then(|| rising_edge(spectrum::louder_of(&self.mid, &self.side), span));
     }
 
     fn settle(&mut self, cx: &mut Context<Self>) {
@@ -436,7 +453,7 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
 }
 
 fn stereo_readings(metered: Metered) -> Div {
-    let level = |channel: &str, meter: Meter| format!("{channel} {:.1} dB", meter.peak_db);
+    let level = |channel: &str, meter: Meter| format!("{channel} {:.1} dBTP", meter.peak_db);
     let correlation = metered.correlation.map_or_else(
         || "correlation —".to_owned(),
         |held| format!("correlation {held:+.2}"),
