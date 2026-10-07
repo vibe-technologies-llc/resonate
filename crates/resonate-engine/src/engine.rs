@@ -1610,8 +1610,8 @@ impl Engine {
             self.transport,
             TransportState::Playing | TransportState::Draining
         ) || (self.transport == TransportState::Loading
-                && self.output.is_none()
-                && self.unbound.is_some())
+            && self.output.is_none()
+            && self.unbound.is_some())
         {
             self.transport = TransportState::Paused;
         }
@@ -2773,7 +2773,9 @@ impl Engine {
         };
         match self.rebind(Some(at), None) {
             Ok(()) if self.playing && self.output.is_none() => {
-                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+                tracing::debug!(
+                    "the sink list moved while it was surveyed; the row waits for the next survey"
+                );
             }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
@@ -2801,7 +2803,9 @@ impl Engine {
             });
         match back {
             Ok(()) if self.playing && self.output.is_none() => {
-                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+                tracing::debug!(
+                    "the sink list moved while it was surveyed; the row waits for the next survey"
+                );
             }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
@@ -3071,7 +3075,9 @@ impl Engine {
 
         match self.rebind(Some(at), None) {
             Ok(()) if self.output.is_none() => {
-                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+                tracing::debug!(
+                    "the sink list moved while it was surveyed; the row waits for the next survey"
+                );
                 self.waiting_for_a_device = true;
             }
             Ok(()) => {

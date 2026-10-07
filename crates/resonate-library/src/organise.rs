@@ -3193,10 +3193,7 @@ mod tests {
 
         named.album = Some(".38 Special");
         named.title = ". . .Hold On Loosely";
-        assert_eq!(
-            rendered(&layout, &named),
-            "38 Special/Hold On Loosely.flac"
-        );
+        assert_eq!(rendered(&layout, &named), "38 Special/Hold On Loosely.flac");
 
         named.title = "..";
         assert_eq!(layout.render(&named, Naming::Anything), None);

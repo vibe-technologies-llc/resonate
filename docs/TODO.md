@@ -6,9 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- MPRIS `Next` on the last row of a non-repeating queue stops playback and ends the queue though
-  `CanGoNext` says false and the spec makes the call do nothing; `Previous` on the first row
-  restarts the track likewise
 - A name within ~30 bytes of the 255-byte limit cannot be written: a delivery's
   `.resonate-delivery` staging name, a dropped file's `.resonate-part`, its `" (2)"` candidates and
   a tag write's staged sibling outgrow it; the want is counted unkept each poll and given up, the

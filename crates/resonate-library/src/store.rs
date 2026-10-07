@@ -2114,9 +2114,11 @@ const THE_OWNER_OF_A_TRACKS_ALBUM: &str = "SELECT ar.name
       WHERE t.id = ?1";
 
 fn album_owner_of(tx: &Transaction<'_>, id: i64) -> Result<Option<String>> {
-    queried(tx, THE_OWNER_OF_A_TRACKS_ALBUM, params![id], |row| row.get(0))
-        .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))
+    queried(tx, THE_OWNER_OF_A_TRACKS_ALBUM, params![id], |row| {
+        row.get(0)
+    })
+    .optional()
+    .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 const THE_WORDS_A_TRACK_SINGS: &str = "SELECT coalesce(t.lyrics, k.text)

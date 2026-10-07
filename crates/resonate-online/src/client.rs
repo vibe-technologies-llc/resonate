@@ -747,7 +747,10 @@ fn redirected_to(at: &str, response: &Response<Body>) -> Option<String> {
         return None;
     }
     let location = response.headers().get(LOCATION)?.to_str().ok()?;
-    if location.parse::<Uri>().is_ok_and(|uri| uri.scheme().is_some()) {
+    if location
+        .parse::<Uri>()
+        .is_ok_and(|uri| uri.scheme().is_some())
+    {
         return Some(location.to_owned());
     }
 

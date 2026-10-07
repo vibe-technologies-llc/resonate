@@ -14418,10 +14418,7 @@ fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again
             .text(ALBUM, "Orbits")
             .text(ISRC, CODE),
     )?;
-    assert_eq!(
-        titles(&library.search("Zephyr", 10)?.tracks),
-        vec!["Echos"]
-    );
+    assert_eq!(titles(&library.search("Zephyr", 10)?.tracks), vec!["Echos"]);
 
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(

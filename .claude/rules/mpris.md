@@ -49,7 +49,10 @@ that also drives `Player` property changes. Ids: `/org/resonate/track/…`,
   (100 ms), are owed likewise. A row leaving the queue is forgotten (owed bounded by the queue).
 - **A method does what the spec says, including nothing.** `SetPosition` before start, past end or
   for another track: ignored. `Seek` past end = `Next`. Offsets via `unsigned_abs` (`i64::MIN`
-  saturates). `SetRate(0.0)` pauses.
+  saturates). `SetRate(0.0)` pauses. `Next` and `Previous` do nothing where `CanGoNext` /
+  `CanGoPrevious` say false (`service::can_go_next`, `can_go_previous`, one arithmetic for both
+  property and method), so the last row of a non-repeating queue is not ended and a lone first row
+  not restarted (`next_and_previous_do_nothing_where_the_bus_was_told_they_could_not`).
 - **`Seeked` is the engine's seek count, not a jump read from the position.** `PlayerState::seeks`
   is stepped by `Engine::seek` only where the seek landed (refused: no announce; track change:
   `Metadata` alone). `skip` also steps it for a row heard again from its start (*repeat track*,

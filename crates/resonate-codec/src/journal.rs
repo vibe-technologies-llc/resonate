@@ -485,10 +485,9 @@ mod tests {
         let track = folder.0.join("Brain Damage.flac");
         fs::write(&track, [1_u8; 8]).expect("a torn track");
 
-        let ours = folder.0.join(kept_name(
-            OsStr::new("Brain Damage.flac"),
-            WHOLE_SUFFIX,
-        ));
+        let ours = folder
+            .0
+            .join(kept_name(OsStr::new("Brain Damage.flac"), WHOLE_SUFFIX));
         fs::write(&ours, [2_u8; 8]).expect("a copy being written back");
         assert!(!names_a_cut_short_write(&ours));
 

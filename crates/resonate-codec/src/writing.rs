@@ -935,7 +935,9 @@ fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<
     for folder in crate::spool::spooled_under() {
         let staged = staged_in(&folder, path);
         match fs::copy(path, &staged) {
-            Ok(_) => return landed_by(&staged, path, location, saving, written_back_from_elsewhere),
+            Ok(_) => {
+                return landed_by(&staged, path, location, saving, written_back_from_elsewhere);
+            }
             Err(source) => {
                 let _ = fs::remove_file(&staged);
                 refused = source;

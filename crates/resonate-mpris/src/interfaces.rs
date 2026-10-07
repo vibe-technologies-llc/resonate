@@ -4,8 +4,8 @@ use ahash::AHashSet;
 use parking_lot::Mutex;
 use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
 use resonate_engine::{
-    ArtRead, Command, Placement, Player, PlayerState, QueueItem, RepeatMode, StreamDigest,
-    TrackState, unclaimed_id,
+    ArtRead, Command, Placement, Player, PlayerState, QueueItem, StreamDigest, TrackState,
+    unclaimed_id,
 };
 use zbus::{
     fdo, interface,
@@ -15,6 +15,7 @@ use zbus::{
 use crate::{
     Heard, Host, Opened,
     art::Pictures,
+    service,
     track::{
         PlaybackStatus, Sleep, SleepMode, frames, loop_status, metadata, micros, playing_digest,
         repeat_mode, sleep_status, track_path,
@@ -197,10 +198,16 @@ pub(crate) struct PlayerInterface {
 #[interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerInterface {
     fn next(&self) -> fdo::Result<()> {
+        if !service::can_go_next(&self.shared.player.state()) {
+            return Ok(());
+        }
         self.shared.settle(Command::Next)
     }
 
     fn previous(&self) -> fdo::Result<()> {
+        if !service::can_go_previous(&self.shared.player.state()) {
+            return Ok(());
+        }
         self.shared.settle(Command::Previous)
     }
 
@@ -354,19 +361,12 @@ impl PlayerInterface {
 
     #[zbus(property)]
     fn can_go_next(&self) -> bool {
-        let state = self.shared.player.state();
-        state.current.is_some()
-            && (state.repeat != RepeatMode::Off
-                || state
-                    .queue_position
-                    .is_some_and(|at| at + 1 < state.queue_len))
+        service::can_go_next(&self.shared.player.state())
     }
 
     #[zbus(property)]
     fn can_go_previous(&self) -> bool {
-        let state = self.shared.player.state();
-        state.current.is_some()
-            && (state.repeat == RepeatMode::Queue || state.queue_position.is_some_and(|at| at > 0))
+        service::can_go_previous(&self.shared.player.state())
     }
 
     #[zbus(property)]

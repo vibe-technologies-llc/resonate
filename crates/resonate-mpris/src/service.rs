@@ -554,6 +554,19 @@ impl Reading {
     }
 }
 
+pub(crate) fn can_go_next(state: &PlayerState) -> bool {
+    state.current.is_some()
+        && (state.repeat != RepeatMode::Off
+            || state
+                .queue_position
+                .is_some_and(|at| at + 1 < state.queue_len))
+}
+
+pub(crate) fn can_go_previous(state: &PlayerState) -> bool {
+    state.current.is_some()
+        && (state.repeat == RepeatMode::Queue || state.queue_position.is_some_and(|at| at > 0))
+}
+
 fn described_otherwise(before: &Watched, now: &Watched) -> bool {
     !Arc::ptr_eq(&before.metadata, &now.metadata) && before.metadata != now.metadata
 }
@@ -599,13 +612,8 @@ fn snapshot(
         heard,
         shown: playing_digest(&state, digest.as_ref())
             .and_then(|playing| shown(&playing.info.tags, &playing.location, art)),
-        can_go_next: current.is_some()
-            && (state.repeat != RepeatMode::Off
-                || state
-                    .queue_position
-                    .is_some_and(|at| at + 1 < state.queue_len)),
-        can_go_previous: current.is_some()
-            && (state.repeat == RepeatMode::Queue || state.queue_position.is_some_and(|at| at > 0)),
+        can_go_next: can_go_next(&state),
+        can_go_previous: can_go_previous(&state),
         can_play: state.queue_len > 0,
         can_pause: current.is_some(),
         can_seek: current.is_some_and(|current| {

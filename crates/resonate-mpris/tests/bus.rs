@@ -1189,6 +1189,37 @@ fn a_seek_past_the_end_of_a_track_acts_like_next_the_way_the_spec_says() {
 }
 
 #[test]
+fn next_and_previous_do_nothing_where_the_bus_was_told_they_could_not() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load(&tree.wav("echoes.wav"));
+    harness.wait_for(|harness| harness.status() == "Playing", "playback to start");
+
+    for (method, able) in [("Next", "CanGoNext"), ("Previous", "CanGoPrevious")] {
+        let can: bool = harness
+            .proxy(PLAYER)
+            .get_property(able)
+            .expect("the property is served");
+        assert!(!can, "{able} said a lone track could be left");
+        harness
+            .proxy(PLAYER)
+            .call::<_, _, ()>(method, &())
+            .expect("the method is served");
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(harness.status(), "Playing", "{method} stopped the queue");
+        assert!(
+            harness
+                .player
+                .state()
+                .current
+                .is_some_and(|track| track.id.get() == 1)
+        );
+    }
+}
+
+#[test]
 fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
     let Some(harness) = Harness::start() else {
         return;
