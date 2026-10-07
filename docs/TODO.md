@@ -80,13 +80,10 @@ sits last in its category, not worked until it moves. Everything else is open.
 
 ## Later: The vault
 - A kept WAVE object reopened by path for a backward seek uses its old frame index against a renewal
-  that replaced it. Do it with the next two items
-- A renewal landing under a new key is weighed against the source, not the object it replaces: the
-  vault can grow
+  that replaced it. Do it with the next item
 - A WAVE object packed before the frames came is one zstd frame naming no length: a backward seek in
   it still restarts the stream
-- `vault --verify` never checks covers and offers nothing to mend one failing row. After the
-  renewal items
+- `vault --verify` never checks covers and offers nothing to mend one failing row
 - The key is the PCM alone: two tracks of the same samples at another rate, count or mask (digital
   silence) share an object, and a standing object is taken on its size alone; needs a migration
 - A JPEG cover is kept byte for byte where its lossless JXL is larger, never smaller than it: a

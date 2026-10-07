@@ -14,7 +14,9 @@ use resonate_codec::{
     Sources, probe,
 };
 use resonate_core::{AudioBuffer, MediaLocation, SampleData, SampleFormat, SourceId, StreamSpec};
-use resonate_vault::{Error, Form, Halt, Keeping, Kept, Refusal, Taking, Vault, VaultFiles};
+use resonate_vault::{
+    Error, Form, Halt, Keeping, Kept, Refusal, Replacing, Taking, Vault, VaultFiles, VaultKey,
+};
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -229,6 +231,7 @@ fn kept(vault: &Vault, sources: &Sources, location: &MediaLocation) -> Kept {
             span: None,
             renewing: false,
             foretold: None,
+            replacing: None,
             halt: Halt::NEVER,
         })
         .expect("a vault that kept it")
@@ -308,6 +311,50 @@ fn a_delivered_stream_is_kept_like_a_file_and_nothing_is_left_in_staging() {
 }
 
 #[test]
+fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let sources = Sources::local();
+    let vault = tree.vault();
+    let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
+    let first = kept(&vault, &sources, &location);
+    let renewed = |replacing: Replacing| {
+        vault.keep(&Taking {
+            sources: &sources,
+            location: &location,
+            span: None,
+            renewing: true,
+            foretold: None,
+            replacing: Some(replacing),
+            halt: Halt::NEVER,
+        })
+    };
+    let elsewhere = VaultKey::read("0123456789abcdef0123456789abcdef").expect("a key");
+
+    assert!(matches!(
+        renewed(Replacing {
+            key: elsewhere,
+            bytes: first.bytes,
+        }),
+        Ok(Keeping::Refused(Refusal::NoSmaller))
+    ));
+    assert!(matches!(
+        renewed(Replacing {
+            key: elsewhere,
+            bytes: first.bytes + 1,
+        }),
+        Ok(Keeping::Kept(_))
+    ));
+    assert!(matches!(
+        renewed(Replacing {
+            key: first.key,
+            bytes: 1,
+        }),
+        Ok(Keeping::Kept(_))
+    ));
+}
+
+#[test]
 fn a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
@@ -326,6 +373,7 @@ fn a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging() {
             span: None,
             renewing: false,
             foretold: None,
+            replacing: None,
             halt: Halt::on(&halted),
         });
 
@@ -569,6 +617,7 @@ fn a_renewal_replaces_the_object_standing_under_its_key_only_where_it_comes_out_
             span: None,
             renewing: true,
             foretold: None,
+            replacing: None,
             halt: Halt::NEVER,
         })
         .expect("a vault that weighed it again")
@@ -710,6 +759,7 @@ fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
             span: None,
             renewing: false,
             foretold: None,
+            replacing: None,
             halt: Halt::NEVER,
         })
     };
@@ -1121,6 +1171,7 @@ fn a_source_with_a_packet_that_will_not_decode_is_not_kept() {
         span: None,
         renewing: false,
         foretold: None,
+        replacing: None,
         halt: Halt::NEVER,
     });
 

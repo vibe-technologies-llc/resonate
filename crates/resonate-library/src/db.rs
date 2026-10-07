@@ -20,7 +20,7 @@ use resonate_core::{
     SampleFormat, SampleRate, Span, StreamSpec, TrackId, WantId,
 };
 use resonate_providers::Providers;
-use resonate_vault::{Encoding, Kept as VaultKept, VaultFiles};
+use resonate_vault::{Encoding, Kept as VaultKept, Replacing, VaultFiles};
 use rusqlite::{
     Connection, OptionalExtension as _, Row, TransactionBehavior, hooks::Action, params,
     params_from_iter, types::Value,
@@ -298,7 +298,8 @@ const TRACKS_TO_VAULT: &str = "SELECT tracks.id, tracks.path, tracks.span_start,
             (SELECT min(o.key) FROM vault_objects o
               WHERE tracks.span_frames IS NULL AND o.frames = tracks.duration
                 AND o.sample_rate = tracks.sample_rate AND o.channels = tracks.channels
-             HAVING count(*) = 1)
+             HAVING count(*) = 1),
+            tracks.vault_key, vault_objects.bytes
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN vault_objects ON vault_objects.key = tracks.vault_key
@@ -6698,6 +6699,7 @@ pub(crate) struct TrackToVault {
     pub album_id: Option<AlbumId>,
     pub renewing: bool,
     pub foretold: Option<VaultKey>,
+    pub replacing: Option<Replacing>,
 }
 
 impl TrackToVault {
@@ -6719,6 +6721,8 @@ struct RawToVault {
     album_id: Option<i64>,
     renewing: bool,
     foretold: Option<String>,
+    standing: Option<String>,
+    standing_bytes: Option<i64>,
 }
 
 impl RawToVault {
@@ -6736,6 +6740,8 @@ impl RawToVault {
             album_id: row.get(9)?,
             renewing: row.get(10)?,
             foretold: row.get(11)?,
+            standing: row.get(12)?,
+            standing_bytes: row.get(13)?,
         })
     }
 
@@ -6761,6 +6767,15 @@ impl RawToVault {
                 .foretold
                 .as_deref()
                 .and_then(|key| VaultKey::read(key).ok()),
+            replacing: self
+                .standing
+                .as_deref()
+                .and_then(|key| VaultKey::read(key).ok())
+                .zip(self.standing_bytes)
+                .map(|(key, bytes)| Replacing {
+                    key,
+                    bytes: u64::try_from(bytes).unwrap_or(0),
+                }),
         })
     }
 }

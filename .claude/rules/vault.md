@@ -137,9 +137,14 @@ is the only copy) and a row `Form::of` keeps as is whatever the encoder, unless 
 that kind is kept (`sheds_tags_kept`: MP3, AAC, DSD, Vorbis, Opus). Preview marks it *weighed
 again*. A renewal is a `Taking` with `renewing`: an object already under the key is a rival, not a
 dedup hit; the new one replaces it (`Kept::replaced`, `Landing::Replaced`) only if smaller; a losing
-renewal keeps the standing object, stamps it current. `keep` never discards a replaced object (rows
-naming the same audio keep theirs); a renewal settling on another key leaves the old object to
-`--prune`. A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row for its
+renewal keeps the standing object, stamps it current. **A renewal settling on another key is
+weighed against the object it would replace, not only the source**: `Taking::replacing` carries
+that object's key and size (`TRACKS_TO_VAULT` reads them beside the row), and a result under
+another key no smaller is `Refusal::NoSmaller`, stamped against the encoder like any refusal, so
+the row keeps its object and the vault never grows by a renewal
+(`a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace`). `keep` never
+discards a replaced object (rows naming the same audio keep theirs); a renewal settling on another
+key leaves the old object to `--prune`, as it leaves an object it landed and then refused. A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row for its
 object: weighed again next import.
 
 **A refusal is stamped against the encoder too.** Each `Keeping::Refused` writes

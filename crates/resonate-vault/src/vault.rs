@@ -94,7 +94,14 @@ pub struct Taking<'a> {
     pub span: Option<FrameSpan>,
     pub renewing: bool,
     pub foretold: Option<VaultKey>,
+    pub replacing: Option<Replacing>,
     pub halt: Halt<'a>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Replacing {
+    pub key: VaultKey,
+    pub bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -341,6 +348,7 @@ impl Vault {
                         span: None,
                         renewing: false,
                         foretold: None,
+                        replacing: None,
                         halt: Halt::NEVER,
                     })
                 } else {
@@ -442,6 +450,14 @@ impl Vault {
                 self.kept_whole(taking, codec, &info, None)?
             }
             kept => kept,
+        };
+        let kept = match (kept, taking.replacing) {
+            (Keeping::Kept(kept), Some(standing))
+                if kept.key != standing.key && kept.bytes >= standing.bytes =>
+            {
+                Keeping::Refused(Refusal::NoSmaller)
+            }
+            (kept, _) => kept,
         };
         Ok(weighed(kept, held, Box::new(info.tags), bits))
     }
@@ -1592,6 +1608,7 @@ mod tests {
                 span: None,
                 renewing: false,
                 foretold: None,
+                replacing: None,
                 halt: Halt::NEVER,
             })
             .expect("a keeping")
@@ -1664,6 +1681,7 @@ mod tests {
                 span: None,
                 renewing: false,
                 foretold: Some(landed.key),
+                replacing: None,
                 halt: Halt::NEVER,
             })
             .expect("a keeping")

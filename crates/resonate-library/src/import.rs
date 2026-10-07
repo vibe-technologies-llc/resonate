@@ -369,6 +369,7 @@ fn keep_one(
         span: row.span,
         renewing: row.renewing,
         foretold: row.foretold,
+        replacing: row.replacing.filter(|_| row.renewing),
         halt: Halt::on(&progress.cancelled),
     };
 

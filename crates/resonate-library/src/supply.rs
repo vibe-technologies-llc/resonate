@@ -364,6 +364,7 @@ fn landed(
                 span: None,
                 renewing: false,
                 foretold: None,
+                replacing: None,
                 halt: Halt::NEVER,
             })
         }
