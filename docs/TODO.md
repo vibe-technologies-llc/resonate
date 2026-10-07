@@ -27,9 +27,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- The tracks pane files a track under its artist's sort name only where its own file carries one: an
-  artist sorted by MusicBrainz or another file's `ARTISTSORT` still files its untagged tracks under
-  *The*
 - On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
   still copies the whole file, twice for one with a second name

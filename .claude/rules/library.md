@@ -237,14 +237,21 @@ rows read via `Player::media` like any unscanned row.
   else the absorbed one's. **A track files under the title and artist its file sorts it by**:
   `tracks.title_sort` = `TITLESORT` (`TSOT`, `sonm`), `tracks.artist_sort` = `ARTISTSORT` for the
   whole credit in `tracks.artist`; both written by every upsert, followed by a tag write
-  (`files_retagged`). `title_filed`, `artist_filed` = generated `VIRTUAL` columns reading the sort
-  name only while the row is billed as the file names it (`title IS tagged_title`, `artist IS
-  tagged_artist`), so a lookup-corrected title is not filed under the file's sort of the old one.
-  Every track order reads the two filed columns and every order index is declared on them (a plain
-  column allows it; an expression would want an index per spelling). Steps adding
-  `artists.tagged_sort`, `albums.tagged_sort` (rows with an album) and `title_sort`/`artist_sort`
-  (which also rebuilt six indexes) each mark scanned rows `probe_again`, the sorts never having been
-  read. A sort name only a lookup or another file gave the artist does not file the tracks pane.
+  (`files_retagged`). `title_filed` = a generated `VIRTUAL` column reading the sort name only while
+  the row is billed as the file names it (`title IS tagged_title`), so a lookup-corrected title is
+  not filed under the file's sort of the old one. `artist_filed` is a plain column the schema's
+  triggers keep (`tracks_file_their_artist_when_added`/`_when_named`,
+  `artists_file_their_tracks_when_sorted`): the file's own `artist_sort` while billed as the file
+  names it (`artist IS tagged_artist`), else the artist's `coalesce(tagged_sort, sort_name)` where
+  `artist_id` names an artist whose name is the whole credit (`COLLATE NOCASE`), else the credit:
+  an artist sorted by MusicBrainz or by another file's `ARTISTSORT` files its untagged tracks too,
+  a credit naming more than the artist keeps its own spelling
+  (`a_track_its_file_does_not_sort_is_filed_under_its_artists_sort_name`). Pure SQL, no
+  application function, so a catalog written by any SQLite still keeps it. Every track order reads
+  the two filed columns and every order index is declared on them (a plain column allows it; an
+  expression would want an index per spelling). Steps adding `artists.tagged_sort`,
+  `albums.tagged_sort` (rows with an album) and `title_sort`/`artist_sort` (which also rebuilt six
+  indexes) each mark scanned rows `probe_again`, the sorts never having been read.
   Albums/artists orders skip the index guard: those tables hold thousands of rows against `tracks`'
   hundreds of thousands, so a temp B-tree beats an index, and `SCHEMA_FINGERPRINT` covers the index
   list (adding one = a `MIGRATIONS` step and a rebuild in every catalog). No `resonate

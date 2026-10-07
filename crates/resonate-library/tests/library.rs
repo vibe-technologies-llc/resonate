@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     env,
     ffi::OsStr,
     fs, io,
@@ -919,6 +920,7 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
             Some("Beatles, The"),
         ),
         ("fade.wav", "Fade", None, "Blur", None),
+        ("yesterday.wav", "Yesterday", None, "The Beatles", None),
     ] {
         let wav = Wav::new().text(TITLE, title).text(ARTIST, artist);
         let wav = match title_sort {
@@ -948,20 +950,23 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
     };
     assert_eq!(
         listed(SortOrder::Title, Direction::Ascending)?,
-        ["Angel Eyes", "The End", "Fade", "Help!"]
+        ["Angel Eyes", "The End", "Fade", "Help!", "Yesterday"]
     );
     assert_eq!(
         listed(SortOrder::Title, Direction::Descending)?,
-        ["Help!", "Fade", "The End", "Angel Eyes"]
+        ["Yesterday", "Help!", "Fade", "The End", "Angel Eyes"]
     );
+    let by_artist = listed(SortOrder::Artist, Direction::Ascending)?;
+    assert_eq!(&by_artist[..1], ["Angel Eyes"]);
     assert_eq!(
-        listed(SortOrder::Artist, Direction::Ascending)?,
-        ["Angel Eyes", "Help!", "Fade", "The End"]
+        by_artist[1..3].iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([&"Help!".to_owned(), &"Yesterday".to_owned()]),
+        "a Beatles track its file does not sort was not filed under the artist's sort name"
     );
-    assert_eq!(
-        listed(SortOrder::Artist, Direction::Descending)?,
-        ["The End", "Fade", "Help!", "Angel Eyes"]
-    );
+    assert_eq!(&by_artist[3..], ["Fade", "The End"]);
+    let backwards = listed(SortOrder::Artist, Direction::Descending)?;
+    assert_eq!(&backwards[..2], ["The End", "Fade"]);
+    assert_eq!(&backwards[4..], ["Angel Eyes"]);
     Ok(())
 }
 

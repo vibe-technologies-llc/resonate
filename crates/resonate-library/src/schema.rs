@@ -322,6 +322,54 @@ const MIGRATIONS: &[&str] = &[
          refused    INTEGER NOT NULL,
          PRIMARY KEY (want_id, taken_from)
      ) STRICT, WITHOUT ROWID;",
+    "DROP INDEX tracks_by_artist_name;
+     ALTER TABLE tracks DROP COLUMN artist_filed;
+     ALTER TABLE tracks ADD COLUMN artist_filed TEXT;
+     UPDATE tracks SET artist_filed = CASE
+         WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort
+         ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
+                        WHERE a.id = tracks.artist_id AND a.name = tracks.artist COLLATE NOCASE),
+                       artist)
+     END;
+     CREATE INDEX tracks_by_artist_name ON tracks(artist_filed COLLATE NOCASE, album_id,
+                                                  disc_number, track_number);
+     CREATE TRIGGER tracks_file_their_artist_when_added AFTER INSERT ON tracks
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
+                 THEN new.artist_sort
+             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
+                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
+                           new.artist)
+         END
+         WHERE id = new.id;
+     END;
+     CREATE TRIGGER tracks_file_their_artist_when_named AFTER UPDATE OF
+         artist, artist_id, artist_sort, tagged_artist ON tracks
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
+                 THEN new.artist_sort
+             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
+                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
+                           new.artist)
+         END
+         WHERE id = new.id;
+     END;
+     CREATE TRIGGER artists_file_their_tracks_when_sorted AFTER UPDATE OF
+         name, tagged_sort, sort_name ON artists
+     WHEN old.name IS NOT new.name
+       OR old.tagged_sort IS NOT new.tagged_sort
+       OR old.sort_name IS NOT new.sort_name
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort
+             WHEN artist = new.name COLLATE NOCASE
+                 THEN coalesce(new.tagged_sort, new.sort_name, artist)
+             ELSE artist
+         END
+         WHERE artist_id = new.id;
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1372,6 +1420,58 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn a_track_its_file_does_not_sort_is_filed_under_its_artists_sort_name() {
+        let connection = opened();
+        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        let filed = |path: &str| -> Option<String> {
+            connection
+                .query_row(
+                    "SELECT artist_filed FROM tracks WHERE path = ?1",
+                    [path],
+                    |row| row.get(0),
+                )
+                .expect("the track reads back")
+        };
+
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name, tagged_sort) VALUES (1, 'the doors', 'The Doors', 'Doors, The');
+                 INSERT INTO artists (id, key, name) VALUES (2, 'the beatles', 'The Beatles');
+                 INSERT INTO tracks (path, title, artist, artist_id, tagged_title, tagged_artist, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES ('untagged.flac', 'The End', 'The Doors', 1, 'The End', 'The Doors', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        ('featuring.flac', 'Riders', 'The Doors & Friends', 1, 'Riders', 'The Doors & Friends', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        ('beatles.flac', 'Help!', 'The Beatles', 2, 'Help!', 'The Beatles', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the rows are stored");
+
+        assert_eq!(filed("untagged.flac").as_deref(), Some("Doors, The"));
+        assert_eq!(
+            filed("featuring.flac").as_deref(),
+            Some("The Doors & Friends")
+        );
+        assert_eq!(filed("beatles.flac").as_deref(), Some("The Beatles"));
+
+        connection
+            .execute_batch("UPDATE artists SET sort_name = 'Beatles, The' WHERE id = 2;")
+            .expect("a lookup sorts the artist");
+        assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles, The"));
+
+        connection
+            .execute_batch(
+                "UPDATE tracks SET artist_sort = 'Fab Four' WHERE path = 'beatles.flac';",
+            )
+            .expect("the file names a sort of its own");
+        assert_eq!(filed("beatles.flac").as_deref(), Some("Fab Four"));
+
+        connection
+            .execute_batch(
+                "UPDATE tracks SET artist = 'Beatles', artist_id = NULL WHERE path = 'beatles.flac';",
+            )
+            .expect("a lookup renames the credit");
+        assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles"));
     }
 
     #[test]
