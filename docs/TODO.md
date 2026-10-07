@@ -6,13 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A row waiting for a device or the graph is stranded when a sink change is announced while the
-  survey that would bind it is out: `bind` waits for the next survey and answers `Ok`, the caller
-  takes that as bound and clears `unbound` and `waiting_for_a_device`; the row sits silent in
-  Loading, Play not reviving it
-- A contact typed for MusicBrainz travels in the User-Agent through the Cover Art Archive's redirect
-  to archive.org, which never asked: ureq keeps every header but credentials across a redirect; the
-  identity test pins the first hop alone
 - A room-correction response measured at a rate other than the stream's is redrawn shifted early by
   the resampler's reach (~7 ms at 44.1 to 48 kHz), losing its start: `resampled` skips
   `latency_frames` from an output already time-aligned; the other-rate test checks length only

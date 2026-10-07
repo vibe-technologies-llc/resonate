@@ -17,8 +17,8 @@ use serde::de::DeserializeOwned;
 use ureq::{
     Agent, Body,
     http::{
-        HeaderMap, Response, StatusCode,
-        header::{AUTHORIZATION, RETRY_AFTER, USER_AGENT},
+        HeaderMap, Response, StatusCode, Uri,
+        header::{AUTHORIZATION, LOCATION, RETRY_AFTER, USER_AGENT},
     },
 };
 
@@ -109,6 +109,7 @@ const LISTENBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
 const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const RETRY_AFTER_BY_DEFAULT: Duration = Duration::from_secs(2);
 const BUSY_RETRIES: u32 = 3;
+const REDIRECTS_FOLLOWED: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
@@ -220,6 +221,10 @@ impl Introduction {
     pub fn user_agent_to(&self, host: Host) -> String {
         self.heard_again();
         self.said.read().user_agent_to(host)
+    }
+
+    fn named(&self) -> String {
+        self.said.read().named()
     }
 
     fn heard_again(&self) {
@@ -617,14 +622,7 @@ impl Client {
             }
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
-                Sending::Get { authorization } => {
-                    let request = self.agent.get(url).header(USER_AGENT, &introduced);
-                    match authorization {
-                        Some(authorization) => request.header(AUTHORIZATION, authorization),
-                        None => request,
-                    }
-                    .call()
-                }
+                Sending::Get { authorization } => self.got(url, &introduced, authorization),
                 Sending::Post(posted) => {
                     let request = self
                         .agent
@@ -670,6 +668,47 @@ impl Client {
         }
     }
 
+    fn got(
+        &self,
+        url: &str,
+        introduced: &str,
+        authorization: Option<&str>,
+    ) -> std::result::Result<Response<Body>, ureq::Error> {
+        let request = self.agent.get(url).header(USER_AGENT, introduced);
+        let request = match authorization {
+            Some(authorization) => request.header(AUTHORIZATION, authorization),
+            None => request,
+        };
+        let named = self.introduction.named();
+        if introduced == named {
+            return request.call();
+        }
+
+        let origin = host_of(url);
+        let mut at = url.to_owned();
+        let mut response = request.config().max_redirects(0).build().call()?;
+        for _ in 0..REDIRECTS_FOLLOWED {
+            let Some(next) = redirected_to(&at, &response) else {
+                return Ok(response);
+            };
+            let said = if host_of(&next) == origin {
+                introduced
+            } else {
+                named.as_str()
+            };
+            response = self
+                .agent
+                .get(&next)
+                .header(USER_AGENT, said)
+                .config()
+                .max_redirects(0)
+                .build()
+                .call()?;
+            at = next;
+        }
+        Err(ureq::Error::TooManyRedirects)
+    }
+
     fn pace(&self, host: Host) {
         match self.standing {
             Standing::Listener => {
@@ -688,6 +727,39 @@ impl Client {
             }
         }
     }
+}
+
+fn host_of(url: &str) -> Option<String> {
+    let uri = url.parse::<Uri>().ok()?;
+    Some(uri.host()?.to_ascii_lowercase())
+}
+
+fn redirected_to(at: &str, response: &Response<Body>) -> Option<String> {
+    let redirects = matches!(
+        response.status(),
+        StatusCode::MOVED_PERMANENTLY
+            | StatusCode::FOUND
+            | StatusCode::SEE_OTHER
+            | StatusCode::TEMPORARY_REDIRECT
+            | StatusCode::PERMANENT_REDIRECT
+    );
+    if !redirects {
+        return None;
+    }
+    let location = response.headers().get(LOCATION)?.to_str().ok()?;
+    if location.parse::<Uri>().is_ok_and(|uri| uri.scheme().is_some()) {
+        return Some(location.to_owned());
+    }
+
+    let from = at.parse::<Uri>().ok()?;
+    let scheme = from.scheme_str()?;
+    if location.starts_with("//") {
+        return Some(format!("{scheme}:{location}"));
+    }
+    let authority = from.authority()?;
+    location
+        .starts_with('/')
+        .then(|| format!("{scheme}://{authority}{location}"))
 }
 
 fn busy(status: StatusCode) -> bool {
@@ -845,6 +917,64 @@ mod tests {
             (head, body)
         });
         (url, served)
+    }
+
+    fn serving_one_get(answer: String) -> (u16, JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("a bound address").port();
+        let served = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("a connection");
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
+                head.push(byte[0]);
+            }
+            let _ = stream.write_all(answer.as_bytes());
+            String::from_utf8(head)
+                .expect("a head in ASCII")
+                .to_ascii_lowercase()
+        });
+        (port, served)
+    }
+
+    fn redirecting_to(location: &str) -> String {
+        format!(
+            "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\n\
+             Connection: close\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn a_contact_is_not_carried_through_a_redirect_to_another_host() {
+        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
+        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
+        let landed = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+        let told = "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n";
+
+        let (elsewhere, landing) = serving_one_get(landed.to_owned());
+        let (same, staying) = serving_one_get(redirecting_to(&format!(
+            "http://localhost:{elsewhere}/download"
+        )));
+        let (asked, asking) =
+            serving_one_get(redirecting_to(&format!("http://127.0.0.1:{same}/moved")));
+        let read = client.bytes(
+            Host::CoverArtArchive,
+            LookupOp::Cover,
+            &format!("http://127.0.0.1:{asked}/release"),
+            64,
+        );
+
+        assert_eq!(read.expect("the cover").as_deref(), Some(&b"ok"[..]));
+        let first = asking.join().expect("the asked host");
+        let second = staying.join().expect("the same host again");
+        let last = landing.join().expect("the other host");
+        assert!(first.contains(told), "{first}");
+        assert!(second.contains(told), "{second}");
+        assert!(
+            last.contains("user-agent: resonate/9.9.9\r\n"),
+            "another host was told the contact: {last}"
+        );
+        assert_eq!(last.matches("user-agent: ").count(), 1, "{last}");
     }
 
     #[test]

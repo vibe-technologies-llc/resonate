@@ -27,7 +27,11 @@ only under a token.
   `Host::asks_who_is_asking`: MetaBrainz (MusicBrainz, Cover Art Archive, ListenBrainz), Wikimedia
   (Commons, Wikidata). Others get bare name and version
   (`a_contact_is_told_to_the_hosts_that_ask_who_is_asking_and_no_other`). `online::identity` fills
-  the contact from `Config::contact` alone.
+  the contact from `Config::contact` alone. **A redirect carries the contact only to the host
+  first asked**: ureq keeps every header but credentials across one, so a GET carrying a contact
+  follows its redirects itself (`Client::got`, at most `REDIRECTS_FOLLOWED`), telling another host
+  (the Cover Art Archive's archive.org) the bare name
+  (`a_contact_is_not_carried_through_a_redirect_to_another_host`).
 - **Identity and reachability are read per request.** `Introduction` = User-Agent behind a shared
   `RwLock`, written as the request's header: a contact typed in settings is heard by every sharing
   client from the next request (`online::INTRODUCTION`, `online::introduce`).

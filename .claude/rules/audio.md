@@ -510,7 +510,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   row waiting for a device or the graph: `the_survey_will_answer_for_a_list_known_wrong`) is not
   bound from: `wait_for_the_survey` keeps the row at its frame in `unbound`, publishes `Loading`,
   marks it waiting for a device unless the graph is lost, command answers `Ok`; the answer binds via
-  `bind_the_row_waiting_for_a_device` or `bind_the_row_the_graph_let_go`. `wait_for_the_graph` marks
+  `bind_the_row_waiting_for_a_device` or `bind_the_row_the_graph_let_go`, each of which reads an
+  `Ok` that left no output as the row waiting again (a change announced while the survey was out
+  makes its answer known wrong too), never as bound
+  (`a_device_announced_while_the_survey_is_out_still_binds_the_row_waiting_for_one`). `wait_for_the_graph` marks
   the list stale only while no survey is out, so the answer it waits on is not made stale by the
   wait. A failed first survey at startup leaves the list stale
   (`a_load_onto_a_list_with_no_devices_is_refused_without_asking_the_graph_again`,

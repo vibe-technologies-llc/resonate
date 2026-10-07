@@ -2770,6 +2770,9 @@ impl Engine {
             return;
         };
         match self.rebind(Some(at), None) {
+            Ok(()) if self.playing && self.output.is_none() => {
+                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+            }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
                 self.unbound = None;
@@ -2795,6 +2798,9 @@ impl Engine {
                 self.rebind(Some(at), None)
             });
         match back {
+            Ok(()) if self.playing && self.output.is_none() => {
+                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+            }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
                 self.unbound = None;
@@ -3058,6 +3064,10 @@ impl Engine {
         }
 
         match self.rebind(Some(at), None) {
+            Ok(()) if self.output.is_none() => {
+                tracing::debug!("the sink list moved while it was surveyed; the row waits for the next survey");
+                self.waiting_for_a_device = true;
+            }
             Ok(()) => {
                 tracing::info!("a device is there again; the row plays on from where it was heard");
                 self.unbound = None;

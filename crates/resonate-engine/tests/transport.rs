@@ -2698,6 +2698,51 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
 }
 
 #[test]
+fn a_device_announced_while_the_survey_is_out_still_binds_the_row_waiting_for_one() -> Result<()> {
+    let (player, graph, _) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+
+    let (open_the_gate, gate) = unbounded::<()>();
+    graph.lock().survey_gate = Some(gate);
+    let asked = graph.lock().enumerations;
+    announce(
+        &graph,
+        SinkInfo {
+            id: SinkId::new(3),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > asked,
+        "the survey to be asked about the device that appeared",
+    );
+    announce(
+        &graph,
+        SinkInfo {
+            id: SinkId::new(4),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    drop(open_the_gate);
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player).is_some(),
+        "the row to play on a device the surveys found",
+    );
+    neither_failed_nor_finished(&player);
+    Ok(())
+}
+
+#[test]
 fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard() -> Result<()> {
     let (player, graph, source) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
