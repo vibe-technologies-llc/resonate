@@ -81,8 +81,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - No test records from a microphone node, though the reconnect test's hosted daemon could serve a
   virtual source
 - Nothing drives `play`'s signal paths or terminal restore; only `mcp`'s hang-up is driven
-- *Take this name* is checked by eye alone: `driven.rs` hands the analysis pane
-  `Fingerprinters::none()`; driving it needs a fake returning a recognition the catalog holds
 - The drop overlay never dragged onto on a real compositor from this tree: gpui's `ExternalPaths` is
   `pub(crate)`, so `driven.rs` calls `dragged_over` and `dropped` directly; the platform's drag
   events are unproved here

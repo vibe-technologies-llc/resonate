@@ -871,9 +871,85 @@ fn heard_row(heard: &HeardAs) -> Div {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use gpui::TestAppContext;
+    use resonate_core::{Mbid, SourceId};
     use resonate_engine::Verdict;
+    use resonate_library::{
+        Credit, Fingerprinters, Fingerprints, Library, Printed, RecordingMatch, Sounded, TrackQuery,
+    };
 
     use super::verdict_colour;
+    use crate::{
+        Pane,
+        analysis::Hearing,
+        driven::{Driven, Folder},
+    };
+
+    const HEARD_AS: &str = "0e1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7";
+
+    struct HearsEchoes {
+        source: SourceId,
+    }
+
+    impl Fingerprints for HearsEchoes {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn recognise(&self, _: &Sounded) -> resonate_library::Result<Printed> {
+            Ok(Printed::Recognised(vec![RecordingMatch {
+                recording: Mbid::new(HEARD_AS).expect("a recording id"),
+                score: 100,
+                title: "Echoes".to_owned(),
+                credit: vec![Credit {
+                    name: "Pink Floyd".to_owned(),
+                    joined_by: String::new(),
+                    mbid: None,
+                }],
+                length: None,
+                isrcs: Vec::new(),
+                releases: Vec::new(),
+            }]))
+        }
+    }
+
+    #[gpui::test]
+    fn the_name_the_audio_was_heard_as_is_taken_by_the_press_that_offers_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let misnamed = folder.tagged(
+            "misnamed.wav",
+            20,
+            &[(b"INAM", "Track 03"), (b"IART", "Somebody")],
+        );
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, &folder);
+        let printers = Fingerprinters::none().and(Arc::new(HearsEchoes {
+            source: SourceId::new("hears-echoes").expect("a source name"),
+        }));
+        let mut driven = Driven::recognising(cx, Arc::clone(&library), &folder, printers);
+
+        driven.play(&[misnamed]);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Analysis, cx);
+        });
+        driven.until(|root, cx| matches!(root.analysis.read(cx).hearing(), Hearing::Heard { .. }));
+        driven.click("take-the-heard-name");
+        driven.until(|_, _| {
+            library
+                .tracks(&TrackQuery::default())
+                .is_ok_and(|tracks| tracks.iter().any(|track| track.title == "Echoes"))
+        });
+
+        let track = library
+            .tracks(&TrackQuery::default())
+            .expect("the catalog reads")
+            .remove(0);
+        assert_eq!(track.artist.as_deref(), Some("Pink Floyd"));
+    }
 
     #[test]
     fn every_verdict_is_drawn_in_a_colour_of_its_own() {

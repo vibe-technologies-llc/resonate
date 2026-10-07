@@ -226,7 +226,7 @@ impl Driven {
         folder: &Folder,
         corrections: Corrected,
     ) -> Self {
-        Self::built(cx, library, folder, corrections, None)
+        Self::built(cx, library, folder, corrections, None, None)
     }
 
     pub(crate) fn reaching(
@@ -241,6 +241,23 @@ impl Driven {
             folder,
             Corrected::uncorrected(),
             Some(reaching),
+            None,
+        )
+    }
+
+    pub(crate) fn recognising(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        fingerprinters: Fingerprinters,
+    ) -> Self {
+        Self::built(
+            cx,
+            library,
+            folder,
+            Corrected::uncorrected(),
+            None,
+            Some(Arc::new(fingerprinters)),
         )
     }
 
@@ -250,6 +267,7 @@ impl Driven {
         folder: &Folder,
         corrections: Corrected,
         reaching: Option<Reaching>,
+        recognising: Option<Arc<Fingerprinters>>,
     ) -> Self {
         let (reference, register) = match reaching {
             Some(Reaching {
@@ -262,9 +280,10 @@ impl Driven {
             }
         };
         let online = Online {
-            enabled: reference.is_some(),
+            enabled: reference.is_some() || recognising.is_some(),
             ..Online::default()
         };
+        let fingerprinters = recognising.unwrap_or_else(|| Arc::new(Fingerprinters::none()));
         theme::wear(Appearance::default());
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
@@ -274,14 +293,14 @@ impl Driven {
                 player: unplugged_player(),
                 library,
                 lyricists: Arc::new(Lyricists::unsourced()),
-                fingerprinters: Arc::new(Fingerprinters::none()),
+                fingerprinters: Arc::clone(&fingerprinters),
                 corrections: Arc::new(corrections),
                 settings: Arc::new(Ephemeral),
                 online,
                 bindings: Bindings::default(),
                 for_the_pass: Consulted {
                     reference: reference.clone(),
-                    fingerprinters: Arc::new(Fingerprinters::none()),
+                    fingerprinters,
                 },
                 reference,
                 scrobblers: None,

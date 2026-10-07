@@ -1398,7 +1398,10 @@ is never named.
   queued row dragged below another, a suggestion card, the equaliser curve pressed/dragged/
   right-pressed, the settings body scrolled, the Listen sheet's segments and microphone chips
   (planted via `ListenModel::hearing_of`; microphones are PipeWire's to list), window drops, search
-  typing and paste, the way back/forward, settings fields, the history switch. `views/root.rs`
+  typing and paste, the way back/forward, settings fields, the history switch, and the analysis
+  pane's *Take this name* (`Driven::recognising` hands the window a `Fingerprinters` whose fake
+  printer hears the playing file as another song; the press renames the catalog row:
+  `the_name_the_audio_was_heard_as_is_taken_by_the_press_that_offers_it`). `views/root.rs`
   drives keys: the queue's reach dropped from its end, backspace after a lapsed jump, each sheet
   holding the pane's keys back, escape taking a menu before a toast, `ctrl-m`, `ctrl-u`, two
   playlist edits in one breath. **Found**: pressing the curve with the equaliser off turned it on,
