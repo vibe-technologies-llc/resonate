@@ -1,46 +1,35 @@
 # Error handling
 
-Every crate exposes a `thiserror` enum named `Error` and
-`pub type Result<T> = std::result::Result<T, Error>`; a provider crate uses the seam's
-`resonate_providers::Error` rather than its own.
-
-> Every variant is a product of typed domain values and, where a foreign library failed, a
-> `#[source]` foreign error paired with a typed **operation** discriminant.
+Per crate: `thiserror` enum `Error` + `pub type Result<T> = std::result::Result<T, Error>`
+(providers use `resonate_providers::Error`). Variants: typed domain values, plus for a foreign
+failure a `#[source]` paired with a typed op enum.
 
 ## Rules
 
-- **No `String`, `&str`, `Box<str>`, `Cow<str>`, `Box<dyn Error>` or `anyhow` as an error
-  *description*.** A caller must be able to `match` and recover the specifics.
-- **A string newtype is allowed only where the string *identifies* something** (`NodeName`,
-  `TagName`, a `PathBuf`), never where it *explains*. `SinkInfo`'s `name` is a `NodeName` and may
-  appear in an error; its `description` is a bare `String` and may not.
-- **Pair an opaque foreign error with an op enum.** `pipewire::Error` wraps
-  `spa::utils::result::Error`, which hides its `Errno`, so `Daemon { op: PwOp, #[source] source }`
-  supplies which call failed as matchable data.
-- **Text that cannot be typed goes to `tracing`.** The error stays matchable; prose is a log
-  record. This holds wherever a foreign API offers only `Display`, including
-  `gpui::App::open_window`, whose `anyhow::Error` cannot even be a `#[source]`.
-- **A variant field named `source` is the `#[source]`, whatever its type**, so name a domain value
-  for what it is (`provider`, `sink`, `track`) and leave `source` to the foreign error.
-- **`#[error(transparent)]` only where the layer adds no context; `#[from]` only where the lower
-  error already carries every field the upper layer would add.** Otherwise write the wrapper by
-  hand so the context is mandatory: `engine::Error::Decode { track, source }` exists because
-  `codec::Error` has no notion of a `TrackId`.
-- **No `#[non_exhaustive]`.** These crates are workspace-internal; it would force `_ =>` arms in the
-  matches that should be exhaustive.
-- **A variant nothing constructs is taken out, not left for later**, and so is a getter with no
-  caller and the state it reads. An enum claims what can happen; write the variant when the code
-  raising it lands.
-- **Keep `size_of::<Error>()` at or below 128 bytes.** `result_large_err` is denied workspace-wide
-  and every crate with an `Error` has a guard test. When one grows, box the *named* foreign error
-  (`Box<rusqlite::Error>`), never `Box<dyn Error>`.
+- **No stringly descriptions**: no `String`, `&str`, `Box<str>`, `Cow<str>`, `Box<dyn Error>`,
+  `anyhow` as an *explanation* (callers must `match`). String newtypes only to *identify*
+  (`NodeName`, `TagName`, `PathBuf`): `SinkInfo.name` may appear, `.description` (`String`) not.
+- **Opaque foreign error + op enum**: `pipewire::Error` wraps `spa::utils::result::Error` (hides its
+  `Errno`); `Daemon { op: PwOp, #[source] source }` names the call.
+- **Untypeable text goes to `tracing`**: the error stays matchable, the prose is a log record,
+  wherever a foreign API offers only `Display` (`gpui::App::open_window`'s `anyhow::Error` cannot
+  even be a `#[source]`).
+- **A field named `source` is the `#[source]`**, any type; name domain values for what they are
+  (`provider`, `sink`, `track`).
+- **`transparent` only where the layer adds no context; `#[from]` only where the lower error has
+  every field the upper would add.** Else hand-write the wrapper, context mandatory:
+  `engine::Error::Decode { track, source }` (`codec::Error` has no `TrackId`).
+- **No `#[non_exhaustive]`** (internal; forces `_ =>` arms in exhaustive matches).
+- **Remove unconstructed variants**, caller-less getters and their state; a variant lands with the
+  code raising it.
+- **`size_of::<Error>() <= 128`**: `result_large_err` denied workspace-wide; guard test per crate.
+  Box the *named* foreign error (`Box<rusqlite::Error>`), never `Box<dyn Error>`.
 
-## Enforcement that is structural
+## Structural enforcement
 
-Prefer a violation that fails to compile over one that is documented.
+Prefer failing to compile over documenting.
 
-- `codec::Error::Symphonia` has no `#[from]`, so `?` on a `symphonia::Result` does not compile and
-  the `from_symphonia` classifier is the only way in, which keeps the typed variants from rotting
-  into an unused catch-all.
-- `engine::Error` cannot grow `Codec(#[from] codec::Error)` beside `Decode { track, .. }` (a
-  duplicate `From` impl); supply the `TrackId`.
+- `codec::Error::Symphonia` has no `#[from]`: `?` on `symphonia::Result` fails; `from_symphonia` is
+  the only way in (typed variants cannot rot into a catch-all).
+- `engine::Error` cannot grow `Codec(#[from] codec::Error)` beside `Decode { track, .. }` (duplicate
+  `From`); supply the `TrackId`.

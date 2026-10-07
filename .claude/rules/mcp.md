@@ -6,148 +6,134 @@ paths:
 
 # The Model Context Protocol
 
-`resonate mcp` is how a language model reaches the player and the catalog. `resonate-mcp` is on core,
-the engine's vocabulary, the library, `resonate-mpris`, the `resonate-providers` seam a poll is handed
-and `serde_json`; the binary reaches it behind the `mcp` feature, on by default. A build without it
-keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features) and answers
-`Error::NoMcp`.
+`resonate mcp` gives a language model the player and catalog. `resonate-mcp` depends on core, engine
+vocabulary, library, `resonate-mpris`, the `resonate-providers` seam (a poll takes it),
+`serde_json`. The binary reaches it behind the default `mcp` feature; without it the subcommand
+stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error::NoMcp`.
 
-## The transport
+## Transport
 
-- **Newline-delimited JSON-RPC 2.0 on stdin and stdout, no async runtime.** `Server::serve` reads a
-  line at a time with `read_until`, so a non-UTF-8 line is a parse error rather than the session's
-  end, and a blank line is passed over. A line over `LONGEST_MESSAGE` is answered `Refusal::TooLong`
-  (`-32600`, the id unread), the rest of it is passed over a buffer at a time and the session goes on.
-  The session ends with the input; a failed read or write is the one thing `serve` returns an `Error`
-  for.
-- **Stdout is the protocol.** Logs go to stderr (`binary.md`); a `println!` on the path of `mcp`
-  corrupts the session.
-- **Refused and failed are two different answers.** A line that is not JSON, a bad envelope or id, an
-  unknown method, tool or resource, undeserialisable parameters and arguments a tool cannot take are a
-  `Refusal`, answered as a JSON-RPC error with `Refusal::code`. A tool that ran and failed (no player
-  on the bus, a missing playlist or track, the catalog or bus erroring) is a *successful* result with
-  `isError` set and the error's whole `source` chain as text; `Tool::run` answers
-  `Result<Result<Value>, Refusal>` to keep them apart. A resource and a prompt have no `isError`, so a
-  failed read is a JSON-RPC error under `InternalError` with the same chain (`Unanswered`), and a URI
-  naming no resource is `Refusal::UnknownResource` under the spec's `-32002`.
-- **A notification is never answered**, nor is a message carrying a `result` or `error`, since this
-  server sends no requests of its own. **A batch is answered as one array** in the order asked,
-  whatever version was negotiated; an empty one is `Refusal::EmptyBatch`.
-- `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS`, else the latest.
+- **Newline-delimited JSON-RPC 2.0 on stdin/stdout, no async runtime.** `Server::serve` uses
+  `read_until`: non-UTF-8 line = parse error, not session end; blank line skipped. A line over
+  `LONGEST_MESSAGE` gets `Refusal::TooLong` (`-32600`, id unread), the rest skipped a buffer at a
+  time. Session ends with input; only a failed read/write makes `serve` return `Error`.
+- **Stdout is the protocol**: logs go to stderr (`binary.md`); a `println!` corrupts it.
+- **Refused vs failed.** `Refusal` = JSON-RPC error via `Refusal::code`: non-JSON, bad envelope/id,
+  unknown method/tool/resource, undeserialisable parameters, arguments a tool cannot take. A tool
+  that ran and failed (no player, missing playlist/track, catalog/bus error) = *successful* result
+  with `isError` and the whole `source` chain as text; `Tool::run` returns `Result<Result<Value>,
+  Refusal>` to keep them apart. Resources/prompts have no `isError`: a failed read is JSON-RPC
+  `InternalError` with the same chain (`Unanswered`); a URI naming no resource is
+  `Refusal::UnknownResource`, spec `-32002`.
+- **Never answered**: notifications, messages with `result`/`error` (no requests of its own). **A
+  batch gets one array**, in order, whatever version was negotiated; empty = `Refusal::EmptyBatch`.
+- `initialize` echoes the asked version if in `PROTOCOLS`, else the latest.
 
-## What is pushed
+## Pushed
 
-- **A resource can be subscribed to, and the resource list watched, where the session can push.**
-  `serve_until_stopped` takes its input over a channel, so a third sender, the `resonate-mcp-tick`
-  thread, puts a `Tick` on it every `LOOKED_OVER_EVERY`, answered between lines on the one thread.
-  On a tick each subscribed URI is read again and, where the reading differs from the last (a failed
-  read is a reading too), `notifications/resources/updated` names it; once the client has listed
-  resources, a changed list is `notifications/resources/list_changed`. So a running pass is pushed
-  through `resonate://library/passes`. A reading that moves with the clock is told as changed on every
-  tick.
-- **`serve` pushes nothing**, since it reads stdin on the thread answering: `initialize` offers
-  `subscribe` and `listChanged` only where `pushing` was set, and a subscription asked of a session
-  that cannot push is `UnknownMethod`. Subscriptions are keyed by the URI the client asked under.
+- **Subscriptions and list watching, where the session can push.** `serve_until_stopped` takes input
+  over a channel; a third sender, thread `resonate-mcp-tick`, puts a `Tick` on it every
+  `LOOKED_OVER_EVERY` (500 ms), answered between lines on the one thread. Each tick re-reads every
+  subscribed URI; a differing reading (a failed read counts) sends
+  `notifications/resources/updated`. Once the client has listed resources, a changed list sends
+  `notifications/resources/list_changed`. So a running pass is pushed via
+  `resonate://library/passes`; a clock-moving reading is changed every tick.
+- **`serve` pushes nothing** (stdin read on the answering thread): `initialize` offers `subscribe`/
+  `listChanged` only where `pushing` was set; subscribing without it = `UnknownMethod`.
+  Subscriptions are keyed by the URI as asked.
 
-## The resources, prompts and completions
+## Resources, prompts, completions
 
-- **A resource is a tool's reading under a URI, and the same reading.** `Resource::read` calls the
-  functions the read-only tools do, at their defaults, shared rather than copied
+- **A resource is a tool's reading under a URI, the same reading**: `Resource::read` calls the
+  read-only tools' functions at their defaults, shared not copied
   (`a_resource_reads_what_the_tool_of_the_same_reading_answers`). `resonate://player/…` reaches the
-  running player and fails as the transport tools do where there is none; `resonate://library/…`
-  reads the catalog with no player. `resonate://library/playlist/{name}` and
-  `resonate://library/statistics/{window}` are templates; a name goes through core's `uri_escaped` /
-  `uri_unescaped` and is found as `playlist_tracks` finds it. A read answers under the URI asked for,
-  since that is what a client keys the reading to.
-- **A prompt is an instruction with a resource embedded beside it.** The embedding is
-  `Resource::embedded`, so a prompt cannot say what the resource would not, and the instruction names
-  each tool through `Tool::name`, so a renamed tool cannot leave a prompt pointing at nothing. Refused
-  as a tool is (`UnknownPrompt`, `BadPromptArguments`, `BlankArgument` under `InvalidParams`).
-- **Every argument a client fills says how it completes, so none answers nothing.** A prompt's
-  `Argument` and the URI `Template`s carry a `Completable`; `build_a_playlist`'s `brief` completes its
-  last words through `Library::names_completing` (artists, albums and genres, never titles). At most a
-  hundred values with the total, `hasMore` saying the rest were left out. An unoffered prompt, argument
-  or template is refused (`UnknownPrompt`, `UnknownArgument`, `UnknownResource`).
+  running player (fails as transport tools do with none); `resonate://library/…` reads the catalog,
+  no player. Templates: `resonate://library/playlist/{name}`,
+  `resonate://library/statistics/{window}`; a name goes through core's
+  `uri_escaped`/`uri_unescaped`, found as `playlist_tracks` finds it. A read answers under the URI
+  asked (what clients key on).
+- **A prompt = instruction + embedded resource** (`Resource::embedded`: cannot say what the resource
+  would not); the instruction names tools via `Tool::name` (a rename cannot dangle). Refusals as
+  tools': `UnknownPrompt`, `BadPromptArguments`, `BlankArgument` (`InvalidParams`).
+- **Every client-filled argument says how it completes**: prompt `Argument`s and URI `Template`s
+  carry a `Completable`; `build_a_playlist`'s `brief` completes its last words via
+  `Library::names_completing` (artists, albums, genres; never titles). At most a hundred values plus
+  the total, `hasMore` for the rest. Unoffered prompt/argument/template: `UnknownPrompt`,
+  `UnknownArgument`, `UnknownResource`.
 
-## The tools
+## Tools
 
-- **Catalog tools read and write a `Library` directly and answer with no player running.** Transport
-  tools reach a player through `Reach` per call, so a player started after the session began is found
-  and a missing one fails that tool alone.
-- **`Controlling` is the seam over `Running`, and `Reach` how one is found** (`Running::found`, or
-  `Running::named` under `--player`), so the tests prove each tool with a fake and no bus.
-- **A `track_id` is the catalog's and a `queue_id` the queue's**, different numbers. A `queue_id` is
-  written as text: the queue mints ids down from `u64::MAX` and a client reading JSON numbers as
-  doubles would round it to another row.
-- **A list of ids is held to `MOST_ROWS`**, as a search's `limit` is: every id array's schema says
-  `maxItems`, and more is `Refusal::TooMany`.
-- **A queueing that fails says how far it got** (`Error::QueuedPartway`, the rows that landed),
-  since `Running::queue` falls back to one `AddTrack` a row against an older player.
-- **A result leaves out what nothing answered** rather than writing `null`, and is one object twice:
-  `structuredContent` and a text block of its JSON.
-- **A transport tool answers what the player reads back once the gesture landed**, `seek` the landed
-  position and `moved_seconds` as the distance actually moved. `play_playlist` is the exception:
-  `ActivatePlaylist` is the front end's, not the engine's, and answers once handed over; it resolves
-  the name through the playlists the *player* offers, exact spelling first, then ignoring case.
-- **`show_queue` describes only what it lists**: it asks `GetTracksMetadata` about the first `limit`
-  alone, so a queue of thousands stays inside the service's read budget.
+- **Catalog tools use a `Library` directly**, no player needed. Transport tools find a player via
+  `Reach` per call: one started mid-session is found; a missing one fails that tool alone.
+  `Controlling` is the seam over `Running`, `Reach` finds one (`Running::found`, or `Running::named`
+  under `--player`); tests use a fake, no bus.
+- **`track_id` = catalog's, `queue_id` = queue's**, different numbers. `queue_id` is text: the queue
+  mints ids down from `u64::MAX`, which JSON-numbers-as-doubles clients would round to another row.
+- **Id lists held to `MOST_ROWS`** (1000) like a search's `limit`: every id array's schema has
+  `maxItems`; more = `Refusal::TooMany`.
+- **A failed queueing says how far it got** (`Error::QueuedPartway`, rows landed): `Running::queue`
+  falls back to one `AddTrack` per row against an older player.
+- **Results omit what nothing answered** (no `null`) and are one object twice: `structuredContent`
+  and a text block of its JSON.
+- **Transport tools answer what the player reads back once the gesture landed**: `seek` the landed
+  position and `moved_seconds` (distance actually moved). Exception `play_playlist`:
+  `ActivatePlaylist` is the front end's, not the engine's, so it answers once handed over; it
+  resolves the name via the playlists the *player* offers, exact spelling then ignoring case.
+- **`show_queue` describes only what it lists**: `GetTracksMetadata` for the first `limit` rows, so
+  thousands of rows stay in the service's read budget.
 
 ## What a model may change
 
-- **The edits are the library's own calls, holding to its rules.** `mark_favourite` is
-  `Library::favour_all`, every id in one transaction, so an unknown id anywhere answers
-  `UnknownTrack`, `UnknownAlbum` or `UnknownArtist` and marks none. The playlist tools are the
-  library's calls of those names (`create_playlist`, `start_playlist`, `save_query` with `fills_from`,
-  `remove_playlist`), so refusals are the window's, and adding to a self-filling playlist is the
-  library's `NotAList`. Their undo stacks are this process's, so a model's change is not on the
-  window's *Undo*, though a window beside the session draws it (`Library::written_elsewhere`).
-- **A playlist row is named by where it sits**: `playlist_tracks` answers each `row`, and
-  `remove_from_playlist` takes a run from `row` to `through_row` (one `Span`, one statement, one undo
-  step) or every row a search matches. A row past the end is `Error::NotInThePlaylist`.
-  **Only the rows asked for are read**: `Library::playlist_entries_within` takes the limit into the
-  `LIMIT` (a saved query's cap lowered to it) and counts `matched` in a query of its own, so a playlist
-  of a hundred thousand rows or a self-filling one costs a few hundred.
-  The resource list is made from `Library::playlist_names`, with no row counted, since it is read on every tick.
-- **A missing track is named by its `release_track_id`.** `want_tracks` is
-  `Library::want_release_tracks` over the whole list in one transaction, so a list naming one unknown
-  row wants none of it.
-- **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint` (the removals, `forget_folder`, `undo_edit`,
-  which may discard a playlist it made, and `play_playlist`, which replaces a queue); `Tool::reaches_the_network` is `openWorldHint`
-  (`start_lookup` and `start_poll` alone).
-- **A session undoes only its own edits.** `undo_edit` is `Library::undo`, or `Library::redo` with
-  `redo`, over the stack of the process serving the session, so it reaches the playlist edits the
-  session's tools made and nothing the window or another process did; a playlist changed by anything
-  else since is the library's `Error::PlaylistChanged`, a failure of that tool. It answers what was
-  walked (`edit`, `playlist`, `more_to_undo`) or `walked: null` where nothing is left.
-- **An unreadable combination is a refusal**: `OneOf`, `AtLeastOneOf`, `AtMostOneOf`, and `BlankField`
-  for a blank `query` or `fills_from`, which the grammar reads as no condition and would take the
-  first rows of the whole library (`a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library`).
+- **Edits are the library's calls, under its rules.** `mark_favourite` = `Library::favour_all`, one
+  transaction: an unknown id anywhere answers `UnknownTrack`/`UnknownAlbum`/`UnknownArtist`, marks
+  none. Playlist tools call `create_playlist`, `start_playlist`, `save_query` (with `fills_from`),
+  `remove_playlist`: refusals are the window's; adding to a self-filling playlist = `NotAList`. Undo
+  stacks are this process's: a model's change is not on the window's *Undo*, though a window beside
+  the session draws it (`Library::written_elsewhere`).
+- **A playlist row is named by position**: `playlist_tracks` answers each `row`;
+  `remove_from_playlist` takes `row`..`through_row` (one `Span`, statement and undo step) or every
+  row a search matches; past the end = `Error::NotInThePlaylist`. **Only rows asked for are read**:
+  `Library::playlist_entries_within` puts the limit in `LIMIT` (a saved query's cap lowered to it),
+  counts `matched` separately, so a hundred-thousand-row or self-filling playlist costs a few
+  hundred. The resource list uses `Library::playlist_names`, no row counted (read every tick).
+- **A missing track is named by `release_track_id`.** `want_tracks` = `Library::want_release_tracks`
+  over the list in one transaction: one unknown row wants none.
+- **`Tool::destroys` = `destructiveHint`**: the removals, `forget_folder`, `undo_edit` (may discard
+  a playlist it made), `play_playlist` (replaces a queue). **`Tool::reaches_the_network` =
+  `openWorldHint`**: `start_lookup`, `start_poll` only.
+- **A session undoes only its own edits.** `undo_edit` = `Library::undo` (`Library::redo` with
+  `redo`) over this process's stack: the session tools' playlist edits, nothing from the window or
+  another process; a playlist since changed by anything else = `Error::PlaylistChanged` (that tool's
+  failure). Answers what was walked (`edit`, `playlist`, `more_to_undo`) or `walked: null`.
+- **Unreadable combinations are refusals**: `OneOf`, `AtLeastOneOf`, `AtMostOneOf`, `BlankField` for
+  a blank `query`/`fills_from` (read as no condition, it would take the first rows of the whole
+  library; `a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library`).
 
-## The long passes
+## Long passes
 
-- **A scan, a lookup and a poll are started, then asked after, each outlasting a call.** `start_scan`,
-  `start_lookup` and `start_poll` answer at once; `library_passes` answers for each `idle`, `running`
-  with the progress snapshot, `finished` with the summary, or `failed` with the error's chain.
-  `stop_pass` cancels one at its next file. `Passes` holds one `Slot` per pass behind a `RefCell` (the
-  server answers on one thread), and a finished pass is joined when first asked after. A second start
-  of a running pass is `Error::AlreadyRunning`.
-- **Passes start as the command line starts them.** A scan refuses a non-folder with
-  `Error::NoSuchFolder` before anything starts, then hands the folders to `Library::scan`, which
-  registers them as roots in one transaction once it holds the walk, so a refused scan keeps none of
-  them (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). **A folder is admitted before
-  that**: the filesystem's own root is `Error::FilesystemRoot`, and a list that would take the library past
-  `MOST_ROOTS` (64) is `Error::TooManyRoots`; `forget_folder` is the way back, `Library::remove_root`
-  with its tracks, and `Error::NotARoot` for a folder never kept. What the passes need from
-  outside arrives as `Lookups`, filled by the binary from what `resonate enrich` and `resonate poll`
-  read; `Server::new` alone carries `Lookups::none()`, so a session with no network answers
-  `start_lookup` with `Error::NoReference` as that tool's failure, not a refusal.
-- **An ending session leaves no pass half-written.** `serve` drains the passes when the input ends
-  (each running one cancelled and joined, so the catalog follows) and `Drop for Passes` drains them
-  every other way out. **A signal ends it the same way**: `resonate mcp` serves through
-  `serve_until_stopped`, stdin is read on a thread of its own, and the binary hands `Stop::stop` to
-  `signals::cancel_when_told`, so `SIGTERM` stops a scan at a file boundary rather than killing it
-  mid-file, with its input still open; a second signal leaves at once. **`Stop::stop` never waits**: it
-  sets a flag the session loop reads before each message and only `try_send`s the wake-up, the channel
-  holding one message and a busy session leaving it full, so the signal thread is free for the second
-  signal however long a call runs (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`).
-  A drain cancels every running pass before it joins any, so the passes wind down together.
+- **Scan, lookup, poll: started, then asked after.** `start_scan`/`start_lookup`/`start_poll` answer
+  at once; `library_passes` gives each `idle`, `running` (progress snapshot), `finished` (summary)
+  or `failed` (error chain); `stop_pass` cancels at the next file. `Passes` holds a `Slot` per pass
+  in a `RefCell` (one answering thread); a finished pass is joined when first asked after. Starting
+  a running pass = `Error::AlreadyRunning`.
+- **Passes start as the CLI starts them.** A scan refuses a non-folder (`Error::NoSuchFolder`)
+  before anything starts; `Library::scan` registers the roots in one transaction once it holds the
+  walk, so a refused scan keeps none
+  (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). **Admission first**: filesystem
+  root = `Error::FilesystemRoot`; a list taking the library past `MOST_ROOTS` (64) =
+  `Error::TooManyRoots`; `forget_folder` is the way back (`Library::remove_root` with its tracks;
+  `Error::NotARoot` for a never-kept folder). Outside needs arrive as `Lookups`, filled by the
+  binary from what `resonate enrich`/`resonate poll` read; `Server::new` alone has
+  `Lookups::none()`, so `start_lookup` with no network = `Error::NoReference` (that tool's failure,
+  not a refusal).
+- **An ending session leaves no pass half-written.** `serve` drains passes when input ends (each
+  running one cancelled and joined, so the catalog follows); `Drop for Passes` on every other exit.
+  **A signal ends it likewise**: `resonate mcp` serves through `serve_until_stopped` (stdin on its
+  own thread) and hands `Stop::stop` to `signals::cancel_when_told`, so `SIGTERM` stops a scan at a
+  file boundary, input still open; a second signal leaves at once. **`Stop::stop` never waits**: it
+  sets a flag the loop reads before each message and only `try_send`s the wake-up (channel holds
+  one; a busy session leaves it full), so the signal thread is free for the second signal however
+  long a call runs
+  (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`). A drain cancels
+  every running pass before joining any, so they wind down together.
+

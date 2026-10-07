@@ -40,7 +40,7 @@ cargo build --release --workspace --exclude resonate-ui --no-default-features   
 ```
 
 The binary's features are `ui`, `online`, `mcp` and `discord`, all on by default. Turning `online`
-off builds with no HTTP client in the tree.
+off leaves the audio stack with no HTTP client; the window's toolkit still brings its own.
 
 The audio stack needs PipeWire and a C toolchain for its bindings; the window adds Wayland,
 xkbcommon, Vulkan, fontconfig and freetype. On Arch that is

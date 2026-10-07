@@ -26,7 +26,7 @@ anything through a portal, a screenshot included.
 ## Launch
 
 The `ui` feature is on by default, so the plain binary is the UI. It needs a PipeWire daemon as well
-as the compositor, because `Player::new` starts the engine before the window opens. Point
+as the compositor, because `Player::with_sources` starts the engine before the window opens. Point
 `--library` at a scratch database, populated with `resonate scan <roots>`, never the user's own.
 
 ```bash
