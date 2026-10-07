@@ -6,8 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- The analysis pane remembers a refused or unreachable recognition for the session: a track looked
-  up offline is never asked again until 64 others push it out or the window restarts
 - A `subsonic` setting without a scheme makes ureq's bad-URI error, which prints the whole request
   URL with token and salt, land in the debug log
 - `play`'s key reader takes one byte after `ESC [`: Ctrl/Shift with an arrow and F5 to F12 leak

@@ -144,7 +144,12 @@ impl AnalysisModel {
             watch.stop();
         }
         self.following = Some(row.clone());
-        self.hearing = self.heard.get(&row).cloned().unwrap_or(Hearing::Unasked);
+        self.hearing = self
+            .heard
+            .get(&row)
+            .filter(|heard| **heard != Hearing::Refused)
+            .cloned()
+            .unwrap_or(Hearing::Unasked);
         self.asking = Task::ready(());
 
         if let Some(drawn) = self.kept.get(&row).cloned() {

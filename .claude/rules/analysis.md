@@ -175,4 +175,6 @@ first. Cache: failure = debug record + decode. Headless commands keep nothing.
 - **What the pane learns goes to the catalog.** `settled` writes the study where the catalog holds
   the row and none is kept, never over one (would drop a landed recognition), recognising via
   `Library::recognise`. A row no scan has seen is recognised through the registry directly, no
-  agreement. The recognition card leads where the audio isn't the song the file names.
+  agreement. The recognition card leads where the audio isn't the song the file names. A refused
+  or unreachable recognition is held for the row on screen only: following the row again asks
+  again (`RECOGNITIONS_KEPT` keeps what was heard, never a refusal, for the run).
