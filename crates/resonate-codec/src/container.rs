@@ -675,13 +675,11 @@ fn sample_rate(
     location: &MediaLocation,
     track: StreamTrackId,
 ) -> Result<SampleRate> {
-    let hz = params
-        .sample_rate
-        .ok_or_else(|| Error::TrackPropertyMissing {
-            location: location.clone(),
-            track,
-            property: TrackProperty::SampleRate,
-        })?;
+    let hz = opus::rate_of(params).ok_or_else(|| Error::TrackPropertyMissing {
+        location: location.clone(),
+        track,
+        property: TrackProperty::SampleRate,
+    })?;
 
     SampleRate::new(hz).map_err(|_| Error::RateNotRepresentable {
         location: location.clone(),
@@ -1305,6 +1303,28 @@ mod tests {
 
         assert_eq!(declared_bits(&params, &prescan), Some(20));
         assert_eq!(declared_bits(&params, &Prescan::default()), Some(24));
+    }
+
+    #[test]
+    fn an_opus_stream_is_billed_at_the_rate_it_decodes_at_whatever_its_container_says() {
+        let location = MediaLocation::local("a.mka");
+        let mut opus = params(CODEC_ID_OPUS);
+        opus.with_sample_rate(8_000);
+        let mut flac = params(CODEC_ID_FLAC);
+        flac.with_sample_rate(8_000);
+
+        assert_eq!(
+            sample_rate(&opus, &location, StreamTrackId(0))
+                .ok()
+                .map(SampleRate::hz),
+            Some(48_000)
+        );
+        assert_eq!(
+            sample_rate(&flac, &location, StreamTrackId(0))
+                .ok()
+                .map(SampleRate::hz),
+            Some(8_000)
+        );
     }
 
     #[test]

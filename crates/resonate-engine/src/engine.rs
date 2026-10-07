@@ -3157,7 +3157,8 @@ impl Engine {
     fn publish(&mut self) {
         let playback = match self.transport {
             TransportState::Idle => PlaybackState::Idle,
-            TransportState::Loading => PlaybackState::Buffering,
+            TransportState::Loading if self.playing => PlaybackState::Buffering,
+            TransportState::Loading => PlaybackState::Paused,
             TransportState::Playing | TransportState::Draining => PlaybackState::Playing,
             TransportState::Paused => PlaybackState::Paused,
             TransportState::Stopped => PlaybackState::Stopped,

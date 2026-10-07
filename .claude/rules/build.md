@@ -39,7 +39,18 @@ paths:
   detaches it, so the workspace lints do not reach libfuzzer's macros. Eleven targets: `probe`,
   `boxes`, `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`.
 - `probe` reaches the container readers through the public API over bytes served by its own
-  `MediaProvider` (`fuzz_targets/held.rs`, shared with `boxes` and `cue`). `equaliser` reads an
+  `MediaProvider` (`fuzz_targets/held.rs`, shared with `boxes` and `cue`). **The input is the file
+  and its last three bytes are also the run's shape**, so a seed stays a plain file a player opens:
+  the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length, the
+  spool path), the next asks DSD as samples rather than DoP, the six above hint an extension off
+  `AUDIO_EXTENSIONS` (zero hints none); the two before it are two seeks, each a 256th of the length,
+  decoded on after, then a seek back to the start and `settle_the_spool`. `cue` resolves every
+  `FILE` line against names a folder could list (the name, its case, its stem with another
+  extension) through `the_one_a_cue_names`, `the_best_a_cue_names` and `the_folder_a_cue_names`.
+- **What a fuzz run found stays found**: an input that once failed a decode is copied into
+  `crates/resonate-codec/tests/found/` and `tests/found.rs` decodes each, holding every block to
+  what a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in one
+  block). `equaliser` reads an
   EqualizerAPO profile, its `GraphicEQ` line included, and holds that what it writes reads back as
   the same profile. `lrc`, `lyricsfile`, `playlist` and `mcp` use seams compiled only under
   `#[cfg(fuzzing)]`; `mcp` reads lines and envelopes and never dispatches, a tool being free to walk

@@ -106,6 +106,14 @@ pub(crate) fn pre_roll(codec: AudioCodecId) -> Frames {
     }
 }
 
+pub(crate) fn rate_of(params: &AudioCodecParameters) -> Option<u32> {
+    if params.codec == CODEC_ID_OPUS {
+        Some(OPUS_RATE)
+    } else {
+        params.sample_rate
+    }
+}
+
 pub(crate) fn channels_of(params: &AudioCodecParameters) -> Option<Channels> {
     let channels = params.channels.clone()?;
     let Channels::Discrete(count) = channels else {

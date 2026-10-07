@@ -4324,6 +4324,52 @@ fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<
 }
 
 #[test]
+fn a_pause_while_a_track_opens_is_published_as_paused_before_it_lands() -> Result<()> {
+    const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+    let source = pcm(16, FRAMES);
+    let named = SourceId::new("slow").expect("a lowercase name");
+    let open = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Gated {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        open: Arc::clone(&open),
+    }));
+
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player
+        .request(Command::Load {
+            items: vec![QueueItem {
+                id: TrackId::new(1).expect("a non-zero track id"),
+                location: MediaLocation::new(named, "tracks/1.wav"),
+                span: None,
+            }],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(ANSWERED_WITHIN)?;
+    player.request(Command::Pause)?.wait_for(ANSWERED_WITHIN)?;
+
+    assert_eq!(
+        player.state().playback,
+        PlaybackState::Paused,
+        "a track paused while it opened was still said to be loading"
+    );
+
+    open.store(true, Ordering::Release);
+    wait_for(
+        &player,
+        |player| player.state().current.is_some(),
+        "the paused track to land",
+    );
+    assert_eq!(player.state().playback, PlaybackState::Paused);
+    assert_eq!(graph.lock().opens, 0);
+    Ok(())
+}
+
+#[test]
 fn a_sleep_timer_due_while_a_track_opens_leaves_it_paused_once_open() -> Result<()> {
     let source = pcm(16, FRAMES);
     let named = SourceId::new("slow").expect("a lowercase name");

@@ -79,7 +79,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   is the `CodecRegistry` every decoder is built from. `Head` reads the identification header from
   extra data (Ogg/Matroska `OpusHead` little-endian, MP4 `dOps` big-endian). Family 1 = multistream
   decoder, Vorbis-ordered channels written to the plane each position takes in symphonia's bit
-  order; Matroska leaves surround unplaced, so `opus::channels_of` places family 1 by its head (255
+  order; **the stream is billed at 48 kHz whatever the container says** (`opus::rate_of`: ffmpeg
+  writes the input's rate as Matroska `SamplingFrequency`, and an 8 kHz bill read the length six
+  times long; `an_opus_stream_is_billed_at_the_rate_it_decodes_at_whatever_its_container_says`); Matroska leaves surround unplaced, so `opus::channels_of` places family 1 by its head (255
   stays discrete). Header output gain applied as samples are written; `R128_TRACK_GAIN`/
   `R128_ALBUM_GAIN` read as ReplayGain 5 dB louder. **Pre-skip is the container's:** Ogg counts it
   *inside* granules, Matroska shifts timestamps by `CodecDelay` (music at zero), MP4 edit list is
@@ -332,7 +334,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   carry their own encoder.
 - **An undecodable packet plays as the silence it would have lasted.** `DecodeError` gives `fill`
   the packet's length via its `PacketSpan`; frames marked `silent`: stream keeps its length,
-  position its clock. **Holes are counted; all-holes streams refused:** `Decoder::holes` answers a
+  position its clock, handed out at most `SILENCE_HANDED_OUT_AT_ONCE` (8 192) frames a block, so a
+  packet declaring hours costs blocks, not a buffer that long. **Holes are counted; all-holes streams refused:** `Decoder::holes` answers a
   `Holes`; `SILENT_PACKETS_BEFORE_REFUSING` failures with no packet ever decoded =
   `Error::PacketUndecodable`. `Decoder::refuse_holes` makes the first hole that error, for readers
   needing every sample: the vault calls it on what it keeps and reads back, so a damaged source is
@@ -385,7 +388,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `OPENING_ANSWERED_WITHIN` or when the opening is dropped (later failure = `Event::Failed`).
   `wait_for_the_graph` does not let go while a row is opening. A failed landing nothing waited on is
   passed over while playing (`Engine::fail`), else `Event::Failed`; thread stopping unanswered =
-  `Error::OpenerStopped`.
+  `Error::OpenerStopped`. **An opening is published as what it will land as**: `Buffering` while
+  the transport means to play, `Paused` where not, so a `Pause` reaching a row still opening reads
+  Paused on the bus at once rather than Playing until it lands
+  (`a_pause_while_a_track_opens_is_published_as_paused_before_it_lands`); the window's
+  `between_songs` reads either with no current track as a handover.
 - **A track that cannot seek decodes off the engine thread** (a still-arriving spool or replayed
   pipe waits for bytes with no deadline). `lending::Decoding` holds the decoder; `Track::next_block`
   *lends* it, with its block, to a `resonate-decode` worker: engine answers `Block::Awaited`, `fill`
@@ -1137,5 +1144,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **`RESONATE_REAL_FIXTURES` points the suite at a folder of real files.** Every file must probe,
   name a known container and codec, report a duration and decode its first block. Unset: skip.
 - **Transport and bus tests drive a real `Player` thread and poll for the expected state**: a state
-  that never arrives costs the full patience; the failure names the transport it watched.
+  that never arrives costs the full patience; the failure names the transport it watched (position
+  and seek count included).
+- **A bus test reaches its own service by the connection's unique name** (`Mpris::unique_name`),
+  never the well-known name: every harness in the process claims
+  `org.mpris.MediaPlayer2.resonate` with replacement, so a cached name reached whichever test took
+  it last; `Harness::names` asks the bus which names the connection owns where a test must use one
+  (`listed_as`, `Running::named`). **It waits for a sounding track, not the status**
+  (`Harness::sounding`): a row still opening is published `Buffering`, read `Playing` on the bus
+  with no current track, and a `SetPosition`, `Next` or track id read then is rightly ignored;
+  those were the `set_position_*` flakes under a loaded machine.
 

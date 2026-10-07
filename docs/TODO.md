@@ -77,19 +77,12 @@ sits last in its category, not worked until it moves. Everything else is open.
   AccessKit, which only Zed's `main` has
 
 ## Testing
-- `resonate-mpris`'s `bus.rs` tests fail now and then, a different `set_position_*` each time, when
-  the whole workspace's tests run at once, and pass alone; candidates: the fixed 300 ms wait in
-  `set_position_*`, the 500 ms `SETTLE`, the `RealtimeSink` thread paced by `thread::sleep`
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame`
   failed once when the whole workspace's tests ran at once, passed alone eight times after; its
   frame counts assume the engine thread keeps pace with the test's pulls
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: S16 and S32 words, packed
   and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream never run
 - The inotify limit is untested
-- The `probe` fuzz target never seeks, decodes DSD to samples, hints an extension or reads a
-  non-seekable stream: the seeks of `ape.rs`, `matroska.rs` and `dsd/` and the whole spooled path
-  are unfuzzed; seeds also lack Matroska lacing and unknown-size clusters, fragmented MP4, m4b
-  chapters, FLAC `CHAPTER` comments and a variable-packet CAF; `cue` reaches no file resolution
 - No test records from a microphone node, though the reconnect test's hosted daemon could serve a
   virtual source
 - Nothing drives `play`'s signal paths or terminal restore; only `mcp`'s hang-up is driven

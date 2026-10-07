@@ -168,7 +168,11 @@ pub(crate) struct ShownCover {
 const COVER_HELD_FOR: Duration = Duration::from_millis(400);
 
 fn between_songs(state: &PlayerState) -> bool {
-    state.current.is_none() && state.playback == PlaybackState::Buffering
+    state.current.is_none()
+        && matches!(
+            state.playback,
+            PlaybackState::Buffering | PlaybackState::Paused
+        )
 }
 
 #[derive(Clone, Copy)]

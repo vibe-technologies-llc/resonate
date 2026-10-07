@@ -28,6 +28,7 @@ use crate::{
 };
 
 const SILENT_PACKETS_BEFORE_REFUSING: u64 = 64;
+const SILENCE_HANDED_OUT_AT_ONCE: usize = 8_192;
 
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -733,6 +734,7 @@ impl Decoder {
         };
 
         let frames = if coded.silent {
+            let taking = taking.min(SILENCE_HANDED_OUT_AT_ONCE);
             out.set_frames(taking);
             silence_out(out.data_mut());
             taking

@@ -25,7 +25,7 @@ use zbus::{
         object_server::InterfaceRef,
     },
     fdo::{RequestNameFlags, RequestNameReply},
-    names::WellKnownName,
+    names::{OwnedUniqueName, WellKnownName},
     zvariant::{OwnedObjectPath, OwnedValue},
 };
 
@@ -188,6 +188,10 @@ impl Mpris {
 
     pub fn name(&self) -> WellKnownName<'static> {
         self.claimed.name()
+    }
+
+    pub fn unique_name(&self) -> Option<OwnedUniqueName> {
+        self.connection.as_ref()?.unique_name().cloned()
     }
 
     pub fn teller(&self) -> Teller {

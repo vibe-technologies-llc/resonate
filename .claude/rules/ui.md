@@ -1054,7 +1054,7 @@ is never named.
     doubled the mode name and the inspector's *Output* stage; what a converted stream became is the
     inspector's to spell out). A press opens the inspector, whose three stages expand this line.
   - **A skip never blanks the panel.** While the next row opens the engine publishes no current
-    track (`Buffering`, `between_songs`): `RootView::playing` answers the song last resolved,
+    track (`Buffering`, or `Paused` for a skip made paused: `between_songs`): `RootView::playing` answers the song last resolved,
     `name_the_window` keeps its title (no *Nothing playing* flash), `held_through_a_change` draws
     the last cover (`RootView::shown_cover`) up to `COVER_HELD_FOR` where one is expected, not the
     disc. The signal path is held too (`held_signal`), so the text column above never moves; changes
