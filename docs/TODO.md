@@ -132,9 +132,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   turned volume shows a buffer late
 
 ## Later: The window
-- A track or album cannot be dragged from a listing into the queue or a playlist; only files from a
-  file manager are taken. A drop is a positional insert (queue edits are now guarded by
-  `Queued::revision`)
+- A track dragged out of a listing takes that row alone, not the reach it stands in; a drop onto a
+  playlist's rows lands at its end, not where it was let go
 
 ## Later: Scrobbling
 - Last.fm is not reached at all; only ListenBrainz is told what was heard

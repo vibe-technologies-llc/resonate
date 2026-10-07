@@ -1,11 +1,13 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, Bounds, Context, Div, DragMoveEvent, IntoElement, Pixels, Point, Render,
     ScrollStrategy, SharedString, Stateful, UniformListScrollHandle, Window, div, prelude::*, px,
     rgb, rgba,
 };
-use resonate_core::{PlaylistId, Span};
+use resonate_core::{AlbumId, PlaylistId, Span};
+use resonate_engine::Placement;
+use resonate_library::Track;
 
 use crate::{
     icons::{self, Icon},
@@ -189,6 +191,62 @@ pub(crate) struct Carried {
     pub(crate) title: SharedString,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum Lift {
+    Tracks(Arc<[Track]>),
+    Album(AlbumId),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Lifted {
+    pub(crate) lift: Lift,
+    pub(crate) title: SharedString,
+}
+
+impl Lifted {
+    pub(crate) fn track(track: &Track) -> Self {
+        Self {
+            lift: Lift::Tracks(Arc::from([track.clone()])),
+            title: SharedString::from(track.title.clone()),
+        }
+    }
+
+    pub(crate) fn album(album: AlbumId, title: &str) -> Self {
+        Self {
+            lift: Lift::Album(album),
+            title: SharedString::from(title.to_owned()),
+        }
+    }
+}
+
+pub(crate) fn liftable(listed: Stateful<Div>, lifted: Lifted) -> Stateful<Div> {
+    listed.on_drag(lifted, |lifted, under, _, cx| {
+        cx.new(|_| Ghost {
+            title: lifted.title.clone(),
+            beside: None,
+            under,
+        })
+    })
+}
+
+pub(crate) fn takes_a_lift(
+    target: Stateful<Div>,
+    into: LiftedTo,
+    cx: &mut Context<RootView>,
+) -> Stateful<Div> {
+    target
+        .drag_over::<Lifted>(|style, _, _, _| style.bg(rgb(theme::hover())))
+        .on_drop(cx.listener(move |this, lifted: &Lifted, _, cx| {
+            this.lifted_into(lifted, into, cx);
+        }))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LiftedTo {
+    Queue(Placement),
+    Playlist(PlaylistId),
+}
+
 pub(crate) struct Ghost {
     title: SharedString,
     beside: Option<SharedString>,
@@ -274,6 +332,17 @@ pub(crate) fn movable(
                 this.shift_rows(shift, carried.rows, onto, cx);
             }
         }))
+        .when_some(lifted_onto(shift, onto), |row, into| {
+            takes_a_lift(row, into, cx)
+        })
+}
+
+const fn lifted_onto(shift: Shift, onto: usize) -> Option<LiftedTo> {
+    match shift {
+        Shift::Queue => Some(LiftedTo::Queue(Placement::At(onto))),
+        Shift::Playlist(playlist) => Some(LiftedTo::Playlist(playlist)),
+        Shift::Listing(_) => None,
+    }
 }
 
 #[derive(Clone)]

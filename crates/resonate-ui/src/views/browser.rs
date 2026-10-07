@@ -35,7 +35,7 @@ use crate::{
         missing::MissingShows,
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
-        reorder::{self, Listed, Shift},
+        reorder::{self, Lifted, Listed, Shift},
         root::{Deleting, Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
         scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
@@ -443,6 +443,7 @@ impl RootView {
 
         let cell = div()
             .id(cell_id.clone())
+            .debug_selector(move || format!("album-{}", id.get()))
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -507,6 +508,8 @@ impl RootView {
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.opened(Selection::Album(id), cx);
             }));
+
+        let cell = reorder::liftable(cell, Lifted::album(id, &album.title));
 
         menu::opens_a_reachable_menu(
             cell,
@@ -1056,6 +1059,7 @@ impl RootView {
                     this.play_the_listing_from(&drawn, start, window, cx);
                 }
             }));
+        let row = reorder::liftable(row, Lifted::track(track));
 
         menu::opens_a_reachable_menu(
             row,

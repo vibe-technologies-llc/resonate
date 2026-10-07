@@ -26,7 +26,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
-    SavedQuery, SortOrder, TokenHeld, Track, is_a_followed_link,
+    SavedQuery, SortOrder, TokenHeld, Track, TrackQuery, is_a_followed_link,
 };
 
 use crate::{
@@ -67,7 +67,7 @@ use crate::{
         playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
         pointed::{self, LitUnderThePointer},
         queue::{Named, QueueMeasure, QueueNames, TakenBack, took_out},
-        reorder::{Creeping, Listed, Reach, Shift, Step},
+        reorder::{self, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
         search::{self, SearchShows, TopEntry, TopRun},
         settings::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
@@ -2454,6 +2454,47 @@ impl RootView {
         }
     }
 
+    pub(crate) fn lifted_into(&mut self, lifted: &Lifted, into: LiftedTo, cx: &mut Context<Self>) {
+        match &lifted.lift {
+            Lift::Tracks(tracks) => self.landed(tracks, into, cx),
+            Lift::Album(album) => {
+                let library = self.library.read(cx).catalog();
+                let asked = TrackQuery {
+                    album: Some(*album),
+                    sort: SortOrder::AlbumThenTrack,
+                    reading: SortOrder::AlbumThenTrack.reads(),
+                    ..TrackQuery::default()
+                };
+                cx.spawn(async move |this, cx| {
+                    let read = cx
+                        .background_executor()
+                        .spawn(async move { library.tracks(&asked) })
+                        .await;
+                    let _ = this.update(cx, |this, cx| match read {
+                        Ok(tracks) => this.landed(&tracks, into, cx),
+                        Err(error) => tracing::error!(%error, "a dragged album could not be read"),
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    fn landed(&mut self, tracks: &[Track], into: LiftedTo, cx: &mut Context<Self>) {
+        if tracks.is_empty() {
+            return;
+        }
+        match into {
+            LiftedTo::Queue(at) => self.queue(&listed(tracks), at, cx),
+            LiftedTo::Playlist(playlist) => {
+                let cuts = tracks.iter().map(Cut::of).collect();
+                self.library.update(cx, |library, cx| {
+                    library.add_to_playlist(playlist, cuts, cx)
+                });
+            }
+        }
+    }
+
     pub(crate) fn reach_further(&mut self, drawn_to: usize, held: usize, cx: &mut Context<Self>) {
         self.library.update(cx, |library, cx| {
             library.reach_further(drawn_to, held, cx);
@@ -3869,6 +3910,7 @@ impl RootView {
             .then(|| library.opened())
             .flatten();
         let playing = self.playing_playlist(cx);
+        let lists: AHashSet<PlaylistId> = library.lists().iter().map(|list| list.id).collect();
 
         pinned
             .iter()
@@ -3884,6 +3926,7 @@ impl RootView {
 
                 div()
                     .id(("pinned-playlist", id.get() as usize))
+                    .debug_selector(move || format!("pinned-playlist-{}", id.get()))
                     .flex()
                     .items_center()
                     .h(px(PINNED_ROW))
@@ -3910,6 +3953,13 @@ impl RootView {
                         this.set_pane(Pane::Playlists, cx);
                         this.show_playlist(Some(id), cx);
                     }))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .zip(pinned.iter())
+            .map(|(row, playlist)| match lists.contains(&playlist.id) {
+                true => reorder::takes_a_lift(row, LiftedTo::Playlist(playlist.id), cx),
+                false => row,
             })
             .collect()
     }

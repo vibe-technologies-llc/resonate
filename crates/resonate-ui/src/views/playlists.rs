@@ -23,7 +23,7 @@ use crate::{
         menu::{self, Called, Menu},
         mosaic::{self, Framed, Mosaic},
         pointed::{self, LitUnderThePointer as _},
-        reorder::{self, Carried, Listed, MOVING_HINT, Shift, Step},
+        reorder::{self, Carried, LiftedTo, Listed, MOVING_HINT, Shift, Step},
         root::{Pane, RootView, empty, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sorting,
@@ -1774,6 +1774,10 @@ impl RootView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.show_playlist(Some(id), cx);
                 }));
+        let listed = match playlist.query {
+            None => reorder::takes_a_lift(listed, LiftedTo::Playlist(id), cx),
+            Some(_) => listed,
+        };
 
         let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
         reorder::marked(
@@ -1908,6 +1912,10 @@ impl RootView {
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.show_playlist(Some(id), cx);
             }));
+        let cell = match playlist.query {
+            None => reorder::takes_a_lift(cell, LiftedTo::Playlist(id), cx),
+            Some(_) => cell,
+        };
 
         let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
         menu::opens_a_reachable_menu(

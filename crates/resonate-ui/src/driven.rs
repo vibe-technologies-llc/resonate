@@ -889,6 +889,60 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_track_dragged_onto_the_queue_button_is_queued_and_an_album_onto_a_pinned_playlist_fills_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "one.wav",
+            1,
+            &[(b"INAM", "One of These Days"), (b"IPRD", "Meddle")],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let tracks = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks");
+        let album = library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the albums read")[0]
+            .id;
+        let playlist = library.create_playlist("Drives").expect("a playlist");
+        library
+            .pin_playlist(playlist, true)
+            .expect("the playlist pinned");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
+        let from = driven.centre_of(named("track", tracks[1].id.get()));
+        let onto = driven.centre_of("queue");
+        driven.drag(from, onto);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue()[0].location.clone()),
+            tracks[1].location
+        );
+
+        driven.click("tab-albums");
+        let from = driven.centre_of(named("album", album.get()));
+        let onto = driven.centre_of(named("pinned-playlist", playlist.get()));
+        driven.drag(from, onto);
+        let began = Instant::now();
+        while library
+            .playlist_entries(playlist, None)
+            .expect("the playlist's rows")
+            .len()
+            < 2
+        {
+            assert!(began.elapsed() < PATIENCE, "the album never landed");
+            driven.settle();
+            thread::sleep(FRAME);
+        }
+    }
+
+    #[gpui::test]
     fn a_queued_row_dragged_below_another_is_played_after_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let files = [

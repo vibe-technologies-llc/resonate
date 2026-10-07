@@ -24,7 +24,7 @@ use crate::{
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         playlists::{self, Held, ROW_GROUP},
-        reorder::{self, Carried, MOVING_HINT, Shift, Step},
+        reorder::{self, Carried, LiftedTo, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting,
@@ -562,18 +562,23 @@ impl RootView {
                 "The queue is empty.",
                 Some("Play something from Albums or Tracks, or add rows with the queue marks."),
             );
-            if !self.holds_what_was_taken_out(&queue) {
-                return nothing;
-            }
+            let heading = self
+                .holds_what_was_taken_out(&queue)
+                .then(|| self.queue_heading(&queue, cx));
 
-            return div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_w(px(0.0))
-                .child(self.queue_heading(&queue, cx))
-                .child(nothing)
-                .into_any_element();
+            return reorder::takes_a_lift(
+                div()
+                    .id("empty-queue")
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.0)),
+                LiftedTo::Queue(Placement::Queued),
+                cx,
+            )
+            .children(heading)
+            .child(nothing)
+            .into_any_element();
         }
 
         let parts = self.queue_parts(cx);
@@ -604,12 +609,16 @@ impl RootView {
             ))
             .child(
                 reorder::follows_a_drag(
-                    div()
-                        .id("queue-rows")
-                        .relative()
-                        .flex()
-                        .flex_1()
-                        .min_h(px(0.0)),
+                    reorder::takes_a_lift(
+                        div()
+                            .id("queue-rows")
+                            .relative()
+                            .flex()
+                            .flex_1()
+                            .min_h(px(0.0)),
+                        LiftedTo::Queue(Placement::Queued),
+                        cx,
+                    ),
                     scroll.clone(),
                     lines,
                     cx,

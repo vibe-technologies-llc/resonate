@@ -12,8 +12,8 @@ use resonate_core::{
     AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
 };
 use resonate_engine::{
-    Asleep, Command, OutputStatus, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest,
-    Until,
+    Asleep, Command, OutputStatus, Placement, PlaybackState, PlayerState, QueueItem, RepeatMode,
+    StreamDigest, Until,
 };
 use resonate_library::{Codec, Favoured};
 
@@ -33,6 +33,7 @@ use crate::{
         kit::{self, KeepsItsWidth},
         listing::Pictured,
         menu::{self, Called, Menu},
+        reorder::{self, LiftedTo},
         root::Magnified,
         slider::{Handle, Pointed},
     },
@@ -1289,6 +1290,7 @@ impl RootView {
             if open { QUEUE_OPEN_HINT } else { QUEUE_HINT },
             open,
         );
+        let toggle = reorder::takes_a_lift(toggle, LiftedTo::Queue(Placement::Queued), cx);
         self.in_the_standing_ring("queue", toggle, |this, _, cx| this.toggle_queue(cx), cx)
     }
 

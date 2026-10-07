@@ -2218,6 +2218,17 @@ is never named.
   the query's). A drop is the one gesture not asking `acting_on`: `reorder::movable` takes the row
   it stands for beside the `Carried` it would hand over, so a span lands on the row the pointer let
   go over, not what that row would have carried if dragged.
+- **A track or album is dragged out of a listing into the queue or a playlist.** A track row
+  (`track_row`, every listing drawing one) and an album cell carry a `reorder::Lifted` (`Lift::Tracks`
+  or `Lift::Album`, ghost titled as a row's) through `reorder::liftable`; `reorder::takes_a_lift`
+  makes a target of a queue row (inserted at its place, `Placement::At`), the queue pane's body and
+  an empty queue (`Placement::Queued`), the playback bar's queue button (likewise: the one target
+  standing over every pane), and a list playlist's index row, card and pinned sidebar row (rows
+  added at its end; a saved search takes none). `RootView::lifted_into` lands tracks at once and
+  reads an album's rows in album order on the background executor first. The innermost target
+  takes the drop (gpui takes the drag from the first listener), so a queue row places and the body
+  under it appends
+  (`a_track_dragged_onto_the_queue_button_is_queued_and_an_album_onto_a_pinned_playlist_fills_it`).
 - **A drag scrolls the list; a held pointer keeps it scrolling.** `reorder::follows_a_drag` puts an
   `on_drag_move` on the div wrapping each `uniform_list`, handing `RootView::creep` a `Creeping`
   (scroll handle, list bounds, row count) while the pointer is within `DRAGGING_EDGE` (36) of an
