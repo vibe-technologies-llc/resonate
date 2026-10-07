@@ -64,6 +64,7 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
                               over one to change its Q, and right-press it to take it out.";
 
 const FOLLOWS_THE_DEFAULT: &str = "follows the default";
+const NOT_PLUGGED_IN: &str = "A device not plugged in now";
 const BOUND_TO_NOTHING: &str = "nothing";
 const ITS_OWN_CURVE: &str = "own curve";
 const BAND_KEYS_HINT: &str = concat!(
@@ -117,11 +118,16 @@ impl RootView {
             .map(|sink| (sink.name.clone(), sink.description.clone()))
             .collect();
         let kept = self.equaliser.read(cx).kept().to_vec();
+        let away = unplugged(self.equaliser.read(cx).bindings(), &devices);
 
         let mut listed =
             rows().child(self.binding_row(None, EVERY_OTHER_DEVICE.to_owned(), &kept, cx));
         for (name, description) in devices {
             listed = listed.child(self.binding_row(Some(name), description, &kept, cx));
+        }
+        for name in away {
+            listed =
+                listed.child(self.binding_row(Some(name), NOT_PLUGGED_IN.to_owned(), &kept, cx));
         }
 
         kit::section_body().child(listed).child(note(BOUND_TO_NOTE))
@@ -1512,6 +1518,16 @@ const CORRECTING: &str = "The room is corrected from now on";
 const NO_TAPS: &str = "That file holds no response to convolve with";
 const UNREAD: &str = "That file could not be read as a response";
 
+fn unplugged(bindings: &crate::Bindings, devices: &[(NodeName, String)]) -> Vec<NodeName> {
+    bindings
+        .by_sink
+        .iter()
+        .map(|(sink, _)| sink)
+        .filter(|sink| !devices.iter().any(|(plugged, _)| plugged == *sink))
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1521,6 +1537,34 @@ mod tests {
             on,
             decibels: decibels.to_vec(),
         }
+    }
+
+    #[test]
+    fn a_device_bound_and_not_plugged_in_is_listed_and_a_plugged_one_is_not_listed_twice() {
+        let headphones = NodeName::new("alsa_output.usb-headphones");
+        let speakers = NodeName::new("alsa_output.pci-speakers");
+        let bindings = crate::Bindings {
+            enabled: true,
+            fallback: Some(Binding::Own),
+            by_sink: vec![
+                (headphones.clone(), Binding::Own),
+                (speakers.clone(), Binding::Own),
+            ],
+        };
+        let plugged = [(speakers, "Speakers".to_owned())];
+
+        assert_eq!(
+            unplugged(&bindings, &plugged),
+            std::slice::from_ref(&headphones)
+        );
+        assert!(
+            unplugged(
+                &bindings,
+                &[(headphones, String::new()), plugged[0].clone()]
+            )
+            .is_empty()
+        );
+        assert!(unplugged(&crate::Bindings::default(), &plugged).is_empty());
     }
 
     #[test]

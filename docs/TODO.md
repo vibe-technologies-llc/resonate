@@ -148,8 +148,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   rip is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- A binding for a device not plugged in is shown by the window for plugged devices only: seen only
-  through `resonate eq`, cannot be taken away alone there
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
 - A downmix folds by position alone: a `Discrete(n)` source is truncated one for one; a stream's own

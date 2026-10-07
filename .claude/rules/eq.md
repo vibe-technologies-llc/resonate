@@ -239,7 +239,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   else the one the engine would bind (engine `chosen_sink`'s order); the Bands group, a press and
   AutoEq's suggestion read it. A press with nothing bound gives it an own curve (the fallback's
   where the graph names no device) and switches the equaliser on; *Add a band* too. The binding row
-  offers the own curve beside *nothing* and every kept profile.
+  offers the own curve beside *nothing* and every kept profile. *Bound to each device* lists the
+  fallback, every plugged device, then every device a binding names that the graph does not offer
+  now (`unplugged`), so a binding for headphones left in a drawer is seen and taken away (*nothing*)
+  from the window as from `eq --unbind --for`.
 - **Sound follows the pointer; a drag never reshapes the chain.** A move onto a different band tells
   the engine the whole `Equalisation` at most every `DRAG_TOLD_EVERY` (50 ms); the timer the first
   move started tells it where the band got to, so where it stopped is heard. `retune` sees one band
