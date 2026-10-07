@@ -6,8 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- The queue's type-ahead matches titles read when the queue last changed (names keyed by queue
-  revision alone): a retagged or enriched queued track is still found by its old name
 - The analysis pane remembers a refused or unreachable recognition for the session: a track looked
   up offline is never asked again until 64 others push it out or the window restarts
 - A `subsonic` setting without a scheme makes ureq's bad-URI error, which prints the whole request

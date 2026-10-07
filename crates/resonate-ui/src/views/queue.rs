@@ -37,24 +37,39 @@ pub(crate) struct QueueMeasure {
 
 #[derive(Default)]
 pub(crate) struct QueueNames {
-    named: Option<(u64, Arc<[String]>)>,
-    asked: Option<u64>,
+    named: Option<(NamedAt, Arc<[String]>)>,
+    asked: Option<NamedAt>,
     reading: Option<Task<()>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NamedAt {
+    queue: u64,
+    library: u64,
+    media: u64,
 }
 
 impl RootView {
     pub(crate) fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Option<Arc<[String]>> {
-        let revision = self.player.read(cx).queued().revision;
-        if let Some((named, names)) = self.queue_names.named.as_ref()
-            && *named == revision
-        {
-            return Some(Arc::clone(names));
+        let revision = NamedAt {
+            queue: self.player.read(cx).queued().revision,
+            library: self.library.read(cx).revision(),
+            media: self.player.read(cx).engine().media_revision(),
+        };
+        let held = self
+            .queue_names
+            .named
+            .as_ref()
+            .map(|(named, names)| (*named, Arc::clone(names)));
+        if held.as_ref().is_some_and(|(named, _)| *named == revision) {
+            return held.map(|(_, names)| names);
         }
         self.name_the_queue(revision, cx);
-        None
+        held.filter(|(named, _)| named.queue == revision.queue)
+            .map(|(_, names)| names)
     }
 
-    fn name_the_queue(&mut self, revision: u64, cx: &mut Context<Self>) {
+    fn name_the_queue(&mut self, revision: NamedAt, cx: &mut Context<Self>) {
         if self.queue_names.asked == Some(revision) {
             return;
         }

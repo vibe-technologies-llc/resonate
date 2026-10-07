@@ -223,8 +223,11 @@ is never named.
     `artists.key`'s fold): *przybylowicz* reaches *Przybyłowicz* at the queue as in the search
     field.
   - **Names a jump reads come off the render thread.** `QueueNames` holds the queue's titles
-    against the `Queued::revision` read at; `names_in_the_queue` hands them out only while that
-    revision stands, else asks the background executor: `queued_rows` reads by id in one
+    against a `NamedAt`: the `Queued::revision`, the library's revision and
+    `Player::media_revision` read at, so a retagged or enriched queued track is found by its new
+    name. `names_in_the_queue` hands them out while all three stand; another catalog or media
+    revision asks again but still hands out what it holds for the same rows meanwhile; another
+    queue revision hands out nothing. Asking is the background executor: `queued_rows` reads by id in one
     `Library::tracks_with_ids` pass (500-id batches; a row whose id names another file falls to its
     path), then `Player::media`, then the stem, in queue row order. A keystroke before they land
     still counts as a jump (`jump_where_typed` makes it once they do). The queue pane asks as it
