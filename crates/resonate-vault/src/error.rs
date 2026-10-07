@@ -4,6 +4,7 @@ use std::{
     result,
 };
 
+use resonate_core::MediaLocation;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -38,6 +39,13 @@ pub enum Error {
     Io {
         op: VaultOp,
         path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("reading {location} failed")]
+    Source {
+        location: MediaLocation,
         #[source]
         source: io::Error,
     },
@@ -100,6 +108,13 @@ impl Error {
         Self::Io {
             op,
             path: path.as_ref().to_path_buf(),
+            source,
+        }
+    }
+
+    pub(crate) fn source(location: &MediaLocation, source: io::Error) -> Self {
+        Self::Source {
+            location: location.clone(),
             source,
         }
     }

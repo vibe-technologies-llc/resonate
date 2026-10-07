@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    io::Cursor,
+    io::{self, Cursor, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     process::{self, Command},
     sync::{
@@ -67,6 +67,60 @@ impl MediaProvider for InMemory {
     fn open(&self, _location: &MediaLocation) -> resonate_codec::Result<Media> {
         Ok(Media {
             stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+            hint: Some(FormatHint::Extension("wav".into())),
+        })
+    }
+}
+
+struct Dropping {
+    held: Cursor<Vec<u8>>,
+    drops_past: u64,
+}
+
+impl Read for Dropping {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        if self.held.position() >= self.drops_past {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "the share went away",
+            ));
+        }
+        let within = (self.drops_past - self.held.position()) as usize;
+        let reach = into.len().min(within);
+        self.held.read(&mut into[..reach])
+    }
+}
+
+impl Seek for Dropping {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.held.seek(to)
+    }
+}
+
+struct DropsFrom {
+    source: SourceId,
+    bytes: Vec<u8>,
+    opened: AtomicU32,
+    whole_for: u32,
+}
+
+impl MediaProvider for DropsFrom {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _location: &MediaLocation) -> resonate_codec::Result<Media> {
+        let opening = self.opened.fetch_add(1, Ordering::Relaxed);
+        let drops_past = if opening < self.whole_for {
+            u64::MAX
+        } else {
+            self.bytes.len() as u64 / 2
+        };
+        Ok(Media {
+            stream: Box::new(Reading::new(Dropping {
+                held: Cursor::new(self.bytes.clone()),
+                drops_past,
+            })),
             hint: Some(FormatHint::Extension("wav".into())),
         })
     }
@@ -502,12 +556,10 @@ fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
     assert!(!vault.verify(&held.path, Form::Wave).unwrap_or(false));
 }
 
-#[test]
-fn a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged() {
+fn past_what_a_wave_holds() -> Vec<u8> {
     const FAST: u32 = 192_000;
     const DECLARED_BYTES: u32 = 0xF000_0000;
 
-    let tree = Tree::new();
     let block_align = CHANNELS * 2;
     let data = vec![0_u8; FRAMES * usize::from(block_align)];
     let mut format = Vec::new();
@@ -528,13 +580,69 @@ fn a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged() {
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&declared_body.to_le_bytes());
     whole.extend_from_slice(&body);
-    let path = tree.write("long.wav", &whole);
+    whole
+}
+
+#[test]
+fn a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged() {
+    let tree = Tree::new();
+    let path = tree.write("long.wav", &past_what_a_wave_holds());
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     assert_eq!(held.form, Form::Kept);
     assert!(held.path.to_string_lossy().ends_with(".wav"));
+}
+
+#[test]
+fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let source = SourceId::new("share").expect("a lowercase name");
+    let location = MediaLocation::new(source.clone(), "long/one");
+    let dropping = |whole_for: u32| {
+        let provider = Arc::new(DropsFrom {
+            source: source.clone(),
+            bytes: past_what_a_wave_holds(),
+            opened: AtomicU32::new(0),
+            whole_for,
+        });
+        let sources = Sources::local().and(Arc::clone(&provider) as Arc<dyn MediaProvider>);
+        (provider, sources)
+    };
+    let taken = |sources: &Sources| {
+        vault.keep(&Taking {
+            sources,
+            location: &location,
+            span: None,
+            renewing: false,
+            foretold: None,
+        })
+    };
+
+    let (whole, sources) = dropping(u32::MAX);
+    let held = taken(&sources).expect("a source that never drops is kept");
+    assert!(matches!(
+        held,
+        Keeping::Kept(Kept {
+            form: Form::Kept,
+            ..
+        })
+    ));
+    let opened_to_keep = whole.opened.load(Ordering::Relaxed);
+
+    let (_, sources) = dropping(0);
+    let mid_decode = taken(&sources).expect_err("a source dropping while decoded is not refused");
+    assert!(!vault.failed_itself(&mid_decode), "{mid_decode}");
+
+    let (_, sources) = dropping(opened_to_keep - 1);
+    let mid_copy = taken(&sources).expect_err("a source dropping while copied is not kept");
+    assert!(
+        matches!(&mid_copy, resonate_vault::Error::Source { location: named, .. } if *named == location),
+        "{mid_copy:?}"
+    );
+    assert!(!vault.failed_itself(&mid_copy), "{mid_copy}");
 }
 
 #[test]

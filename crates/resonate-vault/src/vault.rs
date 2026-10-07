@@ -265,7 +265,8 @@ impl Vault {
                     )
             }
             Error::OutsideTheVault { .. } | Error::NotThere { .. } => true,
-            Error::NotAKey
+            Error::Source { .. }
+            | Error::NotAKey
             | Error::Codec { .. }
             | Error::Unencodable { .. }
             | Error::Encoding { .. }
@@ -779,8 +780,12 @@ impl Vault {
                 .map_err(|source| Error::codec(VaultOp::Verify, source))
                 .and_then(|(mut decoder, info)| pcm_of(&mut decoder, &info, None)),
         };
-        let Ok(went_in) = went_in else {
-            return Ok(Keeping::Refused(Refusal::NotValidated));
+        let went_in = match went_in {
+            Ok(went_in) => went_in,
+            Err(Error::Codec { source, op }) if source.is_out_of_reach() => {
+                return Err(Error::Codec { op, source });
+            }
+            Err(_) => return Ok(Keeping::Refused(Refusal::NotValidated)),
         };
 
         let container = Container::from_id(info.container);
@@ -831,7 +836,9 @@ impl Vault {
         let mut held = 0_u64;
 
         let bared = match stripping {
-            Stripping::Bare(container) => bare::bare(&mut media.stream, container, &staging)?,
+            Stripping::Bare(container) => {
+                bare::bare(&mut media.stream, container, taking.location)?
+            }
             Stripping::Whole => None,
         };
         let stripped = bared.is_some();
@@ -848,7 +855,7 @@ impl Vault {
         let start = media
             .stream
             .stream_position()
-            .map_err(|source| Error::io(VaultOp::Read, &staging, source))?;
+            .map_err(|source| Error::source(taking.location, source))?;
         if !head.is_empty() {
             digest.note(&head);
             file.write_all(&head)
@@ -873,7 +880,7 @@ impl Vault {
         loop {
             let read = rest
                 .read(&mut buffer)
-                .map_err(|source| Error::io(VaultOp::Read, &staging, source))?;
+                .map_err(|source| Error::source(taking.location, source))?;
             if read == 0 {
                 break;
             }

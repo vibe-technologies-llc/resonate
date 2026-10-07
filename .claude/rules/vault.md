@@ -219,7 +219,13 @@ gaining `Vault`, a `vault_objects` table; changes are `MIGRATIONS` steps (`libra
 - **A failing vault ends the import; a failing source is passed over.** `Vault::failed_itself`
   separates them: `Error::Io` on a path under the root, a full, over-quota or read-only disc
   anywhere, and `OutsideTheVault` are the vault's (`keep_one` answers `Error::Vault`, stopping every
-  worker); anything else is `Passing::Unreadable`, import continues.
+  worker); anything else is `Passing::Unreadable`, import continues. A read of the source names
+  the source, never the staging file: `Error::Source { location, .. }` (the copy of a source kept
+  whole, `bare::bare`'s rewind), never the vault's. A source kept whole whose decode fails out of
+  reach (`codec::Error::is_out_of_reach`: a dropped share, a timed-out read) answers the
+  `Error::Codec`, unstamped, as the FLAC and WAVE paths do; only a decode that fails on the bytes
+  themselves is `Refusal::NotValidated`
+  (`a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault`).
 
 ## Reading an object back
 

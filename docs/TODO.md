@@ -118,13 +118,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   release track
 
 ## Later: The vault
-- A source kept whole (lossy, DSD, past eight channels, or a FLAC/WAVE that would not shrink) whose
-  read fails mid-decode during an import (dropped share, timed-out read) is stamped refused as not
-  read back, so no later `--import` tries it until its file or the encoder changes; the FLAC and
-  WAVE paths pass such a row over unstamped, as `vault.md` says
-- A read error on the source while a kept copy is made carries the staging file's path, so
-  `failed_itself` takes it for the vault failing and stops the whole import instead of passing the
-  row over
 - A kept WAVE object reopened by path for a backward seek uses its old frame index against a renewal
   that replaced it. Do it with the next two items
 - A renewal landing under a new key is weighed against the source, not the object it replaces: the

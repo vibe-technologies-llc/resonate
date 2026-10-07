@@ -1,15 +1,15 @@
 use std::{
     io::{Read, Seek, SeekFrom},
     ops::Range,
-    path::Path,
 };
 
 use resonate_codec::{Container, MediaStream};
+use resonate_core::MediaLocation;
 
 use crate::{
     blanks::{self, Blank},
     chunks::{self, Layout},
-    error::{Error, Result, VaultOp},
+    error::{Error, Result},
     key::{KEY_BYTES, VaultKey},
     ogg::{self, Renumbering},
 };
@@ -61,7 +61,7 @@ pub(crate) struct Bare {
 pub(crate) fn bare(
     stream: &mut Box<dyn MediaStream>,
     container: Container,
-    named: &Path,
+    location: &MediaLocation,
 ) -> Result<Option<Bare>> {
     if !stream.is_seekable() {
         return Ok(None);
@@ -92,7 +92,7 @@ pub(crate) fn bare(
     if found.is_none() {
         stream
             .seek(SeekFrom::Start(0))
-            .map_err(|source| Error::io(VaultOp::Read, named, source))?;
+            .map_err(|source| Error::source(location, source))?;
     }
     Ok(found)
 }
@@ -381,7 +381,8 @@ mod tests {
 
     fn bared(bytes: Vec<u8>, container: Container) -> (Option<Bare>, Vec<u8>) {
         let mut stream = streamed(bytes);
-        let bare = bare(&mut stream, container, Path::new("a.file")).expect("a readable stream");
+        let location = MediaLocation::local(std::path::PathBuf::from("a.file"));
+        let bare = bare(&mut stream, container, &location).expect("a readable stream");
         let mut rest = Vec::new();
         stream.read_to_end(&mut rest).expect("the rest");
         if let Some(until) = bare.as_ref().and_then(|bare| bare.until) {
