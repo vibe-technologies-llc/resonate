@@ -88,6 +88,8 @@ else is open to be done.
   AccessKit, which only Zed's `main` has
 
 ## Testing
+- `resonate-mcp`'s `a_prompt_embeds_the_reading_its_resource_answers` compares two live
+  statistics readings in full, so crossing a second between them fails on `since` alone
 - `resonate-mpris`'s `bus.rs` tests fail now and then, a different `set_position_*` each time, when
   the whole workspace's tests run at once, and pass alone; the fixed 300 ms wait in `set_position_*`,
   the 500 ms `SETTLE` and the `RealtimeSink` thread paced by `thread::sleep` are the candidates

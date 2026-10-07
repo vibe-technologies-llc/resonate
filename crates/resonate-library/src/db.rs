@@ -35,9 +35,9 @@ use crate::{
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
     KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid,
-    Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle,
-    OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle,
-    PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
+    Measured, Missing, MissingTrack, MostListened, Move, MusicFilters, NamedPlaylist,
+    OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder,
+    PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
     RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
     Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
     Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
@@ -646,6 +646,7 @@ pub(crate) struct Inner {
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
     delivering_into: Mutex<Option<DeliveryFolder>>,
+    music_filters: Mutex<MusicFilters>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -670,6 +671,7 @@ struct KeptVocabulary {
 
 struct KeptSuggestions {
     stamp: CatalogStamp,
+    filters: MusicFilters,
     suggestions: Arc<[Suggestion]>,
 }
 
@@ -1217,6 +1219,15 @@ impl Library {
         self.inner.vault.as_ref()
     }
 
+    pub fn music_filters(&self) -> MusicFilters {
+        *self.inner.music_filters.lock()
+    }
+
+    pub fn filter_music(&self, filters: MusicFilters) {
+        *self.inner.music_filters.lock() = filters;
+        *self.inner.suggested.lock() = None;
+    }
+
     pub fn deliver_into(&self, folder: Option<DeliveryFolder>) {
         *self.inner.delivering_into.lock() = folder;
     }
@@ -1369,6 +1380,7 @@ impl Library {
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
                 delivering_into: Mutex::new(None),
+                music_filters: Mutex::new(MusicFilters::default()),
             }),
         })
     }
@@ -1691,12 +1703,13 @@ impl Library {
 
     pub fn suggestions(&self) -> Result<Arc<[Suggestion]>> {
         let stamp = self.inner.rows_stamp();
+        let filters = self.music_filters();
         if let Some(kept) = self
             .inner
             .suggested
             .lock()
             .as_ref()
-            .filter(|kept| kept.stamp.still_holds_at(stamp))
+            .filter(|kept| kept.stamp.still_holds_at(stamp) && kept.filters == filters)
         {
             return Ok(Arc::clone(&kept.suggestions));
         }
@@ -1704,16 +1717,18 @@ impl Library {
         let suggestions: Arc<[Suggestion]> = suggest::suggestions(&self.inner)?.into();
         *self.inner.suggested.lock() = Some(KeptSuggestions {
             stamp,
+            filters,
             suggestions: Arc::clone(&suggestions),
         });
         Ok(suggestions)
     }
 
     pub fn album(&self, id: AlbumId) -> Result<Option<Album>> {
+        let columns = filtered_counts(ALBUM_COLUMNS, self.music_filters());
         self.inner.read(|connection| {
             connection
                 .query_row(
-                    &format!("SELECT {ALBUM_COLUMNS} FROM albums a WHERE a.id = ?1"),
+                    &format!("SELECT {columns} FROM albums a WHERE a.id = ?1"),
                     params![id.get() as i64],
                     read_album,
                 )
@@ -1732,15 +1747,20 @@ impl Library {
     }
 
     fn listed_albums(&self, query: &AlbumQuery, only: Option<&str>) -> Result<Vec<Album>> {
-        let Some(scoped) = scoped_albums(query, only) else {
+        let filters = self.music_filters();
+        let Some(scoped) = scoped_albums(query, only, filters) else {
             return Ok(Vec::new());
         };
 
-        let mut sql = format!("SELECT {ALBUM_COLUMNS} FROM albums a{}", scoped.from);
+        let columns = filtered_counts(ALBUM_COLUMNS, filters);
+        let mut sql = format!("SELECT {columns} FROM albums a{}", scoped.from);
         let mut binds = scoped.binds;
 
         sql.push_str(" ORDER BY ");
-        sql.push_str(album_order_by(query.sort, query.reading, scoped.ranked));
+        sql.push_str(&filtered_counts(
+            album_order_by(query.sort, query.reading, scoped.ranked),
+            filters,
+        ));
         sql.push_str(" LIMIT ? OFFSET ?");
         binds.push(Value::Integer(limit(query.limit)));
         binds.push(Value::Integer(query.offset as i64));
@@ -1750,7 +1770,7 @@ impl Library {
     }
 
     pub fn albums_counted(&self, query: &AlbumQuery) -> Result<u32> {
-        let Some(scoped) = scoped_albums(query, None) else {
+        let Some(scoped) = scoped_albums(query, None, self.music_filters()) else {
             return Ok(0);
         };
 
@@ -1761,7 +1781,7 @@ impl Library {
     }
 
     pub fn artists_counted(&self, query: &ArtistQuery) -> Result<u32> {
-        let Some(scoped) = scoped_artists(query, None) else {
+        let Some(scoped) = scoped_artists(query, None, self.music_filters()) else {
             return Ok(0);
         };
 
@@ -1776,9 +1796,14 @@ impl Library {
     }
 
     pub fn artist_totals(&self, id: ArtistId) -> Result<ArtistTotals> {
+        let mut sql = WHAT_AN_ARTIST_HOLDS.to_owned();
+        if let Some(predicate) = self.music_filters().predicate("tracks") {
+            sql.push_str(" AND ");
+            sql.push_str(&predicate);
+        }
         self.inner.read(|connection| {
             connection
-                .query_row(WHAT_AN_ARTIST_HOLDS, [id.get() as i64], |row| {
+                .query_row(&sql, [id.get() as i64], |row| {
                     Ok(ArtistTotals {
                         albums: row.get::<_, i64>(0)? as u32,
                         tracks: row.get::<_, i64>(1)? as u32,
@@ -1809,16 +1834,21 @@ impl Library {
     }
 
     fn listed_artists(&self, query: &ArtistQuery, only: Option<&str>) -> Result<Vec<Artist>> {
-        let Some(scoped) = scoped_artists(query, only) else {
+        let filters = self.music_filters();
+        let Some(scoped) = scoped_artists(query, only, filters) else {
             return Ok(Vec::new());
         };
 
-        let mut sql = format!("SELECT {ARTIST_COLUMNS} FROM artists r{}", scoped.from);
+        let columns = filtered_counts(ARTIST_COLUMNS, filters);
+        let mut sql = format!("SELECT {columns} FROM artists r{}", scoped.from);
         let mut binds = scoped.binds;
         let ranked = scoped.ranked;
 
         sql.push_str(" ORDER BY ");
-        sql.push_str(artist_order_by(query.sort, query.reading, ranked));
+        sql.push_str(&filtered_counts(
+            artist_order_by(query.sort, query.reading, ranked),
+            filters,
+        ));
         sql.push_str(" LIMIT ? OFFSET ?");
         binds.push(Value::Integer(limit(query.limit)));
         binds.push(Value::Integer(query.offset as i64));
@@ -4973,15 +5003,19 @@ pub(crate) fn tracks(
     query: &TrackQuery,
     narrowing: Option<&str>,
 ) -> Result<Vec<Track>> {
-    let Some((sql, binds)) = listing(query, narrowing) else {
+    let Some((sql, binds)) = listing(query, narrowing, *inner.music_filters.lock()) else {
         return Ok(Vec::new());
     };
 
     collect(inner, &sql, binds)
 }
 
-fn listing(query: &TrackQuery, narrowing: Option<&str>) -> Option<(String, Vec<Value>)> {
-    let scoped = scoped(query, narrowing)?;
+fn listing(
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+    filters: MusicFilters,
+) -> Option<(String, Vec<Value>)> {
+    let scoped = scoped(query, narrowing, filters)?;
     let sql = format!(
         "SELECT {TRACK_COLUMNS}{} ORDER BY {} LIMIT ? OFFSET ?",
         scoped.from,
@@ -5000,7 +5034,7 @@ pub(crate) fn measured_narrowed(
     query: &TrackQuery,
     narrowing: Option<&str>,
 ) -> Result<Measured> {
-    let Some(scoped) = scoped(query, narrowing) else {
+    let Some(scoped) = scoped(query, narrowing, *inner.music_filters.lock()) else {
         return Ok(Measured::default());
     };
     let whole = query.limit.is_none() && query.offset == 0;
@@ -5057,7 +5091,7 @@ pub(crate) fn pictured_by(
     query: &TrackQuery,
     at_most: usize,
 ) -> Result<Vec<AlbumId>> {
-    let Some(scoped) = scoped(query, None) else {
+    let Some(scoped) = scoped(query, None, *inner.music_filters.lock()) else {
         return Ok(Vec::new());
     };
     let covered = if scoped.from.contains(" WHERE ") {
@@ -5165,7 +5199,7 @@ fn lossless_codes() -> String {
 }
 
 fn scoped_missing(narrowing: Option<&str>) -> Option<Scoped> {
-    narrowed_onto(narrowing, "album_id", "a.id")
+    narrowed_onto(narrowing, "album_id", "a.id", MusicFilters::default())
 }
 
 fn unheld_holding(narrowing: Option<&str>) -> (String, Vec<Value>) {
@@ -5181,19 +5215,26 @@ fn unheld_holding(narrowing: Option<&str>) -> (String, Vec<Value>) {
     (held, binds)
 }
 
-fn scoped_albums(query: &AlbumQuery, only: Option<&str>) -> Option<Scoped> {
-    let mut scoped = narrowed_onto(query.text.as_deref(), "album_id", "a.id")?;
-    let mut filters = vec![HOLDS_A_BEST_COPY.to_owned()];
+fn filtered_counts(sql: &str, filters: MusicFilters) -> String {
+    match filters.predicate("t") {
+        Some(predicate) => sql.replace("t.hidden = 0", &format!("t.hidden = 0 AND {predicate}")),
+        None => sql.to_owned(),
+    }
+}
+
+fn scoped_albums(query: &AlbumQuery, only: Option<&str>, filters: MusicFilters) -> Option<Scoped> {
+    let mut scoped = narrowed_onto(query.text.as_deref(), "album_id", "a.id", filters)?;
+    let mut conditions = vec![filtered_counts(HOLDS_A_BEST_COPY, filters)];
 
     if let Some(artist) = query.artist {
         let owned_or_played_on = artist.get() as i64;
-        filters.push(BY_OR_HOLDING_THE_ARTIST.to_owned());
+        conditions.push(BY_OR_HOLDING_THE_ARTIST.to_owned());
         scoped.binds.push(Value::Integer(owned_or_played_on));
         scoped.binds.push(Value::Integer(owned_or_played_on));
         scoped.binds.push(Value::Integer(owned_or_played_on));
     }
-    filters.extend(only.map(str::to_owned));
-    scoped.from.push_str(&clause(&filters));
+    conditions.extend(only.map(str::to_owned));
+    scoped.from.push_str(&clause(&conditions));
 
     Some(scoped)
 }
@@ -5203,17 +5244,31 @@ const BY_OR_HOLDING_THE_ARTIST: &str = "(a.artist_id = ?
       OR EXISTS (SELECT 1 FROM tracks t JOIN track_credits c ON c.track_id = t.id
                   WHERE t.album_id = a.id AND c.artist_id = ?))";
 
-fn scoped_artists(query: &ArtistQuery, only: Option<&str>) -> Option<Scoped> {
-    let mut scoped = narrowed_onto(query.text.as_deref(), "artist_id", "r.id")?;
-    scoped
-        .from
-        .push_str(&clause(&Vec::from_iter(only.map(str::to_owned))));
+fn scoped_artists(
+    query: &ArtistQuery,
+    only: Option<&str>,
+    filters: MusicFilters,
+) -> Option<Scoped> {
+    let mut scoped = narrowed_onto(query.text.as_deref(), "artist_id", "r.id", filters)?;
+    let mut conditions: Vec<String> = only.map(str::to_owned).into_iter().collect();
+    if filters != MusicFilters::default() {
+        conditions.push(format!(
+            "{} > 0",
+            filtered_counts(artist_tracks!(), filters)
+        ));
+    }
+    scoped.from.push_str(&clause(&conditions));
 
     Some(scoped)
 }
 
-fn narrowed_onto(text: Option<&str>, column: &str, onto: &str) -> Option<Scoped> {
-    let matching = matching(&[text])?;
+fn narrowed_onto(
+    text: Option<&str>,
+    column: &str,
+    onto: &str,
+    filters: MusicFilters,
+) -> Option<Scoped> {
+    let mut matching = matching(&[text])?;
     let ranked = matching.ranked;
     if !matching.narrows() {
         return Some(Scoped {
@@ -5223,6 +5278,7 @@ fn narrowed_onto(text: Option<&str>, column: &str, onto: &str) -> Option<Scoped>
         });
     }
 
+    matching.filters.extend(filters.predicate("tracks"));
     Some(Scoped {
         from: matching.grouped(column, onto),
         binds: matching.binds,
@@ -5230,11 +5286,12 @@ fn narrowed_onto(text: Option<&str>, column: &str, onto: &str) -> Option<Scoped>
     })
 }
 
-fn scoped(query: &TrackQuery, narrowing: Option<&str>) -> Option<Scoped> {
+fn scoped(query: &TrackQuery, narrowing: Option<&str>, filters: MusicFilters) -> Option<Scoped> {
     if narrowing.is_some_and(asks_for_nothing_it_can_read) {
         return None;
     }
     let mut matching = matching(&[query.text.as_deref(), narrowing])?;
+    matching.filters.extend(filters.predicate("tracks"));
     matching.filters.push(THE_BEST_COPY.to_owned());
     if !matching.insists_on_hidden {
         matching.filters.push(A_SHOWN_TRACK.to_owned());
@@ -7139,7 +7196,8 @@ mod tests {
     }
 
     fn plan(library: &Library, query: &TrackQuery) -> Vec<String> {
-        let (sql, binds) = listing(query, None).expect("an unnarrowed listing is always scoped");
+        let (sql, binds) = listing(query, None, MusicFilters::default())
+            .expect("an unnarrowed listing is always scoped");
 
         library
             .inner
@@ -7257,6 +7315,90 @@ mod tests {
                 Ok(())
             })
             .expect("the catalog takes a track");
+    }
+
+    #[test]
+    fn music_filters_apply_before_paging_and_keep_excluded_tracks() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        for title in ["Below", "Boundary", "Long", "Unknown"] {
+            titled(&library, title);
+        }
+        library.inner.write(|transaction| {
+            transaction.execute_batch(
+                "INSERT INTO artists (id, key, name) VALUES (1, 'one', 'One'), (2, 'two', 'Two'), (3, 'guest', 'Guest');
+                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'First', 1), (2, 'Second', 2);
+                 UPDATE tracks SET artist_id = 1, album_id = 1, artist = 'One';
+                 UPDATE tracks SET duration = 59 * sample_rate WHERE title = 'Below';
+                 UPDATE tracks SET duration = 60 * sample_rate, path = '/music/boundary.FLAC' WHERE title = 'Boundary';
+                 UPDATE tracks SET duration = 600 * sample_rate, path = '/music/long.mp3', artist_id = 2, album_id = 2, artist = 'Two' WHERE title = 'Long';
+                 INSERT INTO track_credits (track_id, artist_id) SELECT id, 3 FROM tracks WHERE title = 'Boundary';"
+            ).map_err(|source| Error::store(StoreOp::Insert, source))?;
+            Ok(())
+        })?;
+        let query = TrackQuery {
+            sort: SortOrder::Title,
+            ..TrackQuery::default()
+        };
+        let all = library.tracks(&query)?;
+        assert_eq!(all.len(), 4);
+        let boundary = all
+            .iter()
+            .find(|track| track.title == "Boundary")
+            .expect("the boundary track")
+            .id;
+        library.filter_music(MusicFilters {
+            extensions: crate::MusicExtensions::parse(&[".flac", ".mp3"])
+                .expect("supported extensions"),
+            minimum_length: crate::MinimumLength::new(60).expect("a minute"),
+        });
+        assert_eq!(
+            library
+                .tracks(&query)?
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Boundary", "Long"]
+        );
+        assert_eq!(library.measured(&query)?.rows, 2);
+        assert_eq!(
+            library.tracks(&TrackQuery {
+                limit: Some(1),
+                offset: 1,
+                ..query.clone()
+            })?[0]
+                .title,
+            "Long"
+        );
+        assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
+        assert_eq!(library.albums_counted(&AlbumQuery::default())?, 2);
+        assert_eq!(library.artists_counted(&ArtistQuery::default())?, 3);
+        assert_eq!(library.artist_totals(ArtistId::new(1)?)?.tracks, 1);
+        library.filter_music(MusicFilters {
+            extensions: crate::MusicExtensions::parse(&["flac"]).expect("FLAC"),
+            ..library.music_filters()
+        });
+        assert_eq!(library.tracks(&query)?.len(), 1);
+        let albums = library.albums(&AlbumQuery::default())?;
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].track_count, 1);
+        assert_eq!(library.albums_counted(&AlbumQuery::default())?, 1);
+        let artists = library.artists(&ArtistQuery::default())?;
+        assert_eq!(artists.len(), 2);
+        assert_eq!(artists[0].track_count, 1);
+        assert_eq!(library.artists_counted(&ArtistQuery::default())?, 2);
+        assert!(library.search("Below", 10)?.tracks.is_empty());
+        assert!(library.search("Below", 10)?.albums.is_empty());
+        assert!(library.track(boundary)?.is_some());
+        library.filter_music(MusicFilters {
+            extensions: crate::MusicExtensions::parse(&[]).expect("none"),
+            ..MusicFilters::default()
+        });
+        assert_eq!(library.measured(&query)?.rows, 0);
+        assert!(library.albums(&AlbumQuery::default())?.is_empty());
+        assert!(library.artists(&ArtistQuery::default())?.is_empty());
+        library.filter_music(MusicFilters::default());
+        assert_eq!(library.tracks(&query)?, all);
+        Ok(())
     }
 
     fn suggested(library: &Library, text: &str) -> Option<String> {
@@ -7487,8 +7629,8 @@ mod tests {
         assert!(matches!(cuts_matching("!!!", "e"), Narrowed::Nothing));
         assert!(matches!(cuts_matching("", "e"), Narrowed::Unasked));
         assert!(matches!(cuts_matching("echoes", "e"), Narrowed::To(_)));
-        assert!(scoped(&TrackQuery::default(), Some("???")).is_none());
-        assert!(scoped(&TrackQuery::default(), None).is_some());
+        assert!(scoped(&TrackQuery::default(), Some("???"), MusicFilters::default()).is_none());
+        assert!(scoped(&TrackQuery::default(), None, MusicFilters::default()).is_some());
     }
 
     #[test]

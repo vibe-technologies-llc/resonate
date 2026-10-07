@@ -21,7 +21,7 @@ use resonate_engine::{
     Restoration, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
-use resonate_library::HistoryKept;
+use resonate_library::{HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 
@@ -34,6 +34,7 @@ pub enum SettingsCategory {
     Processing,
     Equaliser,
     Library,
+    Filters,
     Online,
     Desktop,
     Appearance,
@@ -41,11 +42,12 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Output,
         Self::Processing,
         Self::Equaliser,
         Self::Library,
+        Self::Filters,
         Self::Online,
         Self::Desktop,
         Self::Appearance,
@@ -58,6 +60,7 @@ impl SettingsCategory {
             Self::Processing => "processing",
             Self::Equaliser => "equaliser",
             Self::Library => "library",
+            Self::Filters => "filters",
             Self::Online => "online",
             Self::Desktop => "desktop",
             Self::Appearance => "appearance",
@@ -201,6 +204,8 @@ pub enum SettingKey {
     LastSettingsCategory,
     Inbox,
     MusicFolder,
+    MusicExtensions,
+    MinimumLength,
     FileDropped,
     Subsonic,
     SubsonicUser,
@@ -220,7 +225,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 78] = [
+    pub const ALL: [Self; 80] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -283,6 +288,8 @@ impl SettingKey {
         Self::LastSettingsCategory,
         Self::Inbox,
         Self::MusicFolder,
+        Self::MusicExtensions,
+        Self::MinimumLength,
         Self::FileDropped,
         Self::Subsonic,
         Self::SubsonicUser,
@@ -369,6 +376,8 @@ pub enum Setting {
     LastSettingsCategory(SettingsCategory),
     Inbox(PathBuf),
     MusicFolder(PathBuf),
+    MusicExtensions(MusicExtensions),
+    MinimumLength(MinimumLength),
     FileDropped(bool),
     Subsonic(String),
     SubsonicUser(String),
@@ -451,6 +460,8 @@ impl Setting {
             Self::RememberSettingsCategory(_) => SettingKey::RememberSettingsCategory,
             Self::LastSettingsCategory(_) => SettingKey::LastSettingsCategory,
             Self::Inbox(_) => SettingKey::Inbox,
+            Self::MusicExtensions(_) => SettingKey::MusicExtensions,
+            Self::MinimumLength(_) => SettingKey::MinimumLength,
             Self::MusicFolder(_) => SettingKey::MusicFolder,
             Self::FileDropped(_) => SettingKey::FileDropped,
             Self::Subsonic(_) => SettingKey::Subsonic,

@@ -23,7 +23,7 @@ use resonate_engine::{
     SkipUnderRepeat,
 };
 use resonate_eq::{Binding, ProfileName};
-use resonate_library::{HistoryKept, Layout};
+use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
 use resonate_pipewire::NodeName;
 use toml_edit::{DocumentMut, Item, Table};
@@ -162,6 +162,8 @@ pub struct Config {
     pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
     pub music_folder: Option<PathBuf>,
+    pub music_extensions: Option<MusicExtensions>,
+    pub minimum_length: Option<MinimumLength>,
     pub file_dropped: Option<bool>,
     pub convolution: Option<PathBuf>,
     pub subsonic: Option<String>,
@@ -259,6 +261,8 @@ impl fmt::Debug for Config {
             last_settings_category,
             inbox,
             music_folder,
+            music_extensions,
+            minimum_length,
             file_dropped,
             convolution,
             subsonic,
@@ -342,6 +346,8 @@ impl fmt::Debug for Config {
             .field("last_settings_category", last_settings_category)
             .field("inbox", inbox)
             .field("music_folder", music_folder)
+            .field("music_extensions", music_extensions)
+            .field("minimum_length", minimum_length)
             .field("file_dropped", file_dropped)
             .field("convolution", convolution)
             .field("subsonic", subsonic)
@@ -662,6 +668,13 @@ fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> Result<Conf
 }
 
 impl Config {
+    pub fn music_filters(&self) -> MusicFilters {
+        MusicFilters {
+            extensions: self.music_extensions.unwrap_or_default(),
+            minimum_length: self.minimum_length.unwrap_or_default(),
+        }
+    }
+
     fn take(&mut self, at: At<'_>, value: &Item) -> Result<()> {
         let config = self;
         match at.key {
@@ -735,6 +748,28 @@ impl Config {
             ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
             ConfigKey::MusicFolder => {
                 config.music_folder = given(at.string(value)?).map(PathBuf::from);
+            }
+            ConfigKey::MusicExtensions => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| at.mistyped(ValueKind::Array))?;
+                let extensions = array
+                    .iter()
+                    .map(|extension| {
+                        extension
+                            .as_str()
+                            .ok_or_else(|| at.mistyped(ValueKind::Text))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                config.music_extensions =
+                    Some(MusicExtensions::parse(&extensions).ok_or_else(|| at.rejected())?);
+            }
+            ConfigKey::MinimumLength => {
+                let seconds = at.within(value, &(0..=u64::from(MinimumLength::MAX_SECONDS)))?;
+                config.minimum_length = Some(
+                    MinimumLength::new(u16::try_from(seconds).map_err(|_| at.rejected())?)
+                        .ok_or_else(|| at.rejected())?,
+                );
             }
             ConfigKey::FileDropped => config.file_dropped = Some(at.boolean(value)?),
             ConfigKey::Convolution => {
@@ -1201,6 +1236,7 @@ fn settings_category(text: &str) -> Option<&'static str> {
         "processing" => Some("processing"),
         "equaliser" => Some("equaliser"),
         "library" => Some("library"),
+        "filters" => Some("filters"),
         "online" => Some("online"),
         "desktop" => Some("desktop"),
         "appearance" => Some("appearance"),
@@ -1348,6 +1384,65 @@ mod tests {
     #[test]
     fn an_empty_document_leaves_every_setting_unset() {
         assert_eq!(read("").expect("empty is valid"), Config::default());
+    }
+
+    #[test]
+    fn music_filters_keep_defaults_and_refuse_unsupported_extensions_or_lengths() {
+        assert_eq!(
+            read("").expect("defaults").music_filters(),
+            MusicFilters::default()
+        );
+        let selected = read("music-extensions = [\".MP3\", \"flac\", \".m4a\"]\nminimum-length-s = 600\nlast-settings-category = \"filters\"").expect("valid filters");
+        assert_eq!(
+            selected
+                .music_filters()
+                .extensions
+                .selected()
+                .collect::<Vec<_>>(),
+            ["flac", "m4a", "mp3"]
+        );
+        assert_eq!(selected.music_filters().minimum_length.seconds(), 600);
+        for invalid in [
+            "minimum-length-s = -1",
+            "minimum-length-s = 601",
+            "minimum-length-s = 1.5",
+        ] {
+            assert!(matches!(
+                read(invalid),
+                Err(Error::ConfigValue {
+                    key: ConfigKey::MinimumLength,
+                    ..
+                }) | Err(Error::ConfigType {
+                    key: ConfigKey::MinimumLength,
+                    ..
+                })
+            ));
+        }
+        for invalid in [
+            "music-extensions = [\".exe\"]",
+            "music-extensions = [1]",
+            "music-extensions = \"mp3\"",
+        ] {
+            assert!(matches!(
+                read(invalid),
+                Err(Error::ConfigValue {
+                    key: ConfigKey::MusicExtensions,
+                    ..
+                }) | Err(Error::ConfigType {
+                    key: ConfigKey::MusicExtensions,
+                    ..
+                })
+            ));
+        }
+        assert_eq!(
+            read("music-extensions = []")
+                .expect("exclude all")
+                .music_filters()
+                .extensions
+                .selected()
+                .count(),
+            0
+        );
     }
 
     #[test]

@@ -10,6 +10,7 @@ impl Category {
             Self::Processing => "Processing",
             Self::Equaliser => "Equaliser",
             Self::Library => "Library",
+            Self::Filters => "Filters",
             Self::Online => "Online",
             Self::Desktop => "Desktop",
             Self::Appearance => "Appearance",
@@ -29,6 +30,7 @@ impl Category {
             Self::Library => {
                 "The folders a scan walks, the scan itself, and how the files are filed"
             }
+            Self::Filters => "Which file extensions and track lengths appear in your library",
             Self::Online => {
                 "What is looked up about the library, and what a request says about you"
             }
@@ -48,6 +50,7 @@ impl Category {
             Self::Processing => Icon::Inspector,
             Self::Equaliser => Icon::Equaliser,
             Self::Library => Icon::Folder,
+            Self::Filters => Icon::Search,
             Self::Online => Icon::Globe,
             Self::Desktop => Icon::Info,
             Self::Appearance => Icon::Appearance,
@@ -83,6 +86,8 @@ pub(crate) enum Group {
     Measured,
     RoomCorrection,
     MusicFolder,
+    MusicExtensions,
+    MinimumLength,
     Folders,
     Scanning,
     Refreshing,
@@ -122,7 +127,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 55] = [
+    pub(crate) const ALL: [Self; 57] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -142,6 +147,8 @@ impl Group {
         Self::Measured,
         Self::RoomCorrection,
         Self::MusicFolder,
+        Self::MusicExtensions,
+        Self::MinimumLength,
         Self::Folders,
         Self::Scanning,
         Self::Refreshing,
@@ -200,6 +207,7 @@ impl Group {
             | Self::Bands
             | Self::Measured
             | Self::RoomCorrection => Category::Equaliser,
+            Self::MusicExtensions | Self::MinimumLength => Category::Filters,
             Self::MusicFolder
             | Self::Folders
             | Self::Scanning
@@ -260,6 +268,8 @@ impl Group {
             Self::Bands => "Bands",
             Self::Measured => "Measured corrections",
             Self::RoomCorrection => "Room correction",
+            Self::MusicExtensions => "File extensions",
+            Self::MinimumLength => "Minimum length",
             Self::MusicFolder => "Primary music folder",
             Self::Folders => "Music folders",
             Self::Scanning => "Scanning",
@@ -320,6 +330,12 @@ impl Group {
             Self::Bands => BANDS_HINT,
             Self::Measured => MEASURED_HINT,
             Self::RoomCorrection => ROOM_HINT,
+            Self::MusicExtensions => {
+                "Choose which supported file extensions appear in the library. Every supported extension is included by default. Files and catalog entries are kept when excluded."
+            }
+            Self::MinimumLength => {
+                "Only show tracks at least this long. The minimum can be between 0 seconds and 10 minutes. Zero keeps the current behavior, including tracks whose length is unknown."
+            }
             Self::MusicFolder => MUSIC_FOLDER_HINT,
             Self::Folders => FOLDERS_HINT,
             Self::Scanning => SCANNING_HINT,
@@ -406,6 +422,12 @@ impl Group {
             Self::RoomCorrection => {
                 "convolution impulse response ir fir room correction speakers rew drc \
                  measurement wav"
+            }
+            Self::MusicExtensions => {
+                "music filters formats mp3 flac m4a audio files extension include exclude"
+            }
+            Self::MinimumLength => {
+                "music filters duration seconds minutes short songs minimum length"
             }
             Self::MusicFolder => {
                 "primary main default home directory destination import add copy drop drag \
@@ -531,6 +553,8 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
+            Self::MusicExtensions => &[SettingKey::MusicExtensions],
+            Self::MinimumLength => &[SettingKey::MinimumLength],
             Self::MusicFolder => &[SettingKey::MusicFolder, SettingKey::FileDropped],
             Self::RoomCorrection => &[SettingKey::Convolution],
             Self::Subsonic => &[

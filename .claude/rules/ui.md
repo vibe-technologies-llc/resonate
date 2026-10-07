@@ -2292,7 +2292,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **The settings pane is a rail of categories over a column of sections, and one table says what a
   section is.** `views/settings/` is a folder, the pane holding two pieces of arithmetic worth testing
   without a window. `find.rs` is the vocabulary: a `Category` — Output, Processing, Equaliser, Library,
-  Online, Desktop, Appearance, About — and a `Group`, one per setting, carrying its category, title,
+  Filters, Online, Desktop, Appearance, About — and a `Group`, one per setting, carrying its category, title,
   hint, the words it is *also* called and the `SettingKey`s putting it back. Nothing else enumerates the
   sections: `Category::groups` filters the one table, `mod.rs::group` dispatches a `Group` to the method
   drawing it, and tests hold every group to standing in one category, a title nothing else claims, a
@@ -2303,6 +2303,16 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `ScrollHandle` of its own, and `show_settings` puts it back to the top whenever the category changes:
   gpui keys a scroll offset by element id, and one `"settings"` id across every category left the next
   page opened as far down as the last was read.
+- **Filters is the library's extension and minimum-length selection.** Supported extensions form
+  one wrapping multi-select of `kit::chip`s, each independently selected and carrying a checkmark
+  where included; every format is selected by default. The checkmark's slot stays the same size
+  when cleared, so showing the checkmark takes no extra room. A selection count and *Select
+  all* / *Clear selection* actions name what is held and let the whole selection change at once;
+  each action is greyed where it would change nothing. Chips and actions take the ordinary
+  keyboard focus ring. The minimum is a seconds field accepting zero through 600 on Enter or when
+  leaving the field. A refused number stays in the field and raises a toast; Escape restores the
+  held value and returns focus. Changes reload the library listings at once and store through
+  `SettingsWriter`, and each group and the category can be put back through the ordinary reset controls.
 - **Files dragged from outside are weighed while over the window and copied when dropped.**
   `views/dropping.rs` is the whole of it. gpui turns a file drag into an `ExternalPaths` drag, but
   only the element dropped on hears of it ending — nothing tells a view the drag *left* — so the

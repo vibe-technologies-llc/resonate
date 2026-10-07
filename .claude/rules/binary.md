@@ -173,6 +173,12 @@ password, key and the `contact` (`no_key_holding_a_secret_or_the_contact_is_prin
 - `bluetooth-lead-ms` and `bluetooth-awake-s` are held to `BLUETOOTH_LEAD_MS` and
   `BLUETOOTH_AWAKE_S` through `At::within`, so a slipped digit is refused at startup rather than
   playing hours of silence or keeping headphones awake for days.
+- `music-extensions` is an array of supported audio extensions, read case-insensitively with or
+  without a leading dot; absent it includes every extension this build scans, while an empty array
+  includes none. `minimum-length-s` is a whole number of seconds from zero to 600, default zero.
+  Both live in Settings → Filters and change catalog listings immediately, keeping excluded rows
+  and files so putting a filter back needs no rescan. They do not restrict explicit playback or
+  file operations; a positive minimum passes over rows whose length is unknown.
 - `music-folder` is the one ordinary folder new songs are copied into (drops, `ui.md` and
   `library.md`'s *Taking files in*; a provider's delivery where no vault is open, `providers.md`),
   filed by `organise-as` when `file-dropped` is on; never the vault. Choosing one stores its

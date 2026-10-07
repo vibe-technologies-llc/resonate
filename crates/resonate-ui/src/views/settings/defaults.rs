@@ -5,7 +5,7 @@ use std::{
 
 use resonate_core::{Appearance, Presence, ScrollbarMode};
 use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat};
-use resonate_library::HistoryKept;
+use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
 use crate::{Tabs, WindowButtons, views::settings::find::Group};
@@ -48,6 +48,7 @@ pub(crate) struct Standing {
     pub(crate) listening_for: Duration,
     pub(crate) resume: bool,
     pub(crate) history_kept: HistoryKept,
+    pub(crate) music_filters: MusicFilters,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
     pub(crate) notify: bool,
@@ -88,6 +89,7 @@ impl Standing {
             listening_for: CLIP_BY_DEFAULT,
             resume: RESUME,
             history_kept: HISTORY_KEPT,
+            music_filters: MusicFilters::default(),
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             notify: NOTIFY,
@@ -144,6 +146,8 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Resuming => standing.resume != RESUME,
         Group::History => standing.history_kept != HISTORY_KEPT,
+        Group::MusicExtensions => standing.music_filters.extensions != MusicExtensions::default(),
+        Group::MinimumLength => standing.music_filters.minimum_length != MinimumLength::default(),
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
         Group::Notifications => standing.notify != NOTIFY,
@@ -259,6 +263,8 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Organising
         | Group::Vault
         | Group::Inbox
+        | Group::MusicExtensions
+        | Group::MinimumLength
         | Group::MusicFolder
         | Group::Subsonic
         | Group::Tidal

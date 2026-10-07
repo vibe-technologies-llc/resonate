@@ -4,6 +4,7 @@ pub(crate) mod curve;
 mod defaults;
 mod desktop;
 mod equaliser;
+mod filters;
 mod find;
 mod library;
 mod online;
@@ -415,6 +416,8 @@ impl RootView {
             Group::Bands => self.bands_group(cx),
             Group::Measured => self.measured_group(cx),
             Group::RoomCorrection => self.room_group(cx),
+            Group::MusicExtensions => self.music_extensions_group(cx),
+            Group::MinimumLength => self.minimum_length_group(cx),
             Group::MusicFolder => self.music_folder_group(cx),
             Group::Folders => self.folders_group(cx),
             Group::Scanning => self.scanning_group(cx),
@@ -551,6 +554,8 @@ impl RootView {
             }
             Group::Resuming => self.set_resume(defaults::RESUME, cx),
             Group::History => self.keep_the_history(defaults::HISTORY_KEPT, cx),
+            Group::MusicExtensions => self.set_music_extensions(Default::default(), cx),
+            Group::MinimumLength => self.set_minimum_length(Default::default(), cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Discord => self.put_discord_back(cx),
             Group::DiscordShows => self.put_discord_shows_back(cx),
@@ -657,6 +662,7 @@ impl RootView {
             listening_for,
             resume,
             history_kept,
+            music_filters: cx.global::<ResonateApp>().library.music_filters(),
             skip_under_repeat,
             previous_restarts,
             notify,
@@ -834,10 +840,11 @@ fn switch_row(
     label: impl Into<SharedString>,
     under: impl Into<SharedString>,
     on: bool,
-    id: &'static str,
+    id: impl Into<SharedString>,
 ) -> Stateful<Div> {
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
         .flex()
         .items_center()
         .justify_between()

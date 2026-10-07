@@ -69,6 +69,8 @@ pub enum ConfigKey {
     LastSettingsCategory,
     Inbox,
     MusicFolder,
+    MusicExtensions,
+    MinimumLength,
     FileDropped,
     Subsonic,
     SubsonicUser,
@@ -108,7 +110,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 80] = [
+    pub const ALL: [Self; 82] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -168,6 +170,8 @@ impl ConfigKey {
         Self::LastSettingsCategory,
         Self::Inbox,
         Self::MusicFolder,
+        Self::MusicExtensions,
+        Self::MinimumLength,
         Self::FileDropped,
         Self::Subsonic,
         Self::SubsonicUser,
@@ -251,6 +255,8 @@ impl ConfigKey {
             Self::RememberSettingsCategory => "remember-settings-category",
             Self::LastSettingsCategory => "last-settings-category",
             Self::Inbox => "inbox",
+            Self::MusicExtensions => "music-extensions",
+            Self::MinimumLength => "minimum-length-s",
             Self::MusicFolder => "music-folder",
             Self::FileDropped => "file-dropped",
             Self::Subsonic => "subsonic",
@@ -296,6 +302,7 @@ pub enum ValueKind {
     Integer,
     Number,
     Table,
+    Array,
 }
 
 impl fmt::Display for ValueKind {
@@ -306,6 +313,7 @@ impl fmt::Display for ValueKind {
             Self::Integer => "integer",
             Self::Number => "number",
             Self::Table => "table",
+            Self::Array => "array",
         })
     }
 }

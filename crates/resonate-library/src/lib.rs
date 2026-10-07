@@ -7,6 +7,7 @@ mod enrich;
 mod enriched;
 mod error;
 mod filed;
+mod filters;
 mod fingerprint;
 mod hinted;
 mod history;
@@ -86,6 +87,7 @@ pub use crate::{
         SchemaFingerprint, StoreOp, TagName,
     },
     filed::DeliveryFolder,
+    filters::{MinimumLength, MusicExtensions, MusicFilters},
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
     history::{Aged, HistoryKept},
     import::{

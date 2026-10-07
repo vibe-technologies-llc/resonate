@@ -409,6 +409,7 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
         Some(vault) => Library::open_with_vault(&path, Arc::clone(vault))?,
         None => Library::open(&path)?,
     };
+    library.filter_music(config.music_filters());
     age_the_history(&library, config.history_kept());
     library.deliver_into(delivery_folder(config));
     Ok(library)

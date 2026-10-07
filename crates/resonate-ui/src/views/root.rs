@@ -546,6 +546,7 @@ pub struct RootView {
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
+    pub(crate) minimum_length: Entity<Field>,
     pub(crate) typed_root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
     pub(crate) figure: Entity<Field>,
@@ -885,6 +886,28 @@ impl RootView {
         )
         .detach();
 
+        let minimum_length = cx.new(|cx| {
+            let mut field = Field::new("Seconds, from 0 to 600", window, cx);
+            field.hold(
+                cx.global::<ResonateApp>()
+                    .library
+                    .music_filters()
+                    .minimum_length
+                    .seconds()
+                    .to_string(),
+                cx,
+            );
+            field
+        });
+        cx.subscribe_in(
+            &minimum_length,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.minimum_length_given(window, cx);
+            },
+        )
+        .detach();
+
         let organising = cx.new(|cx| {
             let mut field = Field::new(ORGANISING_PLACEHOLDER, window, cx);
             field.hold(organise_as, cx);
@@ -994,6 +1017,7 @@ impl RootView {
             discord_app,
             discord_icon,
             organising,
+            minimum_length,
             typed_root,
             finding,
             figure,
@@ -3167,6 +3191,7 @@ impl RootView {
             &self.discord_app,
             &self.discord_icon,
             &self.organising,
+            &self.minimum_length,
             &self.typed_root,
             &self.finding,
             &self.figure,
@@ -3249,6 +3274,18 @@ impl RootView {
         }
         if self.discord_icon.read(cx).is_focused(window) {
             self.leave_discord_icon(window, cx);
+            return;
+        }
+        if self.minimum_length.read(cx).is_focused(window) {
+            let length = cx
+                .global::<ResonateApp>()
+                .library
+                .music_filters()
+                .minimum_length;
+            self.minimum_length
+                .update(cx, |field, cx| field.hold(length.seconds().to_string(), cx));
+            window.focus(&self.focus);
+            cx.notify();
             return;
         }
         if self.organising.read(cx).is_focused(window) {

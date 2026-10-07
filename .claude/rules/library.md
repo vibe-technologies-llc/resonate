@@ -645,6 +645,16 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   is how many copies a row stands for, drawn as `+N` beside the title, and `Library::alternatives_of`
   what the menu offers to play instead. A best copy that goes puts `ON DELETE SET NULL` on the rows
   under it, and the end-of-scan pass crowns the next.
+- **Music filters narrow listings and keep the catalog whole.** `MusicFilters` holds the supported
+  extension selection and a `MinimumLength` bounded to ten minutes. `Library::filter_music` changes
+  the selection for this opened catalog; the binary fills it from the config before any listing.
+  Track listings and their measurements apply it before ordering and paging, and albums, artists,
+  their counts and search results follow the same selection. An extension is matched against the
+  file suffix, case-insensitively, rather than inferred from the codec; a cue row has its backing
+  file's extension and its own duration. Zero imposes no duration condition, keeping unknown lengths;
+  a positive minimum requires a known length at least as long. Excluded rows retain their ids,
+  favourites and plays and still resolve for explicit playback; scans keep reading every supported
+  format. Changing the selection drops the suggestion cache, and defaults add no SQL condition.
 - **A hidden track is kept and only stepped past.** `tracks.hidden` is the second `MIGRATIONS` step,
   and `Library::hide_track` sets it either way and answers whether it moved. The row, file, plays,
   playlists and favourite are kept, and a scan never touches the column, so a hidden track stays hidden

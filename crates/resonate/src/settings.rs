@@ -9,7 +9,7 @@ use resonate_engine::{
 use resonate_eq::Binding;
 use resonate_library::HistoryKept;
 use resonate_ui::{Setting, SettingChange, SettingKey, Settings};
-use toml_edit::Value;
+use toml_edit::{Array, Value};
 
 use crate::{
     ConfigKey,
@@ -257,6 +257,19 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
             (ConfigKey::Inbox, Some(folder.into()))
         }
+        Setting::MusicExtensions(extensions) => (
+            ConfigKey::MusicExtensions,
+            Some(Value::Array(
+                extensions
+                    .selected()
+                    .map(|extension| format!(".{extension}"))
+                    .collect::<Array>(),
+            )),
+        ),
+        Setting::MinimumLength(length) => (
+            ConfigKey::MinimumLength,
+            Some(i64::from(length.seconds()).into()),
+        ),
         Setting::MusicFolder(folder) => {
             let folder = folder
                 .to_str()
@@ -386,6 +399,8 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
         SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
+        SettingKey::MusicExtensions => ConfigKey::MusicExtensions,
+        SettingKey::MinimumLength => ConfigKey::MinimumLength,
         SettingKey::MusicFolder => ConfigKey::MusicFolder,
         SettingKey::FileDropped => ConfigKey::FileDropped,
         SettingKey::Convolution => ConfigKey::Convolution,
@@ -449,6 +464,41 @@ mod tests {
     use resonate_core::{Accent, AppId, Pictured, Presence, Shown, TextSize, Theme};
 
     use super::*;
+
+    #[test]
+    fn music_filters_written_by_the_pane_read_back_and_reset_to_the_current_behavior() {
+        let folder = env::temp_dir().join(format!("resonate-settings-filters-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let filters = resonate_library::MusicFilters {
+            extensions: resonate_library::MusicExtensions::parse(&[".MP3", ".flac", ".m4a"])
+                .expect("supported extensions"),
+            minimum_length: resonate_library::MinimumLength::new(600).expect("ten minutes"),
+        };
+        file.apply(&[
+            SettingChange::Store(Setting::MusicExtensions(filters.extensions)),
+            SettingChange::Store(Setting::MinimumLength(filters.minimum_length)),
+        ])
+        .expect("a writable config");
+        assert_eq!(
+            config::load(Some(&path))
+                .expect("the config reads")
+                .music_filters(),
+            filters
+        );
+        file.apply(&[
+            SettingChange::Forget(SettingKey::MusicExtensions),
+            SettingChange::Forget(SettingKey::MinimumLength),
+        ])
+        .expect("resetting the filters");
+        assert_eq!(
+            config::load(Some(&path))
+                .expect("the config reads")
+                .music_filters(),
+            resonate_library::MusicFilters::default()
+        );
+        let _ = fs::remove_dir_all(folder);
+    }
 
     #[test]
     fn a_volume_is_written_as_the_figure_it_is_rather_than_the_float_widened() {
