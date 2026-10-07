@@ -25,7 +25,7 @@ use lofty::{
     probe::Probe,
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
-use resonate_core::{Decibels, MediaLocation};
+use resonate_core::{Decibels, MediaLocation, naming};
 use rustix::fs::XattrFlags;
 
 use crate::{
@@ -1064,32 +1064,40 @@ static STAGED: AtomicU64 = AtomicU64::new(0);
 const ATTRIBUTE_READS_AT_MOST: usize = 4;
 const RUNNING_PROCESSES: &str = "/proc";
 const STAGED_BY_AND_COUNTED: char = '-';
+const LONGEST_LETTER_BYTES: usize = 4;
 
 fn staged_beside(path: &Path) -> PathBuf {
     staged_in(path.parent().unwrap_or(Path::new("")), path)
 }
 
 fn staged_in(folder: &Path, path: &Path) -> PathBuf {
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let extension = path.extension().unwrap_or_default().to_string_lossy();
-    folder.join(format!(
-        ".{stem}.{}{STAGED_BY_AND_COUNTED}{}.{extension}",
+    let mut stamped = OsString::from(format!(
+        ".{}{STAGED_BY_AND_COUNTED}{}.",
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
+    ));
+    stamped.push(path.extension().unwrap_or_default());
+    folder.join(naming::named_within(
+        ".",
+        path.file_stem().unwrap_or_default(),
+        stamped,
     ))
 }
 
 fn staged_by(path: &Path, staged: &OsStr) -> Option<u32> {
     let stem = path.file_stem()?.to_str()?;
     let extension = path.extension().and_then(OsStr::to_str).unwrap_or_default();
-    let (writer, counted) = staged
+    let (kept, stamp) = staged
         .to_str()?
-        .strip_prefix('.')?
-        .strip_prefix(stem)?
         .strip_prefix('.')?
         .strip_suffix(extension)?
         .strip_suffix('.')?
-        .split_once(STAGED_BY_AND_COUNTED)?;
+        .rsplit_once('.')?;
+    let cut = staged.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST;
+    if kept != stem && !(cut && !kept.is_empty() && stem.starts_with(kept)) {
+        return None;
+    }
+    let (writer, counted) = stamp.split_once(STAGED_BY_AND_COUNTED)?;
     counted.parse::<u64>().ok()?;
     writer.parse().ok()
 }
@@ -1873,6 +1881,35 @@ mod tests {
             &edits,
             &[],
         );
+    }
+
+    #[test]
+    fn a_file_named_at_the_limit_is_written_through_a_copy_named_within_it() {
+        let folder = Folder::new();
+        let name = format!("{}.aiff", "ö".repeat(125));
+        assert_eq!(name.len(), 255);
+        let location = folder.holding(&name, &aiff());
+        let tags = FileTags::default();
+        let edits = named_and_identified();
+
+        tags.write(&location, just(&edits))
+            .expect("a written AIFF under the longest name");
+        assert_read_back(
+            &tags
+                .read(&location, Picturing::Whether)
+                .expect("a readable AIFF")
+                .tags,
+            &edits,
+            &[],
+        );
+        let path = location.as_path().expect("a local file");
+        let left: Vec<_> = fs::read_dir(path.parent().expect("a folder"))
+            .expect("the folder")
+            .flatten()
+            .map(|entry| entry.file_name())
+            .filter(|named| named.as_bytes().starts_with(b"."))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 
     #[test]

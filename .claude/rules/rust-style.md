@@ -41,3 +41,13 @@ the code page lacks a letter). Users: cue sheet, playlist sheet, RIFF `INFO` lis
 one guess for all values), LRC/`.txt` lyric sidecar, EqualizerAPO profile, DSDIFF edited-master
 text. Self-defining formats (XSPF, Lyricsfile, ID3 frame encoding byte) read as defined. In core
 because codec, library, lyrics, equaliser all read text and none may see the others.
+
+## A name made from a listener's name
+
+**A staging, journal, copy or candidate name built around a file's name goes through
+`resonate_core::naming::named_within`**, which cuts the name (on a letter) so the whole stays
+within `NAME_BYTES_AT_MOST` (255): a name near the limit gains `.`, a stamp and a suffix and would
+otherwise be refused by the filesystem, failing a write the file itself allows. A reader of such
+names (`journal::kept_by`, `writing::staged_by`) takes a stem that is a prefix of the track's as
+naming it only where the name sits at the limit; a cut whole copy whose prefix names more than one
+file is left where it is (`Mended::Unplaced`).

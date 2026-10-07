@@ -8,6 +8,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use resonate_core::naming;
+
 const MAGIC: &[u8; 8] = b"RSUNDO01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
 const WHOLE_SUFFIX: &str = ".resonate-whole";
@@ -85,14 +87,12 @@ fn journal_name(track: &OsStr) -> PathBuf {
 }
 
 fn kept_name(track: &OsStr, suffix: &str) -> PathBuf {
-    let mut name = std::ffi::OsString::from(".");
-    name.push(track);
-    name.push(format!(
+    let stamped = format!(
         ".{}{KEPT_BY_AND_COUNTED}{}{suffix}",
         process::id(),
         KEPT.fetch_add(1, Ordering::Relaxed)
-    ));
-    PathBuf::from(name)
+    );
+    PathBuf::from(naming::named_within(".", track, stamped))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,8 +116,23 @@ impl Left {
 
 struct KeptBy<'n> {
     track: &'n str,
+    cut: bool,
     writer: u32,
     left: Left,
+}
+
+impl KeptBy<'_> {
+    fn names(&self, track: &OsStr) -> bool {
+        let named = track.as_bytes();
+        let kept = self.track.as_bytes();
+        named == kept || (self.cut && !kept.is_empty() && named.starts_with(kept))
+    }
+}
+
+const LONGEST_LETTER_BYTES: usize = 4;
+
+fn was_cut(kept: &OsStr) -> bool {
+    kept.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST
 }
 
 fn kept_by(kept: &OsStr) -> Option<KeptBy<'_>> {
@@ -130,6 +145,7 @@ fn kept_by(kept: &OsStr) -> Option<KeptBy<'_>> {
     counted.parse::<u64>().ok()?;
     Some(KeptBy {
         track,
+        cut: was_cut(kept),
         writer: writer.parse().ok()?,
         left,
     })
@@ -321,6 +337,7 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mended {
     WrittenBack,
+    Unplaced,
     RolledBack,
     Finished,
     Untouched,
@@ -331,8 +348,13 @@ pub enum Mended {
 pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
     let kept = journal.file_name().and_then(kept_by);
     if let Some(kept) = kept.filter(|kept| kept.left != Left::Undo) {
-        let track = folder_of(journal).join(kept.track);
-        return finished_writing_back(journal, &track);
+        return match track_named_by(folder_of(journal), &kept)? {
+            Some(track) => finished_writing_back(journal, &track),
+            None => {
+                tracing::warn!(path = %journal.display(), "the whole copy a tag write left names no one track, so it is left where it is");
+                Ok(Mended::Unplaced)
+            }
+        };
     }
 
     let bytes = fs::read(journal)?;
@@ -343,6 +365,20 @@ pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
     fs::remove_file(journal)?;
     tracing::info!(path = %journal.display(), ?mended, "mended a tag write cut short");
     Ok(mended)
+}
+
+fn track_named_by(folder: &Path, kept: &KeptBy<'_>) -> io::Result<Option<PathBuf>> {
+    if !kept.cut {
+        return Ok(Some(folder.join(kept.track)));
+    }
+    let mut named = fs::read_dir(folder)?
+        .flatten()
+        .map(|entry| entry.file_name())
+        .filter(|name| !name.as_bytes().starts_with(b".") && kept.names(name));
+    Ok(match (named.next(), named.next()) {
+        (Some(only), None) => Some(folder.join(only)),
+        _ => None,
+    })
 }
 
 fn finished_writing_back(whole: &Path, track: &Path) -> io::Result<Mended> {
@@ -408,17 +444,20 @@ pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
     let Ok(entries) = fs::read_dir(folder_of(track)) else {
         return;
     };
-    let mut prefix = std::ffi::OsString::from(".");
-    prefix.push(name);
-    prefix.push(".");
-
     for entry in entries.flatten() {
         let path = entry.path();
-        let named_after_the_track = entry.file_name().as_bytes().starts_with(prefix.as_bytes());
-        if !named_after_the_track || !names_a_cut_short_write(&path) {
+        let entry_name = entry.file_name();
+        let Some(kept) = kept_by(&entry_name).filter(|kept| kept.names(name)) else {
+            continue;
+        };
+        if !names_a_cut_short_write(&path) {
             continue;
         }
-        if let Err(error) = mend_a_cut_short_write(&path) {
+        let mended = match kept.left {
+            Left::Undo => mend_a_cut_short_write(&path),
+            Left::WholeCopy | Left::TornWholeCopy => finished_writing_back(&path, track),
+        };
+        if let Err(error) = mended {
             tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended");
         }
     }
@@ -500,6 +539,27 @@ mod tests {
         mend_what_a_dead_writer_left(&track);
         assert_eq!(fs::read(&track).expect("the track"), [2_u8; 8]);
         assert!(!torn.whole.exists());
+    }
+
+    #[test]
+    fn a_whole_copy_of_a_track_named_at_the_limit_is_cut_to_fit_and_still_finds_its_track() {
+        let folder = Folder::new("longest");
+        let name = format!("{}.flac", "ä".repeat(125));
+        let track = folder.0.join(&name);
+        fs::write(&track, [1_u8; 8]).expect("a torn track");
+
+        let stamped = format!(".{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{WHOLE_SUFFIX}");
+        let whole = folder
+            .0
+            .join(naming::named_within(".", OsStr::new(&name), &stamped));
+        assert!(whole.file_name().expect("a name").len() <= naming::NAME_BYTES_AT_MOST);
+        fs::write(&whole, [3_u8; 8]).expect("the whole copy");
+
+        assert_eq!(
+            mend_a_cut_short_write(&whole).expect("a mend"),
+            Mended::WrittenBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), [3_u8; 8]);
     }
 
     #[test]

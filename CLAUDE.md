@@ -4,7 +4,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 
 | File | Scope | Covers |
 |---|---|---|
-| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files |
+| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
@@ -126,7 +126,7 @@ Invariants the layering protects (the rules files have the rest):
   `Command::Remove` and `Command::Move` take one. `resonate-ui`'s `edit::Span` is a different type,
   a run of text edits.
 - **Core also carries what two mutually blind crates share**: `Resumption`, `Reordered`,
-  `Appearance`, `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`.
+  `Appearance`, `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`.
 - **Everything else is a crate behind its own seam**: tag writing through `TagSink`, the vault,
   lyrics, providers, studies, the equaliser's I/O, Discord.
 

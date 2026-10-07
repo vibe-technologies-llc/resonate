@@ -6,10 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A name within ~30 bytes of the 255-byte limit cannot be written: a delivery's
-  `.resonate-delivery` staging name, a dropped file's `.resonate-part`, its `" (2)"` candidates and
-  a tag write's staged sibling outgrow it; the want is counted unkept each poll and given up, the
-  drop is refused, the tag write fails though writable in place
 - A poll killed while filing a streamed delivery into the music folder leaves its hidden
   `.resonate-delivery` file (up to 4 GiB); nothing sweeps it as the vault, organise and take-in do
   for theirs

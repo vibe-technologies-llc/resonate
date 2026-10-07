@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsString,
     fs::{self, File},
     io::{self, Read, Write},
     num::NonZeroU32,
@@ -12,7 +11,7 @@ use std::{
 use resonate_codec::{
     DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
 };
-use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate};
+use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming};
 
 use crate::{
     Error, Library, Want,
@@ -151,14 +150,16 @@ fn heard_whole(location: &MediaLocation) -> Option<(Frames, SampleRate)> {
 }
 
 fn staged_beside(whole: &Path) -> PathBuf {
-    let mut staged = OsString::from(".");
-    staged.push(whole.file_name().unwrap_or_default());
-    staged.push(format!(
+    let stamped = format!(
         ".{}-{}.{STAGED_SUFFIX}",
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
-    ));
-    whole.with_file_name(staged)
+    );
+    whole.with_file_name(naming::named_within(
+        ".",
+        whole.file_name().unwrap_or_default(),
+        &stamped,
+    ))
 }
 
 fn staged_from(reader: &mut dyn Read, staged: &Path) -> std::result::Result<(), Unfiled> {

@@ -13,7 +13,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::renamed_cue;
-use resonate_core::{names_a_picture, names_audio};
+use resonate_core::{names_a_picture, names_audio, naming};
 
 use crate::{
     Error, Result,
@@ -685,11 +685,11 @@ fn refused_copy(error: &io::Error) -> Passing {
 }
 
 fn staged_beside(whole: &Path) -> PathBuf {
-    let name = whole.file_name().map(OsString::from).unwrap_or_default();
-    let mut staged = OsString::from(".");
-    staged.push(name);
-    staged.push(format!(".{}.{STAGED_SUFFIX}", process::id()));
-    whole.with_file_name(staged)
+    whole.with_file_name(naming::named_within(
+        ".",
+        whole.file_name().unwrap_or_default(),
+        format!(".{}.{STAGED_SUFFIX}", process::id()),
+    ))
 }
 
 pub(crate) fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
@@ -698,13 +698,12 @@ pub(crate) fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
     let original = whole.to_path_buf();
 
     std::iter::once(original.clone()).chain((2..=CANDIDATE_NAMES).map(move |count| {
-        let mut name = stem.clone();
-        name.push(format!(" ({count})"));
+        let mut after = OsString::from(format!(" ({count})"));
         if let Some(extension) = &extension {
-            name.push(".");
-            name.push(extension);
+            after.push(".");
+            after.push(extension);
         }
-        original.with_file_name(name)
+        original.with_file_name(naming::named_within("", &stem, after))
     }))
 }
 
@@ -885,6 +884,30 @@ mod tests {
             fs::read(into.join("song.flac")).expect("untouched"),
             b"another song"
         );
+    }
+
+    #[test]
+    fn a_name_at_the_limit_is_staged_and_kept_beside_another_under_a_name_that_fits() {
+        let scratch = Scratch::new("longest");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        let name = format!("{}.flac", "ü".repeat(125));
+        assert_eq!(name.len(), 255);
+        let song = written(&from, &name, b"this one");
+        written(&into, &name, b"another song");
+
+        let summary = taken_in(vec![song], &into);
+
+        assert_eq!(summary.stats.copied, 1, "{:?}", summary.passed);
+        let landed = &summary.landed[0].to;
+        let landed_name = landed.file_name().expect("a named file");
+        assert!(landed_name.len() <= 255);
+        assert!(
+            landed_name
+                .to_str()
+                .is_some_and(|named| named.ends_with(" (2).flac")),
+            "{landed_name:?}"
+        );
+        assert_eq!(fs::read(landed).expect("copied"), b"this one");
     }
 
     #[test]

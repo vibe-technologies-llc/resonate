@@ -12,6 +12,7 @@ mod id;
 mod identity;
 mod link;
 mod media;
+pub mod naming;
 mod presence;
 mod print;
 mod quantise;

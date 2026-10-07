@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, text};
+use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, text};
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf};
 
@@ -519,14 +519,12 @@ fn staged_over(path: &Path, text: &str) -> Result<()> {
 fn staging_name_for(name: &OsStr) -> OsString {
     static STAGED: AtomicU64 = AtomicU64::new(0);
 
-    let mut staging = OsString::from(HIDDEN_MARK);
-    staging.push(name);
-    staging.push(format!(
+    let stamped = format!(
         ".{}-{}{STAGING_SUFFIX}",
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
-    ));
-    staging
+    );
+    naming::named_within(HIDDEN_MARK, name, stamped)
 }
 
 const fn hex(byte: u8) -> Option<u8> {
