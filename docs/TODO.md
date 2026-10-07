@@ -73,11 +73,10 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame`
   failed once when the whole workspace's tests ran at once, passed alone eight times after; its
   frame counts assume the engine thread keeps pace with the test's pulls
-- Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: S16 and S32 words, packed
-  and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream never run
+- No frame is pulled through a stream in S16, S32, packed or padded S24, 5.1 or 7.1, or with
+  `NO_CONVERT`, nor recorded from a microphone node: the desktop's sink is stereo F32 and a hosted
+  daemon links nothing (no session manager; a hosted WirePlumber would reach the real cards)
 - The inotify limit is untested
-- No test records from a microphone node, though the reconnect test's hosted daemon could serve a
-  virtual source
 - Nothing drives `play`'s signal paths or terminal restore; only `mcp`'s hang-up is driven
 - The drop overlay never dragged onto on a real compositor from this tree: gpui's `ExternalPaths` is
   `pub(crate)`, so `driven.rs` calls `dragged_over` and `dropped` directly; the platform's drag

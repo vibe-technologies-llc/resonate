@@ -145,13 +145,14 @@ Invariants the layering protects (the rules files have the rest):
 - `cargo bench -p resonate-library --bench spelling`: times the search vocabulary of a synthetic
   500 000-track catalog; asserts nothing.
 - `cargo build --profile profiling`: release with symbols for `perf`/`cargo flamegraph`.
-- Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`),
-  `resonate-listen` (`capture`, `reconnect`; the latter needs `pw-cli`), `resonate-mpris --test bus`
-  (session bus), `resonate-codec --test encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`),
-  `resonate-library --test library` (ffmpeg), `resonate-online --test live`
-  (`RESONATE_ONLINE_TESTS`). The two reconnect tests host their own daemon; the mpris notification
-  and headset presses run under `dbus-run-session`. `resonate-subsonic`, `resonate-tidal` and
-  `resonate-monochrome` serve fake servers on loopback.
+- Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
+  `formats`; the last needs `pw-cli`), `resonate-listen` (`capture`, `reconnect`, `microphone`; the
+  last two need `pw-cli`), `resonate-mpris --test bus` (session bus), `resonate-codec --test
+  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`), `resonate-library --test library` (ffmpeg),
+  `resonate-online --test live` (`RESONATE_ONLINE_TESTS`). The reconnect, `formats` and
+  `microphone` tests host their own daemon; the mpris notification and headset presses run under
+  `dbus-run-session`. `resonate-subsonic`, `resonate-tidal` and `resonate-monochrome` serve fake
+  servers on loopback.
 - `cd fuzz && cargo +nightly fuzz build`, and `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
 

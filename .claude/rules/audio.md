@@ -1152,6 +1152,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   a client before a daemon exists, so `resonate-listen`'s `tests/capture.rs` and
   `resonate-pipewire`'s `tests/stream.rs` read `Error::Disconnected` from the first sink discovery
   as a skip. Other discovery failures fail; reconnect tests host their own daemon.
+- **A hosted daemon proves what the client reads and asks, not what flows.** `formats.rs`
+  (`resonate-pipewire`) hosts null sinks advertising S16 5.1 at 44.1 kHz, S32 7.1 at 96 kHz and
+  stereo S24 packed and padded: each is read as it names its word, rate and map, a `NO_CONVERT`
+  stream in each is taken (paused, never refused), and a sink taken away by `pw-cli destroy` under
+  an open stream is announced `SinkChange::Removed`, leaves the list, and the stream still closes.
+  `microphone.rs` (`resonate-listen`) hosts an `Audio/Source`: it is listed, and a recording from
+  it by name opens a capture aimed at it (`target.object`, no `stream.capture.sink`). With no
+  session manager nothing is linked, so no frame is pulled or recorded there; WirePlumber is not
+  hosted because it would reach the real cards. `pw-cli info` takes an object's id: by name it
+  finds the client first.
 - **A test asserting which row plays pauses the transport first.** The fake graph is pulled by the
   test thread alone, but a decode failing on a loaded machine reaches `Engine::fail`, which skips.
   `stand_still` is the pause; queue-order tests take it before reading a row and again after any
