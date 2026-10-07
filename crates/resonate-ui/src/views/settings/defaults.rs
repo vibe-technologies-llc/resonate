@@ -3,7 +3,10 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Appearance, Presence, ScrollbarMode};
+use resonate_core::{
+    Appearance, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    SpectrumTilt,
+};
 use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
@@ -25,6 +28,12 @@ pub(crate) const MOUSE_NAVIGATION: bool = true;
 
 pub(crate) const FILE_DROPPED: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
+pub(crate) const SPECTRAL: Spectral = Spectral {
+    tilt: SpectrumTilt::Pink,
+    floor: SpectrumFloor::Middling,
+    bands: SpectrumBands::Sixths,
+    falls: SpectrumFalls::Middling,
+};
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
 pub(crate) const REMEMBER_TAB: bool = true;
 pub(crate) const REMEMBER_WINDOW_SIZE: bool = true;
@@ -56,6 +65,7 @@ pub(crate) struct Standing {
     pub(crate) scroll_volume: bool,
     pub(crate) mouse_navigation: bool,
     pub(crate) scrollbars: ScrollbarMode,
+    pub(crate) spectral: Spectral,
     pub(crate) tabs: Tabs,
     pub(crate) remember_tab: bool,
     pub(crate) remember_window_size: bool,
@@ -97,6 +107,7 @@ impl Standing {
             scroll_volume: SCROLL_VOLUME,
             mouse_navigation: MOUSE_NAVIGATION,
             scrollbars: SCROLLBARS,
+            spectral: SPECTRAL,
             tabs: TABS,
             remember_tab: REMEMBER_TAB,
             remember_window_size: REMEMBER_WINDOW_SIZE,
@@ -185,6 +196,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
         Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
+        Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
         Group::WindowState => {
             standing.remember_tab != REMEMBER_TAB
@@ -254,6 +266,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::VolumeWheel
         | Group::MouseNavigation
         | Group::Scrollbars
+        | Group::LiveSpectrum
         | Group::Tabs
         | Group::WindowState
         | Group::Folders

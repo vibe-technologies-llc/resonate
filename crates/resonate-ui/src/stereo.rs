@@ -32,10 +32,10 @@ pub(crate) struct Stereo {
 impl Default for Stereo {
     fn default() -> Self {
         Self {
-            left: Bar::RESTING,
-            right: Bar::RESTING,
-            left_peak: Bar::RESTING,
-            right_peak: Bar::RESTING,
+            left: Bar::METERED,
+            right: Bar::METERED,
+            left_peak: Bar::METERED,
+            right_peak: Bar::METERED,
             correlation: None,
         }
     }

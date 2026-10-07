@@ -119,6 +119,7 @@ pub(crate) enum Group {
     VolumeWheel,
     MouseNavigation,
     Scrollbars,
+    LiveSpectrum,
     Tabs,
     WindowState,
     Build,
@@ -127,7 +128,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 57] = [
+    pub(crate) const ALL: [Self; 58] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -180,6 +181,7 @@ impl Group {
         Self::VolumeWheel,
         Self::MouseNavigation,
         Self::Scrollbars,
+        Self::LiveSpectrum,
         Self::Tabs,
         Self::WindowState,
         Self::Build,
@@ -238,6 +240,7 @@ impl Group {
             | Self::VolumeWheel
             | Self::MouseNavigation
             | Self::Scrollbars
+            | Self::LiveSpectrum
             | Self::Tabs
             | Self::WindowState => Category::Appearance,
             Self::Build | Self::Places | Self::Everything => Category::About,
@@ -302,6 +305,7 @@ impl Group {
             Self::VolumeWheel => "The volume wheel",
             Self::MouseNavigation => "Mouse navigation",
             Self::Scrollbars => "Scrollbars",
+            Self::LiveSpectrum => "Live spectrum",
             Self::Tabs => "Sidebar tabs",
             Self::WindowState => "Window state",
             Self::Build => "This build",
@@ -368,6 +372,7 @@ impl Group {
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
             Self::MouseNavigation => MOUSE_NAVIGATION_HINT,
             Self::Scrollbars => SCROLLBARS_HINT,
+            Self::LiveSpectrum => LIVE_SPECTRUM_HINT,
             Self::Tabs => TABS_HINT,
             Self::WindowState => WINDOW_STATE_HINT,
             Self::Build => BUILD_HINT,
@@ -514,6 +519,10 @@ impl Group {
                 "scroll bar thumb track overlay lists panes drag hide auto-hide automatic hidden \
                  always never while scrolling fade mode"
             }
+            Self::LiveSpectrum => {
+                "visualiser analyser analyzer bars tilt slope pink floor range decibels bands \
+                 octave resolution fall decay release peak"
+            }
             Self::Tabs => {
                 "sidebar panes suggestions missing wanted hide show collection counts numbers \
                  totals badges"
@@ -596,6 +605,12 @@ impl Group {
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
             Self::MouseNavigation => &[SettingKey::MouseNavigation],
             Self::Scrollbars => &[SettingKey::Scrollbars],
+            Self::LiveSpectrum => &[
+                SettingKey::SpectrumTilt,
+                SettingKey::SpectrumFloor,
+                SettingKey::SpectrumBands,
+                SettingKey::SpectrumFalls,
+            ],
             Self::Tabs => &[
                 SettingKey::SuggestionsTab,
                 SettingKey::MissingTab,
@@ -1048,6 +1063,11 @@ pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the v
 
 pub(crate) const MOUSE_NAVIGATION_HINT: &str = "Whether the mouse side buttons move back and \
      forward through album and artist pages opened in this window.";
+
+pub(crate) const LIVE_SPECTRUM_HINT: &str = "How the visualiser's spectrum reads what is heard: \
+     how far the treble is lifted so pink noise stands level, how quiet a band can be and still \
+     show, how finely the octaves are cut, and how quickly a bar falls back once its band \
+     quietens.";
 
 pub(crate) const SCROLLBARS_HINT: &str = "When the lists and panes that scroll draw a bar \
      down their edge that shows where the view stands and can be dragged: always, only while \

@@ -5,16 +5,14 @@ use gpui::{
     Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px,
     rgb,
 };
-use resonate_core::{Frames, SampleRate};
+use resonate_core::{Frames, SampleRate, Spectral};
 use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
 use smallvec::SmallVec;
 
 use crate::{
-    PlayerModel,
+    PlayerModel, ResonateApp,
     icons::Icon,
-    spectrum::{
-        self, CEILING_DB, Column, FLOOR_DB, MARKED_EVERY_DB, Spectrum, height_of, rising_edge,
-    },
+    spectrum::{self, CEILING_DB, Column, MARKED_EVERY_DB, Spectrum, height_within, rising_edge},
     stereo::{self, Meter, Metered, Stereo},
     theme,
     views::{
@@ -133,7 +131,7 @@ impl Visualiser {
         Self {
             player,
             showing: Showing::default(),
-            spectrum: Spectrum::new(DRAWN_BEFORE_ANYTHING_IS_HEARD),
+            spectrum: Spectrum::new(DRAWN_BEFORE_ANYTHING_IS_HEARD, Spectral::default()),
             stereo: Stereo::default(),
             left: Vec::new(),
             right: Vec::new(),
@@ -258,10 +256,10 @@ impl Render for Visualiser {
             Tapped::Samples(tap) => Some(tap.as_ref()),
             Tapped::Nothing | Tapped::Markers => None,
         };
-        if let Some(rate) = tap.map(Tap::rate)
-            && rate != self.spectrum.rate()
-        {
-            self.spectrum = Spectrum::new(rate);
+        let rate = tap.map_or(self.spectrum.rate(), Tap::rate);
+        let spectral = cx.global::<ResonateApp>().spectral;
+        if rate != self.spectrum.rate() || spectral != self.spectrum.spectral() {
+            self.spectrum = Spectrum::new(rate, spectral);
         }
 
         let now = Instant::now();
@@ -289,10 +287,14 @@ impl Render for Visualiser {
         match self.showing {
             Showing::Spectrum => {
                 let top = self.spectrum.top();
-                plot.child(bars(self.spectrum.columns().collect(), top))
-                    .children(marked_at(spectrum::marked(top), |hertz| {
-                        spectrum::across(hertz, top)
-                    }))
+                plot.child(bars(
+                    self.spectrum.columns().collect(),
+                    top,
+                    self.spectrum.floor(),
+                ))
+                .children(marked_at(spectrum::marked(top), |hertz| {
+                    spectrum::across(hertz, top)
+                }))
             }
             Showing::Scope => plot.child(traced(self.trace())),
             Showing::Stereo => {
@@ -317,7 +319,7 @@ fn follows_the_display(moving: bool) -> Canvas<()> {
     .size_0()
 }
 
-fn bars(columns: Columns, heard_to: f64) -> Canvas<()> {
+fn bars(columns: Columns, heard_to: f64, floor: f32) -> Canvas<()> {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
@@ -330,8 +332,8 @@ fn bars(columns: Columns, heard_to: f64) -> Canvas<()> {
             let down = |height: f32| bottom - height * tall;
 
             let mut level = CEILING_DB;
-            while level >= FLOOR_DB {
-                let y = down(height_of(level));
+            while level >= floor {
+                let y = down(height_within(level, floor));
                 window.paint_quad(fill(
                     Bounds::from_corners(
                         point(px(left), px(y)),

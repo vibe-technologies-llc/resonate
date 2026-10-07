@@ -2684,16 +2684,22 @@ is never named.
   *Spectrum*/*Scope* living on the entity for the run. `spectrum.rs` is the arithmetic, tested as
   `curve.rs` is: hand-written radix-2 real transform (half-length complex over bit-reversed even
   and odd samples, split back to the real spectrum) under a periodic Hann window, scaled so a
-  full-scale sine on a bin reads 0 dBFS; sixth-octave bands from the equaliser's
+  full-scale sine on a bin reads 0 dBFS; bands (sixth-octave as built) from the equaliser's
   `RESPONSE_FROM_HZ` to what the rate carries (`spectrum::top_of`: Nyquist, never under
   `RESPONSE_TO_HZ`, so a 96 kHz stream draws to 48 kHz), placed by `spectrum::across` on that axis
   and labelled at each decade under it (`spectrum::marked`, drawn by the curve's `marked_at`); a band narrower than a bin read at its centre
   between the bins either side, one past Nyquist left on the floor. Band = its loudest bin tilted up
-  `TILT_DB_PER_OCTAVE` (3) about 1 kHz (pink noise stands level; a mastered record does not slope
-  into the treble), drawn between `FLOOR_DB` (−78) and 0 over faint lines every 12 dB (no figures:
-  a tilted reading is dBFS only at the pivot). A bar rises at once, falls at `FALLS_DB_PER_SECOND`
-  (40); its peak is held `PEAK_HELD_FOR` (700 ms) before following (`PEAK_FALLS_DB_PER_SECOND`,
-  20); all wall-clock, so a late frame falls further, not slower. Window sized by rate, about 85 ms
+  about 1 kHz (3 dB an octave as built: pink noise stands level; a mastered record does not slope
+  into the treble), drawn between the floor (−78 dB as built) and 0 over faint lines every 12 dB
+  (no figures: a tilted reading is dBFS only at the pivot). A bar rises at once, falls at its rate
+  (40 dB a second as built); its peak is held `PEAK_HELD_FOR` (700 ms) before following at half
+  that; all wall-clock, so a late frame falls further, not slower. **Tilt, floor, bands an octave
+  and fall rate are the listener's**: `resonate_core::Spectral` (`SpectrumTilt`, `SpectrumFloor`,
+  `SpectrumBands`, `SpectrumFalls`, keys `spectrum-tilt`, `spectrum-floor`, `spectrum-bands`,
+  `spectrum-falls`) rides `Stored` onto `ResonateApp::spectral`, chosen in Appearance's *Live
+  spectrum* group; the visualiser builds its `Spectrum` anew wherever the reading or the rate moved
+  (`Spectrum::new(rate, spectral)`, a bar's `Falling` carrying floor and rates; the stereo meters
+  keep `Falling::METERED`). Window sized by rate, about 85 ms
   (`ANALYSED_FOR`): 4 096 points at 44.1 and 48 kHz, up to 32 768 at 384. Scope = 20 ms of left over
   right, from the first rising zero crossing of their mid in the first span of a window twice that
   long (a steady tone stands still).

@@ -25,7 +25,10 @@ mod time;
 mod volume;
 
 pub use crate::{
-    appearance::{Accent, Appearance, ArtistsDrawn, ScrollbarMode, TextSize, Theme},
+    appearance::{
+        Accent, Appearance, ArtistsDrawn, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
+        SpectrumFloor, SpectrumTilt, TextSize, Theme,
+    },
     buffer::{AudioBuffer, SampleData},
     calendar::Calendar,
     channel::{ChannelCount, ChannelLayout, ChannelPosition},

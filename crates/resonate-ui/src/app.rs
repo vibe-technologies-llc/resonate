@@ -14,7 +14,8 @@ use gpui::{
     WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
-    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode, TrackId,
+    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode, Spectral,
+    TrackId,
 };
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
@@ -180,6 +181,7 @@ pub struct ResonateApp {
     pub mouse_navigation: bool,
     pub caret: CaretBlink,
     pub scrollbars: ScrollbarMode,
+    pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,
     pub last_tab: Option<crate::Pane>,
@@ -1002,6 +1004,7 @@ pub fn run(
             mouse_navigation: stored.mouse_navigation,
             caret: stored.caret.clone(),
             scrollbars: stored.scrollbars,
+            spectral: stored.spectral,
             tabs: stored.tabs,
             remember_tab: stored.remember_tab,
             last_tab: stored.last_tab,

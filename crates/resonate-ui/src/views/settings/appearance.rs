@@ -1,5 +1,8 @@
 use gpui::{Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb};
-use resonate_core::{Accent, Appearance, ScrollbarMode, TextSize, Theme};
+use resonate_core::{
+    Accent, Appearance, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    SpectrumTilt, TextSize, Theme,
+};
 
 use crate::{
     ResonateApp, Setting, SettingKey, Tabs, WindowButtons, WindowSize, theme,
@@ -83,6 +86,92 @@ impl Choice for ScrollbarMode {
             }
             Self::Hidden => "No bar is drawn; a list still scrolls with the wheel and the keys.",
         })
+    }
+}
+
+impl Choice for SpectrumTilt {
+    const ALL: &'static [Self] = &[Self::Flat, Self::Pink, Self::Steep];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Flat => "Flat",
+            Self::Pink => "3 dB an octave",
+            Self::Steep => "4.5 dB an octave",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Flat => {
+                "Each band is drawn at the level it reads: white noise stands level, and music \
+                 slopes down into the treble."
+            }
+            Self::Pink => {
+                "The treble is lifted 3 dB an octave about 1 kHz, so pink noise stands level and \
+                 a mastered record does not slope away."
+            }
+            Self::Steep => {
+                "The treble is lifted 4.5 dB an octave about 1 kHz, the slope a mastered record \
+                 tends to fall by, so it stands nearer level."
+            }
+        })
+    }
+}
+
+impl Choice for SpectrumFloor {
+    const ALL: &'static [Self] = &[Self::Shallow, Self::Middling, Self::Deep];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Shallow => "−60 dB",
+            Self::Middling => "−78 dB",
+            Self::Deep => "−96 dB",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "A band quieter than {} dB rests on the floor; the plot runs from there to full scale.",
+            self.db()
+        ))
+    }
+}
+
+impl Choice for SpectrumBands {
+    const ALL: &'static [Self] = &[Self::Thirds, Self::Sixths, Self::Twelfths];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Thirds => "Thirds",
+            Self::Sixths => "Sixths",
+            Self::Twelfths => "Twelfths",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "Each octave is cut into {} bands, every band its loudest bin.",
+            self.per_octave()
+        ))
+    }
+}
+
+impl Choice for SpectrumFalls {
+    const ALL: &'static [Self] = &[Self::Slowly, Self::Middling, Self::Quickly];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Slowly => "Slowly",
+            Self::Middling => "Middling",
+            Self::Quickly => "Quickly",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "A bar falls {} dB a second once its band quietens; its held peak lets go at half that.",
+            self.db_per_second()
+        ))
     }
 }
 
@@ -370,6 +459,51 @@ impl RootView {
         if !self.pane.is_shown(shown) {
             self.set_pane(Pane::default(), cx);
         }
+        cx.notify();
+    }
+
+    pub(super) fn live_spectrum_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let spectral = cx.global::<ResonateApp>().spectral;
+
+        kit::section_body()
+            .gap_4()
+            .child(kit::field(
+                "Treble lifted",
+                self.choices("spectrum-tilt", spectral.tilt, cx, |this, tilt, cx| {
+                    let held = cx.global::<ResonateApp>().spectral;
+                    this.read_the_spectrum(Spectral { tilt, ..held }, cx);
+                    this.store(&Setting::SpectrumTilt(tilt), cx);
+                }),
+            ))
+            .child(kit::field(
+                "Floor",
+                self.choices("spectrum-floor", spectral.floor, cx, |this, floor, cx| {
+                    let held = cx.global::<ResonateApp>().spectral;
+                    this.read_the_spectrum(Spectral { floor, ..held }, cx);
+                    this.store(&Setting::SpectrumFloor(floor), cx);
+                }),
+            ))
+            .child(kit::field(
+                "Bands an octave",
+                self.choices("spectrum-bands", spectral.bands, cx, |this, bands, cx| {
+                    let held = cx.global::<ResonateApp>().spectral;
+                    this.read_the_spectrum(Spectral { bands, ..held }, cx);
+                    this.store(&Setting::SpectrumBands(bands), cx);
+                }),
+            ))
+            .child(kit::field(
+                "Bars fall",
+                self.choices("spectrum-falls", spectral.falls, cx, |this, falls, cx| {
+                    let held = cx.global::<ResonateApp>().spectral;
+                    this.read_the_spectrum(Spectral { falls, ..held }, cx);
+                    this.store(&Setting::SpectrumFalls(falls), cx);
+                }),
+            ))
+    }
+
+    pub(crate) fn read_the_spectrum(&self, spectral: Spectral, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.spectral = spectral);
+        self.visualiser.update(cx, |_, cx| cx.notify());
         cx.notify();
     }
 

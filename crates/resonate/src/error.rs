@@ -57,6 +57,10 @@ pub enum ConfigKey {
     ScrollVolume,
     MouseNavigation,
     Scrollbars,
+    SpectrumTilt,
+    SpectrumFloor,
+    SpectrumBands,
+    SpectrumFalls,
     SuggestionsTab,
     MissingTab,
     TabCounts,
@@ -113,7 +117,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 85] = [
+    pub const ALL: [Self; 89] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -161,6 +165,10 @@ impl ConfigKey {
         Self::ScrollVolume,
         Self::MouseNavigation,
         Self::Scrollbars,
+        Self::SpectrumTilt,
+        Self::SpectrumFloor,
+        Self::SpectrumBands,
+        Self::SpectrumFalls,
         Self::SuggestionsTab,
         Self::MissingTab,
         Self::TabCounts,
@@ -250,6 +258,10 @@ impl ConfigKey {
             Self::ScrollVolume => "scroll-volume",
             Self::MouseNavigation => "mouse-navigation",
             Self::Scrollbars => "scrollbars",
+            Self::SpectrumTilt => "spectrum-tilt",
+            Self::SpectrumFloor => "spectrum-floor",
+            Self::SpectrumBands => "spectrum-bands",
+            Self::SpectrumFalls => "spectrum-falls",
             Self::SuggestionsTab => "suggestions-tab",
             Self::MissingTab => "missing-tab",
             Self::TabCounts => "tab-counts",

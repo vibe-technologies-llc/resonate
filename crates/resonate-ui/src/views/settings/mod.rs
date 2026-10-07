@@ -445,6 +445,7 @@ impl RootView {
             Group::VolumeWheel => self.volume_wheel_group(cx),
             Group::MouseNavigation => self.mouse_navigation_group(cx),
             Group::Scrollbars => self.scrollbars_group(cx),
+            Group::LiveSpectrum => self.live_spectrum_group(cx),
             Group::Tabs => self.tabs_group(cx),
             Group::WindowState => self.window_state_group(cx),
             Group::Build => self.build_group(cx),
@@ -583,6 +584,7 @@ impl RootView {
                 self.navigate_with_mouse_buttons(defaults::MOUSE_NAVIGATION, cx);
             }
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
+            Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
             Group::WindowState => self.put_window_state_back(cx),
             _ => {}
@@ -614,6 +616,7 @@ impl RootView {
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
+        let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
         let remember_tab = cx.global::<ResonateApp>().remember_tab;
         let remember_window_size = cx.global::<ResonateApp>().remember_window_size;
@@ -665,6 +668,7 @@ impl RootView {
             scroll_volume,
             mouse_navigation,
             scrollbars,
+            spectral,
             tabs,
             remember_tab,
             remember_window_size,

@@ -2566,6 +2566,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             scroll_volume: config.scrolls_the_volume(),
             mouse_navigation: config.navigates_with_mouse_buttons(),
             scrollbars: config.scrollbars(),
+            spectral: config.spectral(),
             tabs: config.tabs(),
             remember_tab: config.remembers_tab(),
             last_tab: config.remembered_tab(),

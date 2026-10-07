@@ -15,8 +15,8 @@ use clap::ValueEnum as _;
 #[cfg(any(feature = "ui", test))]
 use resonate_core::Appearance;
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme,
-    Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpectrumBands,
+    SpectrumFalls, SpectrumFloor, SpectrumTilt, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode, Restoration,
@@ -153,6 +153,10 @@ pub struct Config {
     pub scroll_volume: Option<bool>,
     pub mouse_navigation: Option<bool>,
     pub scrollbars: Option<ScrollbarMode>,
+    pub spectrum_tilt: Option<SpectrumTilt>,
+    pub spectrum_floor: Option<SpectrumFloor>,
+    pub spectrum_bands: Option<SpectrumBands>,
+    pub spectrum_falls: Option<SpectrumFalls>,
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
     pub tab_counts: Option<bool>,
@@ -255,6 +259,10 @@ impl fmt::Debug for Config {
             scroll_volume,
             mouse_navigation,
             scrollbars,
+            spectrum_tilt,
+            spectrum_floor,
+            spectrum_bands,
+            spectrum_falls,
             suggestions_tab,
             missing_tab,
             tab_counts,
@@ -343,6 +351,10 @@ impl fmt::Debug for Config {
             .field("scroll_volume", scroll_volume)
             .field("mouse_navigation", mouse_navigation)
             .field("scrollbars", scrollbars)
+            .field("spectrum_tilt", spectrum_tilt)
+            .field("spectrum_floor", spectrum_floor)
+            .field("spectrum_bands", spectrum_bands)
+            .field("spectrum_falls", spectrum_falls)
             .field("suggestions_tab", suggestions_tab)
             .field("missing_tab", missing_tab)
             .field("tab_counts", tab_counts)
@@ -528,6 +540,16 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn scrollbars(&self) -> ScrollbarMode {
         self.scrollbars.unwrap_or_default()
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn spectral(&self) -> resonate_core::Spectral {
+        resonate_core::Spectral {
+            tilt: self.spectrum_tilt.unwrap_or_default(),
+            floor: self.spectrum_floor.unwrap_or_default(),
+            bands: self.spectrum_bands.unwrap_or_default(),
+            falls: self.spectrum_falls.unwrap_or_default(),
+        }
     }
 
     #[cfg(feature = "ui")]
@@ -883,6 +905,18 @@ impl Config {
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
             ConfigKey::MouseNavigation => {
                 config.mouse_navigation = Some(at.boolean(value)?);
+            }
+            ConfigKey::SpectrumTilt => {
+                config.spectrum_tilt = Some(at.one_of(value, SpectrumTilt::parse)?);
+            }
+            ConfigKey::SpectrumFloor => {
+                config.spectrum_floor = Some(at.one_of(value, SpectrumFloor::parse)?);
+            }
+            ConfigKey::SpectrumBands => {
+                config.spectrum_bands = Some(at.one_of(value, SpectrumBands::parse)?);
+            }
+            ConfigKey::SpectrumFalls => {
+                config.spectrum_falls = Some(at.one_of(value, SpectrumFalls::parse)?);
             }
             ConfigKey::Scrollbars => {
                 config.scrollbars = Some(match value.as_bool() {
@@ -1931,6 +1965,32 @@ mod tests {
         );
         assert_eq!(mode("scrollbars = \"hidden\""), ScrollbarMode::Hidden);
         assert!(read("scrollbars = \"sometimes\"").is_err());
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn the_live_spectrum_reads_as_built_unless_the_file_names_another_reading() {
+        assert_eq!(
+            read("").expect("an empty file").spectral(),
+            resonate_core::Spectral::default()
+        );
+
+        let read_back = read(
+            "spectrum-tilt = \"flat\"\nspectrum-floor = \"96\"\nspectrum-bands = \"thirds\"\n\
+             spectrum-falls = \"quickly\"",
+        )
+        .expect("a well formed document")
+        .spectral();
+        assert_eq!(
+            read_back,
+            resonate_core::Spectral {
+                tilt: SpectrumTilt::Flat,
+                floor: SpectrumFloor::Deep,
+                bands: SpectrumBands::Thirds,
+                falls: SpectrumFalls::Quickly,
+            }
+        );
+        assert!(read("spectrum-floor = \"-78\"").is_err());
     }
 
     #[cfg(feature = "ui")]

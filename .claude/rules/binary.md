@@ -153,6 +153,10 @@ Defaults and meanings: `config.rs` and `views/settings/`; below are the decision
   `RootView::set_pane` lands on the tracks, the artist page's *not held* button is not drawn.
 - `artists-drawn`: `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`; set by the
   artists pane's *List*/*Grid*.
+- `spectrum-tilt` (`flat`, `pink`, `steep`), `spectrum-floor` (`60`, `78`, `96`: dB under full
+  scale), `spectrum-bands` (`thirds`, `sixths`, `twelfths`), `spectrum-falls` (`slowly`,
+  `middling`, `quickly`): the live spectrum's reading, `resonate_core::Spectral`, each its default
+  where absent.
 - `scrollbars`: `resonate_core::ScrollbarMode`; the old switch still reads (`true` = `shown`,
   `false` = `hidden`).
 - `remember-tab`, `remember-window-size`, `remember-settings-category` guard `last-tab`,

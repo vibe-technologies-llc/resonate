@@ -118,7 +118,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   its side stops recognition
 
 ## Later: Visualiser
-- The live spectrum's tilt, floor, band width and fall rates are constants
 - The scope triggers on the mid's rising edge alone; the stereo view's meters hold the highest
   sample, not the oversampled true peak
 

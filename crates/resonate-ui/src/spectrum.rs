@@ -6,7 +6,7 @@ use std::{
 };
 
 use resonate_core::{
-    Frames, SampleRate,
+    Frames, SampleRate, Spectral,
     eq::{RESPONSE_FROM_HZ, RESPONSE_TO_HZ},
 };
 
@@ -17,13 +17,10 @@ pub(crate) const QUIETEST_DB: f32 = -160.0;
 const ANALYSED_FOR: Duration = Duration::from_millis(85);
 const FEWEST_POINTS: usize = 8;
 const MOST_POINTS: usize = 32_768;
-const BANDS_PER_OCTAVE: f64 = 6.0;
 const PIVOT_HZ: f64 = 1_000.0;
 const MARKED_DECADES_HZ: [f64; 4] = [100.0, 1_000.0, 10_000.0, 100_000.0];
-const TILT_DB_PER_OCTAVE: f32 = 3.0;
-const FALLS_DB_PER_SECOND: f32 = 40.0;
 const PEAK_HELD_FOR: Duration = Duration::from_millis(700);
-const PEAK_FALLS_DB_PER_SECOND: f32 = 20.0;
+const METERS_FALL_DB_PER_SECOND: f32 = 40.0;
 pub(crate) const LONGEST_STEP: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -236,25 +233,55 @@ struct Band {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Falling {
+    floor: f32,
+    level: f32,
+    peak: f32,
+}
+
+impl Falling {
+    const METERED: Self = Self {
+        floor: FLOOR_DB,
+        level: METERS_FALL_DB_PER_SECOND,
+        peak: METERS_FALL_DB_PER_SECOND / 2.0,
+    };
+
+    const fn of(spectral: Spectral) -> Self {
+        Self {
+            floor: spectral.floor.db(),
+            level: spectral.falls.db_per_second(),
+            peak: spectral.falls.peak_db_per_second(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Bar {
     pub(crate) level: f32,
     pub(crate) peak: f32,
     held: Duration,
+    falling: Falling,
 }
 
 impl Bar {
-    pub(crate) const RESTING: Self = Self {
-        level: FLOOR_DB,
-        peak: FLOOR_DB,
-        held: Duration::ZERO,
-    };
+    pub(crate) const METERED: Self = Self::resting(Falling::METERED);
+
+    const fn resting(falling: Falling) -> Self {
+        Self {
+            level: falling.floor,
+            peak: falling.floor,
+            held: Duration::ZERO,
+            falling,
+        }
+    }
 
     pub(crate) fn fold(&mut self, reading: f32, step: Duration) {
         let seconds = step.as_secs_f32();
         self.level = if reading >= self.level {
             reading
         } else {
-            FALLS_DB_PER_SECOND
+            self.falling
+                .level
                 .mul_add(-seconds, self.level)
                 .max(reading)
         };
@@ -266,14 +293,16 @@ impl Bar {
         }
         self.held = self.held.saturating_add(step);
         if self.held > PEAK_HELD_FOR {
-            self.peak = PEAK_FALLS_DB_PER_SECOND
+            self.peak = self
+                .falling
+                .peak
                 .mul_add(-seconds, self.peak)
                 .max(self.level);
         }
     }
 
     pub(crate) fn is_at_rest(self) -> bool {
-        self.level <= FLOOR_DB && self.peak <= FLOOR_DB
+        self.level <= self.falling.floor && self.peak <= self.falling.floor
     }
 }
 
@@ -287,6 +316,7 @@ pub(crate) struct Column {
 
 pub(crate) struct Spectrum {
     rate: SampleRate,
+    spectral: Spectral,
     fft: Fft,
     bands: Box<[Band]>,
     bins: Vec<f32>,
@@ -294,16 +324,17 @@ pub(crate) struct Spectrum {
 }
 
 impl Spectrum {
-    pub(crate) fn new(rate: SampleRate) -> Self {
+    pub(crate) fn new(rate: SampleRate, spectral: Spectral) -> Self {
         let wanted =
             usize::try_from(Frames::from_duration(ANALYSED_FOR, rate).get()).unwrap_or(MOST_POINTS);
         let fft = Fft::new(wanted);
-        let bands = bands_for(rate, fft.points());
+        let bands = bands_for(rate, fft.points(), spectral);
 
         Self {
             rate,
+            spectral,
             bins: Vec::with_capacity(fft.points() / 2 + 1),
-            bars: vec![Bar::RESTING; bands.len()],
+            bars: vec![Bar::resting(Falling::of(spectral)); bands.len()],
             fft,
             bands,
         }
@@ -311,6 +342,14 @@ impl Spectrum {
 
     pub(crate) const fn rate(&self) -> SampleRate {
         self.rate
+    }
+
+    pub(crate) const fn spectral(&self) -> Spectral {
+        self.spectral
+    }
+
+    pub(crate) const fn floor(&self) -> f32 {
+        self.spectral.floor.db()
     }
 
     pub(crate) const fn points(&self) -> usize {
@@ -324,8 +363,9 @@ impl Spectrum {
     pub(crate) fn take(&mut self, samples: &[f32], step: Duration) {
         self.fft.levels(samples, &mut self.bins);
         let step = step.min(LONGEST_STEP);
+        let floor = self.floor();
         for (bar, band) in self.bars.iter_mut().zip(self.bands.iter()) {
-            bar.fold(reading(&self.bins, *band), step);
+            bar.fold(reading(&self.bins, *band, floor), step);
         }
     }
 
@@ -334,23 +374,28 @@ impl Spectrum {
     }
 
     pub(crate) fn columns(&self) -> impl Iterator<Item = Column> + '_ {
+        let floor = self.floor();
         self.bands
             .iter()
             .zip(self.bars.iter())
-            .map(|(band, bar)| Column {
+            .map(move |(band, bar)| Column {
                 low_hz: band.low,
                 high_hz: band.high,
-                level: height_of(bar.level),
-                peak: height_of(bar.peak),
+                level: height_within(bar.level, floor),
+                peak: height_within(bar.peak, floor),
             })
     }
 }
 
 pub(crate) fn height_of(decibels: f32) -> f32 {
-    ((decibels - FLOOR_DB) / (CEILING_DB - FLOOR_DB)).clamp(0.0, 1.0)
+    height_within(decibels, FLOOR_DB)
 }
 
-fn reading(bins: &[f32], band: Band) -> f32 {
+pub(crate) fn height_within(decibels: f32, floor: f32) -> f32 {
+    ((decibels - floor) / (CEILING_DB - floor)).clamp(0.0, 1.0)
+}
+
+fn reading(bins: &[f32], band: Band, floor: f32) -> f32 {
     let raw = match band.reach {
         Reach::Bins { first, last } => bins.get(first..=last).map_or(QUIETEST_DB, |run| {
             run.iter().copied().fold(QUIETEST_DB, f32::max)
@@ -360,10 +405,10 @@ fn reading(bins: &[f32], band: Band) -> f32 {
             let over = bins.get(below + 1).copied().unwrap_or(under);
             (over - under).mul_add(towards, under)
         }
-        Reach::Beyond => return FLOOR_DB,
+        Reach::Beyond => return floor,
     };
 
-    (raw + band.tilt).clamp(FLOOR_DB, CEILING_DB)
+    (raw + band.tilt).clamp(floor, CEILING_DB)
 }
 
 pub(crate) fn top_of(rate: SampleRate) -> f64 {
@@ -388,13 +433,15 @@ pub(crate) fn marked(top: f64) -> impl Iterator<Item = f64> {
         .filter(move |hertz| *hertz < top)
 }
 
-fn bands_for(rate: SampleRate, points: usize) -> Box<[Band]> {
+fn bands_for(rate: SampleRate, points: usize, spectral: Spectral) -> Box<[Band]> {
+    let per_octave = spectral.bands.per_octave();
+    let tilted = spectral.tilt.db_per_octave();
     let bin_hz = f64::from(rate.hz()) / points as f64;
     let nyquist = f64::from(rate.hz()) / 2.0;
     let last_bin = points / 2;
-    let half_a_band = 2.0_f64.powf(0.5 / BANDS_PER_OCTAVE);
+    let half_a_band = 2.0_f64.powf(0.5 / per_octave);
 
-    let steps = |hertz: f64| (hertz / PIVOT_HZ).log2() * BANDS_PER_OCTAVE;
+    let steps = |hertz: f64| (hertz / PIVOT_HZ).log2() * per_octave;
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a band count across the audible range fits an i32"
@@ -408,7 +455,7 @@ fn bands_for(rate: SampleRate, points: usize) -> Box<[Band]> {
 
     (first..=last)
         .map(|step| {
-            let centre = PIVOT_HZ * 2.0_f64.powf(f64::from(step) / BANDS_PER_OCTAVE);
+            let centre = PIVOT_HZ * 2.0_f64.powf(f64::from(step) / per_octave);
             let low = centre / half_a_band;
             let high = centre * half_a_band;
 
@@ -437,7 +484,7 @@ fn bands_for(rate: SampleRate, points: usize) -> Box<[Band]> {
                 clippy::cast_possible_truncation,
                 reason = "a tilt in decibels fits an f32"
             )]
-            let tilt = TILT_DB_PER_OCTAVE * (centre / PIVOT_HZ).log2() as f32;
+            let tilt = tilted * (centre / PIVOT_HZ).log2() as f32;
 
             Band {
                 low,
@@ -608,7 +655,7 @@ mod tests {
 
     #[test]
     fn the_bands_are_sixth_octaves_across_the_audible_range_meeting_at_their_edges() {
-        let bands = bands_for(RATE, 4_096);
+        let bands = bands_for(RATE, 4_096, Spectral::default());
 
         assert!(
             bands
@@ -629,7 +676,7 @@ mod tests {
 
     #[test]
     fn a_tone_lights_its_own_band_and_leaves_one_two_octaves_away_at_the_floor() {
-        let mut spectrum = Spectrum::new(RATE);
+        let mut spectrum = Spectrum::new(RATE, Spectral::default());
         let points = spectrum.points();
         spectrum.take(&tone_at(RATE, points, 1_000.0, 1.0), Duration::ZERO);
 
@@ -645,7 +692,7 @@ mod tests {
     #[test]
     fn the_treble_is_tilted_up_three_decibels_an_octave_about_the_pivot() {
         let rate = SampleRate::HZ_44100;
-        let mut spectrum = Spectrum::new(rate);
+        let mut spectrum = Spectrum::new(rate, Spectral::default());
         let points = spectrum.points();
         let near_the_pivot = 93.0;
         let tones: Vec<f32> = tone(points, near_the_pivot, 0.05)
@@ -661,7 +708,7 @@ mod tests {
         let an_octave_up = band_level(&spectrum, 2.0 * near_the_pivot * bin_hz);
         assert!((at_the_pivot - tone_level).abs() < 0.05, "{at_the_pivot}");
         assert!(
-            (an_octave_up - tone_level - TILT_DB_PER_OCTAVE).abs() < 0.05,
+            (an_octave_up - tone_level - Spectral::default().tilt.db_per_octave()).abs() < 0.05,
             "{an_octave_up}"
         );
     }
@@ -676,14 +723,32 @@ mod tests {
         assert_eq!(marked(48_000.0).count(), 3);
         assert_eq!(marked(192_000.0).count(), 4);
 
-        let bands = bands_for(SampleRate::HZ_96000, 8_192);
+        let bands = bands_for(SampleRate::HZ_96000, 8_192, Spectral::default());
         assert!(bands.last().is_some_and(|band| band.centre > 40_000.0));
+    }
+
+    #[test]
+    fn a_coarser_reading_cuts_fewer_bands_rests_lower_and_tilts_nothing() {
+        let coarse = Spectral {
+            tilt: resonate_core::SpectrumTilt::Flat,
+            floor: resonate_core::SpectrumFloor::Deep,
+            bands: resonate_core::SpectrumBands::Thirds,
+            falls: resonate_core::SpectrumFalls::Quickly,
+        };
+        let sixths = bands_for(RATE, 4_096, Spectral::default());
+        let thirds = bands_for(RATE, 4_096, coarse);
+        let spectrum = Spectrum::new(RATE, coarse);
+
+        assert!(thirds.len() * 2 <= sixths.len() + 1);
+        assert!(thirds.iter().all(|band| band.tilt == 0.0));
+        assert_eq!(spectrum.floor(), -96.0);
+        assert!(spectrum.columns().all(|column| column.level == 0.0));
     }
 
     #[test]
     fn a_band_above_what_the_rate_can_carry_stays_at_the_floor() {
         let rate = SampleRate::HZ_22050;
-        let mut spectrum = Spectrum::new(rate);
+        let mut spectrum = Spectrum::new(rate, Spectral::default());
         let points = spectrum.points();
         spectrum.take(&noise(points), Duration::ZERO);
 
@@ -693,7 +758,7 @@ mod tests {
 
     #[test]
     fn silence_leaves_every_bar_resting_on_the_floor() {
-        let mut spectrum = Spectrum::new(RATE);
+        let mut spectrum = Spectrum::new(RATE, Spectral::default());
         spectrum.take(&[], Duration::from_millis(16));
 
         assert!(spectrum.is_at_rest());
@@ -706,7 +771,7 @@ mod tests {
 
     #[test]
     fn a_bar_falls_at_its_rate_while_its_peak_holds_and_then_follows() {
-        let mut bar = Bar::RESTING;
+        let mut bar = Bar::METERED;
         bar.fold(-20.0, Duration::ZERO);
         assert_eq!((bar.level, bar.peak), (-20.0, -20.0));
 
@@ -733,7 +798,7 @@ mod tests {
 
     #[test]
     fn a_louder_reading_lifts_a_bar_at_once() {
-        let mut bar = Bar::RESTING;
+        let mut bar = Bar::METERED;
         bar.fold(-40.0, Duration::from_millis(16));
         bar.fold(-6.0, Duration::from_millis(16));
 

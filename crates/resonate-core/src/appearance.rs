@@ -257,6 +257,122 @@ impl fmt::Display for ScrollbarMode {
     }
 }
 
+macro_rules! spoken {
+    ($name:ident { $($variant:ident => $spelt:literal),+ $(,)? }) => {
+        impl $name {
+            pub const ALL: [Self; [$(Self::$variant),+].len()] = [$(Self::$variant),+];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $spelt),+
+                }
+            }
+
+            pub fn parse(text: &str) -> Option<Self> {
+                Self::ALL.into_iter().find(|held| held.as_str() == text)
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SpectrumTilt {
+    Flat,
+    #[default]
+    Pink,
+    Steep,
+}
+
+spoken!(SpectrumTilt { Flat => "flat", Pink => "pink", Steep => "steep" });
+
+impl SpectrumTilt {
+    pub const fn db_per_octave(self) -> f32 {
+        match self {
+            Self::Flat => 0.0,
+            Self::Pink => 3.0,
+            Self::Steep => 4.5,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SpectrumFloor {
+    Shallow,
+    #[default]
+    Middling,
+    Deep,
+}
+
+spoken!(SpectrumFloor { Shallow => "60", Middling => "78", Deep => "96" });
+
+impl SpectrumFloor {
+    pub const fn db(self) -> f32 {
+        match self {
+            Self::Shallow => -60.0,
+            Self::Middling => -78.0,
+            Self::Deep => -96.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SpectrumBands {
+    Thirds,
+    #[default]
+    Sixths,
+    Twelfths,
+}
+
+spoken!(SpectrumBands { Thirds => "thirds", Sixths => "sixths", Twelfths => "twelfths" });
+
+impl SpectrumBands {
+    pub const fn per_octave(self) -> f64 {
+        match self {
+            Self::Thirds => 3.0,
+            Self::Sixths => 6.0,
+            Self::Twelfths => 12.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SpectrumFalls {
+    Slowly,
+    #[default]
+    Middling,
+    Quickly,
+}
+
+spoken!(SpectrumFalls { Slowly => "slowly", Middling => "middling", Quickly => "quickly" });
+
+impl SpectrumFalls {
+    pub const fn db_per_second(self) -> f32 {
+        match self {
+            Self::Slowly => 20.0,
+            Self::Middling => 40.0,
+            Self::Quickly => 80.0,
+        }
+    }
+
+    pub const fn peak_db_per_second(self) -> f32 {
+        self.db_per_second() / 2.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Spectral {
+    pub tilt: SpectrumTilt,
+    pub floor: SpectrumFloor,
+    pub bands: SpectrumBands,
+    pub falls: SpectrumFalls,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Appearance {
     pub theme: Theme,
@@ -309,6 +425,25 @@ mod tests {
             assert_eq!(ScrollbarMode::parse(mode.as_str()), Some(mode));
         }
         assert_eq!(ScrollbarMode::parse("sometimes"), None);
+    }
+
+    #[test]
+    fn every_spectrum_reading_is_read_back_from_the_word_it_is_written_as() {
+        for tilt in SpectrumTilt::ALL {
+            assert_eq!(SpectrumTilt::parse(tilt.as_str()), Some(tilt));
+        }
+        for floor in SpectrumFloor::ALL {
+            assert_eq!(SpectrumFloor::parse(floor.as_str()), Some(floor));
+        }
+        for bands in SpectrumBands::ALL {
+            assert_eq!(SpectrumBands::parse(bands.as_str()), Some(bands));
+        }
+        for falls in SpectrumFalls::ALL {
+            assert_eq!(SpectrumFalls::parse(falls.as_str()), Some(falls));
+        }
+        assert_eq!(SpectrumFloor::parse("-78"), None);
+        assert_eq!(Spectral::default().tilt.db_per_octave(), 3.0);
+        assert_eq!(Spectral::default().floor.db(), -78.0);
     }
 
     #[test]

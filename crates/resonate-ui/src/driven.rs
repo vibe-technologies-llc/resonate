@@ -325,6 +325,7 @@ impl Driven {
                 mouse_navigation: true,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
+                spectral: resonate_core::Spectral::default(),
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,
                 last_tab: None,

@@ -13,8 +13,8 @@ use crossbeam_channel::Sender;
 use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme,
-    Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, Spectral,
+    SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -192,6 +192,10 @@ pub enum SettingKey {
     ScrollVolume,
     MouseNavigation,
     Scrollbars,
+    SpectrumTilt,
+    SpectrumFloor,
+    SpectrumBands,
+    SpectrumFalls,
     SuggestionsTab,
     MissingTab,
     TabCounts,
@@ -226,7 +230,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 81] = [
+    pub const ALL: [Self; 85] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -277,6 +281,10 @@ impl SettingKey {
         Self::ScrollVolume,
         Self::MouseNavigation,
         Self::Scrollbars,
+        Self::SpectrumTilt,
+        Self::SpectrumFloor,
+        Self::SpectrumBands,
+        Self::SpectrumFalls,
         Self::SuggestionsTab,
         Self::MissingTab,
         Self::TabCounts,
@@ -366,6 +374,10 @@ pub enum Setting {
     ScrollVolume(bool),
     MouseNavigation(bool),
     Scrollbars(ScrollbarMode),
+    SpectrumTilt(SpectrumTilt),
+    SpectrumFloor(SpectrumFloor),
+    SpectrumBands(SpectrumBands),
+    SpectrumFalls(SpectrumFalls),
     SuggestionsTab(bool),
     MissingTab(bool),
     TabCounts(bool),
@@ -452,6 +464,10 @@ impl Setting {
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
             Self::MouseNavigation(_) => SettingKey::MouseNavigation,
             Self::Scrollbars(_) => SettingKey::Scrollbars,
+            Self::SpectrumTilt(_) => SettingKey::SpectrumTilt,
+            Self::SpectrumFloor(_) => SettingKey::SpectrumFloor,
+            Self::SpectrumBands(_) => SettingKey::SpectrumBands,
+            Self::SpectrumFalls(_) => SettingKey::SpectrumFalls,
             Self::SuggestionsTab(_) => SettingKey::SuggestionsTab,
             Self::MissingTab(_) => SettingKey::MissingTab,
             Self::TabCounts(_) => SettingKey::TabCounts,
@@ -657,6 +673,7 @@ pub struct Stored {
     pub scroll_volume: bool,
     pub mouse_navigation: bool,
     pub scrollbars: ScrollbarMode,
+    pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,
     pub last_tab: Option<crate::Pane>,
