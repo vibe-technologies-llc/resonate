@@ -1419,7 +1419,7 @@ impl Engine {
             return;
         }
         self.sleep = None;
-        if self.track.is_none() {
+        if self.track.is_none() && self.opening.is_none() {
             return;
         }
         if let Err(error) = self.pause() {

@@ -6,11 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A sleep timer due while the next track opens is cleared without pausing (`doze` returns on an
-  empty `track` before `pause` could note the opening); the music plays on
-- An open playlist marks the row `loaded_position` names by its place in the view, so narrowing by
-  search, or moving/sorting/removing rows while it plays, marks a different song than the playing
-  one
 - A search for an album artist stops finding that artist's tracks and albums once enrichment
   re-indexes them: only the scan writes the album artist into `tracks_fts`'s artist column; every
   reindex and refold writes the track's artist alone

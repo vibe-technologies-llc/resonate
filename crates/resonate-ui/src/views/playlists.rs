@@ -5,8 +5,8 @@ use gpui::{
     PathPromptOptions, Pixels, Point, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
     uniform_list,
 };
-use resonate_core::{AlbumId, PlaylistId, Span};
-use resonate_engine::{Command, Placement, QueueItem, Unclaimed};
+use resonate_core::{AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
+use resonate_engine::{Command, Placement, QueueItem, Queued, Unclaimed};
 use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
 use smallvec::smallvec;
 
@@ -301,6 +301,31 @@ const KEEPING: [(&str, bool, &str); 2] = [
     ("Just once", false, ONCE_HINT),
     ("From now on", true, ALWAYS_HINT),
 ];
+
+fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> Option<usize> {
+    let drawn = queued.loaded_at.iter().position(|at| *at == loaded)?;
+    let playing = queued.rows.get(drawn)?;
+    let is_the_cut = |location: &MediaLocation, span: Option<FrameSpan>| {
+        *location == playing.location && span == playing.span
+    };
+    let heard_before = queued
+        .rows
+        .iter()
+        .zip(queued.loaded_at.iter())
+        .filter(|(row, at)| **at < loaded && is_the_cut(&row.location, row.span))
+        .count();
+
+    let mut same: Vec<(usize, usize)> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| is_the_cut(entry.location(), entry.span()))
+        .map(|(index, entry)| (entry.position, index))
+        .collect();
+    same.sort_unstable();
+    same.get(heard_before)
+        .or_else(|| same.last())
+        .map(|(_, index)| *index)
+}
 
 pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &[QueueItem]) -> Vec<QueueItem> {
     let mut minting = Unclaimed::beside(beside);
@@ -685,7 +710,7 @@ impl RootView {
             .opened_playlist()
             .map_or(Rows::InHand, |held| Rows::of(held, narrowed));
         let heading = self.playlist_heading(opened, &entries, cx);
-        let playing = self.playing_row(opened, cx);
+        let playing = self.playing_row(opened, &entries, cx);
         let reaching = rows
             .are_reached()
             .then(|| self.reaching(Shift::Playlist(opened)))
@@ -1101,12 +1126,19 @@ impl RootView {
         self.library.read(cx).playing_playlist(queue)
     }
 
-    fn playing_row(&self, opened: PlaylistId, cx: &App) -> Option<usize> {
+    fn playing_row(
+        &self,
+        opened: PlaylistId,
+        entries: &[PlaylistEntry],
+        cx: &App,
+    ) -> Option<usize> {
         if self.playing_playlist(cx) != Some(opened) {
             return None;
         }
 
-        self.player.read(cx).state().loaded_position
+        let player = self.player.read(cx);
+        let loaded = player.state().loaded_position?;
+        playing_entry(&player.queued(), loaded, entries)
     }
 
     fn entry_row(
@@ -2123,6 +2155,7 @@ mod tests {
     use std::{path::Path, sync::Arc, time::SystemTime};
 
     use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, Span};
+    use resonate_engine::{QueueItem, Queued};
     use resonate_library::{Cut, Playlist, PlaylistEntry};
 
     use super::{Offered, Reaching};
@@ -2193,6 +2226,56 @@ mod tests {
             items[0].id, items[1].id,
             "two rows no scan has seen were minted one id"
         );
+    }
+
+    fn queued_as(rows: Vec<QueueItem>, loaded_at: Vec<usize>) -> Queued {
+        Queued {
+            rows: Arc::new(rows),
+            loaded_at: loaded_at.into(),
+            ..Queued::default()
+        }
+    }
+
+    #[test]
+    fn the_playing_mark_follows_the_song_however_the_view_is_narrowed_or_ordered() {
+        let entries = listed(5);
+        let items = super::queue_items(&entries, &[]);
+        let queued = queued_as(items, vec![0, 1, 2, 3, 4]);
+
+        assert_eq!(super::playing_entry(&queued, 3, &entries), Some(3));
+
+        let narrowed: Vec<PlaylistEntry> = entries
+            .iter()
+            .filter(|entry| entry.position % 2 == 1)
+            .cloned()
+            .collect();
+        assert_eq!(super::playing_entry(&queued, 3, &narrowed), Some(1));
+        assert_eq!(super::playing_entry(&queued, 2, &narrowed), None);
+
+        let reversed: Vec<PlaylistEntry> = entries.iter().rev().cloned().collect();
+        assert_eq!(super::playing_entry(&queued, 3, &reversed), Some(1));
+
+        let mut moved = entries.clone();
+        let taken = moved.remove(3);
+        moved.insert(0, taken);
+        for (position, entry) in moved.iter_mut().enumerate() {
+            entry.position = position;
+        }
+        assert_eq!(super::playing_entry(&queued, 3, &moved), Some(0));
+    }
+
+    #[test]
+    fn a_file_listed_twice_is_marked_at_the_listing_that_plays() {
+        let entries = vec![cut_at(0, None), cut_at(1, None), cut_at(2, None)];
+        let items = super::queue_items(&entries, &[]);
+        let shuffled = queued_as(
+            vec![items[2].clone(), items[0].clone(), items[1].clone()],
+            vec![2, 0, 1],
+        );
+
+        assert_eq!(super::playing_entry(&shuffled, 1, &entries), Some(1));
+        assert_eq!(super::playing_entry(&shuffled, 2, &entries), Some(2));
+        assert_eq!(super::playing_entry(&shuffled, 0, &entries), Some(0));
     }
 
     #[test]

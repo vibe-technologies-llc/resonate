@@ -635,7 +635,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `order[after - 1]`, `next[0]` or nothing; drawn = `order[..after] ++ next ++ order[after..]`.
   `next` is exhausted before `order` goes on; a heard or skipped-past `next` row *leaves the queue*,
   not joins the playlist. `PlayerState::queue_stamp` = `Queue::playing_from` (stamp of `order`
-  alone, so `Library::playing_playlist` still badges the playlist while a queued row plays);
+  alone, so `Library::playing_playlist` still badges the playlist while a queued row plays; the
+  open playlist marks the listing whose cut is the loaded row's, the same occurrence of it in
+  playlist order, never the view index `loaded_position` names, so a narrowed, sorted or edited
+  view marks the playing song: `playlists::playing_entry`);
   `Queued::stamp` = every row, what `Keeping` weighs. *Previous* or a jump into the playlist keeps
   what waits. Load replaces `order`, keeps `next`; resumption carries it as `Resumption::next`.
 - **Loading replaces what plays; queueing adds to what waits; landing is a `Placement`.**
@@ -698,7 +701,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `SLEEP_FADES_OVER`:** `sleep_is_due_in` answers what is left, `fade_toward_sleep` asks the ring
   for silence over exactly that. Cancel or push-back mid-fade restores the level; a seek or in-place
   restart lifts it (`lift_the_sleep_fade`, `sleep_lifted`). Outlives track change, seek, pause, new
-  load (a timer on the listener). Delay capped at `LONGEST_SLEEP` so a huge value cannot overflow an
+  load (a timer on the listener). Due while a row opens, it pauses the opening, which lands paused
+  (`a_sleep_timer_due_while_a_track_opens_leaves_it_paused_once_open`). Delay capped at `LONGEST_SLEEP` so a huge value cannot overflow an
   `Instant`.
 - **A skip under repeat-track repeats the queue, unless told otherwise.** `Command::Next` and
   `Command::Previous` going back a track are a person's skip (a track's end reaches `skip` as
