@@ -128,7 +128,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   at every rate
 - The scope triggers on the mid's rising edge alone; the stereo view's meters read the mean square,
   not a true peak
-- The plot opens empty for up to a buffer's depth: the tap runs only while the pane is in front
 - The tap records frames as rendered, before the ring trims them: a muted stream still draws, a
   turned volume shows a buffer late
 

@@ -804,15 +804,17 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   sits on `Output` beside the ring; `Engine::fill`, `convert`, `drain` hand it exactly the frames
   `RingProducer` took (after equaliser, gain, dither; before the ring's trim) as f32 left and right
   at the sink's rate. A `Tap` = power-of-two ring of `AtomicU32` whose slots are a `OnceLock` laid
-  by the first frame recorded while somebody listens (never opening the visualiser allocates
-  none). No locks, the engine never waits on the window: a write claims its frames behind a
+  by the first frame recorded while somebody listens (`resonate play` and the bus never listen, so
+  allocate none). No locks, the engine never waits on the window: a write claims its frames behind a
   release fence and publishes the count with release; a read acquires, reads, rereads the claim,
   silences any frame the writer may have gone round onto. The anchor (frames tapped less ring
   contents less `SinkStream::latency`) is fixed by `Engine::publish` every pass through a
   three-atomic seqlock; `Tap::around` runs on from it by the clock (at most `RUNS_AHEAD_AT_MOST`)
   and returns the frames *centred* on the one heard. `Player::listen_in` is the switch (unlistened,
   a block costs a load and a store; listening again marks `valid_from`, so what the ring held reads
-  as silence). `Player::tap` answers `Tapped`: `Nothing`, `Samples`, `Markers` (DoP).
+  as silence). **The window listens from the moment it opens**, not only while the visualiser is in
+  front: recording is two relaxed stores a frame on the engine thread, and a tap switched on as the
+  pane opened held nothing heard for the ring's depth, so the plot opened empty. `Player::tap` answers `Tapped`: `Nothing`, `Samples`, `Markers` (DoP).
 - **A profile holds at most `MAX_WINDOWS` points, whatever a packet claims to span.** Windows come
   from a packet's declared duration, so an absurd `dur` would ask for billions; once full, the open
   window is abandoned, bounding the `Vec` and the engine-thread walk, as in `probe_stream`.

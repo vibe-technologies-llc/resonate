@@ -2707,8 +2707,9 @@ is never named.
   nothing (bars still falling ask again on a timer at the poll's interval; a paused transport holds
   the paused moment). Being an entity keeps its state (transform tables, bars, three sample
   buffers) out of `RootView`. Every frame is still a whole-window GPU paint, gpui's, not the
-  pane's. `RootView::render` calls `PlayerModel::listen_in` with whether the pane is in front, so
-  the engine taps nothing otherwise.
+  pane's. `RootView::new` calls `PlayerModel::listen_in(true)`: the engine taps from the window's first
+  play, so the plot opens on what is already heard rather than empty for the ring's depth (cost
+  in `audio.md`).
 - **The analysis pane draws the whole playing track and says whether it is what it claims.**
   `Pane::Analysis`: fourth pane under `Section::Playing`, same six edits, `Icon::Analysis` (a
   waveform over its axis). Heading = visualiser's (title, artist via `opens`) reading back codec,

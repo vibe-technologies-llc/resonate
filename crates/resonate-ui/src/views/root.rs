@@ -745,6 +745,7 @@ impl RootView {
         let listen = cx.new(|_| ListenModel::new(listens));
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
+        player.read(cx).listen_in(true);
         cx.observe(&player, |this, player, cx| {
             let playing = player.read(cx).state().playback == PlaybackState::Playing;
             this.library
@@ -4682,9 +4683,6 @@ impl Render for RootView {
         hint::asking(self.hints_are_wanted(cx) && !moved);
         self.drawn_at = SystemTime::now();
         self.follow_the_scale(window, cx);
-        self.player
-            .read(cx)
-            .listen_in(self.pane == Pane::Visualiser);
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let grain = self.grain(window, cx);
         self.player.update(cx, |player, _| player.draw_at(grain));
