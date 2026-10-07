@@ -2384,10 +2384,13 @@ starts.
   wanted from the pressing most of its pressings share
   (`an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing`).
   **Playlist link: every song it holds followed as a song link would be.** `PlaylistLink::read`
-  takes `deezer.com/[lang/]playlist/<n>` and `listenbrainz.org/playlist/<mbid>`;
+  takes `deezer.com/[lang/]playlist/<n>`, `listenbrainz.org/playlist/<mbid>` and a Spotify
+  playlist (`open.spotify.com/[intl-xx/]playlist/<id>` or `spotify:playlist:<id>`, the id
+  twenty-two letters and digits);
   `Reference::playlist_linked` answers a `LinkedPlaylist`: its name and a `ListedSong` per song,
   `Recording` (ListenBrainz names recordings) or `Named` (`LinkNames`: Deezer's tracks carry ISRC,
-  title, artist, length, so no request a song). `Library::follow_playlist_link` follows each
+  title, artist, length, so no request a song; Spotify's name title, artists and length alone, so
+  each is followed by the strict search a YouTube upload is). `Library::follow_playlist_link` follows each
   through the halves `follow_link` is made of (`follow_recording`, `follow_names`, `linked_to`), so
   a song is held, found or unnamed by the same rule as a pasted song (`Linked::Held` carries the
   track). `Library::fill_playlist_named` (`playlist::fill`) puts held tracks into the list of that

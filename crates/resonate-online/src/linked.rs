@@ -3,10 +3,8 @@ use std::time::Duration;
 use resonate_library::{AlbumLink, AlbumNames, Barcode, Isrc, LinkNames, LookupOp, SongLink};
 use serde::Deserialize;
 
-use crate::{Client, Host, Result, client::LARGEST_DOCUMENT, deezer};
+use crate::{Client, Host, Result, client::LARGEST_DOCUMENT, deezer, shared::next_data};
 
-const PAGE_DATA_OPENS: &str = r#"<script id="__NEXT_DATA__" type="application/json">"#;
-const PAGE_DATA_CLOSES: &str = "</script>";
 const A_SONG: &str = "song";
 const AN_ALBUM: &str = "album";
 const SONG_ON_DEEZER: &str = "deezer|song|";
@@ -76,10 +74,7 @@ fn page_at(client: &Client, page: &str) -> Result<Option<String>> {
 }
 
 fn page_data(page: &str) -> Option<PageData> {
-    let from = page.find(PAGE_DATA_OPENS)? + PAGE_DATA_OPENS.len();
-    let rest = &page[from..];
-    let data = &rest[..rest.find(PAGE_DATA_CLOSES)?];
-    let document: NextData = serde_json::from_str(data)
+    let document: NextData = serde_json::from_str(next_data(page)?)
         .inspect_err(|error| tracing::debug!(%error, "song.link's page data did not read"))
         .ok()?;
 

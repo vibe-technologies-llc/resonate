@@ -158,6 +158,7 @@ impl Reference for Online {
             PlaylistLink::ListenBrainz(playlist) => {
                 Ok(listenbrainz::playlist_named(&self.client, playlist)?)
             }
+            PlaylistLink::Spotify(playlist) => Ok(spotify::playlist_named(&self.client, playlist)?),
         }
     }
 

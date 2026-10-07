@@ -14,6 +14,15 @@ pub(crate) fn shared_picture(page: &str) -> Option<&str> {
     Some(&rest[..rest.find('"')?])
 }
 
+const PAGE_DATA_OPENS: &str = r#"<script id="__NEXT_DATA__" type="application/json">"#;
+const PAGE_DATA_CLOSES: &str = "</script>";
+
+pub(crate) fn next_data(page: &str) -> Option<&str> {
+    let from = page.find(PAGE_DATA_OPENS)? + PAGE_DATA_OPENS.len();
+    let rest = &page[from..];
+    Some(&rest[..rest.find(PAGE_DATA_CLOSES)?])
+}
+
 pub(crate) fn page_of(client: &Client, host: Host, page: &str) -> Result<Option<String>> {
     Ok(
         passed_over_when_refused(client.bytes(host, LookupOp::Portrait, page, LARGEST_DOCUMENT))?

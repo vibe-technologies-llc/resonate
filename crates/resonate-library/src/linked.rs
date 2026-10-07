@@ -20,6 +20,8 @@ const SPOTIFY_TRACK_PAGE: &str = "https://open.spotify.com/track/";
 const SPOTIFY_ALBUM: &str = "spotify:album:";
 const SPOTIFY_ALBUM_PAGE: &str = "https://open.spotify.com/album/";
 const SPOTIFY_ARTIST: &str = "spotify:artist:";
+const SPOTIFY_PLAYLIST: &str = "spotify:playlist:";
+const SPOTIFY_ID_LENGTH: usize = 22;
 const DEEZER_ARTIST_PAGE: &str = "https://www.deezer.com/artist/";
 const APPLE_MUSIC_IN_EVERY_STOREFRONT: &str = "us";
 const SONG_LINK_PAGES: &str = "https://song.link/";
@@ -127,6 +129,7 @@ pub enum ArtistLink {
 pub enum PlaylistLink {
     Deezer(u64),
     ListenBrainz(Mbid),
+    Spotify(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -441,9 +444,17 @@ impl FollowedLink {
 
 impl PlaylistLink {
     pub fn read(text: &str) -> Option<Self> {
-        let address = Address::read(one_token(text)?)?;
+        let text = one_token(text)?;
+        if let Some(id) = text.strip_prefix(SPOTIFY_PLAYLIST) {
+            return names_a_spotify_id(id).then(|| Self::Spotify(id.to_owned()));
+        }
+        let address = Address::read(text)?;
 
         match address.host.as_str() {
+            "open.spotify.com" => address
+                .after("playlist")
+                .filter(|id| names_a_spotify_id(id))
+                .map(|id| Self::Spotify(id.to_owned())),
             "deezer.com" => address.after("playlist")?.parse().ok().map(Self::Deezer),
             "listenbrainz.org" => match address.segments.as_slice() {
                 ["playlist", id, ..] => Mbid::new(id).ok().map(Self::ListenBrainz),
@@ -575,6 +586,10 @@ fn names_an_album(address: &Address<'_>) -> bool {
         }
         _ => false,
     }
+}
+
+fn names_a_spotify_id(id: &str) -> bool {
+    id.len() == SPOTIFY_ID_LENGTH && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
 
 fn names_an_id(id: &str) -> bool {
@@ -1025,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn a_link_to_a_deezer_or_listenbrainz_playlist_is_read_as_one_and_nothing_else_is() {
+    fn a_link_to_a_deezer_listenbrainz_or_spotify_playlist_is_read_as_one_and_nothing_else_is() {
         const PLAYLIST: &str = "d20c6058-b625-49ec-ab78-99cf15584b3d";
 
         assert_eq!(
@@ -1038,11 +1053,25 @@ mod tests {
                 PLAYLIST
             ))))
         );
+        assert_eq!(
+            FollowedLink::read(
+                "https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M?si=x"
+            ),
+            Some(FollowedLink::Playlist(PlaylistLink::Spotify(
+                "37i9dQZF1DXcBWIGoYBM5M".to_owned()
+            )))
+        );
+        assert_eq!(
+            FollowedLink::read("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"),
+            Some(FollowedLink::Playlist(PlaylistLink::Spotify(
+                "37i9dQZF1DXcBWIGoYBM5M".to_owned()
+            )))
+        );
         for text in [
             "https://www.deezer.com/playlist/a-name",
             "https://listenbrainz.org/playlist/not-an-id",
             "https://listenbrainz.org/user/rob/playlists",
-            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+            "https://open.spotify.com/playlist/not-an-id",
             "https://www.deezer.com/playlist/3155776842 too",
         ] {
             assert_eq!(PlaylistLink::read(text), None, "{text}");
@@ -1161,7 +1190,7 @@ mod tests {
         assert!(is_a_followed_link(
             "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt"
         ));
-        assert!(!is_a_followed_link(
+        assert!(is_a_followed_link(
             "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
         ));
         assert!(!is_a_followed_link("deezer album"));

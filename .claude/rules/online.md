@@ -251,7 +251,11 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
   `PLAYLIST_SONGS_A_PAGE` follow until `nb_tracks` or `PLAYLIST_SONGS_AT_MOST` (1 000); each track
   is `TrackDoc::named` as a pasted track is. ListenBrainz: `/1/playlist/<mbid>`'s JSPF, each
   track's recording read off an `identifier` (one or a list) naming
-  `musicbrainz.org/recording/<mbid>`. A playlist with no title names nothing.
+  `musicbrainz.org/recording/<mbid>`. Spotify: the public `/embed/playlist/<id>` page, whose
+  `__NEXT_DATA__` (cut by `shared::next_data`, song.link's reader too) holds the playlist's `name`
+  and a `trackList` of title, `subtitle` (the artists as billed) and length in milliseconds; no
+  account, no ISRC; the embed lists at most what Spotify puts on it (fifty to a hundred). A playlist
+  with no title names nothing.
 
 ## ListenBrainz
 
