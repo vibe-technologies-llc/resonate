@@ -223,10 +223,12 @@ is never named.
     `artists.key`'s fold): *przybylowicz* reaches *Przybyłowicz* at the queue as in the search
     field.
   - **Names a jump reads come off the render thread.** `QueueNames` holds the queue's titles
-    against a `NamedAt`: the `Queued::revision`, the library's revision and
-    `Player::media_revision` read at, so a retagged or enriched queued track is found by its new
-    name. `names_in_the_queue` hands them out while all three stand; another catalog or media
-    revision asks again but still hands out what it holds for the same rows meanwhile; another
+    against a `NamedAt`: the `Queued::revision`, the catalog's `Library::names_stamp` (moving only
+    where a title, artist, album or genre is written, or a row arrives or goes: a counted play, a
+    favourite, a playlist edit move nothing) and `Player::media_revision` read at, so a retagged or
+    enriched queued track is found by its new name. `names_in_the_queue` hands them out while all
+    three stand (`CatalogStamp::still_holds_at`); a name moved or another media revision asks again
+    but still hands out what it holds for the same rows meanwhile; another
     queue revision hands out nothing. Asking is the background executor: `queued_rows` reads by id in one
     `Library::tracks_with_ids` pass (500-id batches; a row whose id names another file falls to its
     path), then `Player::media`, then the stem, in queue row order. Each name is held folded

@@ -7,7 +7,9 @@ use gpui::{
 };
 use resonate_core::{AlbumId, FrameSpan, MediaLocation, Span, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem};
-use resonate_library::{Cut, Direction, Favoured, Library, Lit, RowOrder, Track, folded_letters};
+use resonate_library::{
+    CatalogStamp, Cut, Direction, Favoured, Library, Lit, RowOrder, Track, folded_letters,
+};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -57,15 +59,21 @@ impl AsRef<str> for Named {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct NamedAt {
     queue: u64,
-    library: u64,
+    names: CatalogStamp,
     media: u64,
+}
+
+impl NamedAt {
+    fn names_still_hold_at(&self, now: &Self) -> bool {
+        self.names.still_holds_at(now.names) && self.media == now.media
+    }
 }
 
 impl RootView {
     pub(crate) fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Option<Arc<[Named]>> {
         let revision = NamedAt {
             queue: self.player.read(cx).queued().revision,
-            library: self.library.read(cx).revision(),
+            names: self.library.read(cx).catalog().names_stamp(),
             media: self.player.read(cx).engine().media_revision(),
         };
         let held = self
@@ -73,7 +81,9 @@ impl RootView {
             .named
             .as_ref()
             .map(|(named, names)| (*named, Arc::clone(names)));
-        if held.as_ref().is_some_and(|(named, _)| *named == revision) {
+        if held.as_ref().is_some_and(|(named, _)| {
+            named.queue == revision.queue && named.names_still_hold_at(&revision)
+        }) {
             return held.map(|(_, names)| names);
         }
         self.name_the_queue(revision, cx);
@@ -93,7 +103,7 @@ impl RootView {
             .queue_names
             .named
             .as_ref()
-            .filter(|(named, _)| named.library == revision.library && named.media == revision.media)
+            .filter(|(named, _)| named.names_still_hold_at(&revision))
             .map(|(_, names)| Arc::clone(names));
 
         self.queue_names.reading = Some(cx.spawn(async move |this, cx| {

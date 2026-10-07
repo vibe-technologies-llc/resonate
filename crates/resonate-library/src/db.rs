@@ -2271,6 +2271,10 @@ impl Library {
         self.inner.plans_stamp()
     }
 
+    pub fn names_stamp(&self) -> CatalogStamp {
+        self.inner.names_stamp()
+    }
+
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {
         self.inner
             .playing()

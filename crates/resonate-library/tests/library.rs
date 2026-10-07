@@ -2188,6 +2188,29 @@ fn a_root_that_is_not_a_directory_is_refused() -> Result<()> {
 }
 
 #[test]
+fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_favourite()
+-> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let track = all(&library)?.remove(0);
+    let named = library.names_stamp();
+
+    library.track_played(&MediaLocation::local(&path), None, Duration::ZERO)?;
+    library.favour(Favoured::Track(track.id), true)?;
+    assert!(
+        named.still_holds_at(library.names_stamp()),
+        "a play or a favourite moved the names a window reads"
+    );
+
+    tree.write("one.wav", &Wav::new().text(TITLE, "Dogs").build());
+    scan(&library, &options(&tree))?;
+    assert!(!named.still_holds_at(library.names_stamp()));
+    Ok(())
+}
+
+#[test]
 fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() -> Result<()> {
     let kept = Tree::new();
     let unplugged = Tree::new();
