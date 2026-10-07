@@ -1460,5 +1460,10 @@ mod tests {
             driven.read(|root, cx| root.listen.read(cx).from().clone()),
             Listening::Desktop
         );
+
+        driven.click("listen-keep-track");
+        assert!(driven.read(|root, cx| root.listen.read(cx).keeps_listening()));
+        driven.click("listen-keep-track");
+        assert!(!driven.read(|root, cx| root.listen.read(cx).keeps_listening()));
     }
 }

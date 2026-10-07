@@ -2637,8 +2637,19 @@ is never named.
   the clip and puts the sheet back at `Idle` (a song named after Stop or closing is neither told to
   the desktop nor drawn). `listening.rs` = model, `views/listen.rs` = drawing. `ListenModel` holds
   the `Listens` the binary handed in and walks one `Stage`: `Recording` (the `Hearing` the bar draws
-  from, the source recorded), `Asking`, then `Found`, `Unknown`, `Silent`, `CaptureFailed`,
-  `Unreached`, `Refused`, `Offline`, `NoService`. `stage_after` picks the landing for an error; a
+  from, the source recorded, which try it is), `Asking`, then `Found`, `Unknown`, `Silent`,
+  `CaptureFailed`, `Unreached`, `Refused`, `Offline`, `NoService`. **A miss is listened to again**:
+  a clip no service named, or one nothing reached, is recorded again up to `TRIES_ON_A_MISS` (3)
+  before the sheet says so (*Nothing named yet, so listening … again (2 of 3)…*); a service out of
+  reach or refusing is said at once. **Keep listening follows the music**: a switch under the
+  sources (`keep_listening`, kept for the run) has every named song, and a last miss, followed by
+  another clip `FOLLOWED_EVERY` (20 s) later, on and on (`Following`: `Waiting`, `Listening`, said
+  in a faint line under the stage) while the card keeps the song named; a song naming the same
+  title and artist (folded) is kept quietly, a new one is told to the desktop and heads the list,
+  a miss or failure while following changes nothing. A press, Stop or closing the sheet ends the
+  following. `then` is the whole decision, pure
+  (`a_miss_or_a_silent_clip_is_listened_to_again_until_the_tries_run_out`,
+  `following_tells_a_new_song_and_keeps_quiet_about_the_same_one_or_a_miss`). `stage_after` picks the landing for an error; a
   failed capture and a clip a service turned down have words of their own, not *nothing reached the
   recording* / *could not be reached*
   (`a_service_that_refused_the_clip_is_not_one_that_could_not_be_reached`). Recording and asking run

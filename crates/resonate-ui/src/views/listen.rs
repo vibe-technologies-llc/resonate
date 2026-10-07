@@ -10,7 +10,7 @@ use resonate_listen::Listening;
 use crate::{
     Pane, ResonateApp, Setting,
     icons::{self, Icon},
-    listening::{Found, Stage},
+    listening::{FOLLOWED_EVERY, Following, Found, Stage, TRIES_ON_A_MISS},
     motion, theme,
     views::{
         hint::Names,
@@ -27,6 +27,8 @@ const FIND_HINT: &str =
 const OPEN_HINT: &str = "Open the page the service keeps for it";
 const DESKTOP_HINT: &str = "Hear what the desktop is playing";
 const MICROPHONE_HINT: &str = "Hear a microphone";
+const KEEP_LISTENING_HINT: &str = "Once a song is named, listen again every little while and \
+                                   name the next song that plays, until stopped";
 const OFFLINE: &str = "Online is off in the settings, so nothing can name what is heard.";
 const NO_SERVICE: &str = "Nothing can name what is heard until the next start: Online was off \
                           when this run began, or this build carries no network.";
@@ -60,6 +62,13 @@ impl RootView {
         self.listen.update(cx, |listen, cx| listen.choose(from, cx));
     }
 
+    fn keep_listening(&mut self, cx: &mut Context<Self>) {
+        self.listen.update(cx, |listen, cx| {
+            let keeps = !listen.keeps_listening();
+            listen.keep_listening(keeps, cx);
+        });
+    }
+
     pub(crate) fn listen_for(&mut self, length: Duration, cx: &mut Context<Self>) {
         self.store(&Setting::ListenFor(length), cx);
         self.listen
@@ -85,6 +94,8 @@ impl RootView {
         let microphones = listen.microphones().to_vec();
         let earlier: Vec<Found> = listen.heard().iter().skip(1).cloned().collect();
         let listening = listen.is_listening();
+        let keeps_listening = listen.keeps_listening();
+        let following = listen.following();
 
         let card = div()
             .id("listen-sheet")
@@ -106,7 +117,16 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_listener(cx)))
             .child(self.listen_heading(listening, cx))
             .child(self.listen_sources(&from, &microphones, listening, cx))
+            .child(self.keeps_listening_row(keeps_listening, cx))
             .child(self.listen_stage(&stage, length, cx))
+            .when_some(following_said(&following), |card, said| {
+                card.child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .text_color(rgb(theme::faint()))
+                        .child(said),
+                )
+            })
             .when(!earlier.is_empty(), |card| {
                 card.child(self.heard_earlier(&earlier, cx))
             });
@@ -224,27 +244,43 @@ impl RootView {
             })
     }
 
-    fn listen_stage(&self, stage: &Stage, length: Duration, cx: &mut Context<Self>) -> Div {
-        match stage {
-            Stage::Recording { hearing, from } => listen_note(format!(
-                "Listening to {} for {} seconds…",
-                heard_from(from),
-                length.as_secs()
-            ))
+    fn keeps_listening_row(&self, keeps: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        div()
+            .id("listen-keep")
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .cursor_pointer()
             .child(
                 div()
-                    .h(px(4.0))
-                    .w_full()
-                    .rounded_full()
-                    .bg(rgb(theme::raised()))
-                    .child(
-                        div()
-                            .h_full()
-                            .rounded_full()
-                            .bg(rgb(theme::accent()))
-                            .w(relative(hearing.share())),
-                    ),
-            ),
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::text()))
+                    .child("Keep listening"),
+            )
+            .child(kit::switch("listen-keep-track", keeps))
+            .names(KEEP_LISTENING_HINT)
+            .on_click(cx.listener(|this, _, _, cx| this.keep_listening(cx)))
+    }
+
+    fn listen_stage(&self, stage: &Stage, length: Duration, cx: &mut Context<Self>) -> Div {
+        match stage {
+            Stage::Recording { hearing, from, nth } => {
+                listen_note(recording_said(from, length, *nth)).child(
+                    div()
+                        .h(px(4.0))
+                        .w_full()
+                        .rounded_full()
+                        .bg(rgb(theme::raised()))
+                        .child(
+                            div()
+                                .h_full()
+                                .rounded_full()
+                                .bg(rgb(theme::accent()))
+                                .w(relative(hearing.share())),
+                        ),
+                )
+            }
             Stage::Asking => listen_note("Asking who it is…".to_owned()),
             Stage::Found(found) => self.found_card(found, cx),
             Stage::Unknown => {
@@ -424,6 +460,31 @@ impl RootView {
                 )
             },
         )
+    }
+}
+
+fn recording_said(from: &Listening, length: Duration, nth: u8) -> String {
+    match nth {
+        1 => format!(
+            "Listening to {} for {} seconds…",
+            heard_from(from),
+            length.as_secs()
+        ),
+        _ => format!(
+            "Nothing named yet, so listening to {} again ({nth} of {TRIES_ON_A_MISS})…",
+            heard_from(from)
+        ),
+    }
+}
+
+fn following_said(following: &Following) -> Option<String> {
+    match following {
+        Following::Off => None,
+        Following::Waiting => Some(format!(
+            "Listening for the next song every {} seconds",
+            FOLLOWED_EVERY.as_secs()
+        )),
+        Following::Listening { .. } => Some("Listening for the next song…".to_owned()),
     }
 }
 
