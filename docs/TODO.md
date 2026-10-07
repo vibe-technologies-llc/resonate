@@ -101,8 +101,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   window imports on every core regardless of what is playing
 - The key is the PCM alone: two tracks of the same samples at another rate, count or mask (digital
   silence) share an object, and a standing object is taken on its size alone; needs a migration
-- A cover is kept as lossless pixels whatever it cost as a JPEG: a 200 KB cover can land several
-  times larger with its bytes dropped; keeping the original where smaller needs no new codec; a
+- A JPEG cover is kept byte for byte where its lossless JXL is larger, never smaller than it: a
   byte-exact JPEG transcode (`jxl-encoder` 0.3, AGPL, opt-in) is an unproven spike
 - Blanking a Matroska file stops at an element of unknown size or after 65 536 elements and lands
   what it blanked so far as stripped; a `TrackEntry` name, chapters and an MP4's track-level `meta`

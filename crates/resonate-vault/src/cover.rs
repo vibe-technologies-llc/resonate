@@ -68,6 +68,17 @@ pub(crate) fn size_of_jxl(bytes: &[u8]) -> Result<(u32, u32)> {
     }
 }
 
+pub(crate) fn size_of(bytes: &[u8], format: Option<ImageFormat>) -> Result<(u32, u32)> {
+    let Some(format) = format else {
+        return size_of_jxl(bytes);
+    };
+    let mut reading = image::ImageReader::new(Cursor::new(bytes));
+    reading.set_format(read_as(format));
+    reading.into_dimensions().map_err(|source| Error::Picture {
+        source: Box::new(source),
+    })
+}
+
 pub(crate) fn pixels_of_jxl(bytes: &[u8]) -> Result<RgbaImage> {
     let picture = jxl_oxide::JxlImage::builder()
         .read(Cursor::new(bytes))

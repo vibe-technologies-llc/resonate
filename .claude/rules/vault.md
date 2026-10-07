@@ -100,7 +100,7 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 
 ```
 <root>/audio/ab/abcdef…7f.flac
-<root>/covers/3c/3cd1…9a.jxl
+<root>/covers/3c/3cd1…9a.jxl    (or .jpg, .png, … where kept as it came)
 <root>/staging/<pid>-<n>.<ext>
 ```
 
@@ -154,12 +154,20 @@ when size, mtime or span moves; `note_vaulted` drops it when the row lands. Unre
 `image` decode, lossless JXL by `zune-jpegxl` at highest effort, read back with `jxl-oxide`,
 compared pixel for pixel before landing. Opaque: three channels; transparent: four.
 
-**The vault decodes JXL back to PNG, so `resonate-ui` is unchanged.** `Vault::picture` answers
-`CoverArt { format: Png, bytes }`, the type every caller takes (window hands gpui encoded bytes;
+**A cover is kept as it came where that is no larger than its JXL.** Lossless pixels of a lossy
+JPEG can weigh several times the JPEG: `keep_cover` encodes the JXL first and, where the bytes it
+was handed are no heavier, lands them under the same key with their own extension (`jpg`, `png`,
+`webp`, `gif`, `bmp`; `PICTURE_EXTENSIONS`), read back byte for byte. `held_cover` finds a key
+under any of them (an older build's JXL of the same picture stays the dedup hit), `covers` lists
+them all, and `picture` hands such a file back as it is, undrawn
+(`a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came`).
+
+**The vault decodes JXL back to PNG, so `resonate-ui` is unchanged.** `Vault::picture` answers a
+JXL as `CoverArt { format: Png, bytes }`, the type every caller takes (window hands gpui encoded bytes;
 `mpris::art::Pictures` writes a file a notification daemon can draw). `dependencies.md` forbids an
 image crate in `resonate-ui`; one decode in the format's owner serves both.
 
-A cover already under its key is a dedup hit sized from the JXL head (`cover::size_of_jxl`). **Drawn
+A cover already under its key is a dedup hit sized from its head (`cover::size_of`). **Drawn
 once a run**: `Drawings` holds the PNG under the cover's key, evicting past `DRAWN_BYTES_AT_MOST`
 (48 MiB); `Vault::forget` takes a drawing with the file; a `Forgetting` count drops a drawing made
 while its cover was being pruned.
@@ -206,7 +214,7 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
   superseded and goes. The upsert clears `vault_key`/`vault_path` where size, mtime or span moved
   (re-ripped file weighed again).
 - **`Library::prune_the_vault` (`--prune`) weighs a cover by its key.** Under the `Walk` guard it
-  removes audio objects no row names plus their `vault_objects` rows, every JXL under `covers/` no
+  removes audio objects no row names plus their `vault_objects` rows, every picture under `covers/` no
   album's `cover_key` holds, then staging. **An object's row goes only with its file**: one
   `Vault::forget` refuses keeps its row, counted in `Pruned::left`. **It walks `audio/` too**
   (`Vault::objects`), taking any object neither `vault_objects` nor a `tracks.vault_key` names, only

@@ -429,6 +429,46 @@ fn a_location_served_out_of_memory_is_kept_like_any_other() {
     assert_eq!(decoded(&held.path, SampleFormat::S16), samples);
 }
 
+fn photographed(width: u32, height: u32) -> CoverArt {
+    let mut state = 0x9e37_79b9_u32;
+    let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+    for _ in 0..width * height * 3 {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        pixels.push((state >> 24) as u8);
+    }
+    let mut written = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, 60)
+        .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
+        .expect("a written photograph");
+
+    CoverArt {
+        format: ImageFormat::Jpeg,
+        bytes: written,
+    }
+}
+
+#[test]
+fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = photographed(96, 64);
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jpg"));
+    assert_eq!(held.bytes, art.bytes.len() as u64);
+    assert_eq!((held.width, held.height), (96, 64));
+
+    let drawn = vault.picture(&held.path).expect("a drawable cover");
+    assert_eq!(drawn, art, "the picture came back otherwise than it went in");
+
+    let again = vault.keep_cover(&art).expect("a kept cover");
+    assert!(again.deduped);
+    assert_eq!((again.width, again.height), (96, 64));
+    assert_eq!(vault.holding().expect("a counted vault").covers, 1);
+}
+
 #[test]
 fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
     let tree = Tree::new();

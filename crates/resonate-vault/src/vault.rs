@@ -12,7 +12,8 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::{
-    Codec, Container, CoverArt, DecodeStatus, Decoder, MediaInfo, Sources, Speakers, TagSet, probe,
+    Codec, Container, CoverArt, DecodeStatus, Decoder, ImageFormat, MediaInfo, Sources, Speakers,
+    TagSet, probe,
 };
 use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
 
@@ -33,6 +34,14 @@ pub(crate) const AUDIO: &str = "audio";
 pub(crate) const COVERS: &str = "covers";
 pub(crate) const STAGING: &str = "staging";
 pub(crate) const COVER_EXTENSION: &str = "jxl";
+const PICTURE_EXTENSIONS: [&str; 6] = [COVER_EXTENSION, "jpg", "png", "webp", "gif", "bmp"];
+const AS_IT_CAME: [ImageFormat; 5] = [
+    ImageFormat::Jpeg,
+    ImageFormat::Png,
+    ImageFormat::Webp,
+    ImageFormat::Gif,
+    ImageFormat::Bmp,
+];
 pub(crate) const COMPRESSED_EXTENSION: &str = "zst";
 const FLAC_EXTENSION: &str = "flac";
 const WAVE_EXTENSION: &str = "wav";
@@ -385,10 +394,10 @@ impl Vault {
         let mut digest = Digest::default();
         digest.note(&art.bytes);
         let key = digest.settled();
-        let target = self.cover_path(key);
 
-        if target.is_file() {
-            let (width, height) = cover::size_of_jxl(&self.read_inside(&target)?)?;
+        if let Some(target) = self.held_cover(key) {
+            let (width, height) =
+                cover::size_of(&self.read_inside(&target)?, kept_as_it_came(&target))?;
             return Ok(KeptCover {
                 key,
                 bytes: self.sized(&target)?,
@@ -400,6 +409,10 @@ impl Vault {
         }
 
         let drawn = cover::as_jxl(art)?;
+        if art.bytes.len() <= drawn.bytes.len() {
+            return self.kept_as_it_came(key, art, &drawn);
+        }
+        let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
         self.written_inside(&staging, &drawn.bytes)?;
 
@@ -423,8 +436,50 @@ impl Vault {
         })
     }
 
+    fn kept_as_it_came(
+        &self,
+        key: VaultKey,
+        art: &CoverArt,
+        drawn: &cover::Drawn,
+    ) -> Result<KeptCover> {
+        let extension = art.format.extension();
+        let target = self.cover_path(key, extension);
+        let staging = self.staged(extension)?;
+        self.written_inside(&staging, &art.bytes)?;
+        if self.read_inside(&staging)? != art.bytes {
+            self.discard(&staging)?;
+            return Err(Error::PictureUnconfirmed {
+                width: drawn.width,
+                height: drawn.height,
+            });
+        }
+
+        let bytes = self.landed(&staging, &target)?;
+        Ok(KeptCover {
+            key,
+            path: target,
+            bytes,
+            width: drawn.width,
+            height: drawn.height,
+            deduped: false,
+        })
+    }
+
+    fn held_cover(&self, key: VaultKey) -> Option<PathBuf> {
+        PICTURE_EXTENSIONS
+            .into_iter()
+            .map(|extension| self.cover_path(key, extension))
+            .find(|path| path.is_file())
+    }
+
     pub fn picture(&self, path: &Path) -> Result<CoverArt> {
         self.inside(path)?;
+        if let Some(format) = kept_as_it_came(path) {
+            return Ok(CoverArt {
+                format,
+                bytes: self.read_inside(path)?,
+            });
+        }
         let key = named(path);
         if let Some(drawn) = key.and_then(|key| self.drawings.drawn(key)) {
             return Ok(drawn);
@@ -494,7 +549,11 @@ impl Vault {
         held.sort();
         Ok(held
             .into_iter()
-            .filter(|path| path.extension().and_then(|held| held.to_str()) == Some(COVER_EXTENSION))
+            .filter(|path| {
+                path.extension()
+                    .and_then(|held| held.to_str())
+                    .is_some_and(|held| PICTURE_EXTENSIONS.contains(&held))
+            })
             .filter_map(|path| named(&path).map(|key| HeldFile { key, path }))
             .collect())
     }
@@ -996,11 +1055,11 @@ impl Vault {
             .join(format!("{key}.{extension}"))
     }
 
-    fn cover_path(&self, key: VaultKey) -> PathBuf {
+    fn cover_path(&self, key: VaultKey, extension: &str) -> PathBuf {
         self.root
             .join(COVERS)
             .join(key.fanout())
-            .join(format!("{key}.{COVER_EXTENSION}"))
+            .join(format!("{key}.{extension}"))
     }
 
     fn staged(&self, extension: &str) -> Result<Staged> {
@@ -1279,6 +1338,13 @@ fn weighed(kept: Keeping, was: Option<u64>, declared: Box<TagSet>, bits: u8) -> 
         }),
         refused @ Keeping::Refused(_) => refused,
     }
+}
+
+fn kept_as_it_came(path: &Path) -> Option<ImageFormat> {
+    let extension = path.extension()?.to_str()?;
+    AS_IT_CAME
+        .into_iter()
+        .find(|format| format.extension() == extension)
 }
 
 fn names_a_place_inside(within: &Path) -> bool {
