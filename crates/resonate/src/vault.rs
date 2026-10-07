@@ -223,8 +223,19 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
 
     let mut held = 0_u64;
     let mut moved = Vec::new();
+    let mut unreached = Vec::new();
     for object in &objects {
-        let reads_back = vault.verify(&object.path, object.form).unwrap_or(false);
+        let reads_back = match vault.verify(&object.path, object.form) {
+            Ok(reads_back) => reads_back,
+            Err(error) if vault.failed_itself(&error) => {
+                unreached.push((object.path.clone(), error));
+                continue;
+            }
+            Err(error) => {
+                tracing::debug!(%error, path = %object.path.display(), "a vault object failed as it was read back");
+                false
+            }
+        };
         library.note_validated(&object.key, reads_back)?;
         if reads_back {
             held += 1;
@@ -236,14 +247,21 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     for path in &moved {
         said!("did not read back as what went in: {}", path.display());
     }
+    for (path, error) in &unreached {
+        said!(
+            "could not be read, so it was not weighed: {} ({error})",
+            path.display()
+        );
+    }
     said!(
-        "weighed {} | held {held} | moved {}",
+        "weighed {} | held {held} | moved {} | unreached {}",
         objects.len(),
-        moved.len()
+        moved.len(),
+        unreached.len()
     );
-    match moved.len() as u64 {
-        0 => Ok(()),
-        objects => Err(Error::ObjectsUnverified { objects }),
+    match (moved.len() as u64, unreached.len() as u64) {
+        (0, 0) => Ok(()),
+        (moved, unreached) => Err(Error::ObjectsUnverified { moved, unreached }),
     }
 }
 

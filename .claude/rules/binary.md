@@ -114,7 +114,9 @@ gives them no type). Decoders: `audio.md`.
   summary says `cancelled`); a second leaves at once. Cancelled: `Error::Cancelled { pass }` via
   `finished`, exit 1. Ran out with failures: `Error::FilesFailed { pass, failed }` via
   `none_failed`, exit 1, after the summary (scan: after its lookup). `vault --verify`:
-  `ObjectsUnverified`. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
+  `ObjectsUnverified { moved, unreached }`: an object that will not read back is noted unvalidated;
+  one the vault cannot reach (`Vault::failed_itself`: the file gone as `ObjectGone`, the drive
+  unmounted) is said apart and left as the catalog had it. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
   failures. A cancelled scan asks the reference nothing after. Handles are one
   `resonate_library::PassHandle` (`ScanHandle` etc. aliases); a dying thread answers
   `Error::Stopped { pass }` after the panic message goes to an error record (`pass::what_it_said`),

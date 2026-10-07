@@ -94,9 +94,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   vault can grow
 - A WAVE object packed before the frames came is one zstd frame naming no length: a backward seek in
   it still restarts the stream
-- `vault --verify` writes an object it could not open (unmounted vault, missing file) as one that
-  did not read back, never checks covers, offers nothing to mend one failing row. After the renewal
-  items
+- `vault --verify` never checks covers and offers nothing to mend one failing row. After the
+  renewal items
 - A cancel is heard only between rows: one long WAVE pass or FLAC encode cannot be interrupted; the
   window imports on every core regardless of what is playing
 - The key is the PCM alone: two tracks of the same samples at another rate, count or mask (digital

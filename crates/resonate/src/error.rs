@@ -458,8 +458,10 @@ pub enum Error {
     #[error("the {} finished, but {failed} of its files failed", pass_named(*pass))]
     FilesFailed { pass: PassKind, failed: u64 },
 
-    #[error("{objects} vault objects did not read back as what went in")]
-    ObjectsUnverified { objects: u64 },
+    #[error(
+        "{moved} vault objects did not read back as what went in and {unreached} could not be read at all"
+    )]
+    ObjectsUnverified { moved: u64, unreached: u64 },
 
     #[error("a tracing subscriber was already installed")]
     LoggingAlreadyInstalled,

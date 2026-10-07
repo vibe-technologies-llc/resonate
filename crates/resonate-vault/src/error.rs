@@ -56,6 +56,9 @@ pub enum Error {
     #[error("no vault is at {path}: the drive it is on may not be mounted", path = path.display())]
     NotThere { path: PathBuf },
 
+    #[error("the vault holds nothing at {path}", path = path.display())]
+    ObjectGone { path: PathBuf },
+
     #[error("a vault key is thirty-two hexadecimal letters")]
     NotAKey,
 

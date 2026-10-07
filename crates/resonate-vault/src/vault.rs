@@ -274,7 +274,9 @@ impl Vault {
                             | io::ErrorKind::ReadOnlyFilesystem
                     )
             }
-            Error::OutsideTheVault { .. } | Error::NotThere { .. } => true,
+            Error::OutsideTheVault { .. } | Error::NotThere { .. } | Error::ObjectGone { .. } => {
+                true
+            }
             Error::Source { .. }
             | Error::NotAKey
             | Error::Codec { .. }
@@ -495,6 +497,11 @@ impl Vault {
 
     pub fn verify(&self, path: &Path, form: Form) -> Result<bool> {
         self.inside(path)?;
+        if !path.is_file() {
+            return Err(Error::ObjectGone {
+                path: path.to_owned(),
+            });
+        }
         let Some(key) = named(path) else {
             return Ok(false);
         };

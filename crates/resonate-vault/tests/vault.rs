@@ -461,7 +461,10 @@ fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
     assert_eq!((held.width, held.height), (96, 64));
 
     let drawn = vault.picture(&held.path).expect("a drawable cover");
-    assert_eq!(drawn, art, "the picture came back otherwise than it went in");
+    assert_eq!(
+        drawn, art,
+        "the picture came back otherwise than it went in"
+    );
 
     let again = vault.keep_cover(&art).expect("a kept cover");
     assert!(again.deduped);
@@ -572,6 +575,15 @@ fn an_object_that_has_been_meddled_with_is_not_verified() {
     fs::write(&held.path, &bytes).expect("a meddled object");
 
     assert!(!vault.verify(&held.path, Form::Flac).unwrap_or(false));
+
+    fs::remove_file(&held.path).expect("an object taken away");
+    let gone = vault
+        .verify(&held.path, Form::Flac)
+        .expect_err("an object that is not there was weighed");
+    assert!(
+        vault.failed_itself(&gone),
+        "an object the vault lost was blamed on what went in: {gone}"
+    );
 }
 
 #[test]
