@@ -21,5 +21,5 @@ pub use crate::{
     files::VaultFiles,
     form::Form,
     key::VaultKey,
-    vault::{HeldFile, Holdings, Keeping, Kept, KeptCover, Refusal, Taking, Vault},
+    vault::{Halt, HeldFile, Holdings, Keeping, Kept, KeptCover, Refusal, Taking, Vault},
 };

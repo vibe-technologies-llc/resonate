@@ -6,7 +6,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -94,6 +94,33 @@ pub struct Taking<'a> {
     pub span: Option<FrameSpan>,
     pub renewing: bool,
     pub foretold: Option<VaultKey>,
+    pub halt: Halt<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Encoding {
+    spec: StreamSpec,
+    speakers: Speakers,
+    bits: u8,
+    codec: Codec,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Halt<'a>(Option<&'a AtomicBool>);
+
+impl<'a> Halt<'a> {
+    pub const NEVER: Self = Self(None);
+
+    pub const fn on(asked: &'a AtomicBool) -> Self {
+        Self(Some(asked))
+    }
+
+    pub(crate) fn heard(self) -> Result<()> {
+        match self.0.is_some_and(|asked| asked.load(Ordering::Relaxed)) {
+            true => Err(Error::Halted),
+            false => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -279,6 +306,7 @@ impl Vault {
             }
             Error::Source { .. }
             | Error::NotAKey
+            | Error::Halted
             | Error::Codec { .. }
             | Error::Unencodable { .. }
             | Error::Encoding { .. }
@@ -313,6 +341,7 @@ impl Vault {
                         span: None,
                         renewing: false,
                         foretold: None,
+                        halt: Halt::NEVER,
                     })
                 } else {
                     Ok(Keeping::Refused(Refusal::TooLarge))
@@ -368,17 +397,42 @@ impl Vault {
             Form::Kept if !whole => return Ok(Keeping::Refused(Refusal::CutFromAnother)),
             Form::Kept => self.kept_whole(taking, codec, &info, Some(decoder))?,
             Form::Wave if outgrows_a_wave => Keeping::Refused(Refusal::TooLarge),
-            Form::Wave => self.kept_as_wave(weighing, &mut decoder, info.spec, speakers, codec)?,
+            Form::Wave => self.kept_as_wave(
+                weighing,
+                &mut decoder,
+                info.spec,
+                speakers,
+                codec,
+                taking.halt,
+            )?,
             Form::Flac => match self.foretold_flac(taking, weighing, &mut decoder, &info, bits)? {
                 Foretold::Settled(kept) => kept,
-                Foretold::Unforetold => {
-                    self.kept_as_flac(weighing, &mut decoder, info.spec, speakers, bits, codec)?
-                }
+                Foretold::Unforetold => self.kept_as_flac(
+                    weighing,
+                    &mut decoder,
+                    Encoding {
+                        spec: info.spec,
+                        speakers,
+                        bits,
+                        codec,
+                    },
+                    taking.halt,
+                )?,
                 Foretold::Misdeclared => {
                     let (mut again, _) = Decoder::open(taking.sources, taking.location)
                         .map_err(|source| Error::codec(VaultOp::Read, source))?;
                     again.refuse_holes();
-                    self.kept_as_flac(weighing, &mut again, info.spec, speakers, bits, codec)?
+                    self.kept_as_flac(
+                        weighing,
+                        &mut again,
+                        Encoding {
+                            spec: info.spec,
+                            speakers,
+                            bits,
+                            codec,
+                        },
+                        taking.halt,
+                    )?
                 }
             },
         };
@@ -678,23 +732,28 @@ impl Vault {
         &self,
         weighing: Weighing,
         decoder: &mut Decoder,
-        spec: StreamSpec,
-        speakers: Speakers,
-        bits: u8,
-        codec: Codec,
+        encoding: Encoding,
+        halt: Halt<'_>,
     ) -> Result<Keeping> {
+        let Encoding {
+            spec,
+            speakers,
+            bits,
+            codec,
+        } = encoding;
         let (format, stored) = flac_depth(bits);
         decoder.set_output_format(format);
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let staging = self.staged(FLAC_EXTENSION)?;
-        let encoded = match flac::encode(decoder, spec, stored, &staging, weighing.smaller_than) {
-            Ok(encoded) => encoded,
-            Err(error) => {
-                self.discard(&staging)?;
-                return Err(error);
-            }
-        };
+        let encoded =
+            match flac::encode(decoder, spec, stored, &staging, weighing.smaller_than, halt) {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    self.discard(&staging)?;
+                    return Err(error);
+                }
+            };
 
         if encoded.frames == Frames::ZERO {
             self.discard(&staging)?;
@@ -748,6 +807,7 @@ impl Vault {
         spec: StreamSpec,
         speakers: Speakers,
         codec: Codec,
+        halt: Halt<'_>,
     ) -> Result<Keeping> {
         let format = if spec.format.is_float() {
             SampleFormat::F32
@@ -758,7 +818,7 @@ impl Vault {
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let staging = self.staged(WAVE_EXTENSION)?;
-        let written = match wave::write(decoder, spec, speakers, &staging) {
+        let written = match wave::write(decoder, spec, speakers, &staging, halt) {
             Ok(written) => written,
             Err(error) => {
                 self.discard(&staging)?;
@@ -804,7 +864,9 @@ impl Vault {
             return Ok(Keeping::Refused(Refusal::NoSmaller));
         }
         let packed = self.staged(&compressed_name(WAVE_EXTENSION))?;
-        if wave::compressed(&staging, &packed, weighing.smaller_than)? == wave::Packed::NoSmaller {
+        if wave::compressed(&staging, &packed, weighing.smaller_than, halt)?
+            == wave::Packed::NoSmaller
+        {
             return Ok(Keeping::Refused(Refusal::NoSmaller));
         }
 
@@ -1530,6 +1592,7 @@ mod tests {
                 span: None,
                 renewing: false,
                 foretold: None,
+                halt: Halt::NEVER,
             })
             .expect("a keeping")
         {
@@ -1601,6 +1664,7 @@ mod tests {
                 span: None,
                 renewing: false,
                 foretold: Some(landed.key),
+                halt: Halt::NEVER,
             })
             .expect("a keeping")
         {

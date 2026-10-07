@@ -325,7 +325,8 @@ mod tests {
         whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
         whole.extend_from_slice(&body);
         fs::write(&from, &whole).expect("written");
-        crate::wave::compressed_in_frames(&from, &path, None, FRAME_BYTES).expect("packed");
+        crate::wave::compressed_in_frames(&from, &path, None, FRAME_BYTES, crate::Halt::NEVER)
+            .expect("packed");
 
         let framed = frames_of(&path)
             .expect("a walk")

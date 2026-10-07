@@ -89,8 +89,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   it still restarts the stream
 - `vault --verify` never checks covers and offers nothing to mend one failing row. After the
   renewal items
-- A cancel is heard only between rows: one long WAVE pass or FLAC encode cannot be interrupted; the
-  window imports on every core regardless of what is playing
 - The key is the PCM alone: two tracks of the same samples at another rate, count or mask (digital
   silence) share an object, and a standing object is taken on its size alone; needs a migration
 - A JPEG cover is kept byte for byte where its lossless JXL is larger, never smaller than it: a

@@ -17,6 +17,7 @@ use resonate_codec::{DecodeStatus, Decoder};
 use resonate_core::{AudioBuffer, Frames, StreamSpec};
 
 use crate::{
+    Halt,
     error::{Error, FlacOp, Result, VaultOp},
     key::VaultKey,
     pcm::{self, BLOCK_FRAMES},
@@ -87,6 +88,7 @@ pub(crate) fn encode(
     bits: u8,
     into: &Path,
     ceiling: Option<u64>,
+    halt: Halt<'_>,
 ) -> Result<Encoded> {
     let channels = usize::from(spec.channel_count().get());
     let depth = usize::from(bits);
@@ -121,6 +123,7 @@ pub(crate) fn encode(
     let mut pending: Vec<i32> = Vec::with_capacity(whole_block * 2);
 
     loop {
+        halt.heard()?;
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Read, source))?;
@@ -282,7 +285,7 @@ mod tests {
             .expect("a readable source");
         decoder.set_output_format(SampleFormat::S16);
         let spec = StreamSpec::new(info.spec.rate, info.spec.channels, SampleFormat::S16);
-        encode(&mut decoder, spec, 16, into, ceiling).expect("an encode")
+        encode(&mut decoder, spec, 16, into, ceiling, Halt::NEVER).expect("an encode")
     }
 
     #[test]

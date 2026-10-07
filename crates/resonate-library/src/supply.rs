@@ -23,7 +23,7 @@ use resonate_providers::{
     Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers, TURNED_TO_APART,
     WAITED_ON_AFTER_AN_OFFER,
 };
-use resonate_vault::{Keeping, Taking};
+use resonate_vault::{Halt, Keeping, Taking};
 
 use crate::{
     Error, Library, Result, ScanOptions, Want,
@@ -364,6 +364,7 @@ fn landed(
                 span: None,
                 renewing: false,
                 foretold: None,
+                halt: Halt::NEVER,
             })
         }
         Delivery::Stream {

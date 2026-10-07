@@ -21,7 +21,8 @@ use resonate_core::{
     AlbumId, ArtistsDrawn, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
 };
 use resonate_engine::{
-    Command, Counting, Keeping, Listening, Placement, PlayerState, QueueItem, RepeatMode, stamp_of,
+    Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
+    RepeatMode, stamp_of,
 };
 use resonate_library::{
     ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
@@ -745,6 +746,9 @@ impl RootView {
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         cx.observe(&player, |this, player, cx| {
+            let playing = player.read(cx).state().playback == PlaybackState::Playing;
+            this.library
+                .update(cx, |library, _| library.heard_playing(playing));
             this.count_a_play(&player, cx);
             this.keep_the_queue(&player, cx);
             this.follow_the_playing_row(&player, cx);

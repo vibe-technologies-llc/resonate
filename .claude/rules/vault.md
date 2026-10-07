@@ -225,6 +225,18 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
   workers write their own catalog rows; the plan is re-sorted to request order (preview and apply
   list alike). `landed_or_standing` decides and renames under one lock. First error stops every
   worker; a panicking one is `Error::Stopped`.
+- **A cancel is heard inside a row, not only between rows.** `Taking::halt` is a `Halt` over the
+  import's cancel flag (`Halt::NEVER` for a delivery); `wave::write` and `flac::encode` look at it
+  each decoded block, `wave::compressed` each read, and answer `Error::Halted`, the staged file
+  discarded as for any failure. `keep_one` answers a halted keep as no outcome: the row is neither
+  counted, stamped refused nor passed over, and is weighed whole by the next import
+  (`a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging`).
+- **An import yields cores to what plays.** `ImportProgress::hold_to` lets the first *n* workers
+  draw rows, the rest waiting `HELD_BACK_LOOKS_AGAIN_AFTER` between looks (a worker mid-row finishes
+  it first); `None` lets every one work. The window holds an import to half the cores while the
+  transport plays (`LibraryModel::heard_playing`, from `RootView`'s player observer), all of them
+  otherwise
+  (`workers_past_what_the_import_is_held_to_wait_and_every_one_works_once_let_go`).
 - **A row leaves the vault only where its own file is still there.** `Library::release_from_vault`
   (`vault --release`) clears `vault_key`/`vault_path` on every vaulted row whose `tracks.path`
   exists, counting the rest in `Released::stranded`. Objects wait for `--prune`, the one deleting

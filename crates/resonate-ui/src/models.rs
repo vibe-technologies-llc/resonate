@@ -798,6 +798,7 @@ pub struct LibraryModel {
     sought: Arc<Sought>,
     reach: usize,
     page_moved: bool,
+    playing: bool,
     albums_counted: u32,
     artists_counted: u32,
     tracks_measured: Measured,
@@ -1010,6 +1011,7 @@ impl LibraryModel {
             sought: Arc::default(),
             reach,
             page_moved: false,
+            playing: false,
             albums_counted: 0,
             artists_counted: 0,
             tracks_measured: Measured::default(),
@@ -4800,6 +4802,16 @@ impl LibraryModel {
         self.previewed_import
     }
 
+    pub(crate) fn heard_playing(&mut self, playing: bool) {
+        if self.playing == playing {
+            return;
+        }
+        self.playing = playing;
+        if let Work::Importing(_, progress) = &self.work {
+            progress.hold_to(workers_beside(playing));
+        }
+    }
+
     pub fn import(&mut self, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
             toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
@@ -4823,6 +4835,7 @@ impl LibraryModel {
             }
         };
 
+        handle.progress().hold_to(workers_beside(self.playing));
         self.work = Work::Importing(pass, Arc::clone(handle.progress()));
         self.imported = None;
         self.previewed_import = Planned::Not;
@@ -6199,6 +6212,14 @@ fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
             },
         },
     })
+}
+
+fn workers_beside(playing: bool) -> Option<NonZeroUsize> {
+    if !playing {
+        return None;
+    }
+    let cores = thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    NonZeroUsize::new(cores / 2).or(Some(NonZeroUsize::MIN))
 }
 
 fn reach_covering(reach: usize, drawn_to: usize) -> usize {

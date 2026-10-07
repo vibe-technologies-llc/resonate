@@ -7,19 +7,22 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     thread,
+    time::Duration,
 };
 
 use ahash::AHashSet;
 use parking_lot::Mutex;
 use resonate_codec::{Codec, Sources};
 use resonate_core::{AlbumId, TrackId};
-use resonate_vault::{Form, Keeping, Refusal, Taking, Vault};
+use resonate_vault::{Error as VaultError, Form, Halt, Keeping, Refusal, Taking, Vault};
 
 use crate::{
     Error, Library, Result,
     db::TrackToVault,
     pass::{Cancelling, ImportHandle, PassHandle, PassKind},
 };
+
+const HELD_BACK_LOOKS_AGAIN_AFTER: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug)]
 pub struct ImportOptions {
@@ -117,6 +120,7 @@ pub struct ImportProgress {
     was_bytes: AtomicU64,
     bytes: AtomicU64,
     cancelled: AtomicBool,
+    held_to: AtomicUsize,
 }
 
 impl ImportProgress {
@@ -139,6 +143,18 @@ impl ImportProgress {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    pub fn hold_to(&self, workers: Option<NonZeroUsize>) {
+        self.held_to
+            .store(workers.map_or(0, NonZeroUsize::get), Ordering::Relaxed);
+    }
+
+    fn lets_work(&self, worker: usize) -> bool {
+        match self.held_to.load(Ordering::Relaxed) {
+            0 => true,
+            held_to => worker < held_to,
+        }
     }
 }
 
@@ -266,7 +282,7 @@ impl<'a> Shared<'a> {
         for index in 0..workers.get() {
             match thread::Builder::new()
                 .name(format!("resonate-import-{index}"))
-                .spawn_scoped(scope, || self.work())
+                .spawn_scoped(scope, move || self.work(index))
             {
                 Ok(worker) => spawned.push(worker),
                 Err(source) => {
@@ -294,18 +310,26 @@ impl<'a> Shared<'a> {
         first_error.map_or(Ok(settled), Err)
     }
 
-    fn work(&self) -> Result<Vec<(usize, Outcome)>> {
+    fn work(&self, worker: usize) -> Result<Vec<(usize, Outcome)>> {
         let mut done = Vec::new();
         while !self.progress.is_cancelled() && !self.failed.load(Ordering::Relaxed) {
+            if !self.progress.lets_work(worker) {
+                thread::sleep(HELD_BACK_LOOKS_AGAIN_AFTER);
+                continue;
+            }
             let claimed = self.next.fetch_add(1, Ordering::Relaxed);
             let Some(&at) = self.claimed_in.get(claimed) else {
                 break;
             };
             let row = &self.rows[at];
             let kept = keep_one(self.library, self.vault, self.sources, row, self.progress)
-                .and_then(|outcome| self.cover_of(row).map(|()| outcome));
+                .and_then(|outcome| match outcome {
+                    Some(outcome) => self.cover_of(row).map(|()| Some(outcome)),
+                    None => Ok(None),
+                });
             match kept {
-                Ok(outcome) => done.push((at, outcome)),
+                Ok(None) => break,
+                Ok(Some(outcome)) => done.push((at, outcome)),
                 Err(error) => {
                     self.failed.store(true, Ordering::Relaxed);
                     return Err(error);
@@ -332,10 +356,10 @@ fn keep_one(
     sources: &Sources,
     row: &TrackToVault,
     progress: &ImportProgress,
-) -> Result<Outcome> {
+) -> Result<Option<Outcome>> {
     let asked = wanted(row);
     if !row.path.is_file() {
-        return Ok(passed(progress, &asked, Passing::SourceGone));
+        return Ok(Some(passed(progress, &asked, Passing::SourceGone)));
     }
 
     let location = row.location();
@@ -345,20 +369,22 @@ fn keep_one(
         span: row.span,
         renewing: row.renewing,
         foretold: row.foretold,
+        halt: Halt::on(&progress.cancelled),
     };
 
     match vault.keep(&taking) {
+        Err(VaultError::Halted) => Ok(None),
         Err(source) if vault.failed_itself(&source) => Err(Error::Vault {
             path: row.path.clone(),
             source: Box::new(source),
         }),
         Err(source) => {
             tracing::warn!(path = %row.path.display(), %source, "the vault could not keep a track");
-            Ok(passed(progress, &asked, Passing::Unreadable))
+            Ok(Some(passed(progress, &asked, Passing::Unreadable)))
         }
         Ok(Keeping::Refused(refusal)) => {
             library.note_vault_refused(row)?;
-            Ok(passed(progress, &asked, Passing::Refused(refusal)))
+            Ok(Some(passed(progress, &asked, Passing::Refused(refusal))))
         }
         Ok(Keeping::Kept(kept)) => {
             let asked = Wanted {
@@ -374,12 +400,12 @@ fn keep_one(
             } else {
                 progress.bytes.fetch_add(kept.bytes, Ordering::Relaxed);
             }
-            Ok(Outcome::Vaulted(Vaulted {
+            Ok(Some(Outcome::Vaulted(Vaulted {
                 wanted: asked,
                 to: kept.path,
                 bytes: kept.bytes,
                 deduped: kept.deduped,
-            }))
+            })))
         }
     }
 }
@@ -481,6 +507,19 @@ mod tests {
 
     use super::*;
     use crate::{ScanOptions, store};
+
+    #[test]
+    fn workers_past_what_the_import_is_held_to_wait_and_every_one_works_once_let_go() {
+        let progress = ImportProgress::default();
+        assert!((0..8).all(|worker| progress.lets_work(worker)));
+
+        progress.hold_to(NonZeroUsize::new(2));
+        assert!(progress.lets_work(1));
+        assert!(!progress.lets_work(2));
+
+        progress.hold_to(None);
+        assert!(progress.lets_work(7));
+    }
 
     const RATE: u32 = 44_100;
     const FRAMES: u32 = 44_100;

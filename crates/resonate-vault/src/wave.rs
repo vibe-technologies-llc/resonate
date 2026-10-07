@@ -8,6 +8,7 @@ use resonate_codec::{DecodeStatus, Decoder, Speakers};
 use resonate_core::{AudioBuffer, ChannelCount, Frames, SampleFormat, StreamSpec};
 
 use crate::{
+    Halt,
     error::{Error, Result, VaultOp},
     key::VaultKey,
     pcm::{self, Digest},
@@ -55,6 +56,7 @@ pub(crate) fn write(
     spec: StreamSpec,
     speakers: Speakers,
     into: &Path,
+    halt: Halt<'_>,
 ) -> Result<Written> {
     let file = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
     let mut writer = BufWriter::new(file);
@@ -71,6 +73,7 @@ pub(crate) fn write(
     let mut pcm_bytes = 0_u64;
 
     loop {
+        halt.heard()?;
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Read, source))?;
@@ -143,8 +146,13 @@ impl<W: Write> Write for Counted<W> {
     }
 }
 
-pub(crate) fn compressed(from: &Path, into: &Path, smaller_than: Option<u64>) -> Result<Packed> {
-    compressed_in_frames(from, into, smaller_than, PACKED_FRAME_BYTES)
+pub(crate) fn compressed(
+    from: &Path,
+    into: &Path,
+    smaller_than: Option<u64>,
+    halt: Halt<'_>,
+) -> Result<Packed> {
+    compressed_in_frames(from, into, smaller_than, PACKED_FRAME_BYTES, halt)
 }
 
 pub(crate) fn compressed_in_frames(
@@ -152,6 +160,7 @@ pub(crate) fn compressed_in_frames(
     into: &Path,
     smaller_than: Option<u64>,
     frame_bytes: u64,
+    halt: Halt<'_>,
 ) -> Result<Packed> {
     let written = |source| Error::io(VaultOp::Write, into, source);
     let read = |source| Error::io(VaultOp::Read, from, source);
@@ -176,6 +185,7 @@ pub(crate) fn compressed_in_frames(
             .map_err(written)?;
         let mut owed = framed;
         while owed > 0 {
+            halt.heard()?;
             let taken = usize::try_from(owed.min(buffer.len() as u64)).unwrap_or(buffer.len());
             reading.read_exact(&mut buffer[..taken]).map_err(read)?;
             encoder.write_all(&buffer[..taken]).map_err(written)?;
@@ -304,7 +314,7 @@ mod tests {
             .collect();
         fs::write(&from, &noise).expect("a noisy file");
 
-        let packed = compressed(&from, &into, Some(CEILING)).expect("a compression");
+        let packed = compressed(&from, &into, Some(CEILING), Halt::NEVER).expect("a compression");
 
         assert_eq!(packed, Packed::NoSmaller);
         let written = fs::metadata(&into).map_or(0, |held| held.len());

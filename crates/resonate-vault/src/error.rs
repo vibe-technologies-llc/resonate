@@ -62,6 +62,9 @@ pub enum Error {
     #[error("a vault key is thirty-two hexadecimal letters")]
     NotAKey,
 
+    #[error("the keep was halted before it settled")]
+    Halted,
+
     #[error("{op:?} against a media stream failed")]
     Codec {
         op: VaultOp,
