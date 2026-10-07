@@ -38,6 +38,8 @@ pub(crate) const MOVING_HINT: &str = concat!(
     ". ",
     keyed!("Take it away", key!(drop_reached)),
     ". ",
+    keyed!("Open its menu", "menu", key!(open_menu)),
+    ". ",
     keyed!("Reach every row between", "shift-click")
 );
 

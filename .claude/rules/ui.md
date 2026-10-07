@@ -2408,6 +2408,15 @@ is never named.
   covers, queue row, playlist row, column header, search box, lyric line each carry their own menu;
   a sidebar row, settings control and missing row deliberately carry none (each would offer only
   what one press does).
+- **The reached row's menu opens from the keyboard** (`menu`, or `shift-f10`: `OpenTheMenu`). A row
+  drawing a menu through `menu::opens_a_reachable_menu` with an `AtTheReach` (the reach's moving
+  row, `RootView::at_the_reach`; queue, playlist and track rows, album and artist cells and rows,
+  playlist cards and rows) lays a canvas whose prepaint keeps its bounds and its menu's builder as
+  the `ReachedMenu` global; `open_the_reached_menu` builds that menu only where the global names the
+  reach in force, so a row scrolled away or a reach since moved opens nothing stale. It opens in from
+  the row's left edge at its middle, its first entry reached, so the arrows and `enter` press any
+  entry (*Add to playlist…*, *Go to artist*, *Share*, favouring) as the right press would
+  (`the_menu_key_opens_the_reached_rows_menu_and_the_arrows_and_enter_press_an_entry`).
 - **Copies go to the compositor over `ext-data-control`, not gpui.** gpui 0.2.2's Wayland
   `write_to_clipboard` sets the selection under the last *key* press's serial; a pointer copy (path,
   lyric line, share) carried none or a stale one, so KWin kept the old clipboard. `clipboard::copy`

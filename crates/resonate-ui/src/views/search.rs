@@ -9,7 +9,7 @@ use crate::{
     icons::Icon,
     theme, toast,
     views::{
-        browser::Plays,
+        browser::{Plays, Rowed},
         hint::Names,
         kit::{self, Found as _, Tone},
         listing,
@@ -648,8 +648,11 @@ impl RootView {
                         &tracks,
                         index,
                         track,
-                        playing == Some(track.id),
-                        Plays::AsTheListingIsDrawn { in_an_album: false },
+                        Rowed {
+                            playing: playing == Some(track.id),
+                            plays: Plays::AsTheListingIsDrawn { in_an_album: false },
+                            reach: self.at_the_reach(Shift::Listing(Listed::Top), index),
+                        },
                         cx,
                     ),
                     reached,

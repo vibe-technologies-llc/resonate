@@ -34,7 +34,7 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
-        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, PasteAway, Pause,
+        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, OpenTheMenu, PasteAway, Pause,
         PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove,
         ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove,
         ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
@@ -60,7 +60,7 @@ use crate::{
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis},
         listing::{self, Pictured},
-        menu::{self, Menu},
+        menu::{self, AtTheReach, Menu},
         missing::MissingShows,
         part::{Parts, Region},
         playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
@@ -1938,6 +1938,32 @@ impl RootView {
     pub(crate) fn reaches(&self, shift: Shift, row: usize) -> bool {
         self.reach
             .is_some_and(|reach| reach.shift == shift && reach.rows().holds(row))
+    }
+
+    pub(crate) fn at_the_reach(&self, shift: Shift, row: usize) -> Option<AtTheReach> {
+        self.reach
+            .filter(|reach| reach.shift == shift && reach.row == row)
+            .map(|_| AtTheReach { shift, row })
+    }
+
+    fn open_the_reached_menu(&mut self, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
+        let Some((shift, held)) = self.reachable(cx) else {
+            return;
+        };
+        let Some(reach) = self.reach_in(shift, held) else {
+            return;
+        };
+        let at = AtTheReach {
+            shift,
+            row: reach.row,
+        };
+        if let Some(menu) = menu::offered_at_the_reach(at, self, cx) {
+            self.open_a_menu(menu, cx);
+        }
     }
 
     pub(crate) fn acting_on(&self, shift: Shift, row: usize) -> Span {
@@ -4629,6 +4655,9 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &PlayReached, window, cx| {
                 this.play_reached_rows(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenTheMenu, _, cx| {
+                this.open_the_reached_menu(cx);
             }))
             .on_action(cx.listener(|this, _: &UndoEdit, _, cx| this.undo_edit(cx)))
             .on_action(cx.listener(|this, _: &RedoEdit, _, cx| this.redo_edit(cx)))

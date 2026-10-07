@@ -769,8 +769,10 @@ impl RootView {
                                                 }
                                             },
                                         ));
-                                    let listed = menu::opens_a_menu(
+                                    let reach = this.at_the_reach(Shift::Queue, index);
+                                    let listed = menu::opens_a_reachable_menu(
                                         listed,
+                                        reach,
                                         move |this, at, cx| {
                                             let taken = this.acting_on(Shift::Queue, index);
                                             let put = Arc::clone(&menued);

@@ -107,6 +107,7 @@ actions!(
         RaiseRow,
         LowerRow,
         PlayReached,
+        OpenTheMenu,
         UndoEdit,
         RedoEdit,
         PasteAway,
@@ -768,6 +769,8 @@ const FORWARD_KEY: &str = "forward";
 
 const BACK_KEY: &str = "back";
 
+const MENU_KEY: &str = "menu";
+
 fn answering_anywhere() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new(PLAY_KEY, TogglePlayPause, None),
@@ -819,6 +822,8 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
         KeyBinding::new(key!(raise_row), RaiseRow, typed),
         KeyBinding::new(key!(lower_row), LowerRow, typed),
         KeyBinding::new(key!(play_reached), PlayReached, typed),
+        KeyBinding::new(key!(open_menu), OpenTheMenu, typed),
+        KeyBinding::new(MENU_KEY, OpenTheMenu, typed),
         KeyBinding::new(key!(undo), UndoEdit, typed),
         KeyBinding::new(key!(redo), RedoEdit, typed),
         KeyBinding::new("ctrl-y", RedoEdit, typed),

@@ -92,6 +92,9 @@ macro_rules! key {
     (drop_reached) => {
         "delete"
     };
+    (open_menu) => {
+        "shift-f10"
+    };
     (band_higher) => {
         "right"
     };
@@ -136,7 +139,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 37] = [
+    const NAMED: [&str; 38] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -168,6 +171,7 @@ mod tests {
         key!(lower_row),
         key!(play_reached),
         key!(drop_reached),
+        key!(open_menu),
         key!(band_higher),
         key!(band_lower),
         key!(band_louder),

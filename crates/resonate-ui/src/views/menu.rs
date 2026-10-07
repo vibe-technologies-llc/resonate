@@ -1,9 +1,9 @@
 use std::{path::Path, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Context, Div, MouseButton, MouseDownEvent, Pixels,
-    Point, SharedString, Stateful, Window, anchored, deferred, div, hsla, point, prelude::*, px,
-    rgb,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, Global, MouseButton,
+    MouseDownEvent, Pixels, Point, SharedString, Stateful, Window, anchored, canvas, deferred, div,
+    hsla, point, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::Placement;
@@ -16,13 +16,31 @@ use crate::{
     views::{
         kit::{self, EndsInAnEllipsis as _},
         playlists::Held,
+        reorder::Shift,
         root::RootView,
     },
 };
 
 const MENU_GROUP: &str = "menu-entry";
+const OPENED_IN_FROM_THE_ROWS_EDGE: f32 = 24.0;
 
 type Doing = dyn Fn(&mut RootView, &mut Window, &mut Context<RootView>);
+
+type Offers = dyn Fn(&mut RootView, Point<Pixels>, &mut Context<RootView>) -> Menu;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AtTheReach {
+    pub(crate) shift: Shift,
+    pub(crate) row: usize,
+}
+
+struct ReachedMenu {
+    reach: AtTheReach,
+    drawn: Bounds<Pixels>,
+    offers: Rc<Offers>,
+}
+
+impl Global for ReachedMenu {}
 
 #[derive(Clone)]
 pub(crate) struct Menu {
@@ -318,6 +336,53 @@ impl RootView {
 
 fn apart() -> Div {
     div().my_1().mx_2().h(px(1.0)).bg(rgb(theme::border()))
+}
+
+pub(crate) fn opens_a_reachable_menu(
+    element: Stateful<Div>,
+    reach: Option<AtTheReach>,
+    offers: impl Fn(&mut RootView, Point<Pixels>, &mut Context<RootView>) -> Menu + 'static,
+    cx: &mut Context<RootView>,
+) -> Stateful<Div> {
+    let offers: Rc<Offers> = Rc::new(offers);
+    let pressed = Rc::clone(&offers);
+    let element = opens_a_menu(element, move |this, at, cx| pressed(this, at, cx), cx);
+    let Some(reach) = reach else {
+        return element;
+    };
+
+    element.child(
+        canvas(
+            move |drawn, _, cx| {
+                cx.set_global(ReachedMenu {
+                    reach,
+                    drawn,
+                    offers: Rc::clone(&offers),
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .inset_0(),
+    )
+}
+
+pub(crate) fn offered_at_the_reach(
+    reach: AtTheReach,
+    this: &mut RootView,
+    cx: &mut Context<RootView>,
+) -> Option<Menu> {
+    let (drawn, offers) = cx
+        .try_global::<ReachedMenu>()
+        .filter(|kept| kept.reach == reach)
+        .map(|kept| (kept.drawn, Rc::clone(&kept.offers)))?;
+    let at = point(
+        drawn.left() + px(OPENED_IN_FROM_THE_ROWS_EDGE),
+        drawn.center().y,
+    );
+    let mut menu = offers(this, at, cx);
+    menu.steps(1);
+    Some(menu)
 }
 
 pub(crate) fn opens_a_menu(

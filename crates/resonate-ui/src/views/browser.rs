@@ -31,7 +31,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
-        menu::{self, Called, Menu},
+        menu::{self, AtTheReach, Called, Menu},
         missing::MissingShows,
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
@@ -150,6 +150,13 @@ pub(crate) fn controls_width(controls: usize) -> f32 {
 const CELL_GROUP: &str = "album-cell";
 
 const SHELF_AT_MOST: usize = 48;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Rowed {
+    pub(crate) playing: bool,
+    pub(crate) plays: Plays,
+    pub(crate) reach: Option<AtTheReach>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Plays {
@@ -280,11 +287,7 @@ impl RootView {
                                                     .skip(first)
                                                     .take(columns)
                                                     .map(|(at, album)| {
-                                                        let reached = this.reaches(
-                                                            Shift::Listing(Listed::Albums),
-                                                            at,
-                                                        );
-                                                        this.album_cell(album, reached, cx)
+                                                        this.album_cell(album, at, cx)
                                                     });
                                                 drawn.push(
                                                     div()
@@ -331,8 +334,8 @@ impl RootView {
         (((width + theme::grid_gap()) / cell).floor() as usize).max(1)
     }
 
-    fn album_cell(&self, album: &Album, reached: bool, cx: &mut Context<Self>) -> Stateful<Div> {
-        self.album_cell_captioned(album, theme::grid_cover(), Caption::ByArtist, reached, cx)
+    fn album_cell(&self, album: &Album, at: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+        self.album_cell_captioned(album, theme::grid_cover(), Caption::ByArtist, Some(at), cx)
     }
 
     pub(crate) fn album_cell_at(
@@ -341,7 +344,7 @@ impl RootView {
         side: f32,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        self.album_cell_captioned(album, side, Caption::ByArtist, false, cx)
+        self.album_cell_captioned(album, side, Caption::ByArtist, None, cx)
     }
 
     fn album_cell_captioned(
@@ -349,10 +352,12 @@ impl RootView {
         album: &Album,
         side: f32,
         caption: Caption,
-        reached: bool,
+        listed_at: Option<usize>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = album.id;
+        let reached = listed_at.is_some_and(|at| self.reaches(Shift::Listing(Listed::Albums), at));
+        let reach = listed_at.and_then(|at| self.at_the_reach(Shift::Listing(Listed::Albums), at));
         let (lit_title, lit_artist) = {
             let search = self.library.read(cx).search();
             (
@@ -482,8 +487,9 @@ impl RootView {
                 this.opened(Selection::Album(id), cx);
             }));
 
-        menu::opens_a_menu(
+        menu::opens_a_reachable_menu(
             cell,
+            reach,
             move |_, at, _| album_menu(at, id, owner).favours(Favoured::Album(id), favourite),
             cx,
         )
@@ -682,8 +688,11 @@ impl RootView {
                                             })),
                                         reached,
                                     );
-                                    rows.push(menu::opens_a_menu(
+                                    let reach =
+                                        this.at_the_reach(Shift::Listing(Listed::Artists), index);
+                                    rows.push(menu::opens_a_reachable_menu(
                                         listed,
+                                        reach,
                                         move |_, at, _| {
                                             artist_menu(at, id)
                                                 .favours(Favoured::Artist(id), favourite)
@@ -813,8 +822,16 @@ impl RootView {
                                                         &tracks,
                                                         held,
                                                         track,
-                                                        playing == Some(track.id),
-                                                        Plays::AsTheListingIsDrawn { in_an_album },
+                                                        Rowed {
+                                                            playing: playing == Some(track.id),
+                                                            plays: Plays::AsTheListingIsDrawn {
+                                                                in_an_album,
+                                                            },
+                                                            reach: this.at_the_reach(
+                                                                Shift::Listing(Listed::Tracks),
+                                                                index,
+                                                            ),
+                                                        },
                                                         cx,
                                                     ),
                                                     reached,
@@ -865,10 +882,14 @@ impl RootView {
         tracks: &Arc<[Track]>,
         index: usize,
         track: &Track,
-        playing: bool,
-        plays: Plays,
+        rowed: Rowed,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let Rowed {
+            playing,
+            plays,
+            reach,
+        } = rowed;
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
         let menued = Arc::clone(tracks);
@@ -1013,8 +1034,9 @@ impl RootView {
                 }
             }));
 
-        menu::opens_a_menu(
+        menu::opens_a_reachable_menu(
             row,
+            reach,
             move |this, at, cx| {
                 let Some(track) = menued.get(index) else {
                     return Menu::at(at);
@@ -1557,8 +1579,10 @@ impl RootView {
                 this.opened(Selection::Artist(id), cx);
             }));
 
-        menu::opens_a_menu(
+        let reach = self.at_the_reach(Shift::Listing(Listed::Artists), at);
+        menu::opens_a_reachable_menu(
             cell,
+            reach,
             move |_, at, _| artist_menu(at, id).favours(Favoured::Artist(id), favourite),
             cx,
         )
@@ -2291,7 +2315,7 @@ impl RootView {
                     album,
                     theme::grid_cover(),
                     Caption::Beside(artist),
-                    false,
+                    None,
                     cx,
                 )
                 .into_any_element(),

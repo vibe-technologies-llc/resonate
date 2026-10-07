@@ -62,8 +62,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   library lands on row 2 000
 - Only Settings and the search field are tab stops: transport buttons, sidebar entries, heading
   buttons, seek and volume rails and every row control cannot be focused or pressed by keyboard
-- A menu opens on the right button alone: a row's *Add to playlist*, *Go to artist*, *Share* and
-  *Favourite* have no key. After the focus item
 - A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row alone;
   nothing adds a row with Control. After the `End` item
 - **Blocked on gpui:** nothing is exposed to a screen reader: published gpui 0.2.2 carries no

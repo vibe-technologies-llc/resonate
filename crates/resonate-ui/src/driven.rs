@@ -649,6 +649,42 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_menu_key_opens_the_reached_rows_menu_and_the_arrows_and_enter_press_an_entry(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
+        driven.cx.simulate_keystrokes("shift-f10");
+        assert!(
+            driven.read(|root, _| root.menu.is_none()),
+            "a menu opened with no row reached"
+        );
+
+        driven.cx.simulate_keystrokes("down menu");
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "the menu key opened no menu on the reached row"
+        );
+
+        driven.cx.simulate_keystrokes("down down enter");
+        assert!(
+            driven.read(|root, _| root.menu.is_none()),
+            "the menu stayed open"
+        );
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        driven.cx.simulate_keystrokes("shift-f10");
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "shift-f10 opened no menu on the reached row"
+        );
+    }
+
+    #[gpui::test]
     fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
         cx: &mut TestAppContext,
     ) {

@@ -9,7 +9,7 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::{Plays, TRACK_CONTROLS},
+        browser::{Plays, Rowed, TRACK_CONTROLS},
         kit, listing,
         reorder::{self, Listed, Shift},
         root::{RootView, empty},
@@ -127,8 +127,14 @@ impl RootView {
                                         &rows,
                                         index,
                                         track,
-                                        playing == Some(track.id),
-                                        Plays::TheseRows,
+                                        Rowed {
+                                            playing: playing == Some(track.id),
+                                            plays: Plays::TheseRows,
+                                            reach: this.at_the_reach(
+                                                Shift::Listing(Listed::Favourites),
+                                                index,
+                                            ),
+                                        },
                                         cx,
                                     ),
                                     reached,

@@ -1312,8 +1312,14 @@ impl RootView {
                 }
             }));
         let edited = rows.are_edited();
-        let listed = menu::opens_a_menu(
+        let reach = if reaches {
+            self.at_the_reach(shift, index)
+        } else {
+            None
+        };
+        let listed = menu::opens_a_reachable_menu(
             listed,
+            reach,
             move |this, at, cx| {
                 let names = Called {
                     title: title.clone(),
@@ -1728,8 +1734,14 @@ impl RootView {
                     this.show_playlist(Some(id), cx);
                 }));
 
+        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
         reorder::marked(
-            menu::opens_a_menu(listed, move |_, at, _| playlist_menu(at, id, pinned), cx),
+            menu::opens_a_reachable_menu(
+                listed,
+                reach,
+                move |_, at, _| playlist_menu(at, id, pinned),
+                cx,
+            ),
             reached,
         )
     }
@@ -1856,7 +1868,13 @@ impl RootView {
                 this.show_playlist(Some(id), cx);
             }));
 
-        menu::opens_a_menu(cell, move |_, at, _| playlist_menu(at, id, pinned), cx)
+        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
+        menu::opens_a_reachable_menu(
+            cell,
+            reach,
+            move |_, at, _| playlist_menu(at, id, pinned),
+            cx,
+        )
     }
 
     fn pin_mark(&self, id: PlaylistId, pinned: bool, cx: &mut Context<Self>) -> Stateful<Div> {
