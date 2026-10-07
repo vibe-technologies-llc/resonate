@@ -38,7 +38,7 @@ const STOOD_IN: &str = "SELECT t.vault_path, t.title, t.artist, coalesce(a.relea
             r.name, t.track_number, t.disc_number, coalesce(a.date, CAST(a.year AS TEXT)),
             t.genre, t.isrc, t.mbid, t.release_track_mbid, t.artist_mbid, a.mbid, r.mbid,
             a.release_group, t.rg_track_gain, t.rg_track_peak, t.rg_album_gain,
-            t.rg_album_peak, t.lyrics, t.id
+            t.rg_album_peak, t.lyrics, t.id, t.vault_bits
        FROM tracks t
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = a.artist_id
@@ -61,23 +61,26 @@ impl StandIn for Vaulted {
         let (start, frames) = store::span_columns(span);
 
         let found = self.inner.read(|connection| {
-            let Some((within, id, mut tags)) = connection
+            let Some(mut standing) = connection
                 .query_row(STOOD_IN, params![path, start, frames], stood_in)
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))?
             else {
                 return Ok(None);
             };
-            fill_what_was_kept(connection, id, &mut tags)?;
-            Ok(Some((within, tags)))
+            fill_what_was_kept(connection, standing.id, &mut standing.tags)?;
+            Ok(Some(standing))
         });
         let found = found.and_then(|found| {
             found
-                .map(|(within, tags)| {
-                    self.inner.in_the_vault(&within).map(|object| StoodIn {
-                        location: MediaLocation::local(object),
-                        tags,
-                    })
+                .map(|standing| {
+                    self.inner
+                        .in_the_vault(&standing.object)
+                        .map(|object| StoodIn {
+                            location: MediaLocation::local(object),
+                            tags: standing.tags,
+                            bits: standing.bits,
+                        })
                 })
                 .transpose()
         });
@@ -134,9 +137,20 @@ fn fill_what_was_kept(connection: &Connection, track: i64, tags: &mut TagSet) ->
     Ok(())
 }
 
-fn stood_in(row: &Row<'_>) -> rusqlite::Result<(String, i64, TagSet)> {
+struct Standing {
+    object: String,
+    id: i64,
+    bits: Option<u8>,
+    tags: TagSet,
+}
+
+fn stood_in(row: &Row<'_>) -> rusqlite::Result<Standing> {
     let object: String = row.get(0)?;
     let id: i64 = row.get(21)?;
+    let bits = row
+        .get::<_, Option<i64>>(22)?
+        .and_then(|bits| u8::try_from(bits).ok())
+        .filter(|bits| *bits > 0);
     let tags = TagSet {
         title: row.get(1)?,
         artist: row.get(2)?,
@@ -158,5 +172,10 @@ fn stood_in(row: &Row<'_>) -> rusqlite::Result<(String, i64, TagSet)> {
         ..TagSet::default()
     };
 
-    Ok((object, id, tags))
+    Ok(Standing {
+        object,
+        id,
+        bits,
+        tags,
+    })
 }

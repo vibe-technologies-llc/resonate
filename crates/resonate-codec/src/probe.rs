@@ -72,8 +72,7 @@ fn stood_in(
         .and_then(|opened| opened.media_info(&stood.location));
     match opened {
         Ok(mut info) => {
-            info.tags = stood.tags;
-            info.cue = None;
+            stood.told_over(&mut info);
             Some(info)
         }
         Err(error) => {

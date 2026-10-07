@@ -2028,6 +2028,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
                   AND tracks.modified    = excluded.modified
                   AND tracks.span_frames IS excluded.span_frames THEN tracks.vault_path
                  ELSE NULL END,
+             vault_bits         = CASE
+                 WHEN tracks.file_size   = excluded.file_size
+                  AND tracks.modified    = excluded.modified
+                  AND tracks.span_frames IS excluded.span_frames THEN tracks.vault_bits
+                 ELSE NULL END,
              asks               = CASE
                  WHEN {RETAGGED} THEN 0
                  ELSE tracks.asks END,

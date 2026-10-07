@@ -179,6 +179,17 @@ pub trait Hinting: Send + Sync {
 pub struct StoodIn {
     pub location: MediaLocation,
     pub tags: TagSet,
+    pub bits: Option<u8>,
+}
+
+impl StoodIn {
+    pub(crate) fn told_over(self, info: &mut crate::MediaInfo) {
+        info.tags = self.tags;
+        info.cue = None;
+        if let Some(bits) = self.bits {
+            info.bits_per_coded_sample = Some(bits);
+        }
+    }
 }
 
 pub struct Sources {

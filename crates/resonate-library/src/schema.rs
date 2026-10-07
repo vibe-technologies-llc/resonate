@@ -455,6 +455,7 @@ const MIGRATIONS: &[&str] = &[
          value    TEXT NOT NULL,
          PRIMARY KEY (track_id, field)
      ) STRICT, WITHOUT ROWID;",
+    "ALTER TABLE tracks ADD COLUMN vault_bits INTEGER;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

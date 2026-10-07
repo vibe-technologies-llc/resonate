@@ -189,6 +189,13 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
   (`a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared`). A release
   drops them with the vault columns. A row vaulted before the table keeps nothing until weighed
   again.
+- **An object stands in at its source's depth, not its container's.** A 24-bit master past 96 kHz
+  lands as a 32-bit WAVE, a 20-bit one as a 24-bit FLAC; `Kept::bits` is the depth the source
+  declared (`bits_per_coded_sample`, else its format's), written to `tracks.vault_bits` (cleared
+  with the other vault columns), carried on `StoodIn::bits` and laid over the object's own by
+  `StoodIn::told_over` (decoder and probe alike), so the inspector says what the master was and a
+  study through the object does not read the container's padding as a fake
+  (`a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits`).
 - **A vault inside a scanned root is not part of the library it holds.** The walk steps past the
   open vault's root (links into it included); `store::apply` leaves a rootless row alone wherever a
   scan reaches one (a delivery keeps name, pairing, place).

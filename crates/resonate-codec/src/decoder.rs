@@ -442,8 +442,7 @@ impl Decoder {
             .and_then(|opened| Self::build(opened, &stood.location));
         match opened {
             Ok((mut decoder, _)) => {
-                decoder.info.tags = stood.tags;
-                decoder.info.cue = None;
+                stood.told_over(&mut decoder.info);
                 let info = decoder.info.clone();
                 Some((decoder, info))
             }
@@ -1770,6 +1769,7 @@ FILE "Meddle.wav" WAVE
         row: MediaLocation,
         span: Option<FrameSpan>,
         object: MediaLocation,
+        bits: Option<u8>,
     }
 
     impl crate::StandIn for Standing {
@@ -1785,12 +1785,14 @@ FILE "Meddle.wav" WAVE
                     lyrics: Some("Overhead the albatross".to_owned()),
                     ..TagSet::default()
                 },
+                bits: self.bits,
             })
         }
     }
 
     #[test]
     fn a_row_something_stands_in_for_is_decoded_from_it_under_the_tags_it_was_given() {
+        const SOURCE_BITS: u8 = 12;
         let object = std::env::temp_dir().join(format!("resonate-stood-in-{}.wav", process::id()));
         let samples = ramp(16);
         fs::write(&object, Wav::pcm(16).build(&samples).into_inner()).expect("a writable temp dir");
@@ -1801,6 +1803,7 @@ FILE "Meddle.wav" WAVE
             row: row.clone(),
             span: Some(span),
             object: MediaLocation::local(&object),
+            bits: Some(SOURCE_BITS),
         }));
 
         let (mut decoder, info) =
@@ -1816,6 +1819,11 @@ FILE "Meddle.wav" WAVE
         );
         assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
         assert_eq!(info.tags.lyrics.as_deref(), Some("Overhead the albatross"));
+        assert_eq!(
+            info.bits_per_coded_sample,
+            Some(SOURCE_BITS),
+            "the object's own width was reported for the source's"
+        );
         assert_eq!(probed, info);
         assert!(
             Decoder::open(&sources, &row).is_err(),

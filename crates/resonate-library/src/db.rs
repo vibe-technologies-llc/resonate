@@ -2664,7 +2664,8 @@ impl Library {
             for (id, _) in &standing {
                 released += transaction
                     .execute(
-                        "UPDATE tracks SET vault_key = NULL, vault_path = NULL WHERE id = ?1",
+                        "UPDATE tracks SET vault_key = NULL, vault_path = NULL, vault_bits = NULL
+                          WHERE id = ?1",
                         params![id],
                     )
                     .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -2741,8 +2742,9 @@ impl Library {
 
             transaction
                 .execute(
-                    "UPDATE tracks SET vault_key = ?1, vault_path = ?2 WHERE id = ?3",
-                    params![key, held, row.id.get() as i64],
+                    "UPDATE tracks SET vault_key = ?1, vault_path = ?2, vault_bits = ?3
+                      WHERE id = ?4",
+                    params![key, held, i64::from(kept.bits), row.id.get() as i64],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
             vaulted::keep_what_the_catalog_cannot_fill(
@@ -2842,10 +2844,10 @@ impl Library {
                          disc_number, duration, sample_rate, channels, sample_format, codec,
                          file_size, modified, added, seen, mbid, release_track_mbid, isrc,
                          vault_key, vault_path, genre, lyrics, rg_track_gain, rg_track_peak,
-                         rg_album_gain, rg_album_peak
+                         rg_album_gain, rg_album_peak, vault_bits
                      ) VALUES (
                          NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
+                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
                      )
                      ON CONFLICT(path, span_start) DO NOTHING
                      RETURNING id",
@@ -2876,6 +2878,7 @@ impl Library {
                         gain.track_peak.map(f64::from),
                         gain.album_gain.map(|gain| f64::from(gain.get())),
                         gain.album_peak.map(f64::from),
+                        i64::from(kept.bits),
                     ],
                     |row| row.get(0),
                 )

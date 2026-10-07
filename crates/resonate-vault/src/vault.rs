@@ -100,6 +100,7 @@ pub struct Kept {
     pub deduped: bool,
     pub replaced: bool,
     pub declared: Box<TagSet>,
+    pub bits: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -377,7 +378,7 @@ impl Vault {
             }
             kept => kept,
         };
-        Ok(weighed(kept, held, Box::new(info.tags)))
+        Ok(weighed(kept, held, Box::new(info.tags), bits))
     }
 
     pub fn keep_cover(&self, art: &CoverArt) -> Result<KeptCover> {
@@ -603,6 +604,7 @@ impl Vault {
             deduped: false,
             replaced: false,
             declared: Box::default(),
+            bits: 0,
         })))
     }
 
@@ -653,6 +655,7 @@ impl Vault {
                 deduped: false,
                 replaced: false,
                 declared: Box::default(),
+                bits: 0,
             }));
         }
 
@@ -725,6 +728,7 @@ impl Vault {
                 deduped: true,
                 replaced: false,
                 declared: Box::default(),
+                bits: 0,
             }));
         }
 
@@ -764,6 +768,7 @@ impl Vault {
             deduped: false,
             replaced: false,
             declared: Box::default(),
+            bits: 0,
         }))
     }
 
@@ -820,6 +825,7 @@ impl Vault {
             deduped: false,
             replaced: false,
             declared: Box::default(),
+            bits: 0,
         }))
     }
 
@@ -938,6 +944,7 @@ impl Vault {
             deduped: false,
             replaced: false,
             declared: Box::default(),
+            bits: 0,
         }))
     }
 
@@ -1262,11 +1269,12 @@ impl Landing {
     }
 }
 
-fn weighed(kept: Keeping, was: Option<u64>, declared: Box<TagSet>) -> Keeping {
+fn weighed(kept: Keeping, was: Option<u64>, declared: Box<TagSet>, bits: u8) -> Keeping {
     match kept {
         Keeping::Kept(kept) => Keeping::Kept(Kept {
             was: was.unwrap_or(kept.bytes),
             declared,
+            bits,
             ..kept
         }),
         refused @ Keeping::Refused(_) => refused,

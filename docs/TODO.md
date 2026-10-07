@@ -107,9 +107,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - Blanking a Matroska file stops at an element of unknown size or after 65 536 elements and lands
   what it blanked so far as stripped; a `TrackEntry` name, chapters and an MP4's track-level `meta`
   are never blanked; an MP4 past 4 096 boxes keeps every tag
-- A 24-bit hi-res source is written as a 32-bit WAVE and a 20-bit one stored as a 24-bit FLAC: the
-  stand-in reports the container's width where the catalog says the source's, and a study or
-  `analyse` through the object judges the genuine master Fake for padded bits
 - **Blocked on `flacenc`:** `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at
   96 kHz and the depth at 24 bits: a 24-bit rip loses to `flac -8` by ~15 % and is kept; a 192 kHz
   rip is never a FLAC

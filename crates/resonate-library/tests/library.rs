@@ -151,6 +151,7 @@ impl Drop for Tree {
 
 struct Wav {
     bits: u16,
+    rate: u32,
     frames: usize,
     from: usize,
     id3: Vec<u8>,
@@ -161,6 +162,7 @@ impl Wav {
     fn new() -> Self {
         Self {
             bits: 16,
+            rate: RATE,
             frames: 4_410,
             from: 0,
             id3: Vec::new(),
@@ -180,6 +182,11 @@ impl Wav {
 
     fn bits(mut self, bits: u16) -> Self {
         self.bits = bits;
+        self
+    }
+
+    fn rate(mut self, rate: u32) -> Self {
+        self.rate = rate;
         self
     }
 
@@ -243,8 +250,8 @@ impl Wav {
         let mut fmt = Vec::new();
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&CHANNELS.to_le_bytes());
-        fmt.extend_from_slice(&RATE.to_le_bytes());
-        fmt.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+        fmt.extend_from_slice(&self.rate.to_le_bytes());
+        fmt.extend_from_slice(&(self.rate * u32::from(block_align)).to_le_bytes());
         fmt.extend_from_slice(&block_align.to_le_bytes());
         fmt.extend_from_slice(&self.bits.to_le_bytes());
 
@@ -19166,6 +19173,39 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
     assert_eq!(objects[0].form, Form::Flac);
     assert_eq!(objects[0].taken_from, path);
     assert!(objects[0].validated);
+    Ok(())
+}
+
+#[test]
+fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .bits(24)
+            .rate(192_000)
+            .frames(19_200)
+            .text(TITLE, "Echoes")
+            .build(),
+    );
+
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    let summary = vaulted(&library, true)?;
+    assert_eq!(summary.stats.vaulted, 1);
+    assert_eq!(summary.plan.vaulted[0].wanted.form, Form::Wave);
+
+    let rows = all(&library)?;
+    let stood = library
+        .stand_in()
+        .stands_in(&rows[0].location, rows[0].span)
+        .expect("the vault stands in for the row");
+    assert_eq!(
+        stood.bits,
+        Some(24),
+        "the object's width stood for the master's"
+    );
     Ok(())
 }
 
