@@ -989,6 +989,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   the same of a driver; not subscribed.
 - **A global leaving the registry takes its proxy with it, whatever it was told first** (a card
   unplugged before its routes were enumerated keeps no proxy/listener until reconnect).
+- **A stream's listener goes before its stream.** `pw_stream_destroy` frees the hook list the
+  listener's `spa_hook_remove` writes into, so an open playback or capture stream is an `Opened`,
+  whose `Drop` takes the listener first; never a tuple, whose first field (the stream) drops first.
 - **The client outlives its daemon.** A connection's everything (core, registry, listeners, bound
   proxies) is one `Graph`, made by `Reaching`; the loop keeps main loop and context for the
   process's life and connects a core through them as often as needed. Core `error` event with broken

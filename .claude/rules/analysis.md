@@ -110,7 +110,7 @@ first. Cache: failure = debug record + decode. Headless commands keep nothing.
   `Agreement`). `track_studies_forget_a_changed_file` deletes the row when an update moves size,
   mtime or span (trigger, not upsert clause: covers every writer). Tag runs are the one writer known
   not to touch audio: `files_retagged` holds a written file's `track_studies` and `unstudied` rows
-  across its follow (`StudiesKept`), puts them back.
+  across its follow (`KeptAcross`, which holds its kept lyrics alike: `library.md`), puts them back.
 - **A failed study is kept as failed.** `unstudied` holds the id under the failing `JUDGED_UNDER`;
   `to_study` and `Library::will_not_study` skip it until `unstudied_forget_a_changed_file` fires,
   `JUDGED_UNDER` moves, or `refresh` re-asks. Stopped studies and out-of-reach files

@@ -1435,7 +1435,11 @@ rows read via `Player::media` like any unscanned row.
   `lyrics_forget_a_changed_file` trigger deletes a path's when `file_size`, `modified` or
   `span_frames` moves (as `track_studies` is forgotten), so a replaced file asks again instead of
   showing the old song's words
-  (`kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_alone`). A kept row
+  (`kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_alone`). A tag run
+  touches no audio, so `files_retagged` holds a written file's kept words across the trigger
+  (`KeptAcross`); a remembered miss and a refusal are held only where it wrote no title or artist,
+  the new name being worth asking again
+  (`a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a_new_name`). A kept row
   is a `KeptLyrics` holding `Option<LyricText>`: text, `synced`, migration-added `lyricsfile`
   (Lyricsfile document, kept only where it says more than its lines: word-timed or two overlapping
   voices). `LyricDetail`: `Plain` < `Lines` < `Lyricsfile`; `sung::keep` never trades a richer set
@@ -1619,9 +1623,15 @@ the undo record keeps fields by `TagField::as_str`.
   `chown`, `set_permissions`, every `listxattr` name, ACLs and SELinux labels included, via
   `rustix`). Where any is refused (another user's file in a shared folder, a label only root may
   set) and wherever the file has a second name (`nlink` over one), the whole tagged copy is written
-  back into the file's own inode instead (`written_back`; in-place edits never need it): keeps
+  back into the file's own inode instead (`settled_over`; in-place edits never need it): keeps
   everything and both names, at the price of a second copy and a window where the file is part
-  rewritten, the synced staged copy beside it until the write-back syncs
+  rewritten. Before that window the synced copy is renamed `.<name>.<pid>-<n>.resonate-whole`
+  (`journal::WholeCopy`); a write-back failing part way renames it `.resonate-torn` and answers
+  `codec::Error::WrittenBackPartway` naming it, never removing the one whole copy. A dead writer's
+  whole copy, and any torn one, is finished by the next write to that track or the scan of its
+  folder (`Mended::WrittenBack`), never swept as left over
+  (`a_track_a_dead_writer_left_part_written_back_is_finished_from_its_whole_copy`). A copy staged
+  in the spool folder (the track's own folder refusing one) is kept there, named by the error
   (`a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link`,
   `a_track_with_two_names_keeps_both_and_both_read_the_write`,
   `a_tracks_extended_attributes_survive_a_write`).
@@ -1729,8 +1739,10 @@ guard; re-keys a sleeve-keyed album after moves land (both under *Schema and gro
   library. `Display for Layout` writes the template as read (the settings field draws it;
   `DEFAULT_LAYOUT` = `{albumartist}/{album}/{disc}{track} {title}` is asserted against it).
 - **A component is what a filesystem takes; a segment resolving to nothing is dropped.**
-  `as_one_component`: `/` to `-`, control characters and delete dropped, leading whitespace and
-  trailing whitespace/dots trimmed (*...And Justice for All* keeps its dots; `..` is nothing), cut
+  `as_one_component`: `/` to `-`, control characters and delete dropped, whitespace and dots
+  trimmed at both ends, since a scan passes a dot-name over and would prune what was filed there
+  (*...And Justice for All* files as *And Justice for All*, *.38 Special* as *38 Special*; `..` is
+  nothing), cut
   to `COMPONENT_BYTES` (255) on a character boundary. Extension appended only if the layout lacks
   `{ext}`; last segment's budget is 255 less it, so a cut name still ends `.flac`. A last segment
   ending `.{ext}` is budgeted alike (`Segment::write_ahead_of_the_extension` writes what precedes

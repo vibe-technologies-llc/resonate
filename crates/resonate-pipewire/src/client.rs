@@ -54,8 +54,28 @@ type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
 type Nodes = Rc<RefCell<BTreeMap<u32, (Node, NodeListener)>>>;
 type Devices = Rc<RefCell<BTreeMap<u32, (Device, DeviceListener)>>>;
 type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener, HeldIn)>>>;
-type ActiveStream = (StreamRc, StreamListener<Box<dyn AudioSource>>);
-type HeardStream = (StreamRc, StreamListener<Box<dyn AudioSink>>);
+type ActiveStream = Opened<Box<dyn AudioSource>>;
+type HeardStream = Opened<Box<dyn AudioSink>>;
+
+struct Opened<D> {
+    stream: StreamRc,
+    listener: Option<StreamListener<D>>,
+}
+
+impl<D> Opened<D> {
+    fn new(stream: StreamRc, listener: StreamListener<D>) -> Self {
+        Self {
+            stream,
+            listener: Some(listener),
+        }
+    }
+}
+
+impl<D> Drop for Opened<D> {
+    fn drop(&mut self) {
+        drop(self.listener.take());
+    }
+}
 
 const CORE_ID: u32 = 0;
 const RECONNECT_EVERY: Duration = Duration::from_secs(1);
@@ -728,13 +748,13 @@ fn run(
                 }
             }
             Request::StopCapture => {
-                if let Some((stream, _)) = heard.borrow().as_ref() {
+                if let Some(Opened { stream, .. }) = heard.borrow().as_ref() {
                     let _ = stream.disconnect();
                 }
                 heard.borrow_mut().take();
             }
             Request::SetActive(wanted) => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
+                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
                     let _ = stream.set_active(wanted);
                 }
             }
@@ -754,12 +774,12 @@ fn run(
                 }
             }
             Request::Drain => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
+                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
                     let _ = stream.flush(true);
                 }
             }
             Request::Close => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
+                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
                     let _ = stream.disconnect();
                 }
                 active.borrow_mut().take();
@@ -1496,7 +1516,7 @@ fn build_stream(
         .connect(Direction::Output, None, flags, &mut params)
         .map_err(|source| Error::daemon(PwOp::StreamConnect, source))?;
 
-    Ok((stream, listener))
+    Ok(Opened::new(stream, listener))
 }
 
 fn build_capture_stream(
@@ -1570,7 +1590,7 @@ fn build_capture_stream(
         )
         .map_err(|source| Error::daemon(PwOp::StreamConnect, source))?;
 
-    Ok((stream, listener))
+    Ok(Opened::new(stream, listener))
 }
 
 #[cfg(test)]

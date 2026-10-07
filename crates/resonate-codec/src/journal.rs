@@ -10,6 +10,8 @@ use std::{
 
 const MAGIC: &[u8; 8] = b"RSUNDO01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
+const WHOLE_SUFFIX: &str = ".resonate-whole";
+const TORN_SUFFIX: &str = ".resonate-torn";
 const KEPT_BY_AND_COUNTED: char = '-';
 const RUNNING_PROCESSES: &str = "/proc";
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -79,32 +81,149 @@ fn folder_of(track: &Path) -> &Path {
 }
 
 fn journal_name(track: &OsStr) -> PathBuf {
+    kept_name(track, JOURNAL_SUFFIX)
+}
+
+fn kept_name(track: &OsStr, suffix: &str) -> PathBuf {
     let mut name = std::ffi::OsString::from(".");
     name.push(track);
     name.push(format!(
-        ".{}{KEPT_BY_AND_COUNTED}{}{JOURNAL_SUFFIX}",
+        ".{}{KEPT_BY_AND_COUNTED}{}{suffix}",
         process::id(),
         KEPT.fetch_add(1, Ordering::Relaxed)
     ));
     PathBuf::from(name)
 }
 
-fn kept_by(journal: &OsStr) -> Option<u32> {
-    let (writer, counted) = journal
-        .to_str()?
-        .strip_prefix('.')?
-        .strip_suffix(JOURNAL_SUFFIX)?
-        .rsplit_once('.')?
-        .1
-        .split_once(KEPT_BY_AND_COUNTED)?;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Left {
+    Undo,
+    WholeCopy,
+    TornWholeCopy,
+}
+
+impl Left {
+    const ALL: [Self; 3] = [Self::Undo, Self::WholeCopy, Self::TornWholeCopy];
+
+    const fn suffix(self) -> &'static str {
+        match self {
+            Self::Undo => JOURNAL_SUFFIX,
+            Self::WholeCopy => WHOLE_SUFFIX,
+            Self::TornWholeCopy => TORN_SUFFIX,
+        }
+    }
+}
+
+struct KeptBy<'n> {
+    track: &'n str,
+    writer: u32,
+    left: Left,
+}
+
+fn kept_by(kept: &OsStr) -> Option<KeptBy<'_>> {
+    let named = kept.to_str()?.strip_prefix('.')?;
+    let (left, unsuffixed) = Left::ALL
+        .into_iter()
+        .find_map(|left| Some((left, named.strip_suffix(left.suffix())?)))?;
+    let (track, stamp) = unsuffixed.rsplit_once('.')?;
+    let (writer, counted) = stamp.split_once(KEPT_BY_AND_COUNTED)?;
     counted.parse::<u64>().ok()?;
-    writer.parse().ok()
+    Some(KeptBy {
+        track,
+        writer: writer.parse().ok()?,
+        left,
+    })
 }
 
 pub fn names_a_cut_short_write(path: &Path) -> bool {
-    path.file_name()
-        .and_then(kept_by)
-        .is_some_and(|writer| writer != process::id() && !is_running(writer))
+    path.file_name().and_then(kept_by).is_some_and(|kept| {
+        kept.left == Left::TornWholeCopy
+            || (kept.writer != process::id() && !is_running(kept.writer))
+    })
+}
+
+pub(crate) struct WholeCopy {
+    copy: PathBuf,
+    track: PathBuf,
+}
+
+pub(crate) struct Torn {
+    pub(crate) whole: PathBuf,
+    pub(crate) source: io::Error,
+}
+
+pub(crate) enum Unsettled {
+    Untouched(io::Error),
+    Torn(Torn),
+}
+
+impl From<io::Error> for Unsettled {
+    fn from(source: io::Error) -> Self {
+        Self::Untouched(source)
+    }
+}
+
+impl WholeCopy {
+    pub(crate) fn named_beside(staged: &Path, track: &Path) -> io::Result<Self> {
+        let name = track
+            .file_name()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+        let folder = folder_of(track);
+        let copy = folder.join(kept_name(name, WHOLE_SUFFIX));
+
+        fs::rename(staged, &copy)?;
+        if let Err(error) = File::open(folder).and_then(|folder| folder.sync_all()) {
+            let _ = fs::rename(&copy, staged);
+            return Err(error);
+        }
+        Ok(Self {
+            copy,
+            track: track.to_path_buf(),
+        })
+    }
+
+    pub(crate) fn written_back(self) -> Result<(), Unsettled> {
+        match copied_over(&self.copy, &self.track) {
+            Ok(()) => {}
+            Err(Unsettled::Untouched(source)) => {
+                let _ = fs::remove_file(&self.copy);
+                return Err(Unsettled::Untouched(source));
+            }
+            Err(Unsettled::Torn(Torn { source, .. })) => {
+                return Err(Unsettled::Torn(self.torn(source)));
+            }
+        }
+        if let Err(error) = fs::remove_file(&self.copy) {
+            tracing::debug!(%error, path = %self.copy.display(), "the whole copy of a written-back track could not be removed");
+        }
+        Ok(())
+    }
+
+    fn torn(self, source: io::Error) -> Torn {
+        let name = self.track.file_name().unwrap_or_default();
+        let torn = folder_of(&self.track).join(kept_name(name, TORN_SUFFIX));
+        let whole = match fs::rename(&self.copy, &torn) {
+            Ok(()) => torn,
+            Err(_) => self.copy,
+        };
+        Torn { whole, source }
+    }
+}
+
+pub(crate) fn copied_over(whole: &Path, track: &Path) -> Result<(), Unsettled> {
+    let mut copy = File::open(whole)?;
+    let mut file = OpenOptions::new().write(true).open(track)?;
+    let torn = |source| {
+        tracing::warn!(%source, track = %track.display(), whole = %whole.display(), "a track failed part way through being written back, so its whole copy is kept for the next write or scan to finish");
+        Unsettled::Torn(Torn {
+            whole: whole.to_path_buf(),
+            source,
+        })
+    };
+
+    let length = io::copy(&mut copy, &mut file).map_err(torn)?;
+    file.set_len(length).map_err(torn)?;
+    file.sync_all().map_err(torn)
 }
 
 fn is_running(writer: u32) -> bool {
@@ -201,6 +320,7 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mended {
+    WrittenBack,
     RolledBack,
     Finished,
     Untouched,
@@ -209,6 +329,12 @@ pub enum Mended {
 }
 
 pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
+    let kept = journal.file_name().and_then(kept_by);
+    if let Some(kept) = kept.filter(|kept| kept.left != Left::Undo) {
+        let track = folder_of(journal).join(kept.track);
+        return finished_writing_back(journal, &track);
+    }
+
     let bytes = fs::read(journal)?;
     let mended = match decoded(folder_of(journal), &bytes) {
         Some(kept) => rolled_back(&kept)?,
@@ -216,6 +342,23 @@ pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
     };
     fs::remove_file(journal)?;
     tracing::info!(path = %journal.display(), ?mended, "mended a tag write cut short");
+    Ok(mended)
+}
+
+fn finished_writing_back(whole: &Path, track: &Path) -> io::Result<Mended> {
+    let mended = match copied_over(whole, track) {
+        Ok(()) => Mended::WrittenBack,
+        Err(Unsettled::Untouched(error))
+            if error.kind() == io::ErrorKind::NotFound && !track.exists() =>
+        {
+            Mended::ChangedSince
+        }
+        Err(Unsettled::Untouched(error) | Unsettled::Torn(Torn { source: error, .. })) => {
+            return Err(error);
+        }
+    };
+    fs::remove_file(whole)?;
+    tracing::info!(path = %whole.display(), ?mended, "finished writing back a track a tag write left part rewritten");
     Ok(mended)
 }
 
@@ -314,6 +457,50 @@ mod tests {
         ));
         fs::write(&journal, encoded(name, stood, changes)).expect("a journal");
         journal
+    }
+
+    #[test]
+    fn a_track_a_dead_writer_left_part_written_back_is_finished_from_its_whole_copy() {
+        let folder = Folder::new("written-back");
+        let track = folder.0.join("Breathe.flac");
+        let whole = folder
+            .0
+            .join(format!(".Breathe.flac.{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}"));
+
+        fs::write(&track, [9_u8; 40]).expect("a torn track");
+        fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+
+        assert!(names_a_cut_short_write(&whole));
+        assert_eq!(
+            mend_a_cut_short_write(&whole).expect("a mend"),
+            Mended::WrittenBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), [4_u8; 24]);
+        assert!(!whole.exists(), "the whole copy was left");
+    }
+
+    #[test]
+    fn a_whole_copy_a_failed_write_back_kept_is_finished_even_by_its_own_process() {
+        let folder = Folder::new("torn-copy");
+        let track = folder.0.join("Brain Damage.flac");
+        fs::write(&track, [1_u8; 8]).expect("a torn track");
+
+        let ours = folder.0.join(kept_name(
+            OsStr::new("Brain Damage.flac"),
+            WHOLE_SUFFIX,
+        ));
+        fs::write(&ours, [2_u8; 8]).expect("a copy being written back");
+        assert!(!names_a_cut_short_write(&ours));
+
+        let torn = WholeCopy {
+            copy: ours,
+            track: track.clone(),
+        }
+        .torn(io::Error::from(io::ErrorKind::StorageFull));
+        assert!(names_a_cut_short_write(&torn.whole));
+        mend_what_a_dead_writer_left(&track);
+        assert_eq!(fs::read(&track).expect("the track"), [2_u8; 8]);
+        assert!(!torn.whole.exists());
     }
 
     #[test]

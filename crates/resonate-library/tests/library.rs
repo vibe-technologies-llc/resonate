@@ -17098,6 +17098,60 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
 }
 
 #[test]
+fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a_new_name()
+-> Result<()> {
+    let tree = Tree::new();
+    let written = |name: &str| {
+        tree.write(
+            name,
+            &Aiff::new()
+                .text(TITLE, "Echos")
+                .text(ARTIST, "The Orbiters")
+                .build(),
+        )
+    };
+    let found = written("found/1.aiff");
+    let missed = written("missed/2.aiff");
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let found_at = MediaLocation::local(&found);
+    let missed_at = MediaLocation::local(&missed);
+    library.keep_lyrics(&found_at, None, Some(&words("Overhead the albatross")))?;
+    library.keep_lyrics(&missed_at, None, None)?;
+    beside(&database)
+        .execute(
+            "INSERT INTO lyrics_refused (path, span_start, refused, refusals) VALUES (?1, 0, 1, 1)",
+            [found.to_str().expect("a path")],
+        )
+        .expect("a refusal is written");
+
+    answer_track(&database, &found, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &missed, "Echoes", "The Orbiters", "Orbits");
+    let applied = retagged(&library, true)?;
+    assert_eq!(applied.stats.written, 2);
+
+    assert_eq!(
+        library
+            .kept_lyrics(&found_at, None)?
+            .and_then(|kept| kept.sung)
+            .map(|sung| sung.text),
+        Some("Overhead the albatross".to_owned()),
+        "writing the tags threw away the words of a song it did not touch"
+    );
+    assert!(
+        library.kept_lyrics(&missed_at, None)?.is_none(),
+        "a miss under the old name was kept past the new one"
+    );
+    let refusals: i64 = beside(&database)
+        .query_row("SELECT count(*) FROM lyrics_refused", [], |row| row.get(0))
+        .expect("the refusals count");
+    assert_eq!(refusals, 0, "a refusal under the old name was kept");
+    Ok(())
+}
+
+#[test]
 fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
     let tree = Tree::new();
     let written = |name: &str| {

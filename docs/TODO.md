@@ -6,20 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- Closing a playback stream or recording drops `StreamRc` before its `StreamListener` (tuple's first
-  field drops first): `pw_stream_destroy` frees the hook list, then the listener's `spa_hook_remove`
-  writes two pointers into freed memory, on every track change, sink switch, reconnect and
-  shutdown; AddressSanitizer shows it, the reverse order does not
-- A layout rendering a folder/file name that begins with a dot (*...And Justice for All*, artist
-  *.38 Special*) files tracks where the scan skips hidden names, so the next scan prunes them with
-  their plays, listens and favourites; `as_one_component` trims trailing dots only; a test pins the
-  dot-led path as right
-- A tag write landed back into the file's own inode (second name, staged copy unable to carry
-  owner/attributes, folder nothing may be created in) that fails partway removes the staged copy,
-  the only whole one: torn track; a crash mid-write-back leaves a copy the next write to that track
-  sweeps as left over
-- A tag run deletes the kept lyrics and lyric refusals of every file it writes (new size and mtime
-  fire `lyrics_forget_a_changed_file`); `StudiesKept` holds only the studies across it
 - A row waiting for a device or the graph is stranded when a sink change is announced while the
   survey that would bind it is out: `bind` waits for the next survey and answers `Ok`, the caller
   takes that as bound and clears `unbound` and `waiting_for_a_device`; the row sits silent in

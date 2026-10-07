@@ -446,8 +446,7 @@ fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
 }
 
 fn without_padding(text: &str) -> &str {
-    text.trim_start()
-        .trim_end_matches(|character: char| character.is_whitespace() || character == '.')
+    text.trim_matches(|character: char| character.is_whitespace() || character == '.')
 }
 
 fn largest_prefix_within(text: &str, budget: usize) -> &str {
@@ -2906,7 +2905,7 @@ mod tests {
         let mut named = comfortably_numb();
         named.album_artist = Some("/etc");
         named.title = "../../passwd";
-        assert_eq!(rendered(&layout, &named), "-etc/..-..-passwd.flac");
+        assert_eq!(rendered(&layout, &named), "-etc/-..-passwd.flac");
     }
 
     #[test]
@@ -3170,7 +3169,7 @@ mod tests {
     }
 
     #[test]
-    fn a_component_that_is_only_dots_or_only_spaces_resolves_to_nothing() {
+    fn a_component_is_never_hidden_and_one_that_is_only_dots_or_only_spaces_resolves_to_nothing() {
         let layout = read("{album}/{title}");
         let mut named = comfortably_numb();
 
@@ -3186,13 +3185,17 @@ mod tests {
         named.album = Some("...And Justice for All");
         assert_eq!(
             rendered(&layout, &named),
-            "...And Justice for All/Comfortably Numb.flac"
+            "And Justice for All/Comfortably Numb.flac"
         );
 
         named.title = "Alive.";
+        assert_eq!(rendered(&layout, &named), "And Justice for All/Alive.flac");
+
+        named.album = Some(".38 Special");
+        named.title = ". . .Hold On Loosely";
         assert_eq!(
             rendered(&layout, &named),
-            "...And Justice for All/Alive.flac"
+            "38 Special/Hold On Loosely.flac"
         );
 
         named.title = "..";

@@ -31,7 +31,7 @@ use rustix::fs::XattrFlags;
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
     counted::{Counted, counts},
-    journal::mend_what_a_dead_writer_left,
+    journal::{Torn, Unsettled, WholeCopy, copied_over, mend_what_a_dead_writer_left},
     overlay::{Landing, Overlay},
     padded::Head,
     probe_pictured,
@@ -904,8 +904,8 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         location: location.clone(),
         source,
     };
-    sweep_what_a_dead_writer_staged(path);
     mend_what_a_dead_writer_left(path);
+    sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
         Ok(None) => {}
@@ -935,7 +935,7 @@ fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<
     for folder in crate::spool::spooled_under() {
         let staged = staged_in(&folder, path);
         match fs::copy(path, &staged) {
-            Ok(_) => return landed_by(&staged, path, location, saving, written_back),
+            Ok(_) => return landed_by(&staged, path, location, saving, written_back_from_elsewhere),
             Err(source) => {
                 let _ = fs::remove_file(&staged);
                 refused = source;
@@ -1012,7 +1012,7 @@ fn landed_by(
     path: &Path,
     location: &MediaLocation,
     saving: &Saving<'_>,
-    settle: fn(&Path, &Path) -> io::Result<()>,
+    settle: fn(&Path, &Path) -> std::result::Result<(), Unsettled>,
 ) -> Result<()> {
     let written = OpenOptions::new()
         .read(true)
@@ -1038,13 +1038,21 @@ fn landed_by(
                 location: location.clone(),
             })
         })
-        .and_then(|()| {
-            settle(staged, path).map_err(|source| Error::Io {
+        .and_then(|()| match settle(staged, path) {
+            Ok(()) => Ok(()),
+            Err(Unsettled::Untouched(source)) => Err(Error::Io {
                 location: location.clone(),
                 source,
-            })
+            }),
+            Err(Unsettled::Torn(Torn { whole, source })) => Err(Error::WrittenBackPartway {
+                location: location.clone(),
+                whole,
+                source,
+            }),
         });
-    if written.is_err() {
+    if let Err(error) = &written
+        && !matches!(error, Error::WrittenBackPartway { .. })
+    {
         let _ = fs::remove_file(staged);
     }
     written
@@ -1113,11 +1121,11 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
     }
 }
 
-fn settled_over(staged: &Path, path: &Path) -> io::Result<()> {
+fn settled_over(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
     File::open(staged)?.sync_all()?;
     if standing.nlink() > 1 || !carries_what_the_file_did(&standing, path, staged) {
-        return written_back(staged, path);
+        return WholeCopy::named_beside(staged, path)?.written_back();
     }
 
     fs::rename(staged, path)?;
@@ -1190,13 +1198,10 @@ fn unsupported(error: &io::Error) -> bool {
     error.raw_os_error() == Some(rustix::io::Errno::NOTSUP.raw_os_error())
 }
 
-fn written_back(staged: &Path, path: &Path) -> io::Result<()> {
-    let mut whole = File::open(staged)?;
-    let mut file = OpenOptions::new().write(true).open(path)?;
-    let length = io::copy(&mut whole, &mut file)?;
-    file.set_len(length)?;
-    file.sync_all()?;
-    fs::remove_file(staged)
+fn written_back_from_elsewhere(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
+    File::open(staged)?.sync_all()?;
+    copied_over(staged, path)?;
+    Ok(fs::remove_file(staged)?)
 }
 
 fn front_cover(picture: &CoverArt) -> Picture {

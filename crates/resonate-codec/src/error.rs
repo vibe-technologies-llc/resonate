@@ -229,6 +229,14 @@ pub enum Error {
     #[error("{location} changed while its tags were being written, so they were not")]
     ChangedWhileWritten { location: MediaLocation },
 
+    #[error("{location} was left part rewritten by a tag write; its whole copy is kept at {}", whole.display())]
+    WrittenBackPartway {
+        location: MediaLocation,
+        whole: std::path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("the tags in {location} could not be written")]
     TagsUnwritten {
         location: MediaLocation,
@@ -274,6 +282,7 @@ impl Error {
             | Self::Unwritable { location }
             | Self::TagsUnread { location, .. }
             | Self::ChangedWhileWritten { location }
+            | Self::WrittenBackPartway { location, .. }
             | Self::TagsUnwritten { location, .. } => Some(location),
             Self::SeekOutOfRange { .. } | Self::Domain(_) => None,
         }

@@ -567,6 +567,12 @@ pub(crate) struct Followed {
     pub modified: SystemTime,
 }
 
+impl Followed {
+    const fn renames(&self) -> bool {
+        self.title.is_some() || self.artist.is_some()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Undoing {
     pub path: PathBuf,
@@ -817,9 +823,9 @@ pub(crate) fn files_retagged(
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
-    let kept = StudiesKept::through(tx)?;
+    let kept = KeptAcross::through(tx)?;
     for follow in followed {
-        kept.hold(follow.track)?;
+        kept.hold(follow.track, follow.renames())?;
         statement
             .execute(params![
                 follow.track.get() as i64,
@@ -846,15 +852,80 @@ pub(crate) fn files_retagged(
     }
 }
 
-struct StudiesKept<'t> {
+struct KeptAcross<'t> {
     tx: &'t Transaction<'t>,
 }
 
-impl<'t> StudiesKept<'t> {
-    const TABLES: [&'static str; 2] = ["track_studies", "unstudied"];
+#[derive(Clone, Copy)]
+enum Kept {
+    Studies,
+    Unstudied,
+    Lyrics,
+    LyricRefusals,
+}
 
+impl Kept {
+    const ALL: [Self; 4] = [
+        Self::Studies,
+        Self::Unstudied,
+        Self::Lyrics,
+        Self::LyricRefusals,
+    ];
+
+    const fn table(self) -> &'static str {
+        match self {
+            Self::Studies => "track_studies",
+            Self::Unstudied => "unstudied",
+            Self::Lyrics => "lyrics_kept",
+            Self::LyricRefusals => "lyrics_refused",
+        }
+    }
+
+    const fn rows_of_the_track(self) -> &'static str {
+        match self {
+            Self::Studies | Self::Unstudied => "SELECT k.* FROM {from} k WHERE k.track_id = ?1",
+            Self::Lyrics | Self::LyricRefusals => {
+                "SELECT k.* FROM {from} k
+                   JOIN main.tracks t ON k.path = t.path AND k.span_start = t.span_start
+                  WHERE t.id = ?1"
+            }
+        }
+    }
+
+    const fn outlives_a_new_name(self) -> &'static str {
+        match self {
+            Self::Studies | Self::Unstudied => "1",
+            Self::Lyrics => "k.text IS NOT NULL",
+            Self::LyricRefusals => "0",
+        }
+    }
+
+    fn held(self) -> String {
+        format!(
+            "INSERT INTO temp.kept_{table} {rows} AND (?2 = 0 OR {outlives})",
+            table = self.table(),
+            rows = self
+                .rows_of_the_track()
+                .replace("{from}", &format!("main.{}", self.table())),
+            outlives = self.outlives_a_new_name(),
+        )
+    }
+
+    fn put_back(self) -> String {
+        format!(
+            "INSERT OR REPLACE INTO main.{table} {rows}",
+            table = self.table(),
+            rows = self
+                .rows_of_the_track()
+                .replace("{from}", &format!("temp.kept_{}", self.table())),
+        )
+    }
+}
+
+impl<'t> KeptAcross<'t> {
     fn through(tx: &'t Transaction<'t>) -> Result<Self> {
-        for table in Self::TABLES {
+        for kept in Kept::ALL {
+            let table = kept.table();
             tx.execute_batch(&format!(
                 "CREATE TEMP TABLE IF NOT EXISTS kept_{table} AS SELECT * FROM main.{table} WHERE 0"
             ))
@@ -863,24 +934,20 @@ impl<'t> StudiesKept<'t> {
         Ok(Self { tx })
     }
 
-    fn hold(&self, track: TrackId) -> Result<()> {
-        for table in Self::TABLES {
+    fn hold(&self, track: TrackId, renamed: bool) -> Result<()> {
+        for kept in Kept::ALL {
             self.tx
-                .prepare_cached(&format!(
-                    "INSERT INTO temp.kept_{table} SELECT * FROM main.{table} WHERE track_id = ?1"
-                ))
-                .and_then(|mut statement| statement.execute(params![track.get() as i64]))
+                .prepare_cached(&kept.held())
+                .and_then(|mut statement| statement.execute(params![track.get() as i64, renamed]))
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
         Ok(())
     }
 
     fn put_back(&self, track: TrackId) -> Result<()> {
-        for table in Self::TABLES {
+        for kept in Kept::ALL {
             self.tx
-                .prepare_cached(&format!(
-                    "INSERT OR REPLACE INTO main.{table} SELECT * FROM temp.kept_{table} WHERE track_id = ?1"
-                ))
+                .prepare_cached(&kept.put_back())
                 .and_then(|mut statement| statement.execute(params![track.get() as i64]))
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
@@ -888,9 +955,9 @@ impl<'t> StudiesKept<'t> {
     }
 
     fn done(self) -> Result<()> {
-        for table in Self::TABLES {
+        for kept in Kept::ALL {
             self.tx
-                .execute_batch(&format!("DROP TABLE temp.kept_{table}"))
+                .execute_batch(&format!("DROP TABLE temp.kept_{}", kept.table()))
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
         }
         Ok(())

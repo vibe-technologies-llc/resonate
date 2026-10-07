@@ -181,6 +181,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::TagsUnread { .. }
         | Read::TagsUnwritten { .. }
         | Read::ChangedWhileWritten { .. }
+        | Read::WrittenBackPartway { .. }
         | Read::Domain(_) => Cause::Damaged,
     }
 }

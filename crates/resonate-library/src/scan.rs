@@ -135,6 +135,7 @@ impl Failure {
             | Codec::TagsUnread { .. }
             | Codec::TagsUnwritten { .. }
             | Codec::ChangedWhileWritten { .. }
+            | Codec::WrittenBackPartway { .. }
             | Codec::Domain(_) => Self::Unreadable,
         }
     }
