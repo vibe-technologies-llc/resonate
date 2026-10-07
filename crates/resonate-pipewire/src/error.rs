@@ -50,6 +50,9 @@ pub enum Error {
         #[source]
         source: GenError,
     },
+
+    #[error("the {param:?} POD this build wrote did not read back as one")]
+    PodUnread { param: PodParam },
 }
 
 impl Error {

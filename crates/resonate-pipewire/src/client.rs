@@ -1498,9 +1498,8 @@ fn build_stream(
 
     let mut params = Vec::with_capacity(2);
     for bytes in narrower.as_ref().into_iter().chain(iter::once(&padded)) {
-        params.push(Pod::from_bytes(bytes).ok_or(Error::PodBuild {
+        params.push(Pod::from_bytes(bytes).ok_or(Error::PodUnread {
             param: PodParam::EnumFormat,
-            source: libspa::pod::serialize::GenError::NotYetImplemented,
         })?);
     }
 
@@ -1577,9 +1576,8 @@ fn build_capture_stream(
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
     let format = format_pod(spec, WireWord::Padded, sys::SPA_PARAM_EnumFormat)?;
-    let mut params = [Pod::from_bytes(&format).ok_or(Error::PodBuild {
+    let mut params = [Pod::from_bytes(&format).ok_or(Error::PodUnread {
         param: PodParam::EnumFormat,
-        source: libspa::pod::serialize::GenError::NotYetImplemented,
     })?];
     stream
         .connect(

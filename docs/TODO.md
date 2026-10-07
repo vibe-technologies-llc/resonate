@@ -5,10 +5,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 **Blocked on …** = waits on the named outside thing (hardware, upstream crate, service, format),
 sits last in its category, not worked until it moves. Everything else is open.
 
-## Defects
-- A pod that fails to parse back from its own bytes is reported as `PodBuild` with a
-  `GenError::NotYetImplemented` source nothing raised
-
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth

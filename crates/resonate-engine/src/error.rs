@@ -192,7 +192,9 @@ const fn cause_at_the_sink(sink: &resonate_pipewire::Error) -> Cause {
     match sink {
         Sink::NoSink => Cause::NoDevice,
         Sink::SinkGone { .. } => Cause::DeviceGone,
-        Sink::StreamFailed { .. } | Sink::PodBuild { .. } => Cause::DeviceRefused,
+        Sink::StreamFailed { .. } | Sink::PodBuild { .. } | Sink::PodUnread { .. } => {
+            Cause::DeviceRefused
+        }
         Sink::Daemon { .. } | Sink::LoopStopped | Sink::Disconnected => Cause::SoundServer,
     }
 }
