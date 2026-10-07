@@ -126,7 +126,8 @@ sits last in its category, not worked until it moves. Everything else is open.
 ## Later: Visualiser
 - The live spectrum's tilt, floor, band width and fall rates are constants; its axis stops at 20 kHz
   at every rate
-- The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
+- The scope triggers on the mid's rising edge alone; the stereo view's meters read the mean square,
+  not a true peak
 - The plot opens empty for up to a buffer's depth: the tap runs only while the pane is in front
 - The tap records frames as rendered, before the ring trims them: a muted stream still draws, a
   turned volume shows a buffer late

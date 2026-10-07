@@ -2686,6 +2686,16 @@ is never named.
   (`ANALYSED_FOR`): 4 096 points at 44.1 and 48 kHz, up to 32 768 at 384. Scope = 20 ms of left over
   right, from the first rising zero crossing of their mid in the first span of a window twice that
   long (a steady tone stands still).
+- **The visualiser's third view is the stereo picture.** *Stereo* (`Showing::Stereo`) reads the
+  spectrum's window of left and right (about 85 ms) into `stereo.rs`, gpui-free and tested as
+  `spectrum.rs` is: each channel's mean square in dBFS folded into the spectrum's `Bar` (rises at
+  once, falls at its rate, peak held then following), and the channels' correlation (Pearson's,
+  `None` over silence) settled towards each reading over `CORRELATION_SETTLES_OVER` (300 ms). The
+  canvas draws a goniometer (side across, mid up: `sides_and_mids`, at most `DOTS_AT_MOST` dots, the
+  mid, side and both channels' axes as guides) in the largest square the plot leaves, two level
+  meters at its right, and the correlation as a mark on a −1..+1 track under it, in the failure
+  colour below 0; the held levels and the correlation are figures over the plot's corner, each
+  explained behind the pointer. Proved drawn against a nearly-mono tone in a virtual KWin.
 - **The pane follows the display's clock while it has sound to draw.** A zero-size canvas asks
   `Window::request_animation_frame` whenever the transport plays and the engine hands the pane a
   tap (as the lyrics pane follows a synced set): bars and scope move once per display frame (120 a

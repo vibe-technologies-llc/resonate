@@ -22,6 +22,7 @@ mod motion;
 mod recent;
 mod settings;
 mod spectrum;
+mod stereo;
 mod theme;
 mod toast;
 mod views;

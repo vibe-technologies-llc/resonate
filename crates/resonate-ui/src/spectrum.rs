@@ -13,7 +13,7 @@ use resonate_core::{
 pub(crate) const FLOOR_DB: f32 = -78.0;
 pub(crate) const CEILING_DB: f32 = 0.0;
 pub(crate) const MARKED_EVERY_DB: f32 = 12.0;
-const QUIETEST_DB: f32 = -160.0;
+pub(crate) const QUIETEST_DB: f32 = -160.0;
 const ANALYSED_FOR: Duration = Duration::from_millis(85);
 const FEWEST_POINTS: usize = 8;
 const MOST_POINTS: usize = 32_768;
@@ -23,7 +23,7 @@ const TILT_DB_PER_OCTAVE: f32 = 3.0;
 const FALLS_DB_PER_SECOND: f32 = 40.0;
 const PEAK_HELD_FOR: Duration = Duration::from_millis(700);
 const PEAK_FALLS_DB_PER_SECOND: f32 = 20.0;
-const LONGEST_STEP: Duration = Duration::from_millis(100);
+pub(crate) const LONGEST_STEP: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Complex {
@@ -235,20 +235,20 @@ struct Band {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Bar {
-    level: f32,
-    peak: f32,
+pub(crate) struct Bar {
+    pub(crate) level: f32,
+    pub(crate) peak: f32,
     held: Duration,
 }
 
 impl Bar {
-    const RESTING: Self = Self {
+    pub(crate) const RESTING: Self = Self {
         level: FLOOR_DB,
         peak: FLOOR_DB,
         held: Duration::ZERO,
     };
 
-    fn fold(&mut self, reading: f32, step: Duration) {
+    pub(crate) fn fold(&mut self, reading: f32, step: Duration) {
         let seconds = step.as_secs_f32();
         self.level = if reading >= self.level {
             reading
@@ -271,7 +271,7 @@ impl Bar {
         }
     }
 
-    fn is_at_rest(self) -> bool {
+    pub(crate) fn is_at_rest(self) -> bool {
         self.level <= FLOOR_DB && self.peak <= FLOOR_DB
     }
 }
