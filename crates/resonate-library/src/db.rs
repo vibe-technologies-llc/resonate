@@ -49,11 +49,14 @@ use crate::{
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, learning, likeness,
-    linked::{self, AlbumLink, ArtistHeldBy, ArtistLink, HeldBy, Linked, SongLink},
+    linked::{
+        self, AlbumLink, ArtistHeldBy, ArtistLink, FollowedPlaylist, HeldBy, LinkNames, Linked,
+        ListedSong, PlaylistLink, SongLink,
+    },
     meant::{ByArtist, Meant},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
-    playlist,
+    playlist::{self, Filled},
     renamed::{ADDED, NamesMoved, RENAMED_TRIGGERS, RETITLED, Renamed},
     resumed,
     retag::{self, Followed, TrackToTag},
@@ -3451,44 +3454,57 @@ impl Library {
     }
 
     pub fn follow_link(&self, reference: &dyn Reference, link: &SongLink) -> Result<Linked> {
-        let recording = match link {
-            SongLink::MusicBrainz(id) => {
-                if let Some(held) = self
-                    .inner
-                    .read(|connection| linked::held_as(connection, HeldBy::Recording(id)))?
-                {
-                    return Ok(held);
-                }
-                reference.recording(id)?
-            }
+        match link {
+            SongLink::MusicBrainz(id) => self.follow_recording(reference, id),
             SongLink::Deezer(_) | SongLink::Elsewhere(_) => {
                 let Some(song) = reference.song_linked(link)? else {
                     return Ok(Linked::Unnamed);
                 };
-                for isrc in &song.isrcs {
-                    if let Some(held) = self
-                        .inner
-                        .read(|connection| linked::held_as(connection, HeldBy::Isrc(isrc)))?
-                    {
-                        return Ok(held);
-                    }
-                }
-                let mut taken = None;
-                for isrc in &song.isrcs {
-                    let takes = reference.recordings_of_isrc(isrc)?;
-                    taken = linked::the_take_linked(takes, song.length);
-                    if taken.is_some() {
-                        break;
-                    }
-                }
-                match taken {
-                    Some(take) => reference.recording(&take.id)?.or(Some(take)),
-                    None => {
-                        linked::the_song_searched_for(reference, &song, linked::Footage::of(link))?
-                    }
-                }
+                self.follow_names(reference, &song, linked::Footage::of(link))
             }
+        }
+    }
+
+    fn follow_recording(&self, reference: &dyn Reference, id: &Mbid) -> Result<Linked> {
+        if let Some(held) = self
+            .inner
+            .read(|connection| linked::held_as(connection, HeldBy::Recording(id)))?
+        {
+            return Ok(held);
+        }
+        self.linked_to(reference.recording(id)?)
+    }
+
+    fn follow_names(
+        &self,
+        reference: &dyn Reference,
+        song: &LinkNames,
+        footage: linked::Footage,
+    ) -> Result<Linked> {
+        for isrc in &song.isrcs {
+            if let Some(held) = self
+                .inner
+                .read(|connection| linked::held_as(connection, HeldBy::Isrc(isrc)))?
+            {
+                return Ok(held);
+            }
+        }
+        let mut taken = None;
+        for isrc in &song.isrcs {
+            let takes = reference.recordings_of_isrc(isrc)?;
+            taken = linked::the_take_linked(takes, song.length);
+            if taken.is_some() {
+                break;
+            }
+        }
+        let recording = match taken {
+            Some(take) => reference.recording(&take.id)?.or(Some(take)),
+            None => linked::the_song_searched_for(reference, song, footage)?,
         };
+        self.linked_to(recording)
+    }
+
+    fn linked_to(&self, recording: Option<Recording>) -> Result<Linked> {
         let Some(recording) = recording else {
             return Ok(Linked::Unnamed);
         };
@@ -3505,6 +3521,51 @@ impl Library {
                 .next()
                 .map_or(Linked::Unnamed, |found| Linked::Found(Box::new(found))),
         )
+    }
+
+    pub fn follow_playlist_link(
+        &self,
+        reference: &dyn Reference,
+        link: &PlaylistLink,
+    ) -> Result<Option<FollowedPlaylist>> {
+        let Some(linked) = reference.playlist_linked(link)? else {
+            return Ok(None);
+        };
+        let mut followed = FollowedPlaylist {
+            name: linked.name,
+            held: Vec::new(),
+            found: Vec::new(),
+            unnamed: 0,
+        };
+        for song in &linked.songs {
+            let song = match song {
+                ListedSong::Recording(id) => self.follow_recording(reference, id)?,
+                ListedSong::Named(names) => {
+                    self.follow_names(reference, names, linked::Footage::Heard)?
+                }
+            };
+            match song {
+                Linked::Held { track, .. } => followed.held.push(track),
+                Linked::Found(found) => followed.found.push(*found),
+                Linked::HeldAlbum { .. }
+                | Linked::Album { .. }
+                | Linked::HeldArtist { .. }
+                | Linked::Artist(_)
+                | Linked::Unnamed => followed.unnamed += 1,
+            }
+        }
+
+        Ok(Some(followed))
+    }
+
+    pub fn fill_playlist_named(&self, name: &str, tracks: &[TrackId]) -> Result<Filled> {
+        let mut cuts = Vec::with_capacity(tracks.len());
+        for track in tracks {
+            if let Some(held) = self.track(*track)? {
+                cuts.push(Cut::of(&held));
+            }
+        }
+        playlist::fill(&self.inner, name, &cuts)
     }
 
     pub fn follow_album_link(&self, reference: &dyn Reference, link: &AlbumLink) -> Result<Linked> {

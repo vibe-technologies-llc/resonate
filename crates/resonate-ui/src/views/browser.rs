@@ -3774,10 +3774,11 @@ mod tests {
         use resonate_library::{
             AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
             ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
-            Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames, LookupOp,
-            LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
-            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
+            Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames,
+            LinkedPlaylist, ListedSong, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
+            PlaylistLink, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+            Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink,
+            SongsAsked, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3799,6 +3800,7 @@ mod tests {
         const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
         const HEROES_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
         const JANJI: &str = "0b3c6f5d-2e1a-4c8b-9d7e-6f5a4b3c2d1e";
+        const NCS_PLAYLIST: u64 = 1_234;
 
         fn mbid(id: &str) -> Mbid {
             Mbid::new(id).expect("an mbid")
@@ -4007,6 +4009,15 @@ mod tests {
 
             fn artist_linked(&self, _: &ArtistLink) -> Result<Option<String>> {
                 Ok(None)
+            }
+
+            fn playlist_linked(&self, link: &PlaylistLink) -> Result<Option<LinkedPlaylist>> {
+                Ok(
+                    (link == &PlaylistLink::Deezer(NCS_PLAYLIST)).then(|| LinkedPlaylist {
+                        name: "NCS".to_owned(),
+                        songs: vec![ListedSong::Recording(mbid(HEROES_TONIGHT))],
+                    }),
+                )
             }
 
             fn artist_at(&self, _: &str) -> Result<Option<Mbid>> {
@@ -4626,6 +4637,49 @@ mod tests {
             driven.until(|_, _| !asked.lock().is_empty());
 
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+        }
+
+        #[gpui::test]
+        fn a_playlist_link_pasted_into_the_search_wants_every_song_it_holds_that_is_not_held(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://www.deezer.com/en/playlist/{NCS_PLAYLIST}"
+                )));
+                search.update(cx, |search, cx| search.pastes(window, cx));
+            });
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert_eq!(
+                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                ""
+            );
+            assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+            assert_eq!(library.wants().expect("the wants read").len(), 1);
+            assert!(
+                library
+                    .playlist_named("NCS")
+                    .expect("the playlists read")
+                    .is_none(),
+                "a playlist was made of songs none of which is held"
+            );
         }
 
         #[gpui::test]

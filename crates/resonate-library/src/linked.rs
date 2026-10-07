@@ -1,7 +1,7 @@
 use std::{fmt, time::Duration};
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, ArtistId, Isrc, Mbid, Service};
+use resonate_core::{AlbumId, ArtistId, Isrc, Mbid, Service, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{
@@ -25,8 +25,10 @@ const APPLE_MUSIC_IN_EVERY_STOREFRONT: &str = "us";
 const SONG_LINK_PAGES: &str = "https://song.link/";
 const ALBUM_LINK_PAGES: &str = "https://album.link/";
 const YOUTUBE_MUSIC_ALBUMS: &str = "OLAK5uy_";
-const HELD_BY_RECORDING: &str = "SELECT title, artist FROM tracks WHERE mbid = ?1 LIMIT 1";
-const HELD_BY_ISRC: &str = "SELECT title, artist FROM tracks WHERE isrc = ?1 LIMIT 1";
+const HELD_BY_RECORDING: &str =
+    "SELECT title, artist, id FROM tracks WHERE mbid = ?1 ORDER BY id LIMIT 1";
+const HELD_BY_ISRC: &str =
+    "SELECT title, artist, id FROM tracks WHERE isrc = ?1 ORDER BY id LIMIT 1";
 const HELD_ALBUM: &str = "SELECT a.id, coalesce(a.release_title, a.title),
         (SELECT r.name FROM artists r WHERE r.id = a.artist_id),
         (SELECT count(*) FROM release_tracks m WHERE m.album_id = a.id AND m.track_id IS NULL)
@@ -122,10 +124,37 @@ pub enum ArtistLink {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlaylistLink {
+    Deezer(u64),
+    ListenBrainz(Mbid),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FollowedLink {
     Song(SongLink),
     Album(AlbumLink),
     Artist(ArtistLink),
+    Playlist(PlaylistLink),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ListedSong {
+    Recording(Mbid),
+    Named(LinkNames),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkedPlaylist {
+    pub name: String,
+    pub songs: Vec<ListedSong>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FollowedPlaylist {
+    pub name: String,
+    pub held: Vec<TrackId>,
+    pub found: Vec<Found>,
+    pub unnamed: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -147,6 +176,7 @@ pub struct AlbumNames {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Linked {
     Held {
+        track: TrackId,
         title: String,
         artist: Option<String>,
     },
@@ -405,6 +435,22 @@ impl FollowedLink {
             .map(Self::Song)
             .or_else(|| AlbumLink::read(text).map(Self::Album))
             .or_else(|| ArtistLink::read(text).map(Self::Artist))
+            .or_else(|| PlaylistLink::read(text).map(Self::Playlist))
+    }
+}
+
+impl PlaylistLink {
+    pub fn read(text: &str) -> Option<Self> {
+        let address = Address::read(one_token(text)?)?;
+
+        match address.host.as_str() {
+            "deezer.com" => address.after("playlist")?.parse().ok().map(Self::Deezer),
+            "listenbrainz.org" => match address.segments.as_slice() {
+                ["playlist", id, ..] => Mbid::new(id).ok().map(Self::ListenBrainz),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
 
@@ -557,13 +603,18 @@ pub(crate) fn held_as(connection: &Connection, held_by: HeldBy<'_>) -> Result<Op
 
     connection
         .query_row(sql, params![key], |row| {
-            Ok(Linked::Held {
-                title: row.get(0)?,
-                artist: row.get(1)?,
-            })
+            Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)?))
         })
         .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .map(|(title, artist, id)| {
+            Ok(Linked::Held {
+                track: TrackId::new(id as u64)?,
+                title,
+                artist,
+            })
+        })
+        .transpose()
 }
 
 pub(crate) fn the_take_linked(
@@ -970,6 +1021,31 @@ mod tests {
             "https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4 too",
         ] {
             assert_eq!(AlbumLink::read(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_link_to_a_deezer_or_listenbrainz_playlist_is_read_as_one_and_nothing_else_is() {
+        const PLAYLIST: &str = "d20c6058-b625-49ec-ab78-99cf15584b3d";
+
+        assert_eq!(
+            FollowedLink::read("https://www.deezer.com/fr/playlist/3155776842?utm_source=deezer"),
+            Some(FollowedLink::Playlist(PlaylistLink::Deezer(3_155_776_842)))
+        );
+        assert_eq!(
+            FollowedLink::read(&format!("https://listenbrainz.org/playlist/{PLAYLIST}/")),
+            Some(FollowedLink::Playlist(PlaylistLink::ListenBrainz(mbid(
+                PLAYLIST
+            ))))
+        );
+        for text in [
+            "https://www.deezer.com/playlist/a-name",
+            "https://listenbrainz.org/playlist/not-an-id",
+            "https://listenbrainz.org/user/rob/playlists",
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+            "https://www.deezer.com/playlist/3155776842 too",
+        ] {
+            assert_eq!(PlaylistLink::read(text), None, "{text}");
         }
     }
 

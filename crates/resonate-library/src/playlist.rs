@@ -361,6 +361,81 @@ pub fn remove(inner: &Inner, id: PlaylistId) -> Result<bool> {
     Ok(true)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Filled {
+    pub playlist: PlaylistId,
+    pub added: usize,
+    pub started: bool,
+}
+
+pub fn fill(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<Filled> {
+    let wanted = wanted_name(name)?;
+    let standing = inner.read(|connection| {
+        let id = connection
+            .query_row(
+                "SELECT id FROM playlists WHERE folded = ?1 ORDER BY id LIMIT 1",
+                params![folded(wanted.as_str())],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some(id) = id else {
+            return Ok(None);
+        };
+        let id = PlaylistId::new(id as u64)?;
+        if asked_in(connection, id)?.is_some() {
+            return Ok(None);
+        }
+        Ok(Some((id, rows(connection, id)?)))
+    })?;
+
+    let Some((playlist, held)) = standing else {
+        let named = inner.read(|connection| a_free_name(connection, wanted.as_str()))?;
+        let playlist = start(inner, named.as_str(), cuts)?;
+        return Ok(Filled {
+            playlist,
+            added: cuts.len(),
+            started: true,
+        });
+    };
+    let mut kept: AHashSet<Row> = held.into_iter().collect();
+    let mut missing = Vec::new();
+    for cut in cuts {
+        if kept.insert(Row::of(cut)?) {
+            missing.push(cut.clone());
+        }
+    }
+    let added = match missing.is_empty() {
+        true => 0,
+        false => add(inner, playlist, &missing)?,
+    };
+
+    Ok(Filled {
+        playlist,
+        added,
+        started: false,
+    })
+}
+
+fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {
+    let taken = |name: &PlaylistName| {
+        connection
+            .query_row(
+                "SELECT 1 FROM playlists WHERE folded = ?1",
+                params![folded(name.as_str())],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|held| held.is_some())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    };
+    let first = wanted_name(name)?;
+    if !taken(&first)? {
+        return Ok(first);
+    }
+    a_free_copy_of(connection, name)
+}
+
 pub fn duplicate(inner: &Inner, id: PlaylistId) -> Result<PlaylistId> {
     let copy = undo::started_under_a_name_found(inner, Edit::Started, |transaction| {
         let name = a_free_copy_of(transaction, &name_of(transaction, id)?)?;

@@ -4,14 +4,15 @@ use resonate_codec::CoverArt;
 use resonate_core::SourceId;
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
-    Barcode, BarcodeMatch, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText,
-    LyricsAsked, Mbid, Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
+    Barcode, BarcodeMatch, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames,
+    LinkedPlaylist, LyricText, LyricsAsked, Mbid, PlaylistLink, Recording, RecordingAsked,
+    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, SongLink,
+    SongsAsked, StreamAsked,
 };
 
 use crate::{
     Client, Error, Identity, Result, apple, client::passed_over_when_refused, commons, coverart,
-    deezer, linked, lrclib, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
+    deezer, linked, listenbrainz, lrclib, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -145,6 +146,18 @@ impl Reference for Online {
         match link {
             ArtistLink::MusicBrainz(_) | ArtistLink::Elsewhere(_) => Ok(None),
             ArtistLink::Deezer(artist) => Ok(deezer::artist_named(&self.client, *artist)?),
+        }
+    }
+
+    fn playlist_linked(
+        &self,
+        link: &PlaylistLink,
+    ) -> resonate_library::Result<Option<LinkedPlaylist>> {
+        match link {
+            PlaylistLink::Deezer(playlist) => Ok(deezer::playlist_named(&self.client, *playlist)?),
+            PlaylistLink::ListenBrainz(playlist) => {
+                Ok(listenbrainz::playlist_named(&self.client, playlist)?)
+            }
         }
     }
 

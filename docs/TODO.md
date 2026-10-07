@@ -35,7 +35,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- A pasted link to a playlist is taken as words to search, not followed
+- A pasted Spotify, Apple Music, TIDAL or YouTube playlist link is taken as words: only Deezer and
+  ListenBrainz answer a playlist without an account
 - **Blocked on a service:** a lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 

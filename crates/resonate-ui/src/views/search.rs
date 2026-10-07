@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
     rgb, transparent_black,
 };
-use resonate_library::{AlbumFound, ArtistFound, FollowedLink, Linked};
+use resonate_library::{AlbumFound, ArtistFound, Filled, FollowedLink, FollowedPlaylist, Linked};
 
 use crate::{
     Beyond, LibraryModel, Notice, Selection, format,
@@ -63,6 +63,44 @@ const LOOKING_THE_ARTIST_UP: &str = "Looking up the artist that link names…";
 const NO_ARTIST_AT_THE_LINK: &str = "No service could tell which artist that link names";
 
 const FOLLOWING_THE_LINK: &str = "look up what that link names";
+
+const LOOKING_THE_PLAYLIST_UP: &str = "Looking up every song that playlist holds…";
+
+const NO_PLAYLIST_AT_THE_LINK: &str = "No service could read the playlist that link names";
+
+const FILLING_THE_PLAYLIST: &str = "make the playlist that link names";
+
+fn playlist_told(name: &str, filled: Option<Filled>, wanted: usize, unnamed: usize) -> String {
+    let mut told = match filled {
+        Some(Filled {
+            started: true,
+            added,
+            ..
+        }) => format!(
+            "Made “{name}” of {}",
+            format::counted(added, "song", "songs")
+        ),
+        Some(Filled { added: 0, .. }) => format!("“{name}” already holds every song you have"),
+        Some(Filled { added, .. }) => format!(
+            "Added {} to “{name}”",
+            format::counted(added, "song", "songs")
+        ),
+        None => format!("Nothing “{name}” holds is in your library yet"),
+    };
+    if wanted > 0 {
+        told.push_str(&format!(
+            " · downloading {}; paste the link again once they arrive",
+            format::counted(wanted, "more", "more")
+        ));
+    }
+    if unnamed > 0 {
+        told.push_str(&format!(
+            " · {} no service could name",
+            format::counted(unnamed, "song", "songs")
+        ));
+    }
+    told
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TopEntry {
@@ -158,8 +196,17 @@ impl Told {
                 looking: LOOKING_THE_ARTIST_UP,
                 nothing: NO_ARTIST_AT_THE_LINK,
             },
+            FollowedLink::Playlist(_) => Self {
+                looking: LOOKING_THE_PLAYLIST_UP,
+                nothing: NO_PLAYLIST_AT_THE_LINK,
+            },
         }
     }
+}
+
+enum Following {
+    Linked(resonate_library::Result<Linked>),
+    Playlist(resonate_library::Result<Option<FollowedPlaylist>>),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -410,18 +457,27 @@ impl RootView {
             let followed = cx
                 .background_executor()
                 .spawn(async move {
+                    let reference = reference.as_ref();
                     match &link {
-                        FollowedLink::Song(song) => library.follow_link(reference.as_ref(), song),
+                        FollowedLink::Song(song) => {
+                            Following::Linked(library.follow_link(reference, song))
+                        }
                         FollowedLink::Album(album) => {
-                            library.follow_album_link(reference.as_ref(), album)
+                            Following::Linked(library.follow_album_link(reference, album))
                         }
                         FollowedLink::Artist(artist) => {
-                            library.follow_artist_link(reference.as_ref(), artist)
+                            Following::Linked(library.follow_artist_link(reference, artist))
+                        }
+                        FollowedLink::Playlist(playlist) => {
+                            Following::Playlist(library.follow_playlist_link(reference, playlist))
                         }
                     }
                 })
                 .await;
-            let _ = this.update(cx, |this, cx| this.followed(followed, &told, cx));
+            let _ = this.update(cx, |this, cx| match followed {
+                Following::Linked(linked) => this.followed(linked, &told, cx),
+                Following::Playlist(playlist) => this.followed_a_playlist(playlist, &told, cx),
+            });
         })
         .detach();
     }
@@ -470,6 +526,66 @@ impl RootView {
             }
             Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
         }
+    }
+
+    fn followed_a_playlist(
+        &mut self,
+        followed: resonate_library::Result<Option<FollowedPlaylist>>,
+        told: &Told,
+        cx: &mut Context<Self>,
+    ) {
+        let followed = match followed {
+            Ok(Some(followed)) => followed,
+            Ok(None) => {
+                toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);
+                return;
+            }
+            Err(error) => {
+                toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx);
+                return;
+            }
+        };
+        let FollowedPlaylist {
+            name,
+            held,
+            found,
+            unnamed,
+        } = followed;
+        let wanted = found.len();
+        for found in found {
+            self.library
+                .update(cx, |library, cx| library.want_found(found, cx));
+        }
+        if held.is_empty() {
+            toast::tell(
+                Notice::Noted(playlist_told(&name, None, wanted, unnamed)),
+                cx,
+            );
+            return;
+        }
+
+        let library = self.library.read(cx).catalog();
+        cx.spawn(async move |this, cx| {
+            let filling = name.clone();
+            let filled = cx
+                .background_executor()
+                .spawn(async move { library.fill_playlist_named(&filling, &held) })
+                .await;
+            let _ = this.update(cx, |this, cx| match filled {
+                Ok(filled) => {
+                    this.library
+                        .update(cx, |library, cx| library.reload_playlists(cx));
+                    this.set_pane(Pane::Playlists, cx);
+                    this.show_playlist(Some(filled.playlist), cx);
+                    toast::tell(
+                        Notice::Done(playlist_told(&name, Some(filled), wanted, unnamed)),
+                        cx,
+                    );
+                }
+                Err(error) => toast::tell(toast::could_not(FILLING_THE_PLAYLIST, &error), cx),
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn search_pane(&mut self, shows: SearchShows, cx: &mut Context<Self>) -> AnyElement {

@@ -1,10 +1,12 @@
 use std::{
+    slice,
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
 
 use resonate_library::{
-    Billed, ListeningService, LookupOp, Love, Mbid, Scrobble, Scrobbler, TokenHeld,
+    Billed, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Mbid, Scrobble,
+    Scrobbler, TokenHeld,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -12,11 +14,14 @@ use serde_json::{Map, Value, json};
 use crate::{
     Client, Host,
     client::{Encoded, Posted},
+    deezer::PLAYLIST_SONGS_AT_MOST,
 };
 
 const SUBMIT_LISTENS: &str = "/1/submit-listens";
 const RECORDING_FEEDBACK: &str = "/1/feedback/recording-feedback";
 const VALIDATE_TOKEN: &str = "/1/validate-token";
+const PLAYLIST: &str = "/1/playlist/";
+const RECORDING_PAGE: &str = "musicbrainz.org/recording/";
 const LOVED: i8 = 1;
 const NEITHER: i8 = 0;
 const JSON: &str = "application/json";
@@ -36,6 +41,76 @@ struct Answer {
 struct Validated {
     valid: bool,
     user_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PlaylistAnswer {
+    playlist: PlaylistDoc,
+}
+
+#[derive(Deserialize)]
+struct PlaylistDoc {
+    title: Option<String>,
+    #[serde(default)]
+    track: Vec<PlaylistTrack>,
+}
+
+#[derive(Deserialize)]
+struct PlaylistTrack {
+    #[serde(default)]
+    identifier: Identifiers,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum Identifiers {
+    Several(Vec<String>),
+    One(String),
+    #[default]
+    None,
+}
+
+impl Identifiers {
+    fn recording(&self) -> Option<Mbid> {
+        let named = match self {
+            Self::Several(several) => several.as_slice(),
+            Self::One(one) => slice::from_ref(one),
+            Self::None => &[],
+        };
+        named.iter().find_map(|url| {
+            let (_, id) = url.split_once(RECORDING_PAGE)?;
+            Mbid::new(id.trim_end_matches('/')).ok()
+        })
+    }
+}
+
+impl PlaylistDoc {
+    fn linked(self) -> Option<LinkedPlaylist> {
+        let name = self
+            .title
+            .map(|title| title.trim().to_owned())
+            .filter(|title| !title.is_empty())?;
+        Some(LinkedPlaylist {
+            name,
+            songs: self
+                .track
+                .iter()
+                .filter_map(|track| track.identifier.recording())
+                .take(PLAYLIST_SONGS_AT_MOST)
+                .map(ListedSong::Recording)
+                .collect(),
+        })
+    }
+}
+
+pub(crate) fn playlist_named(
+    client: &Client,
+    playlist: &Mbid,
+) -> crate::Result<Option<LinkedPlaylist>> {
+    let asked = format!("{PLAYLIST}{}", playlist.as_str());
+    let held = client.json::<PlaylistAnswer>(Host::ListenBrainz, LookupOp::FollowLink, &asked)?;
+
+    Ok(held.and_then(|answer| answer.playlist.linked()))
 }
 
 pub struct ListenBrainz {
@@ -213,6 +288,36 @@ mod tests {
     use resonate_library::{Isrc, Mbid};
 
     use super::*;
+
+    #[test]
+    fn a_listenbrainz_playlist_names_its_title_and_each_song_by_its_recording() {
+        let answer: PlaylistAnswer =
+            serde_json::from_str(include_str!("../tests/fixtures/listenbrainz_playlist.json"))
+                .expect("the captured playlist reads back");
+
+        let linked = answer.playlist.linked().expect("a named playlist");
+
+        assert_eq!(linked.name, "Great daily jams!");
+        assert_eq!(linked.songs.len(), 50);
+        assert_eq!(
+            linked.songs.first(),
+            Some(&ListedSong::Recording(
+                Mbid::new("471f0790-7b32-44ab-b5f8-911a790c6e7e").expect("an mbid")
+            ))
+        );
+    }
+
+    #[test]
+    fn a_playlist_naming_a_recording_by_one_identifier_or_none_reads_either() {
+        let one: PlaylistTrack = serde_json::from_str(
+            r#"{"identifier": "https://musicbrainz.org/recording/471f0790-7b32-44ab-b5f8-911a790c6e7e"}"#,
+        )
+        .expect("one identifier reads");
+        let none: PlaylistTrack = serde_json::from_str("{}").expect("no identifier reads");
+
+        assert!(one.identifier.recording().is_some());
+        assert_eq!(none.identifier.recording(), None);
+    }
 
     fn told(title: &str) -> Scrobble {
         Scrobble {

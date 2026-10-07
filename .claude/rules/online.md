@@ -245,6 +245,12 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
 - **`Reference::artist_linked` = the name Deezer's `/artist/<n>` bills**, from the `ArtistDoc` a
   portrait uses; a MusicBrainz artist link asks nothing, its id in hand
   (`an_artist_page_names_the_artist_it_is_of_and_an_empty_answer_names_nobody`).
+- **`Reference::playlist_linked` reads a playlist's songs without a request a song.** Deezer:
+  `/playlist/<n>` gives the title and the first tracks inline; `/playlist/<n>/tracks` pages of
+  `PLAYLIST_SONGS_A_PAGE` follow until `nb_tracks` or `PLAYLIST_SONGS_AT_MOST` (1 000); each track
+  is `TrackDoc::named` as a pasted track is. ListenBrainz: `/1/playlist/<mbid>`'s JSPF, each
+  track's recording read off an `identifier` (one or a list) naming
+  `musicbrainz.org/recording/<mbid>`. A playlist with no title names nothing.
 
 ## ListenBrainz
 

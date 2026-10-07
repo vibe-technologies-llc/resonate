@@ -32,16 +32,16 @@ use resonate_library::{
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAhead, LyricsAsked, Mbid,
-    Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer,
-    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollHandle, PollOptions, PollProgress,
-    Popularity, Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch,
-    RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup,
-    ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery,
-    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
-    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
-    Unwritten, Vault, Waits, Window, Wording, Written,
+    Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, LovesTold, LyricText,
+    LyricsAhead, LyricsAsked, Mbid, Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions,
+    OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder,
+    PollHandle, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -9662,6 +9662,7 @@ enum Called {
     AlbumLinked(AlbumLink),
     ArtistLinked(ArtistLink),
     ArtistAt(String),
+    PlaylistLinked(PlaylistLink),
     ByBarcode(Barcode),
 }
 
@@ -9687,7 +9688,8 @@ impl Called {
             Self::SongLinked(_)
             | Self::AlbumLinked(_)
             | Self::ArtistLinked(_)
-            | Self::ArtistAt(_) => LookupOp::FollowLink,
+            | Self::ArtistAt(_)
+            | Self::PlaylistLinked(_) => LookupOp::FollowLink,
             Self::ByBarcode(_) => LookupOp::FindRelease,
         }
     }
@@ -9730,6 +9732,7 @@ struct Canned {
     album_linked: Option<AlbumNames>,
     artist_linked: Option<String>,
     artists_at: Vec<(String, Mbid)>,
+    playlist_linked: Option<LinkedPlaylist>,
     barcoded: Vec<BarcodeMatch>,
 }
 
@@ -10050,6 +10053,11 @@ impl Reference for Fake {
     fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>> {
         self.note(Called::ArtistLinked(link.clone()))?;
         Ok(self.canned.artist_linked.clone())
+    }
+
+    fn playlist_linked(&self, link: &PlaylistLink) -> Result<Option<LinkedPlaylist>> {
+        self.note(Called::PlaylistLinked(link.clone()))?;
+        Ok(self.canned.playlist_linked.clone())
     }
 
     fn artist_at(&self, page: &str) -> Result<Option<Mbid>> {
@@ -22431,7 +22439,13 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
     let by_isrc = library.follow_link(&fake, &linked_to_spotify())?;
     let by_recording = library.follow_link(&fake, &SongLink::MusicBrainz(mbid(RECORDING)))?;
 
+    let first = all(&library)?
+        .into_iter()
+        .find(|track| track.title == ORBITS_TITLES[0])
+        .expect("the first track held")
+        .id;
     let held = Linked::Held {
+        track: first,
         title: ORBITS_TITLES[0].to_owned(),
         artist: Some("The Orbiters".to_owned()),
     };
@@ -22442,6 +22456,73 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
         vec![Called::SongLinked(linked_to_spotify())],
         "a song held is not asked about"
     );
+    Ok(())
+}
+
+#[test]
+fn a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_once() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows[0] = ReleaseTrack {
+        recording: Some(mbid(RECORDING)),
+        ..rows[0].clone()
+    };
+    let identifying = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(rows, Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &identifying, false)?;
+    let held = all(&library)?
+        .into_iter()
+        .find(|track| track.title == ORBITS_TITLES[0])
+        .expect("the first track held")
+        .id;
+    let fake = Fake::new(Canned {
+        playlist_linked: Some(LinkedPlaylist {
+            name: "Night drive".to_owned(),
+            songs: vec![
+                ListedSong::Recording(mbid(RECORDING)),
+                ListedSong::Recording(mbid(ECHOES)),
+                ListedSong::Named(LinkNames {
+                    isrcs: vec![isrc(ANOTHER_CODE)],
+                    length: None,
+                    title: None,
+                    artist: None,
+                }),
+            ],
+        }),
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    });
+
+    let followed = library
+        .follow_playlist_link(&fake, &PlaylistLink::Deezer(1))?
+        .expect("a playlist the service read");
+    let first = library.fill_playlist_named(&followed.name, &followed.held)?;
+    let again = library.fill_playlist_named(&followed.name, &followed.held)?;
+
+    assert_eq!(followed.name, "Night drive");
+    assert_eq!(followed.held, [held]);
+    assert_eq!(
+        followed
+            .found
+            .iter()
+            .map(|found| found.recording.clone())
+            .collect::<Vec<_>>(),
+        [mbid(ECHOES)]
+    );
+    assert_eq!(followed.unnamed, 1);
+    assert!(first.started);
+    assert_eq!(first.added, 1);
+    assert_eq!(again.playlist, first.playlist);
+    assert!(!again.started);
+    assert_eq!(
+        again.added, 0,
+        "a playlist followed again took a song twice"
+    );
+    assert_eq!(library.playlist_entries(first.playlist, None)?.len(), 1);
     Ok(())
 }
 

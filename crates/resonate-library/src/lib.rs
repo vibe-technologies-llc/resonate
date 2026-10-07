@@ -97,8 +97,8 @@ pub use crate::{
     },
     learning::Learning,
     linked::{
-        AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, LinkNames, Linked, SongLink,
-        is_a_followed_link,
+        AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, FollowedPlaylist, LinkNames,
+        Linked, LinkedPlaylist, ListedSong, PlaylistLink, SongLink, is_a_followed_link,
     },
     meant::{ByArtist, Meant},
     model::{
@@ -116,6 +116,7 @@ pub use crate::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
         RetagHandle, ScanHandle, TakeInHandle,
     },
+    playlist::Filled,
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
         SavedQuery, SearchResults, SortOrder, TrackQuery,

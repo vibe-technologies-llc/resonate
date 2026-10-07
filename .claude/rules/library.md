@@ -2383,6 +2383,17 @@ starts.
   usual pressing's (linked deluxe edition = wanted as the deluxe track list); a group-only link is
   wanted from the pressing most of its pressings share
   (`an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_pressing`).
+  **Playlist link: every song it holds followed as a song link would be.** `PlaylistLink::read`
+  takes `deezer.com/[lang/]playlist/<n>` and `listenbrainz.org/playlist/<mbid>`;
+  `Reference::playlist_linked` answers a `LinkedPlaylist`: its name and a `ListedSong` per song,
+  `Recording` (ListenBrainz names recordings) or `Named` (`LinkNames`: Deezer's tracks carry ISRC,
+  title, artist, length, so no request a song). `Library::follow_playlist_link` follows each
+  through the halves `follow_link` is made of (`follow_recording`, `follow_names`, `linked_to`), so
+  a song is held, found or unnamed by the same rule as a pasted song (`Linked::Held` carries the
+  track). `Library::fill_playlist_named` (`playlist::fill`) puts held tracks into the list of that
+  name (folded), only rows it lacks; a saved query or no playlist of the name starts one under a
+  free name (`Filled`)
+  (`a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_once`).
   **Artist link: followed to the artist it names.** `ArtistLink::read` takes
   `musicbrainz.org/artist/<mbid>` and `deezer.com/[lang/]artist/<n>`; `Library::follow_artist_link`
   answers `Linked::HeldArtist` for a held artist (`artists.mbid` for the first; for the second the

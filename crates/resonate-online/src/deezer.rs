@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use resonate_codec::{CoverArt, ImageFormat};
 use resonate_library::{
-    Barcode, Isrc, Link, LinkNames, LookupOp, Relation, Service, StreamAsked, folded_letters,
+    Barcode, Isrc, Link, LinkNames, LinkedPlaylist, ListedSong, LookupOp, Relation, Service,
+    StreamAsked, folded_letters,
 };
 use serde::Deserialize;
 
@@ -17,6 +18,9 @@ const ARTIST: &str = "/artist/";
 const ALBUM: &str = "/album/";
 const TRACK: &str = "/track/";
 const TRACK_BY_ISRC: &str = "/track/isrc:";
+const PLAYLIST: &str = "/playlist/";
+const PLAYLIST_SONGS_A_PAGE: usize = 100;
+pub(crate) const PLAYLIST_SONGS_AT_MOST: usize = 1_000;
 const SEARCH: &str = "/search";
 const SEARCHED_AT_MOST: &str = "10";
 const TRACK_PAGES: &str = "https://www.deezer.com/";
@@ -120,6 +124,39 @@ pub(crate) fn artist_named(client: &Client, artist: u64) -> Result<Option<String
     Ok(held.and_then(|doc| named(doc.name.as_deref())))
 }
 
+pub(crate) fn playlist_named(client: &Client, playlist: u64) -> Result<Option<LinkedPlaylist>> {
+    let asked = format!("{PLAYLIST}{playlist}");
+    let Some(held) = client.json::<PlaylistDoc>(Host::Deezer, LookupOp::FollowLink, &asked)? else {
+        return Ok(None);
+    };
+    let Some(name) = named(held.title.as_deref()) else {
+        return Ok(None);
+    };
+    let counted = held.nb_tracks.unwrap_or_default();
+    let mut tracks = held.tracks.map(|page| page.data).unwrap_or_default();
+    while tracks.len() < counted.min(PLAYLIST_SONGS_AT_MOST) {
+        let asked = format!(
+            "{PLAYLIST}{playlist}/tracks?index={}&limit={PLAYLIST_SONGS_A_PAGE}",
+            tracks.len()
+        );
+        let page = client.json::<TracksPage>(Host::Deezer, LookupOp::FollowLink, &asked)?;
+        let Some(page) = page.filter(|page| !page.data.is_empty()) else {
+            break;
+        };
+        tracks.extend(page.data);
+    }
+    tracks.truncate(PLAYLIST_SONGS_AT_MOST);
+
+    Ok(Some(LinkedPlaylist {
+        name,
+        songs: tracks
+            .into_iter()
+            .filter_map(TrackDoc::named)
+            .map(ListedSong::Named)
+            .collect(),
+    }))
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -147,6 +184,19 @@ struct TrackDoc {
     duration: Option<u64>,
     artist: Option<Credited>,
     isrc: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaylistDoc {
+    title: Option<String>,
+    nb_tracks: Option<usize>,
+    tracks: Option<TracksPage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TracksPage {
+    #[serde(default)]
+    data: Vec<TrackDoc>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -298,6 +348,30 @@ mod tests {
             .into_iter()
             .find(|track| track.answers(asked))
             .and_then(TrackDoc::linked)
+    }
+
+    #[test]
+    fn a_deezer_playlist_names_its_title_and_each_song_by_its_code_title_artist_and_length() {
+        let held: PlaylistDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_playlist.json"))
+                .expect("the captured playlist reads back");
+        let page: TracksPage = serde_json::from_str(include_str!(
+            "../tests/fixtures/deezer_playlist_tracks.json"
+        ))
+        .expect("the captured page reads back");
+
+        assert_eq!(held.title.as_deref(), Some("Top Worldwide"));
+        assert_eq!(held.nb_tracks, Some(100));
+        assert_eq!(held.tracks.map(|page| page.data.len()), Some(100));
+        assert_eq!(
+            page.data.into_iter().next().and_then(TrackDoc::named),
+            Some(LinkNames {
+                isrcs: vec![Isrc::new("QZJ842603468").expect("a code")],
+                length: Some(Duration::from_secs(170)),
+                title: Some("Boston".to_owned()),
+                artist: Some("STELLA LEFTY".to_owned()),
+            })
+        );
     }
 
     #[test]
