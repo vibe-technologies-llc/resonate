@@ -21,7 +21,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     let mut sheet = Sheet::default();
     let mut timed = Timed::default();
 
-    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in sheet::lines_of(text) {
         if let Some(option) = line.strip_prefix(VLC_OPTION_TAG) {
             timed.read(option);
             continue;

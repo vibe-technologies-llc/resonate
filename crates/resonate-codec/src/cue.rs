@@ -238,7 +238,7 @@ pub fn read(bytes: &[u8]) -> CueSheet {
     let (text, encoding) = decoded(bytes);
     let mut sheet = Reading::default();
 
-    for line in text.lines() {
+    for line in text.split(['\n', '\r']) {
         sheet.line(line);
     }
     sheet.finish(encoding)
@@ -1030,6 +1030,22 @@ FILE "Meddle.flac" WAVE
         let sheet = read(MEDDLE.as_bytes());
         assert_eq!(sheet.files.len(), 1);
         sheet.files.into_iter().next().expect("one file")
+    }
+
+    #[test]
+    fn a_sheet_whose_lines_end_in_a_carriage_return_alone_reads_as_the_same_sheet() {
+        let alone = read(MEDDLE.replace('\n', "\r").as_bytes());
+        let paired = read(MEDDLE.replace('\n', "\r\n").as_bytes());
+        let tracks = |sheet: &CueSheet| {
+            sheet
+                .files
+                .iter()
+                .map(|file| file.tracks.len())
+                .sum::<usize>()
+        };
+
+        assert_eq!(tracks(&alone), 3);
+        assert_eq!(tracks(&paired), 3);
     }
 
     #[test]

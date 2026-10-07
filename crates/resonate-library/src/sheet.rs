@@ -389,8 +389,16 @@ pub fn stem_of(location: &MediaLocation) -> String {
         .map_or_else(|| location.to_string(), |stem| stem.into_owned())
 }
 
+pub(crate) fn lines_of(text: &str) -> impl Iterator<Item = &str> {
+    text.split(LINE_ENDS)
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+}
+
+const LINE_ENDS: [char; 2] = ['\n', '\r'];
+
 fn sniffed(text: &str) -> PlaylistFormat {
-    let Some(first) = text.lines().map(str::trim).find(|line| !line.is_empty()) else {
+    let Some(first) = lines_of(text).next() else {
         return PlaylistFormat::M3u;
     };
 
@@ -539,6 +547,36 @@ const fn hex(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sheet_whose_lines_end_in_a_carriage_return_alone_reads_every_row() {
+        let beside = Path::new("/music");
+
+        for ending in ["\r", "\r\n", "\n"] {
+            let m3u = [
+                "#EXTM3U",
+                "#EXTINF:350,Pink Floyd - Echoes",
+                "a.flac",
+                "b.flac",
+                "",
+            ]
+            .join(ending);
+            let pls = [
+                "[playlist]",
+                "File1=a.flac",
+                "File2=b.flac",
+                "NumberOfEntries=2",
+                "",
+            ]
+            .join(ending);
+
+            for (text, format) in [(m3u, PlaylistFormat::M3u), (pls, PlaylistFormat::Pls)] {
+                let (sheet, read_as) = parse(&text, beside);
+                assert_eq!(read_as, format, "{ending:?}");
+                assert_eq!(sheet.locations.len(), 2, "{format:?} ended by {ending:?}");
+            }
+        }
+    }
 
     #[test]
     fn a_sheet_too_large_to_import_is_refused_rather_than_exported() {

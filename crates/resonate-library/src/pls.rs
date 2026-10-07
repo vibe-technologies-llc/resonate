@@ -29,7 +29,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     let mut sheet = Sheet::default();
     let mut numbered: Vec<(u32, MediaLocation)> = Vec::new();
 
-    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in sheet::lines_of(text) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };

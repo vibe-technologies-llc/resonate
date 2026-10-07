@@ -6,8 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- An M3U written with bare carriage returns reads as one comment line and imports as an empty
-  playlist without saying so
 - Text from a file or service is read in quadratic time or unbounded in places: an enhanced-LRC
   line of thousands of `<` takes a minute (512 KiB, measured); an XSPF value of `&` with no `;`
   rescans the rest for each; a WAVE `LIST`/`INFO` ceiling of 1 MiB holds per list, not over the

@@ -2740,7 +2740,10 @@ starts.
   - **Encoding**: byte-order mark (UTF-8; UTF-16 either way, odd length refused), else valid
     UTF-8, else the code page `resonate_core::text` detects (`rust-style.md`), unless the name
     declares UTF-8 (`.m3u8`, `.xspf`) or the bytes hold a NUL (no text sheet does); either refusal
-    = `Error::UnreadablePlaylistFile`. `Imported::encoding` reports it.
+    = `Error::UnreadablePlaylistFile`. `Imported::encoding` reports it. A line ends at `\n`, `\r\n`
+    or a bare `\r` (an old Mac sheet; `sheet::lines_of`, and the cue reader likewise), never read
+    as one comment line
+    (`a_sheet_whose_lines_end_in_a_carriage_return_alone_reads_every_row`).
   - **Import reconciles by count, not set**: a row the playlist holds counts as already there (a
     sheet read twice is a no-op); a file the *sheet* names twice is two rows (`add_to_playlist`
     deliberately allows a file twice). A taken name is appended to, not refused: `import` and
