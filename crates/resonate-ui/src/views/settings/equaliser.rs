@@ -209,7 +209,6 @@ impl RootView {
 
         segment
             .track_focus(&self.controls.at(&id, cx))
-            .tab_stop(true)
             .key_context(crate::app::CONTROL_CONTEXT)
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.bind_a_curve(sink.clone(), binding.clone(), cx);
@@ -454,7 +453,6 @@ impl RootView {
                     kind == chosen,
                 )
                 .track_focus(&self.controls.at(&id, cx))
-                .tab_stop(true)
                 .key_context(crate::app::CONTROL_CONTEXT)
                 .on_click(cx.listener(move |this, _, _, cx| this.retype_a_band(row, kind, cx))),
             );

@@ -16,8 +16,8 @@ mod tidal;
 use std::sync::atomic::Ordering;
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
-    relative, rgb,
+    AnyElement, Context, Div, FocusHandle, FontWeight, SharedString, Stateful, Window, div,
+    prelude::*, px, relative, rgb,
 };
 use resonate_core::Appearance;
 use resonate_library::DEFAULT_LAYOUT;
@@ -726,7 +726,6 @@ impl RootView {
 
         control
             .track_focus(&self.controls.at(&named, cx))
-            .tab_stop(true)
             .key_context(CONTROL_CONTEXT)
             .focus(|control| {
                 control
@@ -749,11 +748,20 @@ impl RootView {
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let handle = self.controls.at(named, cx);
+        Self::ringed(&handle, control, press, cx)
+    }
+
+    pub(crate) fn ringed(
+        handle: &FocusHandle,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let clicked = press.clone();
 
         control
-            .track_focus(&self.controls.at(named, cx))
-            .tab_stop(true)
+            .track_focus(handle)
             .key_context(CONTROL_CONTEXT)
             .focus(|control| {
                 control
@@ -812,7 +820,6 @@ impl RootView {
 
         control
             .track_focus(&self.controls.at(format!("{id}-{index}"), cx))
-            .tab_stop(true)
             .key_context(CONTROL_CONTEXT)
             .focus(|option| option.bg(theme::tinted(theme::accent(), 0x2a)))
             .on_action(

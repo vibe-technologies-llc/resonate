@@ -149,7 +149,7 @@ impl Field {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let focus = cx.focus_handle();
+        let focus = cx.focus_handle().tab_stop(true);
         cx.on_focus(&focus, window, |this, _, cx| this.take_the_caret(cx))
             .detach();
         cx.on_blur(&focus, window, |this, _, cx| this.drop_the_caret(cx))
@@ -470,7 +470,6 @@ impl Render for Field {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus)
-            .tab_stop(true)
             .key_context(SEARCH_CONTEXT)
             .flex()
             .flex_1()

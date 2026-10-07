@@ -557,6 +557,7 @@ pub struct RootView {
     pub(crate) looking: Entity<Field>,
     pub(crate) equaliser: Entity<EqualiserModel>,
     pub(crate) controls: Controls,
+    pub(crate) standing_controls: Controls,
     pub(crate) took_out: TakenBack,
     pub(crate) queue_length: QueueMeasure,
     pub(crate) queue_ordered: Option<Task<()>>,
@@ -1034,6 +1035,7 @@ impl RootView {
             looking,
             equaliser,
             controls: Controls::default(),
+            standing_controls: Controls::default(),
             took_out: TakenBack::default(),
             queue_length: QueueMeasure::default(),
             queue_ordered: None,
@@ -2607,7 +2609,8 @@ impl RootView {
 
     fn let_the_control_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.disarm();
-        if self.controls.lets_go(window) {
+        let let_go = self.controls.lets_go(window) | self.standing_controls.lets_go(window);
+        if let_go {
             cx.notify();
         }
     }
@@ -3267,6 +3270,21 @@ impl RootView {
         } else {
             window.focus_next();
         }
+    }
+
+    fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.focus.is_focused(window) {
+            self.search.read(cx).take_focus(window);
+        }
+        window.focus_next();
+    }
+
+    fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.focus.is_focused(window) {
+            self.search.read(cx).take_focus(window);
+            return;
+        }
+        window.focus_prev();
     }
 
     fn leave_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -4322,6 +4340,18 @@ impl RootView {
             )
     }
 
+    pub(crate) fn in_the_standing_ring(
+        &self,
+        named: &'static str,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let handle = self.standing_controls.at(named, cx);
+        Self::ringed(&handle, control, press, cx)
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    }
+
     fn pane_row(&self, pane: Pane, count: Option<usize>, cx: &mut Context<Self>) -> Stateful<Div> {
         let chosen = pane == self.in_front(cx);
         let colour = if chosen {
@@ -4335,7 +4365,7 @@ impl RootView {
             theme::muted()
         };
 
-        div()
+        let row = div()
             .id(SharedString::new_static(pane.label()))
             .debug_selector(|| format!("tab-{}", pane.as_str()))
             .group(PANE_GROUP)
@@ -4366,8 +4396,13 @@ impl RootView {
             .names(pane.about())
             .when_some(count, |row, count| {
                 row.child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))
-            })
-            .on_click(cx.listener(move |this, _, _, cx| this.choose_pane(pane, cx)))
+            });
+        self.in_the_standing_ring(
+            pane.label(),
+            row,
+            move |this, _, cx| this.choose_pane(pane, cx),
+            cx,
+        )
     }
 
     pub(crate) fn drawn_cover(
@@ -4681,8 +4716,12 @@ impl Render for RootView {
                 this.focus_filter(window, cx);
             }))
             .on_action(cx.listener(|this, _: &Listen, _, cx| this.open_the_listener(cx)))
-            .on_action(|_: &ReachNext, window: &mut Window, _: &mut App| window.focus_next())
-            .on_action(|_: &ReachPrevious, window: &mut Window, _: &mut App| window.focus_prev())
+            .on_action(cx.listener(|this, _: &ReachNext, window, cx| {
+                this.tab_past_the_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ReachPrevious, window, cx| {
+                this.tab_back_to_the_search(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &NextPane, _, cx| this.step_pane(Step::Below, cx)))
             .on_action(cx.listener(|this, _: &PreviousPane, _, cx| {
                 this.step_pane(Step::Above, cx);

@@ -531,7 +531,6 @@ impl RootView {
         let clicked = name.clone();
 
         row.track_focus(&self.controls.at(reached, cx))
-            .tab_stop(true)
             .key_context(crate::app::CONTROL_CONTEXT)
             .focus(|row| row.border_color(rgb(theme::accent())))
             .on_action(

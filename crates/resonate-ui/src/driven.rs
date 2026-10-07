@@ -684,6 +684,54 @@ mod tests {
         );
     }
 
+    fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
+        const TAB_STOPS_AT_MOST: usize = 64;
+        let root = driven.root.clone();
+        let on_it = |driven: &mut Driven| {
+            driven.cx.update(|window, cx| {
+                root.read(cx)
+                    .standing_controls
+                    .at(named, cx)
+                    .is_focused(window)
+            })
+        };
+        (0..TAB_STOPS_AT_MOST).any(|_| {
+            driven.cx.simulate_keystrokes("tab");
+            on_it(driven)
+        })
+    }
+
+    #[gpui::test]
+    fn tab_reaches_the_transport_buttons_and_the_sidebar_and_enter_presses_them(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
+        assert!(
+            tabbed_onto(&mut driven, "queue"),
+            "tab never reached the queue button"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        assert!(
+            driven.read(|root, _| root.pane == Pane::Queue),
+            "enter on the queue button did not open the queue"
+        );
+
+        assert!(
+            tabbed_onto(&mut driven, Pane::Albums.label()),
+            "tab never reached the sidebar's albums"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        assert!(
+            driven.read(|root, _| root.pane == Pane::Albums),
+            "enter on the sidebar's albums did not open them"
+        );
+    }
+
     #[gpui::test]
     fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
         cx: &mut TestAppContext,

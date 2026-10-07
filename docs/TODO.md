@@ -60,8 +60,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   keys; only its songs are
 - `End`, select-all and the scrollbar act on the 2 000 rows loaded so far: `End` in a 50 000-track
   library lands on row 2 000
-- Only Settings and the search field are tab stops: transport buttons, sidebar entries, heading
-  buttons, seek and volume rails and every row control cannot be focused or pressed by keyboard
+- Heading buttons and every row control (favourite star, ✕, pin) are no tab stops; the seek and
+  volume rails are reached only by their keys
 - A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row alone;
   nothing adds a row with Control. After the `End` item
 - **Blocked on gpui:** nothing is exposed to a screen reader: published gpui 0.2.2 carries no

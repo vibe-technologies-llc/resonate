@@ -276,7 +276,6 @@ impl RootView {
 
         control
             .track_focus(&self.controls.at(named, cx))
-            .tab_stop(true)
             .key_context(crate::app::CONTROL_CONTEXT)
             .focus(|mark| mark.bg(theme::tinted(theme::accent(), 0x2a)))
             .on_action(

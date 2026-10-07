@@ -21,7 +21,7 @@ impl Controls {
         self.handles
             .borrow_mut()
             .entry(named)
-            .or_insert_with(|| cx.focus_handle())
+            .or_insert_with(|| cx.focus_handle().tab_stop(true))
             .clone()
     }
 

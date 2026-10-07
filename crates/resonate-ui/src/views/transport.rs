@@ -430,25 +430,25 @@ impl RootView {
             .child(kit::measures_its_width(self.status_room.clone()))
             .child(self.queue_button(cx))
             .when(kept.shuffle, |cluster| {
-                cluster.child(
-                    self.toggle("shuffle", Icon::Shuffle, shuffling(shuffle), shuffle)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.send(Command::SetShuffle(!shuffle), cx);
-                        })),
-                )
+                cluster.child(self.in_the_standing_ring(
+                    "shuffle",
+                    self.toggle("shuffle", Icon::Shuffle, shuffling(shuffle), shuffle),
+                    move |this, _, cx| this.send(Command::SetShuffle(!shuffle), cx),
+                    cx,
+                ))
             })
             .when(kept.repeat, |cluster| {
-                cluster.child(
+                cluster.child(self.in_the_standing_ring(
+                    "repeat",
                     self.toggle(
                         "repeat",
                         repeat,
                         repeating(state.repeat),
                         state.repeat != RepeatMode::Off,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.send(Command::SetRepeat(cycled), cx);
-                    })),
-                )
+                    ),
+                    move |this, _, cx| this.send(Command::SetRepeat(cycled), cx),
+                    cx,
+                ))
             })
             .when(kept.sleep, |cluster| {
                 cluster.child(self.sleep_button(state.sleeping, cx))
@@ -1108,33 +1108,37 @@ impl RootView {
             .gap_2()
             .ml_2()
             .child(
-                div()
-                    .id("volume-icon")
-                    .flex()
-                    .items_center()
-                    .cursor_pointer()
-                    .group(VOLUME_ICON_GROUP)
-                    .child(motion::popped(
-                        icons::lit_on_hover(
-                            icons::icon(
-                                if muted { Icon::Muted } else { Icon::Volume },
-                                theme::toggle_icon(),
-                                if muted {
-                                    theme::accent()
-                                } else {
-                                    theme::muted()
-                                },
+                self.in_the_standing_ring(
+                    "volume-icon",
+                    div()
+                        .id("volume-icon")
+                        .flex()
+                        .items_center()
+                        .cursor_pointer()
+                        .group(VOLUME_ICON_GROUP)
+                        .child(motion::popped(
+                            icons::lit_on_hover(
+                                icons::icon(
+                                    if muted { Icon::Muted } else { Icon::Volume },
+                                    theme::toggle_icon(),
+                                    if muted {
+                                        theme::accent()
+                                    } else {
+                                        theme::muted()
+                                    },
+                                ),
+                                VOLUME_ICON_GROUP,
                             ),
-                            VOLUME_ICON_GROUP,
-                        ),
-                        "glyph",
-                        muted,
-                    ))
-                    .names(if muted { UNMUTE_HINT } else { hint })
-                    .on_click(cx.listener(|this, _, _, cx| {
+                            "glyph",
+                            muted,
+                        ))
+                        .names(if muted { UNMUTE_HINT } else { hint }),
+                    |this, _, cx| {
                         cx.stop_propagation();
                         this.toggle_mute(cx);
-                    })),
+                    },
+                    cx,
+                ),
             )
             .when(rail, |bar| {
                 bar.child(self.rail(Handle::Volume, level, None, cx))
@@ -1224,7 +1228,7 @@ impl RootView {
         command: Command,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        div()
+        let stepped = div()
             .id(id)
             .group(CONTROL_GROUP)
             .flex()
@@ -1239,14 +1243,19 @@ impl RootView {
                 icons::icon(glyph, theme::transport_step_icon(), theme::muted()),
                 CONTROL_GROUP,
             ))
-            .names(saying)
-            .on_click(cx.listener(move |this, _, _, cx| this.send(command.clone(), cx)))
+            .names(saying);
+        self.in_the_standing_ring(
+            id,
+            stepped,
+            move |this, _, cx| this.send(command.clone(), cx),
+            cx,
+        )
     }
 
     fn play_button(&self, playing: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let glyph = if playing { Icon::Pause } else { Icon::Play };
 
-        div()
+        let button = div()
             .id("play")
             .flex()
             .flex_none()
@@ -1262,20 +1271,25 @@ impl RootView {
                 "glyph",
                 playing,
             ))
-            .names(if playing { PAUSE_HINT } else { PLAY_HINT })
-            .on_click(cx.listener(|this, _, _, cx| this.send(Command::TogglePlayPause, cx)))
+            .names(if playing { PAUSE_HINT } else { PLAY_HINT });
+        self.in_the_standing_ring(
+            "play",
+            button,
+            |this, _, cx| this.send(Command::TogglePlayPause, cx),
+            cx,
+        )
     }
 
     fn queue_button(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let open = self.pane == Pane::Queue;
 
-        self.toggle(
+        let toggle = self.toggle(
             "queue",
             Icon::Queue,
             if open { QUEUE_OPEN_HINT } else { QUEUE_HINT },
             open,
-        )
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_queue(cx)))
+        );
+        self.in_the_standing_ring("queue", toggle, |this, _, cx| this.toggle_queue(cx), cx)
     }
 
     fn toggle(

@@ -2498,11 +2498,25 @@ is never named.
   `FocusHandle` per control id, forgetting those a frame stopped drawing (a redrawn control keeps
   the caret); ring = `Window::focus_next`/`focus_prev` over tab stops gpui inserts in paint order
   (no re-implemented order). A control carries `.track_focus`, `.tab_stop(true)` and
-  `key_context(CONTROL_CONTEXT)`, the whole key plumbing: `space`/`enter` bound under it fire the
+  `key_context(CONTROL_CONTEXT)`, the whole key plumbing (`RootView::ringed`): `space`/`enter` bound under it fire the
   control's *own* `on_action`; escape lets go; every window binding that carried `!Search` carries
   `!Search && !Control`, so the transport stands down as for the search field. `tab`/`shift-tab`
   are bound with no predicate (focus must move from inside a text field too). Focus is drawn as
   hover is: accent on the border where a control has one, else an accent wash.
+  - **A tab stop is the handle's, not the element's.** gpui reads `FocusHandle::tab_stop` for a
+    tracked handle and applies an element's `.tab_stop(true)` only to a handle it made itself, so
+    `Controls::at` and `Field::new` make their handles tab stops (until they did, no control or
+    field was in the ring at all and `tab` moved nothing).
+  - Settings' controls are `controls`, pruned each frame to what the pane drew;
+    `standing_controls` hold what every frame draws (transport buttons, the mute mark, sidebar
+    panes), never pruned (a pane's frame would otherwise drop the transport's handles and the
+    caret with them); `in_the_standing_ring` lays them. A click on one takes no caret
+    (`prevent_default` on its press: gpui focuses a focusable element under a press), so choosing
+    a pane with the pointer leaves the arrows reaching its rows, not stuck on the sidebar.
+  - `tab` from the window (the results the search box handed the caret to) moves past the search
+    field, `shift-tab` returns to it: `tab` in the field means *go to the results*, so a ring
+    starting over at the field from the window never got further
+    (`tab_reaches_the_transport_buttons_and_the_sidebar_and_enter_presses_them`).
 - **What is in this build, and where it keeps things, is a category, not a window.** `WindowKind`
   is `Main` alone (no `Preferences`/`About`: nothing constructed them, a defect per `errors.md`).
   About reports the version, the two faces `fonts.rs` settled on, the sink count the graph
