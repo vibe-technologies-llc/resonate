@@ -47,8 +47,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   from the documentation and `tests/live.rs` has no AcoustID test
 
 ## Performance and scale
-- Scrolling a large library to the end re-reads the whole prefix of tracks, albums and artists at
-  every page (quadratic); design with the `End` item under Keyboard
 - A name written anywhere in the catalog (each batch of a scan) re-reads every queued track's name
   while the queue pane is open; a play, favourite or playlist edit no longer does
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU
@@ -58,12 +56,10 @@ sits last in its category, not worked until it moves. Everything else is open.
 ## Keyboard and accessibility
 - The album and artist strips on a search's *Top results*, held and found, are not reached by the
   keys; only its songs are
-- `End`, select-all and the scrollbar act on the 2 000 rows loaded so far: `End` in a 50 000-track
-  library lands on row 2 000
 - Heading buttons and every row control (favourite star, ✕, pin) are no tab stops; the seek and
   volume rails are reached only by their keys
 - A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row alone;
-  nothing adds a row with Control. After the `End` item
+  nothing adds a row with Control
 - **Blocked on gpui:** nothing is exposed to a screen reader: published gpui 0.2.2 carries no
   AccessKit, which only Zed's `main` has
 

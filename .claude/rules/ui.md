@@ -1649,16 +1649,27 @@ is never named.
   roots that are folders now, keeps the rest as `absent`; one turning up later (drive mounted
   after open) rebuilds the watch and is owed its own incremental scan (was read once, never
   watched).
-- **A browse pane holds a window onto the listing; counts come from the catalog.**
-  `LibraryModel::reach` = rows `browsed` asks for, `PAGE` (2 000) to start. `reach_further` adds a
-  page when a list has drawn within `LOOK_AHEAD` (200) of what it holds *and* holds all it asked
-  (there may be more). It re-reads with a larger limit, not a page at an offset: sort is redone
-  anyway, and a prefix of one ordered read cannot duplicate or skip a row as a second offset read
-  can under a scan. Called from the `uniform_list` processors (only place knowing how far a list
-  is drawn); `held < reach` = re-entrancy guard (growth in flight leaves the window larger than
-  what is loaded). `LOOK_AHEAD < PAGE` is a `const` assertion (else frame one reaches the first
-  window's end and it grows to the whole library unasked). `set_query` and `select` reset to one
-  page (rows under the old window are not a new query's).
+- **A browse pane holds a prefix of the listing, but is as long as the whole match.**
+  `LibraryModel::reach` = rows the four browse lists are read to, `PAGE` (2 000) to start. Each
+  list's `uniform_list` counts the catalog's match (`albums_listed`, `artists_listed`,
+  `listed_rows`: the larger of what is held and `albums_counted`/`artists_counted`/`listed().rows`),
+  so the scrollbar, `End`, `ctrl-a` and the page keys reach the last row of a 50 000-track library;
+  a row not yet read draws as a blank row of its height (a grid row with fewer cells). The
+  `uniform_list` processors (only place knowing how far a list is drawn) call `reach_further`: once
+  a list has drawn within `LOOK_AHEAD` (200) of what it holds *and* holds all it asked, `reach`
+  grows to cover what was drawn (`reach_covering`: a thumb dragged to the end reads the rest in one
+  read, not a page per frame); `held < reach` = re-entrancy guard. **A page read reads only what
+  lies past the rows held** (`grown`, `Wanted::ThePage`): `Asked::held` names each list's length
+  when asked; each list is read from one row before its end (`offset` = held less one) up to
+  `reach`. `grew` adds the read only where its first row is the row held last (`Grew::Renewed`);
+  where the list's length or its last row moved under the read (a scan wrote between), it answers
+  `Grew::Moved` and the model reads the lists whole once (`page_moved` zeroes `Asked::held`), so a
+  second offset read can never duplicate or skip a row. Scrolling to the end of a large library was
+  quadratic before (every page re-read the whole prefix). `LOOK_AHEAD < PAGE` is a `const`
+  assertion. `set_query` and `select` reset to one page (rows under the old window are not a new
+  query's). A row pressed or reached past what is held plays through `play_the_listing_from`'s
+  whole read, starting at its place in it
+  (`a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row`).
 - **A count is what the query matches, not what the window holds.** `Library::albums_counted`,
   `artists_counted`, `measured` answer over the whole match; the first two share scoping with the
   listings via `narrowed_onto` (count and listing cannot disagree on the search's meaning).

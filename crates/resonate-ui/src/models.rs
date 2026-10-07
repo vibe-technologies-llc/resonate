@@ -166,6 +166,36 @@ struct Paged {
     scoped: Vec<Track>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Held {
+    albums: usize,
+    artists: usize,
+    tracks: usize,
+    scoped: usize,
+}
+
+struct Grown {
+    from: Held,
+    page: Paged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Grew {
+    Same,
+    Renewed,
+    Moved,
+}
+
+impl Grew {
+    const fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Moved, _) | (_, Self::Moved) => Self::Moved,
+            (Self::Renewed, _) | (_, Self::Renewed) => Self::Renewed,
+            (Self::Same, Self::Same) => Self::Same,
+        }
+    }
+}
+
 struct Standing {
     statistics: Statistics,
     most_listened: MostListened,
@@ -176,7 +206,7 @@ struct Standing {
 
 struct Loaded {
     browsed: Option<Browsed>,
-    paged: Option<Paged>,
+    grown: Option<Grown>,
     shelves: Option<Shelves>,
     meant: Option<Meant>,
 }
@@ -399,6 +429,7 @@ struct Asked {
     reading: Direction,
     sorting: Sorting,
     reach: usize,
+    held: Held,
     window: Window,
 }
 
@@ -415,6 +446,7 @@ impl Asked {
             reading: PlaylistOrder::default().reads(),
             sorting: Sorting::default(),
             reach: PAGE,
+            held: Held::default(),
             window: Window::default(),
         }
     }
@@ -765,6 +797,7 @@ pub struct LibraryModel {
     enriching: Option<Arc<EnrichProgress>>,
     sought: Arc<Sought>,
     reach: usize,
+    page_moved: bool,
     albums_counted: u32,
     artists_counted: u32,
     tracks_measured: Measured,
@@ -976,6 +1009,7 @@ impl LibraryModel {
             enriching: None,
             sought: Arc::default(),
             reach,
+            page_moved: false,
             albums_counted: 0,
             artists_counted: 0,
             tracks_measured: Measured::default(),
@@ -2735,7 +2769,7 @@ impl LibraryModel {
         if held < self.reach || drawn_to + LOOK_AHEAD < held {
             return;
         }
-        self.reach = self.reach.saturating_add(PAGE);
+        self.reach = reach_covering(self.reach, drawn_to);
         self.read(Wanted::ThePage, cx);
     }
 
@@ -2784,9 +2818,17 @@ impl LibraryModel {
 
     pub fn listed_rows(&self) -> usize {
         match self.rows.is_empty() {
-            true => self.listing().len(),
+            true => self.listing().len().max(self.listed().rows as usize),
             false => self.rows.len(),
         }
+    }
+
+    pub(crate) fn albums_listed(&self) -> usize {
+        self.albums.len().max(self.albums_counted as usize)
+    }
+
+    pub(crate) fn artists_listed(&self) -> usize {
+        self.artists.len().max(self.artists_counted as usize)
     }
 
     pub fn albums(&self) -> Arc<[Album]> {
@@ -3954,6 +3996,15 @@ impl LibraryModel {
             reading: self.reading,
             sorting: self.sorting,
             reach: self.reach,
+            held: match self.page_moved {
+                true => Held::default(),
+                false => Held {
+                    albums: self.albums.len(),
+                    artists: self.artists.len(),
+                    tracks: self.tracks.len(),
+                    scoped: self.scoped.len(),
+                },
+            },
             window: self.window,
         }
     }
@@ -4002,7 +4053,9 @@ impl LibraryModel {
             Ok(loaded) => {
                 let shelved = loaded.shelves.is_some();
                 let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
-                self.take(loaded);
+                if self.take(loaded) == Grew::Moved {
+                    self.read(Wanted::ThePage, cx);
+                }
                 if gone == Some(self.selection) {
                     self.select(Selection::Everything, cx);
                 }
@@ -4017,13 +4070,13 @@ impl LibraryModel {
         cx.notify();
     }
 
-    fn take(&mut self, loaded: Loaded) {
+    fn take(&mut self, loaded: Loaded) -> Grew {
         self.revision = self.revision.wrapping_add(1);
         self.read_albums = Recent::new(ALBUMS_HELD);
         if let Some(shelves) = loaded.shelves {
             self.take_the_shelves(shelves);
         }
-        if loaded.browsed.is_some() || loaded.paged.is_some() {
+        if loaded.browsed.is_some() || loaded.grown.is_some() {
             self.search = Search::read(
                 loaded
                     .meant
@@ -4033,13 +4086,24 @@ impl LibraryModel {
             self.meant = loaded.meant;
         }
         if let Some(browsed) = loaded.browsed {
+            self.page_moved = false;
             self.take_the_listing(browsed);
-        } else if let Some(paged) = loaded.paged {
-            self.take_the_page(paged);
-            self.index_the_favourites();
-            self.restate_the_listing();
-            self.ask_about_what_is_drawn();
+            return Grew::Renewed;
         }
+        let Some(grown) = loaded.grown else {
+            return Grew::Same;
+        };
+        let grew = self.take_the_growth(grown);
+        match grew {
+            Grew::Same => {}
+            Grew::Moved => self.page_moved = true,
+            Grew::Renewed => {
+                self.index_the_favourites();
+                self.restate_the_listing();
+                self.ask_about_what_is_drawn();
+            }
+        }
+        grew
     }
 
     fn take_the_wants(&mut self, wants: WantsRead) {
@@ -4080,6 +4144,22 @@ impl LibraryModel {
         if self.held.is_none() {
             self.opened = None;
         }
+    }
+
+    fn take_the_growth(&mut self, grown: Grown) -> Grew {
+        let Grown { from, page } = grown;
+        let albums = grew(&mut self.albums, from.albums, page.albums);
+        if albums == Grew::Renewed {
+            self.index_the_albums();
+        }
+        let grew = albums
+            .and(grew(&mut self.artists, from.artists, page.artists))
+            .and(grew(&mut self.tracks, from.tracks, page.tracks))
+            .and(grew(&mut self.scoped, from.scoped, page.scoped));
+        if from == Held::default() {
+            self.page_moved = false;
+        }
+        grew
     }
 
     fn take_the_page(&mut self, paged: Paged) {
@@ -5916,8 +5996,8 @@ fn load(library: &Library, mut asked: Asked, wanted: Wanted) -> resonate_library
     asked.meant = meant.as_ref().map(|meant| meant.searched.clone());
     let narrowing = asked.text.as_deref();
 
-    let (browsed, paged) = match wanted {
-        Wanted::ThePage => (None, Some(paged(library, &asked)?)),
+    let (browsed, grown) = match wanted {
+        Wanted::ThePage => (None, Some(grown(library, &asked)?)),
         wanted if wanted.reads_the_listing() => (
             Some(browsed(library, &asked, wanted.reads_what_stands())?),
             None,
@@ -5936,7 +6016,7 @@ fn load(library: &Library, mut asked: Asked, wanted: Wanted) -> resonate_library
 
     Ok(Loaded {
         browsed,
-        paged,
+        grown,
         shelves,
         meant,
     })
@@ -6088,6 +6168,68 @@ impl Asked {
             offset: 0,
         }
     }
+}
+
+fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
+    let from = asked.held;
+    let overlapping = |held: usize| held.saturating_sub(1);
+    let limit = |held: usize| Some(asked.reach.saturating_sub(overlapping(held)).max(1));
+    let tracks_after = |album, artist, held: usize| TrackQuery {
+        offset: overlapping(held),
+        ..asked.listing(album, artist, limit(held))
+    };
+
+    Ok(Grown {
+        from,
+        page: Paged {
+            albums: library.albums(&AlbumQuery {
+                limit: limit(from.albums),
+                offset: overlapping(from.albums),
+                ..asked.albums()
+            })?,
+            artists: library.artists(&ArtistQuery {
+                limit: limit(from.artists),
+                offset: overlapping(from.artists),
+                ..asked.artists()
+            })?,
+            tracks: library.tracks(&tracks_after(None, None, from.tracks))?,
+            scoped: match asked.scoping() {
+                true => library.tracks(&tracks_after(asked.album, asked.artist, from.scoped))?,
+                false => Vec::new(),
+            },
+        },
+    })
+}
+
+fn reach_covering(reach: usize, drawn_to: usize) -> usize {
+    let wanted = drawn_to
+        .saturating_add(LOOK_AHEAD)
+        .div_ceil(PAGE)
+        .saturating_mul(PAGE);
+    wanted.max(reach.saturating_add(PAGE))
+}
+
+fn grew<T: PartialEq + Clone>(held: &mut Arc<[T]>, from: usize, read: Vec<T>) -> Grew {
+    if from == 0 {
+        return match renewed(held, read) {
+            true => Grew::Renewed,
+            false => Grew::Same,
+        };
+    }
+    if held.len() != from {
+        return Grew::Moved;
+    }
+    let Some((overlap, after)) = read.split_first() else {
+        return Grew::Moved;
+    };
+    if held.last() != Some(overlap) {
+        return Grew::Moved;
+    }
+    if after.is_empty() {
+        return Grew::Same;
+    }
+    *held = held.iter().chain(after).cloned().collect();
+    Grew::Renewed
 }
 
 fn paged(library: &Library, asked: &Asked) -> resonate_library::Result<Paged> {
@@ -6504,6 +6646,39 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&held, &before));
         assert!(renewed(&mut held, vec![1, 2]));
         assert_eq!(*held, [1, 2]);
+    }
+
+    #[test]
+    fn a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row() {
+        let mut held: std::sync::Arc<[u32]> = vec![1, 2, 3].into();
+        let before = std::sync::Arc::clone(&held);
+
+        assert_eq!(super::grew(&mut held, 3, vec![3]), super::Grew::Same);
+        assert!(std::sync::Arc::ptr_eq(&held, &before));
+        assert_eq!(
+            super::grew(&mut held, 3, vec![3, 4, 5]),
+            super::Grew::Renewed
+        );
+        assert_eq!(*held, [1, 2, 3, 4, 5]);
+        assert_eq!(super::grew(&mut held, 5, vec![9, 6]), super::Grew::Moved);
+        assert_eq!(super::grew(&mut held, 4, vec![4, 5, 6]), super::Grew::Moved);
+        assert_eq!(super::grew(&mut held, 5, Vec::new()), super::Grew::Moved);
+        assert_eq!(*held, [1, 2, 3, 4, 5]);
+        assert_eq!(super::grew(&mut held, 0, vec![7, 8]), super::Grew::Renewed);
+        assert_eq!(*held, [7, 8]);
+    }
+
+    #[test]
+    fn a_list_drawn_far_past_what_it_holds_reaches_as_far_as_it_was_drawn_in_one_read() {
+        assert_eq!(
+            super::reach_covering(super::PAGE, super::PAGE),
+            2 * super::PAGE
+        );
+        assert_eq!(super::reach_covering(super::PAGE, 10), 2 * super::PAGE);
+        assert_eq!(
+            super::reach_covering(super::PAGE, 49_999),
+            (49_999 + super::LOOK_AHEAD).div_ceil(super::PAGE) * super::PAGE
+        );
     }
 
     #[test]

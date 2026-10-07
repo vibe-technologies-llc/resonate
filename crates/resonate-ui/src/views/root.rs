@@ -2345,12 +2345,18 @@ impl RootView {
             self.play(held, start, cx);
             return;
         }
-        let Some(pressed) = held.get(start).map(|track| track.id) else {
-            return;
-        };
+        let pressed = held.get(start).map(|track| track.id);
         self.with_everything_listed(window, cx, move |this, listing, _, cx| {
-            let Some(start) = listing.iter().position(|track| track.id == pressed) else {
-                tracing::warn!(%pressed, "the row pressed is not in the listing read whole");
+            let found = match pressed {
+                Some(pressed) => listing.iter().position(|track| track.id == pressed),
+                None => (start < listing.len()).then_some(start),
+            };
+            let Some(start) = found else {
+                tracing::warn!(
+                    ?pressed,
+                    start,
+                    "the row pressed is not in the listing read whole"
+                );
                 return;
             };
             this.play(&listing, start, cx);
@@ -2471,12 +2477,12 @@ impl RootView {
                 (rows > 0).then_some((Shift::Listing(Listed::Tracks), rows))
             }
             Pane::Artists => {
-                let rows = self.library.read(cx).artists().len();
+                let rows = self.library.read(cx).artists_listed();
 
                 (rows > 0).then_some((Shift::Listing(Listed::Artists), rows))
             }
             Pane::Albums => {
-                let rows = self.library.read(cx).albums().len();
+                let rows = self.library.read(cx).albums_listed();
 
                 (rows > 0).then_some((Shift::Listing(Listed::Albums), rows))
             }

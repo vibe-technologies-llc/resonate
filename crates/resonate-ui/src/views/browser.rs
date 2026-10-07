@@ -207,6 +207,7 @@ impl RootView {
         let reads = library.search().reads();
         let nothing = albums.is_empty();
         let counted = library.albums_counted() as usize;
+        let listed = library.albums_listed();
         let beyond = self.albums_found_beyond(cx);
         let found_nothing = (nothing && beyond.is_none()).then(|| {
             self.nothing_beyond(cx).unwrap_or_else(|| {
@@ -224,7 +225,7 @@ impl RootView {
         });
         let columns = self.grid_columns();
         let held = albums.len();
-        let rows = held.div_ceil(columns.max(1));
+        let rows = listed.div_ceil(columns.max(1));
         let measured = self.grid_width.clone();
         let laid_out = self.grid_width.get() > px(0.0);
         if laid_out {
@@ -556,9 +557,10 @@ impl RootView {
         let nothing = artists.is_empty();
         let counted = self.library.read(cx).artists_counted() as usize;
         let held = artists.len();
+        let listed = self.library.read(cx).artists_listed();
         let drawn = self.artists_drawn;
         if drawn == ArtistsDrawn::List {
-            self.land_where_it_was_left(held);
+            self.land_where_it_was_left(listed);
         }
 
         let beyond = self.artists_found_beyond(cx);
@@ -623,12 +625,13 @@ impl RootView {
                         self.artist_rows.clone(),
                         uniform_list(
                             "artists",
-                            held,
+                            listed,
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 this.reach_further(range.end, held, cx);
                                 let mut rows = Vec::new();
                                 for index in range {
                                     let Some(artist) = artists.get(index) else {
+                                        rows.push(tall_row(false).id(("unread-artist", index)));
                                         continue;
                                     };
                                     let id = artist.id;
@@ -744,7 +747,7 @@ impl RootView {
             .unwrap_or_default()
             .into();
         let held = tracks.len();
-        let listed = if rowed { rows.len() } else { held };
+        let listed = self.library.read(cx).listed_rows();
         self.land_where_it_was_left(listed);
         let records = match self.library.read(cx).selection() {
             Selection::Artist(artist) => {
@@ -799,12 +802,12 @@ impl RootView {
                                 this.reach_further(range.end, held, cx);
                                 let mut drawn = Vec::new();
                                 for index in range {
-                                    let row = if rowed {
+                                    let listed_row = if rowed {
                                         rows.get(index).copied()
                                     } else {
                                         Some(ListedRow::Held(index))
                                     };
-                                    match row {
+                                    match listed_row {
                                         Some(ListedRow::Disc(disc)) => {
                                             drawn.push(
                                                 disc_heading(disc, &media).into_any_element(),
@@ -812,6 +815,7 @@ impl RootView {
                                         }
                                         Some(ListedRow::Held(held)) => {
                                             let Some(track) = tracks.get(held) else {
+                                                drawn.push(row(false).into_any_element());
                                                 continue;
                                             };
                                             let reached =
@@ -1420,7 +1424,11 @@ impl RootView {
         let artists = Arc::clone(artists);
         let held = artists.len();
         let columns = self.grid_columns();
-        let rows = held.div_ceil(columns.max(1));
+        let rows = self
+            .library
+            .read(cx)
+            .artists_listed()
+            .div_ceil(columns.max(1));
         let measured = self.grid_width.clone();
         let laid_out = self.grid_width.get() > px(0.0);
         if laid_out {
