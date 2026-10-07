@@ -13,11 +13,11 @@ mod processing;
 mod subsonic;
 mod tidal;
 
-use std::sync::atomic::Ordering;
+use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, FontWeight, MouseButton, SharedString, Stateful, Window,
-    div, prelude::*, px, relative, rgb,
+    AnyElement, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point, SharedString,
+    Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::Appearance;
 use resonate_library::DEFAULT_LAYOUT;
@@ -764,6 +764,30 @@ impl RootView {
         Self::ringed(&handle, control, press, cx)
             .focus(|control| control.opacity(1.0))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    }
+
+    pub(crate) fn in_the_pane_ring_at(
+        &self,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, Point<Pixels>, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let corner = Rc::new(Cell::new(Point::default()));
+        let held = Rc::clone(&corner);
+        let control = control.relative().child(
+            canvas(
+                move |bounds, _, _| held.set(bounds.bottom_left()),
+                |_, (), _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        );
+
+        self.in_the_pane_ring(
+            control,
+            move |this, _, cx| press(this, corner.get(), cx),
+            cx,
+        )
     }
 
     pub(crate) fn ringed(

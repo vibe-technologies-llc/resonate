@@ -108,7 +108,7 @@ impl RootView {
                 source(&digest.info).into_any_element(),
                 heard_card(heard.as_ref()).into_any_element(),
                 sink_card(output).into_any_element(),
-                bitrate(&digest, graphing, cx).into_any_element(),
+                bitrate(self, &digest, graphing, cx).into_any_element(),
                 replay_gain(
                     digest.replay_gain_mode,
                     digest.replay_gain,
@@ -355,7 +355,12 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
     )
 }
 
-fn bitrate(digest: &StreamDigest, graphing: bool, cx: &mut Context<RootView>) -> impl IntoElement {
+fn bitrate(
+    root: &RootView,
+    digest: &StreamDigest,
+    graphing: bool,
+    cx: &mut Context<RootView>,
+) -> impl IntoElement {
     let rate = digest.info.spec.rate;
     let Some(profile) = digest.profile.as_ref() else {
         return fields(
@@ -388,22 +393,21 @@ fn bitrate(digest: &StreamDigest, graphing: bool, cx: &mut Context<RootView>) ->
             ),
         ],
     )
-    .child(
-        div().mt_1().child(
-            kit::button(
-                "bitrate-graph",
-                Some(Icon::Inspector),
-                if graphing { "Hide graph" } else { "Show graph" },
-                if graphing {
-                    GRAPH_OPEN_HINT
-                } else {
-                    GRAPH_HINT
-                },
-                Tone::Outlined,
-            )
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_bitrate_graph(cx))),
+    .child(div().mt_1().child(root.in_the_pane_ring(
+        kit::button(
+            "bitrate-graph",
+            Some(Icon::Inspector),
+            if graphing { "Hide graph" } else { "Show graph" },
+            if graphing {
+                GRAPH_OPEN_HINT
+            } else {
+                GRAPH_HINT
+            },
+            Tone::Outlined,
         ),
-    )
+        |this, _, cx| this.toggle_bitrate_graph(cx),
+        cx,
+    )))
     .into_any_element()
 }
 

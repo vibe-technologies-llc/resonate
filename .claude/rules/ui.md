@@ -2561,7 +2561,12 @@ is never named.
     playlist marks. A row's hidden controls are `RootView::row_controls`, a container tracking a
     handle that is no tab stop (`Controls::holding`), shown by `in_focus` while one of its controls
     holds the caret
-    (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`).
+    (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`). A mark opening a card
+    or menu where pressed (an album's and an artist's info mark, an opened playlist's ⋯) goes
+    through `in_the_pane_ring_at`: a canvas keeps the mark's bottom-left corner each frame and the
+    press, by pointer or key, opens there
+    (`a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`). The order chips under a
+    heading (`RootView::order_row`) and the inspector's graph switch are rung too.
   - **The seek and volume rails are tab stops of their own context.** `slider::rail` tracks a
     standing handle under `Control Rail`; `app::answering_on_a_rail` binds `right`/`up` to `RailOn`
     and `left`/`down` to `RailBack`, which step the rail it is on: a seek of `seek_step`, a volume

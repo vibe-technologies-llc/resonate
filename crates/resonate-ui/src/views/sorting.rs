@@ -1,7 +1,4 @@
-use gpui::{
-    Context, Div, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
-    div,
-};
+use gpui::{Context, Div, ParentElement as _, SharedString, Styled as _, div};
 use resonate_library::{AlbumOrder, ArtistOrder, Direction, PlaylistOrder, RowOrder, SortOrder};
 
 use crate::{
@@ -34,49 +31,63 @@ pub(crate) fn shape(label: &'static str) -> Div {
         .child(kit::eyebrow(label).w(theme::width(theme::field_label())))
 }
 
-pub(crate) fn order_row<O: Ordering>(
-    orders_named: &'static str,
-    readings_named: &'static str,
-    held: O,
-    reading: Direction,
-    order_by: impl Fn(&mut RootView, O, &mut Context<RootView>) + Clone + 'static,
-    read_as: impl Fn(&mut RootView, Direction, &mut Context<RootView>) + Clone + 'static,
-    cx: &mut Context<RootView>,
-) -> Div {
-    let mut orders = shape("Order");
-    for (index, order) in O::EVERY.iter().copied().enumerate() {
-        let chosen = order_by.clone();
-        orders = orders.child(
-            kit::chip(
-                (orders_named, index),
-                SharedString::new_static(order.named()),
-                order == held,
-            )
-            .names(ORDER_HINT)
-            .on_click(cx.listener(move |this, _, _, cx| chosen(this, order, cx))),
-        );
-    }
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Chips {
+    pub(crate) orders: &'static str,
+    pub(crate) readings: &'static str,
+}
 
-    let mut readings = shape("Reading");
-    for (index, direction) in Direction::ALL.into_iter().enumerate() {
-        let taken = read_as.clone();
-        readings = readings.child(
-            kit::chip(
-                (readings_named, index),
-                SharedString::new_static(held.read(direction)),
-                direction == reading,
-            )
-            .names(READING_HINT)
-            .on_click(cx.listener(move |this, _, _, cx| taken(this, direction, cx))),
-        );
-    }
+impl RootView {
+    pub(crate) fn order_row<O: Ordering>(
+        &self,
+        named: Chips,
+        held: O,
+        reading: Direction,
+        order_by: impl Fn(&mut RootView, O, &mut Context<RootView>) + Clone + 'static,
+        read_as: impl Fn(&mut RootView, Direction, &mut Context<RootView>) + Clone + 'static,
+        cx: &mut Context<RootView>,
+    ) -> Div {
+        let mut orders = shape("Order");
+        for (index, order) in O::EVERY.iter().copied().enumerate() {
+            let chosen = order_by.clone();
+            orders = orders.child(
+                self.in_the_pane_ring(
+                    kit::chip(
+                        (named.orders, index),
+                        SharedString::new_static(order.named()),
+                        order == held,
+                    )
+                    .names(ORDER_HINT),
+                    move |this, _, cx| chosen(this, order, cx),
+                    cx,
+                ),
+            );
+        }
 
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(orders)
-        .child(readings)
+        let mut readings = shape("Reading");
+        for (index, direction) in Direction::ALL.into_iter().enumerate() {
+            let taken = read_as.clone();
+            readings = readings.child(
+                self.in_the_pane_ring(
+                    kit::chip(
+                        (named.readings, index),
+                        SharedString::new_static(held.read(direction)),
+                        direction == reading,
+                    )
+                    .names(READING_HINT),
+                    move |this, _, cx| taken(this, direction, cx),
+                    cx,
+                ),
+            );
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(orders)
+            .child(readings)
+    }
 }
 
 impl Ordering for PlaylistOrder {

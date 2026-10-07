@@ -6,9 +6,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
-    MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
-    hsla, img, point, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, BoxShadow, Context, Div, ElementId, FontWeight, MouseButton, MouseDownEvent,
+    ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div, hsla, img, point,
+    prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
@@ -1853,13 +1853,11 @@ impl RootView {
                         ))
                     })
                     .when_some(record, |row, _| {
-                        row.child(
-                            kit::icon_button("album-record", Icon::Info, RECORD_HINT).on_click(
-                                cx.listener(move |this, event: &ClickEvent, _, cx| {
-                                    this.show_the_record(id, event.position(), cx);
-                                }),
-                            ),
-                        )
+                        row.child(self.in_the_pane_ring_at(
+                            kit::icon_button("album-record", Icon::Info, RECORD_HINT),
+                            move |this, at, cx| this.show_the_record(id, at, cx),
+                            cx,
+                        ))
                     }),
             );
 
@@ -1938,13 +1936,11 @@ impl RootView {
                     cx,
                 )
                 .when(!genres.is_empty(), |row| {
-                    row.child(
-                        kit::icon_button("artist-genres", Icon::Info, GENRES_HINT).on_click(
-                            cx.listener(move |this, event: &ClickEvent, _, cx| {
-                                this.show_the_artist(id, event.position(), cx);
-                            }),
-                        ),
-                    )
+                    row.child(self.in_the_pane_ring_at(
+                        kit::icon_button("artist-genres", Icon::Info, GENRES_HINT),
+                        move |this, at, cx| this.show_the_artist(id, at, cx),
+                        cx,
+                    ))
                 })
                 .when_some(unheld, |row, (unheld, unread)| {
                     row.child(self.in_the_pane_ring(
@@ -2748,9 +2744,11 @@ impl RootView {
     pub(crate) fn tracks_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        sorting::order_row(
-            "track-order",
-            "track-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "track-order",
+                readings: "track-reading",
+            },
             sorting.tracks,
             sorting.tracks_read,
             |this, order, cx| {
@@ -2768,9 +2766,11 @@ impl RootView {
     pub(crate) fn albums_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        sorting::order_row(
-            "album-order",
-            "album-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "album-order",
+                readings: "album-reading",
+            },
             sorting.albums,
             sorting.albums_read,
             |this, order, cx| {
@@ -2788,9 +2788,11 @@ impl RootView {
     pub(crate) fn artists_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        sorting::order_row(
-            "artist-order",
-            "artist-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "artist-order",
+                readings: "artist-reading",
+            },
             sorting.artists,
             sorting.artists_read,
             |this, order, cx| {

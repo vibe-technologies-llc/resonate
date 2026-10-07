@@ -748,6 +748,33 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.set_pane(Pane::Playlists, cx);
+                root.show_playlist(Some(playlist), cx);
+            });
+        });
+        driven.until(|root, cx| root.library.read(cx).opened() == Some(playlist));
+
+        assert!(
+            tabbed_onto_the_pane(&mut driven, "more-of-the-playlist"),
+            "tab never reached the playlist's menu mark"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "enter opened no menu"
+        );
+    }
+
+    #[gpui::test]
     fn a_rail_holding_the_caret_moves_with_the_arrows(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let file = folder.tone("tone.wav", 1);

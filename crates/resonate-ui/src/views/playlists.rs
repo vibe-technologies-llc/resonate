@@ -607,9 +607,11 @@ impl RootView {
         let held = library.playlist_order();
         let reading = library.playlist_reading();
 
-        sorting::order_row(
-            "playlist-order",
-            "playlist-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "playlist-order",
+                readings: "playlist-reading",
+            },
             held,
             reading,
             |this, order, cx| {
@@ -664,9 +666,11 @@ impl RootView {
             ));
         }
 
-        sorting::order_row(
-            "search-order",
-            "search-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "search-order",
+                readings: "search-reading",
+            },
             self.query_sort,
             self.query_reading,
             |this, order, cx| this.sort_a_search(order, cx),
@@ -1017,13 +1021,13 @@ impl RootView {
                     },
                     cx,
                 ))
-                .child(
-                    kit::icon_button("more-of-the-playlist", Icon::More, MORE_HINT).on_click(
-                        cx.listener(move |this, event: &ClickEvent, _, cx| {
-                            this.open_a_menu(playlist_menu(event.position(), opened, pinned), cx);
-                        }),
-                    ),
-                )
+                .child(self.in_the_pane_ring_at(
+                    kit::icon_button("more-of-the-playlist", Icon::More, MORE_HINT),
+                    move |this, at, cx| {
+                        this.open_a_menu(playlist_menu(at, opened, pinned), cx);
+                    },
+                    cx,
+                ))
             })
             .when_some(undoable, |bar, undoable| {
                 bar.child(self.undoing(&undoable, cx))
@@ -1137,9 +1141,11 @@ impl RootView {
             );
         }
 
-        sorting::order_row(
-            "row-order",
-            "row-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "row-order",
+                readings: "row-reading",
+            },
             self.row_order,
             self.row_reading,
             move |this, order, cx| this.put_in_order(opened, order, this.row_reading, cx),

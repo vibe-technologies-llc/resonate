@@ -1121,9 +1121,11 @@ impl RootView {
     }
 
     fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
-        sorting::order_row(
-            "queue-order",
-            "queue-reading",
+        self.order_row(
+            sorting::Chips {
+                orders: "queue-order",
+                readings: "queue-reading",
+            },
             self.queue_order,
             self.queue_reading,
             |this, order, cx| this.put_the_queue_in_order(order, Direction::Ascending, cx),
