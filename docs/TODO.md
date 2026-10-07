@@ -6,9 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A TIDAL token answer with an enormous `expires_in`, or a DASH manifest with `startNumber` near
-  `u64::MAX`, panics the provider's thread through unchecked `Instant` and range arithmetic instead
-  of being refused as unreadable
 - A pod that fails to parse back from its own bytes is reported as `PodBuild` with a
   `GenError::NotYetImplemented` source nothing raised
 

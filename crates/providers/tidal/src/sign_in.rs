@@ -171,7 +171,7 @@ impl TidalSignIn {
 }
 
 fn waited(every: Duration, until: Instant, cancelled: &(dyn Fn() -> bool + Sync)) -> bool {
-    let next = Instant::now() + every;
+    let next = Instant::now().checked_add(every).unwrap_or(until);
     while Instant::now() < next.min(until) {
         if cancelled() {
             return false;
@@ -220,7 +220,9 @@ impl SignsIn for TidalSignIn {
         authorizing: &Authorizing,
         cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<Option<RefreshToken>> {
-        let until = Instant::now() + authorizing.lasts;
+        let until = Instant::now()
+            .checked_add(authorizing.lasts)
+            .ok_or_else(|| self.unreadable())?;
         let mut every = authorizing.asked_every;
         loop {
             if !waited(every, until, cancelled) {

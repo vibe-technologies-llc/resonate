@@ -312,6 +312,12 @@ and Subsonic only where client id and refresh token are given (secret sent where
   manifests TIDAL answers (base64 BTS JSON naming one URL; DASH MPD, selecting its FLAC rendition).
   Encryption is `Withheld::Encrypted`, no FLAC rendition `Withheld::Lossy`; both answer `Nothing`
   (no decrypting, no lossy stream).
+- **A number the service gives is checked before it is added to.** A DASH `startNumber` whose
+  segments would number past `u64` is `Unread::NumberedPastTheEnd`; an `expires_in` (session,
+  hifi-api token, device code) no clock can add is `Error::Unreadable`, never an `Instant`
+  overflow panicking the provider's thread
+  (`a_session_said_to_last_past_any_clock_is_refused_as_unreadable`,
+  `a_dash_manifest_numbered_past_the_last_number_is_refused`).
 - **Media from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over `https` with
   host `audio.tidal.com` or under it, refusing a user-info `@`, a bracketed literal, a host merely
   ending in the name; one URL off them fails the whole manifest as `Error::OffItsHosts` before a

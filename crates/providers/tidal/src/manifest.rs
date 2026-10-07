@@ -49,6 +49,7 @@ pub(crate) enum Unread {
     NotTheDocument,
     NoMedia,
     TooManySegments,
+    NumberedPastTheEnd,
 }
 
 #[derive(Deserialize)]
@@ -218,7 +219,10 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
         base,
         filled(initialization, id, bandwidth, start),
     )?);
-    for number in start..start + segments {
+    let end = start
+        .checked_add(segments)
+        .ok_or(Unread::NumberedPastTheEnd)?;
+    for number in start..end {
         urls.push(resolved(base, filled(media, id, bandwidth, number))?);
     }
 
@@ -313,6 +317,20 @@ mod tests {
             read_document(DASH, DASHED.as_bytes()),
             dash(DASHED.as_bytes())
         );
+    }
+
+    #[test]
+    fn a_dash_manifest_numbered_past_the_last_number_is_refused() {
+        let numbered = DASHED.replace(
+            r#"startNumber="1""#,
+            &format!(r#"startNumber="{}""#, u64::MAX - 1),
+        );
+        assert_ne!(numbered, DASHED);
+
+        assert!(matches!(
+            read(DASH, &encoded(&numbered)),
+            Err(Unread::NumberedPastTheEnd)
+        ));
     }
 
     #[test]

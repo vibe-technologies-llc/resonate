@@ -218,7 +218,9 @@ impl Tidal {
         Ok(Session {
             bearer,
             country,
-            until: Instant::now() + lasts,
+            until: Instant::now()
+                .checked_add(lasts)
+                .ok_or_else(|| self.asker.unreadable(op))?,
         })
     }
 

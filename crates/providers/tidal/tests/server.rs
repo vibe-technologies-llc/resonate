@@ -580,6 +580,30 @@ fn a_refresh_token_turned_away_is_the_account_and_not_the_want() {
 }
 
 #[test]
+fn a_session_said_to_last_past_any_clock_is_refused_as_unreadable() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => Canned::json(&format!(
+            r#"{{"access_token":"fresh-access","token_type":"Bearer","expires_in":{},"user":{{"countryCode":"GB"}}}}"#,
+            u64::MAX
+        )),
+        _ => Canned::refused(500, "{}"),
+    });
+
+    let refused = fake.tidal().find(&by_isrc());
+
+    assert!(
+        matches!(
+            refused,
+            Err(Error::Unreadable {
+                op: ProviderOp::SignIn,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+}
+
+#[test]
 fn a_session_that_lapsed_signs_in_again_once() {
     let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
         "/auth/token" => granted(),

@@ -284,7 +284,9 @@ impl HifiApi {
             .saturating_sub(RENEWED_BEFORE);
         let token = AccessToken {
             bearer: format!("Bearer {}", granted.access_token),
-            until: Instant::now() + lasts,
+            until: Instant::now()
+                .checked_add(lasts)
+                .ok_or_else(|| self.asker.unreadable(op))?,
         };
         let bearer = token.bearer.clone();
         let mut tokens = self.tokens.lock();
