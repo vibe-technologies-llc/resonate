@@ -47,9 +47,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   from the documentation and `tests/live.rs` has no AcoustID test
 
 ## Performance and scale
-- One watched file added still regroups the alternatives of the whole catalog and gathers the loose
-  albums of its whole root; a scan that changed nothing does neither
-- A change under one root stats every file of every other; the tidy reads each other root's paths
 - Scrolling a large library to the end re-reads the whole prefix of tracks, albums and artists at
   every page (quadratic); design with the `End` item under Keyboard
 - Each catalog revision re-reads every queued track's name while the queue pane is open

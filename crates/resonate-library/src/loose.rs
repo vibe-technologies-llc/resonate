@@ -3,14 +3,35 @@ use rusqlite::{Transaction, params};
 
 use crate::{Error, Result, StoreOp, enriched};
 
-const NAMED_BY_A_FOLDER_OR_A_RELEASE: &str = "SELECT a.id, a.title, a.year, a.tagged_tracks
-       FROM albums a
-      WHERE a.id IN (SELECT album_id FROM tracks WHERE root_id = ?1 AND album_id IS NOT NULL)
-        AND NOT EXISTS (SELECT 1 FROM tracks t
-                         WHERE t.album_id = a.id AND t.root_id IS NOT ?1)
-        AND NOT EXISTS (SELECT 1 FROM album_keys k
-                         WHERE k.album_id = a.id AND substr(k.key, 1, 1) = char(31))
-      ORDER BY a.id";
+macro_rules! loose_in_the_root {
+    ($titled:literal) => {
+        concat!(
+            "SELECT a.id, a.title, a.year, a.tagged_tracks
+               FROM albums a
+              WHERE a.id IN (SELECT album_id FROM tracks WHERE root_id = ?1 AND album_id IS NOT NULL)",
+            $titled,
+            " AND NOT EXISTS (SELECT 1 FROM tracks t
+                               WHERE t.album_id = a.id AND t.root_id IS NOT ?1)
+              AND NOT EXISTS (SELECT 1 FROM album_keys k
+                               WHERE k.album_id = a.id AND substr(k.key, 1, 1) = char(31))
+              ORDER BY a.id"
+        )
+    };
+}
+
+const NAMED_BY_A_FOLDER_OR_A_RELEASE: &str = loose_in_the_root!("");
+
+const TITLED_AS_AN_ALBUM_WRITTEN_AT: &str = loose_in_the_root!(
+    " AND words_of(a.title) IN (SELECT words_of(b.title) FROM albums b
+                                 WHERE b.id IN (SELECT album_id FROM tracks
+                                                 WHERE root_id = ?1 AND seen = ?2))"
+);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Weighed {
+    EveryAlbum,
+    TitlesWrittenAt(i64),
+}
 
 const SEATS: &str = "SELECT disc_number, track_number FROM tracks
       WHERE album_id = ?1 AND alternative_of IS NULL";
@@ -24,10 +45,14 @@ struct Loose {
     seats: Vec<Option<(u32, u32)>>,
 }
 
-pub(crate) fn gather_the_loose(tx: &Transaction<'_>, roots: &[i64]) -> Result<u64> {
+pub(crate) fn gather_the_loose(
+    tx: &Transaction<'_>,
+    roots: &[i64],
+    weighed: Weighed,
+) -> Result<u64> {
     let mut gathered = 0;
     for root in roots {
-        for run in same_titled(tx, *root)? {
+        for run in same_titled(tx, *root, weighed)? {
             if !one_record(&run) {
                 tracing::debug!(
                     root,
@@ -49,24 +74,36 @@ pub(crate) fn gather_the_loose(tx: &Transaction<'_>, roots: &[i64]) -> Result<u6
     Ok(gathered)
 }
 
-fn same_titled(tx: &Transaction<'_>, root: i64) -> Result<Vec<Vec<Loose>>> {
-    let mut statement = tx
-        .prepare_cached(NAMED_BY_A_FOLDER_OR_A_RELEASE)
-        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-    let held = statement
-        .query_map(params![root], |row| {
-            Ok((
-                row.get::<_, String>(1)?,
-                Loose {
-                    id: row.get(0)?,
-                    year: row.get(2)?,
-                    declared: row.get(3)?,
-                    seats: Vec::new(),
-                },
-            ))
-        })
-        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+fn same_titled(tx: &Transaction<'_>, root: i64, weighed: Weighed) -> Result<Vec<Vec<Loose>>> {
+    let loose = |row: &rusqlite::Row<'_>| {
+        Ok((
+            row.get::<_, String>(1)?,
+            Loose {
+                id: row.get(0)?,
+                year: row.get(2)?,
+                declared: row.get(3)?,
+                seats: Vec::new(),
+            },
+        ))
+    };
+    let held = match weighed {
+        Weighed::EveryAlbum => {
+            tx.prepare_cached(NAMED_BY_A_FOLDER_OR_A_RELEASE)
+                .and_then(|mut statement| {
+                    statement
+                        .query_map(params![root], loose)?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                })
+        }
+        Weighed::TitlesWrittenAt(generation) => tx
+            .prepare_cached(TITLED_AS_AN_ALBUM_WRITTEN_AT)
+            .and_then(|mut statement| {
+                statement
+                    .query_map(params![root, generation], loose)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            }),
+    }
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut by_title: AHashMap<String, Vec<Loose>> = AHashMap::new();
     let mut order = Vec::new();

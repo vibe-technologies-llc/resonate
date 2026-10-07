@@ -12,13 +12,50 @@ const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 
 const FIRST_DISC: u32 = 1;
 
-const EVERY_COPY: &str =
-    "SELECT t.id, coalesce(a.release_title, a.title), coalesce(r.name, t.artist),
-            t.disc_number, t.track_number, t.title, t.duration, t.sample_rate, t.sample_format,
-            t.codec, t.file_size, t.span_frames, t.alternative_of, a.title
-       FROM tracks t
-       LEFT JOIN albums a ON a.id = t.album_id
-       LEFT JOIN artists r ON r.id = a.artist_id";
+const REGROUPED_BY_TITLE_AT_MOST: i64 = 4_096;
+
+macro_rules! every_copy {
+    () => {
+        "SELECT t.id, coalesce(a.release_title, a.title), coalesce(r.name, t.artist),
+                t.disc_number, t.track_number, t.title, t.duration, t.sample_rate,
+                t.sample_format, t.codec, t.file_size, t.span_frames, t.alternative_of, a.title
+           FROM tracks t
+           LEFT JOIN albums a ON a.id = t.album_id
+           LEFT JOIN artists r ON r.id = a.artist_id"
+    };
+}
+
+const EVERY_COPY: &str = every_copy!();
+
+const EVERY_COPY_SHARING_AN_OWED_TITLE: &str = concat!(
+    every_copy!(),
+    " WHERE t.title_words IN (SELECT w.title_words FROM regroup_owed_tracks o
+                               JOIN tracks w ON w.id = o.track_id)"
+);
+
+const WHAT_IS_OWED: &str = "SELECT (SELECT owed FROM regroup_owed),
+            (SELECT count(*) FROM regroup_owed_tracks),
+            EXISTS (SELECT 1 FROM regroup_owed_tracks o JOIN tracks w ON w.id = o.track_id
+                     WHERE w.title_words IS NULL)";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Owed {
+    Nothing,
+    TheSongsOfSomeTitles,
+    EverySong,
+}
+
+impl Owed {
+    const fn of(whole: bool, tracks: i64, unworded: bool) -> Self {
+        if whole || unworded || tracks > REGROUPED_BY_TITLE_AT_MOST {
+            Self::EverySong
+        } else if tracks > 0 {
+            Self::TheSongsOfSomeTitles
+        } else {
+            Self::Nothing
+        }
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Song {
@@ -111,18 +148,21 @@ impl Held {
 }
 
 pub(crate) fn settle_if_owed(tx: &Transaction<'_>) -> crate::Result<u64> {
-    let owed: bool = tx
-        .query_row("SELECT owed FROM regroup_owed", [], |row| row.get(0))
+    let owed = tx
+        .query_row(WHAT_IS_OWED, [], |row| {
+            Ok(Owed::of(row.get(0)?, row.get(1)?, row.get(2)?))
+        })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     match owed {
-        true => settle(tx),
-        false => Ok(0),
+        Owed::Nothing => Ok(0),
+        Owed::TheSongsOfSomeTitles => regrouped(tx, EVERY_COPY_SHARING_AN_OWED_TITLE),
+        Owed::EverySong => regrouped(tx, EVERY_COPY),
     }
 }
 
-pub(crate) fn settle(tx: &Transaction<'_>) -> crate::Result<u64> {
+fn regrouped(tx: &Transaction<'_>, read: &str) -> crate::Result<u64> {
     let copies: Vec<Held> = tx
-        .prepare(EVERY_COPY)
+        .prepare(read)
         .and_then(|mut statement| {
             statement
                 .query_map([], Held::read)
@@ -144,8 +184,11 @@ pub(crate) fn settle(tx: &Transaction<'_>) -> crate::Result<u64> {
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
         }
     }
-    tx.execute("UPDATE regroup_owed SET owed = 0", [])
-        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.execute_batch(
+        "UPDATE regroup_owed SET owed = 0 WHERE owed = 1;
+         DELETE FROM regroup_owed_tracks;",
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
     Ok(moved as u64)
 }
 
@@ -237,4 +280,25 @@ fn crowned(run: Vec<Held>) -> Vec<(Held, Option<i64>)> {
             (copy, under)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_few_owed_tracks_regroup_their_titles_and_a_flood_or_an_unworded_one_every_song() {
+        assert_eq!(Owed::of(false, 0, false), Owed::Nothing);
+        assert_eq!(Owed::of(false, 3, false), Owed::TheSongsOfSomeTitles);
+        assert_eq!(
+            Owed::of(false, REGROUPED_BY_TITLE_AT_MOST, false),
+            Owed::TheSongsOfSomeTitles
+        );
+        assert_eq!(
+            Owed::of(false, REGROUPED_BY_TITLE_AT_MOST + 1, false),
+            Owed::EverySong
+        );
+        assert_eq!(Owed::of(false, 3, true), Owed::EverySong);
+        assert_eq!(Owed::of(true, 0, false), Owed::EverySong);
+    }
 }

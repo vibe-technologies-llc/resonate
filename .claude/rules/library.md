@@ -508,8 +508,10 @@ rows read via `Player::media` like any unscanned row.
   and stepped over by the tidy (unmounted drive != empty one; pruning would take every counted
   play). A root named on the command line is still `Error::RootNotADirectory` where missing (asked
   for). A window-watch scan is the other kind: `Library::scan_what_is_held` walks only the named
-  roots `roots` still holds and that are there, registers nothing, answers `None` where none is
-  left, so a drive unplugged after its root was queued costs the roots beside it nothing; the
+  roots `roots` still holds and that are there, registers nothing, tidies no root beside them (the
+  watch hears what goes under every root it covers: `scan::Beside::LeftToTheWatch`;
+  `a_scan_the_watch_asked_for_leaves_the_roots_beside_it_to_the_watch`), answers `None` where none
+  is left, so a drive unplugged after its root was queued costs the roots beside it nothing; the
   window takes a root off what it owes only once a scan has taken it.
 - **A per-row statement is prepared once a connection.** `store::cached` runs literal SQL through
   `prepare_cached`; every per-row write uses it (scan store writes: unreached mark, index row,
@@ -642,7 +644,10 @@ rows read via `Player::media` like any unscanned row.
   - **A record filed loose in a root is gathered once the scan has written it.** A compilation
     with no `ALBUMARTIST`/`COMPILATION` flag, folder = root, would stand as one album per track
     artist. `loose::gather_the_loose` runs after the prune on every walked root where the scan
-    wrote a row: takes albums whose tracks all sit in that root and whose keys are all fallback
+    wrote a row, weighing only albums titled as one the scan wrote a row into
+    (`Weighed::TitlesWrittenAt`, by `words_of` the titles: a superset of the lowercase match)
+    unless it removed one (a prune can leave a run gatherable: `Weighed::EveryAlbum`)
+    (`a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_reads_it`): takes albums whose tracks all sit in that root and whose keys are all fallback
     tier (none a folder's or release's), groups by lowercased title, gathers a group via
     `enriched::gather` only where `one_record` says the numbering makes one: every track numbered,
     no disc and number taken twice, years and declared `TRACKTOTAL`s agreeing where stated, no more
@@ -1269,13 +1274,22 @@ rows read via `Player::media` like any unscanned row.
   `sweep_orphans`. `build` runs `settle_the_credits_if_owed`, so a reader-only process (`resonate
   stats`, a second window) writes nothing, takes no write lock, does not make the first window
   reload its vocabulary (`a_catalog_with_nothing_to_settle_is_opened_again_without_a_write`). A
-  scan asks the same (`sweep_orphans_if_owed`) and **regroups copies only if owed**: `regroup_owed`,
-  set by triggers on track added/removed, a write to a column `EVERY_COPY` groups/ranks by, an
-  album's title/release title/owner, an artist's name; cleared by `alternatives::settle` (via
-  `settle_if_owed`). An unchanged scan sweeps and regroups nothing; a lookup billing an album under
-  its release still has the next scan meet its copies
-  (`only_a_write_to_what_the_grouping_reads_owes_a_regroup`,
-  `a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same`).
+  scan asks the same (`sweep_orphans_if_owed`) and **regroups copies only if owed, and only the
+  songs owed**: triggers note in `regroup_owed_tracks` (a `MIGRATIONS` step) a track added, a write
+  to a column `EVERY_COPY` groups/ranks by (with the copy it was held under and those held under
+  it or beside it), every track of an album retitled, rebilled or given another owner, of an
+  artist renamed, and the copies held under a track deleted. Every grouping key holds the folded
+  title, so a song's copies all share `tracks.title_words` (index `tracks_by_title_words`):
+  `alternatives::settle_if_owed` reads only copies sharing an owed track's, unless the standing
+  `regroup_owed` flag is set, more than `REGROUPED_BY_TITLE_AT_MOST` (4 096) tracks are owed or one
+  is not yet worded (then every copy). One watched file added regroups its title, not the catalog;
+  a forget by the watch and a delete settle the same way. An unchanged scan sweeps and regroups
+  nothing; a lookup billing an album under its release still has the next scan meet its copies
+  (`only_a_write_to_what_the_grouping_reads_owes_a_regroup_and_of_the_copies_it_touches`,
+  `a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands_it_back`,
+  `a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same`). A trigger's insert
+  names no conflict clause (`NOT IN` the owed set instead): SQLite overrides a trigger's
+  `OR IGNORE` with the outer statement's policy, and the scan's upsert aborted on it.
   `restate_the_statistics` and the loose gathering run only if the scan wrote/removed a row;
   `credit_the_unheld` only if one arrived.
 - **A collaboration is listed under every artist it credits, never as an artist of its own.**

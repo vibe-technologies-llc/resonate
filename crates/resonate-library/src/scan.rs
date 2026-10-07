@@ -260,7 +260,7 @@ pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandl
         .name("resonate-scan".to_owned())
         .spawn(move || {
             let outcome = roots(&inner, &options.roots)
-                .and_then(|roots| run(&inner, &options, roots, &progress));
+                .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
             drop(walking);
             outcome
         })
@@ -285,7 +285,7 @@ pub(crate) fn start_over_held(
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
-            let outcome = run(&inner, &options, roots, &progress);
+            let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
             drop(walking);
             outcome
         })
@@ -297,6 +297,12 @@ pub(crate) fn start_over_held(
 struct Root {
     id: i64,
     path: PathBuf,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Beside {
+    Tidied,
+    LeftToTheWatch,
 }
 
 struct Stored {
@@ -450,7 +456,7 @@ fn forget_at_or_under(
     }
     if forgotten > 0 {
         store::sweep_orphans(transaction)?;
-        alternatives::settle(transaction)?;
+        alternatives::settle_if_owed(transaction)?;
     }
     Ok(forgotten)
 }
@@ -509,6 +515,7 @@ fn run(
     inner: &Arc<Inner>,
     options: &ScanOptions,
     roots: Vec<Root>,
+    beside: Beside,
     progress: &Arc<ScanProgress>,
 ) -> Result<ScanSummary> {
     let generation = store::to_nanos(SystemTime::now());
@@ -604,10 +611,18 @@ fn run(
         if arrived > 0 {
             inner.write(history::credit_the_unheld)?;
         }
-        let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
+        let tidied = match beside {
+            Beside::Tidied => tidy_the_roots_beside(inner, &ids, progress)?,
+            Beside::LeftToTheWatch => 0,
+        };
         progress.removed.store(removed + tidied, Ordering::Relaxed);
         if changed > 0 {
-            let gathered = inner.write(|transaction| loose::gather_the_loose(transaction, &ids))?;
+            let weighed = match removed + tidied {
+                0 => loose::Weighed::TitlesWrittenAt(generation),
+                _ => loose::Weighed::EveryAlbum,
+            };
+            let gathered =
+                inner.write(|transaction| loose::gather_the_loose(transaction, &ids, weighed))?;
             if gathered > 0 {
                 tracing::debug!(
                     gathered,

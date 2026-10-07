@@ -401,6 +401,48 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN title_words TEXT;
      CREATE INDEX tracks_by_artist_and_words ON tracks(artist_id, title_words);
      CREATE TABLE title_words_wanted (id INTEGER PRIMARY KEY) STRICT;",
+    "CREATE TABLE regroup_owed_tracks (track_id INTEGER PRIMARY KEY) STRICT;
+     CREATE INDEX tracks_by_title_words ON tracks(title_words);
+     DROP TRIGGER tracks_owe_a_regroup_when_added;
+     DROP TRIGGER tracks_owe_a_regroup_when_gone;
+     DROP TRIGGER tracks_owe_a_regroup_when_moved;
+     DROP TRIGGER albums_owe_a_regroup_when_named;
+     DROP TRIGGER artists_owe_a_regroup_when_named;
+     CREATE TRIGGER tracks_owe_a_regroup_when_added AFTER INSERT ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT NEW.id WHERE NOT EXISTS (SELECT 1 FROM regroup_owed_tracks WHERE track_id = NEW.id);
+     END;
+     CREATE TRIGGER tracks_owe_a_regroup_when_gone BEFORE DELETE ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE alternative_of = OLD.id
+            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+     CREATE TRIGGER tracks_owe_a_regroup_when_moved AFTER UPDATE OF
+         album_id, artist, disc_number, track_number, title, duration, sample_rate,
+         sample_format, codec, file_size, span_frames ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE (id = NEW.id OR id = NEW.alternative_of OR alternative_of = NEW.id
+                 OR alternative_of = NEW.alternative_of)
+            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+     CREATE TRIGGER albums_owe_a_regroup_when_named AFTER UPDATE OF
+         title, release_title, artist_id ON albums
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE album_id = NEW.id AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+     CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT t.id FROM tracks t JOIN albums a ON a.id = t.album_id
+          WHERE a.artist_id = NEW.id AND t.id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1364,21 +1406,34 @@ mod tests {
     }
 
     #[test]
-    fn only_a_write_to_what_the_grouping_reads_owes_a_regroup() {
+    fn only_a_write_to_what_the_grouping_reads_owes_a_regroup_and_of_the_copies_it_touches() {
         let connection = opened();
         lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
         connection
             .execute_batch(
-                "INSERT INTO albums (id, title) VALUES (1, 'Meddle');
-                 INSERT INTO tracks (id, path, title, album_id, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'echoes.flac', 'Echoes', 1, 44100, 2, 1, 1, 10, 1, 1, 1);
-                 UPDATE regroup_owed SET owed = 0;",
+                "INSERT INTO albums (id, title) VALUES (1, 'Meddle'), (2, 'Animals');
+                 INSERT INTO tracks (id, path, title, album_id, alternative_of, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'echoes.flac', 'Echoes', 1, NULL, 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (2, 'echoes.mp3', 'Echoes', 1, 1, 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (3, 'dogs.flac', 'Dogs', 2, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);
+                 UPDATE regroup_owed SET owed = 0;
+                 DELETE FROM regroup_owed_tracks;",
             )
             .expect("the rows are stored");
-        let owed = || -> bool {
-            connection
+        let owed = || -> (bool, Vec<i64>) {
+            let whole = connection
                 .query_row("SELECT owed FROM regroup_owed", [], |row| row.get(0))
-                .expect("the flag reads back")
+                .expect("the flag reads back");
+            let tracks = connection
+                .prepare("SELECT track_id FROM regroup_owed_tracks ORDER BY track_id")
+                .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
+                .expect("the owed tracks read back");
+            (whole, tracks)
+        };
+        let forgive = || {
+            connection
+                .execute_batch("DELETE FROM regroup_owed_tracks;")
+                .expect("the owed tracks are forgiven");
         };
 
         connection
@@ -1387,8 +1442,9 @@ mod tests {
                  UPDATE albums SET cover_asked = 1 WHERE id = 1;",
             )
             .expect("the counts are written");
-        assert!(
-            !owed(),
+        assert_eq!(
+            owed(),
+            (false, Vec::new()),
             "a play, a favourite or a scan's stamp owed a regroup"
         );
 
@@ -1398,15 +1454,43 @@ mod tests {
                 [],
             )
             .expect("the release is billed");
-        assert!(owed(), "an album billed under its release owed nothing");
+        assert_eq!(
+            owed(),
+            (false, vec![1, 2]),
+            "an album billed under its release owed the regroup of its tracks alone"
+        );
+
+        forgive();
+        connection
+            .execute(
+                "UPDATE tracks SET title = 'One of These Days' WHERE id = 2",
+                [],
+            )
+            .expect("the copy is renamed");
+        assert_eq!(
+            owed(),
+            (false, vec![1, 2]),
+            "a copy renamed away did not owe the regroup of the song it was held under"
+        );
+
+        forgive();
+        connection
+            .execute("DELETE FROM tracks WHERE id = 3", [])
+            .expect("a lone track goes");
+        assert_eq!(
+            owed(),
+            (false, Vec::new()),
+            "a lone track gone owed a regroup"
+        );
 
         connection
-            .execute_batch(
-                "UPDATE regroup_owed SET owed = 0;
-                 DELETE FROM tracks WHERE id = 1;",
-            )
-            .expect("the track goes");
-        assert!(owed(), "a track gone owed nothing");
+            .execute("DELETE FROM tracks WHERE id = 1", [])
+            .expect("the best copy goes");
+        assert_eq!(
+            owed(),
+            (false, vec![2]),
+            "the best copy gone owed nothing of the copy held under it"
+        );
     }
 
     #[test]

@@ -92,7 +92,7 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
     }
     if forgotten.tracks > 0 {
         store::sweep_orphans(tx)?;
-        alternatives::settle(tx)?;
+        alternatives::settle_if_owed(tx)?;
     }
     Ok(forgotten)
 }

@@ -1236,6 +1236,33 @@ fn a_compilation_gathered_out_of_a_root_stays_one_album_when_a_file_is_read_agai
 }
 
 #[test]
+fn a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_reads_it()
+-> Result<()> {
+    let tree = Tree::new();
+    a_compilation_loose_in_a_root(&tree);
+    let late = tree.path().join("2.wav");
+    let held = fs::read(&late).expect("the third track was written");
+    fs::remove_file(&late).expect("the third track is held back");
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let gathered = only_album(&library)?;
+    tree.write("elsewhere.wav", &Wav::new().text(ALBUM, "Animals").build());
+
+    fs::write(&late, held).expect("the third track arrives");
+    scan(&library, &options(&tree))?;
+
+    let albums = library.albums(&AlbumQuery::default())?;
+    let compilation: Vec<_> = albums
+        .iter()
+        .filter(|album| album.title == "Now That's What I Call Music 42")
+        .collect();
+    assert_eq!(compilation.len(), 1, "the late artist's track stood apart");
+    assert_eq!(compilation[0].id, gathered.id);
+    assert_eq!(compilation[0].track_count, 3);
+    Ok(())
+}
+
+#[test]
 fn two_albums_loose_in_a_root_numbered_from_one_each_stay_apart() -> Result<()> {
     let tree = Tree::new();
     for (index, artist) in ["Ada", "Ada", "Ben", "Ben"].into_iter().enumerate() {
@@ -2200,6 +2227,46 @@ fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() ->
     let mut held = vec![kept_root, unplugged_root];
     held.sort();
     assert_eq!(library.roots()?, held);
+    assert_eq!(all(&library)?.len(), 3);
+    Ok(())
+}
+
+#[test]
+fn a_scan_the_watch_asked_for_leaves_the_roots_beside_it_to_the_watch() -> Result<()> {
+    let changed = Tree::new();
+    let beside = Tree::new();
+    changed.write("one.wav", &Wav::new().build());
+    beside.write("two.wav", &Wav::new().build());
+    let library = Library::open_in_memory()?;
+    for tree in [&changed, &beside] {
+        scan(&library, &options(tree))?;
+    }
+    let changed_root = changed.path().canonicalize().expect("the tree exists");
+
+    fs::remove_file(beside.path().join("two.wav")).expect("the file taken away");
+    changed.write("three.wav", &Wav::new().build());
+    library
+        .scan_what_is_held(ScanOptions {
+            roots: vec![changed_root.clone()],
+            ..options(&changed)
+        })?
+        .expect("a held root to walk")
+        .join()?;
+
+    assert_eq!(
+        all(&library)?.len(),
+        3,
+        "a scan the watch asked for stat every file of a root nobody changed"
+    );
+
+    changed.write("four.wav", &Wav::new().build());
+    library
+        .scan(ScanOptions {
+            roots: vec![changed_root],
+            ..options(&changed)
+        })?
+        .join()?;
+
     assert_eq!(all(&library)?.len(), 3);
     Ok(())
 }
@@ -3446,6 +3513,36 @@ fn the_better_copy_leaving_puts_the_one_it_hid_back_on_the_list() -> Result<()> 
     scan(&library, &options(&tree))?;
     fs::remove_file(&best).expect("the better copy goes");
     scan(&library, &options(&tree))?;
+
+    let rows = all(&library)?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].spec.format.valid_bits(), 16);
+    assert_eq!(rows[0].alternatives, 0);
+    Ok(())
+}
+
+#[test]
+fn a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands_it_back()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
+    scan(&library, &options(&tree))?;
+
+    let rows = all(&library)?;
+    assert_eq!(
+        rows.len(),
+        1,
+        "a copy added later was listed beside the song"
+    );
+    assert_eq!(rows[0].location.as_path(), Some(best.as_path()));
+    assert_eq!(rows[0].alternatives, 1);
+
+    fs::remove_file(&best).expect("the better copy goes");
+    assert_eq!(library.forget_the_gone(&[best])?, 1);
 
     let rows = all(&library)?;
     assert_eq!(rows.len(), 1);
