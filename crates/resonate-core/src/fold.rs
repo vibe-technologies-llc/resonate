@@ -22,6 +22,10 @@ pub fn folded_letters(text: &str) -> String {
     folded.nfc().collect()
 }
 
+pub fn is_lettered(glyph: char) -> bool {
+    glyph.is_alphanumeric() || is_combining_mark(glyph)
+}
+
 const ACCENTED_SCRIPTS: [RangeInclusive<char>; 11] = [
     '\u{0000}'..='\u{024f}',
     '\u{0370}'..='\u{03ff}',
@@ -76,6 +80,15 @@ mod tests {
         assert_eq!(folded_letters("ｶﾞﾗｽ").chars().count(), "ｶﾞﾗｽ".chars().count());
         assert_ne!(folded_letters("हिन्दी"), folded_letters("हनद"));
         assert_eq!(folded_letters("हिन्दी"), "हिन्दी");
+    }
+
+    #[test]
+    fn a_combining_mark_belongs_to_the_word_it_sits_in() {
+        assert!(is_lettered('\u{0308}'));
+        assert!(is_lettered('\u{093f}'));
+        assert!(is_lettered('o'));
+        assert!(!is_lettered(' '));
+        assert!(!is_lettered('-'));
     }
 
     #[test]

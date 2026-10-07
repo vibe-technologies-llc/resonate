@@ -531,6 +531,13 @@ rows read via `Player::media` like any unscanned row.
   (an index written before the fold needed a rescan). Not `enriched::folded_title`, which keeps
   marks (vs a MusicBrainz title a mark is evidence; gathering spellings of one name it is noise);
   `enriched::stripped_title` = both (letter fold through title fold), the enrichment's fallback.
+  **A combining mark is part of the word it sits in** (`resonate_core::is_lettered`): a typed word
+  is folded whole before it is cut into pieces, and a held name is cut into highlight runs by the
+  same test, as SQLite's `unicode61` keeps a mark inside its token; `Mo` + U+0308 + `tley` is one
+  word, `motley`
+  (`a_name_typed_or_tagged_with_combining_accents_is_found_as_the_precomposed_name_is`).
+  `store::words_of` still cuts at a kept mark, as the `songs` and single-release rows it wrote
+  were cut.
   **The billed spelling is the one with the marks** (`marks_in`, applied on cache hit as on the
   row), so a later scan meeting the stripped spelling does not undo the accented one and the
   display name does not follow scan order. `resonate missing --artist` and the window's

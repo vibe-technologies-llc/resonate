@@ -723,10 +723,10 @@ pub(crate) fn runs_in(text: &str) -> impl Iterator<Item = (&str, String)> {
 }
 
 pub(crate) fn pieces_of(word: &Word) -> Pieces {
-    word.text
-        .split(|letter: char| !letter.is_alphanumeric())
-        .map(store::folded_letters)
+    store::folded_letters(&word.text)
+        .split(|letter: char| !store::is_lettered(letter))
         .filter(|piece| !piece.is_empty())
+        .map(str::to_owned)
         .collect()
 }
 
@@ -740,7 +740,7 @@ fn tokens_of(text: &str) -> Tokens {
     let mut begun: Option<usize> = None;
 
     for (at, letter) in text.char_indices() {
-        if letter.is_alphanumeric() {
+        if store::is_lettered(letter) {
             begun.get_or_insert(at);
             continue;
         }
@@ -1926,6 +1926,21 @@ mod tests {
         );
         assert_eq!(lit("Straße", "strasse", Column::Title), ["Straße"]);
         assert_eq!(lit("Kıskanç", "kiskanc", Column::Title), ["Kıskanç"]);
+    }
+
+    #[test]
+    fn a_combining_accent_is_part_of_the_word_it_sits_in_typed_or_held() {
+        let typed = "Mo\u{0308}tley";
+        let held = "Mo\u{0308}tley Cru\u{0308}e";
+
+        assert_eq!(pieces_of(&worded(typed)[0]).as_slice(), ["motley"]);
+        assert_eq!(lit(held, "motley", Column::Artist), ["Mo\u{0308}tley"]);
+        assert_eq!(lit("Mötley Crüe", typed, Column::Artist), ["Mötley"]);
+        assert_eq!(
+            lit(held, "\"motley crue\"", Column::Artist),
+            ["Mo\u{0308}tley Cru\u{0308}e"]
+        );
+        assert_eq!(pieces_of(&worded("हिन्दी")[0]).as_slice(), ["हिन्दी"]);
     }
 
     #[test]

@@ -10,11 +10,11 @@ use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
     Codec, CoverArt, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
 };
-pub use resonate_core::folded_letters;
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
     StreamSpec, TrackId,
 };
+pub use resonate_core::{folded_letters, is_lettered};
 use resonate_vault::{Form, VaultKey};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,

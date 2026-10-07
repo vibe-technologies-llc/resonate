@@ -194,6 +194,38 @@ fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> R
 }
 
 #[test]
+fn a_name_typed_or_tagged_with_combining_accents_is_found_as_the_precomposed_name_is() -> Result<()>
+{
+    let tree = Tree::new();
+    tree.write(
+        "a.wav",
+        &Wav::new()
+            .text(TITLE, "Kickstart My Heart")
+            .text(ARTIST, "Mötley Crüe"),
+    );
+    tree.write(
+        "b.wav",
+        &Wav::new()
+            .text(TITLE, "Dr. Feelgood")
+            .text(ARTIST, "Mo\u{0308}tley Cru\u{0308}e"),
+    );
+    tree.write("c.wav", &Wav::new().text(TITLE, "Tley").text(ARTIST, "Mo"));
+
+    let library = scanned(&tree)?;
+    let both = named(&["Kickstart My Heart", "Dr. Feelgood"]);
+
+    for text in [
+        "Mötley",
+        "Mo\u{0308}tley",
+        "artist:mo\u{0308}tley",
+        "\"Mo\u{0308}tley Cru\u{0308}e\"",
+    ] {
+        assert_eq!(titled(&library, text)?, both, "{text} missed a spelling");
+    }
+    Ok(())
+}
+
+#[test]
 fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<()> {
     let tree = Tree::new();
     tree.write(
