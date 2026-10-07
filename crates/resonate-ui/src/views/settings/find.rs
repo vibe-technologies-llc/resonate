@@ -448,7 +448,7 @@ impl Group {
             }
             Self::Vault => {
                 "archive import re-encode recompress flac strip metadata covers jxl \
-                              managed store deduplicate validate"
+                              managed store deduplicate validate folder location choose"
             }
             Self::Inbox => "provider poll wants missing download drop folder fill obtain supply",
             Self::Subsonic => {

@@ -1145,8 +1145,14 @@ const VAULT_NOTE: &str = "Decodes every scanned track the vault does not hold, t
                           and points the catalog at it. The files it read are left exactly where \
                           they are.";
 
-const NO_VAULT: &str = "No vault is open. Name one with --vault, or set the vault key in \
-                        config.toml, and this build will keep what it imports there.";
+const NO_VAULT: &str = "No vault is open. Choose the folder it should keep what it imports in; an \
+                        empty folder becomes one.";
+
+const VAULT_AT_THE_NEXT_START: &str = "Opened from the next start, and what is imported from then \
+                                       on is kept there.";
+
+const IN_THE_LIBRARY: &str = "That folder is inside a library folder, which would scan the \
+                              vault's objects as songs. Choose a folder outside every one.";
 
 const PREVIEW_IMPORT_FIRST: &str = "Preview first, so what would be kept is on screen before \
                                     anything is.";
@@ -1160,9 +1166,9 @@ const NOTHING_TO_KEEP: &str = "Nothing to import. The vault already holds every 
 impl RootView {
     pub(super) fn vault_group(&mut self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
-        if !library.has_a_vault() {
-            return kit::section_body().child(note(NO_VAULT));
-        }
+        let Some(root) = library.vault_root() else {
+            return self.naming_a_vault(cx);
+        };
 
         let busy = library.is_busy();
         let importing = library.is_importing();
@@ -1182,6 +1188,7 @@ impl RootView {
             .map(|(_, summary)| wanted_rows(summary));
 
         kit::section_body()
+            .child(folder_row(&root))
             .child(note(VAULT_NOTE))
             .child(
                 div()
@@ -1201,6 +1208,43 @@ impl RootView {
             })
             .when_some(listed, |body, listed| body.child(listed))
             .when_some(told, |body, told| body.child(note(told)))
+    }
+
+    fn naming_a_vault(&self, cx: &mut Context<Self>) -> Div {
+        let named = self.vault_named.clone();
+
+        kit::section_body()
+            .child(match &named {
+                Some(folder) => div().child(folder_row(folder)),
+                None => div().child(note(NO_VAULT)),
+            })
+            .child(div().flex().flex_wrap().gap_2().child(action(
+                "choose-vault-folder",
+                "Choose folder…",
+                Icon::Folder,
+                false,
+                |this, _, cx| this.pick_a_folder(cx, Self::name_the_vault),
+                self,
+                cx,
+            )))
+            .when(named.is_some(), |body| {
+                body.child(note(VAULT_AT_THE_NEXT_START))
+            })
+    }
+
+    pub(crate) fn name_the_vault(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+        let folder = folder.canonicalize().unwrap_or(folder);
+        let music = cx.global::<ResonateApp>().music_folder.clone();
+        let refusal =
+            unusable_as_the_vault(&folder, self.library.read(cx).roots(), music.as_deref());
+        if let Some(refusal) = refusal {
+            self.report(Notice::Trouble(refusal.to_owned()), cx);
+            return;
+        }
+
+        self.store(&Setting::Vault(folder.clone()), cx);
+        self.vault_named = Some(folder);
+        cx.notify();
     }
 
     fn preview_the_import(
@@ -1420,6 +1464,14 @@ impl RootView {
     }
 
     fn choose_the_music_folder(&self, cx: &mut Context<Self>) {
+        self.pick_a_folder(cx, Self::set_the_music_folder);
+    }
+
+    fn pick_a_folder(
+        &self,
+        cx: &mut Context<Self>,
+        landed: impl FnOnce(&mut Self, PathBuf, &mut Context<Self>) + 'static,
+    ) {
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -1444,7 +1496,7 @@ impl RootView {
                 return;
             };
 
-            let named = this.update(cx, |this, cx| this.set_the_music_folder(folder, cx));
+            let named = this.update(cx, |this, cx| landed(this, folder, cx));
             let _ = named;
         })
         .detach();
@@ -1554,34 +1606,7 @@ impl RootView {
     }
 
     fn choose_inbox_folder(&self, cx: &mut Context<Self>) {
-        let picked = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some(SharedString::new_static("Choose")),
-        });
-
-        cx.spawn(async move |this, cx| {
-            let chosen = match picked.await {
-                Ok(Ok(Some(chosen))) => chosen,
-                Ok(Ok(None)) | Err(_) => return,
-                Ok(Err(error)) => {
-                    tracing::error!(%error, "the folder picker could not be opened");
-                    let reported = this.update(cx, |_, cx| {
-                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
-                    });
-                    let _ = reported;
-                    return;
-                }
-            };
-            let Some(folder) = chosen.into_iter().next() else {
-                return;
-            };
-
-            let named = this.update(cx, |this, cx| this.set_inbox(folder, cx));
-            let _ = named;
-        })
-        .detach();
+        self.pick_a_folder(cx, Self::set_inbox);
     }
 
     fn set_inbox(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
@@ -1627,6 +1652,22 @@ fn unusable_as_the_music_folder(folder: &Path, vault: Option<&Path>) -> Option<&
         .map(|_| IN_THE_VAULT)
 }
 
+fn unusable_as_the_vault(
+    folder: &Path,
+    roots: &[PathBuf],
+    music: Option<&Path>,
+) -> Option<&'static str> {
+    if !folder.is_dir() {
+        return Some(NOT_A_FOLDER);
+    }
+    roots
+        .iter()
+        .map(PathBuf::as_path)
+        .chain(music)
+        .any(|held| folder.starts_with(held))
+        .then_some(IN_THE_LIBRARY)
+}
+
 fn asked_of_the_inbox(stats: PollStats) -> String {
     format!(
         "asked {} · kept {} · not kept {} · nothing {} · refused {} · late {}",
@@ -1667,6 +1708,34 @@ mod tests {
         assert_eq!(beside, None);
         assert_eq!(within, Some(IN_THE_VAULT));
         assert_eq!(itself, Some(IN_THE_VAULT));
+        assert_eq!(missing, Some(NOT_A_FOLDER));
+    }
+
+    #[test]
+    fn a_vault_is_a_folder_outside_every_library_folder() {
+        let held =
+            std::env::temp_dir().join(format!("resonate-vault-named-{}", std::process::id()));
+        let root = held.join("music");
+        let music = held.join("dropped");
+        let inside = root.join("archive");
+        let dropped_into = music.join("archive");
+        let beside = held.join("vault");
+        for folder in [&inside, &dropped_into, &beside] {
+            std::fs::create_dir_all(folder).expect("a writable temporary directory");
+        }
+        let roots = [root.clone()];
+
+        let outside = unusable_as_the_vault(&beside, &roots, Some(&music));
+        let within_a_root = unusable_as_the_vault(&inside, &roots, Some(&music));
+        let the_root = unusable_as_the_vault(&root, &roots, None);
+        let within_the_music = unusable_as_the_vault(&dropped_into, &roots, Some(&music));
+        let missing = unusable_as_the_vault(&held.join("nowhere"), &[], None);
+        let _ = std::fs::remove_dir_all(&held);
+
+        assert_eq!(outside, None);
+        assert_eq!(within_a_root, Some(IN_THE_LIBRARY));
+        assert_eq!(the_root, Some(IN_THE_LIBRARY));
+        assert_eq!(within_the_music, Some(IN_THE_LIBRARY));
         assert_eq!(missing, Some(NOT_A_FOLDER));
     }
 

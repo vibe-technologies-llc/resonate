@@ -180,7 +180,12 @@ Defaults and meanings: `config.rs` and `views/settings/`; below are the decision
   with `Vault::open`, which refuses a missing root (`vault::Error::NotThere`) rather than making
   `audio/`, `covers/`, `staging/` under an empty mount point. Every other command opens through
   `vault_already_kept`, passing over a missing one: warning where the `vault` key named it, silence
-  for the default place (a build nobody imported into).
+  for the default place (a build nobody imported into). **The pane names a vault only where none
+  is open** (Settings → Vault, `naming_a_vault`): the folder picker's choice is canonicalised,
+  refused when it is not a folder or sits inside a library root or the music folder
+  (`unusable_as_the_vault`: a scan would catalog its objects as songs), and stored as the `vault`
+  key (`Setting::Vault`), opened by `Vault::open` from the next start; an open vault shows its root
+  and is never swapped from the window (the rows it holds are keyed to it).
 
 **The pane writes through `resonate_ui::Settings`**, filled by `settings::File`. It edits with
 `toml_edit`, not by reserialising a `Config`: a hand-written file keeps comments and key order; a

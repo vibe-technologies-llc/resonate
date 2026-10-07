@@ -257,6 +257,12 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
             (ConfigKey::Inbox, Some(folder.into()))
         }
+        Setting::Vault(folder) => {
+            let folder = folder
+                .to_str()
+                .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::Vault, Some(folder.into()))
+        }
         Setting::MusicExtensions(extensions) => (
             ConfigKey::MusicExtensions,
             Some(Value::Array(
@@ -399,6 +405,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
         SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
+        SettingKey::Vault => ConfigKey::Vault,
         SettingKey::MusicExtensions => ConfigKey::MusicExtensions,
         SettingKey::MinimumLength => ConfigKey::MinimumLength,
         SettingKey::MusicFolder => ConfigKey::MusicFolder,
@@ -612,6 +619,23 @@ mod tests {
 
         assert_eq!(named, Some(inbox));
         assert_eq!(forgotten, None);
+    }
+
+    #[test]
+    fn a_vault_the_pane_names_reads_back_for_the_next_start() {
+        let folder = env::temp_dir().join(format!("resonate-settings-vault-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let vault = PathBuf::from("/archive/vault");
+
+        file.apply(&[SettingChange::Store(Setting::Vault(vault.clone()))])
+            .expect("a writable temporary directory");
+        let named = config::load(Some(&path))
+            .expect("the file reads back")
+            .vault;
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(named, Some(vault));
     }
 
     #[test]

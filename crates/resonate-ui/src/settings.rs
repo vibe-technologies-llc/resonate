@@ -203,6 +203,7 @@ pub enum SettingKey {
     RememberSettingsCategory,
     LastSettingsCategory,
     Inbox,
+    Vault,
     MusicFolder,
     MusicExtensions,
     MinimumLength,
@@ -225,7 +226,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 80] = [
+    pub const ALL: [Self; 81] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -287,6 +288,7 @@ impl SettingKey {
         Self::RememberSettingsCategory,
         Self::LastSettingsCategory,
         Self::Inbox,
+        Self::Vault,
         Self::MusicFolder,
         Self::MusicExtensions,
         Self::MinimumLength,
@@ -375,6 +377,7 @@ pub enum Setting {
     RememberSettingsCategory(bool),
     LastSettingsCategory(SettingsCategory),
     Inbox(PathBuf),
+    Vault(PathBuf),
     MusicFolder(PathBuf),
     MusicExtensions(MusicExtensions),
     MinimumLength(MinimumLength),
@@ -460,6 +463,7 @@ impl Setting {
             Self::RememberSettingsCategory(_) => SettingKey::RememberSettingsCategory,
             Self::LastSettingsCategory(_) => SettingKey::LastSettingsCategory,
             Self::Inbox(_) => SettingKey::Inbox,
+            Self::Vault(_) => SettingKey::Vault,
             Self::MusicExtensions(_) => SettingKey::MusicExtensions,
             Self::MinimumLength(_) => SettingKey::MinimumLength,
             Self::MusicFolder(_) => SettingKey::MusicFolder,
