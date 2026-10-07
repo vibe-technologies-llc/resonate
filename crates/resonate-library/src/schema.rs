@@ -370,6 +370,22 @@ const MIGRATIONS: &[&str] = &[
          END
          WHERE artist_id = new.id;
      END;",
+    "ALTER TABLE albums ADD COLUMN cover_print TEXT;
+     UPDATE albums SET cover_print = length(cover_art) || ':' || hex(substr(cover_art, 1, 256))
+      WHERE cover_art IS NOT NULL;
+     CREATE TRIGGER albums_print_their_cover_when_added AFTER INSERT ON albums
+     WHEN new.cover_art IS NOT NULL
+     BEGIN
+         UPDATE albums
+            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
+          WHERE id = new.id;
+     END;
+     CREATE TRIGGER albums_print_their_cover_when_changed AFTER UPDATE OF cover_art ON albums
+     BEGIN
+         UPDATE albums
+            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
+          WHERE id = new.id;
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1420,6 +1436,58 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn an_album_cover_is_printed_once_as_it_is_written_and_reads_as_it_always_did() {
+        let connection = opened();
+        let carried = &MIGRATIONS[..MIGRATIONS.len() - 1];
+        let cover: Vec<u8> = (0..1_000_u32).map(|at| (at % 251) as u8).collect();
+        let printed_as_before = |id: i64| -> (Option<String>, Option<String>) {
+            connection
+                .query_row(
+                    "SELECT cover_print, length(cover_art) || ':' || hex(substr(cover_art, 1, 256))
+                       FROM albums WHERE id = ?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("the album reads back")
+        };
+
+        lay_out_through(&connection, V1, carried).expect("the earlier steps apply");
+        connection
+            .execute(
+                "INSERT INTO albums (id, title, cover_art, cover_format) VALUES (1, 'Kept', ?1, 1)",
+                [&cover],
+            )
+            .expect("an album held before the step");
+        lay_out_through(&connection, V1, MIGRATIONS).expect("the newest step applies");
+
+        let (carried_print, carried_before) = printed_as_before(1);
+        assert!(carried_print.is_some());
+        assert_eq!(carried_print, carried_before);
+
+        connection
+            .execute(
+                "INSERT INTO albums (id, title, cover_art, cover_format) VALUES (2, 'New', ?1, 1)",
+                [&cover[..10]],
+            )
+            .expect("an album added");
+        connection
+            .execute("INSERT INTO albums (id, title) VALUES (3, 'Bare')", [])
+            .expect("an album with no cover");
+        let (added, added_before) = printed_as_before(2);
+        assert_eq!(added, added_before);
+        assert_eq!(printed_as_before(3), (None, None));
+
+        connection
+            .execute("UPDATE albums SET cover_art = ?1 WHERE id = 3", [&cover])
+            .expect("a cover found");
+        connection
+            .execute("UPDATE albums SET cover_art = NULL WHERE id = 1", [])
+            .expect("a cover dropped");
+        assert_eq!(printed_as_before(3).0, carried_print);
+        assert_eq!(printed_as_before(1), (None, None));
     }
 
     #[test]

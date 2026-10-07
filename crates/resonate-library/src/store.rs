@@ -35,15 +35,7 @@ const FORGOTTEN_AT_ONCE: usize = 256;
 
 macro_rules! the_picture_of {
     ($album:literal) => {
-        concat!(
-            "coalesce(",
-            $album,
-            ".cover_key, length(",
-            $album,
-            ".cover_art) || ':' || hex(substr(",
-            $album,
-            ".cover_art, 1, 256)))"
-        )
+        concat!("coalesce(", $album, ".cover_key, ", $album, ".cover_print)")
     };
 }
 pub(crate) use the_picture_of;
@@ -70,7 +62,7 @@ DELETE FROM likenesses
  WHERE picture NOT IN (SELECT ",
     the_picture_of!("a"),
     " FROM albums a
-                        WHERE a.cover_key IS NOT NULL OR a.cover_art IS NOT NULL);
+                        WHERE a.cover_key IS NOT NULL OR a.cover_print IS NOT NULL);
 "
 );
 

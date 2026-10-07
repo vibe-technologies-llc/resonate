@@ -5076,7 +5076,7 @@ pub(crate) fn measured_narrowed(
 }
 
 const COVERED_ALBUM: &str = "(tracks.album_id IN (SELECT id FROM albums
-       WHERE cover_art IS NOT NULL OR cover_path IS NOT NULL))";
+       WHERE cover_print IS NOT NULL OR cover_path IS NOT NULL))";
 
 const PICTURE_OF_THE_ALBUM: &str = concat!(
     "(SELECT ",
@@ -5130,7 +5130,7 @@ pub(crate) fn pictures_of_albums(
     }
     let sql = format!(
         "SELECT a.id, {} FROM albums a
-          WHERE (a.cover_art IS NOT NULL OR a.cover_path IS NOT NULL) AND a.id IN ({})",
+          WHERE (a.cover_print IS NOT NULL OR a.cover_path IS NOT NULL) AND a.id IN ({})",
         store::the_picture_of!("a"),
         vec!["?"; albums.len()].join(", ")
     );

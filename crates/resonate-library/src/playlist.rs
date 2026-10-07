@@ -645,7 +645,7 @@ pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<Alb
                FROM playlist_entries e JOIN tracks ON {ON_THE_SAME_CUT}
               WHERE e.playlist_id = ?1
                 AND tracks.album_id IN (SELECT id FROM albums
-                                         WHERE cover_art IS NOT NULL OR cover_path IS NOT NULL)
+                                         WHERE cover_print IS NOT NULL OR cover_path IS NOT NULL)
               GROUP BY tracks.album_id
               ORDER BY min(e.position)
               LIMIT ?2",

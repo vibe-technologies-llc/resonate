@@ -168,7 +168,12 @@ rows read via `Player::media` like any unscanned row.
   first, up to `PICTURED_BY_AT_MOST` (4) (weighs `PICTURES_WEIGHED_PER_TILE`, 4, candidates per
   tile), skipping an album whose picture (vault key, or bytes' length + first 256 bytes) another
   already stood for, then one that merely *looks like* one standing (one sleeve at two resolutions
-  is not two tiles). `store::the_picture_of!` = that identity, written once for query and sweep.
+  is not two tiles). `store::the_picture_of!` = that identity, written once for query and sweep:
+  `coalesce(cover_key, cover_print)`, where `albums.cover_print` is the bytes' length + hex of the
+  first 256, kept by the triggers `albums_print_their_cover_when_added`/`_when_changed` as the
+  cover is written, so a sweep or a suggestion candidate reads a short text, never the cover (the
+  text is the expression it replaced: kept `likenesses` still match;
+  `an_album_cover_is_printed_once_as_it_is_written_and_reads_as_it_always_did`).
   `resonate_codec::Likeness`: cover averaged in linear light onto 8x8 cells kept as sRGB bytes;
   alike within a root mean square of `ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF` (12 of 255): sleeve at
   quarter size ~1, re-encoded as JPEG ~3, mirrored or with a banner across the top ~80. A likeness

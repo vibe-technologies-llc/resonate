@@ -61,8 +61,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   the window
 - A first scan reads each album's embedded cover inside the transaction holding the catalog's write
   lock: every other write waits behind file reads
-- A picture's identity is the length and first 256 bytes of each embedded cover, which SQLite reads
-  whole, in every orphan sweep and per suggestion candidate
 - The Missing pane's counts, listing and due lookups fold every track title of an artist for each
   release, on each narrowing key
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first; the Xing table of
