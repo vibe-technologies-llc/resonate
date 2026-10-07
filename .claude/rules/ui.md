@@ -327,7 +327,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `config.toml` per pixel; a seek only previews and commits one `Command::Seek` on release, so a scrub
   costs one gap — and only if the track the press began on still plays, a `Grab` carrying its
   `TrackId`, so the fraction dragged on one track is never applied to the next
-  (`a_seek_rail_released_after_the_track_changed_seeks_nothing`). The wheel over the volume cluster is a notch of `VOLUME_A_NOTCH` — a touchpad's pixels
+  (`a_seek_rail_released_after_the_track_changed_seeks_nothing`). On release, `PlayerModel::seek`
+  holds the requested position for the playback bar until its `Outcome` answers, rather than
+  showing the last poll's position between the preview and the seek landing. The engine publishes
+  before answering; the model polls the answer before reading that published state, so dropping
+  the held position and taking the new one happen in the same refresh. A newer seek replaces the
+  held position, a changed track clears it, and a refused seek restores the published position
+  and raises the ordinary command toast. Only `shown_position` reads the held target: the model's
+  `state` stays what the engine published for lyrics, play counting and queue resumption.
+  The wheel over the volume cluster is a notch of `VOLUME_A_NOTCH` — a touchpad's pixels
   counted in `PIXELS_A_NOTCH` — while `ResonateApp::scroll_volume` says so, and `RootView::volume_aimed`
   is what a run of notches or held keys adds to: the engine publishes the new volume a poll later, so
   reading it back each notch lost all notches but one in a poll. **A press on the speaker, or `ctrl-m`,

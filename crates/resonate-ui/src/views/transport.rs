@@ -281,7 +281,8 @@ impl RootView {
         else {
             return;
         };
-        self.send(Command::Seek(along(duration, fraction)), cx);
+        self.player
+            .update(cx, |player, cx| player.seek(along(duration, fraction), cx));
     }
 
     pub(crate) fn seek_to_moment(&self, at: Duration, cx: &mut Context<Self>) {
@@ -317,6 +318,7 @@ impl RootView {
     pub(crate) fn transport(&self, corners: Corners<Pixels>, cx: &mut Context<Self>) -> AnyElement {
         let model = self.player.read(cx);
         let state = model.state().clone();
+        let shown_position = model.shown_position();
         let digest = model.digest();
         let sink = state
             .output
@@ -325,7 +327,11 @@ impl RootView {
 
         let now_playing = self.now_playing_panel(&state, digest.as_deref(), sink, cx);
         let (played, duration, rate) = match state.current {
-            Some(track) => (track.position, track.duration, track.source.rate),
+            Some(track) => (
+                shown_position.unwrap_or(track.position),
+                track.duration,
+                track.source.rate,
+            ),
             None => (Frames::ZERO, None, SampleRate::HZ_44100),
         };
         let position = match (self.grabbed_fraction(Handle::Seek), duration) {

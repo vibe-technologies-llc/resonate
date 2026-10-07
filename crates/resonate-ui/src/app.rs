@@ -14,10 +14,10 @@ use gpui::{
     WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
-    Appearance, ArtistsDrawn, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId,
+    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode, TrackId,
 };
 use resonate_engine::{
-    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, OutputSettings,
+    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
     PlaybackState, Player, PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
     TrackState,
 };
@@ -263,8 +263,15 @@ struct Graphed {
     series: Arc<[BitRate]>,
 }
 
+struct Seeking {
+    track: TrackId,
+    position: Frames,
+    outcome: Outcome,
+}
+
 pub struct PlayerModel {
     state: PlayerState,
+    seeking: Option<Seeking>,
     settings: Arc<OutputSettings>,
     sinks: Arc<[SinkInfo]>,
     digest: Option<Arc<StreamDigest>>,
@@ -304,6 +311,7 @@ impl PlayerModel {
 
         Self {
             state: read_to_the_second(player.state()),
+            seeking: None,
             settings: player.output_settings(),
             sinks: player.sinks(),
             digest: player.digest(),
@@ -325,6 +333,46 @@ impl PlayerModel {
 
     pub const fn state(&self) -> &PlayerState {
         &self.state
+    }
+
+    pub(crate) fn shown_position(&self) -> Option<Frames> {
+        let track = self.state.current?;
+        Some(
+            self.seeking
+                .as_ref()
+                .filter(|seek| seek.track == track.id)
+                .map_or(track.position, |seek| seek.position),
+        )
+    }
+
+    pub(crate) fn seek(&mut self, position: Frames, cx: &mut Context<Self>) {
+        let Some(track) = self.state.current else {
+            return;
+        };
+        match self.player.request(Command::Seek(position)) {
+            Ok(outcome) => {
+                self.seeking = Some(Seeking {
+                    track: track.id,
+                    position,
+                    outcome,
+                });
+            }
+            Err(error) => {
+                self.seeking = None;
+                Self::seek_refused(error, cx);
+            }
+        }
+        self.moved = Moved::Clock;
+        cx.notify();
+    }
+
+    fn seek_refused(error: resonate_engine::Error, cx: &mut Context<Self>) {
+        let command = CommandKind::Seek;
+        tracing::warn!(%error, ?command, "the engine refused a command");
+        toast::tell(
+            Notice::Trouble(toast::would_not_do(command, error.cause())),
+            cx,
+        );
     }
 
     pub fn output_settings(&self) -> &OutputSettings {
@@ -561,6 +609,14 @@ impl PlayerModel {
     fn refresh(&mut self, cx: &mut Context<Self>) -> Poll {
         let mut moved = None;
 
+        if let Some(outcome) = self.seeking.as_ref().and_then(|seek| seek.outcome.poll()) {
+            self.seeking = None;
+            moved = Some(Moved::More);
+            if let Err(error) = outcome {
+                Self::seek_refused(error, cx);
+            }
+        }
+
         for event in self.player.events().try_iter() {
             moved = Some(Moved::More);
             match event {
@@ -598,6 +654,14 @@ impl PlayerModel {
         }
 
         let state = read_to_the_second(self.player.state());
+        if self
+            .seeking
+            .as_ref()
+            .is_some_and(|seek| state.current.map(|track| track.id) != Some(seek.track))
+        {
+            self.seeking = None;
+            moved = Some(Moved::More);
+        }
         if state != self.state {
             if self.grain.shows(&self.state, &state) {
                 moved = moved.max(Some(moved_by(&self.state, &state)));
@@ -638,6 +702,7 @@ impl PlayerModel {
         }
 
         let busy = moved.is_some()
+            || self.seeking.is_some()
             || self.state.playback == PlaybackState::Playing
             || self.state.sleeping.is_some();
         if let Some(moved) = moved {

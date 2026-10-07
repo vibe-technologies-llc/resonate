@@ -287,7 +287,137 @@ fn thumb(filled: f32, held: bool) -> Div {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use gpui::TestAppContext;
+    use resonate_core::Frames;
+    use resonate_engine::Command;
+    use resonate_library::Library;
+
     use super::*;
+    use crate::driven::{Driven, Folder};
+
+    #[gpui::test]
+    fn releasing_a_seek_keeps_its_preview_until_the_engine_answers(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let file = folder.tone("seek.wav", 10);
+        let mut driven = Driven::opened_in(
+            cx,
+            Arc::new(Library::open_in_memory().expect("a catalog")),
+            &folder,
+        );
+        driven.play(&[file]);
+        let root = driven.root.clone();
+        let (wanted, engine) = driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                let current = root
+                    .player
+                    .read(cx)
+                    .state()
+                    .current
+                    .expect("a paused track");
+                let wanted = Frames(current.duration.expect("a length").get() * 3 / 4);
+                root.grabbed = Some(Grab {
+                    handle: Handle::Seek,
+                    fraction: 0.75,
+                    track: Some(current.id),
+                });
+                root.release(cx);
+                let model = root.player.read(cx);
+                assert_eq!(
+                    model.state().current.expect("a track").position,
+                    current.position
+                );
+                assert_eq!(model.shown_position(), Some(wanted));
+                assert!(root.grabbed.is_none());
+                (wanted, model.engine())
+            })
+        });
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .state()
+                .current
+                .is_some_and(|track| track.position == wanted)
+        });
+        let newest = driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                let current = root
+                    .player
+                    .read(cx)
+                    .state()
+                    .current
+                    .expect("a paused track");
+                for fraction in [0.5, 0.25] {
+                    root.grabbed = Some(Grab {
+                        handle: Handle::Seek,
+                        fraction,
+                        track: Some(current.id),
+                    });
+                    root.release(cx);
+                }
+                let newest = Frames(current.duration.expect("a length").get() / 4);
+                assert_eq!(root.player.read(cx).shown_position(), Some(newest));
+                newest
+            })
+        });
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .state()
+                .current
+                .is_some_and(|track| track.position == newest)
+        });
+        let later = Frames::ZERO;
+        engine.send(Command::Seek(later)).expect("a later seek");
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .state()
+                .current
+                .is_some_and(|track| track.position == later)
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).shown_position()),
+            Some(later)
+        );
+    }
+
+    #[gpui::test]
+    fn a_refused_seek_releases_the_preview_even_when_the_clock_did_not_move(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let file = folder.tone("seek.wav", 10);
+        let mut driven = Driven::opened_in(
+            cx,
+            Arc::new(Library::open_in_memory().expect("a catalog")),
+            &folder,
+        );
+        driven.play(&[file]);
+        let model = driven.read(|root, _| root.player.clone());
+        let before = driven.cx.update(|_, cx| {
+            model.update(cx, |model, cx| {
+                let current = model.state().current.expect("a paused track");
+                let past_end = Frames(current.duration.expect("a length").get() + 1);
+                model.seek(past_end, cx);
+                assert_eq!(model.shown_position(), Some(past_end));
+                current.position
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).shown_position() == Some(before));
+        assert_eq!(
+            driven.read(|root, cx| root
+                .player
+                .read(cx)
+                .state()
+                .current
+                .expect("a track")
+                .position),
+            before,
+        );
+        assert!(driven.read(|_, cx| crate::toast::is_showing(cx)));
+    }
 
     fn track(id: u64) -> Option<TrackId> {
         Some(TrackId::new(id).expect("an id"))
