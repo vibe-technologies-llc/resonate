@@ -2695,7 +2695,8 @@ is never named.
 - **The visualiser's third view is the stereo picture.** *Stereo* (`Showing::Stereo`) reads the
   spectrum's window of left and right (about 85 ms) into `stereo.rs`, gpui-free and tested as
   `spectrum.rs` is: each channel's mean square in dBFS folded into the spectrum's `Bar` (rises at
-  once, falls at its rate, peak held then following), and the channels' correlation (Pearson's,
+  once, falls at its rate) and its highest sample into another, whose held peak is the meter's
+  mark and the figure over the plot, and the channels' correlation (Pearson's,
   `None` over silence) settled towards each reading over `CORRELATION_SETTLES_OVER` (300 ms). The
   canvas draws a goniometer (side across, mid up: `sides_and_mids`, at most `DOTS_AT_MOST` dots, the
   mid, side and both channels' axes as guides) in the largest square the plot leaves, two level

@@ -24,6 +24,8 @@ pub(crate) struct Metered {
 pub(crate) struct Stereo {
     left: Bar,
     right: Bar,
+    left_peak: Bar,
+    right_peak: Bar,
     correlation: Option<f32>,
 }
 
@@ -32,6 +34,8 @@ impl Default for Stereo {
         Self {
             left: Bar::RESTING,
             right: Bar::RESTING,
+            left_peak: Bar::RESTING,
+            right_peak: Bar::RESTING,
             correlation: None,
         }
     }
@@ -42,6 +46,8 @@ impl Stereo {
         let step = step.min(LONGEST_STEP);
         self.left.fold(mean_square_db(left), step);
         self.right.fold(mean_square_db(right), step);
+        self.left_peak.fold(peak_db(left), step);
+        self.right_peak.fold(peak_db(right), step);
 
         self.correlation = match (correlation(left, right), self.correlation) {
             (Some(read), Some(held)) => Some(settled_towards(held, read, step)),
@@ -53,20 +59,22 @@ impl Stereo {
     pub(crate) fn is_at_rest(&self) -> bool {
         self.left.is_at_rest()
             && self.right.is_at_rest()
+            && self.left_peak.is_at_rest()
+            && self.right_peak.is_at_rest()
             && self
                 .correlation
                 .is_none_or(|held| held.abs() < f32::EPSILON)
     }
 
     pub(crate) fn metered(&self) -> Metered {
-        let meter = |bar: Bar| Meter {
-            level: height_of(bar.level),
-            peak: height_of(bar.peak),
-            peak_db: bar.peak.max(FLOOR_DB),
+        let meter = |level: Bar, peak: Bar| Meter {
+            level: height_of(level.level),
+            peak: height_of(peak.peak),
+            peak_db: peak.peak.max(FLOOR_DB),
         };
         Metered {
-            left: meter(self.left),
-            right: meter(self.right),
+            left: meter(self.left, self.left_peak),
+            right: meter(self.right, self.right_peak),
             correlation: self.correlation,
         }
     }
@@ -86,6 +94,16 @@ pub(crate) fn mean_square_db(samples: &[f32]) -> f32 {
         return QUIETEST_DB;
     }
     (10.0 * energy.log10()).max(QUIETEST_DB)
+}
+
+pub(crate) fn peak_db(samples: &[f32]) -> f32 {
+    let peak = samples
+        .iter()
+        .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+    if peak * peak <= SILENT_ENERGY {
+        return QUIETEST_DB;
+    }
+    (20.0 * peak.log10()).max(QUIETEST_DB)
 }
 
 pub(crate) fn correlation(left: &[f32], right: &[f32]) -> Option<f32> {
@@ -119,11 +137,13 @@ mod tests {
     }
 
     #[test]
-    fn a_full_scale_sine_meters_three_decibels_under_full_scale() {
+    fn a_full_scale_sine_meters_three_decibels_under_full_scale_and_peaks_at_it() {
         let sine = tone(4_096, 1.0);
 
         assert!((mean_square_db(&sine) + 3.01).abs() < 0.05);
         assert_eq!(mean_square_db(&vec![0.0; 64]), QUIETEST_DB);
+        assert!(peak_db(&sine).abs() < 0.01);
+        assert!((peak_db(&tone(4_096, 0.5)) + 6.02).abs() < 0.05);
     }
 
     #[test]

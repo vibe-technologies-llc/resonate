@@ -48,7 +48,8 @@ const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising 
 const STEREO_HINT: &str = "Where the sound stands between the speakers: a goniometer, mid up and \
                            side across, beside each channel's level and how alike the two are";
 
-const LEVEL_HINT: &str = "Each channel's loudness over the last moment, its peak held above it";
+const LEVEL_HINT: &str =
+    "Each channel's loudness over the last moment, its highest sample held above it";
 
 const CORRELATION_HINT: &str = "How alike the two channels are: +1 the same sound in each, 0 \
                                 unrelated, below 0 out of phase";
