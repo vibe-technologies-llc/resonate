@@ -34,15 +34,16 @@ use crate::{
     CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid,
-    Measured, Missing, MissingTrack, MostListened, Move, MusicFilters, NamedPlaylist,
-    OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder,
-    PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
-    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
-    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
-    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
-    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
-    Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
+    KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, ListeningService,
+    LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move, MusicFilters,
+    NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER,
+    REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease, Reference, Release,
+    ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings,
+    Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery,
+    TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey, VaultObject,
+    Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -1663,6 +1664,14 @@ impl Library {
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
         scrobble::submit(&self.inner, scrobbler)
+    }
+
+    pub fn tell_earlier_listens(&self, service: ListeningService) -> Result<()> {
+        scrobble::tell_earlier(&self.inner, service)
+    }
+
+    pub fn earlier_listens_owed(&self, service: ListeningService) -> Result<bool> {
+        scrobble::earlier_owed(&self.inner, service)
     }
 
     pub fn tell_loves(&self, scrobbler: &dyn Scrobbler) -> Result<LovesTold> {

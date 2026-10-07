@@ -14,7 +14,8 @@ const FOREVER: &str = "forever";
 
 const FORGET_THE_LISTENS: &str = "DELETE FROM listens
       WHERE at < ?1
-        AND id <= coalesce((SELECT min(through) FROM submissions), id)";
+        AND id <= coalesce((SELECT min(through) FROM submissions), id)
+        AND id <= coalesce((SELECT min(through) FROM earlier_submissions), id)";
 
 const FORGET_THE_PASSES: &str = "DELETE FROM passes WHERE at < ?1";
 

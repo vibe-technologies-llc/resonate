@@ -21,10 +21,23 @@ const REFUSED_FOR_NOW: [u16; 2] = [408, 429];
 
 const THE_MARK: &str = "SELECT through FROM submissions WHERE service = ?1";
 
-const MARKED_THROUGH: &str = "INSERT INTO submissions (service, through) VALUES (?1, ?2)
+const MARKED_THROUGH: &str = "INSERT INTO submissions (service, through, began) VALUES (?1, ?2, ?2)
      ON CONFLICT (service) DO UPDATE SET through = max(through, excluded.through)";
 
+const THE_FIRST_MARK: &str = "SELECT coalesce(began, through) FROM submissions WHERE service = ?1";
+
 const THE_LAST_LISTEN: &str = "SELECT coalesce(max(id), 0) FROM listens";
+
+const THE_EARLIER_MARK: &str = "SELECT through, until FROM earlier_submissions WHERE service = ?1";
+
+const EARLIER_ASKED_FOR: &str = "INSERT INTO earlier_submissions (service, through, until)
+     VALUES (?1, 0, ?2)
+     ON CONFLICT (service) DO NOTHING";
+
+const EARLIER_MARKED_THROUGH: &str = "UPDATE earlier_submissions SET through = max(through, ?2)
+      WHERE service = ?1";
+
+const EARLIER_ALL_TOLD: &str = "DELETE FROM earlier_submissions WHERE service = ?1";
 
 const THE_LOVED_RECORDINGS: &str = "SELECT DISTINCT mbid FROM tracks
       WHERE favourite IS NOT NULL AND mbid IS NOT NULL";
@@ -51,7 +64,7 @@ const THE_LISTENS_AFTER: &str = concat!(
        JOIN tracks t ON t.id = l.track_id
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = t.artist_id
-      WHERE l.id > ?1
+      WHERE l.id > ?1 AND l.id <= ?3
       ORDER BY l.id
       LIMIT ?2"
 );
@@ -140,6 +153,22 @@ pub struct Submitted {
     pub refused: usize,
     pub unnamed: usize,
     pub started: bool,
+    pub earlier: usize,
+}
+
+#[derive(Clone, Copy)]
+enum Cursor {
+    Since,
+    Earlier { until: u64 },
+}
+
+impl Cursor {
+    const fn until(self) -> u64 {
+        match self {
+            Self::Since => i64::MAX.cast_unsigned(),
+            Self::Earlier { until } => until,
+        }
+    }
 }
 
 struct Pending {
@@ -149,7 +178,7 @@ struct Pending {
 
 pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
     let service = scrobbler.service();
-    let Some(mut through) = mark(inner, service)? else {
+    let Some(through) = mark(inner, service)? else {
         let last = inner.read(last_listen)?;
         mark_through(inner, service, last)?;
         return Ok(Submitted {
@@ -159,10 +188,61 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
     };
 
     let mut submitted = Submitted::default();
+    told_in_batches(inner, scrobbler, through, Cursor::Since, &mut submitted)?;
+    if let Some((through, until)) = earlier_mark(inner, service)? {
+        let since = submitted.submitted;
+        told_in_batches(
+            inner,
+            scrobbler,
+            through,
+            Cursor::Earlier { until },
+            &mut submitted,
+        )?;
+        submitted.earlier = submitted.submitted - since;
+        earlier_all_told(inner, service)?;
+    }
+    Ok(submitted)
+}
+
+pub(crate) fn tell_earlier(inner: &Inner, service: ListeningService) -> Result<()> {
+    let until = match first_mark(inner, service)? {
+        Some(began) => began,
+        None => {
+            let last = inner.read(last_listen)?;
+            mark_through(inner, service, last)?;
+            last
+        }
+    };
+    let until = i64::try_from(until).unwrap_or(i64::MAX);
+    inner.write(|transaction| {
+        transaction
+            .execute(EARLIER_ASKED_FOR, params![service.name(), until])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Update, source))
+    })
+}
+
+pub(crate) fn earlier_owed(inner: &Inner, service: ListeningService) -> Result<bool> {
+    Ok(earlier_mark(inner, service)?.is_some())
+}
+
+fn told_in_batches(
+    inner: &Inner,
+    scrobbler: &dyn Scrobbler,
+    mut through: u64,
+    cursor: Cursor,
+    submitted: &mut Submitted,
+) -> Result<()> {
+    let service = scrobbler.service();
+    let marked = |through: u64| match cursor {
+        Cursor::Since => mark_through(inner, service, through),
+        Cursor::Earlier { .. } => earlier_mark_through(inner, service, through),
+    };
     loop {
-        let pending = inner.read(|connection| listens_after(connection, through))?;
+        let pending =
+            inner.read(|connection| listens_after(connection, through, cursor.until()))?;
         let Some(last) = pending.last().map(|pending| pending.listen.get()) else {
-            return Ok(submitted);
+            return Ok(());
         };
         let named: Vec<Scrobble> = pending
             .iter()
@@ -186,7 +266,7 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
                             submitted.refused += 1;
                         }
                         Err(error) => {
-                            mark_through(inner, service, one.listen.get() - 1)?;
+                            marked(one.listen.get() - 1)?;
                             return Err(error);
                         }
                     }
@@ -195,9 +275,9 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
         }
 
         through = last;
-        mark_through(inner, service, through)?;
+        marked(through)?;
         if pending.len() < SUBMITTED_AT_ONCE {
-            return Ok(submitted);
+            return Ok(());
         }
     }
 }
@@ -323,6 +403,53 @@ fn mark_through(inner: &Inner, service: ListeningService, through: u64) -> Resul
     })
 }
 
+fn first_mark(inner: &Inner, service: ListeningService) -> Result<Option<u64>> {
+    inner.read(|connection| {
+        connection
+            .query_row(THE_FIRST_MARK, params![service.name()], |row| {
+                row.get::<_, i64>(0)
+            })
+            .optional()
+            .map(|began| began.map(|began| began.max(0).cast_unsigned()))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+fn earlier_mark(inner: &Inner, service: ListeningService) -> Result<Option<(u64, u64)>> {
+    inner.read(|connection| {
+        connection
+            .query_row(THE_EARLIER_MARK, params![service.name()], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })
+            .optional()
+            .map(|marked| {
+                marked.map(|(through, until)| {
+                    (through.max(0).cast_unsigned(), until.max(0).cast_unsigned())
+                })
+            })
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+fn earlier_mark_through(inner: &Inner, service: ListeningService, through: u64) -> Result<()> {
+    let through = i64::try_from(through).unwrap_or(i64::MAX);
+    inner.write(|transaction| {
+        transaction
+            .execute(EARLIER_MARKED_THROUGH, params![service.name(), through])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Update, source))
+    })
+}
+
+fn earlier_all_told(inner: &Inner, service: ListeningService) -> Result<()> {
+    inner.write(|transaction| {
+        transaction
+            .execute(EARLIER_ALL_TOLD, params![service.name()])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Delete, source))
+    })
+}
+
 fn last_listen(connection: &Connection) -> Result<u64> {
     connection
         .query_row(THE_LAST_LISTEN, [], |row| row.get::<_, i64>(0))
@@ -330,7 +457,7 @@ fn last_listen(connection: &Connection) -> Result<u64> {
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn listens_after(connection: &Connection, through: u64) -> Result<Vec<Pending>> {
+fn listens_after(connection: &Connection, through: u64, until: u64) -> Result<Vec<Pending>> {
     let mut statement = connection
         .prepare(THE_LISTENS_AFTER)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -338,7 +465,8 @@ fn listens_after(connection: &Connection, through: u64) -> Result<Vec<Pending>> 
         .query_map(
             params![
                 i64::try_from(through).unwrap_or(i64::MAX),
-                SUBMITTED_AT_ONCE as i64
+                SUBMITTED_AT_ONCE as i64,
+                i64::try_from(until).unwrap_or(i64::MAX)
             ],
             RawListen::read,
         )

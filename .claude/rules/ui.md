@@ -2642,8 +2642,11 @@ is never named.
   `listen-for`; its *Recognition* group has the AudD token beside the AcoustID key, each a `Field`
   read at the next start. Its *ListenBrainz* group is the `listenbrainz-token` field, not read at
   next start: the binary's submitter follows the settings file, so a token given or cleared there is
-  what the next submission (within half a minute) carries. **A token given is asked about at
-  once.** Where Online is on and the build handed `Lookups::scrobblers` (the `Scrobblers` seam
+  what the next submission (within half a minute) carries. With a token typed, *Send earlier
+  plays* is armed by the first press (`telling_the_earlier_plays`, lowered with the pane's other
+  armed presses) and asks `Library::tell_earlier_listens` on the second
+  (`the_earlier_plays_are_asked_for_by_the_second_press_alone`); the submitter does the sending.
+  **A token given is asked about at once.** Where Online is on and the build handed `Lookups::scrobblers` (the `Scrobblers` seam
   turning a token into a `Scrobbler`; `None` without `online`), `check_the_listenbrainz_token` asks
   `token_held` on the background executor and says in a toast whose token it is or that the service
   does not know it (a short-pasted token is found out then, not by listens never arriving).

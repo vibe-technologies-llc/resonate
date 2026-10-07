@@ -4220,6 +4220,21 @@ impl LibraryModel {
         self.start_scan(Vec::new(), Reading::Everything, Prompted::ByHand, cx);
     }
 
+    pub fn tell_earlier_listens(&mut self, cx: &mut Context<Self>) -> bool {
+        match self
+            .library
+            .tell_earlier_listens(resonate_library::ListeningService::ListenBrainz)
+        {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::error!(%error, "the earlier plays could not be asked to be sent");
+                toast::tell(toast::could_not("send the earlier plays", &error), cx);
+                cx.notify();
+                false
+            }
+        }
+    }
+
     pub fn look_for_missing_covers(&mut self, cx: &mut Context<Self>) {
         if self.enriching.is_some() || !self.can_enrich() {
             return;

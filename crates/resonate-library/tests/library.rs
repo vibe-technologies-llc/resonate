@@ -5509,6 +5509,61 @@ fn what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold
 }
 
 #[test]
+fn plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_asked_for()
+-> Result<()> {
+    const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let heat = MediaLocation::local(tree.write(
+        "heat.wav",
+        &Wav::new().text(TITLE, "Heat").text(ARTIST, "Ben").build(),
+    ));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let told = Told::default();
+    let a_year = HistoryKept::parse("365").expect("a span of days");
+
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
+    assert!(library.submit_listens(&told)?.started);
+    library.track_played(&heat, None, Duration::ZERO)?;
+    assert_eq!(library.submit_listens(&told)?.submitted, 1);
+    assert!(!library.earlier_listens_owed(ListeningService::ListenBrainz)?);
+
+    library.tell_earlier_listens(ListeningService::ListenBrainz)?;
+    library.tell_earlier_listens(ListeningService::ListenBrainz)?;
+    assert!(library.earlier_listens_owed(ListeningService::ListenBrainz)?);
+    beside(&database)
+        .execute_batch(&format!(
+            "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
+        ))
+        .expect("the history is moved back past a year");
+    assert_eq!(
+        library.age_the_history(a_year)?.listens,
+        0,
+        "a play asked to be told was forgotten before it was"
+    );
+
+    library.track_played(&cold, None, Duration::ZERO)?;
+    let submitted = library.submit_listens(&told)?;
+
+    assert_eq!(submitted.submitted, 3);
+    assert_eq!(submitted.earlier, 2);
+    assert_eq!(
+        told.titles(),
+        vec![vec!["Heat"], vec!["Cold"], vec!["Cold", "Heat"]]
+    );
+    assert!(!library.earlier_listens_owed(ListeningService::ListenBrainz)?);
+    assert_eq!(library.submit_listens(&told)?.submitted, 0);
+    assert_eq!(library.age_the_history(a_year)?.listens, 3);
+    Ok(())
+}
+
+#[test]
 fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told() -> Result<()> {
     const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
     let tree = Tree::new();

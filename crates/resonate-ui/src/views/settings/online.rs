@@ -33,6 +33,13 @@ const SUBMITTING_NOTE: &str = "Followed as soon as it is given: every play count
                                is sent to ListenBrainz within a minute. Leave it empty to send \
                                nothing.";
 
+const EARLIER_PLAYS_NOTE: &str = "Plays counted before the token was given are kept here and not \
+                                  sent unless asked: every one of them goes to ListenBrainz, a \
+                                  hundred at a time.";
+
+const EARLIER_PLAYS_ASKED: &str = "The earlier plays are on their way, a hundred a minute, oldest \
+                                   first.";
+
 const BY_SOUND_NOTE: &str = "A lookup that finds no name, recording id or ISRC to ask with, and \
                              no AcoustID answer, sends Shazam the peaks of twelve seconds of the \
                              track and asks MusicBrainz for what it names. The Analysis pane \
@@ -265,6 +272,10 @@ impl RootView {
     }
 
     pub(super) fn submitting_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let given = !self.listenbrainz.read(cx).text().trim().is_empty();
+        let armed = self.telling_the_earlier_plays;
+        let asked = self.earlier_plays_asked;
+
         kit::section_body()
             .child(kit::field(
                 "User token",
@@ -276,6 +287,41 @@ impl RootView {
                 ),
             ))
             .child(note(SUBMITTING_NOTE))
+            .when(given, |body| {
+                body.child(div().flex().flex_wrap().gap_2().child(action(
+                    "send-the-earlier-plays",
+                    if armed {
+                        "Press again to send every earlier play"
+                    } else {
+                        "Send earlier plays"
+                    },
+                    Icon::Export,
+                    asked,
+                    move |this, _, cx| {
+                        if armed {
+                            this.send_the_earlier_plays(cx);
+                        } else {
+                            this.telling_the_earlier_plays = true;
+                            cx.notify();
+                        }
+                    },
+                    self,
+                    cx,
+                )))
+                .child(note(if asked {
+                    EARLIER_PLAYS_ASKED
+                } else {
+                    EARLIER_PLAYS_NOTE
+                }))
+            })
+    }
+
+    fn send_the_earlier_plays(&mut self, cx: &mut Context<Self>) {
+        self.telling_the_earlier_plays = false;
+        self.earlier_plays_asked = self
+            .library
+            .update(cx, |library, cx| library.tell_earlier_listens(cx));
+        cx.notify();
     }
 
     pub(super) fn listening_group(&mut self, cx: &mut Context<Self>) -> Div {

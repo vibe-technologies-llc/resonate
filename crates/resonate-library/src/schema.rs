@@ -386,6 +386,12 @@ const MIGRATIONS: &[&str] = &[
             SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
           WHERE id = new.id;
      END;",
+    "CREATE TABLE earlier_submissions (
+         service TEXT PRIMARY KEY,
+         through INTEGER NOT NULL,
+         until   INTEGER NOT NULL
+     ) STRICT;
+     ALTER TABLE submissions ADD COLUMN began INTEGER;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

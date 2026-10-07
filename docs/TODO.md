@@ -187,8 +187,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   `Queued::revision`)
 
 ## Later: Scrobbling
-- Plays from before the token are never sent to ListenBrainz (favourites are, as loves); Last.fm is
-  not reached at all
+- Last.fm is not reached at all; only ListenBrainz is told what was heard
 
 ## Later: MPRIS
 - A shuffle is announced as the whole list replaced: `Tracks` is built from the play order alone;

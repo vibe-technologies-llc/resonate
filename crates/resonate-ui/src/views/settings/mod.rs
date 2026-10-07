@@ -698,6 +698,7 @@ impl RootView {
             || self.writing_the_tags
             || self.keeping_the_tracks
             || self.discarding_the_curve
+            || self.telling_the_earlier_plays
             || self.aging_the_history.is_some()
     }
 
@@ -709,6 +710,7 @@ impl RootView {
         self.writing_the_tags = false;
         self.keeping_the_tracks = false;
         self.discarding_the_curve = false;
+        self.telling_the_earlier_plays = false;
         self.aging_the_history = None;
     }
 

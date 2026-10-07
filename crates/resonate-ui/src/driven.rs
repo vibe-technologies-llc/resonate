@@ -1303,6 +1303,37 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_earlier_plays_are_asked_for_by_the_second_press_alone(cx: &mut TestAppContext) {
+        let library = catalog();
+        let owed = |library: &Library| {
+            library
+                .earlier_listens_owed(resonate_library::ListeningService::ListenBrainz)
+                .expect("the catalog reads")
+        };
+        let mut driven = Driven::open(cx, Arc::clone(&library));
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("listenbrainz token");
+        driven.settle();
+        driven.focus(|root| &root.listenbrainz);
+        driven.cx.simulate_input("token");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.click("send-the-earlier-plays");
+
+        assert!(driven.read(|root, _| root.telling_the_earlier_plays));
+        assert!(!owed(&library), "the first press sent the earlier plays");
+
+        driven.click("send-the-earlier-plays");
+
+        assert!(owed(&library));
+        assert!(
+            driven.read(|root, _| { !root.telling_the_earlier_plays && root.earlier_plays_asked })
+        );
+    }
+
+    #[gpui::test]
     fn escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was(
         cx: &mut TestAppContext,
     ) {

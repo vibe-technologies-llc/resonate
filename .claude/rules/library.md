@@ -134,7 +134,14 @@ rows read via `Player::media` like any unscanned row.
   refused alone = `Submitted::refused`, passed over; any other failure moves the mark only past what
   was told, answers the error, rest told next ask. Service with no row yet is marked at the last
   listen held, told nothing (`Submitted::started`): a token given today does not send ten years of
-  history. Counting a play writes nothing here, so any process may have counted it (offline, before
+  history unasked. **Asked, it does**: `Library::tell_earlier_listens` notes an
+  `earlier_submissions` row (`through` 0, `until` the service's first mark, `submissions.began`,
+  written once as the row is made; a row from before the column answers its mark), and every
+  `submit_listens` after its own pass tells listens in `(through, until]` the same way, a batch at a
+  time, counted in `Submitted::earlier`, dropping the row once none are left; asked again while one
+  stands, the standing one goes on. Aging holds back every listen past the lower of both marks, so
+  asked-for history is told before it can go
+  (`plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_asked_for`). Counting a play writes nothing here, so any process may have counted it (offline, before
   a restart) and whichever run submits next tells it; a listen whose track leaves the catalog first
   leaves with it (cascade). `Library::billed_as` = same names for one row, what `playing_now` is
   told. Two runs submitting at once may tell a batch twice; ListenBrainz keeps one listen per moment
