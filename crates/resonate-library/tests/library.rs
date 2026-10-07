@@ -32,8 +32,8 @@ use resonate_library::{
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium,
-    Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
+    Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAhead, LyricsAsked, Mbid,
+    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
     PlaylistFormat, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
     RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
     Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
@@ -9107,6 +9107,35 @@ fn timed_words(text: &str) -> LyricText {
         synced: true,
         ..words(text)
     }
+}
+
+#[test]
+fn a_lyrics_offset_is_held_per_row_and_goes_with_the_track() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write(
+        "echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let whole = MediaLocation::local(&path);
+    let cut = Some(FrameSpan::starting(Frames(44_100)));
+    let ahead = LyricsAhead::ZERO.earlier().earlier().earlier();
+
+    assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
+    library.hold_lyrics_ahead(&whole, None, ahead)?;
+    assert_eq!(library.lyrics_ahead(&whole, None)?, ahead);
+    assert_eq!(library.lyrics_ahead(&whole, cut)?, LyricsAhead::ZERO);
+
+    library.hold_lyrics_ahead(&whole, None, LyricsAhead::ZERO)?;
+    assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
+
+    library.hold_lyrics_ahead(&whole, None, ahead.later().later().later().later())?;
+    assert_eq!(library.lyrics_ahead(&whole, None)?.millis(), -100);
+    fs::remove_file(&path).expect("the file goes");
+    library.forget_the_gone(std::slice::from_ref(&path))?;
+    assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
+    Ok(())
 }
 
 #[test]

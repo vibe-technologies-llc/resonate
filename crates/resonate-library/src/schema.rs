@@ -392,6 +392,12 @@ const MIGRATIONS: &[&str] = &[
          until   INTEGER NOT NULL
      ) STRICT;
      ALTER TABLE submissions ADD COLUMN began INTEGER;",
+    "CREATE TABLE lyrics_ahead (
+         path       TEXT NOT NULL,
+         span_start INTEGER NOT NULL,
+         ahead_ms   INTEGER NOT NULL,
+         PRIMARY KEY (path, span_start)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

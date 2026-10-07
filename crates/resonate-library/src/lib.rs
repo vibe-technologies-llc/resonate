@@ -148,7 +148,7 @@ pub use crate::{
     store::folded_letters,
     studies::{Agreement, HEARD_AT_LEAST, Heard, HeardAs, Studied, StudiedTrack, StudyFilter},
     suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
-    sung::{BETTERED_AFTER, MISSED_AGAIN_AFTER},
+    sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{
         ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary,
         RETRY_WAITS, TRIES_BEFORE_GIVING_UP,

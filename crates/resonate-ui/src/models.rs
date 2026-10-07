@@ -4220,6 +4220,30 @@ impl LibraryModel {
         self.start_scan(Vec::new(), Reading::Everything, Prompted::ByHand, cx);
     }
 
+    pub fn lyrics_ahead(&self, wanted: &resonate_lyrics::Wanted) -> resonate_library::LyricsAhead {
+        self.library
+            .lyrics_ahead(&wanted.location, wanted.span)
+            .unwrap_or_else(|error| {
+                tracing::debug!(%error, "how far the words run ahead could not be read");
+                resonate_library::LyricsAhead::ZERO
+            })
+    }
+
+    pub fn hold_lyrics_ahead(
+        &self,
+        wanted: &resonate_lyrics::Wanted,
+        ahead: resonate_library::LyricsAhead,
+        cx: &mut Context<Self>,
+    ) {
+        if let Err(error) = self
+            .library
+            .hold_lyrics_ahead(&wanted.location, wanted.span, ahead)
+        {
+            tracing::error!(%error, "how far the words run ahead could not be kept");
+            toast::tell(toast::could_not("keep the lyrics' timing", &error), cx);
+        }
+    }
+
     pub fn tell_earlier_listens(&mut self, cx: &mut Context<Self>) -> bool {
         match self
             .library

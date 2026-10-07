@@ -9,6 +9,7 @@ use gpui::{
 };
 use resonate_core::{Frames, TrackId};
 use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
+use resonate_library::LyricsAhead;
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
 use crate::{models::Scale, theme};
@@ -582,6 +583,7 @@ pub struct LyricsModel {
     breathing_for: Option<Breathing>,
     fading_breath: Option<FadingBreath>,
     clock: Option<Clock>,
+    ahead: LyricsAhead,
     _find: Task<()>,
 }
 
@@ -611,8 +613,21 @@ impl LyricsModel {
             breathing_for: None,
             fading_breath: None,
             clock: None,
+            ahead: LyricsAhead::ZERO,
             _find: Task::ready(()),
         }
+    }
+
+    pub const fn ahead(&self) -> LyricsAhead {
+        self.ahead
+    }
+
+    pub fn hold_ahead(&mut self, ahead: LyricsAhead) {
+        self.ahead = ahead;
+    }
+
+    pub const fn looked_for(&self) -> Option<&Wanted> {
+        self.looked_for.as_ref()
     }
 
     pub const fn look(&self) -> &Look {

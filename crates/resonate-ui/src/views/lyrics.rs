@@ -9,6 +9,7 @@ use gpui::{
     linear_color_stop, linear_gradient, point, prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
+use resonate_library::LyricsAhead;
 use resonate_lyrics::{Credits, Detail, Sweep, Voice, Wanted};
 
 use crate::{
@@ -49,6 +50,15 @@ const FOLLOW_HINT: &str = "Follow the track again — a scroll of your own holds
 const PRESS_HINT: &str = "Press any line to jump the transport to the moment it is sung at. A \
                           scroll of your own holds the pane where you leave it until Follow puts \
                           it back on the track.";
+
+const EARLIER_HINT: &str = "The words come a tenth of a second sooner, for a sheet that runs \
+                            late. Kept for this track.";
+
+const LATER_HINT: &str = "The words come a tenth of a second later, for a sheet that runs early. \
+                          Kept for this track.";
+
+const PUT_BACK_HINT: &str = "How far the words run ahead of the track. Press to put them back on \
+                             the sheet's own timing.";
 
 const WORD_SYNCED: &str = "WORD-SYNCED";
 
@@ -132,8 +142,32 @@ impl RootView {
         }
 
         let wanted = self.wanted_lyrics(&state, digest.as_deref(), cx);
-        self.lyrics
-            .update(cx, |model, cx| model.follow(asked, wanted, cx));
+        let ahead = wanted.as_ref().map_or(LyricsAhead::ZERO, |wanted| {
+            self.library.read(cx).lyrics_ahead(wanted)
+        });
+        self.lyrics.update(cx, |model, cx| {
+            model.follow(asked, wanted, cx);
+            model.hold_ahead(ahead);
+        });
+    }
+
+    fn nudge_the_lyrics(&mut self, ahead: LyricsAhead, cx: &mut Context<Self>) {
+        let Some(wanted) = self.lyrics.read(cx).looked_for().cloned() else {
+            return;
+        };
+        self.lyrics.update(cx, |model, _| model.hold_ahead(ahead));
+        self.library.update(cx, |library, cx| {
+            library.hold_lyrics_ahead(&wanted, ahead, cx)
+        });
+        cx.notify();
+    }
+
+    fn seek_to_the_words(&mut self, at: Duration, cx: &mut Context<Self>) {
+        let ahead = self.lyrics.update(cx, |model, _| {
+            model.follow_again();
+            model.ahead()
+        });
+        self.seek_to_moment(ahead.back(at), cx);
     }
 
     pub(crate) fn lyrics_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -149,12 +183,13 @@ impl RootView {
         let playing = self.playing(&state, digest.as_deref(), cx);
         let now = Instant::now();
         let heard = Heard::of(&state);
-        let position = match heard {
+        let heard_at = match heard {
             Some(heard) => self
                 .lyrics
                 .update(cx, |model, _| model.keep_time(heard, now)),
             None => current.position.to_duration(current.source.rate),
         };
+        let position = self.lyrics.read(cx).ahead().read(heard_at);
         let sounding = heard.is_some_and(|heard| heard.playing);
 
         let moving = self.lyrics.update(cx, |model, _| {
@@ -208,6 +243,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let chosen = self.lyrics.read(cx).reading();
+        let ahead = self.lyrics.read(cx).ahead();
 
         kit::heading().child(
             kit::heading_row()
@@ -251,7 +287,31 @@ impl RootView {
                             ))
                         })
                         .when(synced, |actions| {
-                            actions.child(hint::explains("lyric-press", PRESS_HINT))
+                            actions
+                                .child(
+                                    kit::chip("lyrics-later", "Later", false)
+                                        .names(LATER_HINT)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.nudge_the_lyrics(ahead.later(), cx);
+                                        })),
+                                )
+                                .when(!ahead.is_zero(), |actions| {
+                                    actions.child(
+                                        kit::chip("lyrics-ahead", said_ahead(ahead), true)
+                                            .names(PUT_BACK_HINT)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
+                                            })),
+                                    )
+                                })
+                                .child(
+                                    kit::chip("lyrics-earlier", "Earlier", false)
+                                        .names(EARLIER_HINT)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.nudge_the_lyrics(ahead.earlier(), cx);
+                                        })),
+                                )
+                                .child(hint::explains("lyric-press", PRESS_HINT))
                         })
                         .when_some(attribution(look), |actions, attributed| {
                             actions
@@ -511,17 +571,13 @@ impl RootView {
                 .cursor_pointer()
                 .hover(|line| line.bg(theme::tinted(theme::text(), 0x0e)))
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.lyrics.update(cx, |model, _| model.follow_again());
-                    this.seek_to_moment(at, cx);
+                    this.seek_to_the_words(at, cx);
                 })),
             move |this, where_at, cx| {
                 this.copies_a_lyric(where_at, &words, cx).apart().does(
                     Icon::Lyrics,
                     SEEK_TO_IT,
-                    move |this, _, cx| {
-                        this.lyrics.update(cx, |model, _| model.follow_again());
-                        this.seek_to_moment(at, cx);
-                    },
+                    move |this, _, cx| this.seek_to_the_words(at, cx),
                 )
             },
             cx,
@@ -866,11 +922,28 @@ fn notice_of(text: SharedString) -> AnyElement {
         .into_any_element()
 }
 
+const MILLIS_PER_SECOND: f64 = 1_000.0;
+
+fn said_ahead(ahead: LyricsAhead) -> String {
+    let seconds = f64::from(ahead.millis()) / MILLIS_PER_SECOND;
+    let sign = if ahead.millis() > 0 { "+" } else { "−" };
+    format!("{sign}{:.1} s", seconds.abs())
+}
+
 #[cfg(test)]
 mod tests {
     use resonate_lyrics::Singing;
 
     use super::*;
+
+    #[test]
+    fn how_far_the_words_run_ahead_is_said_in_tenths_of_a_second_with_its_sign() {
+        let ahead = |millis| LyricsAhead::of_millis(millis).expect("within reach");
+
+        assert_eq!(said_ahead(ahead(300)), "+0.3 s");
+        assert_eq!(said_ahead(ahead(-1_200)), "−1.2 s");
+        assert_eq!(said_ahead(LyricsAhead::ZERO.earlier()), "+0.1 s");
+    }
 
     fn singing(sung: usize, word: Range<usize>, through: f32) -> Sweep {
         Sweep {

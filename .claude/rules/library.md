@@ -1454,6 +1454,11 @@ rows read via `Player::media` like any unscanned row.
   registry narrowed to one provider found nothing (want stays due). `forget_delivered` clears the
   offer and records it in `forgotten_deliveries`, which `land_release`'s `wants_under` and
   `want_again` carry to the want's new row. `providers.md` has the rest.
+- **How far a row's words run ahead is the listener's, kept beside the row.** `lyrics_ahead`
+  (`path`, `span_start`, `ahead_ms`), keyed as `lyrics_kept` is; `Library::lyrics_ahead` answers
+  `LyricsAhead::ZERO` for none, `hold_lyrics_ahead` deletes the row for zero; swept with the track
+  in `ORPHANS`, kept across a rewrite of the file (an offset fits the sheet and the audio, not the
+  bytes) (`a_lyrics_offset_is_held_per_row_and_goes_with_the_track`).
 - **A lyric fetched once is kept, and so is a miss; what is kept only gets better.** `lyrics_kept`
   is keyed `(path, span_start)` as `tracks` is (a cue row keeps its words apart from the file's);
   `text` `NULL` = remembered miss; `taken` = last asked. A kept row, and a `lyrics_refused` one,

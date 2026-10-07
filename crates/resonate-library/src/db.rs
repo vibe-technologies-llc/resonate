@@ -35,9 +35,9 @@ use crate::{
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
     KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, ListeningService,
-    LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move, MusicFilters,
-    NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER,
+    LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
+    MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER,
     REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease, Reference, Release,
     ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder, SavedQuery,
     ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings,
@@ -4084,6 +4084,31 @@ impl Library {
 
         self.inner
             .write(|transaction| sung::keep(transaction, path, start, told, SystemTime::now()))
+    }
+
+    pub fn lyrics_ahead(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+    ) -> Result<LyricsAhead> {
+        let path = playlist::local_path(location)?;
+        let (start, _) = store::span_columns(span);
+
+        self.inner
+            .read(|connection| sung::ahead(connection, path, start))
+    }
+
+    pub fn hold_lyrics_ahead(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+        ahead: LyricsAhead,
+    ) -> Result<()> {
+        let path = playlist::local_path(location)?;
+        let (start, _) = store::span_columns(span);
+
+        self.inner
+            .write(|transaction| sung::hold_ahead(transaction, path, start, ahead))
     }
 
     pub fn lyrics_to_ask(&self, refresh: bool) -> Result<Vec<TrackId>> {

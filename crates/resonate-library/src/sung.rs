@@ -12,6 +12,63 @@ pub const MISSED_AGAIN_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 pub const BETTERED_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LyricsAhead(i32);
+
+impl LyricsAhead {
+    pub const ZERO: Self = Self(0);
+    pub const STEP_MS: i32 = 100;
+    pub const MOST_MS: i32 = 30_000;
+
+    pub const fn of_millis(millis: i32) -> Option<Self> {
+        if millis.abs() > Self::MOST_MS {
+            return None;
+        }
+        Some(Self(millis))
+    }
+
+    pub const fn millis(self) -> i32 {
+        self.0
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    #[must_use]
+    pub const fn earlier(self) -> Self {
+        Self(clamped(self.0 + Self::STEP_MS))
+    }
+
+    #[must_use]
+    pub const fn later(self) -> Self {
+        Self(clamped(self.0 - Self::STEP_MS))
+    }
+
+    pub fn read(self, heard: Duration) -> Duration {
+        let by = Duration::from_millis(u64::from(self.0.unsigned_abs()));
+        if self.0 >= 0 {
+            heard.saturating_add(by)
+        } else {
+            heard.saturating_sub(by)
+        }
+    }
+
+    pub fn back(self, sung: Duration) -> Duration {
+        Self(-self.0).read(sung)
+    }
+}
+
+const fn clamped(millis: i32) -> i32 {
+    if millis > LyricsAhead::MOST_MS {
+        LyricsAhead::MOST_MS
+    } else if millis < -LyricsAhead::MOST_MS {
+        -LyricsAhead::MOST_MS
+    } else {
+        millis
+    }
+}
+
 impl KeptLyrics {
     pub fn is_due(&self, now: SystemTime) -> bool {
         let waited = |wait: Duration| now.duration_since(self.taken).is_ok_and(|age| age >= wait);
@@ -139,6 +196,45 @@ pub(crate) fn asking(connection: &Connection, id: TrackId) -> Result<Option<Aski
     }))
 }
 
+pub(crate) fn ahead(connection: &Connection, path: &str, span_start: i64) -> Result<LyricsAhead> {
+    let held = connection
+        .query_row(
+            "SELECT ahead_ms FROM lyrics_ahead WHERE path = ?1 AND span_start = ?2",
+            params![path, span_start],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(held
+        .and_then(|millis| i32::try_from(millis).ok())
+        .and_then(LyricsAhead::of_millis)
+        .unwrap_or_default())
+}
+
+pub(crate) fn hold_ahead(
+    transaction: &Transaction<'_>,
+    path: &str,
+    span_start: i64,
+    ahead: LyricsAhead,
+) -> Result<()> {
+    let written = if ahead.is_zero() {
+        transaction.execute(
+            "DELETE FROM lyrics_ahead WHERE path = ?1 AND span_start = ?2",
+            params![path, span_start],
+        )
+    } else {
+        transaction.execute(
+            "INSERT INTO lyrics_ahead (path, span_start, ahead_ms) VALUES (?1, ?2, ?3)
+             ON CONFLICT (path, span_start) DO UPDATE SET ahead_ms = excluded.ahead_ms",
+            params![path, span_start, i64::from(ahead.millis())],
+        )
+    };
+    written
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
 pub(crate) fn kept(
     connection: &Connection,
     path: &str,
@@ -234,6 +330,25 @@ pub(crate) fn note_refused(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_offset_reads_the_words_ahead_or_behind_and_is_held_within_its_reach() {
+        let heard = Duration::from_secs(10);
+        let ahead = LyricsAhead::of_millis(500).expect("within reach");
+        let behind = LyricsAhead::of_millis(-500).expect("within reach");
+
+        assert_eq!(ahead.read(heard), Duration::from_millis(10_500));
+        assert_eq!(behind.read(heard), Duration::from_millis(9_500));
+        assert_eq!(behind.read(Duration::from_millis(200)), Duration::ZERO);
+        assert_eq!(ahead.back(ahead.read(heard)), heard);
+        assert_eq!(LyricsAhead::ZERO.earlier().millis(), LyricsAhead::STEP_MS);
+        assert_eq!(LyricsAhead::ZERO.later().millis(), -LyricsAhead::STEP_MS);
+        assert_eq!(LyricsAhead::of_millis(LyricsAhead::MOST_MS + 1), None);
+        let furthest = LyricsAhead::of_millis(LyricsAhead::MOST_MS).expect("at the edge");
+        assert_eq!(furthest.earlier(), furthest);
+        let least = LyricsAhead::of_millis(-LyricsAhead::MOST_MS).expect("at the edge");
+        assert_eq!(least.later(), least);
+    }
 
     fn plain(text: &str) -> LyricText {
         LyricText {

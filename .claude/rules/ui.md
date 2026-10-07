@@ -1304,6 +1304,14 @@ is never named.
     after `QUIET_POLLS_BEFORE_RESTING` (30) quiet polls the loop waits `RESTING_POLL_INTERVAL` (64
     ms) instead of `POLL_INTERVAL` until the next change: a paused window still answers a press
     within a frame or four at a quarter of the wakeups.
+- **A sheet that runs early or late is moved by the listener, for that track.** A synced set's
+  heading carries *Later*, *Earlier* (`LyricsAhead::STEP_MS`, 100 ms a press, held within
+  `MOST_MS`, 30 s) and, while moved, the offset as a selected chip putting it back
+  (`said_ahead`: *+0.3 s*). `RootView::look_for_lyrics` reads `Library::lyrics_ahead` for the row
+  it builds a `Wanted` for and hands it to `LyricsModel::hold_ahead`; `nudge_the_lyrics` writes
+  `Library::hold_lyrics_ahead` against the row the model looked for. The pane reads every line at
+  `ahead.read(clock)` (positive: the words come sooner), and a line press seeks to
+  `ahead.back(moment)`, so the press still lands where the words are sung.
 - **A line press seeks; your own scroll is not fought.** Timed lines call
   `RootView::seek_to_moment`, clamped to the duration before `Command::Seek` (engine refuses a frame
   past the end; an overrunning `.lrc` stamp left a red bar line until a track change). A wheel sets

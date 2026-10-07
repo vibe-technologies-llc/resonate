@@ -58,6 +58,9 @@ DELETE FROM lyrics_kept
 DELETE FROM lyrics_refused
  WHERE NOT EXISTS (SELECT 1 FROM tracks t
                     WHERE t.path = lyrics_refused.path AND t.span_start = lyrics_refused.span_start);
+DELETE FROM lyrics_ahead
+ WHERE NOT EXISTS (SELECT 1 FROM tracks t
+                    WHERE t.path = lyrics_ahead.path AND t.span_start = lyrics_ahead.span_start);
 DELETE FROM likenesses
  WHERE picture NOT IN (SELECT ",
     the_picture_of!("a"),
