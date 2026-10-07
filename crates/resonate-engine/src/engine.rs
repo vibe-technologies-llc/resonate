@@ -1606,8 +1606,10 @@ impl Engine {
             });
         }
         self.playing = false;
-        if self.transport == TransportState::Playing
-            || (self.transport == TransportState::Loading
+        if matches!(
+            self.transport,
+            TransportState::Playing | TransportState::Draining
+        ) || (self.transport == TransportState::Loading
                 && self.output.is_none()
                 && self.unbound.is_some())
         {
@@ -2955,6 +2957,10 @@ impl Engine {
                 return;
             };
             if !output.ended {
+                return;
+            }
+            if !self.playing {
+                output.silent_until = None;
                 return;
             }
 

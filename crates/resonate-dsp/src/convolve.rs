@@ -131,12 +131,10 @@ fn resampled(taps: &[f64], from: SampleRate, to: SampleRate) -> Result<Vec<f64>>
         let counted = resampler.process(block, &mut out);
         written.extend_from_slice(&out[..counted.frames_out]);
     }
-    let delay = resampler.latency_frames().round() as usize;
     let scale = f64::from(from.hz()) / f64::from(to.hz());
     let length = (taps.len() as u64 * u64::from(to.hz())).div_ceil(u64::from(from.hz())) as usize;
     Ok(written
         .into_iter()
-        .skip(delay)
         .take(length)
         .map(|tap| tap * scale)
         .collect())
@@ -475,6 +473,21 @@ mod tests {
         assert_eq!(partition_frames_at(RATE), 1_024);
         assert_eq!(partition_frames_at(SampleRate::HZ_96000), 2_048);
         assert_eq!(partition_frames_at(SampleRate::HZ_192000), 4_096);
+    }
+
+    #[test]
+    fn a_response_taken_at_another_rate_keeps_its_peak_where_it_was_in_time() {
+        let mut taps = vec![0.0; 4_410];
+        taps[441] = 1.0;
+        let impulse = Impulse::new(SampleRate::HZ_44100, vec![taps]).expect("an impulse");
+
+        let at_ours = impulse.at(RATE).expect("a response resampled");
+        let peak = at_ours[0]
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(at, _)| at);
+        assert_eq!(peak, Some(480), "the response moved in time");
     }
 
     #[test]

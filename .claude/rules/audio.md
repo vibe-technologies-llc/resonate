@@ -398,7 +398,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Bit-perfect wins at every track boundary; no gapless playback.** Track change drains the ring
   and reopens the stream: once dry, engine asks the graph to drain and waits for
   `StreamEvent::Drained`, so the boundary falls where the graph says the tail played out;
-  `SinkStream::latency` on the wall clock is the fallback for a backend that never answers. A stream
+  `SinkStream::latency` on the wall clock is the fallback for a backend that never answers. A pause
+  while the tail drains is `Paused` like any other (`Draining` is published as Playing), and
+  `settle` counts no tail while paused, so the boundary waits for play
+  (`a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play`). A stream
   takes every instruction through one `StreamCommand`, keeping that handshake, `set_active` and
   `close` on one ordered channel to the loop thread.
 - **Bluetooth headphones can be kept from cutting the start; off unless asked.** They power the

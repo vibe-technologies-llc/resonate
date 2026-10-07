@@ -106,7 +106,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 
 - **A measured impulse response is convolved before the equaliser.** `Impulse`: per-channel taps at
   the measured rate (mono serves all; fewer channels than the stream wrap round); `Impulse::at`
-  redraws at the stream rate via the `VeryHigh` resampler, caching each rate. `engine::read_impulse`
+  redraws at the stream rate via the `VeryHigh` resampler, caching each rate; the resampler's output
+  is already time-aligned (it waits for its reach), so nothing is skipped and the response starts
+  where it did (`a_response_taken_at_another_rate_keeps_its_peak_where_it_was_in_time`).
+  `engine::read_impulse`
   decodes any codec-readable file, ≤ `LONGEST_IMPULSE` (10 s), **with the headroom its loudest boost
   needs**: `Impulse::with_headroom` scales every channel by the reciprocal of the greatest magnitude
   any channel reaches, where above unity (a dip-boosting correction never clips at the dither or

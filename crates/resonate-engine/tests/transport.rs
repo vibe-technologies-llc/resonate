@@ -3594,6 +3594,49 @@ fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -
 }
 
 #[test]
+fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, 4_000);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, graph) = player_with_tail(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        u64::from(RATE) / 4,
+        false,
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    let whole = 4_000 * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= whole,
+        "the first track to be handed over whole",
+    );
+
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    wait_for(&player, paused, "the draining row to say it is paused");
+    thread::sleep(Duration::from_millis(400));
+    assert!(plays(&player, 1), "{}", transport(&player));
+    assert!(paused(&player), "{}", transport(&player));
+
+    player.request(Command::Play)?.wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| graph.opens == 2 && plays(player, 2),
+        "the second track to open once the tail played out after the pause",
+    );
+    Ok(())
+}
+
+#[test]
 fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

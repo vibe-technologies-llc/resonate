@@ -6,11 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A room-correction response measured at a rate other than the stream's is redrawn shifted early by
-  the resampler's reach (~7 ms at 44.1 to 48 kHz), losing its start: `resampled` skips
-  `latency_frames` from an output already time-aligned; the other-rate test checks length only
-- A pause pressed while a track's last buffer drains leaves the transport `Draining`, published as
-  Playing: window and bus say Playing over silence
 - A sleep timer due while the next track opens is cleared without pausing (`doze` returns on an
   empty `track` before `pause` could note the opening); the music plays on
 - An open playlist marks the row `loaded_position` names by its place in the view, so narrowing by
