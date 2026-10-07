@@ -178,8 +178,13 @@ are the want's. **A file still arriving is neither miss nor provider away**: `St
   is `held`, never due again. `Library::forget_delivered` removes the rootless row a path names
   (`resonate forget`, the window's *Forget this delivery*), nothing a scan filed; the object is left
   to `--prune`, the want standing. **What was forgotten is remembered; the want is due at once**:
-  same transaction resets its offer, `tried`, `misses` and adds a `forgotten_deliveries` row
-  (`vault_objects.taken_from`, when). The poll hands each want's to `Providers::first` as
+  same transaction resets its offer, `tried`, `misses` and adds a `forgotten_deliveries` row for
+  **every delivery the object came from**: `vault_objects.taken_from` (the first) and each
+  `object_deliveries` row (a `MIGRATIONS` step: object key, `taken_from`, when; written by
+  `note_delivered` for every delivery noted, a second provider's same audio landing on the standing
+  object included; cascades with the object), so a provider that brought the same audio after the
+  first was forgotten is not fetched from again
+  (`a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_declined_from_both`). The poll hands each want's to `Providers::first` as
   `Asking::declined`, which passes a matching delivery over (`Answer::declined`, never `refused`)
   and asks the next provider. A stream is declined by key alone; a file only where its later
   modification or status change is no later than the forgetting, so a right file put back under the

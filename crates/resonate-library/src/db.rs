@@ -376,13 +376,19 @@ const WANTS_UNHELD: &str = concat!(
 
 const REMEMBER_THE_DELIVERY_FORGOTTEN: &str =
     "INSERT INTO forgotten_deliveries (want_id, taken_from, forgotten)
-     SELECT w.id, o.taken_from, ?2
+     SELECT w.id, d.taken_from, ?2
        FROM tracks t
-       JOIN vault_objects o ON o.key = t.vault_key
+       JOIN (SELECT key, taken_from FROM vault_objects
+             UNION
+             SELECT key, taken_from FROM object_deliveries) d ON d.key = t.vault_key
        JOIN release_tracks rt ON rt.track_id = t.id
        JOIN wants w ON w.release_track_id = rt.id
       WHERE t.root_id IS NULL AND t.path = ?1
      ON CONFLICT(want_id, taken_from) DO UPDATE SET forgotten = excluded.forgotten";
+
+const NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM: &str =
+    "INSERT INTO object_deliveries (key, taken_from, took) VALUES (?1, ?2, ?3)
+     ON CONFLICT(key, taken_from) DO UPDATE SET took = excluded.took";
 
 const ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD: &str =
     "UPDATE wants SET offered = NULL, tried = NULL, misses = 0
@@ -2806,6 +2812,12 @@ impl Library {
                         store::codec_code(kept.codec),
                         i64::from(weighed_under(kept, false).get()),
                     ],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            transaction
+                .execute(
+                    NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM,
+                    params![key, offered, took],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
 

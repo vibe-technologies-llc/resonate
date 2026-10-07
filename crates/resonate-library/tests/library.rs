@@ -21608,6 +21608,63 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
 }
 
 #[test]
+fn a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_declined_from_both()
+-> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let song = Wav::new().text(TITLE, "San Tropez").frames(4_410).build();
+    let delivered = tree.write("delivered.wav", &song);
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    let shop = Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/55391743",
+            extension: "wav",
+            bytes: song,
+        },
+    ));
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&inbox) as Arc<dyn Provider>)
+            .and(Arc::clone(&shop) as Arc<dyn Provider>),
+    );
+    library
+        .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+    let object = library.vault_objects()?[0].path.clone();
+    assert!(library.forget_delivered(&object)?);
+
+    let summary = library
+        .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+    assert_eq!(
+        summary.stats.kept, 1,
+        "the second provider's delivery was not kept"
+    );
+    assert_eq!(shop.asked().len(), 1);
+    assert_eq!(
+        library.vault_objects()?.len(),
+        1,
+        "the same audio was kept twice"
+    );
+    assert!(library.forget_delivered(&object)?);
+
+    let summary = library
+        .poll(providers, PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+    assert_eq!(
+        summary.stats.kept, 0,
+        "a provider whose delivery was forgotten delivered it again"
+    );
+    assert_eq!(library.wants()?[0].held, None);
+    Ok(())
+}
+
+#[test]
 fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_again() -> Result<()>
 {
     let tree = Tree::new();

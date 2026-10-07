@@ -88,8 +88,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   microphone
 
 ## Later: Sources and providers
-- Forgetting a delivered row remembers only the delivery its object was first noted from: a second
-  provider that delivered the same audio is fetched from again
 - **Blocked on the services:** the Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either
 - **Blocked on the servers:** Subsonic matches a recording id or ISRC but not the release-track id

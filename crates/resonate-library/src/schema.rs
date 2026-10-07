@@ -443,6 +443,12 @@ const MIGRATIONS: &[&str] = &[
          SELECT t.id FROM tracks t JOIN albums a ON a.id = t.album_id
           WHERE a.artist_id = NEW.id AND t.id NOT IN (SELECT track_id FROM regroup_owed_tracks);
      END;",
+    "CREATE TABLE object_deliveries (
+         key        TEXT NOT NULL REFERENCES vault_objects(key) ON DELETE CASCADE,
+         taken_from TEXT NOT NULL,
+         took       INTEGER NOT NULL,
+         PRIMARY KEY (key, taken_from)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
