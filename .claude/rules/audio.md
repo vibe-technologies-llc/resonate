@@ -587,7 +587,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Error::LoopStopped` rather than looping for ever (`graph_last_lost`). Asking the sinks first matters: a bind succeeds against the stale list and fails
   only when the stream opens. A disconnected *event* channel stays `Output::deaf`, since a graph can
   stop reporting and go on pulling. A failing `backend.open` takes the whole `Output` with it (the
-  consumer went into the call and cannot come back).
+  consumer went into the call and cannot come back). A graph that lets go just as a row ends binds the
+  row again at its end and the next row opens a stream of its own, so that stream opens twice and the
+  next row still plays from its first frame
+  (`a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start`).
 - **A device going is waited out, not billed to the row.** `Engine::fail` first hands its error to
   `parked_for_a_device`: `NoSink`, `SinkGone` and `StreamFailed` with a track open close the output, keep
   the row in `unbound` at the heard position, publish `Loading` (`Paused` where paused), mark the sink

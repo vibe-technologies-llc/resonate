@@ -1419,6 +1419,61 @@ fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
     Ok(())
 }
 
+fn without_a_declared_length(file: &[u8]) -> Vec<u8> {
+    let at = file
+        .windows(4)
+        .position(|id| id == b"data")
+        .expect("a data chunk")
+        + 4;
+    let mut open_ended = file.to_vec();
+    open_ended[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    open_ended[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+    open_ended
+}
+
+#[test]
+fn a_track_of_unknown_length_plays_to_its_end_and_hands_on_to_the_next_row() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &without_a_declared_length(&source.file));
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    assert_eq!(
+        player.state().current.map(|track| track.duration),
+        Some(None),
+        "a length nothing declared was published"
+    );
+
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| plays(player, 2),
+        "the next row to open",
+    );
+
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= wanted * 2,
+        "both rows to reach the graph",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(graph.played[..wanted], source.stream[..]);
+    assert_eq!(graph.played[wanted..wanted * 2], source.stream[..]);
+    Ok(())
+}
+
 #[test]
 fn a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next() -> Result<()> {
     let tree = Tree::new();
@@ -1627,6 +1682,64 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
             .try_iter()
             .any(|event| matches!(event, Event::Failed { .. })),
         "a graph that came back was reported as a failed track"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    let wanted = source.stream.len();
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() + block >= wanted,
+        "the first row to reach its last block",
+    );
+
+    let remaining = wanted - graph.lock().played.len();
+    graph.lock().pull(remaining);
+    graph.lock().source = None;
+
+    wait_for(
+        &player,
+        |_| graph.lock().opens >= 2,
+        "the stream to be bound to the graph again",
+    );
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= wanted + block * 4,
+        "the next row to play on",
+    );
+
+    assert!(plays(&player, 2), "{}", transport(&player));
+    let played = graph.lock().played.clone();
+    assert_eq!(played[..wanted], source.stream[..]);
+    assert!(
+        heard_as_faded_in(&played[wanted..wanted + block * 4], &source.stream),
+        "the next row did not begin from its first frame"
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "a graph that came back at a boundary was reported as a failed track"
     );
     Ok(())
 }

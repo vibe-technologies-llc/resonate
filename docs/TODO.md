@@ -94,7 +94,6 @@ else is open to be done.
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once
   when the whole workspace's tests ran at once and passed alone eight times after; its frame counts
   assume the engine thread keeps pace with the test's pulls
-- No transport test covers a track of unknown length or a reconnect at a track boundary
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
   are never run
