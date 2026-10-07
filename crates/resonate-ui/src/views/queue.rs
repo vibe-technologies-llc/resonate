@@ -8,7 +8,8 @@ use gpui::{
 use resonate_core::{AlbumId, FrameSpan, MediaLocation, Span, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem};
 use resonate_library::{
-    CatalogStamp, Cut, Direction, Favoured, Library, Lit, RowOrder, Track, folded_letters,
+    CatalogStamp, Cut, Direction, Favoured, Library, Lit, NamesMoved, RowOrder, Track,
+    folded_letters,
 };
 use smallvec::{SmallVec, smallvec};
 
@@ -47,6 +48,7 @@ pub(crate) struct QueueNames {
 #[derive(Clone, Debug)]
 pub(crate) struct Named {
     item: QueueItem,
+    track: Option<TrackId>,
     folded: String,
 }
 
@@ -103,8 +105,11 @@ impl RootView {
             .queue_names
             .named
             .as_ref()
-            .filter(|(named, _)| named.names_still_hold_at(&revision))
-            .map(|(_, names)| Arc::clone(names));
+            .filter(|(named, _)| named.media == revision.media)
+            .map(|(named, names)| Standing {
+                names: Arc::clone(names),
+                moved: library.names_moved_since(named.names),
+            });
 
         self.queue_names.reading = Some(cx.spawn(async move |this, cx| {
             let names: Arc<[Named]> = cx
@@ -121,36 +126,57 @@ impl RootView {
     }
 }
 
+struct Standing {
+    names: Arc<[Named]>,
+    moved: NamesMoved,
+}
+
 fn named_again(
     library: &Library,
     player: &Player,
     rows: &[QueueItem],
-    standing: Option<Arc<[Named]>>,
+    standing: Option<Standing>,
 ) -> Arc<[Named]> {
-    let known: AHashMap<&QueueItem, &str> = standing
+    let known: AHashMap<&QueueItem, &Named> = standing
         .iter()
-        .flat_map(|names| names.iter())
-        .map(|named| (&named.item, named.folded.as_str()))
+        .flat_map(|standing| {
+            standing
+                .names
+                .iter()
+                .filter(|named| !standing.moved.names(named.track))
+        })
+        .map(|named| (&named.item, named))
         .collect();
     let unknown: Vec<QueueItem> = rows
         .iter()
         .filter(|item| !known.contains_key(item))
         .cloned()
         .collect();
-    let read: AHashMap<&QueueItem, String> = queued_rows(library, &unknown)
+    let read: AHashMap<&QueueItem, Named> = queued_rows(library, &unknown)
         .into_iter()
         .zip(unknown.iter())
-        .map(|(track, item)| (item, folded_letters(&queued_name(track, player, item))))
+        .map(|(track, item)| {
+            let catalog = track.as_ref().map(|track| track.id);
+            let named = Named {
+                item: item.clone(),
+                track: catalog,
+                folded: folded_letters(&queued_name(track, player, item)),
+            };
+            (item, named)
+        })
         .collect();
 
     rows.iter()
-        .map(|item| Named {
-            item: item.clone(),
-            folded: known
+        .map(|item| {
+            known
                 .get(item)
-                .map(|folded| (*folded).to_owned())
+                .map(|named| (*named).clone())
                 .or_else(|| read.get(item).cloned())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| Named {
+                    item: item.clone(),
+                    track: None,
+                    folded: String::new(),
+                })
         })
         .collect()
 }
@@ -1347,13 +1373,11 @@ fn takes_out_again(offer: Option<Offer>) -> SharedString {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use resonate_core::{MediaLocation, Span, TrackId};
-    use resonate_library::Library;
+    use resonate_library::{Library, NamesMoved};
 
     use super::{
-        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, Run, TakenBack,
+        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, Run, Standing, TakenBack,
         named_again, puts_back, takes_out_again, took_out,
     };
 
@@ -1361,20 +1385,50 @@ mod tests {
     fn a_queue_edit_names_only_the_rows_it_brought() {
         let library = Library::open_in_memory().expect("an in-memory catalog");
         let player = crate::driven::unplugged_player();
-        let standing: Arc<[Named]> = queued(&[1, 2])
-            .into_iter()
-            .map(|item| Named {
-                folded: format!("kept {}", item.id.get()),
-                item,
-            })
-            .collect();
         let rows = queued(&[2, 3, 1]);
 
-        let named = named_again(&library, &player, &rows, Some(standing));
+        let named = named_again(
+            &library,
+            &player,
+            &rows,
+            Some(standing(&[1, 2], NamesMoved::Nothing)),
+        );
         let folded: Vec<&str> = named.iter().map(|named| named.folded.as_str()).collect();
 
         assert_eq!(folded, ["kept 2", "3", "kept 1"]);
         assert!(named.iter().map(|named| &named.item).eq(rows.iter()));
+    }
+
+    #[test]
+    fn a_name_written_in_the_catalog_reads_again_only_the_rows_it_retitled() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let player = crate::driven::unplugged_player();
+        let rows = queued(&[1, 2, 3]);
+        let moved = NamesMoved::These {
+            retitled: [TrackId::new(2).expect("a namable track")]
+                .into_iter()
+                .collect(),
+            added: false,
+        };
+
+        let named = named_again(&library, &player, &rows, Some(standing(&[1, 2, 3], moved)));
+        let folded: Vec<&str> = named.iter().map(|named| named.folded.as_str()).collect();
+
+        assert_eq!(folded, ["kept 1", "2", "kept 3"]);
+    }
+
+    fn standing(ids: &[u64], moved: NamesMoved) -> Standing {
+        Standing {
+            names: queued(ids)
+                .into_iter()
+                .map(|item| Named {
+                    folded: format!("kept {}", item.id.get()),
+                    track: Some(item.id),
+                    item,
+                })
+                .collect(),
+            moved,
+        }
     }
 
     fn queued(ids: &[u64]) -> Vec<QueueItem> {

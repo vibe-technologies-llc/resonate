@@ -28,6 +28,7 @@ mod playlist;
 mod pls;
 mod query;
 mod reference;
+mod renamed;
 mod resumed;
 mod retag;
 mod scan;
@@ -128,6 +129,7 @@ pub use crate::{
         may_be_pictured, portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls,
         wikipedia_urls,
     },
+    renamed::NamesMoved,
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,

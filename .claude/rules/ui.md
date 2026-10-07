@@ -232,10 +232,14 @@ is never named.
     queue revision hands out nothing. Asking is the background executor: `queued_rows` reads by id in one
     `Library::tracks_with_ids` pass (500-id batches; a row whose id names another file falls to its
     path), then `Player::media`, then the stem, in queue row order. Each name is held folded
-    (`Named`: the row and its `folded_letters`), so a key weighs strings, never folds one on the UI
-    thread; where only the queue moved (library and media revisions as they were) `named_again`
-    keeps every row already named and reads only those the edit brought
-    (`a_queue_edit_names_only_the_rows_it_brought`). A keystroke before they land
+    (`Named`: the row, the catalog row it was read from and its `folded_letters`), so a key weighs
+    strings, never folds one on the UI thread. `named_again` keeps every row already named and
+    reads only those the queue edit brought (`a_queue_edit_names_only_the_rows_it_brought`) and
+    those `Library::names_moved_since` the names were read says a write retitled (by the catalog
+    row a name was read from; a row the catalog did not hold only where a row arrived): a scan
+    writing batch after batch under an open queue pane reads the rows it touched, not every queued
+    row per batch (`a_name_written_in_the_catalog_reads_again_only_the_rows_it_retitled`). Another
+    media revision still reads every row. A keystroke before they land
     still counts as a jump (`jump_where_typed` makes it once they do). The queue pane asks as it
     draws, so names are usually ready before the first letter (once read on the first keystroke on
     the render thread, up to two SQLite reads a row through a cache smaller than a long queue).

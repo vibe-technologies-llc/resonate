@@ -47,8 +47,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   from the documentation and `tests/live.rs` has no AcoustID test
 
 ## Performance and scale
-- A name written anywhere in the catalog (each batch of a scan) re-reads every queued track's name
-  while the queue pane is open; a play, favourite or playlist edit no longer does
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream
   (zed #62455)

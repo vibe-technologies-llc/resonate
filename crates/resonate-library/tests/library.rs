@@ -33,15 +33,15 @@ use resonate_library::{
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAhead, LyricsAsked, Mbid,
-    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
-    PlaylistFormat, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
-    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer,
+    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollHandle, PollOptions, PollProgress,
+    Popularity, Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch,
+    RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery,
+    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
+    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
+    Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -2214,6 +2214,50 @@ fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_fav
     tree.write("one.wav", &Wav::new().text(TITLE, "Dogs").build());
     scan(&library, &options(&tree))?;
     assert!(!named.still_holds_at(library.names_stamp()));
+    Ok(())
+}
+
+#[test]
+fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrived() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("two.wav", &Wav::new().text(TITLE, "Time").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let held = all(&library)?;
+    let echoes = held
+        .iter()
+        .find(|track| track.title == "Echoes")
+        .expect("Echoes")
+        .id;
+    let time = held
+        .iter()
+        .find(|track| track.title == "Time")
+        .expect("Time")
+        .id;
+    let named = library.names_stamp();
+
+    assert_eq!(library.names_moved_since(named), NamesMoved::Nothing);
+
+    tree.write("one.wav", &Wav::new().text(TITLE, "Dogs").build());
+    scan(&library, &options(&tree))?;
+    let moved = library.names_moved_since(named);
+    assert!(moved.names(Some(echoes)));
+    assert!(
+        !moved.names(Some(time)),
+        "a row nothing retitled is named as moved"
+    );
+    assert!(
+        !moved.names(None),
+        "no row arrived, yet one is said to have"
+    );
+
+    let retitled = library.names_stamp();
+    tree.write("three.wav", &Wav::new().text(TITLE, "Money").build());
+    scan(&library, &options(&tree))?;
+    let moved = library.names_moved_since(retitled);
+    assert!(moved.names(None), "a row arriving is not said to have");
+    assert!(!moved.names(Some(echoes)));
     Ok(())
 }
 

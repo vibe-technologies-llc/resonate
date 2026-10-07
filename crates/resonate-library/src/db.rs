@@ -53,7 +53,9 @@ use crate::{
     meant::{ByArtist, Meant},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
-    playlist, resumed,
+    playlist,
+    renamed::{ADDED, NamesMoved, RENAMED_TRIGGERS, RETITLED, Renamed},
+    resumed,
     retag::{self, Followed, TrackToTag},
     scan, schema, scrobble, search, share, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
@@ -647,6 +649,7 @@ pub(crate) struct Inner {
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
     planned: Arc<AtomicU64>,
+    renamed: Arc<Mutex<Renamed>>,
     spellings: Mutex<Option<KeptVocabulary>>,
     suggested: Mutex<Option<KeptSuggestions>>,
     playing: Mutex<Option<Playing>>,
@@ -658,16 +661,26 @@ pub(crate) struct Inner {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CatalogStamp {
-    named: u64,
+    pub(crate) named: u64,
     written_elsewhere: Option<i64>,
 }
 
 impl CatalogStamp {
     pub fn still_holds_at(self, now: Self) -> bool {
-        self.named == now.named
-            && now
-                .written_elsewhere
-                .is_none_or(|elsewhere| self.written_elsewhere == Some(elsewhere))
+        self.named == now.named && self.written_here_alone_until(now)
+    }
+
+    pub(crate) fn written_here_alone_until(self, now: Self) -> bool {
+        now.written_elsewhere
+            .is_none_or(|elsewhere| self.written_elsewhere == Some(elsewhere))
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn at(named: u64, written_elsewhere: Option<i64>) -> Self {
+        Self {
+            named,
+            written_elsewhere,
+        }
     }
 }
 
@@ -1144,29 +1157,43 @@ fn plans_moved_triggers() -> String {
     sql
 }
 
-fn watch_the_names(
-    connection: &Connection,
-    named: &Arc<AtomicU64>,
-    written: &Arc<AtomicU64>,
-    planned: &Arc<AtomicU64>,
-) -> Result<()> {
-    connection
-        .execute_batch(NAMES_MOVED_TRIGGERS)
-        .map_err(|source| Error::store(StoreOp::Open, source))?;
-    connection
-        .execute_batch(&plans_moved_triggers())
-        .map_err(|source| Error::store(StoreOp::Open, source))?;
+struct Counters {
+    named: Arc<AtomicU64>,
+    written: Arc<AtomicU64>,
+    planned: Arc<AtomicU64>,
+    renamed: Arc<Mutex<Renamed>>,
+}
 
-    let named = Arc::clone(named);
-    let written = Arc::clone(written);
-    let planned = Arc::clone(planned);
+fn watch_the_names(connection: &Connection, counters: Counters) -> Result<()> {
+    for triggers in [
+        NAMES_MOVED_TRIGGERS,
+        &plans_moved_triggers(),
+        RENAMED_TRIGGERS,
+    ] {
+        connection
+            .execute_batch(triggers)
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+    }
+
+    let Counters {
+        named,
+        written,
+        planned,
+        renamed,
+    } = counters;
     connection
         .update_hook(Some(
-            move |_: Action, database: &str, table: &str, _: i64| {
+            move |action: Action, database: &str, table: &str, row: i64| {
                 if database == TEMPORARY && table == NAMES_MOVED {
                     named.fetch_add(1, Ordering::AcqRel);
                 } else if database == TEMPORARY && table == PLANS_MOVED {
                     planned.fetch_add(1, Ordering::AcqRel);
+                } else if database == TEMPORARY
+                    && action == Action::SQLITE_INSERT
+                    && (table == RETITLED || table == ADDED)
+                {
+                    let at = named.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+                    renamed.lock().note(at, row, table == ADDED);
                 } else if NAMED_TABLES.contains(&table) {
                     written.fetch_add(1, Ordering::AcqRel);
                 }
@@ -1377,7 +1404,16 @@ impl Library {
         let named = Arc::new(AtomicU64::new(0));
         let written = Arc::new(AtomicU64::new(0));
         let planned = Arc::new(AtomicU64::new(0));
-        watch_the_names(&writer, &named, &written, &planned)?;
+        let renamed = Arc::new(Mutex::new(Renamed::default()));
+        watch_the_names(
+            &writer,
+            Counters {
+                named: Arc::clone(&named),
+                written: Arc::clone(&written),
+                planned: Arc::clone(&planned),
+                renamed: Arc::clone(&renamed),
+            },
+        )?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -1393,6 +1429,7 @@ impl Library {
                 named,
                 written,
                 planned,
+                renamed,
                 spellings: Mutex::new(None),
                 suggested: Mutex::new(None),
                 playing: Mutex::new(None),
@@ -2279,6 +2316,11 @@ impl Library {
 
     pub fn names_stamp(&self) -> CatalogStamp {
         self.inner.names_stamp()
+    }
+
+    pub fn names_moved_since(&self, then: CatalogStamp) -> NamesMoved {
+        let now = self.inner.names_stamp();
+        self.inner.renamed.lock().since(then, now)
     }
 
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {

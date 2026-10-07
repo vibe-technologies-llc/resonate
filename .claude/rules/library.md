@@ -2531,6 +2531,18 @@ starts.
   `WHERE`, so the truncate optimisation (the one case SQLite skips the hook for) cannot arise.
   `Library::written_elsewhere` hands the same reading out as a `WrittenElsewhere`, what the window
   watches for another process's edits (`ui.md`).
+- **Which rows a name moved is journalled, not only that one did.** `renamed.rs`: temp triggers on
+  `tracks` (`RENAMED_TRIGGERS`) insert-then-delete a row of `temp.titles_moved` (a title, path or
+  span written, or a row deleted) or `temp.titles_added` (a row inserted), keyed by the track id, so
+  the table stays empty and the update hook hears the id; the hook steps the names counter itself
+  and notes `(counter after the step, id, added)` in `Inner::renamed`, a `Renamed` journal of at
+  most `RENAMED_HELD_AT_MOST` (16 384) notes, oldest let go first. `Library::names_moved_since(a
+  stamp)` answers `NamesMoved`: `Nothing` where the stamp still holds; `Everything` where another
+  process wrote or a note after the stamp was let go; else `These { retitled, added }`, the ids
+  noted after it and whether any row arrived. Stepping the counter per note is what makes "after"
+  exact: a stamp read after a note is past it, one read before is not (with the trigger's own
+  bump the order of two triggers on one row is SQLite's to choose)
+  (`the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrived`).
 ## Playlists
 
 - **A playlist is a list of cuts, not library rows.** `Cut` = `MediaLocation` + `Option<FrameSpan>`
