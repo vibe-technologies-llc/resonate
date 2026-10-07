@@ -16,6 +16,8 @@ const LARGEST_TAP: usize = 1 << 20;
 const RUNS_AHEAD_AT_MOST: Duration = Duration::from_millis(100);
 const ANCHOR_TRIES: usize = 64;
 const NOTHING_VALID: u64 = u64::MAX;
+const UNITY: f32 = 1.0;
+const SILENT_AMPLITUDE: f32 = 1e-9;
 
 #[derive(Clone, Default)]
 pub enum Tapped {
@@ -49,6 +51,7 @@ pub struct Tap {
     valid_from: AtomicU64,
     born: Instant,
     anchor: Anchor,
+    heard: Option<Arc<AtomicU32>>,
 }
 
 #[derive(Default)]
@@ -106,7 +109,7 @@ fn nanos(at: Duration) -> u64 {
 }
 
 impl Tap {
-    fn new(rate: SampleRate, ring: usize) -> Self {
+    fn new(rate: SampleRate, ring: usize, heard: Option<Arc<AtomicU32>>) -> Self {
         let capacity = capacity_for(ring, rate);
         Self {
             rate,
@@ -117,6 +120,7 @@ impl Tap {
             valid_from: AtomicU64::new(0),
             born: Instant::now(),
             anchor: Anchor::default(),
+            heard,
         }
     }
 
@@ -139,6 +143,7 @@ impl Tap {
         let before = wanted.saturating_sub((end - start) as usize);
 
         silence(left, right);
+        let heard = self.heard_now();
         let frames = left
             .iter_mut()
             .zip(right.iter_mut())
@@ -146,8 +151,8 @@ impl Tap {
             .zip(start..end);
         for ((on_the_left, on_the_right), frame) in frames {
             let slot = (frame as usize & self.mask) * TAPPED_CHANNELS;
-            *on_the_left = self.level_at(slot);
-            *on_the_right = self.level_at(slot + 1);
+            *on_the_left = self.level_at(slot) * heard;
+            *on_the_right = self.level_at(slot + 1) * heard;
         }
 
         fence(Ordering::Acquire);
@@ -170,6 +175,12 @@ impl Tap {
         Caught {
             tapped: (end - first_sound) as usize,
         }
+    }
+
+    fn heard_now(&self) -> f32 {
+        self.heard
+            .as_ref()
+            .map_or(UNITY, |heard| f32::from_bits(heard.load(Ordering::Acquire)))
     }
 
     fn run_on(&self, fixed: Fixed, now: Instant) -> u64 {
@@ -220,16 +231,30 @@ pub(crate) struct Tapping {
     listening: Arc<AtomicBool>,
     written: u64,
     skipping: bool,
+    unrendered: f32,
 }
 
 impl Tapping {
-    pub(crate) fn new(rate: SampleRate, ring: usize, listening: &Arc<AtomicBool>) -> Self {
+    pub(crate) fn new(
+        rate: SampleRate,
+        ring: usize,
+        listening: &Arc<AtomicBool>,
+        heard: Option<Arc<AtomicU32>>,
+    ) -> Self {
         Self {
-            tap: Arc::new(Tap::new(rate, ring)),
+            tap: Arc::new(Tap::new(rate, ring, heard)),
             listening: Arc::clone(listening),
             written: 0,
             skipping: false,
+            unrendered: UNITY,
         }
+    }
+
+    pub(crate) fn rendered_at(&mut self, amplitude: f32) {
+        self.unrendered = match amplitude > SILENT_AMPLITUDE {
+            true => amplitude.recip(),
+            false => 0.0,
+        };
     }
 
     pub(crate) fn tapped(&self) -> Tapped {
@@ -260,6 +285,8 @@ impl Tapping {
         let scale = buffer.spec().format.full_scale().recip();
         let run =
             from.saturating_mul(channels)..from.saturating_add(frames).saturating_mul(channels);
+        let scale = scale * self.unrendered;
+        let unrendered = self.unrendered;
         match buffer.data() {
             SampleData::S16(samples) => {
                 self.lay(samples.get(run), channels, |sample| {
@@ -269,7 +296,9 @@ impl Tapping {
             SampleData::S24(samples) | SampleData::S32(samples) => {
                 self.lay(samples.get(run), channels, |sample| sample as f32 * scale);
             }
-            SampleData::F32(samples) => self.lay(samples.get(run), channels, |sample| sample),
+            SampleData::F32(samples) => {
+                self.lay(samples.get(run), channels, |sample| sample * unrendered);
+            }
         }
         self.published(upto);
     }
@@ -350,7 +379,7 @@ mod tests {
     #[test]
     fn what_is_read_is_centred_on_the_frame_the_graph_is_playing() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(3_000, 0), 0, 3_000);
         tapping.hear(1_000, false);
 
@@ -363,9 +392,33 @@ mod tests {
     }
 
     #[test]
+    fn what_is_read_is_at_the_level_heard_now_rather_than_the_one_it_was_rendered_at() {
+        let ear = listening(true);
+        let heard = Arc::new(AtomicU32::new(0.5_f32.to_bits()));
+        let mut tapping = Tapping::new(RATE, RING, &ear, Some(Arc::clone(&heard)));
+        tapping.rendered_at(0.5);
+        tapping.record(&ramp(3_000, 0), 0, 3_000);
+        tapping.hear(1_000, false);
+
+        let (left, _, _) = read(&tapping.tap, 100);
+        assert_eq!(left.first().copied(), Some(level_of(1_950)));
+
+        heard.store(1.0_f32.to_bits(), Ordering::Release);
+        let (left, _, _) = read(&tapping.tap, 100);
+        assert_eq!(left.first().copied(), Some(2.0 * level_of(1_950)));
+
+        heard.store(0.0_f32.to_bits(), Ordering::Release);
+        let (left, right, _) = read(&tapping.tap, 100);
+        assert!(
+            left.iter().chain(&right).all(|level| *level == 0.0),
+            "a muted stream still drew"
+        );
+    }
+
+    #[test]
     fn a_look_past_what_has_been_written_ends_at_the_newest_frame() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(500, 0), 0, 500);
         tapping.hear(0, false);
 
@@ -378,7 +431,7 @@ mod tests {
     #[test]
     fn a_look_reaching_before_the_stream_began_is_silence_there() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(40, 0), 0, 40);
         tapping.hear(0, false);
 
@@ -392,7 +445,7 @@ mod tests {
     #[test]
     fn nothing_is_recorded_while_nobody_listens_and_what_was_passed_over_reads_as_silence() {
         let ear = listening(false);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(1_000, 0), 0, 1_000);
         tapping.hear(0, false);
 
@@ -421,7 +474,7 @@ mod tests {
     #[test]
     fn a_tap_nobody_has_listened_to_holds_no_slots() {
         let ear = listening(false);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(1_000, 0), 0, 1_000);
         assert!(tapping.tap.slots.get().is_none());
 
@@ -433,7 +486,7 @@ mod tests {
     #[test]
     fn a_seek_forgets_what_was_tapped_before_it() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(2_000, 0), 0, 2_000);
         tapping.forget();
         tapping.hear(500, false);
@@ -447,7 +500,7 @@ mod tests {
     #[test]
     fn a_moving_transport_runs_on_from_its_anchor_but_never_past_what_is_written() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&ramp(48_000, 0), 0, 48_000);
         tapping.hear(40_000, true);
         let fixed = tapping
@@ -473,7 +526,7 @@ mod tests {
     #[test]
     fn a_frame_the_ring_has_gone_round_on_reads_as_silence_rather_than_as_the_frame_after_it() {
         let ear = listening(true);
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         let capacity = tapping.tap.mask + 1;
         let frames = capacity + 1_000;
         tapping.record(&ramp(frames, 0), 0, frames);
@@ -495,7 +548,7 @@ mod tests {
         if let SampleData::S16(samples) = buffer.data_mut() {
             samples.copy_from_slice(&[i16::MIN, -16_384, 0, 16_384]);
         }
-        let mut tapping = Tapping::new(RATE, RING, &ear);
+        let mut tapping = Tapping::new(RATE, RING, &ear, None);
         tapping.record(&buffer, 1, 3);
         tapping.hear(0, false);
 
@@ -516,8 +569,8 @@ mod tests {
     #[test]
     fn a_tap_published_twice_is_the_same_tap_and_a_new_one_is_not() {
         let ear = listening(true);
-        let one = Tapping::new(RATE, RING, &ear);
-        let another = Tapping::new(RATE, RING, &ear);
+        let one = Tapping::new(RATE, RING, &ear, None);
+        let another = Tapping::new(RATE, RING, &ear, None);
 
         assert!(one.tapped().is(&one.tapped()));
         assert!(!one.tapped().is(&another.tapped()));

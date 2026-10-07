@@ -803,7 +803,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **What is heard is tapped where written, read back by where the graph has got to.** `Tapping`
   sits on `Output` beside the ring; `Engine::fill`, `convert`, `drain` hand it exactly the frames
   `RingProducer` took (after equaliser, gain, dither; before the ring's trim) as f32 left and right
-  at the sink's rate. A `Tap` = power-of-two ring of `AtomicU32` whose slots are a `OnceLock` laid
+  at the sink's rate, **stored at unity**: divided by the amplitude the chain rendered them at
+  (`Tapping::rendered_at` with `RingProducer::rendering`, nothing where that is silence) and read
+  back multiplied by the level the ring hears now (`Tap` holds the ring's `heard` atomic), so a
+  mute draws silence and a turned volume shows at once, as the ring's trim plays it
+  (`what_is_read_is_at_the_level_heard_now_rather_than_the_one_it_was_rendered_at`). A `Tap` = power-of-two ring of `AtomicU32` whose slots are a `OnceLock` laid
   by the first frame recorded while somebody listens (`resonate play` and the bus never listen, so
   allocate none). No locks, the engine never waits on the window: a write claims its frames behind a
   release fence and publishes the count with release; a read acquires, reads, rereads the claim,

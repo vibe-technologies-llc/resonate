@@ -121,8 +121,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - The live spectrum's tilt, floor, band width and fall rates are constants
 - The scope triggers on the mid's rising edge alone; the stereo view's meters hold the highest
   sample, not the oversampled true peak
-- The tap records frames as rendered, before the ring trims them: a muted stream still draws, a
-  turned volume shows a buffer late
 
 ## Later: Scrobbling
 - Last.fm is signed in to from the command line alone (`resonate lastfm`); the window has no group

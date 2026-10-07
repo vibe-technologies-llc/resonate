@@ -204,6 +204,14 @@ impl RingProducer {
         self.hand_over_what_is_owed();
     }
 
+    pub const fn rendering(&self) -> f32 {
+        self.rendering
+    }
+
+    pub fn heard(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.heard)
+    }
+
     pub fn hear_at(&self, amplitude: f32) {
         self.heard.store(amplitude.to_bits(), Ordering::Release);
     }

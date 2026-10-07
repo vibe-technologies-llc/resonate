@@ -415,6 +415,7 @@ impl Output {
                 plan.stream.rate,
                 capacity.get() as usize,
                 listening,
+                Some(producer.heard()),
             )),
             Packing::DopMarked(_) => None,
         };
@@ -557,6 +558,7 @@ impl Output {
         self.stage(frames);
         let written = self.producer.write(&self.staged);
         if let Some(tapping) = self.tapping.as_mut() {
+            tapping.rendered_at(self.producer.rendering());
             tapping.record(&self.staged, 0, written);
         }
     }
@@ -2508,6 +2510,7 @@ impl Engine {
                     return Ok(Filled::AsFarAsItGoes);
                 }
                 if let Some(tapping) = output.tapping.as_mut() {
+                    tapping.rendered_at(output.producer.rendering());
                     tapping.record(&track.decoded, track.decoded_at, written);
                 }
                 track.decoded_at = track.decoded_at.saturating_add(written);
@@ -2546,6 +2549,7 @@ impl Engine {
         output.stage(count.frames_out);
         let written = output.producer.write(&output.staged);
         if let Some(tapping) = output.tapping.as_mut() {
+            tapping.rendered_at(output.producer.rendering());
             tapping.record(&output.staged, 0, written);
         }
 
@@ -2577,6 +2581,7 @@ impl Engine {
         };
         let laid = output.producer.write_from(&output.staged, written);
         if let Some(tapping) = output.tapping.as_mut() {
+            tapping.rendered_at(output.producer.rendering());
             tapping.record(&output.staged, written, laid);
         }
         let written = written.saturating_add(laid);
