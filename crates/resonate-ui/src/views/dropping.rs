@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use gpui::{
@@ -29,6 +29,8 @@ use crate::{
 const DRAG_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 
 const COPY_LOOKED_AT_EVERY: Duration = Duration::from_millis(150);
+
+const FOLDER_LOOKED_AT_EVERY: Duration = Duration::from_secs(2);
 
 const NAMES_SHOWN: usize = 6;
 
@@ -59,18 +61,41 @@ const READY_SAYS: &str = "Copied as they are into";
 
 const READY_TO_FILE_SAYS: &str = "Copied and filed by your layout into";
 
+const WEIGHING_TITLE: &str = "Looking at what is dragged…";
+
+const WEIGHING_SAYS: &str = "Drop when it says what would be copied.";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Incoming {
     paths: Vec<PathBuf>,
-    weighed: Vec<Dropped>,
+    weighed: Option<Vec<Dropped>>,
 }
 
-impl Incoming {
-    fn of(paths: &[PathBuf]) -> Self {
-        Self {
-            paths: paths.to_vec(),
-            weighed: weigh(paths),
-        }
+#[derive(Default)]
+pub(crate) struct FolderStanding {
+    seen: Option<Seen>,
+    looking: bool,
+}
+
+struct Seen {
+    folder: PathBuf,
+    there: bool,
+    at: Instant,
+}
+
+impl FolderStanding {
+    fn of(&self, folder: &Path) -> Option<bool> {
+        self.seen
+            .as_ref()
+            .filter(|seen| seen.folder == folder)
+            .map(|seen| seen.there)
+    }
+
+    fn is_due_for(&self, folder: &Path) -> bool {
+        !self.looking
+            && self.seen.as_ref().is_none_or(|seen| {
+                seen.folder != folder || seen.at.elapsed() >= FOLDER_LOOKED_AT_EVERY
+            })
     }
 }
 
@@ -113,6 +138,7 @@ pub(crate) struct TakingIn {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Verdict {
     Ready { taken: usize, skipped: usize },
+    Weighing,
     NoFolder,
     FolderGone,
     NothingToTake,
@@ -125,26 +151,34 @@ impl Verdict {
     }
 
     const fn is_trouble(self) -> bool {
-        !matches!(self, Self::Ready { .. })
+        !matches!(self, Self::Ready { .. } | Self::Weighing)
     }
 }
 
 pub(crate) fn verdict(
-    weighed: &[Dropped],
+    weighed: Option<&[Dropped]>,
     folder: Option<&Path>,
-    folder_is_there: bool,
+    folder_is_there: Option<bool>,
     busy: bool,
 ) -> Verdict {
+    if busy {
+        return Verdict::Busy;
+    }
+    if folder.is_none() {
+        return Verdict::NoFolder;
+    }
+    let (Some(weighed), Some(there)) = (weighed, folder_is_there) else {
+        return match folder_is_there {
+            Some(false) => Verdict::FolderGone,
+            _ => Verdict::Weighing,
+        };
+    };
     let taken = weighed
         .iter()
         .filter(|dropped| dropped.looks.is_taken())
         .count();
 
-    if busy {
-        Verdict::Busy
-    } else if folder.is_none() {
-        Verdict::NoFolder
-    } else if !folder_is_there {
+    if !there {
         Verdict::FolderGone
     } else if taken == 0 {
         Verdict::NothingToTake
@@ -234,11 +268,69 @@ impl RootView {
         }
 
         let first = self.incoming.is_none();
-        self.incoming = Some(Incoming::of(paths));
+        self.incoming = Some(Incoming {
+            paths: paths.to_vec(),
+            weighed: None,
+        });
+        self.weigh_the_drag(paths.to_vec(), cx);
+        self.music_folder_is_there(cx);
         if first {
             self.watch_the_drag(cx);
         }
         cx.notify();
+    }
+
+    fn weigh_the_drag(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.weighing_the_drag = cx.spawn(async move |this, cx| {
+            let held = paths.clone();
+            let weighed = cx
+                .background_executor()
+                .spawn(async move { weigh(&held) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Some(incoming) = this
+                    .incoming
+                    .as_mut()
+                    .filter(|incoming| incoming.paths == paths)
+                {
+                    incoming.weighed = Some(weighed);
+                    cx.notify();
+                }
+            });
+        });
+    }
+
+    pub(crate) fn music_folder_is_there(&mut self, cx: &mut Context<Self>) -> Option<bool> {
+        let folder = cx.global::<ResonateApp>().music_folder.clone()?;
+        if self.music_folder_standing.is_due_for(&folder) {
+            self.look_at_the_music_folder(folder.clone(), cx);
+        }
+        self.music_folder_standing.of(&folder)
+    }
+
+    fn look_at_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+        self.music_folder_standing.looking = true;
+        self.looking_at_the_music_folder = cx.spawn(async move |this, cx| {
+            let looked = folder.clone();
+            let there = cx
+                .background_executor()
+                .spawn(async move { looked.is_dir() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                let moved = this.music_folder_standing.of(&folder) != Some(there);
+                this.music_folder_standing = FolderStanding {
+                    seen: Some(Seen {
+                        folder,
+                        there,
+                        at: Instant::now(),
+                    }),
+                    looking: false,
+                };
+                if moved {
+                    cx.notify();
+                }
+            });
+        });
     }
 
     fn watch_the_drag(&mut self, cx: &mut Context<Self>) {
@@ -260,19 +352,37 @@ impl RootView {
         });
     }
 
-    fn verdict_on(&self, weighed: &[Dropped], cx: &Context<Self>) -> Verdict {
-        let folder = cx.global::<ResonateApp>().music_folder.clone();
-        let there = folder.as_deref().is_some_and(Path::is_dir);
-
-        verdict(weighed, folder.as_deref(), there, self.taking_in.is_some())
-    }
-
     pub(crate) fn dropped(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        self.incoming = None;
+        let known = self
+            .incoming
+            .take()
+            .filter(|incoming| incoming.paths == paths)
+            .and_then(|incoming| incoming.weighed);
         cx.notify();
 
-        let weighed = weigh(&paths);
-        match self.verdict_on(&weighed, cx) {
+        let folder = cx.global::<ResonateApp>().music_folder.clone();
+        cx.spawn(async move |this, cx| {
+            let held = paths.clone();
+            let looked = folder.clone();
+            let (weighed, there) = cx
+                .background_executor()
+                .spawn(async move {
+                    let weighed = known.unwrap_or_else(|| weigh(&held));
+                    let there = looked.as_deref().map(Path::is_dir);
+                    (weighed, there)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                let busy = this.taking_in.is_some();
+                let landed = verdict(Some(&weighed), folder.as_deref(), there, busy);
+                this.land_the_drop(landed, paths, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn land_the_drop(&mut self, verdict: Verdict, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        match verdict {
             Verdict::NoFolder => {
                 self.report(Notice::Trouble(NO_FOLDER_TITLE.to_owned()), cx);
                 self.set_pane(crate::Pane::Settings, cx);
@@ -285,6 +395,7 @@ impl RootView {
                 self.report(Notice::Trouble(NOTHING_TITLE.to_owned()), cx);
             }
             Verdict::Busy => self.report(Notice::Noted(BUSY_TITLE.to_owned()), cx),
+            Verdict::Weighing => {}
             Verdict::Ready { .. } => self.copy_into_the_music_folder(paths, cx),
         }
     }
@@ -373,10 +484,17 @@ impl RootView {
         }
     }
 
-    pub(crate) fn drop_overlay(&self, cx: &mut Context<Self>) -> Option<Div> {
+    pub(crate) fn drop_overlay(&mut self, cx: &mut Context<Self>) -> Option<Div> {
         let incoming = self.incoming.clone()?;
-        let verdict = self.verdict_on(&incoming.weighed, cx);
+        let there = self.music_folder_is_there(cx);
         let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let verdict = verdict(
+            incoming.weighed.as_deref(),
+            folder.as_deref(),
+            there,
+            self.taking_in.is_some(),
+        );
+        let weighed = incoming.weighed.unwrap_or_default();
         let ready_says = if cx.global::<ResonateApp>().file_dropped {
             READY_TO_FILE_SAYS
         } else {
@@ -418,11 +536,14 @@ impl RootView {
                 SharedString::new_static(BUSY_TITLE),
                 SharedString::new_static(BUSY_SAYS),
             ),
+            Verdict::Weighing => (
+                SharedString::new_static(WEIGHING_TITLE),
+                SharedString::new_static(WEIGHING_SAYS),
+            ),
         };
 
-        let hidden = incoming.weighed.len().saturating_sub(NAMES_SHOWN);
-        let names = incoming
-            .weighed
+        let hidden = weighed.len().saturating_sub(NAMES_SHOWN);
+        let names = weighed
             .iter()
             .take(NAMES_SHOWN)
             .fold(div().flex().flex_col().gap_1(), |list, dropped| {
@@ -667,27 +788,55 @@ mod tests {
         let folder = Path::new("/music");
 
         assert_eq!(
-            verdict(&mixed, Some(folder), true, false),
+            verdict(Some(&mixed), Some(folder), Some(true), false),
             Verdict::Ready {
                 taken: 2,
                 skipped: 1
             }
         );
-        assert_eq!(verdict(&mixed, None, false, false), Verdict::NoFolder);
         assert_eq!(
-            verdict(&mixed, Some(folder), false, false),
+            verdict(Some(&mixed), None, Some(false), false),
+            Verdict::NoFolder
+        );
+        assert_eq!(
+            verdict(Some(&mixed), Some(folder), Some(false), false),
             Verdict::FolderGone
         );
-        assert_eq!(verdict(&mixed, Some(folder), true, true), Verdict::Busy);
+        assert_eq!(
+            verdict(Some(&mixed), Some(folder), Some(true), true),
+            Verdict::Busy
+        );
         assert_eq!(
             verdict(
-                &[dropped(Looks::Other), dropped(Looks::Gone)],
+                Some(&[dropped(Looks::Other), dropped(Looks::Gone)]),
                 Some(folder),
-                true,
+                Some(true),
                 false
             ),
             Verdict::NothingToTake
         );
+    }
+
+    #[test]
+    fn a_drag_not_yet_weighed_or_a_folder_not_yet_looked_at_is_weighing_and_drops_nothing() {
+        let audio = [dropped(Looks::Audio)];
+        let folder = Path::new("/music");
+
+        assert_eq!(
+            verdict(None, Some(folder), Some(true), false),
+            Verdict::Weighing
+        );
+        assert_eq!(
+            verdict(Some(&audio), Some(folder), None, false),
+            Verdict::Weighing
+        );
+        assert_eq!(
+            verdict(None, Some(folder), Some(false), false),
+            Verdict::FolderGone
+        );
+        assert_eq!(verdict(None, None, None, false), Verdict::NoFolder);
+        assert!(!Verdict::Weighing.drops());
+        assert!(!Verdict::Weighing.is_trouble());
     }
 
     #[test]

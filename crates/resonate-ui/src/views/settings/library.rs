@@ -1407,7 +1407,7 @@ impl RootView {
     pub(super) fn music_folder_group(&mut self, cx: &mut Context<Self>) -> Div {
         let folder = cx.global::<ResonateApp>().music_folder.clone();
         let filed = cx.global::<ResonateApp>().file_dropped;
-        let gone = folder.as_deref().is_some_and(|folder| !folder.is_dir());
+        let gone = self.music_folder_is_there(cx) == Some(false);
 
         kit::section_body()
             .child(match &folder {

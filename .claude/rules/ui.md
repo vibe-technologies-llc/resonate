@@ -2215,8 +2215,16 @@ is never named.
 - **Files dragged in from outside are weighed while over the window and copied when dropped.**
   `views/dropping.rs`. gpui makes a file drag an `ExternalPaths` drag, but only the drop target
   hears it end (nothing says the drag *left*), so the root's `on_drag_move::<ExternalPaths>` sets
-  `RootView::incoming` (paths plus `resonate_library::weigh`'s read of each) and starts
-  `watching_the_drag`, a 100 ms timer clearing it once `App::has_active_drag` is false. While
+  `RootView::incoming` (paths, and `resonate_library::weigh`'s read of each once it lands) and
+  starts `watching_the_drag`, a 100 ms timer clearing it once `App::has_active_drag` is false.
+  **Nothing on a drag or a frame touches the disc on the render thread**: `weigh_the_drag` reads the
+  paths on the background executor (the card says *Looking at what is dragged…*,
+  `Verdict::Weighing`, until it lands); whether the music folder is there is
+  `RootView::music_folder_is_there`, a `FolderStanding` looked at on the background executor at most
+  every `FOLDER_LOOKED_AT_EVERY` (2 s) while something draws it (overlay, Library settings), the
+  last answer standing meanwhile; a drop reuses the drag's weighing and looks at the folder once
+  more off the thread before `land_the_drop` acts. A folder on a stalled mount stalls a background
+  thread, never the window. While
   `incoming` is set, `drop_overlay` draws over the window and is the occluding `on_drop` target: a
   scrim, a dashed card listing up to six names each with *copied*, *cue sheet, copied*, *beside a
   song, copied with it*, a folder line, *not audio, left out* or *not there*, and the destination

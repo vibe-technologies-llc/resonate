@@ -50,9 +50,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - Scrolling a large library to the end re-reads the whole prefix of tracks, albums and artists at
   every page (quadratic); design with the `End` item under Keyboard
 - Each catalog revision re-reads every queued track's name while the queue pane is open
-- Dragging files from a file manager stats every path on entering and dropping; the drop overlay and
-  Library settings stat the music folder every frame: a folder on a stalled network mount freezes
-  the window
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first; the Xing table of
   contents is never used
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU
