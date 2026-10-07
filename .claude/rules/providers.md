@@ -256,6 +256,10 @@ the inbox only where all three are given and `online` is on.
   `musicBrainzId` is the recording or its `isrc` (one code or a list as OpenSubsonic writes it, read
   via `Isrc::new`) holds the want's, so a tribute band's *Echoes* is never delivered for Pink
   Floyd's.
+- **The log never sees a request's address.** Every URL carries the user, token and salt, and
+  ureq's `BadUri` and `Http` errors print the whole of it (a `subsonic` setting with no scheme), so
+  `told` logs those two as a sentence alone
+  (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
 - **Deadline for an answer, for a download silence alone.** API requests carry
   `Patience::answered_within` as `timeout_global`. A download may run minutes: its agent bounds the
   head alone and `stall.rs` each read (`BrokenOffAfter`, a connector chained after ureq's

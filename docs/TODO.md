@@ -6,8 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A `subsonic` setting without a scheme makes ureq's bad-URI error, which prints the whole request
-  URL with token and salt, land in the debug log
 - `play`'s key reader takes one byte after `ESC [`: Ctrl/Shift with an arrow and F5 to F12 leak
   their tail as keys and leave the prompt half-typed (such as `5C`) until Enter or Esc
 - An M3U written with bare carriage returns reads as one comment line and imports as an empty

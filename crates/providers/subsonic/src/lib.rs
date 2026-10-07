@@ -241,6 +241,13 @@ fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
+fn told(error: &ureq::Error) -> Option<String> {
+    match error {
+        ureq::Error::BadUri(_) | ureq::Error::Http(_) => None,
+        error => Some(error.to_string()),
+    }
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(
         String::with_capacity(bytes.len() * 2),
@@ -345,7 +352,21 @@ impl Subsonic {
     }
 
     fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
-        tracing::debug!(%error, ?op, "the Subsonic server could not be reached");
+        match told(&error) {
+            Some(told) => {
+                tracing::debug!(
+                    error = told,
+                    ?op,
+                    "the Subsonic server could not be reached"
+                );
+            }
+            None => {
+                tracing::debug!(
+                    ?op,
+                    "the Subsonic server's address does not read as one; it may lack its scheme"
+                );
+            }
+        }
         if trust::certificate_refused(&error) {
             return Error::Untrusted {
                 provider: self.source.clone(),
@@ -547,6 +568,27 @@ mod tests {
         ));
         assert!(untrusted.is_the_provider_away());
         assert!(matches!(unreached, Error::Io { .. }));
+    }
+
+    #[test]
+    fn an_address_without_a_scheme_is_never_told_to_the_log_with_its_token() {
+        let subsonic = Subsonic::at(Server {
+            url: "music.local:4533".to_owned(),
+            user: "listener".to_owned(),
+            password: "sesame".to_owned(),
+        });
+        let url = subsonic.url("ping", &[]);
+        let refused = subsonic
+            .asking
+            .get(&url)
+            .call()
+            .expect_err("an address with no scheme is refused");
+
+        assert!(super::told(&refused).is_none(), "{refused}");
+        assert!(
+            super::told(&ureq::Error::HostNotFound).is_some_and(|told| !told.contains("t=")),
+            "an error naming no address is still told"
+        );
     }
 
     #[test]
