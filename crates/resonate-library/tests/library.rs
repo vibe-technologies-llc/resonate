@@ -19170,6 +19170,56 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
 }
 
 #[test]
+fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ALBUM, "Meddle")
+            .text(TRACK, "6/6")
+            .text(b"TCOM", "Roger Waters")
+            .text(b"TCOP", "1971 Pink Floyd Music Ltd")
+            .text(b"TIT1", "Meddle sessions")
+            .text(LABEL, "Harvest")
+            .text(COMPILATION, "1")
+            .build(),
+    );
+
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(vaulted(&library, true)?.stats.vaulted, 1);
+
+    let rows = all(&library)?;
+    let stood = library
+        .stand_in()
+        .stands_in(&rows[0].location, rows[0].span)
+        .expect("the vault stands in for the row");
+    assert_eq!(stood.tags.title.as_deref(), Some("Echoes"));
+    assert_eq!(stood.tags.track_number, Some(6));
+    assert_eq!(stood.tags.track_total, Some(6), "the total was lost");
+    assert_eq!(stood.tags.credits.composer.as_deref(), Some("Roger Waters"));
+    assert_eq!(
+        stood.tags.copyright.as_deref(),
+        Some("1971 Pink Floyd Music Ltd")
+    );
+    assert_eq!(stood.tags.grouping.as_deref(), Some("Meddle sessions"));
+    assert_eq!(stood.tags.label.as_deref(), Some("Harvest"));
+    assert!(stood.tags.compilation, "the compilation mark was lost");
+
+    let released = library.release_from_vault(&[])?;
+    assert_eq!(released.released, 1);
+    assert!(
+        library
+            .stand_in()
+            .stands_in(&rows[0].location, rows[0].span)
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_rescan_after_an_import_leaves_the_row_in_the_vault_and_imports_nothing_again() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

@@ -59,7 +59,7 @@ use crate::{
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
     undo::{self, Step},
-    vaulted::Vaulted,
+    vaulted::{self, Vaulted},
 };
 
 const READER_POOL: usize = 8;
@@ -2668,6 +2668,9 @@ impl Library {
                         params![id],
                     )
                     .map_err(|source| Error::store(StoreOp::Update, source))?;
+                transaction
+                    .execute("DELETE FROM kept_tags WHERE track_id = ?1", params![id])
+                    .map_err(|source| Error::store(StoreOp::Delete, source))?;
             }
             Ok(released as u64)
         })?;
@@ -2742,6 +2745,11 @@ impl Library {
                     params![key, held, row.id.get() as i64],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+            vaulted::keep_what_the_catalog_cannot_fill(
+                transaction,
+                row.id.get() as i64,
+                &kept.declared,
+            )?;
 
             transaction
                 .execute(
@@ -2884,6 +2892,7 @@ impl Library {
                         &want.album_title,
                         &store::indexed_genre_of(transaction, declared.genre.as_deref(), artist)?,
                     )?;
+                    vaulted::keep_what_the_catalog_cannot_fill(transaction, id, declared)?;
                     id
                 }
                 None => transaction

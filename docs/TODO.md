@@ -97,9 +97,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `vault --verify` writes an object it could not open (unmounted vault, missing file) as one that
   did not read back, never checks covers, offers nothing to mend one failing row. After the renewal
   items
-- The stand-in's `TagSet` fills seventeen fields from the catalog: a vaulted row loses its composer,
-  lyricist, comment, label, totals and grouping on the bus and in the inspector; `Kept::declared`
-  holds them at import and nothing keeps them
 - A cancel is heard only between rows: one long WAVE pass or FLAC encode cannot be interrupted; the
   window imports on every core regardless of what is playing
 - The key is the PCM alone: two tracks of the same samples at another rate, count or mask (digital

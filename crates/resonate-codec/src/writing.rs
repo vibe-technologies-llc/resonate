@@ -226,6 +226,53 @@ impl TagField {
         }
     }
 
+    pub fn set(self, tags: &mut TagSet, value: &str) {
+        let text = Some(value.to_owned());
+        let number = value.parse::<u32>().ok();
+        match self {
+            Self::Title => tags.title = text,
+            Self::Artist => tags.artist = text,
+            Self::Album => tags.album = text,
+            Self::AlbumArtist => tags.album_artist = text,
+            Self::TrackNumber => tags.track_number = number,
+            Self::TrackTotal => tags.track_total = number,
+            Self::DiscNumber => tags.disc_number = number,
+            Self::DiscTotal => tags.disc_total = number,
+            Self::Date => tags.date = text,
+            Self::Label => tags.label = text,
+            Self::CatalogNumber => tags.catalog_number = text,
+            Self::Barcode => tags.barcode = text,
+            Self::Isrc => tags.isrc = text,
+            Self::MusicBrainzTrackId => tags.musicbrainz_track_id = text,
+            Self::MusicBrainzReleaseTrackId => tags.musicbrainz_release_track_id = text,
+            Self::MusicBrainzAlbumId => tags.musicbrainz_album_id = text,
+            Self::MusicBrainzArtistId => tags.musicbrainz_artist_id = text,
+            Self::MusicBrainzAlbumArtistId => tags.musicbrainz_album_artist_id = text,
+            Self::MusicBrainzReleaseGroupId => tags.musicbrainz_release_group_id = text,
+            Self::Genre => tags.genre = text,
+            Self::Composer => tags.credits.composer = text,
+            Self::Conductor => tags.credits.conductor = text,
+            Self::Lyricist => tags.credits.lyricist = text,
+            Self::Performer => tags.credits.performer = text,
+            Self::Remixer => tags.credits.remixer = text,
+            Self::Engineer => tags.credits.engineer = text,
+            Self::Producer => tags.credits.producer = text,
+            Self::Comment => tags.comment = text,
+            Self::BeatsPerMinute => tags.beats_per_minute = number,
+            Self::Compilation => tags.compilation = value == COMPILED,
+            Self::Grouping => tags.grouping = text,
+            Self::Copyright => tags.copyright = text,
+            Self::ReplayGainTrackGain => tags.replay_gain.track_gain = crate::tags::decibels(value),
+            Self::ReplayGainTrackPeak => tags.replay_gain.track_peak = crate::tags::peak(value),
+            Self::ReplayGainAlbumGain => tags.replay_gain.album_gain = crate::tags::decibels(value),
+            Self::ReplayGainAlbumPeak => tags.replay_gain.album_peak = crate::tags::peak(value),
+            Self::ArtistSort => tags.artist_sort = text,
+            Self::AlbumArtistSort => tags.album_artist_sort = text,
+            Self::TitleSort => tags.title_sort = text,
+            Self::AlbumSort => tags.album_sort = text,
+        }
+    }
+
     fn key_in(self, kind: TagType) -> Option<ItemKey> {
         match (self, kind) {
             (Self::BeatsPerMinute, TagType::VorbisComments) => Some(ItemKey::Bpm),
@@ -1660,6 +1707,17 @@ mod tests {
             .filter(|name| name.to_string_lossy().starts_with('.'))
             .collect();
         assert!(left.is_empty(), "a staged copy was left behind: {left:?}");
+    }
+
+    #[test]
+    fn every_field_set_into_a_tag_set_reads_back_as_it_was_spelled() {
+        let edits = named_and_identified();
+        let mut tags = TagSet::default();
+        for edit in &edits {
+            edit.field.set(&mut tags, &edit.value);
+        }
+
+        assert_read_back(&tags, &edits, &[]);
     }
 
     #[test]

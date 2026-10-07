@@ -449,6 +449,12 @@ const MIGRATIONS: &[&str] = &[
          took       INTEGER NOT NULL,
          PRIMARY KEY (key, taken_from)
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE kept_tags (
+         track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+         field    TEXT NOT NULL,
+         value    TEXT NOT NULL,
+         PRIMARY KEY (track_id, field)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

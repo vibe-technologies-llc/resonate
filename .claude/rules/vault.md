@@ -167,7 +167,8 @@ while its cover was being pruned.
 ## What the catalog holds
 
 `tracks.vault_key`, `tracks.vault_path`, `albums.cover_key`, `albums.cover_path`, `cover_source`
-gaining `Vault`, a `vault_objects` table; changes are `MIGRATIONS` steps (`library.md`).
+gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRATIONS` steps
+(`library.md`).
 
 - **A vaulted row is still named by its own file; the vault stands in only when bytes are wanted.**
   `tracks.path` + `span_start` are its identity everywhere (location, playlist `Cut`, plays, share,
@@ -178,6 +179,16 @@ gaining `Vault`, a `vault_objects` table; changes are `MIGRATIONS` steps (`libra
   including `rg_*` (gain heard, `TagSet::heard_gain`, not only declared) and `tracks.lyrics`. An
   object that will not open falls back to the row's file. `info`, scan, import use sources with no
   stand-in: they read the file.
+- **What the catalog cannot fill, the import keeps.** `vaulted::FILLED_FROM_THE_CATALOG` names the
+  nineteen `TagField`s the stand-in reads off `tracks`, `albums` and `artists`; every other field
+  `Kept::declared` holds (credits, comment, totals, label, catalogue number, barcode, grouping,
+  copyright, BPM, compilation, the four sort names) is written to `kept_tags (track_id, field,
+  value)` by `note_vaulted` and by a delivery's row, spelled by `TagField::read` and set back by
+  `TagField::set` (`every_field_set_into_a_tag_set_reads_back_as_it_was_spelled`), so the bus and
+  the inspector see what the file said
+  (`a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared`). A release
+  drops them with the vault columns. A row vaulted before the table keeps nothing until weighed
+  again.
 - **A vault inside a scanned root is not part of the library it holds.** The walk steps past the
   open vault's root (links into it included); `store::apply` leaves a rootless row alone wherever a
   scan reaches one (a delivery keeps name, pairing, place).
