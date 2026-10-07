@@ -1063,6 +1063,41 @@ fn a_property_that_was_set_announces_the_value_it_was_set_to() {
 }
 
 #[test]
+fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let paths: Vec<PathBuf> = (0..24).map(|n| tree.wav(&format!("row-{n}.wav"))).collect();
+    harness.load_all(&paths);
+    harness.wait_for(
+        |harness| harness.tracks().len() == paths.len(),
+        "the queue to reach the track list",
+    );
+    let listed = harness.tracks();
+    let signals = harness.tracklist_signals();
+
+    harness
+        .proxy(PLAYER)
+        .set_property("Shuffle", true)
+        .expect("Shuffle is writable");
+    harness.wait_for(
+        |harness| {
+            harness
+                .player
+                .queue()
+                .iter()
+                .map(|item| item.id.get())
+                .ne(1..=24)
+        },
+        "the play order to be shuffled",
+    );
+
+    unannounced(&signals, "TrackListReplaced", SETTLE);
+    assert_eq!(harness.tracks(), listed, "a shuffle moved the track list");
+}
+
+#[test]
 fn set_position_seeks_the_track_it_names_and_ignores_any_other() {
     let Some(harness) = Harness::start() else {
         return;

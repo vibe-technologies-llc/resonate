@@ -3225,8 +3225,10 @@ impl Engine {
         self.announced = Some(revision);
         *self.published.queue.write() = Queued {
             revision,
+            rows_revision: self.queue.rows_revision(),
             rows: Arc::new(self.queue.in_play_order()),
             loaded_at: self.queue.loaded_at(),
+            listed: self.queue.listed(),
             next: self.queue.playing_next(),
             stamp: self.queue.stamp(),
         };

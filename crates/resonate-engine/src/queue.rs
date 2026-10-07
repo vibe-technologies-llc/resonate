@@ -15,8 +15,10 @@ pub struct QueueItem {
 #[derive(Clone, Debug)]
 pub struct Queued {
     pub revision: u64,
+    pub rows_revision: u64,
     pub rows: Arc<Vec<QueueItem>>,
     pub loaded_at: Arc<[usize]>,
+    pub listed: Arc<[usize]>,
     pub next: Option<Span>,
     pub stamp: QueueStamp,
 }
@@ -25,11 +27,26 @@ impl Default for Queued {
     fn default() -> Self {
         Self {
             revision: 0,
+            rows_revision: 0,
             rows: Arc::default(),
             loaded_at: Arc::from(Vec::new()),
+            listed: Arc::from(Vec::new()),
             next: None,
             stamp: QueueStamp::default(),
         }
+    }
+}
+
+impl Queued {
+    pub fn in_list_order(&self) -> Vec<QueueItem> {
+        if self.listed.len() != self.rows.len() {
+            return self.rows.to_vec();
+        }
+        self.listed
+            .iter()
+            .filter_map(|at| self.rows.get(*at))
+            .cloned()
+            .collect()
     }
 }
 
@@ -149,6 +166,7 @@ pub struct Queue {
     shuffle: bool,
     shuffler: Shuffler,
     revision: u64,
+    rows_revision: u64,
     stamp: QueueStamp,
     playing_from: QueueStamp,
 }
@@ -166,6 +184,7 @@ impl Queue {
             shuffle: false,
             shuffler: Shuffler::new(),
             revision: 0,
+            rows_revision: 0,
             stamp: QueueStamp::default(),
             playing_from: QueueStamp::default(),
         }
@@ -459,6 +478,43 @@ impl Queue {
 
     pub fn loaded_at(&self) -> Arc<[usize]> {
         self.drawn().collect()
+    }
+
+    pub const fn rows_revision(&self) -> u64 {
+        self.rows_revision
+    }
+
+    pub fn listed(&self) -> Arc<[usize]> {
+        let drawn: Vec<usize> = self.drawn().collect();
+        let as_drawn = || (0..drawn.len()).collect();
+        if !self.shuffle {
+            return as_drawn();
+        }
+
+        let mut drawn_at = vec![None; self.items.len()];
+        for (at, index) in drawn.iter().enumerate() {
+            if let Some(slot) = drawn_at.get_mut(*index) {
+                *slot = Some(at);
+            }
+        }
+        let place = self
+            .last_heard()
+            .and_then(|heard| self.unshuffled.iter().position(|held| *held == heard))
+            .map_or(0, |at| at + 1)
+            .min(self.unshuffled.len());
+        let (before, after) = self.unshuffled.split_at(place);
+        let mut listed = Vec::with_capacity(drawn.len());
+        for index in before.iter().chain(&self.next).chain(after) {
+            if let Some(at) = drawn_at.get_mut(*index).and_then(Option::take) {
+                listed.push(at);
+            }
+        }
+
+        if listed.len() == drawn.len() {
+            listed.into()
+        } else {
+            as_drawn()
+        }
     }
 
     pub fn current(&self) -> Option<&QueueItem> {
@@ -812,6 +868,7 @@ impl Queue {
 
     fn rows_changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
+        self.rows_revision = self.rows_revision.wrapping_add(1);
         self.stamp = stamp_of(&self.items);
         self.stamp_what_is_playing_from();
     }
@@ -1091,6 +1148,50 @@ mod tests {
         assert_eq!(order.get(at + 1), Some(&90));
         assert_eq!(order.get(at + 2), Some(&91));
         assert_eq!(current(&queue), Some(playing));
+    }
+
+    fn listed(queue: &Queue) -> Vec<u64> {
+        let drawn = queue.in_play_order();
+        queue
+            .listed()
+            .iter()
+            .map(|at| drawn[*at].id.get())
+            .collect()
+    }
+
+    #[test]
+    fn the_list_a_shuffle_leaves_is_the_order_the_rows_stand_in_unshuffled() {
+        let mut queue = loaded(32, 4);
+        let before = listed(&queue);
+        let rows_were = queue.rows_revision();
+        let drawn_was = queue.revision();
+        assert_eq!(before, numbered(&queue));
+
+        queue.set_shuffle(true);
+        assert_ne!(
+            numbered(&queue),
+            before,
+            "thirty-two rows shuffled into place"
+        );
+        assert_eq!(listed(&queue), before, "a shuffle moved the list");
+        assert_eq!(queue.rows_revision(), rows_were);
+        assert_ne!(queue.revision(), drawn_was);
+
+        queue.advance(true).expect("32 rows outlast one advance");
+        let playing = current(&queue).expect("a row is playing");
+        queue.insert(vec![item(90)], Placement::Next);
+        let list = listed(&queue);
+        let at = list
+            .iter()
+            .position(|id| *id == playing)
+            .expect("the playing row is listed");
+        assert_eq!(list.get(at + 1), Some(&90), "{list:?}");
+        assert_ne!(queue.rows_revision(), rows_were);
+        assert_eq!(list.len(), 33);
+
+        queue.set_shuffle(false);
+        assert_eq!(listed(&queue), numbered(&queue));
+        assert_eq!(listed(&queue), list, "unshuffling moved the list");
     }
 
     #[test]

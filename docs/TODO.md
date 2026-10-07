@@ -167,11 +167,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 ## Later: Scrobbling
 - Last.fm is not reached at all; only ListenBrainz is told what was heard
 
-## Later: MPRIS
-- A shuffle is announced as the whole list replaced: `Tracks` is built from the play order alone;
-  `Queued::loaded_at` carries the order rows were added in, which the track list does not read, and
-  `AddTrack`/`RemoveTrack` would then map back to play-order positions
-
 ## Later: MCP
 - An edit a model makes is not on the window's *Undo*: undo stacks live in the process that made it
 

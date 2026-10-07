@@ -28,9 +28,14 @@ seam), and the client a second `resonate` reaches a first through.
 
 ## The track list
 
-`TrackList` = the published queue read back: `Tracks` = `Player::queue` as object paths,
+`TrackList` = the published queue read back: `Tracks` = `Queued::in_list_order` as object paths,
 `AddTrack`/`RemoveTrack` = `Command::Insert`/`Remove`, four signals diffed from the 200 ms `POLL`
-that also drives `Player` property changes. Ids: `/org/resonate/track/…`,
+that also drives `Player` property changes. **The list is the queue unshuffled, not the play
+order**: `Queued::listed` (the engine's `Queue::listed`) is the unshuffled order with the rows
+queued next after the row heard, as drawn positions; with shuffle off it is the play order, and a
+shuffle turned on or off moves nothing on the bus (`AddTrack`, `RemoveTrack`, `GoTo` find rows by
+id, so play-order positions never reach a client)
+(`a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it`). Ids: `/org/resonate/track/…`,
 `/org/resonate/playlist/…` (spec reserves `/org/mpris`).
 
 - **Moves announced edit by edit where possible.** `tracklist::change` keys rows by id, holds the
@@ -38,8 +43,9 @@ that also drives `Player` property changes. Ids: `/org/resonate/track/…`,
   arrived/moved as `TrackAdded`, ordered so every `AfterTrack` names an announced row.
   `TrackListReplaced` for: shuffle-sized reorder, no shared row, duplicate ids, a kept id whose row
   differs, more than `EDITS_ANNOUNCED_AT_MOST` (64) edits, and equal rows with a moved
-  `Queued::revision` (`change_between`; the engine's only trace of a row added and removed within
-  one poll).
+  `Queued::rows_revision` (`change_between`; the engine's only trace of a row added and removed
+  within one poll; a counter of its own, which a reorder or shuffle leaves, unlike
+  `Queued::revision`).
 - **`GetTracksMetadata` answers positionally**: one entry per id, in order; an id naming no row
   gets `mpris:trackid` alone (the only field keying reply to request). One `READ_BUDGET` (500 ms)
   per call: a row with unread tags answers with its file stem and `Owed` remembers it; the poll

@@ -339,7 +339,8 @@ struct Collection {
 
 struct Watched {
     queue: Arc<Vec<QueueItem>>,
-    queue_revision: u64,
+    listed: Arc<Vec<QueueItem>>,
+    rows_revision: u64,
     playlists: Collection,
     playback: PlaybackState,
     repeat: RepeatMode,
@@ -365,8 +366,8 @@ struct Watched {
 impl Watched {
     fn sampled(&self) -> Sample<'_> {
         Sample {
-            rows: &self.queue,
-            revision: self.queue_revision,
+            rows: &self.listed,
+            revision: self.rows_revision,
         }
     }
 }
@@ -585,6 +586,15 @@ fn snapshot(
     let current = state.current;
     let art = shared.art(&state, digest.as_ref());
     let queued = shared.player.queued();
+    let listed = match before {
+        Some(held)
+            if held.rows_revision == queued.rows_revision
+                && Arc::ptr_eq(&held.queue, &queued.rows) =>
+        {
+            Arc::clone(&held.listed)
+        }
+        _ => Arc::new(queued.in_list_order()),
+    };
     let queue = queued.rows;
     let heard = Reading::again(shared, &state, &queue, before.map(|held| &held.heard));
     let described = Described {
@@ -604,7 +614,8 @@ fn snapshot(
 
     Watched {
         queue,
-        queue_revision: queued.revision,
+        listed,
+        rows_revision: queued.rows_revision,
         playlists: collect(playlists, held_playlists),
         playback: state.playback,
         repeat: state.repeat,
@@ -730,7 +741,7 @@ fn publish_queue_moves(
             for edit in edits {
                 match edit {
                     Edit::Removed { at } => {
-                        if let Some(item) = before.queue.get(at) {
+                        if let Some(item) = before.listed.get(at) {
                             report(zbus::block_on(TrackList::track_removed(
                                 emitter,
                                 track_path(item.id),
@@ -738,7 +749,7 @@ fn publish_queue_moves(
                         }
                     }
                     Edit::Added { at } => {
-                        if let Some(item) = now.queue.get(at) {
+                        if let Some(item) = now.listed.get(at) {
                             let patience = until.saturating_duration_since(Instant::now());
                             let media =
                                 shared
@@ -762,7 +773,7 @@ fn publish_queue_moves(
                             report(zbus::block_on(TrackList::track_added(
                                 emitter,
                                 metadata,
-                                after_row(&now.queue, at),
+                                after_row(&now.listed, at),
                             )));
                         }
                     }
@@ -770,7 +781,7 @@ fn publish_queue_moves(
             }
         }
         Change::Replaced => {
-            let rows = now.queue.iter().map(|item| track_path(item.id)).collect();
+            let rows = now.listed.iter().map(|item| track_path(item.id)).collect();
             report(zbus::block_on(TrackList::track_list_replaced(
                 emitter,
                 rows,
@@ -779,10 +790,10 @@ fn publish_queue_moves(
         }
     }
     if !before
-        .queue
+        .listed
         .iter()
         .map(|item| item.id)
-        .eq(now.queue.iter().map(|item| item.id))
+        .eq(now.listed.iter().map(|item| item.id))
     {
         report(zbus::block_on(tracks.get().tracks_invalidate(emitter)));
     }

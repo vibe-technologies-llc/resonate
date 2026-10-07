@@ -232,7 +232,8 @@ impl TrackList {
     fn tracks(&self) -> Vec<OwnedObjectPath> {
         self.shared
             .player
-            .queue()
+            .queued()
+            .in_list_order()
             .iter()
             .map(|item| track_path(item.id))
             .collect()
