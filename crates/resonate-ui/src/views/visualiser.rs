@@ -12,14 +12,16 @@ use smallvec::SmallVec;
 use crate::{
     PlayerModel,
     icons::Icon,
-    spectrum::{CEILING_DB, Column, FLOOR_DB, MARKED_EVERY_DB, Spectrum, height_of, rising_edge},
+    spectrum::{
+        self, CEILING_DB, Column, FLOOR_DB, MARKED_EVERY_DB, Spectrum, height_of, rising_edge,
+    },
     stereo::{self, Meter, Metered, Stereo},
     theme,
     views::{
         hint::{self, Names},
         kit, plot,
         root::RootView,
-        settings::{across_at, marked_frequencies},
+        settings::marked_at,
         transport::Playing,
     },
 };
@@ -38,7 +40,8 @@ const READS_HINT: &str = "What reaches the device — after the equaliser, the v
                           so that pink noise stands level, falling back slowly with each band's \
                           peak held above it.";
 
-const SPECTRUM_HINT: &str = "Sixth-octave bands from 20 Hz to 20 kHz, with each band's peak held";
+const SPECTRUM_HINT: &str =
+    "Sixth-octave bands from 20 Hz to what the rate carries, with each band's peak held";
 
 const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising edge";
 
@@ -283,9 +286,13 @@ impl Render for Visualiser {
             .size_full()
             .child(follows_the_display(playing && tap.is_some()));
         match self.showing {
-            Showing::Spectrum => plot
-                .child(bars(self.spectrum.columns().collect()))
-                .children(marked_frequencies()),
+            Showing::Spectrum => {
+                let top = self.spectrum.top();
+                plot.child(bars(self.spectrum.columns().collect(), top))
+                    .children(marked_at(spectrum::marked(top), |hertz| {
+                        spectrum::across(hertz, top)
+                    }))
+            }
             Showing::Scope => plot.child(traced(self.trace())),
             Showing::Stereo => {
                 let metered = self.stereo.metered();
@@ -309,7 +316,7 @@ fn follows_the_display(moving: bool) -> Canvas<()> {
     .size_0()
 }
 
-fn bars(columns: Columns) -> Canvas<()> {
+fn bars(columns: Columns, heard_to: f64) -> Canvas<()> {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
@@ -318,7 +325,7 @@ fn bars(columns: Columns) -> Canvas<()> {
             let top = f32::from(bounds.top()) + HEAD_ROOM;
             let bottom = f32::from(bounds.bottom()) - LABEL_ROOM;
             let tall = (bottom - top).max(0.0);
-            let across = |hertz: f64| left + across_at(hertz) * wide;
+            let across = |hertz: f64| left + spectrum::across(hertz, heard_to) * wide;
             let down = |height: f32| bottom - height * tall;
 
             let mut level = CEILING_DB;

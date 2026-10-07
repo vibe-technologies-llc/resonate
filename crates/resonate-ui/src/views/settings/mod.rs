@@ -24,8 +24,8 @@ use resonate_library::DEFAULT_LAYOUT;
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
 pub(crate) use crate::views::settings::{
-    curve::{HeldBand, Plotted, across_at},
-    equaliser::marked_frequencies,
+    curve::{HeldBand, Plotted},
+    equaliser::marked_at,
     find::{Category, Group},
     subsonic::Account,
     tidal::{SigningIn, TidalAccount},

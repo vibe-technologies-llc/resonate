@@ -2679,9 +2679,10 @@ is never named.
   *Spectrum*/*Scope* living on the entity for the run. `spectrum.rs` is the arithmetic, tested as
   `curve.rs` is: hand-written radix-2 real transform (half-length complex over bit-reversed even
   and odd samples, split back to the real spectrum) under a periodic Hann window, scaled so a
-  full-scale sine on a bin reads 0 dBFS; sixth-octave bands across the equaliser's
-  `RESPONSE_FROM_HZ`..`RESPONSE_TO_HZ`, placed by `across_at`, labelled by `marked_frequencies`
-  (both plots read 100, 1k, 10k at the same places); a band narrower than a bin read at its centre
+  full-scale sine on a bin reads 0 dBFS; sixth-octave bands from the equaliser's
+  `RESPONSE_FROM_HZ` to what the rate carries (`spectrum::top_of`: Nyquist, never under
+  `RESPONSE_TO_HZ`, so a 96 kHz stream draws to 48 kHz), placed by `spectrum::across` on that axis
+  and labelled at each decade under it (`spectrum::marked`, drawn by the curve's `marked_at`); a band narrower than a bin read at its centre
   between the bins either side, one past Nyquist left on the floor. Band = its loudest bin tilted up
   `TILT_DB_PER_OCTAVE` (3) about 1 kHz (pink noise stands level; a mastered record does not slope
   into the treble), drawn between `FLOOR_DB` (−78) and 0 over faint lines every 12 dB (no figures:

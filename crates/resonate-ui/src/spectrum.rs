@@ -19,6 +19,7 @@ const FEWEST_POINTS: usize = 8;
 const MOST_POINTS: usize = 32_768;
 const BANDS_PER_OCTAVE: f64 = 6.0;
 const PIVOT_HZ: f64 = 1_000.0;
+const MARKED_DECADES_HZ: [f64; 4] = [100.0, 1_000.0, 10_000.0, 100_000.0];
 const TILT_DB_PER_OCTAVE: f32 = 3.0;
 const FALLS_DB_PER_SECOND: f32 = 40.0;
 const PEAK_HELD_FOR: Duration = Duration::from_millis(700);
@@ -316,6 +317,10 @@ impl Spectrum {
         self.fft.points()
     }
 
+    pub(crate) fn top(&self) -> f64 {
+        top_of(self.rate)
+    }
+
     pub(crate) fn take(&mut self, samples: &[f32], step: Duration) {
         self.fft.levels(samples, &mut self.bins);
         let step = step.min(LONGEST_STEP);
@@ -361,6 +366,28 @@ fn reading(bins: &[f32], band: Band) -> f32 {
     (raw + band.tilt).clamp(FLOOR_DB, CEILING_DB)
 }
 
+pub(crate) fn top_of(rate: SampleRate) -> f64 {
+    (f64::from(rate.hz()) / 2.0).max(RESPONSE_TO_HZ)
+}
+
+pub(crate) fn across(hertz: f64, top: f64) -> f32 {
+    let decades = (top / RESPONSE_FROM_HZ).log10();
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a fraction of the width fits an f32"
+    )]
+    let fraction = ((hertz / RESPONSE_FROM_HZ).log10() / decades) as f32;
+
+    fraction.clamp(0.0, 1.0)
+}
+
+pub(crate) fn marked(top: f64) -> impl Iterator<Item = f64> {
+    MARKED_DECADES_HZ
+        .into_iter()
+        .filter(move |hertz| *hertz < top)
+}
+
 fn bands_for(rate: SampleRate, points: usize) -> Box<[Band]> {
     let bin_hz = f64::from(rate.hz()) / points as f64;
     let nyquist = f64::from(rate.hz()) / 2.0;
@@ -377,7 +404,7 @@ fn bands_for(rate: SampleRate, points: usize) -> Box<[Band]> {
         clippy::cast_possible_truncation,
         reason = "a band count across the audible range fits an i32"
     )]
-    let last = steps(RESPONSE_TO_HZ / half_a_band).floor() as i32;
+    let last = steps(top_of(rate) / half_a_band).floor() as i32;
 
     (first..=last)
         .map(|step| {
@@ -583,13 +610,13 @@ mod tests {
     fn the_bands_are_sixth_octaves_across_the_audible_range_meeting_at_their_edges() {
         let bands = bands_for(RATE, 4_096);
 
-        assert_eq!(bands.len(), 59);
         assert!(
             bands
                 .first()
                 .is_some_and(|band| band.low >= RESPONSE_FROM_HZ)
         );
-        assert!(bands.last().is_some_and(|band| band.high <= RESPONSE_TO_HZ));
+        assert!(bands.last().is_some_and(|band| band.high <= top_of(RATE)));
+        assert!(bands.last().is_some_and(|band| band.high > RESPONSE_TO_HZ));
         assert!(
             bands
                 .iter()
@@ -637,6 +664,20 @@ mod tests {
             (an_octave_up - tone_level - TILT_DB_PER_OCTAVE).abs() < 0.05,
             "{an_octave_up}"
         );
+    }
+
+    #[test]
+    fn the_axis_reaches_what_the_rate_can_carry_and_no_lower_than_twenty_kilohertz() {
+        assert_eq!(top_of(SampleRate::HZ_22050), RESPONSE_TO_HZ);
+        assert_eq!(top_of(SampleRate::HZ_96000), 48_000.0);
+        assert_eq!(across(RESPONSE_FROM_HZ, 48_000.0), 0.0);
+        assert_eq!(across(48_000.0, 48_000.0), 1.0);
+        assert!(across(10_000.0, 48_000.0) < across(10_000.0, RESPONSE_TO_HZ));
+        assert_eq!(marked(48_000.0).count(), 3);
+        assert_eq!(marked(192_000.0).count(), 4);
+
+        let bands = bands_for(SampleRate::HZ_96000, 8_192);
+        assert!(bands.last().is_some_and(|band| band.centre > 40_000.0));
     }
 
     #[test]

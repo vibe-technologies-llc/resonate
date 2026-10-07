@@ -805,13 +805,20 @@ fn marked_levels(widest: f32) -> Div {
 }
 
 pub(crate) fn marked_frequencies() -> Vec<Div> {
-    CURVE_MARKED_AT_HZ
+    marked_at(CURVE_MARKED_AT_HZ, across_at)
+}
+
+pub(crate) fn marked_at(
+    marks: impl IntoIterator<Item = f64>,
+    across: impl Fn(f64) -> f32,
+) -> Vec<Div> {
+    marks
         .into_iter()
         .map(|hertz| {
             axis_label(spelt_hertz(hertz))
                 .absolute()
                 .bottom_1()
-                .left(relative(across_at(hertz)))
+                .left(relative(across(hertz)))
         })
         .collect()
 }

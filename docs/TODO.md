@@ -124,8 +124,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   its side stops recognition
 
 ## Later: Visualiser
-- The live spectrum's tilt, floor, band width and fall rates are constants; its axis stops at 20 kHz
-  at every rate
+- The live spectrum's tilt, floor, band width and fall rates are constants
 - The scope triggers on the mid's rising edge alone; the stereo view's meters read the mean square,
   not a true peak
 - The tap records frames as rendered, before the ring trims them: a muted stream still draws, a
