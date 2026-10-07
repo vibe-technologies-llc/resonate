@@ -77,7 +77,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   `NO_CONVERT`, nor recorded from a microphone node: the desktop's sink is stereo F32 and a hosted
   daemon links nothing (no session manager; a hosted WirePlumber would reach the real cards)
 - The inotify limit is untested
-- Nothing drives `play`'s signal paths or terminal restore; only `mcp`'s hang-up is driven
 - The drop overlay never dragged onto on a real compositor from this tree: gpui's `ExternalPaths` is
   `pub(crate)`, so `driven.rs` calls `dragged_over` and `dropped` directly; the platform's drag
   events are unproved here

@@ -87,8 +87,11 @@ gives them no type). Decoders: `audio.md`.
   echo via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
   `signals::leave` (restores first), and the first `KeyAtATime` installs a panic hook restoring the
-  modes (via `try_lock`). `input::keys` reads byte by byte with the escape state kept across reads
-  (`Keyed::escaping`): an Escape cancels the typed line; `ESC [` reads a whole control sequence
+  modes (via `try_lock`). `tests/terminal.rs` drives it: `play` on a pseudo-terminal of its own
+  (`setsid --ctty`; `unsafe_code` rules out a `pre_exec`), against a PipeWire runtime folder with
+  no daemon so nothing sounds, is sent `SIGINT`, `SIGTERM` or `SIGHUP` once it has left canonical
+  mode, and must leave, killed by none, with canonical mode and echo back. `input::keys` reads
+  byte by byte with the escape state kept across reads (`Keyed::escaping`): an Escape cancels the typed line; `ESC [` reads a whole control sequence
   through its parameters to the final byte (Ctrl or Shift with an arrow is the arrow; F5 to F12,
   Delete and the rest are nothing), `ESC O` one byte more (F1 to F4); a key after a lone Escape is
   that key (`a_key_sending_a_longer_sequence_is_read_whole_and_leaves_nothing_typed`). A
