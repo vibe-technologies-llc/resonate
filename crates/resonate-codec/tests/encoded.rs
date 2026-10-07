@@ -1274,6 +1274,43 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
     }
 }
 
+#[test]
+fn a_backward_seek_into_mpeg_audio_hears_what_a_seek_from_a_fresh_open_hears() {
+    let tree = Tree::new();
+    for (name, codec, exact) in [
+        ("long.mp3", ["-c:a", "libmp3lame", "-q:a", "0"], true),
+        ("long.aac", ["-c:a", "aac", "-b:a", "192k"], false),
+    ] {
+        let Some((path, _)) = fixture(&tree, name, &codec) else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let at = Frames(u64::from(RATE) / 2 + 77);
+
+        let (mut fresh, info) = Decoder::open(&Sources::local(), &location).expect("it opens");
+        assert_eq!(fresh.seek(at).expect("a seek from the start"), at);
+        let from_a_fresh_open = drain(&mut fresh, info.spec);
+
+        let (mut played, _) = Decoder::open(&Sources::local(), &location).expect("it opens");
+        drain(&mut played, info.spec);
+        assert_eq!(played.seek(at).expect("a seek back after playing"), at);
+        let after_playing = drain(&mut played, info.spec);
+
+        assert_eq!(after_playing.len(), from_a_fresh_open.len());
+        if exact {
+            assert!(
+                after_playing == from_a_fresh_open,
+                "{name}: a seek back after playing heard otherwise than one from a fresh open"
+            );
+        }
+        let apart = drift(&after_playing, &from_a_fresh_open);
+        assert!(
+            apart < 1e-4,
+            "{name}: a seek back after playing landed {apart:e} RMS of full scale away"
+        );
+    }
+}
+
 const MP3_DECODER_DELAY: u32 = 529;
 
 fn id3v2_3_comment(description: &str, text: &str) -> Vec<u8> {

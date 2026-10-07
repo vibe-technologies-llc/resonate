@@ -51,8 +51,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   every page (quadratic); design with the `End` item under Keyboard
 - A name written anywhere in the catalog (each batch of a scan) re-reads every queued track's name
   while the queue pane is open; a play, favourite or playlist edit no longer does
-- Every backward seek in an MP3 or ADTS stream walks the frames from the first; the Xing table of
-  contents is never used
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream
   (zed #62455)

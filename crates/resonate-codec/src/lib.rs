@@ -10,6 +10,7 @@ mod decoder;
 mod dsd;
 mod error;
 mod flac;
+mod framed;
 mod journal;
 mod matroska;
 mod mpa;

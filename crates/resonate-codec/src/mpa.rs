@@ -76,7 +76,7 @@ enum MpegLayer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Stream {
+pub(crate) struct Stream {
     version: MpegVersion,
     layer: MpegLayer,
     rate: u32,
@@ -84,9 +84,10 @@ struct Stream {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FrameHeader {
-    stream: Stream,
+    pub(crate) stream: Stream,
     kbps: u32,
-    mono: bool,
+    pub(crate) mono: bool,
+    pub(crate) has_crc: bool,
     pub(crate) length: usize,
 }
 
@@ -161,11 +162,16 @@ impl FrameHeader {
             },
             kbps,
             mono,
+            has_crc: flags & 1 == 0,
             length: usize::try_from(slots * bytes_a_slot).ok()?,
         })
     }
 
-    const fn samples(self) -> u64 {
+    pub(crate) const fn is_mpeg_one(self) -> bool {
+        matches!(self.stream.version, MpegVersion::One)
+    }
+
+    pub(crate) const fn samples(self) -> u64 {
         match (self.stream.layer, self.stream.version) {
             (MpegLayer::One, _) => 384,
             (MpegLayer::Two, _) | (MpegLayer::Three, MpegVersion::One) => 1_152,
@@ -173,7 +179,7 @@ impl FrameHeader {
         }
     }
 
-    const fn xing_at(self) -> Option<u64> {
+    pub(crate) const fn xing_at(self) -> Option<u64> {
         let side_info = match (self.stream.layer, self.stream.version, self.mono) {
             (MpegLayer::Three, MpegVersion::One, false) => 32,
             (MpegLayer::Three, MpegVersion::One, true)

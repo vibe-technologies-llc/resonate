@@ -149,6 +149,25 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   its last frame and decodes on (`past_the_readers_own_end`). `mpa::FrameHeader` is the one MPEG
   header parser (junk search too)
   (`a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_its_end`).
+- **MPEG audio and ADTS seek from marks, not from the first frame.** `framed::Framed` wraps
+  symphonia's `MpaReader` and `AdtsReader` (registered at `Tier::Preferred`), handing on their
+  packets with timestamps shifted into the opening reader's. A seek walks frame headers itself
+  (`Framing::walk` syncs as the reader does and passes over a Xing, Info or VBRI frame met
+  mid-stream as it does) from the latest mark at least `Framing::LEAD` short of the target (MPEG:
+  eight long frames, room for the bit reservoir), the reader's own position, or the first music
+  frame, whichever is latest; it reopens the inner reader at the newest frame that the target's
+  `main_data_begin` reaches no further back than and that `MpaReader::try_new`'s strict open would
+  keep (the next frame adjacent and alike), so the packets after the landing are the ones a walk
+  from the start hands out. No such frame: reopened at the opening and walked from the first
+  frame, as symphonia did. **Marks** are kept every `MARKED_EVERY_FRAMES` (32) frames, from walked
+  frames and from frames heard while playing (position summed from packet lengths, with the ADTS
+  header bytes `beside` each payload); where a seek finds the reader standing elsewhere than the
+  sum says (junk or a skipped note moved it), every heard mark since the last exact position goes.
+  A backward seek near the end reads about a second of frames, not the whole prefix
+  (`a_backward_seek_after_playing_reads_near_where_it_lands_not_from_the_first_frame`,
+  `a_backward_seek_into_mpeg_audio_hears_what_a_seek_from_a_fresh_open_hears`; symphonia's AAC
+  decoder keeps some state across `reset`, so ADTS is held to a drift bound, MP3 to equality). The
+  Xing table of contents is not read: a byte per percent of the length lands nowhere exact.
 - **`Timeline` holds where the music starts, not the priming length.** One
   `music_at: Timestamp`; playable frame -> container timestamp by adding to it: zero where the
   reader named the delay (symphonia negative PTS), else `Track::start_ts` plus scanned priming (Ogg
