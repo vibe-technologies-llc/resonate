@@ -183,11 +183,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   alone and a third is folded onto the two
 
 ## Later: Listen and recognition
-- *Open* on a recognised song hands the desktop whatever link Shazam or AudD answered, unchecked as
-  an `https://` page (Deezer's is held to its track pages)
-- A clip not silent but leaving no peaks (steady tone, sparse material) is still sent to Shazam
 - Listen records one clip and asks each service once; nothing listens again on a miss or follows a
-  stream from song to song. After the item above
+  stream from song to song
 - **Blocked on Shazam:** reached through an undocumented endpoint (`amp.shazam.com`); a change on
   its side stops recognition
 

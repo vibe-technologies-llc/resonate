@@ -312,12 +312,14 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
 - **Shazam is asked a signature, never audio.** `Shazam::recognise` posts `signature_of` the clip's
   mono mix with fresh `uuid` v4 ids, a zeroed location, UTC and this build's agent. Empty `matches`
   = nothing heard. The cover (`coverarthq`) comes from `AppleArtwork` only over https on
-  `mzstatic.com` or a subdomain (`shared::on_host`). The endpoint is undocumented, likeliest to
+  `mzstatic.com` or a subdomain (`shared::on_host`); the song's page only over https on
+  `shazam.com`, else `Heard::link` is `None`, so *Open* hands the desktop nothing else. The endpoint is undocumented, likeliest to
   change; `shazam_answers_a_clip_it_does_not_know_with_nothing_rather_than_a_refusal` is the live
   test that notices.
 - **AudD gets the clip itself, only with a token the listener typed**: mono mix as 16-bit WAVE in
   `multipart/form-data`, refusing a clip past `LARGEST_CLIP`. `status` other than `success` =
-  `Refused` with the service's error code; `null` result = nothing heard.
+  `Refused` with the service's error code; `null` result = nothing heard. `song_link` is kept only
+  over https on `lis.tn`, AudD's own page.
 - **A file nothing else can name is named by ear, where the listener said so.** `ByEar` is a
   `Fingerprints` registered after `AcoustId` wherever `online` is on, answering only while the
   shared `identify-by-sound` switch is on (`Fingerprints::answers`, weighed by

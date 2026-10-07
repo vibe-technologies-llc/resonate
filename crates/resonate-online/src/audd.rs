@@ -26,6 +26,7 @@ const PCM: u16 = 1;
 const MONO: u16 = 1;
 const SIXTEEN_BITS: u16 = 16;
 const PICTURES_SERVED_BY: &str = "mzstatic.com";
+const PAGES_SERVED_BY: &str = "lis.tn";
 
 #[derive(Deserialize)]
 struct Answer {
@@ -192,7 +193,9 @@ fn heard_in(
         isrc: isrc.as_deref().and_then(|isrc| Isrc::new(isrc).ok()),
         recording: recorded.and_then(|recorded| Mbid::new(&recorded.id).ok()),
         picture: None,
-        link: found.song_link,
+        link: found
+            .song_link
+            .filter(|url| on_host(url, PAGES_SERVED_BY).is_some()),
         by: service.clone(),
     };
     Ok(Some((heard, artwork)))
@@ -281,6 +284,14 @@ mod tests {
         assert_eq!(heard.link.as_deref(), Some("https://lis.tn/Warriors"));
         let artwork = artwork.expect("artwork");
         assert!(artwork.ends_with("600x600bb.jpg"), "{artwork}");
+    }
+
+    #[test]
+    fn a_link_off_audds_own_pages_is_not_taken() {
+        let elsewhere = RECOGNISED.replace("https://lis.tn/Warriors", "javascript:alert(1)");
+        let (heard, _) = answered(&elsewhere).expect("an answer").expect("a song");
+
+        assert_eq!(heard.link, None);
     }
 
     #[test]

@@ -29,6 +29,7 @@ const POWER_SCALE: f64 = (1 << 17) as f64;
 const QUIETEST_POWER: f64 = 1e-10;
 const SIXTEEN_BIT_SCALE: f64 = 32_768.0;
 const SIGNED_SECONDS_AT_MOST: f64 = 12.0;
+const FEWEST_PEAKS_A_SECOND: u64 = 1;
 
 const PEAKS_LOOKED_FOR_AFTER: u64 = 46;
 const EXAMINED_FRAMES_AGO: usize = 46;
@@ -58,6 +59,7 @@ const RESAMPLED_IN_BLOCKS: usize = 4_096;
 pub struct Signature {
     bytes: Vec<u8>,
     samples: u32,
+    peaks: usize,
 }
 
 impl Signature {
@@ -71,6 +73,15 @@ impl Signature {
 
     pub fn sample_ms(&self) -> u64 {
         u64::from(self.samples) * 1_000 / u64::from(SIGNED_AT.hz())
+    }
+
+    pub const fn peaks(&self) -> usize {
+        self.peaks
+    }
+
+    pub fn is_worth_asking(&self) -> bool {
+        let seconds = self.samples / SIGNED_AT.hz();
+        self.peaks > 0 && self.peaks as u64 >= u64::from(seconds) * FEWEST_PEAKS_A_SECOND
     }
 }
 
@@ -352,7 +363,11 @@ fn serialised(bands: &[Vec<Peak>; 4], samples: u32) -> Signature {
     if let Some(slot) = bytes.get_mut(4..8) {
         slot.copy_from_slice(&checksum.to_le_bytes());
     }
-    Signature { bytes, samples }
+    Signature {
+        bytes,
+        samples,
+        peaks: bands.iter().map(Vec::len).sum(),
+    }
 }
 
 const CRC32_POLYNOMIAL: u32 = 0xedb8_8320;
@@ -490,6 +505,28 @@ mod tests {
             (hertz - 440.0).abs() < 10.0
         });
         assert!(near_440, "no peak landed near 440 Hz");
+    }
+
+    #[test]
+    fn a_steady_tone_or_a_lone_click_leaves_too_few_peaks_to_be_worth_asking_about() {
+        let rate = SampleRate::HZ_48000;
+        let steady = signature_of(&tone(&[440.0], rate, 12.0), rate);
+        let mut clicked = vec![0.0; 12 * rate.hz() as usize];
+        clicked[6 * rate.hz() as usize] = 0.9;
+        let clicked = signature_of(&clicked, rate);
+        let played = signature_of(&notes(&[440.0, 2_000.0], rate, 12.0), rate);
+
+        assert!(!steady.is_worth_asking(), "{} peaks", steady.peaks());
+        assert!(!clicked.is_worth_asking(), "{} peaks", clicked.peaks());
+        assert!(played.is_worth_asking(), "{} peaks", played.peaks());
+        assert_eq!(
+            played.peaks(),
+            bands_of(&played)
+                .iter()
+                .map(|(_, peaks)| peaks.len())
+                .sum::<usize>()
+        );
+        assert!(!signature_of(&[], rate).is_worth_asking());
     }
 
     #[test]

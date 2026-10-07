@@ -55,6 +55,9 @@ analyse from their object). Library reaches `study` (enrichment) and `print` (mo
   pane). `signature_of` writes Shazam's signature from the documented format, not any client's
   source: mono, 16 kHz via `Resampler` at `Balanced`, at most `SIGNED_SECONDS_AT_MOST` from the
   middle, as a `data:audio/vnd.shazam.sig;base64,` URI. A steady tone signs as nothing.
+  `Signature::is_worth_asking` holds a signature to `FEWEST_PEAKS_A_SECOND` of what it signed:
+  `Shazam::signed` asks nothing about one under it (a steady tone, a lone click: nothing heard),
+  for Listen and `ByEar` alike.
 
 ## What the window drew is kept
 

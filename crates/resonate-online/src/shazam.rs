@@ -26,6 +26,7 @@ const ALBUM: &str = "Album";
 const RELEASED: &str = "Released";
 const SONG_SECTION: &str = "SONG";
 const PICTURES_SERVED_BY: &str = "mzstatic.com";
+const PAGES_SERVED_BY: &str = "shazam.com";
 const YEAR_DIGITS: usize = 4;
 
 #[derive(Serialize)]
@@ -156,6 +157,13 @@ impl Shazam {
         rate: SampleRate,
     ) -> crate::Result<Option<(Heard, Option<String>)>> {
         let signature = signature_of(mono, rate);
+        if !signature.is_worth_asking() {
+            tracing::debug!(
+                peaks = signature.peaks(),
+                "the clip left too few peaks for Shazam to match; not asked"
+            );
+            return Ok(None);
+        }
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis() as u64);
@@ -237,7 +245,10 @@ fn heard_in(answer: Option<Answer>, service: &SourceId) -> Option<(Heard, Option
         isrc: track.isrc.as_deref().and_then(|isrc| Isrc::new(isrc).ok()),
         recording: None,
         picture: None,
-        link: track.url.clone(),
+        link: track
+            .url
+            .clone()
+            .filter(|url| on_host(url, PAGES_SERVED_BY).is_some()),
         by: service.clone(),
     };
     Some((heard, cover))
@@ -276,6 +287,44 @@ mod tests {
         assert_eq!(heard.by, service());
         let cover = cover.expect("a cover");
         assert!(served_by_the_picture_host(&cover), "{cover}");
+    }
+
+    #[test]
+    fn a_link_off_shazams_own_pages_is_not_taken() {
+        let mut answer: Answer = serde_json::from_str(MATCHED).expect("a shazam answer");
+        if let Some(track) = answer.track.as_mut() {
+            track.url = Some("http://www.shazam.com/track/300945736".to_owned());
+        }
+        let (heard, _) = heard_in(Some(answer), &service()).expect("a match");
+
+        assert_eq!(heard.link, None);
+        for url in [
+            "file:///etc/passwd",
+            "https://shazam.com.example.org/track/1",
+            "https://example.org/www.shazam.com/track/1",
+        ] {
+            assert!(on_host(url, PAGES_SERVED_BY).is_none(), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_steady_tone_is_never_sent_to_be_matched() {
+        let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+        client.reach(false);
+        let shazam = Shazam::new(Arc::clone(&client));
+        let rate = SampleRate::HZ_48000;
+        let steady: Vec<f32> = (0..12 * rate.hz())
+            .map(|n| {
+                let at = f64::from(n) / f64::from(rate.hz());
+                (0.4 * (std::f64::consts::TAU * 440.0 * at).sin()) as f32
+            })
+            .collect();
+
+        assert!(matches!(shazam.signed(&steady, rate), Ok(None)));
+        assert!(matches!(
+            shazam.signed(&vec![0.1; steady.len()], rate),
+            Ok(None)
+        ));
     }
 
     #[test]
