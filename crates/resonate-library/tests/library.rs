@@ -19344,7 +19344,8 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
     assert_eq!(stood.tags.label.as_deref(), Some("Harvest"));
     assert!(stood.tags.compilation, "the compilation mark was lost");
 
-    let released = library.release_from_vault(&[])?;
+    let key = library.vault_objects()?[0].key;
+    let released = library.release_the_rows_of(&[key])?;
     assert_eq!(released.released, 1);
     assert!(
         library

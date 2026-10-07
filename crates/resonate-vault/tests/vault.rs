@@ -537,6 +537,27 @@ fn photographed(width: u32, height: u32) -> CoverArt {
 }
 
 #[test]
+fn a_cover_reads_back_until_its_bytes_are_damaged_whichever_way_it_was_kept() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+
+    for art in [photographed(96, 64), picture(33, 21)] {
+        let held = vault.keep_cover(&art).expect("a kept cover");
+        assert!(vault.verify_cover(&held.path).expect("a readable cover"));
+
+        let mut bytes = fs::read(&held.path).expect("the kept cover");
+        let middle = bytes.len() / 2;
+        bytes.truncate(middle);
+        fs::write(&held.path, &bytes).expect("a writable cover");
+        assert!(
+            !vault.verify_cover(&held.path).expect("a readable file"),
+            "a cut cover read back: {}",
+            held.path.display()
+        );
+    }
+}
+
+#[test]
 fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
     let tree = Tree::new();
     let vault = tree.vault();

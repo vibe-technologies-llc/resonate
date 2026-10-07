@@ -2709,9 +2709,18 @@ impl Library {
             });
         }
 
-        let released = self.inner.write(|transaction| {
+        let released = self.released(&standing)?;
+
+        Ok(Released {
+            released,
+            stranded: stranded.len() as u64,
+        })
+    }
+
+    fn released(&self, standing: &[(i64, PathBuf)]) -> Result<u64> {
+        self.inner.write(|transaction| {
             let mut released = 0;
-            for (id, _) in &standing {
+            for (id, _) in standing {
                 released += transaction
                     .execute(
                         "UPDATE tracks SET vault_key = NULL, vault_path = NULL, vault_bits = NULL
@@ -2724,11 +2733,46 @@ impl Library {
                     .map_err(|source| Error::store(StoreOp::Delete, source))?;
             }
             Ok(released as u64)
-        })?;
+        })
+    }
+
+    pub fn release_the_rows_of(&self, keys: &[VaultKey]) -> Result<Released> {
+        let _walk = self.walk_the_tree()?;
+        let mut vaulted: Vec<(i64, PathBuf)> = Vec::new();
+        for key in keys {
+            let named = key.to_string();
+            vaulted.extend(self.inner.read(|connection| {
+                rows(
+                    connection,
+                    "SELECT id, path FROM tracks WHERE vault_key = ?1",
+                    vec![Value::Text(named.clone())],
+                    |row| Ok(Ok((row.get(0)?, PathBuf::from(row.get::<_, String>(1)?)))),
+                )
+            })?);
+        }
+        let (standing, stranded): (Vec<_>, Vec<_>) =
+            vaulted.into_iter().partition(|(_, path)| path.exists());
+
+        let released = self.released(&standing)?;
 
         Ok(Released {
             released,
             stranded: stranded.len() as u64,
+        })
+    }
+
+    pub fn let_go_of_vault_covers(&self, keys: &[VaultKey]) -> Result<u64> {
+        self.inner.write(|transaction| {
+            let mut let_go = 0;
+            for key in keys {
+                let_go += transaction
+                    .execute(
+                        "UPDATE albums SET cover_key = NULL, cover_path = NULL WHERE cover_key = ?1",
+                        params![key.to_string()],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Update, source))?;
+            }
+            Ok(let_go as u64)
         })
     }
 

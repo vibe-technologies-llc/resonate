@@ -598,6 +598,28 @@ impl Vault {
         }
     }
 
+    pub fn verify_cover(&self, path: &Path) -> Result<bool> {
+        self.inside(path)?;
+        if !path.is_file() {
+            return Err(Error::ObjectGone {
+                path: path.to_owned(),
+            });
+        }
+        let Some(key) = named(path) else {
+            return Ok(false);
+        };
+        let bytes = self.read_inside(path)?;
+
+        Ok(match kept_as_it_came(path) {
+            Some(format) => {
+                let mut digest = Digest::default();
+                digest.note(&bytes);
+                digest.settled() == key && cover::size_of(&bytes, Some(format)).is_ok()
+            }
+            None => cover::pixels_of_jxl(&bytes).is_ok(),
+        })
+    }
+
     pub fn forget(&self, path: &Path) -> Result<bool> {
         self.inside(path)?;
         if let Some(key) = named(path) {

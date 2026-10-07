@@ -14,7 +14,7 @@ const WRITES_SHOWN: usize = 20;
 
 pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()> {
     if args.verify {
-        return verify(library, vault);
+        return verify(library, vault, args.apply);
     }
     if args.prune {
         return prune(library, args);
@@ -214,9 +214,10 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
     told
 }
 
-fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
+fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
     let objects = library.vault_objects()?;
-    if objects.is_empty() {
+    let covers = vault.covers()?;
+    if objects.is_empty() && covers.is_empty() {
         said!("the vault holds nothing to weigh");
         return Ok(());
     }
@@ -240,11 +241,27 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
         if reads_back {
             held += 1;
         } else {
-            moved.push(object.path.clone());
+            moved.push((object.key, object.path.clone()));
         }
     }
 
-    for path in &moved {
+    let mut covers_held = 0_u64;
+    let mut covers_moved = Vec::new();
+    for cover in &covers {
+        match vault.verify_cover(&cover.path) {
+            Ok(true) => covers_held += 1,
+            Ok(false) => covers_moved.push((cover.key, cover.path.clone())),
+            Err(error) if vault.failed_itself(&error) => {
+                unreached.push((cover.path.clone(), error));
+            }
+            Err(error) => {
+                tracing::debug!(%error, path = %cover.path.display(), "a vault cover failed as it was read back");
+                covers_moved.push((cover.key, cover.path.clone()));
+            }
+        }
+    }
+
+    for (_, path) in moved.iter().chain(&covers_moved) {
         said!("did not read back as what went in: {}", path.display());
     }
     for (path, error) in &unreached {
@@ -254,12 +271,41 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
         );
     }
     said!(
-        "weighed {} | held {held} | moved {} | unreached {}",
+        "weighed {} | held {held} | moved {} | covers weighed {} | covers held {covers_held} | \
+         covers moved {} | unreached {}",
         objects.len(),
         moved.len(),
+        covers.len(),
+        covers_moved.len(),
         unreached.len()
     );
-    match (moved.len() as u64, unreached.len() as u64) {
+
+    let failing = moved.len() + covers_moved.len();
+    if failing > 0 && mending {
+        let keys: Vec<_> = moved.iter().map(|(key, _)| *key).collect();
+        let released = library.release_the_rows_of(&keys)?;
+        let covers: Vec<_> = covers_moved.iter().map(|(key, _)| *key).collect();
+        let let_go = library.let_go_of_vault_covers(&covers)?;
+        said!(
+            "mended: tracks pointed back at their own files {} | tracks the vault holds the only \
+             copy of {} | albums letting go of a cover {let_go}",
+            released.released,
+            released.stranded
+        );
+        return match unreached.len() as u64 {
+            0 => Ok(()),
+            unreached => Err(Error::ObjectsUnverified {
+                moved: 0,
+                unreached,
+            }),
+        };
+    }
+    if failing > 0 {
+        said!(
+            "nothing was mended; --apply points each track back at its own file and lets the covers go"
+        );
+    }
+    match (failing as u64, unreached.len() as u64) {
         (0, 0) => Ok(()),
         (moved, unreached) => Err(Error::ObjectsUnverified { moved, unreached }),
     }

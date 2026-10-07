@@ -500,16 +500,18 @@ pub struct VaultArgs {
 
     #[arg(
         long,
-        conflicts_with = "verify",
-        help = "Make the import, the release or the prune rather than printing it"
+        help = "Make the import, the release or the prune rather than printing it; after \
+                --verify, mend what did not read back"
     )]
     pub apply: bool,
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "prune", "apply", "roots", "at_most"],
-        help = "Decode every object the vault holds and weigh what comes back against what \
-                went in"
+        conflicts_with_all = ["import", "prune", "roots", "at_most"],
+        help = "Decode every object and cover the vault holds and weigh what comes back against \
+                what went in. With --apply, point each track of an object that did not read back \
+                at its own file, to be weighed again by the next import, and let every album go \
+                of a cover that did not"
     )]
     pub verify: bool,
 

@@ -116,7 +116,13 @@ gives them no type). Decoders: `audio.md`.
   `none_failed`, exit 1, after the summary (scan: after its lookup). `vault --verify`:
   `ObjectsUnverified { moved, unreached }`: an object that will not read back is noted unvalidated;
   one the vault cannot reach (`Vault::failed_itself`: the file gone as `ObjectGone`, the drive
-  unmounted) is said apart and left as the catalog had it. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
+  unmounted) is said apart and left as the catalog had it. Covers are weighed too
+  (`Vault::verify_cover`: one kept as it came by its digest and a readable size, a JXL by decoding
+  it whole). `--verify --apply` mends what did not read back: each track of such an object is
+  pointed back at its own file where that is still there (`Library::release_the_rows_of`, weighed
+  again by the next `--import`; one the vault holds the only copy of is counted and left), and every
+  album naming such a cover lets it go (`Library::let_go_of_vault_covers`), then the run ends well
+  unless something went unreached. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
   failures. A cancelled scan asks the reference nothing after. Handles are one
   `resonate_library::PassHandle` (`ScanHandle` etc. aliases); a dying thread answers
   `Error::Stopped { pass }` after the panic message goes to an error record (`pass::what_it_said`),
