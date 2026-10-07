@@ -1554,7 +1554,9 @@ is never named.
   is what the binary hands in, a `config.toml` key the window draws and obeys, so `LibraryModel`
   holds it beside `online` and `after_scan`. The *Resuming* card is a Library group, not Online: it
   writes to the catalog, no network. Off = `Library::forget_resumption` at once, not merely ceasing
-  to write (a queue left behind came back when the setting was turned on again).
+  to write (a queue left behind came back when the setting was turned on again). Each write runs
+  on a background task that first awaits the one before it (`keep_after_what_was_kept`): replacing
+  the task would cancel a queue write still waiting for a thread behind the place write after it.
 - **Tab, restore size and Settings category each have a memory switch.** `remember-tab`,
   `remember-window-size`, `remember-settings-category` default on and ride into `ResonateApp` via
   `Stored`. The tab is the pane `in_front` names (a scoped album is remembered as Albums); a tab

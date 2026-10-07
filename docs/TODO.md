@@ -6,9 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- The queue is kept for the next run by tasks each replacing the last in `keep_the_queue`: a queue
-  write still waiting for a thread is cancelled by the place write behind it; the next run resumes
-  an older queue
 - MPRIS `Next` on the last row of a non-repeating queue stops playback and ends the queue though
   `CanGoNext` says false and the spec makes the call do nothing; `Previous` on the first row
   restarts the track likewise

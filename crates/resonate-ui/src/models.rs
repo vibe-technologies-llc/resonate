@@ -4431,7 +4431,7 @@ impl LibraryModel {
         self.resume = resume;
         if !resume {
             let library = Arc::clone(&self.library);
-            self._kept = cx.background_executor().spawn(async move {
+            self.keep_after_what_was_kept(cx, move || {
                 if let Err(error) = library.forget_resumption() {
                     tracing::warn!(%error, "what was kept of a queue could not be discarded");
                 }
@@ -4453,7 +4453,7 @@ impl LibraryModel {
     pub fn keep_the_queue(&mut self, keep: Keep, cx: &Context<Self>) {
         let library = Arc::clone(&self.library);
 
-        self._kept = cx.background_executor().spawn(async move {
+        self.keep_after_what_was_kept(cx, move || {
             let kept = match keep {
                 Keep::Queue(resumption) => library.keep_resumption(&resumption),
                 Keep::Order(reordered) => library.keep_order(&reordered),
@@ -4462,6 +4462,18 @@ impl LibraryModel {
             if let Err(error) = kept {
                 tracing::warn!(%error, "the queue was not kept for the next run");
             }
+        });
+    }
+
+    fn keep_after_what_was_kept(
+        &mut self,
+        cx: &Context<Self>,
+        keep: impl FnOnce() + Send + 'static,
+    ) {
+        let before = std::mem::replace(&mut self._kept, Task::ready(()));
+        self._kept = cx.background_executor().spawn(async move {
+            before.await;
+            keep();
         });
     }
 
