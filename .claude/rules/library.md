@@ -1321,8 +1321,14 @@ rows read via `Player::media` like any unscanned row.
   *Unheld* = no album's `release_group` is its mbid (`unheld_by_any_album!` in `db.rs`, via
   `albums_by_release_group`), so a landed pressing or thin group leaves the list. **A single is held
   wherever its song is**: title kept as `artist_releases.song` (`store::words_of`: letter fold, each
-  non-letter-or-digit run one space), weighed by the macro against `words_of` of every title of the
-  artist's tracks (deterministic SQLite function registered per connection by `schema::configure`):
+  non-letter-or-digit run one space), weighed by the macro against `tracks.title_words`, the
+  `words_of` of each track's title kept beside it, looked up by `tracks_by_artist_and_words`
+  (`words_of` is the deterministic SQLite function `schema::configure` registers per connection;
+  the writer's temp triggers `track_worded`/`track_reworded` keep the column as a title is written,
+  `store::word_the_titles` fills it once on the open after the step adding it, so the Missing pane's
+  counts, listing and due lookups no longer fold an artist's every title per release, and
+  `title:=` reads it too;
+  `a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them`):
   *Fearless* on the album holds the *Fearless* single however punctuated; only a single whose song
   is nowhere is listed
   (`a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`,

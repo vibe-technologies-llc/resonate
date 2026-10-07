@@ -210,7 +210,7 @@ macro_rules! unheld_by_any_album {
         "NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)
          AND NOT EXISTS (SELECT 1 FROM tracks t
                           WHERE r.song IS NOT NULL AND t.artist_id = r.artist_id
-                            AND words_of(t.title) = r.song)
+                            AND t.title_words = r.song)
          AND NOT EXISTS (SELECT 1 FROM dismissed_releases d
                           WHERE d.artist_id = r.artist_id AND d.mbid = r.mbid)"
     };
@@ -545,7 +545,7 @@ const SONG_HELD_NOWHERE: &str = concat!(
     "
                     AND NOT EXISTS (SELECT 1 FROM tracks t
                                      WHERE t.artist_id = r.artist_id
-                                       AND words_of(t.title) = s.words)"
+                                       AND t.title_words = s.words)"
 );
 
 const SONGS_IN_ORDER: &str = " ORDER BY s.released IS NULL, s.released, s.release_group, s.disc,
@@ -566,7 +566,7 @@ const MISSING_FROM_AN_ARTISTS_ALBUMS: &str =
                          WHERE d.album_id = rt.album_id AND d.disc = rt.disc
                            AND d.position = rt.position AND d.folded = rt.folded)
         AND NOT EXISTS (SELECT 1 FROM tracks t
-                         WHERE t.artist_id = a.artist_id AND words_of(t.title) = words_of(rt.title))
+                         WHERE t.artist_id = a.artist_id AND t.title_words = words_of(rt.title))
       ORDER BY a.id, rt.disc, rt.position";
 
 const ALBUMS_NOT_HELD_BY_AN_ARTIST: &str =
@@ -580,7 +580,7 @@ const ALBUMS_NOT_HELD_BY_AN_ARTIST: &str =
                            AND EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id))
         AND NOT EXISTS (SELECT 1 FROM tracks t
                          WHERE r.song IS NOT NULL AND t.artist_id = r.artist_id
-                           AND words_of(t.title) = r.song)
+                           AND t.title_words = r.song)
         AND NOT EXISTS (SELECT 1 FROM dismissed_releases d
                          WHERE d.artist_id = r.artist_id AND d.mbid = r.mbid)
       ORDER BY r.first_released IS NULL, r.first_released, r.title COLLATE NOCASE";
@@ -1096,6 +1096,14 @@ CREATE TEMP TRIGGER genre_renamed AFTER UPDATE ON main.artist_genres
 BEGIN UPDATE temp.names_moved SET times = times + 1; END;
 ";
 
+const TITLES_WORDED_TRIGGERS: &str = "
+CREATE TEMP TRIGGER track_worded AFTER INSERT ON main.tracks
+BEGIN UPDATE main.tracks SET title_words = words_of(NEW.title) WHERE id = NEW.id; END;
+CREATE TEMP TRIGGER track_reworded AFTER UPDATE OF title ON main.tracks
+WHEN OLD.title IS NOT NEW.title OR NEW.title_words IS NULL
+BEGIN UPDATE main.tracks SET title_words = words_of(NEW.title) WHERE id = NEW.id; END;
+";
+
 fn plans_moved_triggers() -> String {
     let mut sql = format!(
         "CREATE TEMP TABLE {PLANS_MOVED} (
@@ -1352,8 +1360,12 @@ impl Library {
     fn build(source: Source, vault: Option<Arc<Vault>>) -> Result<Self> {
         let mut writer = connect(&source, schema::Role::Writing)?;
         schema::lay_out(&writer)?;
+        writer
+            .execute_batch(TITLES_WORDED_TRIGGERS)
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
         store::reconcile_artists(&mut writer)?;
         store::refold_the_index(&mut writer)?;
+        store::word_the_titles(&mut writer)?;
         store::settle_the_credits_if_owed(&mut writer)?;
 
         let named = Arc::new(AtomicU64::new(0));
@@ -3982,7 +3994,7 @@ impl Library {
                 AND NOT EXISTS (SELECT 1 FROM artist_releases r
                                   JOIN tracks t ON t.artist_id = r.artist_id
                                  WHERE r.mbid = s.release_group
-                                   AND words_of(t.title) = s.words)
+                                   AND t.title_words = s.words)
               ORDER BY s.disc, s.position",
             songs::SONG_COLUMNS
         );
@@ -5505,7 +5517,7 @@ fn named(word: &Word) -> Option<Narrowing> {
     Some(Narrowing { sql, binds })
 }
 
-const TITLED_AS_A_WHOLE: &str = "words_of(tracks.title) = ?";
+const TITLED_AS_A_WHOLE: &str = "tracks.title_words = ?";
 
 const FILED_UNDER_A_WHOLE_GENRE: &str = "(words_of(tracks.genre) = ?
       OR tracks.artist_id IN (SELECT artist_id FROM artist_genres WHERE words_of(name) = ?))";
@@ -7245,6 +7257,70 @@ mod tests {
                     .map_err(|source| Error::store(StoreOp::Query, source))
             })
             .expect("the planner answers for a listing it can prepare")
+    }
+
+    #[test]
+    fn a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let words = |library: &Library| -> Option<String> {
+            library
+                .inner
+                .read(|connection| {
+                    connection
+                        .query_row("SELECT title_words FROM tracks", [], |row| row.get(0))
+                        .map_err(|source| Error::store(StoreOp::Query, source))
+                })
+                .expect("the track reads back")
+        };
+
+        library
+            .inner
+            .write(|transaction| {
+                transaction
+                    .execute_batch(
+                        "INSERT INTO artists (id, key, name) VALUES (1, 'ada', 'Ada');
+                         INSERT INTO tracks (root_id, path, title, artist, artist_id, sample_rate,
+                                             channels, sample_format, codec, file_size, modified,
+                                             added, seen)
+                         VALUES (NULL, '/a.flac', 'Wish You Were Here!', 'Ada', 1, 44100, 2, 1, 1,
+                                 1, 1, 1, 1);",
+                    )
+                    .map_err(|source| Error::store(StoreOp::Insert, source))
+            })
+            .expect("a track is written");
+        assert_eq!(words(&library).as_deref(), Some("wish you were here"));
+
+        library
+            .inner
+            .write(|transaction| {
+                transaction
+                    .execute("UPDATE tracks SET title = 'Hey You'", [])
+                    .map(drop)
+                    .map_err(|source| Error::store(StoreOp::Update, source))
+            })
+            .expect("the track is renamed");
+        assert_eq!(words(&library).as_deref(), Some("hey you"));
+
+        for sql in [MISSING_FROM_AN_ARTISTS_ALBUMS, ALBUMS_NOT_HELD_BY_AN_ARTIST] {
+            let steps: Vec<String> = library
+                .inner
+                .read(|connection| {
+                    let mut statement = connection
+                        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                    statement
+                        .query_map([1_i64], |row| row.get::<_, String>(3))
+                        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                        .map_err(|source| Error::store(StoreOp::Query, source))
+                })
+                .expect("the planner answers");
+            assert!(
+                steps
+                    .iter()
+                    .any(|step| step.contains("tracks_by_artist_and_words")),
+                "a held song is looked for title by title: {steps:?}"
+            );
+        }
     }
 
     #[test]

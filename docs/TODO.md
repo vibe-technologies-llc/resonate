@@ -61,8 +61,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   the window
 - A first scan reads each album's embedded cover inside the transaction holding the catalog's write
   lock: every other write waits behind file reads
-- The Missing pane's counts, listing and due lookups fold every track title of an artist for each
-  release, on each narrowing key
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first; the Xing table of
   contents is never used
 - **Blocked on gpui:** every frame the visualiser or lyrics pane asks for is a whole-window GPU

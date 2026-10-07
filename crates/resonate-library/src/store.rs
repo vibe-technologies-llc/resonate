@@ -1127,6 +1127,30 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
     Ok(removed as u64)
 }
 
+pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
+    let wanted: bool = queried(
+        connection,
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'title_words_wanted')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if !wanted {
+        return Ok(());
+    }
+
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    tx.execute_batch(
+        "UPDATE tracks SET title_words = words_of(title) WHERE title_words IS NULL;
+         DROP TABLE IF EXISTS title_words_wanted;",
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.commit()
+        .map_err(|source| Error::store(StoreOp::Transaction, source))
+}
+
 pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
     let owed: bool = connection
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))

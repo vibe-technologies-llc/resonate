@@ -398,6 +398,9 @@ const MIGRATIONS: &[&str] = &[
          ahead_ms   INTEGER NOT NULL,
          PRIMARY KEY (path, span_start)
      ) STRICT, WITHOUT ROWID;",
+    "ALTER TABLE tracks ADD COLUMN title_words TEXT;
+     CREATE INDEX tracks_by_artist_and_words ON tracks(artist_id, title_words);
+     CREATE TABLE title_words_wanted (id INTEGER PRIMARY KEY) STRICT;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
