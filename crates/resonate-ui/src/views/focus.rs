@@ -11,7 +11,11 @@ pub(crate) struct Controls {
 
 impl Controls {
     pub(crate) fn opening(&self) {
-        self.drawn.borrow_mut().clear();
+        let mut drawn = self.drawn.borrow_mut();
+        self.handles
+            .borrow_mut()
+            .retain(|named, _| drawn.contains(named));
+        drawn.clear();
     }
 
     pub(crate) fn at(&self, named: impl Into<SharedString>, cx: &App) -> FocusHandle {
@@ -25,11 +29,15 @@ impl Controls {
             .clone()
     }
 
-    pub(crate) fn forget_what_has_gone(&self) {
-        let drawn = self.drawn.borrow();
+    pub(crate) fn holding(&self, named: impl Into<SharedString>, cx: &App) -> FocusHandle {
+        let named = named.into();
+        self.drawn.borrow_mut().insert(named.clone());
+
         self.handles
             .borrow_mut()
-            .retain(|named, _| drawn.contains(named));
+            .entry(named)
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
     }
 
     pub(crate) fn holds_the_caret(&self, window: &Window) -> bool {

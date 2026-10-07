@@ -16,8 +16,8 @@ mod tidal;
 use std::sync::atomic::Ordering;
 
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, FontWeight, SharedString, Stateful, Window, div,
-    prelude::*, px, relative, rgb,
+    AnyElement, Context, Div, FocusHandle, FontWeight, MouseButton, SharedString, Stateful, Window,
+    div, prelude::*, px, relative, rgb,
 };
 use resonate_core::Appearance;
 use resonate_library::DEFAULT_LAYOUT;
@@ -90,8 +90,6 @@ fn said_under<T: Choice>(held: T) -> SharedString {
 
 impl RootView {
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        self.controls.opening();
-
         let narrowing = Narrowing::of(self.finding.read(cx).text());
         let category = self.settings_category;
         let standing = self.standing(cx);
@@ -100,7 +98,7 @@ impl RootView {
         let footer = (!narrowing.narrows() && category.groups().any(can_be_put_back))
             .then(|| self.reset(category, cx));
 
-        let pane = div()
+        div()
             .flex()
             .flex_col()
             .flex_1()
@@ -130,10 +128,7 @@ impl RootView {
                     )),
             )
             .when_some(footer, Div::child)
-            .into_any_element();
-
-        self.controls.forget_what_has_gone();
-        pane
+            .into_any_element()
     }
 
     fn settings_heading(
@@ -750,6 +745,25 @@ impl RootView {
     ) -> Stateful<Div> {
         let handle = self.controls.at(named, cx);
         Self::ringed(&handle, control, press, cx)
+    }
+
+    pub(crate) fn in_the_pane_ring(
+        &self,
+        mut control: Stateful<Div>,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let named = control
+            .interactivity()
+            .element_id
+            .as_ref()
+            .map_or_else(SharedString::default, |id| {
+                SharedString::from(id.to_string())
+            });
+        let handle = self.controls.at(named, cx);
+        Self::ringed(&handle, control, press, cx)
+            .focus(|control| control.opacity(1.0))
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
     }
 
     pub(crate) fn ringed(

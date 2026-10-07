@@ -18,7 +18,7 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::{OPEN_ARTIST_HINT, ROW_CONTROLS, row_controls},
+        browser::{OPEN_ARTIST_HINT, ROW_CONTROLS},
         hint,
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
@@ -740,7 +740,7 @@ impl RootView {
                                         })
                                         .child(listing::length_cell(drawn.length))
                                         .child(
-                                            row_controls()
+                                            this.row_controls(("queue-controls", index), cx)
                                                 .child(this.mover(
                                                     "raise",
                                                     Step::Above,
@@ -767,7 +767,7 @@ impl RootView {
                                                     move || Held::of(Arc::clone(&holding)),
                                                     cx,
                                                 ))
-                                                .child(
+                                                .child(this.in_the_pane_ring(
                                                     kit::icon_button(
                                                         ("remove", index),
                                                         Icon::Close,
@@ -776,12 +776,13 @@ impl RootView {
                                                         } else {
                                                             REMOVE_REACHED_HINT
                                                         },
-                                                    )
-                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                    ),
+                                                    move |this, _, cx| {
                                                         cx.stop_propagation();
                                                         this.drop_rows(Shift::Queue, acting_on, cx);
-                                                    })),
-                                                ),
+                                                    },
+                                                    cx,
+                                                )),
                                         )
                                         .on_click(cx.listener(
                                             move |this, event: &ClickEvent, _, cx| {
@@ -966,85 +967,77 @@ impl RootView {
                             .child(hint::explains("queue-moving", MOVING_HINT))
                             .when(queued, |bar| {
                                 bar.child(self.orders_a_listing("order-queue", cx))
-                                    .child(
+                                    .child(self.in_the_pane_ring(
                                         kit::button(
                                             "clear-queue",
                                             Some(Icon::Discard),
                                             "Clear",
                                             CLEAR_HINT,
                                             Tone::Ghost,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| {
-                                                let queued = this.player.read(cx).queue();
-                                                let Some(last) = queued.len().checked_sub(1) else {
-                                                    return;
-                                                };
-                                                this.drop_rows(
-                                                    Shift::Queue,
-                                                    Span::between(0, last),
-                                                    cx,
-                                                );
-                                            }),
                                         ),
-                                    )
-                                    .child(
+                                        |this, _, cx| {
+                                            let queued = this.player.read(cx).queue();
+                                            let Some(last) = queued.len().checked_sub(1) else {
+                                                return;
+                                            };
+                                            this.drop_rows(
+                                                Shift::Queue,
+                                                Span::between(0, last),
+                                                cx,
+                                            );
+                                        },
+                                        cx,
+                                    ))
+                                    .child(self.in_the_pane_ring(
                                         kit::button(
                                             "queue-to-playlist-all",
                                             Some(Icon::Plus),
                                             "Save as a playlist",
                                             QUEUED_HINT,
                                             Tone::Outlined,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                let queued: Arc<[Cut]> = this
-                                                    .player
-                                                    .read(cx)
-                                                    .queue()
-                                                    .iter()
-                                                    .map(queued_cut)
-                                                    .collect();
-                                                this.hold_for_a_playlist(
-                                                    Held::of(queued),
-                                                    window,
-                                                    cx,
-                                                );
-                                            }),
                                         ),
-                                    )
+                                        |this, window, cx| {
+                                            let queued: Arc<[Cut]> = this
+                                                .player
+                                                .read(cx)
+                                                .queue()
+                                                .iter()
+                                                .map(queued_cut)
+                                                .collect();
+                                            this.hold_for_a_playlist(Held::of(queued), window, cx);
+                                        },
+                                        cx,
+                                    ))
                             })
                             .when(taken_out.is_some(), |bar| {
-                                bar.child(
+                                bar.child(self.in_the_pane_ring(
                                     kit::button(
                                         "put-the-queue-back",
                                         Some(Icon::Undo),
                                         "Put back",
                                         puts_back(taken_out),
                                         Tone::Ghost,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.put_the_queue_back(cx);
-                                        },
-                                    )),
-                                )
+                                    ),
+                                    |this, _, cx| {
+                                        this.put_the_queue_back(cx);
+                                    },
+                                    cx,
+                                ))
                             })
                             .when(put_back.is_some(), |bar| {
-                                bar.child(
+                                bar.child(self.in_the_pane_ring(
                                     kit::button(
                                         "take-the-queue-out-again",
                                         Some(Icon::Redo),
                                         "Take out again",
                                         takes_out_again(put_back),
                                         Tone::Ghost,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.take_the_queue_out_again(cx);
-                                        },
-                                    )),
-                                )
+                                    ),
+                                    |this, _, cx| {
+                                        this.take_the_queue_out_again(cx);
+                                    },
+                                    cx,
+                                ))
                             }),
                     ),
             )

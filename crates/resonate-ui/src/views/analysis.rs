@@ -196,16 +196,17 @@ impl RootView {
             .update(cx, |model, cx| model.spectrogram(stops, cx));
         let plotted = self.analysis.read(cx).plotted.clone();
         let taking = hearing.leads().then(|| {
-            div().flex().pt_2().child(
+            div().flex().pt_2().child(self.in_the_pane_ring(
                 kit::button(
                     "take-the-heard-name",
                     Some(Icon::Check),
                     TAKE_THE_NAME,
                     TAKE_THE_NAME_HINT,
                     kit::Tone::Outlined,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.take_the_heard_name(cx))),
-            )
+                ),
+                |this, _, cx| this.take_the_heard_name(cx),
+                cx,
+            ))
         });
         let heard = heard_card(hearing, recognises).children(taking);
         let (leading, trailing) = if hearing.leads() {

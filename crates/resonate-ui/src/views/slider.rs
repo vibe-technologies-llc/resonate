@@ -1,12 +1,18 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, Bounds, Context, Div, Length, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, SharedString, canvas, div, prelude::*, px, relative, rgb,
+    AnyElement, Bounds, Context, Div, KeyContext, Length, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, canvas, div, prelude::*, px,
+    relative, rgb,
 };
 use resonate_core::TrackId;
 
-use crate::{RootView, theme, views::kit};
+use crate::{
+    RootView,
+    app::{CONTROL_CONTEXT, RAIL_CONTEXT, RailBack, RailOn, seek_step},
+    theme,
+    views::{kit, root::VOLUME_STEP},
+};
 
 const RAIL_GROUP: &str = "rail";
 
@@ -34,6 +40,12 @@ impl Handle {
     const fn fills_its_row(self) -> bool {
         matches!(self, Self::Seek)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Toward {
+    On,
+    Back,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -172,6 +184,17 @@ impl RootView {
         }
     }
 
+    fn step_the_rail(&mut self, handle: Handle, toward: Toward, cx: &mut Context<Self>) {
+        let sign = match toward {
+            Toward::On => 1,
+            Toward::Back => -1,
+        };
+        match handle {
+            Handle::Seek => self.seek_by(sign * seek_step(), cx),
+            Handle::Volume => self.volume_by(sign as f32 * VOLUME_STEP, cx),
+        }
+    }
+
     pub(crate) fn pointer_left_the_seek_rail(&mut self, cx: &mut Context<Self>) {
         if self.seek_pointed.take().is_some() {
             cx.notify();
@@ -187,9 +210,22 @@ impl RootView {
     ) -> AnyElement {
         let painted = self.rail_of(handle).painted.clone();
         let held = self.grabbed_fraction(handle).is_some();
+        let focus = self.standing_controls.at(handle.id(), cx);
 
         div()
             .id(handle.id())
+            .track_focus(&focus)
+            .key_context(
+                KeyContext::parse(&format!("{CONTROL_CONTEXT} {RAIL_CONTEXT}")).unwrap_or_default(),
+            )
+            .on_action(cx.listener(move |this, _: &RailOn, _, cx| {
+                this.step_the_rail(handle, Toward::On, cx);
+            }))
+            .on_action(cx.listener(move |this, _: &RailBack, _, cx| {
+                this.step_the_rail(handle, Toward::Back, cx);
+            }))
+            .rounded_md()
+            .focus(|rail| rail.bg(theme::tinted(theme::accent(), 0x14)))
             .group(RAIL_GROUP)
             .flex()
             .when_else(
@@ -213,8 +249,9 @@ impl RootView {
             })
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     cx.stop_propagation();
+                    window.prevent_default();
                     this.grab(handle, event.position, cx);
                 }),
             )

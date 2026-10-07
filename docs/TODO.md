@@ -52,8 +52,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   (zed #62455)
 
 ## Keyboard and accessibility
-- Heading buttons and every row control (favourite star, ✕, pin) are no tab stops; the seek and
-  volume rails are reached only by their keys
+- The marks opening a card or menu where pressed (an album's and artist's info mark, a playlist's
+  ⋯), the order chips under a heading and the inspector's graph switch are no tab stops
 - A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row alone;
   nothing adds a row with Control
 - **Blocked on gpui:** nothing is exposed to a screen reader: published gpui 0.2.2 carries no

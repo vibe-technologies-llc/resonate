@@ -280,17 +280,20 @@ impl RootView {
     fn bring_back(&self, dismissed: Missing, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let many = dismissed.tracks + dismissed.releases;
         (many > 0).then(|| {
-            kit::button(
-                "bring-back-dismissed",
-                Some(Icon::Undo),
-                format!("Bring back {many} dismissed"),
-                BRING_BACK_HINT,
-                Tone::Ghost,
+            self.in_the_pane_ring(
+                kit::button(
+                    "bring-back-dismissed",
+                    Some(Icon::Undo),
+                    format!("Bring back {many} dismissed"),
+                    BRING_BACK_HINT,
+                    Tone::Ghost,
+                ),
+                |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.bring_back_dismissed(cx));
+                },
+                cx,
             )
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.library
-                    .update(cx, |library, cx| library.bring_back_dismissed(cx));
-            }))
         })
     }
 
@@ -319,21 +322,20 @@ impl RootView {
                 row.child(kit::badge(kind, theme::muted()))
             })
             .child(listing::length_cell(SharedString::from(year)).text_color(rgb(theme::faint())))
-            .child(
-                controls_place().child(
-                    kit::icon_button(
-                        ("dismiss-release", index),
-                        Icon::Close,
-                        DISMISS_RELEASE_HINT,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let release = mbid.clone();
-                        this.library.update(cx, |library, cx| {
-                            library.dismiss_release(artist, release, cx);
-                        });
-                    })),
+            .child(controls_place().child(self.in_the_pane_ring(
+                kit::icon_button(
+                    ("dismiss-release", index),
+                    Icon::Close,
+                    DISMISS_RELEASE_HINT,
                 ),
-            )
+                move |this, _, cx| {
+                    let release = mbid.clone();
+                    this.library.update(cx, |library, cx| {
+                        library.dismiss_release(artist, release, cx);
+                    });
+                },
+                cx,
+            )))
     }
 
     fn missing_tabs(
@@ -343,15 +345,16 @@ impl RootView {
         releases: usize,
         cx: &mut Context<Self>,
     ) -> Div {
-        let tab = |shown: MissingShows,
-                   label: &'static str,
-                   count: usize,
-                   cx: &mut Context<Self>| {
-            kit::segment(("missing-shows", shown as usize), label, shows == shown)
-                .gap_2()
-                .child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))
-                .on_click(cx.listener(move |this, _, _, cx| this.show_what_is_missing(shown, cx)))
-        };
+        let tab =
+            |shown: MissingShows, label: &'static str, count: usize, cx: &mut Context<Self>| {
+                self.in_the_pane_ring(
+                    kit::segment(("missing-shows", shown as usize), label, shows == shown)
+                        .gap_2()
+                        .child(kit::figure(count.to_string()).text_color(rgb(theme::faint()))),
+                    move |this, _, cx| this.show_what_is_missing(shown, cx),
+                    cx,
+                )
+            };
 
         div().flex().pt_1().child(
             kit::segmented()

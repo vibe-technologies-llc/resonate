@@ -2528,8 +2528,24 @@ is never named.
     tracked handle and applies an element's `.tab_stop(true)` only to a handle it made itself, so
     `Controls::at` and `Field::new` make their handles tab stops (until they did, no control or
     field was in the ring at all and `tab` moved nothing).
-  - Settings' controls are `controls`, pruned each frame to what the pane drew;
-    `standing_controls` hold what every frame draws (transport buttons, the mute mark, sidebar
+  - A pane's controls are `controls`: `RootView::content` opens each pane frame with
+    `Controls::opening`, which keeps the handles the frame before drew and starts counting again,
+    so a control a `uniform_list` row draws (laid out after `content` returns) keeps its caret
+    across frames. Settings lays its own through `in_the_ring`; every other pane through
+    `RootView::in_the_pane_ring`, which names the handle by the control's own element id, presses it
+    through the one closure a click and `space`/`enter` share, shows it while it holds the caret
+    where it hides until hovered (`opacity` 1 on focus) and takes no caret on a click: heading
+    buttons and marks, segments and chips, the way back, a row's star, queue marks, ✕ and pin, the
+    playlist marks. A row's hidden controls are `RootView::row_controls`, a container tracking a
+    handle that is no tab stop (`Controls::holding`), shown by `in_focus` while one of its controls
+    holds the caret
+    (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`).
+  - **The seek and volume rails are tab stops of their own context.** `slider::rail` tracks a
+    standing handle under `Control Rail`; `app::answering_on_a_rail` binds `right`/`up` to `RailOn`
+    and `left`/`down` to `RailBack`, which step the rail it is on: a seek of `seek_step`, a volume
+    of `VOLUME_STEP` (`a_rail_holding_the_caret_moves_with_the_arrows`). A press on a rail takes no
+    caret.
+  - `standing_controls` hold what every frame draws (transport buttons, the mute mark, sidebar
     panes), never pruned (a pane's frame would otherwise drop the transport's handles and the
     caret with them); `in_the_standing_ring` lays them. A click on one takes no caret
     (`prevent_default` on its press: gpui focuses a focusable element under a press), so choosing

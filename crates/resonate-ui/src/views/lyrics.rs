@@ -251,65 +251,71 @@ impl RootView {
                 .child(
                     kit::actions()
                         .when(synced && !following, |actions| {
-                            actions.child(
+                            actions.child(self.in_the_pane_ring(
                                 kit::button(
                                     "follow-lyrics",
                                     Some(Icon::Lyrics),
                                     "Follow",
                                     FOLLOW_HINT,
                                     Tone::Outlined,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.lyrics.update(cx, |model, _| model.follow_again());
-                                        cx.notify();
-                                    },
-                                )),
-                            )
+                                ),
+                                |this, _, cx| {
+                                    this.lyrics.update(cx, |model, _| model.follow_again());
+                                    cx.notify();
+                                },
+                                cx,
+                            ))
                         })
                         .when(synced, |actions| {
                             actions.children(Reading::ALL.into_iter().enumerate().map(
                                 |(index, reading)| {
-                                    kit::chip(
-                                        ("lyric-reading", index),
-                                        reading.label(),
-                                        reading == chosen,
-                                    )
-                                    .names(reading.about())
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
+                                    self.in_the_pane_ring(
+                                        kit::chip(
+                                            ("lyric-reading", index),
+                                            reading.label(),
+                                            reading == chosen,
+                                        )
+                                        .names(reading.about()),
+                                        move |this, _, cx| {
                                             this.lyrics
                                                 .update(cx, |model, _| model.read_as(reading));
                                             cx.notify();
                                         },
-                                    ))
+                                        cx,
+                                    )
                                 },
                             ))
                         })
                         .when(synced, |actions| {
                             actions
-                                .child(
-                                    kit::chip("lyrics-later", "Later", false)
-                                        .names(LATER_HINT)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.nudge_the_lyrics(ahead.later(), cx);
-                                        })),
-                                )
+                                .child(self.in_the_pane_ring(
+                                    kit::chip("lyrics-later", "Later", false).names(LATER_HINT),
+                                    move |this, _, cx| {
+                                        this.nudge_the_lyrics(ahead.later(), cx);
+                                    },
+                                    cx,
+                                ))
                                 .when(!ahead.is_zero(), |actions| {
                                     actions.child(
-                                        kit::chip("lyrics-ahead", said_ahead(ahead), true)
-                                            .names(PUT_BACK_HINT)
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        self.in_the_pane_ring(
+                                            kit::chip("lyrics-ahead", said_ahead(ahead), true)
+                                                .names(PUT_BACK_HINT),
+                                            |this, _, cx| {
                                                 this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
-                                            })),
+                                            },
+                                            cx,
+                                        ),
                                     )
                                 })
                                 .child(
-                                    kit::chip("lyrics-earlier", "Earlier", false)
-                                        .names(EARLIER_HINT)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    self.in_the_pane_ring(
+                                        kit::chip("lyrics-earlier", "Earlier", false)
+                                            .names(EARLIER_HINT),
+                                        move |this, _, cx| {
                                             this.nudge_the_lyrics(ahead.earlier(), cx);
-                                        })),
+                                        },
+                                        cx,
+                                    ),
                                 )
                                 .child(hint::explains("lyric-press", PRESS_HINT))
                         })

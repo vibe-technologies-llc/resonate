@@ -78,6 +78,8 @@ use crate::{
     },
 };
 
+pub(crate) const VOLUME_STEP: f32 = 0.05;
+
 const VOLUME_SETTLE: Duration = Duration::from_millis(400);
 
 const WINDOW_SIZE_SETTLE: Duration = Duration::from_millis(400);
@@ -3621,10 +3623,13 @@ impl RootView {
                     .min_w(px(0.0))
                     .child(self.search_field(window, cx))
                     .child(
-                        kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
-                            .flex_none()
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(|this, _, _, cx| this.open_the_listener(cx))),
+                        self.in_the_pane_ring(
+                            kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
+                                .flex_none()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
+                            |this, _, cx| this.open_the_listener(cx),
+                            cx,
+                        ),
                     ),
             )
             .child(
@@ -4043,35 +4048,33 @@ impl RootView {
                                 .items_center()
                                 .gap_1()
                                 .when(finished, |actions| {
-                                    actions.child(
+                                    actions.child(self.in_the_pane_ring(
                                         kit::button(
                                             "clear-downloads",
                                             None,
                                             "Clear finished",
                                             CLEAR_DOWNLOADS_HINT,
                                             kit::Tone::Ghost,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| {
-                                                this.library.update(cx, |library, cx| {
-                                                    library.clear_finished_downloads(cx);
-                                                });
-                                            }),
                                         ),
-                                    )
+                                        |this, _, cx| {
+                                            this.library.update(cx, |library, cx| {
+                                                library.clear_finished_downloads(cx);
+                                            });
+                                        },
+                                        cx,
+                                    ))
                                 })
-                                .child(
+                                .child(self.in_the_pane_ring(
                                     kit::icon_button(
                                         "close-downloads",
                                         Icon::Close,
                                         HIDE_DOWNLOADS_HINT,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.close_the_downloads(cx);
-                                        },
-                                    )),
-                                ),
+                                    ),
+                                    |this, _, cx| {
+                                        this.close_the_downloads(cx);
+                                    },
+                                    cx,
+                                )),
                         ),
                 )
                 .child(list),
@@ -4148,60 +4151,64 @@ impl RootView {
             .items_center()
             .gap_0p5()
             .when_some(track, |actions, track| {
-                actions.child(
+                actions.child(self.in_the_pane_ring(
                     kit::icon_button(
                         listing::keyed_by("play-download", &recording),
                         Icon::Play,
                         PLAY_DOWNLOAD_HINT,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         this.play_what_was_downloaded(track, cx);
-                    })),
-                )
+                    },
+                    cx,
+                ))
             })
             .when(fetching.can_be_asked_again(), |actions| {
-                actions.child(
+                actions.child(self.in_the_pane_ring(
                     kit::icon_button(
                         listing::keyed_by("ask-again", &recording),
                         Icon::Redo,
                         ASK_AGAIN_HINT,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         let wanted = again.clone();
                         this.library
                             .update(cx, |library, cx| library.want_found(wanted, cx));
-                    })),
-                )
+                    },
+                    cx,
+                ))
             })
             .when(fetching.can_be_cancelled(), |actions| {
                 let cancelled = recording.clone();
-                actions.child(
+                actions.child(self.in_the_pane_ring(
                     kit::icon_button(
                         listing::keyed_by("cancel-download", &recording),
                         Icon::Stop,
                         CANCEL_DOWNLOAD_HINT,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
                             library.cancel_download(&cancelled, cx);
                         });
-                    })),
-                )
+                    },
+                    cx,
+                ))
             })
             .when(!fetching.is_underway(), |actions| {
                 let dismissed = recording.clone();
-                actions.child(
+                actions.child(self.in_the_pane_ring(
                     kit::icon_button(
                         listing::keyed_by("dismiss-download", &recording),
                         Icon::Close,
                         DISMISS_DOWNLOAD_HINT,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
                             library.dismiss_download(&dismissed, cx);
                         });
-                    })),
-                )
+                    },
+                    cx,
+                ))
             });
 
         div()
@@ -4311,26 +4318,28 @@ impl RootView {
                     .flex()
                     .justify_end()
                     .gap_2()
-                    .child(
+                    .child(self.in_the_pane_ring(
                         kit::button(
                             "keep-the-track",
                             None,
                             "Cancel",
                             KEEP_THE_TRACK_HINT,
                             kit::Tone::Outlined,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.keep_the_track(cx))),
-                    )
-                    .child(
+                        ),
+                        |this, _, cx| this.keep_the_track(cx),
+                        cx,
+                    ))
+                    .child(self.in_the_pane_ring(
                         kit::button(
                             "delete-the-track",
                             Some(Icon::Delete),
                             "Delete",
                             DELETE_THE_TRACK_HINT,
                             kit::Tone::Destructive,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.delete_the_track(cx))),
-                    ),
+                        ),
+                        |this, _, cx| this.delete_the_track(cx),
+                        cx,
+                    )),
             );
 
         div()
@@ -4559,6 +4568,7 @@ impl RootView {
     }
 
     fn content(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        self.controls.opening();
         if let Some(shows) = self.search_in_front(cx) {
             return self.search_pane(shows, cx);
         }
@@ -4683,8 +4693,8 @@ impl Render for RootView {
                 };
                 this.send(Command::SetRepeat(repeat), cx);
             }))
-            .on_action(cx.listener(|this, _: &VolumeUp, _, cx| this.volume_by(0.05, cx)))
-            .on_action(cx.listener(|this, _: &VolumeDown, _, cx| this.volume_by(-0.05, cx)))
+            .on_action(cx.listener(|this, _: &VolumeUp, _, cx| this.volume_by(VOLUME_STEP, cx)))
+            .on_action(cx.listener(|this, _: &VolumeDown, _, cx| this.volume_by(-VOLUME_STEP, cx)))
             .on_action(cx.listener(|this, _: &ReachAbove, _, cx| {
                 this.reach_row(Step::Above, cx);
             }))

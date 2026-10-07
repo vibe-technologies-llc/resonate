@@ -6,7 +6,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
+    AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
     MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
     hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
@@ -178,11 +178,31 @@ impl RootView {
         };
         let mark = kit::star(id, already, SharedString::from(format!("{what:?}")), saying);
 
-        mark.on_click(cx.listener(move |this, _, _, cx| {
-            cx.stop_propagation();
-            this.library
-                .update(cx, |library, cx| library.favour(what, !already, cx));
-        }))
+        self.in_the_pane_ring(
+            mark,
+            move |this, _, cx| {
+                cx.stop_propagation();
+                this.library
+                    .update(cx, |library, cx| library.favour(what, !already, cx));
+            },
+            cx,
+        )
+    }
+
+    pub(crate) fn row_controls(&self, id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
+        let id = id.into();
+        let within = self.controls.holding(id.to_string(), cx);
+
+        div()
+            .id(id)
+            .track_focus(&within)
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_0p5()
+            .opacity(0.0)
+            .group_hover(ROW_GROUP, |controls| controls.opacity(1.0))
+            .in_focus(|controls| controls.opacity(1.0))
     }
 
     pub(crate) fn favour_mark_under(
@@ -515,16 +535,19 @@ impl RootView {
             icon,
             message,
             more,
-            kit::button(
-                "search-instead",
-                Some(Icon::Search),
-                format!("Did you mean {instead}?"),
-                INSTEAD_HINT,
-                Tone::Outlined,
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.search_instead(offered.clone(), window, cx);
-            })),
+            self.in_the_pane_ring(
+                kit::button(
+                    "search-instead",
+                    Some(Icon::Search),
+                    format!("Did you mean {instead}?"),
+                    INSTEAD_HINT,
+                    Tone::Outlined,
+                ),
+                move |this, window, cx| {
+                    this.search_instead(offered.clone(), window, cx);
+                },
+                cx,
+            ),
         )
     }
 
@@ -532,7 +555,7 @@ impl RootView {
         let sung = self.library.read(cx).sung()?.clone();
         let offered = sung.query;
 
-        Some(
+        Some(self.in_the_pane_ring(
             kit::button(
                 "search-the-lyrics",
                 Some(Icon::Lyrics),
@@ -542,11 +565,12 @@ impl RootView {
                 ),
                 SUNG_HINT,
                 tone,
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
+            ),
+            move |this, window, cx| {
                 this.search_instead(offered.clone(), window, cx);
-            })),
-        )
+            },
+            cx,
+        ))
     }
 
     pub(crate) fn artists(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -988,28 +1012,23 @@ impl RootView {
                         cx,
                     ))
                     .child(
-                        row_controls()
+                        self.row_controls(("track-controls", index), cx)
                             .when_some(adding_to, |controls, target| {
                                 let cut = Cut::of(track);
-                                controls.child(
+                                controls.child(self.in_the_pane_ring(
                                     kit::icon_button(
                                         ("add-song-to-playlist", index),
                                         Icon::Plus,
                                         ADD_SONG_HINT,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            cx.stop_propagation();
-                                            this.library.update(cx, |library, cx| {
-                                                library.add_to_playlist(
-                                                    target,
-                                                    vec![cut.clone()],
-                                                    cx,
-                                                );
-                                            });
-                                        },
-                                    )),
-                                )
+                                    ),
+                                    move |this, _, cx| {
+                                        cx.stop_propagation();
+                                        this.library.update(cx, |library, cx| {
+                                            library.add_to_playlist(target, vec![cut.clone()], cx);
+                                        });
+                                    },
+                                    cx,
+                                ))
                             })
                             .when(adding_to.is_none(), |controls| {
                                 controls
@@ -1264,21 +1283,20 @@ impl RootView {
                 controls_place_of(controls)
                     .gap_1()
                     .when_some(dismissed, |controls, release_track| {
-                        controls.child(
+                        controls.child(self.in_the_pane_ring(
                             kit::icon_button(
                                 ("dismiss-missing", release_track.get()),
                                 Icon::Close,
                                 DISMISS_MISSING_HINT,
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.library.update(cx, |library, cx| {
-                                        library.dismiss_missing(release_track, cx);
-                                    });
-                                },
-                            )),
-                        )
+                            ),
+                            move |this, _, cx| {
+                                cx.stop_propagation();
+                                this.library.update(cx, |library, cx| {
+                                    library.dismiss_missing(release_track, cx);
+                                });
+                            },
+                            cx,
+                        ))
                     })
                     .child(mark),
             );
@@ -1359,20 +1377,24 @@ impl RootView {
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
         match asks {
             Asks::Row(release_track) => match self.library.read(cx).wanted(release_track) {
-                Some(want) => {
-                    kit::icon_button(("unwant", release_track.get()), Icon::Wanted, UNWANT_HINT)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            cx.stop_propagation();
-                            this.library
-                                .update(cx, |library, cx| library.unwant(want, cx));
-                        }))
-                }
-                None => kit::icon_button(("want", release_track.get()), Icon::Want, WANT_HINT)
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                Some(want) => self.in_the_pane_ring(
+                    kit::icon_button(("unwant", release_track.get()), Icon::Wanted, UNWANT_HINT),
+                    move |this, _, cx| {
+                        cx.stop_propagation();
+                        this.library
+                            .update(cx, |library, cx| library.unwant(want, cx));
+                    },
+                    cx,
+                ),
+                None => self.in_the_pane_ring(
+                    kit::icon_button(("want", release_track.get()), Icon::Want, WANT_HINT),
+                    move |this, _, cx| {
                         cx.stop_propagation();
                         this.library
                             .update(cx, |library, cx| library.want(release_track, cx));
-                    })),
+                    },
+                    cx,
+                ),
             },
             Asks::Found(found) => {
                 let fetching = self
@@ -1390,17 +1412,20 @@ impl RootView {
                     );
                 }
                 let offered = Found::clone(&found);
-                let wanting = kit::icon_button(
-                    listing::keyed_by("want-found", &found.recording),
-                    Icon::Want,
-                    WANT_FOUND_HINT,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    let wanted = Found::clone(&found);
-                    this.library
-                        .update(cx, |library, cx| library.want_found(wanted, cx));
-                }));
+                let wanting = self.in_the_pane_ring(
+                    kit::icon_button(
+                        listing::keyed_by("want-found", &found.recording),
+                        Icon::Want,
+                        WANT_FOUND_HINT,
+                    ),
+                    move |this, _, cx| {
+                        cx.stop_propagation();
+                        let wanted = Found::clone(&found);
+                        this.library
+                            .update(cx, |library, cx| library.want_found(wanted, cx));
+                    },
+                    cx,
+                );
                 menu::opens_a_menu(wanting, move |_, at, _| releases_to_want(at, &offered), cx)
             }
         }
@@ -1408,11 +1433,14 @@ impl RootView {
 
     fn artists_drawn_as(&self, drawn: ArtistsDrawn, cx: &mut Context<Self>) -> Div {
         let choice = |as_: ArtistsDrawn, label: &'static str, cx: &mut Context<Self>| {
-            kit::segment(("artists-drawn", as_ as usize), label, drawn == as_)
-                .names(saying(as_))
-                .on_click(cx.listener(move |this, _, _, cx| {
+            self.in_the_pane_ring(
+                kit::segment(("artists-drawn", as_ as usize), label, drawn == as_)
+                    .names(saying(as_)),
+                move |this, _, cx| {
                     this.draw_the_artists_as(as_, cx);
-                }))
+                },
+                cx,
+            )
         };
 
         kit::segmented()
@@ -1661,34 +1689,34 @@ impl RootView {
         let sung = self.sung_offer(Tone::Ghost, cx);
         let actions = kit::actions()
             .when_some(adding_to, |bar, _| {
-                bar.child(
+                bar.child(self.in_the_pane_ring(
                     kit::button(
                         "finish-adding-songs",
                         Some(Icon::Back),
                         "Done",
                         FINISH_ADDING_HINT,
                         Tone::Ghost,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.finish_adding_songs(cx))),
-                )
+                    ),
+                    |this, _, cx| this.finish_adding_songs(cx),
+                    cx,
+                ))
             })
             .when(adding_to.is_none(), |bar| {
                 bar.when_some(sung, |bar, sung| bar.child(sung))
                     .when(searching && naming.is_none(), |bar| {
-                        bar.child(
+                        bar.child(self.in_the_pane_ring(
                             kit::button(
                                 "save-search",
                                 Some(Icon::Search),
                                 "Save this search",
                                 SAVE_SEARCH_HINT,
                                 Tone::Ghost,
-                            )
-                            .on_click(cx.listener(
-                                |this, _, window, cx| {
-                                    this.name_a_playlist(Naming::Query(None), window, cx);
-                                },
-                            )),
-                        )
+                            ),
+                            |this, window, cx| {
+                                this.name_a_playlist(Naming::Query(None), window, cx);
+                            },
+                            cx,
+                        ))
                     })
                     .child(self.orders_a_listing("order-tracks", cx))
                     .child(self.shuffle_all(cx))
@@ -1796,22 +1824,20 @@ impl RootView {
             .child(
                 self.page_actions(Favoured::Album(id), favourite, true, true, cx)
                     .when(has_missing_tracks, |row| {
-                        row.child(
+                        row.child(self.in_the_pane_ring(
                             kit::button(
                                 "download-album-missing",
                                 Some(Icon::Download),
                                 "Get the rest",
                                 GET_ALBUM_REST_HINT,
                                 Tone::Ghost,
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.library.update(cx, |library, cx| {
-                                        library.want_missing_tracks(id, cx)
-                                    });
-                                },
-                            )),
-                        )
+                            ),
+                            move |this, _, cx| {
+                                this.library
+                                    .update(cx, |library, cx| library.want_missing_tracks(id, cx));
+                            },
+                            cx,
+                        ))
                     })
                     .when_some(record, |row, _| {
                         row.child(
@@ -1908,7 +1934,7 @@ impl RootView {
                     )
                 })
                 .when_some(unheld, |row, (unheld, unread)| {
-                    row.child(
+                    row.child(self.in_the_pane_ring(
                         kit::button(
                             "unheld-releases",
                             Some(Icon::Missing),
@@ -1924,28 +1950,28 @@ impl RootView {
                             },
                             UNHELD_HINT,
                             Tone::Ghost,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
+                        ),
+                        |this, _, cx| {
                             this.show_what_is_missing(MissingShows::Releases, cx);
                             this.set_pane(Pane::Missing, cx);
-                        })),
-                    )
+                        },
+                        cx,
+                    ))
                     .when(unread > 0 && reads_further, |row| {
-                        row.child(
+                        row.child(self.in_the_pane_ring(
                             kit::button(
                                 "read-the-rest",
                                 Some(Icon::Import),
                                 READ_THE_REST,
                                 READ_THE_REST_HINT,
                                 Tone::Ghost,
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.library
-                                        .update(cx, |library, cx| library.read_the_rest_of(id, cx));
-                                },
-                            )),
-                        )
+                            ),
+                            move |this, _, cx| {
+                                this.library
+                                    .update(cx, |library, cx| library.read_the_rest_of(id, cx));
+                            },
+                            cx,
+                        ))
                     })
                 })
                 .when(any_records > 0, |row| {
@@ -1968,10 +1994,13 @@ impl RootView {
     ) -> Div {
         let tab =
             |shown: ArtistShows, label: &'static str, count: usize, cx: &mut Context<Self>| {
-                kit::segment(("artist-shows", shown as usize), label, shows == shown)
-                    .gap_2()
-                    .child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))
-                    .on_click(cx.listener(move |this, _, _, cx| this.show_of_the_artist(shown, cx)))
+                self.in_the_pane_ring(
+                    kit::segment(("artist-shows", shown as usize), label, shows == shown)
+                        .gap_2()
+                        .child(kit::figure(count.to_string()).text_color(rgb(theme::faint()))),
+                    move |this, _, cx| this.show_of_the_artist(shown, cx),
+                    cx,
+                )
             };
 
         kit::segmented()
@@ -1992,10 +2021,11 @@ impl RootView {
             .way_back_to()
             .unwrap_or_else(|| SharedString::new_static(self.in_front(cx).label()));
 
-        div().flex().child(
-            kit::way_back("way-back", label, WAY_BACK_HINT)
-                .on_click(cx.listener(|this, _, _, cx| this.step_back(cx))),
-        )
+        div().flex().child(self.in_the_pane_ring(
+            kit::way_back("way-back", label, WAY_BACK_HINT),
+            |this, _, cx| this.step_back(cx),
+            cx,
+        ))
     }
 
     fn page_actions(
@@ -2133,15 +2163,15 @@ impl RootView {
         };
         let listed = match pressings {
             None => {
-                return div().child(
+                return div().child(self.in_the_pane_ring(
                     kit::button(
                         "other-pressings",
                         Some(Icon::Disc),
                         label,
                         hint,
                         Tone::Ghost,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         let asking = asking.clone();
                         this.library.update(cx, |library, cx| match asking {
                             Asking::Group(group) => {
@@ -2149,8 +2179,9 @@ impl RootView {
                             }
                             Asking::Search => library.ask_for_releases(album, cx),
                         });
-                    })),
-                );
+                    },
+                    cx,
+                ));
             }
             Some(Pressings::Asking) => return pressing_note(waiting),
             Some(Pressings::Unanswered) => return pressing_note(none),
@@ -2223,27 +2254,30 @@ impl RootView {
             false => (FORGET_THE_MATCH, FORGET_THE_MATCH_HINT),
         };
 
-        kit::button(
-            "not-this-record",
-            Some(Icon::Discard),
-            label,
-            hint,
-            Tone::Ghost,
+        self.in_the_pane_ring(
+            kit::button(
+                "not-this-record",
+                Some(Icon::Discard),
+                label,
+                hint,
+                Tone::Ghost,
+            ),
+            move |this, _, cx| {
+                if forgetting {
+                    this.record = None;
+                    this.library
+                        .update(cx, |library, cx| library.forget_the_match(album, cx));
+                } else {
+                    this.record = Some(OpenedRecord::Album {
+                        album,
+                        at,
+                        forgetting: true,
+                    });
+                }
+                cx.notify();
+            },
+            cx,
         )
-        .on_click(cx.listener(move |this, _, _, cx| {
-            if forgetting {
-                this.record = None;
-                this.library
-                    .update(cx, |library, cx| library.forget_the_match(album, cx));
-            } else {
-                this.record = Some(OpenedRecord::Album {
-                    album,
-                    at,
-                    forgetting: true,
-                });
-            }
-            cx.notify();
-        }))
     }
 
     fn detail_over(
@@ -2283,34 +2317,40 @@ impl RootView {
     }
 
     pub(crate) fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "play-all",
-            Some(Icon::Play),
-            "Play",
-            PLAY_ALL_HINT,
-            Tone::Primary,
+        self.in_the_pane_ring(
+            kit::button(
+                "play-all",
+                Some(Icon::Play),
+                "Play",
+                PLAY_ALL_HINT,
+                Tone::Primary,
+            ),
+            |this, window, cx| {
+                this.with_everything_listed(window, cx, |this, listing, _, cx| {
+                    this.plays_in_order(cx);
+                    this.play(&listing, 0, cx);
+                });
+            },
+            cx,
         )
-        .on_click(cx.listener(|this, _, window, cx| {
-            this.with_everything_listed(window, cx, |this, listing, _, cx| {
-                this.plays_in_order(cx);
-                this.play(&listing, 0, cx);
-            });
-        }))
     }
 
     pub(crate) fn shuffle_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "shuffle-all",
-            Some(Icon::Shuffle),
-            "Shuffle",
-            SHUFFLE_ALL_HINT,
-            Tone::Outlined,
+        self.in_the_pane_ring(
+            kit::button(
+                "shuffle-all",
+                Some(Icon::Shuffle),
+                "Shuffle",
+                SHUFFLE_ALL_HINT,
+                Tone::Outlined,
+            ),
+            |this, window, cx| {
+                this.with_everything_listed(window, cx, |this, listing, _, cx| {
+                    this.play_shuffled(&listing, cx);
+                });
+            },
+            cx,
         )
-        .on_click(cx.listener(|this, _, window, cx| {
-            this.with_everything_listed(window, cx, |this, listing, _, cx| {
-                this.play_shuffled(&listing, cx);
-            });
-        }))
     }
 
     fn artist_records(&self, artist: ArtistId, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -2684,9 +2724,12 @@ impl RootView {
         named: &'static str,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        kit::icon_button(named, Icon::Sort, ORDER_HINT)
-            .when(self.ordering, |button| button.bg(rgb(theme::hover())))
-            .on_click(cx.listener(|this, _, _, cx| this.order_a_listing(cx)))
+        self.in_the_pane_ring(
+            kit::icon_button(named, Icon::Sort, ORDER_HINT)
+                .when(self.ordering, |button| button.bg(rgb(theme::hover()))),
+            |this, _, cx| this.order_a_listing(cx),
+            cx,
+        )
     }
 
     pub(crate) fn tracks_in_order(&self, cx: &mut Context<Self>) -> Div {
@@ -3582,16 +3625,6 @@ fn queueing(tracks: &Arc<[Track]>, index: usize) -> impl Fn() -> Arc<[PlaylistEn
             .get(index)
             .map_or_else(|| Arc::from([]), |track| listed(slice::from_ref(track)))
     }
-}
-
-pub(crate) fn row_controls() -> Div {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap_0p5()
-        .opacity(0.0)
-        .group_hover(ROW_GROUP, |controls| controls.opacity(1.0))
 }
 
 pub(crate) fn trailing_controls() -> Div {

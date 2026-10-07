@@ -247,24 +247,24 @@ impl RootView {
             .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx))
             .child(self.shuffle_suggestion(&suggestion.query, cx))
             .child(self.save_mark("opened-suggestion-save", suggestion, cx))
-            .child(
-                kit::icon_button("opened-suggestion-search", Icon::Search, SEARCH_HINT).on_click(
-                    cx.listener(move |this, _, window, cx| {
-                        this.search_instead(searched.clone(), window, cx);
-                        this.choose_pane(Pane::Tracks, cx);
-                    }),
-                ),
-            );
+            .child(self.in_the_pane_ring(
+                kit::icon_button("opened-suggestion-search", Icon::Search, SEARCH_HINT),
+                move |this, window, cx| {
+                    this.search_instead(searched.clone(), window, cx);
+                    this.choose_pane(Pane::Tracks, cx);
+                },
+                cx,
+            ));
 
         let heading = kit::heading()
-            .child(
-                kit::way_back("suggestions-back", "Suggestions", BACK_HINT).on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.library
-                            .update(cx, |library, cx| library.open_suggestion(None, cx));
-                    },
-                )),
-            )
+            .child(self.in_the_pane_ring(
+                kit::way_back("suggestions-back", "Suggestions", BACK_HINT),
+                |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.open_suggestion(None, cx));
+                },
+                cx,
+            ))
             .child(
                 kit::hero().child(art).child(
                     div()
@@ -413,13 +413,17 @@ impl RootView {
         let saving = suggestion.query.clone();
         let named = suggestion.name.clone();
 
-        kit::icon_button(id, Icon::Plus, SAVE_HINT).on_click(cx.listener(move |this, _, _, cx| {
-            let saved = saving.clone();
-            let name = named.clone();
-            this.library.update(cx, |library, cx| {
-                library.save_query(name, saved, cx);
-            });
-        }))
+        self.in_the_pane_ring(
+            kit::icon_button(id, Icon::Plus, SAVE_HINT),
+            move |this, _, cx| {
+                let saved = saving.clone();
+                let name = named.clone();
+                this.library.update(cx, |library, cx| {
+                    library.save_query(name, saved, cx);
+                });
+            },
+            cx,
+        )
     }
 
     fn queue_mark(
@@ -430,13 +434,15 @@ impl RootView {
     ) -> Stateful<Div> {
         let queueing = query.clone();
 
-        kit::icon_button(id, Icon::QueueLast, QUEUE_HINT).on_click(cx.listener(
-            move |this, _, window, cx| {
+        self.in_the_pane_ring(
+            kit::icon_button(id, Icon::QueueLast, QUEUE_HINT),
+            move |this, window, cx| {
                 this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
                     this.queue(&listed(&rows), Placement::Queued, cx);
                 });
             },
-        ))
+            cx,
+        )
     }
 
     fn play_suggestion(
@@ -447,31 +453,36 @@ impl RootView {
     ) -> Stateful<Div> {
         let playing = query.clone();
 
-        kit::button(id, Some(Icon::Play), "Play", PLAY_HINT, Tone::Primary).on_click(cx.listener(
-            move |this, _, window, cx| {
+        self.in_the_pane_ring(
+            kit::button(id, Some(Icon::Play), "Play", PLAY_HINT, Tone::Primary),
+            move |this, window, cx| {
                 this.with_the_rows_of(&playing, window, cx, |this, rows, _, cx| {
                     this.plays_in_order(cx);
                     this.play(&rows, 0, cx);
                 });
             },
-        ))
+            cx,
+        )
     }
 
     fn shuffle_suggestion(&self, query: &SavedQuery, cx: &mut Context<Self>) -> Stateful<Div> {
         let shuffling = query.clone();
 
-        kit::button(
-            "opened-suggestion-shuffle",
-            Some(Icon::Shuffle),
-            "Shuffle",
-            SHUFFLE_HINT,
-            Tone::Outlined,
+        self.in_the_pane_ring(
+            kit::button(
+                "opened-suggestion-shuffle",
+                Some(Icon::Shuffle),
+                "Shuffle",
+                SHUFFLE_HINT,
+                Tone::Outlined,
+            ),
+            move |this, window, cx| {
+                this.with_the_rows_of(&shuffling, window, cx, |this, rows, _, cx| {
+                    this.play_shuffled(&rows, cx);
+                });
+            },
+            cx,
         )
-        .on_click(cx.listener(move |this, _, window, cx| {
-            this.with_the_rows_of(&shuffling, window, cx, |this, rows, _, cx| {
-                this.play_shuffled(&rows, cx);
-            });
-        }))
     }
 }
 

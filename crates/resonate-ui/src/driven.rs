@@ -701,6 +701,68 @@ mod tests {
         })
     }
 
+    fn tabbed_onto_the_pane(driven: &mut Driven, named: &'static str) -> bool {
+        const TAB_STOPS_AT_MOST: usize = 64;
+        let root = driven.root.clone();
+        let on_it = |driven: &mut Driven| {
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).controls.at(named, cx).is_focused(window))
+        };
+        (0..TAB_STOPS_AT_MOST).any(|_| {
+            driven.cx.simulate_keystrokes("tab");
+            on_it(driven)
+        })
+    }
+
+    #[gpui::test]
+    fn tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .id;
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
+        assert!(
+            tabbed_onto_the_pane(&mut driven, "play-all"),
+            "tab never reached the heading's Play"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        assert!(
+            tabbed_onto_the_pane(&mut driven, "track-favourite-0"),
+            "tab never reached the row's star"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .favours(resonate_library::Favoured::Track(track), false)
+        }));
+    }
+
+    #[gpui::test]
+    fn a_rail_holding_the_caret_moves_with_the_arrows(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let file = folder.tone("tone.wav", 1);
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&[file]);
+        let before = driven.read(|root, cx| root.player.read(cx).state().volume);
+
+        assert!(
+            tabbed_onto(&mut driven, "volume"),
+            "tab never reached the volume rail"
+        );
+        driven.cx.simulate_keystrokes("left");
+        driven.until(|root, cx| root.player.read(cx).state().volume < before);
+    }
+
     #[gpui::test]
     fn tab_reaches_the_transport_buttons_and_the_sidebar_and_enter_presses_them(
         cx: &mut TestAppContext,

@@ -443,20 +443,21 @@ impl RootView {
                         .child(
                             kit::segmented().children(Showing::ALL.into_iter().enumerate().map(
                                 |(index, showing)| {
-                                    kit::segment(
-                                        ("visualiser-showing", index),
-                                        showing.label(),
-                                        showing == chosen,
-                                    )
-                                    .names(showing.about())
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
+                                    self.in_the_pane_ring(
+                                        kit::segment(
+                                            ("visualiser-showing", index),
+                                            showing.label(),
+                                            showing == chosen,
+                                        )
+                                        .names(showing.about()),
+                                        move |this, _, cx| {
                                             this.visualiser.update(cx, |visualiser, cx| {
                                                 visualiser.show(showing);
                                                 cx.notify();
                                             });
                                         },
-                                    ))
+                                        cx,
+                                    )
                                 },
                             )),
                         ),

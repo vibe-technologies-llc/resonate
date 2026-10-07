@@ -258,17 +258,20 @@ impl RootView {
         let mut chosen = sorting::shape("Window");
         for (index, offered) in Window::ALL.into_iter().enumerate() {
             chosen = chosen.child(
-                kit::chip(
-                    ("statistics-window", index),
-                    SharedString::new_static(spelled(offered)),
-                    offered == window,
-                )
-                .names(WINDOW_HINT)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.let_go_of_the_reach_in(Shift::Listing(Listed::Heard));
-                    this.library
-                        .update(cx, |library, cx| library.read_over(offered, cx));
-                })),
+                self.in_the_pane_ring(
+                    kit::chip(
+                        ("statistics-window", index),
+                        SharedString::new_static(spelled(offered)),
+                        offered == window,
+                    )
+                    .names(WINDOW_HINT),
+                    move |this, _, cx| {
+                        this.let_go_of_the_reach_in(Shift::Listing(Listed::Heard));
+                        this.library
+                            .update(cx, |library, cx| library.read_over(offered, cx));
+                    },
+                    cx,
+                ),
             );
         }
 

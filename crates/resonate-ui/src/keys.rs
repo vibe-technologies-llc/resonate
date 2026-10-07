@@ -113,6 +113,18 @@ macro_rules! key {
     (band_wider) => {
         "shift-down"
     };
+    (rail_on) => {
+        "right"
+    };
+    (rail_back) => {
+        "left"
+    };
+    (rail_up) => {
+        "up"
+    };
+    (rail_down) => {
+        "down"
+    };
 }
 
 macro_rules! ways {
@@ -139,7 +151,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 38] = [
+    const NAMED: [&str; 42] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -178,6 +190,10 @@ mod tests {
         key!(band_quieter),
         key!(band_narrower),
         key!(band_wider),
+        key!(rail_on),
+        key!(rail_back),
+        key!(rail_up),
+        key!(rail_down),
     ];
 
     #[test]

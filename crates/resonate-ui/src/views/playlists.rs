@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, sync::Arc, time::SystemTime};
+use std::{env, path::PathBuf, rc::Rc, sync::Arc, time::SystemTime};
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
@@ -16,7 +16,7 @@ use crate::{
     models::Picture,
     motion, theme,
     views::{
-        browser::{self, OPEN_ARTIST_HINT, row_controls},
+        browser::{self, OPEN_ARTIST_HINT},
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
@@ -424,28 +424,30 @@ impl RootView {
         div()
             .flex()
             .gap_2()
-            .child(
+            .child(self.in_the_pane_ring(
                 kit::button(
                     "first-playlist",
                     Some(Icon::Plus),
                     "New playlist",
                     NEW_HINT,
                     Tone::Primary,
-                )
-                .on_click(cx.listener(|this, _, window, cx| {
+                ),
+                |this, window, cx| {
                     this.name_a_playlist(Naming::New, window, cx);
-                })),
-            )
-            .child(
+                },
+                cx,
+            ))
+            .child(self.in_the_pane_ring(
                 kit::button(
                     "first-import",
                     Some(Icon::Import),
                     "Import",
                     IMPORT_HINT,
                     Tone::Outlined,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.import_playlists(cx))),
-            )
+                ),
+                |this, _, cx| this.import_playlists(cx),
+                cx,
+            ))
     }
 
     fn playlist_grid(
@@ -515,12 +517,15 @@ impl RootView {
     fn playlists_drawn_as(&self, cx: &mut Context<Self>) -> Div {
         let drawn = self.playlists_drawn;
         let choice = |as_: PlaylistsDrawn, label: &'static str, cx: &mut Context<Self>| {
-            kit::segment(("playlists-drawn", as_ as usize), label, drawn == as_)
-                .names(as_.saying())
-                .on_click(cx.listener(move |this, _, _, cx| {
+            self.in_the_pane_ring(
+                kit::segment(("playlists-drawn", as_ as usize), label, drawn == as_)
+                    .names(as_.saying()),
+                move |this, _, cx| {
                     this.playlists_drawn = as_;
                     cx.notify();
-                }))
+                },
+                cx,
+            )
         };
 
         kit::segmented()
@@ -547,23 +552,25 @@ impl RootView {
                 bar.child(self.playlists_drawn_as(cx))
                     .child(self.orders_a_listing("playlists-sort", cx))
             })
-            .child(
-                kit::icon_button("import-playlists", Icon::Import, IMPORT_HINT)
-                    .on_click(cx.listener(|this, _, _, cx| this.import_playlists(cx))),
-            )
+            .child(self.in_the_pane_ring(
+                kit::icon_button("import-playlists", Icon::Import, IMPORT_HINT),
+                |this, _, cx| this.import_playlists(cx),
+                cx,
+            ))
             .when(naming.is_none(), |bar| {
-                bar.child(
+                bar.child(self.in_the_pane_ring(
                     kit::button(
                         "new-playlist",
                         Some(Icon::Plus),
                         "New playlist",
                         NEW_HINT,
                         Tone::Primary,
-                    )
-                    .on_click(cx.listener(|this, _, window, cx| {
+                    ),
+                    |this, window, cx| {
                         this.name_a_playlist(Naming::New, window, cx);
-                    })),
-                )
+                    },
+                    cx,
+                ))
             });
 
         kit::heading()
@@ -650,10 +657,11 @@ impl RootView {
 
         let mut caps = sorting::shape("Rows");
         for (index, held) in CAPS.into_iter().enumerate() {
-            caps = caps.child(
-                kit::chip(("search-cap", index), capped(held), held == cap)
-                    .on_click(cx.listener(move |this, _, _, cx| this.cap_a_search(held, cx))),
-            );
+            caps = caps.child(self.in_the_pane_ring(
+                kit::chip(("search-cap", index), capped(held), held == cap),
+                move |this, _, cx| this.cap_a_search(held, cx),
+                cx,
+            ));
         }
 
         sorting::order_row(
@@ -804,31 +812,37 @@ impl RootView {
                 Icon::Search,
                 "Nothing in the library matches this search yet.",
                 Some("It fills itself as the library grows, or its search can be changed."),
-                kit::button(
-                    "revise-an-empty-search",
-                    Some(Icon::Search),
-                    "Edit search",
-                    FILLS_ITSELF_HINT,
-                    Tone::Outlined,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.revise_search(opened, window, cx);
-                })),
+                self.in_the_pane_ring(
+                    kit::button(
+                        "revise-an-empty-search",
+                        Some(Icon::Search),
+                        "Edit search",
+                        FILLS_ITSELF_HINT,
+                        Tone::Outlined,
+                    ),
+                    move |this, window, cx| {
+                        this.revise_search(opened, window, cx);
+                    },
+                    cx,
+                ),
             ),
             Rows::InHand | Rows::Kept => kit::empty_offering(
                 Icon::Playlists,
                 "This playlist is empty.",
                 Some("Choose songs from the library, or press + on any track or queue row."),
-                kit::button(
-                    "fill-an-empty-playlist",
-                    Some(Icon::Plus),
-                    "Add songs",
-                    ADD_SONGS_HINT,
-                    Tone::Primary,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.add_songs_to_playlist(opened, cx);
-                })),
+                self.in_the_pane_ring(
+                    kit::button(
+                        "fill-an-empty-playlist",
+                        Some(Icon::Plus),
+                        "Add songs",
+                        ADD_SONGS_HINT,
+                        Tone::Primary,
+                    ),
+                    move |this, _, cx| {
+                        this.add_songs_to_playlist(opened, cx);
+                    },
+                    cx,
+                ),
             ),
         }
     }
@@ -888,113 +902,121 @@ impl RootView {
             .pt_2()
             .when(!entries.is_empty(), |bar| {
                 let played = Arc::clone(entries);
-                bar.child(
+                bar.child(self.in_the_pane_ring(
                     kit::button(
                         "play-playlist",
                         Some(Icon::Play),
                         "Play",
                         PLAY_HINT,
                         Tone::Primary,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    ),
+                    move |this, _, cx| {
                         this.plays_in_order(cx);
                         this.play_playlist(opened, &played, 0, !narrowed, cx);
-                    })),
-                )
+                    },
+                    cx,
+                ))
                 .child({
                     let played = Arc::clone(entries);
-                    kit::button(
-                        "shuffle-playlist",
-                        Some(Icon::Shuffle),
-                        "Shuffle",
-                        SHUFFLE_HINT,
-                        Tone::Outlined,
+                    self.in_the_pane_ring(
+                        kit::button(
+                            "shuffle-playlist",
+                            Some(Icon::Shuffle),
+                            "Shuffle",
+                            SHUFFLE_HINT,
+                            Tone::Outlined,
+                        ),
+                        move |this, _, cx| {
+                            this.play_playlist(
+                                opened,
+                                &played,
+                                somewhere_in(played.len()),
+                                !narrowed,
+                                cx,
+                            );
+                            this.send(Command::SetShuffle(true), cx);
+                        },
+                        cx,
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.play_playlist(
-                            opened,
-                            &played,
-                            somewhere_in(played.len()),
-                            !narrowed,
-                            cx,
-                        );
-                        this.send(Command::SetShuffle(true), cx);
-                    }))
                 })
             })
             .when(naming.is_none() && !rows.are_edited(), |bar| {
-                bar.child(
+                bar.child(self.in_the_pane_ring(
                     kit::button(
                         "revise-search",
                         Some(Icon::Search),
                         "Edit search",
                         FILLS_ITSELF_HINT,
                         Tone::Ghost,
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
+                    ),
+                    move |this, window, cx| {
                         this.revise_search(opened, window, cx);
-                    })),
-                )
+                    },
+                    cx,
+                ))
             })
             .when(normal && naming.is_none(), |bar| {
-                bar.child(
-                    kit::icon_button("add-songs-to-playlist", Icon::Plus, ADD_SONGS_HINT).on_click(
-                        cx.listener(move |this, _, _, cx| {
-                            this.add_songs_to_playlist(opened, cx);
-                        }),
-                    ),
-                )
+                bar.child(self.in_the_pane_ring(
+                    kit::icon_button("add-songs-to-playlist", Icon::Plus, ADD_SONGS_HINT),
+                    move |this, _, cx| {
+                        this.add_songs_to_playlist(opened, cx);
+                    },
+                    cx,
+                ))
             })
             .when(
                 matches!(rows, Rows::Narrowed) && !entries.is_empty(),
                 |bar| {
-                    bar.child(
+                    bar.child(self.in_the_pane_ring(
                         kit::button(
                             "drop-shown",
                             Some(Icon::Discard),
                             "Drop shown",
                             DROP_SHOWN_HINT,
                             Tone::Ghost,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        ),
+                        move |this, _, cx| {
                             this.library
                                 .update(cx, |library, cx| library.remove_matching(opened, cx));
-                        })),
-                    )
+                        },
+                        cx,
+                    ))
                 },
             )
             .when(normal && !entries.is_empty(), |bar| {
-                bar.child(
-                    kit::icon_button("tidy-playlist", Icon::Tidy, TIDY_HINT).on_click(cx.listener(
-                        move |this, _, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.tidy_playlist(opened, cx));
-                        },
-                    )),
-                )
-                .child(
-                    kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT)
-                        .when(sorting, |button| {
+                bar.child(self.in_the_pane_ring(
+                    kit::icon_button("tidy-playlist", Icon::Tidy, TIDY_HINT),
+                    move |this, _, cx| {
+                        this.library
+                            .update(cx, |library, cx| library.tidy_playlist(opened, cx));
+                    },
+                    cx,
+                ))
+                .child(self.in_the_pane_ring(
+                    kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT).when(
+                        sorting,
+                        |button| {
                             button
                                 .bg(rgb(theme::hover()))
                                 .text_color(rgb(theme::text()))
-                        })
-                        .on_click(
-                            cx.listener(move |this, _, _, cx| this.sort_a_playlist(opened, cx)),
-                        ),
-                )
+                        },
+                    ),
+                    move |this, _, cx| this.sort_a_playlist(opened, cx),
+                    cx,
+                ))
             })
             .when(named.is_some(), |bar| {
-                bar.child(
+                bar.child(self.in_the_pane_ring(
                     match pinned {
                         true => kit::lit_mark("pin-playlist", Icon::Pinned, UNPIN_HINT),
                         false => kit::icon_button("pin-playlist", Icon::Pin, PIN_HINT),
-                    }
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    },
+                    move |this, _, cx| {
                         this.library
                             .update(cx, |library, cx| library.pin_playlist(opened, !pinned, cx));
-                    })),
-                )
+                    },
+                    cx,
+                ))
                 .child(
                     kit::icon_button("more-of-the-playlist", Icon::More, MORE_HINT).on_click(
                         cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -1038,13 +1060,16 @@ impl RootView {
                     .child(kit::hero_title(name, self.hero_width.get())),
             )
             .child(
-                kit::icon_button("select-playlist-title", Icon::Rename, RENAME_HINT)
-                    .opacity(0.0)
-                    .group_hover("playlist-title", |mark| mark.opacity(1.0))
-                    .on_click(cx.listener(move |this, _, window, cx| {
+                self.in_the_pane_ring(
+                    kit::icon_button("select-playlist-title", Icon::Rename, RENAME_HINT)
+                        .opacity(0.0)
+                        .group_hover("playlist-title", |mark| mark.opacity(1.0)),
+                    move |this, window, cx| {
                         cx.stop_propagation();
                         this.name_a_playlist(Naming::Rename(opened), window, cx);
-                    })),
+                    },
+                    cx,
+                ),
             );
 
         let art = self.playlist_art(
@@ -1077,13 +1102,13 @@ impl RootView {
             .child(actions);
 
         kit::heading()
-            .child(div().flex().child(
-                kit::way_back("all-playlists", "Playlists", BACK_HINT).on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.show_playlist(None, cx);
-                    },
-                )),
-            ))
+            .child(div().flex().child(self.in_the_pane_ring(
+                kit::way_back("all-playlists", "Playlists", BACK_HINT),
+                |this, _, cx| {
+                    this.show_playlist(None, cx);
+                },
+                cx,
+            )))
             .child(kit::hero().child(art).child(about))
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
             .when(sorting, |pane| pane.child(self.rows_in_order(opened, cx)))
@@ -1097,15 +1122,18 @@ impl RootView {
         let mut keeps = sorting::shape("Keeps");
         for (index, (label, wanted, saying)) in KEEPING.into_iter().enumerate() {
             keeps = keeps.child(
-                kit::chip(
-                    ("row-keeping", index),
-                    SharedString::new_static(label),
-                    wanted == keeping,
-                )
-                .names(saying)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.keep_in_order(opened, wanted, cx);
-                })),
+                self.in_the_pane_ring(
+                    kit::chip(
+                        ("row-keeping", index),
+                        SharedString::new_static(label),
+                        wanted == keeping,
+                    )
+                    .names(saying),
+                    move |this, _, cx| {
+                        this.keep_in_order(opened, wanted, cx);
+                    },
+                    cx,
+                ),
             );
         }
 
@@ -1251,7 +1279,7 @@ impl RootView {
             })
             .child(listing::length_cell(drawn.length))
             .child(
-                row_controls()
+                self.row_controls(("entry-controls", index), cx)
                     .child(self.queue_control(
                         ("entry-next", index),
                         Placement::Next,
@@ -1283,7 +1311,7 @@ impl RootView {
                         cx,
                     ))
                     .when(rows.are_edited(), |controls| {
-                        controls.child(
+                        controls.child(self.in_the_pane_ring(
                             kit::icon_button(
                                 ("drop-entry", index),
                                 Icon::Close,
@@ -1292,14 +1320,13 @@ impl RootView {
                                 } else {
                                     REMOVE_REACHED_HINT
                                 },
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.drop_rows(shift, dropping, cx);
-                                },
-                            )),
-                        )
+                            ),
+                            move |this, _, cx| {
+                                cx.stop_propagation();
+                                this.drop_rows(shift, dropping, cx);
+                            },
+                            cx,
+                        ))
                     }),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -1463,25 +1490,31 @@ impl RootView {
     }
 
     fn undoing(&self, undoable: &Undoable, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "undo-edit",
-            Some(Icon::Undo),
-            "Undo",
-            puts_back(undoable),
-            Tone::Ghost,
+        self.in_the_pane_ring(
+            kit::button(
+                "undo-edit",
+                Some(Icon::Undo),
+                "Undo",
+                puts_back(undoable),
+                Tone::Ghost,
+            ),
+            |this, _, cx| this.undo_edit(cx),
+            cx,
         )
-        .on_click(cx.listener(|this, _, _, cx| this.undo_edit(cx)))
     }
 
     fn redoing(&self, redoable: &Undoable, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "redo-edit",
-            Some(Icon::Redo),
-            "Redo",
-            does_again(redoable),
-            Tone::Ghost,
+        self.in_the_pane_ring(
+            kit::button(
+                "redo-edit",
+                Some(Icon::Redo),
+                "Redo",
+                does_again(redoable),
+                Tone::Ghost,
+            ),
+            |this, _, cx| this.redo_edit(cx),
+            cx,
         )
-        .on_click(cx.listener(|this, _, _, cx| this.redo_edit(cx)))
     }
 
     pub(crate) fn import_playlists(&self, cx: &mut Context<Self>) {
@@ -1565,10 +1598,15 @@ impl RootView {
             Placement::Queued | Placement::At(_) => (Icon::QueueLast, QUEUE_HINT),
         };
 
-        kit::icon_button(id, icon, saying).on_click(cx.listener(move |this, _, _, cx| {
-            cx.stop_propagation();
-            this.queue(&holding(), at, cx);
-        }))
+        let holding = Rc::new(holding);
+        self.in_the_pane_ring(
+            kit::icon_button(id, icon, saying),
+            move |this, _, cx| {
+                cx.stop_propagation();
+                this.queue(&holding(), at, cx);
+            },
+            cx,
+        )
     }
 
     pub(crate) fn add_control(
@@ -1578,12 +1616,15 @@ impl RootView {
         holding: impl Fn() -> Held + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        kit::icon_button(id, Icon::Plus, saying).on_click(cx.listener(
-            move |this, _, window, cx| {
+        let holding = Rc::new(holding);
+        self.in_the_pane_ring(
+            kit::icon_button(id, Icon::Plus, saying),
+            move |this, window, cx| {
                 cx.stop_propagation();
                 this.hold_for_a_playlist(holding(), window, cx);
             },
-        ))
+            cx,
+        )
     }
 }
 
@@ -1659,7 +1700,7 @@ impl RootView {
                 )
                 .child(listing::heard(playlist.plays, playlist.played, now))
                 .child(
-                    row_controls()
+                    self.row_controls(("playlist-controls", id.get() as usize), cx)
                         .child(
                             control("pin-saved", id, pin_icon(pinned), pin_hint(pinned)).on_click(
                                 cx.listener(move |this, _, _, cx| {
@@ -1883,11 +1924,15 @@ impl RootView {
             false => kit::icon_button(("pin-cell", id.get() as usize), Icon::Pin, PIN_HINT),
         };
 
-        mark.on_click(cx.listener(move |this, _, _, cx| {
-            cx.stop_propagation();
-            this.library
-                .update(cx, |library, cx| library.pin_playlist(id, !pinned, cx));
-        }))
+        self.in_the_pane_ring(
+            mark,
+            move |this, _, cx| {
+                cx.stop_propagation();
+                this.library
+                    .update(cx, |library, cx| library.pin_playlist(id, !pinned, cx));
+            },
+            cx,
+        )
     }
 
     fn play_on_the_art(&self, id: PlaylistId, cx: &mut Context<Self>) -> Stateful<Div> {

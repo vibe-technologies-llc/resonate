@@ -497,32 +497,38 @@ impl RootView {
             None => matched.in_the_library(),
         };
         let as_typed = meant.is_some().then(|| {
-            kit::button(
-                "search-as-typed",
-                None,
-                "Search the words as typed",
-                AS_TYPED_HINT,
-                Tone::Ghost,
+            self.in_the_pane_ring(
+                kit::button(
+                    "search-as-typed",
+                    None,
+                    "Search the words as typed",
+                    AS_TYPED_HINT,
+                    Tone::Ghost,
+                ),
+                |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.search_as_typed(cx));
+                },
+                cx,
             )
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.library
-                    .update(cx, |library, cx| library.search_as_typed(cx));
-            }))
         });
         let sung = self.sung_offer(Tone::Ghost, cx);
         let again =
             matches!(matched.elsewhere, Some(Beyond::Unreached(_))).then(|| self.ask_again(cx));
         let saves = naming.is_none().then(|| {
-            kit::button(
-                "save-search",
-                Some(Icon::Search),
-                "Save this search",
-                SAVE_SEARCH_HINT,
-                Tone::Ghost,
+            self.in_the_pane_ring(
+                kit::button(
+                    "save-search",
+                    Some(Icon::Search),
+                    "Save this search",
+                    SAVE_SEARCH_HINT,
+                    Tone::Ghost,
+                ),
+                |this, window, cx| {
+                    this.name_a_playlist(Naming::Query(None), window, cx);
+                },
+                cx,
             )
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.name_a_playlist(Naming::Query(None), window, cx);
-            }))
         });
         let orders = shows
             .ordered_by()
@@ -808,15 +814,16 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let more = (held > section.shown()).then(|| {
-            kit::button(
-                gpui::ElementId::from(SharedString::from(format!("see-all-{}", section.id()))),
-                None,
-                format!("See all {held}"),
-                section.see_all(),
-                Tone::Ghost,
-            )
-            .on_click(
-                cx.listener(move |this, _, _, cx| this.show_in_the_search(section.shows(), cx)),
+            self.in_the_pane_ring(
+                kit::button(
+                    gpui::ElementId::from(SharedString::from(format!("see-all-{}", section.id()))),
+                    None,
+                    format!("See all {held}"),
+                    section.see_all(),
+                    Tone::Ghost,
+                ),
+                move |this, _, cx| this.show_in_the_search(section.shows(), cx),
+                cx,
             )
         });
 
@@ -981,17 +988,20 @@ impl RootView {
     }
 
     fn ask_again(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "ask-elsewhere-again",
-            Some(Icon::Search),
-            "Try again",
-            ASK_AGAIN_HINT,
-            Tone::Ghost,
+        self.in_the_pane_ring(
+            kit::button(
+                "ask-elsewhere-again",
+                Some(Icon::Search),
+                "Try again",
+                ASK_AGAIN_HINT,
+                Tone::Ghost,
+            ),
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.ask_elsewhere_again(cx));
+            },
+            cx,
         )
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.library
-                .update(cx, |library, cx| library.ask_elsewhere_again(cx));
-        }))
     }
 
     pub(crate) fn nothing_beyond(&self, cx: &App) -> Option<AnyElement> {

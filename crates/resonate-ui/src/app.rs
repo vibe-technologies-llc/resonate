@@ -75,6 +75,8 @@ pub(crate) const CONTROL_CONTEXT: &str = "Control";
 
 pub(crate) const BAND_CONTEXT: &str = "Band";
 
+pub(crate) const RAIL_CONTEXT: &str = "Rail";
+
 actions!(
     resonate,
     [
@@ -130,6 +132,8 @@ actions!(
         BandQuieter,
         BandNarrower,
         BandWider,
+        RailOn,
+        RailBack,
     ]
 );
 
@@ -853,6 +857,15 @@ fn answering_on_a_band(on_a_band: Option<&str>) -> Vec<KeyBinding> {
     ]
 }
 
+fn answering_on_a_rail(on_a_rail: Option<&str>) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new(key!(rail_on), RailOn, on_a_rail),
+        KeyBinding::new(key!(rail_back), RailBack, on_a_rail),
+        KeyBinding::new(key!(rail_up), RailOn, on_a_rail),
+        KeyBinding::new(key!(rail_down), RailBack, on_a_rail),
+    ]
+}
+
 pub(crate) fn bindings() -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
@@ -860,6 +873,7 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
     bindings.extend(answering_away_from_a_field(Some(&away_from_search)));
     bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT)));
     bindings.extend(answering_on_a_band(Some(BAND_CONTEXT)));
+    bindings.extend(answering_on_a_rail(Some(RAIL_CONTEXT)));
     bindings.extend(field::bindings());
     bindings
 }
