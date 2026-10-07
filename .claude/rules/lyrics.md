@@ -98,7 +98,10 @@ dependency (tested without a window).
   how early its language stands among those the listener reads; only then where found. Tag
   spellings compare for equality after `lrc::folded`, not containment (else every sheet holding the
   title goes to every track). A candidate is read to `LARGEST_SIDECAR` (= the reader's
-  `LARGEST_SHEET`), keeping the whole lines that fitted. An unreadable candidate is logged, walk
+  `LARGEST_SHEET`), keeping the whole lines that fitted: the bytes are cut back to the last line
+  break *before* their encoding is weighed (an even length under a UTF-16 mark), so a UTF-8 file
+  cut inside a letter is not guessed a legacy code page
+  (`a_sidecar_in_utf8_cut_inside_a_letter_still_reads_as_utf8`). An unreadable candidate is logged, walk
   goes on (an oversized `Echoes.lrc` does not stop `Echoes.txt`).
 - **Languages are the locale's, only where asked.** `Sidecar::choosing_by_the_locale` reads
   `LANGUAGE`'s colon list (unless locale is `C`/`POSIX`), then the first of `LC_ALL`,

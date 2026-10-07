@@ -496,8 +496,12 @@ fn lowered(name: Option<&OsStr>) -> Option<String> {
     Some(name?.to_string_lossy().to_lowercase())
 }
 
-fn whole_lines_within_a_sheet(head: Vec<u8>) -> String {
+fn whole_lines_within_a_sheet(mut head: Vec<u8>) -> String {
     let cut_short = head.len() as u64 > LARGEST_SIDECAR;
+    if cut_short {
+        head.truncate(LARGEST_SIDECAR as usize);
+        cut_back_to_a_whole_line(&mut head);
+    }
     let mut sheet = text::decoded(&head).0;
     if !cut_short && sheet.len() as u64 <= LARGEST_SIDECAR {
         return sheet;
@@ -511,6 +515,20 @@ fn whole_lines_within_a_sheet(head: Vec<u8>) -> String {
     let ended = sheet.rfind(['\n', '\r']).map_or(0, |last| last + 1);
     sheet.truncate(ended);
     sheet
+}
+
+const UTF16_MARKS: [[u8; 2]; 2] = [[0xff, 0xfe], [0xfe, 0xff]];
+
+fn cut_back_to_a_whole_line(head: &mut Vec<u8>) {
+    if UTF16_MARKS.iter().any(|mark| head.starts_with(mark)) {
+        head.truncate(head.len() & !1);
+        return;
+    }
+    let ended = head
+        .iter()
+        .rposition(|byte| matches!(byte, b'\n' | b'\r'))
+        .map_or(0, |last| last + 1);
+    head.truncate(ended);
 }
 
 #[cfg(test)]
@@ -773,6 +791,32 @@ mod tests {
 
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    #[test]
+    fn a_sidecar_in_utf8_cut_inside_a_letter_still_reads_as_utf8() {
+        let tree = Tree::new();
+        let limit = LARGEST_SIDECAR as usize;
+        let mut sheet = String::new();
+        while sheet.len() <= limit + 64 {
+            sheet.push_str("[00:01.00]über die Brücke\n");
+        }
+        while sheet.is_char_boundary(limit) {
+            sheet.insert(0, 'x');
+        }
+        tree.write("Echoes.lrc", &sheet);
+
+        let lyrics = found(&tree.track("Echoes.flac")).expect("the words that fitted");
+
+        assert_eq!(lyrics.timing(), Timing::Synced);
+        assert!(
+            lyrics
+                .lines()
+                .iter()
+                .all(|line| line.text.is_empty() || line.text == "über die Brücke"),
+            "{:?}",
+            lyrics.lines().first()
+        );
     }
 
     #[test]

@@ -6,8 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A UTF-8 lyric sidecar over 512 KiB is cut mid-character before its encoding is weighed: guessed as
-  a legacy code page, mojibake instead of the whole lines that fitted
 - A TIDAL token answer with an enormous `expires_in`, or a DASH manifest with `startNumber` near
   `u64::MAX`, panics the provider's thread through unchecked `Instant` and range arithmetic instead
   of being refused as unreadable
