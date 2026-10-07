@@ -2069,7 +2069,11 @@ starts.
   `WHERE` as a denial does. `suggest.rs` artist mixes are whole names, so a mix for *Air* is *Air*'s
   (`an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it`).
 - **`tracks_fts` holds the fold of a name; the query is folded with it.** Indexed: `folded_letters`
-  of title, billed artist, album, genres (lyrics apart); `db::indexed` folds every piece of a typed
+  of title, billed artist, album, genres (lyrics apart). The artist column is the billed artist with
+  the album's owner beside it, read by `store::index_row` itself (`album_owner_of`), so scan,
+  enrichment and every reindex write the album artist alike; the scan adds a compilation's tagged
+  album artist too
+  (`an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again`); `db::indexed` folds every piece of a typed
   word likewise, so the sides differ only by being changed apart. Why: `unicode61
   remove_diacritics 2` folds `Ç` to `c`, `İ` to `i`, not dotless `ı`, so *Kıskanç* matched only
   typed with `ı`, *KISKANÇ* only without; the fold also lets *Przybylowicz* find *Przybyłowicz*.

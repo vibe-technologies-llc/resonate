@@ -2087,6 +2087,8 @@ pub(crate) fn index_row(
     cached(tx, "DELETE FROM tracks_fts WHERE rowid = ?1", params![id])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
+    let owner = album_owner_of(tx, id)?;
+    let artist = indexed_artist(Some(artist), owner.as_deref());
     let sung = sung_by(tx, id)?;
     cached(
         tx,
@@ -2095,7 +2097,7 @@ pub(crate) fn index_row(
         params![
             id,
             folded_letters(title),
-            folded_letters(artist),
+            folded_letters(&artist),
             folded_letters(album),
             folded_letters(genre),
             sung,
@@ -2103,6 +2105,18 @@ pub(crate) fn index_row(
     )
     .map(drop)
     .map_err(|source| Error::store(StoreOp::Insert, source))
+}
+
+const THE_OWNER_OF_A_TRACKS_ALBUM: &str = "SELECT ar.name
+       FROM tracks t
+       JOIN albums a ON a.id = t.album_id
+       JOIN artists ar ON ar.id = a.artist_id
+      WHERE t.id = ?1";
+
+fn album_owner_of(tx: &Transaction<'_>, id: i64) -> Result<Option<String>> {
+    queried(tx, THE_OWNER_OF_A_TRACKS_ALBUM, params![id], |row| row.get(0))
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 const THE_WORDS_A_TRACK_SINGS: &str = "SELECT coalesce(t.lyrics, k.text)
@@ -2280,7 +2294,7 @@ fn indexed_artist(artist: Option<&str>, album_artist: Option<&str>) -> String {
     match (artist, album_artist) {
         (artist, "") => artist.to_owned(),
         ("", album_artist) => album_artist.to_owned(),
-        (artist, album_artist) if artist == album_artist => artist.to_owned(),
+        (artist, album_artist) if artist.contains(album_artist) => artist.to_owned(),
         (artist, album_artist) => format!("{artist} {album_artist}"),
     }
 }

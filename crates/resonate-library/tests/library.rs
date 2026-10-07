@@ -14409,6 +14409,39 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
 }
 
 #[test]
+fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again() -> Result<()> {
+    let (_tree, library, ..) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .text(ALBUM_ARTIST, "Zephyr Collective")
+            .text(ALBUM, "Orbits")
+            .text(ISRC, CODE),
+    )?;
+    assert_eq!(
+        titles(&library.search("Zephyr", 10)?.tracks),
+        vec!["Echos"]
+    );
+
+    let fake = Arc::new(Fake::new(Canned {
+        isrcs: vec![(
+            isrc(CODE),
+            orbits_recording(RECORDING, "Echoes", CODE, on_orbits(1)),
+        )],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    }));
+    assert_eq!(enrich(&library, &fake, false)?.stats.named, 1);
+
+    assert_eq!(
+        titles(&library.search("Zephyr", 10)?.tracks),
+        vec!["Echoes"],
+        "the album artist no longer finds the track the enrichment indexed again"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
     let tagged = || {
         Wav::new()

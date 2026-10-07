@@ -6,9 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A search for an album artist stops finding that artist's tracks and albums once enrichment
-  re-indexes them: only the scan writes the album artist into `tracks_fts`'s artist column; every
-  reindex and refold writes the track's artist alone
 - The queue is kept for the next run by tasks each replacing the last in `keep_the_queue`: a queue
   write still waiting for a thread is cancelled by the place write behind it; the next run resumes
   an older queue
