@@ -943,6 +943,38 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_track_dragged_out_of_the_reach_it_stands_in_carries_the_whole_reach(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+        let listing = driven.read(|root, cx| root.library.read(cx).listing());
+
+        driven.cx.simulate_keystrokes("down shift-down");
+        driven.settle();
+        let from = driven.centre_of(named("track", listing[0].id.get()));
+        let onto = driven.centre_of("queue");
+        driven.drag(from, onto);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        let queued: Vec<_> = driven.read(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| item.location.clone())
+                .collect()
+        });
+        assert_eq!(
+            queued,
+            [listing[0].location.clone(), listing[1].location.clone()]
+        );
+    }
+
+    #[gpui::test]
     fn a_queued_row_dragged_below_another_is_played_after_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let files = [

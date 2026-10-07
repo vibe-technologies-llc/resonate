@@ -2493,6 +2493,12 @@ impl RootView {
                     library.add_to_playlist(playlist, cuts, cx)
                 });
             }
+            LiftedTo::PlaylistAt(playlist, at) => {
+                let cuts = tracks.iter().map(Cut::of).collect();
+                self.library.update(cx, |library, cx| {
+                    library.insert_into_playlist(playlist, cuts, at, cx);
+                });
+            }
         }
     }
 

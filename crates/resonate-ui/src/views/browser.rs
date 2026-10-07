@@ -1059,7 +1059,16 @@ impl RootView {
                     this.play_the_listing_from(&drawn, start, window, cx);
                 }
             }));
-        let row = reorder::liftable(row, Lifted::track(track));
+        let lifted = match plays {
+            Plays::AsTheListingIsDrawn { in_an_album: false } => {
+                let rows = self.acting_on(Shift::Listing(Listed::Tracks), index);
+                Lifted::tracks(tracks.get(rows.range()).unwrap_or(slice::from_ref(track)))
+            }
+            Plays::AsTheListingIsDrawn { in_an_album: true } | Plays::TheseRows => {
+                Lifted::track(track)
+            }
+        };
+        let row = reorder::liftable(row, lifted);
 
         menu::opens_a_reachable_menu(
             row,

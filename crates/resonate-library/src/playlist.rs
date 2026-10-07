@@ -783,6 +783,32 @@ pub fn add(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
     add_as(inner, id, Edit::Added, cuts)
 }
 
+pub fn insert_at(inner: &Inner, id: PlaylistId, cuts: &[Cut], at: usize) -> Result<usize> {
+    let wanted = Adding::of(cuts)?;
+    let added = undo::edited(inner, id, Edit::Added, Reach::From(at), |transaction| {
+        only_a_list(transaction, id)?;
+        if wanted.rows.is_empty() {
+            return Ok(Change::Nothing(0));
+        }
+        let held = usize::try_from(tail(transaction, id)?).unwrap_or(0);
+        let added = wanted.appended(transaction, id)?;
+        if kept_in(transaction, id)?.is_none() && at < held && added > 0 {
+            reseated(
+                transaction,
+                id,
+                Span::between(held, held + added - 1),
+                at as i64,
+            )?;
+        }
+        Ok(Change::Made(added))
+    })?;
+
+    if added > 0 {
+        inner.playlists_changed();
+    }
+    Ok(added)
+}
+
 fn add_as(inner: &Inner, id: PlaylistId, edit: Edit, cuts: &[Cut]) -> Result<usize> {
     let wanted = Adding::of(cuts)?;
     let added = undo::edited(inner, id, edit, Reach::Appended, |transaction| {

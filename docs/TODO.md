@@ -131,10 +131,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - The tap records frames as rendered, before the ring trims them: a muted stream still draws, a
   turned volume shows a buffer late
 
-## Later: The window
-- A track dragged out of a listing takes that row alone, not the reach it stands in; a drop onto a
-  playlist's rows lands at its end, not where it was let go
-
 ## Later: Scrobbling
 - Last.fm is signed in to from the command line alone (`resonate lastfm`); the window has no group
   for it, and a favourite is not loved there (its API names a track by its names)

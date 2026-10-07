@@ -3159,15 +3159,24 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 let added = library.add_to_playlist(id, &holding)?;
-                let name = library
-                    .playlist(id)?
-                    .map_or_else(|| format!("playlist {id}"), |found| found.name);
+                put_into(library, id, added).map(Some)
+            },
+            cx,
+        );
+    }
 
-                Ok(Some(match added {
-                    0 => format!("Nothing went into {name}"),
-                    1 => format!("Put 1 track in {name}{TAKEN_BACK}"),
-                    added => format!("Put {added} tracks in {name}{TAKEN_BACK}"),
-                }))
+    pub fn insert_into_playlist(
+        &mut self,
+        id: PlaylistId,
+        holding: Vec<Cut>,
+        at: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit(
+            Change::Playlist,
+            move |library| {
+                let added = library.insert_into_playlist(id, &holding, at)?;
+                put_into(library, id, added).map(Some)
             },
             cx,
         );
@@ -6211,6 +6220,18 @@ fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
                 false => Vec::new(),
             },
         },
+    })
+}
+
+fn put_into(library: &Library, id: PlaylistId, added: usize) -> resonate_library::Result<String> {
+    let name = library
+        .playlist(id)?
+        .map_or_else(|| format!("playlist {id}"), |found| found.name);
+
+    Ok(match added {
+        0 => format!("Nothing went into {name}"),
+        1 => format!("Put 1 track in {name}{TAKEN_BACK}"),
+        added => format!("Put {added} tracks in {name}{TAKEN_BACK}"),
     })
 }
 

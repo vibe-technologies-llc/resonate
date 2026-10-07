@@ -18418,6 +18418,50 @@ fn a_pinned_playlist_leads_every_order() -> Result<()> {
 }
 
 #[test]
+fn rows_put_into_a_playlist_at_a_place_land_there_and_one_undo_takes_them_out() -> Result<()> {
+    let (tree, library) = scanned_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let evening = library.start_playlist("Evening", &[file("a.wav"), file("b.wav")])?;
+    let names = |library: &Library| -> Result<Vec<String>> {
+        Ok(library
+            .playlist_entries(evening, None)?
+            .into_iter()
+            .filter_map(|entry| {
+                entry
+                    .cut
+                    .location
+                    .as_path()
+                    .and_then(|path| path.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .collect())
+    };
+
+    assert_eq!(
+        library.insert_into_playlist(evening, &[file("c.wav"), file("a.wav")], 1)?,
+        2
+    );
+    assert_eq!(names(&library)?, ["a.wav", "c.wav", "a.wav", "b.wav"]);
+    assert_eq!(
+        library.insert_into_playlist(evening, &[file("b.wav")], 99)?,
+        1
+    );
+    assert_eq!(
+        names(&library)?,
+        ["a.wav", "c.wav", "a.wav", "b.wav", "b.wav"]
+    );
+
+    library
+        .undo()?
+        .expect("the insert at the end is there to take back");
+    library
+        .undo()?
+        .expect("the insert at a place is there to take back");
+    assert_eq!(names(&library)?, ["a.wav", "b.wav"]);
+    Ok(())
+}
+
+#[test]
 fn undoing_an_edit_keeps_a_playlist_pinned() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));

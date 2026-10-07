@@ -33,6 +33,7 @@ pub(crate) enum Reach {
     Appended,
     Emptied(Span),
     Shuffled(Span),
+    From(usize),
 }
 
 impl Reach {
@@ -59,6 +60,14 @@ impl Reach {
             Self::Appended => match playlist::kept_in(transaction, id)? {
                 Some(_) => Reached::Whole,
                 None => Reached::From(playlist::tail(transaction, id)?),
+            },
+            Self::From(at) => match playlist::kept_in(transaction, id)? {
+                Some(_) => Reached::Whole,
+                None => Reached::From(
+                    i64::try_from(at)
+                        .unwrap_or(i64::MAX)
+                        .min(playlist::tail(transaction, id)?),
+                ),
             },
         })
     }

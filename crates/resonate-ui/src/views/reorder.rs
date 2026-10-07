@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{slice, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, Bounds, Context, Div, DragMoveEvent, IntoElement, Pixels, Point, Render,
@@ -205,9 +205,18 @@ pub(crate) struct Lifted {
 
 impl Lifted {
     pub(crate) fn track(track: &Track) -> Self {
+        Self::tracks(slice::from_ref(track))
+    }
+
+    pub(crate) fn tracks(tracks: &[Track]) -> Self {
+        let title = match tracks {
+            [one] => one.title.clone(),
+            [first, ..] => format!("{} and {} more", first.title, tracks.len() - 1),
+            [] => String::new(),
+        };
         Self {
-            lift: Lift::Tracks(Arc::from([track.clone()])),
-            title: SharedString::from(track.title.clone()),
+            lift: Lift::Tracks(Arc::from(tracks)),
+            title: SharedString::from(title),
         }
     }
 
@@ -245,6 +254,7 @@ pub(crate) fn takes_a_lift(
 pub(crate) enum LiftedTo {
     Queue(Placement),
     Playlist(PlaylistId),
+    PlaylistAt(PlaylistId, usize),
 }
 
 pub(crate) struct Ghost {
@@ -340,7 +350,7 @@ pub(crate) fn movable(
 const fn lifted_onto(shift: Shift, onto: usize) -> Option<LiftedTo> {
     match shift {
         Shift::Queue => Some(LiftedTo::Queue(Placement::At(onto))),
-        Shift::Playlist(playlist) => Some(LiftedTo::Playlist(playlist)),
+        Shift::Playlist(playlist) => Some(LiftedTo::PlaylistAt(playlist, onto)),
         Shift::Listing(_) => None,
     }
 }

@@ -2235,6 +2235,10 @@ impl Library {
         playlist::add(&self.inner, id, cuts)
     }
 
+    pub fn insert_into_playlist(&self, id: PlaylistId, cuts: &[Cut], at: usize) -> Result<usize> {
+        playlist::insert_at(&self.inner, id, cuts, at)
+    }
+
     pub fn copy_playlist(
         &self,
         from: PlaylistId,
