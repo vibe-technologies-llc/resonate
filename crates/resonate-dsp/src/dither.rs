@@ -258,7 +258,11 @@ fn on_the_grid(steps: f64) -> f64 {
 }
 
 fn in_range(steps: f64, steps_per_unit: f64) -> f64 {
-    steps.clamp(-steps_per_unit, steps_per_unit - 1.0)
+    if steps.is_nan() {
+        0.0
+    } else {
+        steps.clamp(-steps_per_unit, steps_per_unit - 1.0)
+    }
 }
 
 pub struct Dither {
@@ -1158,13 +1162,7 @@ mod tests {
             }
 
             let [not_a_number, above, below, huge] = streams.map(|output| output[WILD_AT]);
-            let mut word = SampleData::S16(vec![i16::MAX]);
-            word.write_f64(&[not_a_number]);
-            assert_eq!(
-                word,
-                SampleData::S16(vec![0]),
-                "a NaN the stage passes on is silence once the conversion reads it"
-            );
+            assert_eq!(not_a_number, 0.0, "a NaN leaves the stage as silence");
             assert_eq!(above, 1.0 - step);
             assert_eq!(below, -1.0);
             assert_eq!(huge, 1.0 - step);

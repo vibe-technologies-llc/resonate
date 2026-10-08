@@ -46,7 +46,7 @@ const DECADES_WITH_A_NAME: [(i32, &str); 8] = [
 const THE_DECADES_THE_CATALOG_HOLDS: &str = "SELECT (a.year / ?1) * ?1 AS decade,
             count(*) AS held
        FROM tracks t JOIN albums a ON a.id = t.album_id
-      WHERE a.year IS NOT NULL
+      WHERE a.year IS NOT NULL AND a.year >= ?1
       GROUP BY decade
      HAVING held >= ?2
       ORDER BY held DESC, decade DESC

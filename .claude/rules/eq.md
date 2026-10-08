@@ -27,10 +27,14 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   milli-dB, `Q` milli-units. `OutputSettings` derives `Eq` and `publish_settings` compares it every
   16 ms (floats would not build); the text format's precision makes the round trip exact; `Ord`
   exact.
-- **Channels**: `Band::channels` is a `ChannelSet` (`EVERY` default, also past the eighth channel);
-  `design_for` gives `Biquad::IDENTITY` off-set. The APO reader follows `Channel:` lines, the writer
-  emits one where sets differ; an unnameable channel or a partial-channel `Preamp:` (a preamp is one
-  for all) passes its lines over.
+- **Channels**: `Band::channels` is a `ChannelSet` (`EVERY` default, also past the eighth channel)
+  of *speaker slots* in EqualizerAPO's order (`L R C SUB RL RR SL SR`), not stream indices;
+  `design_for` gives `Biquad::IDENTITY` off-set. The stage resolves each stream channel to its slot
+  through the layout's positions (`ChannelSet::slot_of`; a discrete layout by index, a rear centre
+  reached only by every channel), so `C` on quad reaches nothing, not the rear left
+  (`a_channel_a_profile_names_is_the_speaker_of_that_name_whatever_the_layout`). The APO reader
+  follows `Channel:` lines, the writer emits one where sets differ; an unnameable channel or a
+  partial-channel `Preamp:` (a preamp is one for all) passes its lines over.
 - **Curves are per channel; channel-less = loudest.** `Profile::magnitude_db_on`/`response_on`: one
   channel; `magnitude_db`/`response`/`peak_db`: loudest per point (L+R boosts at one centre = 6 dB,
   not 12), so *Fit the preamp* holds the loudest under full scale. `channels_apart`: channels some
@@ -96,7 +100,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `delivery()` is made from), so it costs a conversion, not noise; the test keeps `OutputMode` from
   naming work never run.
 - **The preamp is a scalar before the bands.** Nothing else guards a boost: clip prevention
-  attenuates, never limits (`audio.md`). *Fit* sets it from the profile's peak; a listener's
+  attenuates, never limits (`audio.md`). *Fit* sets it from the profile's peak (`peak_db` weighs
+  every band's centre beside the drawn sweep, so a Q 40 boost between two points is not missed;
+  a peak past the deepest preamp fits the deepest, not none); a listener's
   override meets the existing clamps, visible in `explain`. **It glides**: `set_equalisation` moves
   `Preamping` over `EASED_OVER`, weighed by frames since it began (never accumulated: lands
   exactly); `is_ramping` meanwhile
@@ -109,7 +115,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   redraws at the stream rate via the `VeryHigh` resampler, caching each rate; the resampler's output
   is already time-aligned (it waits for its reach), so nothing is skipped and the response starts
   where it did (`a_response_taken_at_another_rate_keeps_its_peak_where_it_was_in_time`).
-  `engine::read_impulse`
+  `Impulse::new` refuses a tap that is no finite number (one NaN would ride the convolver for the
+  rest of the stream). `engine::read_impulse`
   decodes any codec-readable file, ≤ `LONGEST_IMPULSE` (10 s), **with the headroom its loudest boost
   needs**: `Impulse::with_headroom` scales every channel by the reciprocal of the greatest magnitude
   any channel reaches, where above unity (a dip-boosting correction never clips at the dither or
@@ -174,12 +181,18 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   own curves so a gone device can be forgotten; a too-large or broken file is an `unreadable` row,
   not the end of the list.
 - **A profile is read as far as it parses, never failing on a line** (the `lrc.rs`/`cue.rs` rule):
-  parameters by name; `BW Oct` and `S` convert to Q, comma decimals read, out-of-range values clamp,
-  `#` lines are comments. Only `LARGEST_PROFILE` (64 KiB) and `LINES_AT_MOST` (4096) refuse; a
-  filter past `MAX_BANDS` is passed over and counted. `read_number` is exported so the pane's cells
-  agree. **What a read gave up is said, CLI and window alike**: `Reading`/`Kept` carry `passed_over`
-  (unsupported filters, a `Device:` or unknown `Channel:` scope) and `approximated` (a
-  non-second-order rolloff word, read as second order).
+  parameters by name; `BW` and `S` convert to Q (`BW` in the unit it names, before or after the
+  number: `Oct` octaves, `Hz` hertz as centre over width; unnamed, octaves), comma decimals read,
+  `#` lines are comments. Only `LARGEST_PROFILE` (64 KiB of the file's own bytes, weighed before
+  decoding, so a UTF-16 file is refused rather than read in part: `Error::TooLarge`) and
+  `LINES_AT_MOST` (4096, `Error::TooManyLines`) refuse; a filter past `MAX_BANDS` is passed over
+  and counted. **A file correcting several devices is read as the first it names**: `Device: all`
+  (or none) reaches; the first device named is read; every line under another device is passed
+  over, never summed into it (`a_file_correcting_two_devices_is_read_as_the_first_of_them`).
+  `read_number` is exported so the pane's cells agree. **What a read gave up is said, CLI and
+  window alike**: `Reading`/`Kept` carry `passed_over` (unsupported filters, another device's
+  lines, an unknown `Channel:` scope), `approximated` (a non-second-order rolloff word, read as
+  second order) and `clamped` (a frequency, gain, Q or preamp held to what this build holds).
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** Its 127 points carry no
   bands: the curve is fitted onto the 31 ISO third-octave centres at `Q::THIRD_OCTAVE`, iterating
   the bank's response against the target `FITTING_PASSES` (12) times (a band set to the curve at its

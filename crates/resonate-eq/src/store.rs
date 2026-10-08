@@ -8,7 +8,7 @@ use std::{
 
 use resonate_core::{eq::Profile, text};
 
-use crate::{Error, Result, StoreOp, apo};
+use crate::{EqOp, Error, Result, StoreOp, apo};
 
 pub const EXTENSION: &str = "txt";
 pub const NAME_AT_MOST: usize = 96;
@@ -79,6 +79,7 @@ pub struct Kept {
     pub converted: bool,
     pub passed_over: usize,
     pub approximated: usize,
+    pub clamped: usize,
 }
 
 pub struct Store {
@@ -135,6 +136,12 @@ impl Store {
         file.take(apo::LARGEST_PROFILE as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(Self::failed(path, StoreOp::Read))?;
+        if bytes.len() > apo::LARGEST_PROFILE {
+            return Err(Error::TooLarge {
+                op: EqOp::Parse,
+                limit: apo::LARGEST_PROFILE,
+            });
+        }
         Ok(Some(text::decoded(&bytes).0))
     }
 
@@ -258,6 +265,7 @@ impl Store {
             profile: reading.profile,
             passed_over: reading.passed_over,
             approximated: reading.approximated,
+            clamped: reading.clamped,
         })
     }
 
@@ -508,6 +516,22 @@ mod tests {
             scratch.store.read(&name).expect("it reads"),
             Some(profile())
         );
+    }
+
+    #[test]
+    fn a_utf16_file_past_the_bytes_a_profile_holds_is_refused_rather_than_read_in_part() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let from = folder.join("wide.txt");
+        let text = "Filter 1: ON PK Fc 1000 Hz Gain 1 dB Q 1\n".repeat(1_000);
+        let bytes: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        fs::write(&from, bytes).expect("a writable file");
+
+        assert!(matches!(Store::read_in(&from), Err(Error::TooLarge { .. })));
     }
 
     #[test]

@@ -1,8 +1,8 @@
 use std::{iter, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use resonate_core::{
-    SampleRate, StreamSpec,
-    eq::{Biquad, MAX_BANDS, Profile},
+    ChannelCount, ChannelLayout, SampleRate, StreamSpec,
+    eq::{Biquad, ChannelSet, MAX_BANDS, Profile},
 };
 
 use crate::{Error, ProcessCount, Processor, Result, fused::multiply_add};
@@ -418,6 +418,7 @@ pub struct Equaliser {
     profile: Arc<Profile>,
     rate: SampleRate,
     channels: NonZeroUsize,
+    layout: ChannelLayout,
     preamp: Preamping,
     coefficients: Vec<Biquad>,
     bands: usize,
@@ -433,6 +434,7 @@ impl Equaliser {
             profile,
             rate,
             channels: NonZeroUsize::MIN,
+            layout: ChannelLayout::Discrete(ChannelCount::MONO),
             preamp: Preamping::steady(1.0),
             coefficients: Vec::with_capacity(MAX_BANDS),
             bands: 0,
@@ -471,10 +473,12 @@ impl Equaliser {
         let mut first_channel = 0;
         for group in Group::splitting(self.channels.get()) {
             for band in bands {
-                self.coefficients.extend(
-                    (first_channel..first_channel + group.width())
-                        .map(|channel| band.design_for(self.rate, channel)),
-                );
+                self.coefficients
+                    .extend(
+                        (first_channel..first_channel + group.width()).map(|channel| {
+                            band.design_for(self.rate, ChannelSet::slot_of(self.layout, channel))
+                        }),
+                    );
             }
             first_channel += group.width();
         }
@@ -506,6 +510,7 @@ impl Processor for Equaliser {
 
         let channels = usize::from(spec.channel_count().get());
         self.channels = NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN);
+        self.layout = spec.channels;
         self.state.clear();
         self.state
             .resize(self.channels.get() * MAX_BANDS, Section::default());

@@ -146,6 +146,8 @@ struct Fader {
 
 const WHOLE: f64 = 1.0;
 const SILENT: f64 = 0.0;
+const S24_LEAST: f64 = -8_388_608.0;
+const S24_GREATEST: f64 = 8_388_607.0;
 
 pub struct RingProducer {
     inner: rtrb::Producer<u8>,
@@ -599,7 +601,15 @@ fn scale(frame: &mut [u8], format: SampleFormat, level: f64) {
                 *sample = scaled.to_ne_bytes();
             }
         }
-        SampleFormat::S24 | SampleFormat::S32 => {
+        SampleFormat::S24 => {
+            for sample in frame.as_chunks_mut::<4>().0 {
+                let scaled = (f64::from(i32::from_ne_bytes(*sample)) * level)
+                    .round()
+                    .clamp(S24_LEAST, S24_GREATEST) as i32;
+                *sample = scaled.to_ne_bytes();
+            }
+        }
+        SampleFormat::S32 => {
             for sample in frame.as_chunks_mut::<4>().0 {
                 let scaled = (f64::from(i32::from_ne_bytes(*sample)) * level).round() as i32;
                 *sample = scaled.to_ne_bytes();
@@ -1516,5 +1526,23 @@ mod tests {
                 .any(|frame| frame[..] == carried.as_bytes()[8 * 15..]),
             "unmuting a marked ring did not bring its music back"
         );
+    }
+
+    #[test]
+    fn a_trim_above_one_holds_a_twenty_four_bit_word_inside_its_twenty_four_bits() {
+        let mut frame: Vec<u8> = [8_000_000_i32, -8_000_000, 1_000]
+            .iter()
+            .flat_map(|sample| sample.to_ne_bytes())
+            .collect();
+
+        scale(&mut frame, SampleFormat::S24, 2.0);
+
+        let words: Vec<i32> = frame
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|word| i32::from_ne_bytes(*word))
+            .collect();
+        assert_eq!(words, vec![8_388_607, -8_388_608, 2_000]);
     }
 }

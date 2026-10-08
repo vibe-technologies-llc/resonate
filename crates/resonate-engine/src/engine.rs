@@ -1575,7 +1575,9 @@ impl Engine {
         }
         if let Some(at) = self.unbound {
             self.rebind(Some(at), None)?;
-            self.unbound = None;
+            if self.output.is_some() {
+                self.unbound = None;
+            }
             return Ok(());
         }
         if self.transport == TransportState::Paused {

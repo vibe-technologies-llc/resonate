@@ -89,6 +89,12 @@ fn caveats(kept: &resonate_eq::Kept) -> String {
             kept.approximated
         ));
     }
+    if kept.clamped > 0 {
+        said.push_str(&format!(
+            "; {} values past what it holds were held to its limits",
+            kept.clamped
+        ));
+    }
     said
 }
 

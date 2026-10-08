@@ -4173,6 +4173,47 @@ fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_ba
 }
 
 #[test]
+fn play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(Vec::new())?;
+    let outcome = player
+        .request(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(PATIENCE);
+    assert!(outcome.is_err(), "a queue with no sink started playing");
+
+    let (open_the_gate, gate) = unbounded::<()>();
+    graph.lock().survey_gate = Some(gate);
+    let asked = graph.lock().enumerations;
+    announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > asked,
+        "the survey to be asked about the device that appeared",
+    );
+    player.request(Command::Play)?.wait_for(PATIENCE)?;
+    assert_eq!(
+        graph.lock().opens,
+        0,
+        "a stream opened before the survey answered"
+    );
+
+    drop(open_the_gate);
+    wait_for(
+        &player,
+        playing,
+        "the row to bind once the survey brought the device",
+    );
+    Ok(())
+}
+
+#[test]
 fn the_first_play_pause_after_a_load_that_found_no_device_plays() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

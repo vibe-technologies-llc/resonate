@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::{Error, Result, SampleRate};
+use crate::{ChannelLayout, ChannelPosition, Error, Result, SampleRate};
 
 pub const MAX_BANDS: usize = 32;
 
@@ -307,6 +307,25 @@ impl ChannelSet {
 
     pub fn held(self) -> impl Iterator<Item = usize> {
         (0..Self::NAMED_AT_MOST).filter(move |channel| self.holds(*channel))
+    }
+
+    pub fn slot_of(layout: ChannelLayout, channel: usize) -> usize {
+        use ChannelPosition::{
+            FrontCenter, FrontLeft, FrontRight, Lfe, RearCenter, RearLeft, RearRight, SideLeft,
+            SideRight,
+        };
+        match layout.positions().get(channel) {
+            None => channel,
+            Some(FrontLeft) => 0,
+            Some(FrontRight) => 1,
+            Some(FrontCenter) => 2,
+            Some(Lfe) => 3,
+            Some(RearLeft) => 4,
+            Some(RearRight) => 5,
+            Some(SideLeft) => 6,
+            Some(SideRight) => 7,
+            Some(RearCenter) => Self::NAMED_AT_MOST,
+        }
     }
 }
 
@@ -773,9 +792,17 @@ impl Profile {
 
     pub fn peak_db(&self, rate: SampleRate) -> f64 {
         let heard = self.heard_apart(rate);
-        sweep(RESPONSE_POINTS).fold(f64::NEG_INFINITY, |highest, hertz| {
-            highest.max(loudest_db(&heard, hertz, rate))
-        })
+        let centres: Vec<f64> = self
+            .bands()
+            .iter()
+            .filter(|band| band.applies_at(rate))
+            .map(|band| band.frequency.hertz())
+            .collect();
+        sweep(RESPONSE_POINTS)
+            .chain(centres)
+            .fold(f64::NEG_INFINITY, |highest, hertz| {
+                highest.max(loudest_db(&heard, hertz, rate))
+            })
     }
 
     pub fn fitted_preamp(&self, rate: SampleRate) -> Preamp {
@@ -783,7 +810,8 @@ impl Profile {
         if !peak.is_finite() || peak <= 0.0 {
             return Preamp::NONE;
         }
-        Preamp::from_decibels(-peak).unwrap_or(Preamp::NONE)
+        let deepest = -f64::from(BandGain::WIDEST_MILLI_DECIBELS) / MILLI_DECIBELS_PER_DECIBEL;
+        Preamp::from_decibels((-peak).max(deepest)).unwrap_or(Preamp::NONE)
     }
 }
 
@@ -1015,6 +1043,56 @@ pub fn sweep(points: usize) -> impl Iterator<Item = f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_narrow_boost_between_the_drawn_points_is_fitted_under_whole() {
+        let rate = SampleRate::HZ_48000;
+        let narrow = Band::peaking(
+            Frequency::from_hertz(1_013.0).expect("in range"),
+            BandGain::from_decibels(12.0).expect("in range"),
+            Q::from_units(40.0).expect("in range"),
+        );
+        let profile = Profile::new(Preamp::NONE, vec![narrow]).expect("a profile");
+
+        assert!(
+            (profile.peak_db(rate) - 12.0).abs() < 0.05,
+            "{}",
+            profile.peak_db(rate)
+        );
+        assert_eq!(profile.fitted_preamp(rate).milli_decibels(), -12_000);
+    }
+
+    #[test]
+    fn a_stack_past_the_deepest_preamp_is_fitted_the_deepest_one() {
+        let rate = SampleRate::HZ_48000;
+        let boost = Band::peaking(
+            Frequency::from_hertz(1_000.0).expect("in range"),
+            BandGain::from_milli_decibels(BandGain::WIDEST_MILLI_DECIBELS).expect("in range"),
+            Q::from_units(1.0).expect("in range"),
+        );
+        let profile = Profile::new(Preamp::NONE, vec![boost; 3]).expect("a profile");
+
+        assert_eq!(
+            profile.fitted_preamp(rate).milli_decibels(),
+            -BandGain::WIDEST_MILLI_DECIBELS
+        );
+    }
+
+    #[test]
+    fn a_channel_a_profile_names_is_the_speaker_of_that_name_whatever_the_layout() {
+        let centre = ChannelSet::of(&[2]).expect("the centre");
+
+        assert_eq!(ChannelSet::slot_of(ChannelLayout::Stereo, 1), 1);
+        assert_eq!(ChannelSet::slot_of(ChannelLayout::Quad, 2), 4);
+        assert_eq!(ChannelSet::slot_of(ChannelLayout::Surround50, 3), 4);
+        assert_eq!(ChannelSet::slot_of(ChannelLayout::Surround61, 5), 6);
+        assert_eq!(
+            ChannelSet::slot_of(ChannelLayout::Surround61, 4),
+            ChannelSet::NAMED_AT_MOST
+        );
+        assert!(!centre.holds(ChannelSet::slot_of(ChannelLayout::Quad, 2)));
+        assert!(centre.holds(ChannelSet::slot_of(ChannelLayout::Surround50, 2)));
+    }
 
     const RATES: [SampleRate; 4] = [
         SampleRate::HZ_44100,

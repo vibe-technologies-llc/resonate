@@ -28,6 +28,20 @@ pub(crate) fn wide_s32(sample: f64) -> i32 {
     rounded_f64(held_f64(SampleFormat::S32, sample)) as i32
 }
 
+pub(crate) fn f32(sample: f32) -> f32 {
+    if sample.is_finite() {
+        sample
+    } else if sample.is_nan() {
+        0.0
+    } else {
+        1.0_f32.copysign(sample)
+    }
+}
+
+pub(crate) fn wide_f32(sample: f64) -> f32 {
+    f32(sample as f32)
+}
+
 fn held_f32(format: SampleFormat, sample: f32) -> f32 {
     let full_scale = format.full_scale();
     let scaled = sample * full_scale;

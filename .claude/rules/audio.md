@@ -44,7 +44,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Text blank once trimmed is no tag; stored text is trimmed.** `tags::given` is the one door for
   text `StandardTag`s into a `TagSet` slot, leaving it unchanged if nothing remains (a blank frame
   after a name must not unname it). ReplayGain values and numbers likewise: unparsable, zero or
-  oversized keeps the earlier frame's value (an empty frame must not play at no gain).
+  oversized keeps the earlier frame's value (an empty frame must not play at no gain); a gain past
+  `PLAUSIBLE_GAIN_DB` (±64 dB) is no tag (`+300 dB` would reach the gain stage as infinity).
   `tags::decibels`/`tags::peak` take a unit in any case and a decimal comma where it is the only
   separator. Newest revision wins a retagged date; ID3v2.3 `TDAT`/`TIME` read by own key
   (`Id3DatePart`), clock never a date. `COMM` description beginning `iTun` = iTunes private note
@@ -454,7 +455,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Entering::FadedIn`; at a track's start it opens whole, so a bit-perfect first frame is untouched.
   Only a stream the graph is pulling fades (`Output::is_sounding`, `PULLED_WITHIN`).
 - **A volume or ReplayGain change is heard at once, on what the ring holds.** Consumer trims each
-  frame by level-to-be-heard / level-rendered-at. `RingProducer::hear_at` stores the amplitude to be
+  frame by level-to-be-heard / level-rendered-at (a 24-bit word held inside its 24 bits where the
+  trim is above one). `RingProducer::hear_at` stores the amplitude to be
   heard (atomic, f32 bits); `render_at(amplitude, ahead)` announces the frame (counted from the last
   discard) from which the chain renders at a new amplitude, via an SPSC queue of `RENDERED_SLOTS`
   carrying the discard epoch. `ahead` = rendered but not yet in the ring
@@ -535,7 +537,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   empty list, change stream gone; ask failing with a list still published: bind takes it. **No bind
   asks in line where the survey answers for the list** (`the_survey_answers_for_the_list`: survey
   thread + change stream). A list with no announced change since the survey last answered is
-  current, empty included: a bind takes it, an empty one is `NoSink` at once. A stale list still
+  current, empty included: a bind takes it, an empty one is `NoSink` at once. The real client
+  answers a graph with no sink as an empty list (`Surveyor for Survey` reads `NoSink` as none, as
+  the test doubles do), so the last device unplugged leaves the published list. A stale list still
   holding devices is bound from as published; the survey's answer moves the stream via
   `follow_the_sink_it_would_choose`. A list known wrong (stale or survey out, and empty or with a
   row waiting for a device or the graph: `the_survey_will_answer_for_a_list_known_wrong`) is not
@@ -628,7 +632,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Opening` (`Unwrapped::open` on a `resonate-track-open` thread); landing paused, `Engine::started`
   records the frame in `Engine::unbound` and stops: a skip run costs one open a row, not a sink
   selection, ring, DSP chain, half-ring decode and `Backend::open`. Paused, every `rebind` records
-  the frame instead; `Engine::play` spends it; a failed bind leaves it set (next `Play` retries).
+  the frame instead; `Engine::play` spends it only where the bind made an output: one
+  waiting for the survey keeps it for the answer
+  (`play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back`); a failed bind leaves
+  it set (next `Play` retries).
   `unbound` also holds the row of a lost graph, missing device or unanswered sink survey, bound by
   their own paths. `PlayerState::output` stays `None` until bound.
 ## The queue
@@ -1011,7 +1018,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   and `Engine::flush` pick byte copy or conversion from `OutputPlan::is_transparent`, the reading
   `delivery()` asks the decoder's format from.
 - **Every float reaching an integer word is rounded to nearest, ties to even, saturated (NaN to
-  zero); one set of core conversions is the whole of how.** `SampleData::write_f64` is what
+  zero); one set of core conversions is the whole of how.** A float word takes every finite value
+  as is, NaN as zero and an infinity as full scale (`quantise::f32`); the dither stage hands a NaN
+  on as silence. `SampleData::write_f64` is what
   `Output::stage` narrows the carrier through to the ring; `write_f32` is its narrow twin
   (`convert_into`, `retype`, DSD decimator). A narrowing nothing dithers (dither off, or float
   source at its own rate onto an integer word) is `OutputPlan::rounds`: non-transparent plan, empty

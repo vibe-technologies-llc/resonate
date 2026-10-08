@@ -59,6 +59,9 @@ pub enum Error {
     #[error("{op:?} answered more than the {limit} bytes a profile may hold")]
     TooLarge { op: EqOp, limit: usize },
 
+    #[error("the profile holds more than the {limit} lines a profile may hold")]
+    TooManyLines { limit: usize },
+
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),
 }

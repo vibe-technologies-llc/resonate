@@ -247,6 +247,7 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
         Eq::NoSuchProfile => Some("that profile isn't kept any more"),
         Eq::NameNotUsable => Some("that name can't be used for a profile"),
         Eq::TooLarge { .. } => Some("the file is too large"),
+        Eq::TooManyLines { .. } => Some("the file holds too many lines"),
         _ => None,
     };
     Notice::Trouble(match why {

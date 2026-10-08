@@ -29,7 +29,10 @@ pub trait Backend: Send + 'static {
 
 impl Surveyor for Survey {
     fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Self::enumerate_sinks(self, timeout)
+        match Self::enumerate_sinks(self, timeout) {
+            Err(SinkError::NoSink) => Ok(Vec::new()),
+            found => found,
+        }
     }
 }
 

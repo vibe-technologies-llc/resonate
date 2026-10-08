@@ -209,6 +209,12 @@ fn passed_over(kept: &Kept) {
             kept.approximated
         );
     }
+    if kept.clamped > 0 {
+        said!(
+            "{} values past what this build holds were held to its limits",
+            kept.clamped
+        );
+    }
 }
 
 fn export(

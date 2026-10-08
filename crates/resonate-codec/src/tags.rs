@@ -34,6 +34,7 @@ const RIGHT_PEAK: usize = 7;
 const REPLAY_GAIN_REFERENCE_DB: f32 = 89.0;
 const LUFS_BELOW_THE_REFERENCE_DB: f32 = 107.0;
 const PLAUSIBLE_REFERENCE_DB: std::ops::RangeInclusive<f32> = 60.0..=120.0;
+const PLAUSIBLE_GAIN_DB: std::ops::RangeInclusive<f32> = -64.0..=64.0;
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
 const R128_ALBUM_GAIN: &str = "R128_ALBUM_GAIN";
@@ -1096,6 +1097,10 @@ pub(crate) fn decibels(value: &str) -> Option<Decibels> {
         tracing::debug!(value, "discarding an unparseable ReplayGain gain");
         return None;
     };
+    if !PLAUSIBLE_GAIN_DB.contains(&db) {
+        tracing::debug!(value, "discarding a ReplayGain gain no tagger would write");
+        return None;
+    }
     Decibels::new(db).ok()
 }
 
@@ -1879,6 +1884,17 @@ mod tests {
         );
         assert_eq!(set.replay_gain.album_gain, None);
         assert_eq!(set.replay_gain.track_peak, Some(0.987_654));
+    }
+
+    #[test]
+    fn a_replay_gain_past_any_a_tagger_would_write_is_dropped() {
+        let set = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("+300 dB"))),
+            tag(StandardTag::ReplayGainAlbumGain(text("-800 dB"))),
+        ]);
+
+        assert_eq!(set.replay_gain.track_gain, None);
+        assert_eq!(set.replay_gain.album_gain, None);
     }
 
     #[test]

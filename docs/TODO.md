@@ -6,29 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- *Play* pressed while the sink survey is out after a device went clears the row it would bind:
-  `Engine::play` sets `unbound = None` after a `rebind` that took the `wait_for_the_survey` branch,
-  so `bind_the_row_waiting_for_a_device` finds nothing and the transport sits in `Loading` for good
-- An empty sink list is never published: `Survey::enumerate_sinks` answers `NoSink` for an empty
-  snapshot and `take_the_survey` publishes only `Ok`, so the last device unplugged stays listed,
-  a bind is made to it, fails `SinkGone` and is billed to the row instead of waiting (the test
-  double answers `Ok(vec![])`, hiding it)
-- A NaN or infinity reaches a float sink untouched: one NaN tap in an impulse makes every later
-  convolver sample NaN (`Impulse::with_headroom` returns early on a non-finite peak, `read_impulse`
-  checks no tap), flat dither passes NaN through, and `SampleData::write_f64` to F32 is a bare cast
-- A tagged ReplayGain gain has no bound: `tags::decibels` takes `+300 dB`, past ~770 dB
-  `to_gain` is infinite and `GainStage` makes `0 × ∞ = NaN`; with no peak declared nothing caps it
-- The ring's trim saturates a 24-bit stream at 32 bits: `ring::scale` rounds S24 and S32 alike to
-  `i32`, so a volume raised against what the ring holds (trim above one) writes words outside the
-  sign-extended 24 bits
-- An EqualizerAPO `Device:` line is counted as passed over but never scopes what follows: a file
-  correcting two devices imports as the sum of both
-- An EqualizerAPO `Channel:` name is matched by index (`L R C SUB RL RR SL SR` = 0..7), not by
-  `ChannelLayout::positions`: on quad `C` lands on rear left, on 5.0 `SUB` on rear left, on 6.1 the
-  sides shift onto the rears
-- *Fit the preamp* misses a narrow boost: `peak_db` samples 256 points 2.8 % apart, so a +12 dB
-  band at Q 40 is underestimated by up to 10.8 dB; a stack past ±40 dB fits no preamp at all
-  (`Preamp::from_decibels(-peak).unwrap_or(Preamp::NONE)`) rather than the limit
 - A track number guessed from the file name is written into the file: `name_from_stem` fills
   `track_number`, `retag::offered` writes `TrackNumber`/`DiscNumber` unconditionally and
   `land_recording`'s `coalesce` keeps the guess over a lookup's number
@@ -91,17 +68,10 @@ sits last in its category, not worked until it moves. Everything else is open.
   at zero not weighed
 - The LAME gain and peak are read after any `Xing`/`Info` header without checking a LAME encoder
   string or its CRC: a Xing header with no LAME extension levels the track by whatever bytes follow
-- The decade suggestions can offer "the 0s": `THE_DECADES_THE_CATALOG_HOLDS` takes `year = 0`
 - Ctrl-C at the Last.fm password prompt leaves echo off: `a_line_unechoed` installs no restore,
   only `play` has one
 - `library = ""` is taken as an empty path, not the default, and no path setting (`library`,
   `vault`, `inbox`, `music-folder`, `convolution`) expands `~`
-- EqualizerAPO reading: a UTF-16 file over `LARGEST_PROFILE` is read partially and called whole
-  (the byte cap is on the raw read, the refusal on decoded text); the unit after `BW` is never
-  read (`BW Hz 100` is 100 octaves); clamped frequency, gain, Q and preamp are not reported;
-  `TooLarge` for the line count says bytes
-- `ReadBySeeking` names its container with `Debug` ("is Dsf")
-
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth
@@ -385,8 +355,7 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `a_lame_encoded_rip_declares_the_priming_its_xing_header_carries` always skips in CI: `lame` is
   not in `ARCH_PACKAGES`
 - `downgrade`, `MAX_RENEGOTIATIONS` and `Error::Renegotiation` are untested (the only
-  `FormatChanged` test answers the spec asked for); no test double answers an empty sink list as
-  the real client does
+  `FormatChanged` test answers the spec asked for)
 - Loudness and the print have no reference: no test against `ffmpeg -af ebur128` or EBU 3341/3342,
   K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
@@ -397,9 +366,7 @@ sits last in its category, not worked until it moves. Everything else is open.
 - Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths beyond
   `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested
 - The Output and Processing settings panes have no test pressing their controls
-- The equaliser reader is never fed a `Device:` scope, an oversized UTF-16 file, a NaN impulse, a
-  huge gain or a narrow high-Q band; the scan never a folder past the depth limit, a non-UTF-8
-  name or nested symlink targets
+- The scan is never fed a folder past the depth limit, a non-UTF-8 name or nested symlink targets
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame`
   failed once when the whole workspace's tests ran at once, passed alone eight times after; its
   frame counts assume the engine thread keeps pace with the test's pulls

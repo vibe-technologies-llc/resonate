@@ -69,7 +69,7 @@ impl SampleData {
             Self::S16(store) => each(samples, store, quantise::s16),
             Self::S24(store) => each(samples, store, quantise::s24),
             Self::S32(store) => each(samples, store, quantise::s32),
-            Self::F32(store) => each(samples, store, |sample| sample),
+            Self::F32(store) => each(samples, store, quantise::f32),
         }
     }
 
@@ -78,7 +78,7 @@ impl SampleData {
             Self::S16(store) => each(samples, store, quantise::wide_s16),
             Self::S24(store) => each(samples, store, quantise::wide_s24),
             Self::S32(store) => each(samples, store, quantise::wide_s32),
-            Self::F32(store) => each(samples, store, |sample| sample as f32),
+            Self::F32(store) => each(samples, store, quantise::wide_f32),
         }
     }
 
@@ -590,5 +590,17 @@ mod tests {
             words,
             SampleData::S16(vec![0, 2, -2, i16::MAX, i16::MIN, 0])
         );
+    }
+
+    #[test]
+    fn a_nan_or_an_infinity_never_reaches_a_float_word() {
+        let mut wide = SampleData::F32(vec![0.0; 5]);
+        wide.write_f64(&[f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, 0.25]);
+
+        let mut narrow = SampleData::F32(vec![0.0; 4]);
+        narrow.write_f32(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1.5]);
+
+        assert_eq!(wide, SampleData::F32(vec![0.0, 1.0, -1.0, 1.0, 0.25]));
+        assert_eq!(narrow, SampleData::F32(vec![0.0, 1.0, -1.0, 1.5]));
     }
 }

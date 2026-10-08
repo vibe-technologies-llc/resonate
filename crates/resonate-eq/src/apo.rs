@@ -13,7 +13,9 @@ const PREAMP: &str = "preamp:";
 const FILTER: &str = "filter";
 const COMMENT: char = '#';
 const CHANNEL: &str = "channel:";
+const DEVICE: &str = "device:";
 const EVERY_CHANNEL: &str = "all";
+const EVERY_DEVICE: &str = "all";
 const CHANNEL_NAMES: [&str; ChannelSet::NAMED_AT_MOST] =
     ["L", "R", "C", "SUB", "RL", "RR", "SL", "SR"];
 
@@ -63,6 +65,7 @@ pub struct Reading {
     pub profile: Profile,
     pub passed_over: usize,
     pub approximated: usize,
+    pub clamped: usize,
 }
 
 pub fn read_number(text: &str) -> Option<f64> {
@@ -108,30 +111,59 @@ fn kind_of(code: &str) -> Option<BandKind> {
     }
 }
 
-fn clamped_frequency(hertz: f64) -> Frequency {
-    let held = hertz.clamp(
+struct Held<T> {
+    value: T,
+    moved: bool,
+}
+
+fn held_within(value: f64, least: f64, most: f64) -> Held<f64> {
+    let held = value.clamp(least, most);
+    Held {
+        value: held,
+        moved: held != value,
+    }
+}
+
+fn clamped_frequency(hertz: f64) -> Held<Frequency> {
+    let held = held_within(
+        hertz,
         f64::from(Frequency::LOWEST_CENTIHERTZ) / 100.0,
         f64::from(Frequency::HIGHEST_CENTIHERTZ) / 100.0,
     );
-    Frequency::from_hertz(held).unwrap_or(Frequency::LOWEST)
+    Held {
+        value: Frequency::from_hertz(held.value).unwrap_or(Frequency::LOWEST),
+        moved: held.moved,
+    }
 }
 
-fn clamped_gain(decibels: f64) -> BandGain {
+fn clamped_gain(decibels: f64) -> Held<BandGain> {
     let widest = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / 1_000.0;
-    BandGain::from_decibels(decibels.clamp(-widest, widest)).unwrap_or(BandGain::FLAT)
+    let held = held_within(decibels, -widest, widest);
+    Held {
+        value: BandGain::from_decibels(held.value).unwrap_or(BandGain::FLAT),
+        moved: held.moved,
+    }
 }
 
-fn clamped_q(units: f64) -> Q {
-    let held = units.clamp(
+fn clamped_q(units: f64) -> Held<Q> {
+    let held = held_within(
+        units,
         f64::from(Q::WIDEST_MILLI) / 1_000.0,
         f64::from(Q::NARROWEST_MILLI) / 1_000.0,
     );
-    Q::from_units(held).unwrap_or(Q::BUTTERWORTH)
+    Held {
+        value: Q::from_units(held.value).unwrap_or(Q::BUTTERWORTH),
+        moved: held.moved,
+    }
 }
 
-fn clamped_preamp(decibels: f64) -> Preamp {
+fn clamped_preamp(decibels: f64) -> Held<Preamp> {
     let widest = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / 1_000.0;
-    Preamp::from_decibels(decibels.clamp(-widest, widest)).unwrap_or(Preamp::NONE)
+    let held = held_within(decibels, -widest, widest);
+    Held {
+        value: Preamp::from_decibels(held.value).unwrap_or(Preamp::NONE),
+        moved: held.moved,
+    }
 }
 
 fn q_from_bandwidth(octaves: f64) -> f64 {
@@ -154,12 +186,38 @@ fn q_from_slope(slope: f64, decibels: f64) -> f64 {
     1.0 / under.sqrt()
 }
 
+#[derive(Clone, Copy)]
+enum Bandwidth {
+    Octaves(f64),
+    Hertz(f64),
+}
+
+impl Bandwidth {
+    fn spelled(unit: &str, number: f64) -> Option<Self> {
+        if unit.eq_ignore_ascii_case("oct") {
+            Some(Self::Octaves(number))
+        } else if unit.eq_ignore_ascii_case("hz") {
+            Some(Self::Hertz(number))
+        } else {
+            None
+        }
+    }
+
+    fn q_at(self, hertz: f64) -> f64 {
+        match self {
+            Self::Octaves(octaves) => q_from_bandwidth(octaves),
+            Self::Hertz(wide) if wide > 0.0 => hertz / wide,
+            Self::Hertz(_) => Q::BUTTERWORTH.units(),
+        }
+    }
+}
+
 #[derive(Default)]
 struct Written {
     hertz: Option<f64>,
     decibels: Option<f64>,
     q: Option<f64>,
-    bandwidth: Option<f64>,
+    bandwidth: Option<Bandwidth>,
     slope: Option<f64>,
     rolloff_db_an_octave: Option<u32>,
 }
@@ -181,10 +239,10 @@ impl Written {
                 }
                 "GAIN" => self.decibels = value,
                 "Q" => self.q = value,
-                "BW" if value.is_some() => self.bandwidth = value,
                 "BW" => {
-                    self.bandwidth = words.get(at + 2).copied().and_then(read_number);
-                    taken = 3;
+                    let (bandwidth, read) = bandwidth_in(words.get(at + 1..).unwrap_or_default());
+                    self.bandwidth = bandwidth;
+                    taken = 1 + read;
                 }
                 "S" => self.slope = value,
                 word => {
@@ -196,17 +254,32 @@ impl Written {
         }
     }
 
-    fn q_for(&self, kind: BandKind, decibels: f64) -> f64 {
+    fn q_for(&self, kind: BandKind, hertz: f64, decibels: f64) -> f64 {
         if let Some(q) = self.q {
             return q;
         }
-        if let Some(octaves) = self.bandwidth {
-            return q_from_bandwidth(octaves);
+        if let Some(bandwidth) = self.bandwidth {
+            return bandwidth.q_at(hertz);
         }
         match self.slope {
             Some(slope) if kind.uses_gain() => q_from_slope(slope, decibels),
             _ => Q::BUTTERWORTH.units(),
         }
+    }
+}
+
+fn bandwidth_in(words: &[&str]) -> (Option<Bandwidth>, usize) {
+    let first = words.first().copied().unwrap_or_default();
+    let second = words.get(1).copied().unwrap_or_default();
+    match read_number(first) {
+        Some(number) => match Bandwidth::spelled(second, number) {
+            Some(bandwidth) => (Some(bandwidth), 2),
+            None => (Some(Bandwidth::Octaves(number)), 1),
+        },
+        None => match read_number(second) {
+            Some(number) => (Bandwidth::spelled(first, number), 2),
+            None => (None, 1),
+        },
     }
 }
 
@@ -219,6 +292,7 @@ fn rolloff_in(word: &str) -> Option<u32> {
 struct Taken {
     band: Band,
     approximated: bool,
+    clamped: bool,
 }
 
 fn band_of(line: &str) -> Option<Taken> {
@@ -240,8 +314,13 @@ fn band_of(line: &str) -> Option<Taken> {
     let gain = if kind.uses_gain() {
         clamped_gain(decibels)
     } else {
-        BandGain::FLAT
+        Held {
+            value: BandGain::FLAT,
+            moved: false,
+        }
     };
+    let frequency = clamped_frequency(hertz);
+    let q = clamped_q(written.q_for(kind, hertz, decibels));
 
     let approximated = written
         .rolloff_db_an_octave
@@ -250,21 +329,42 @@ fn band_of(line: &str) -> Option<Taken> {
     Some(Taken {
         band: Band {
             on,
-            ..Band::new(
-                kind,
-                clamped_frequency(hertz),
-                gain,
-                clamped_q(written.q_for(kind, decibels)),
-            )
+            ..Band::new(kind, frequency.value, gain.value, q.value)
         },
         approximated,
+        clamped: frequency.moved || gain.moved || q.moved,
     })
 }
 
-fn preamp_of(line: &str) -> Option<Preamp> {
+fn preamp_of(line: &str) -> Option<Held<Preamp>> {
     let (_, tail) = line.split_once(':')?;
     let spelled = tail.split_whitespace().next()?;
     read_number(spelled).map(clamped_preamp)
+}
+
+enum DeviceScope {
+    Every,
+    TheFirstNamed,
+    Another,
+}
+
+fn device_scope(line: &str, first_named: &mut Option<String>) -> DeviceScope {
+    let named = line
+        .split_once(':')
+        .map(|(_, tail)| tail.trim())
+        .unwrap_or_default();
+    if named.is_empty() || named.eq_ignore_ascii_case(EVERY_DEVICE) {
+        return DeviceScope::Every;
+    }
+    let folded = named.to_lowercase();
+    match first_named {
+        Some(first) if *first == folded => DeviceScope::TheFirstNamed,
+        Some(_) => DeviceScope::Another,
+        None => {
+            *first_named = Some(folded);
+            DeviceScope::TheFirstNamed
+        }
+    }
 }
 
 pub fn read(text: &str) -> Result<Reading> {
@@ -280,8 +380,11 @@ pub fn read(text: &str) -> Result<Reading> {
     let mut bands = Vec::new();
     let mut passed_over = 0;
     let mut approximated = 0;
+    let mut clamped = 0;
     let mut lines = 0;
     let mut scope = Scope::Reaching(ChannelSet::EVERY);
+    let mut first_device = None;
+    let mut another_device = false;
 
     for line in text.lines() {
         let line = line.trim_start_matches('\u{feff}').trim();
@@ -291,13 +394,26 @@ pub fn read(text: &str) -> Result<Reading> {
 
         lines += 1;
         if lines > LINES_AT_MOST {
-            return Err(Error::TooLarge {
-                op: EqOp::Parse,
+            return Err(Error::TooManyLines {
                 limit: LINES_AT_MOST,
             });
         }
 
         let folded = line.to_ascii_lowercase();
+        if folded.starts_with(DEVICE) {
+            another_device = match device_scope(line, &mut first_device) {
+                DeviceScope::Every | DeviceScope::TheFirstNamed => false,
+                DeviceScope::Another => {
+                    tracing::debug!(line, "a second device's correction is passed over");
+                    true
+                }
+            };
+            continue;
+        }
+        if another_device {
+            passed_over += 1;
+            continue;
+        }
         if folded.starts_with(CHANNEL) {
             scope = scope_of(line);
             if scope == Scope::Unread {
@@ -319,7 +435,13 @@ pub fn read(text: &str) -> Result<Reading> {
 
         if folded.starts_with(PREAMP) {
             match preamp_of(line) {
-                Some(read) if reaching.is_every() => preamp = Some(read),
+                Some(read) if reaching.is_every() => {
+                    if read.moved {
+                        tracing::debug!(line, "a preamp past what this build holds");
+                        clamped += 1;
+                    }
+                    preamp = Some(read.value);
+                }
                 Some(_) => {
                     tracing::debug!(line, "a preamp for some channels and not others");
                     passed_over += 1;
@@ -356,6 +478,10 @@ pub fn read(text: &str) -> Result<Reading> {
                     tracing::debug!(line, "a rolloff this build reads as a second-order filter");
                     approximated += 1;
                 }
+                if taken.clamped {
+                    tracing::debug!(line, "a filter past what this build holds, held to it");
+                    clamped += 1;
+                }
                 bands.push(Band {
                     channels: reaching,
                     ..taken.band
@@ -387,6 +513,7 @@ pub fn read(text: &str) -> Result<Reading> {
         profile,
         passed_over,
         approximated,
+        clamped,
     })
 }
 
@@ -653,9 +780,55 @@ mod tests {
     }
 
     #[test]
+    fn a_file_correcting_two_devices_is_read_as_the_first_of_them() {
+        let text = "Device: Headphones One\n\
+                    Filter 1: ON PK Fc 100 Hz Gain 3 dB Q 1\n\
+                    Device: Speakers Two\n\
+                    Filter 2: ON PK Fc 200 Hz Gain -6 dB Q 1\n\
+                    Filter 3: ON PK Fc 300 Hz Gain -6 dB Q 1\n\
+                    Device: all\n\
+                    Filter 4: ON PK Fc 400 Hz Gain 2 dB Q 1\n";
+        let reading = read(text).expect("it reads");
+
+        let centres: Vec<u32> = reading
+            .profile
+            .bands()
+            .iter()
+            .map(|band| band.frequency.centihertz() / 100)
+            .collect();
+        assert_eq!(centres, vec![100, 400]);
+        assert_eq!(reading.passed_over, 2);
+    }
+
+    #[test]
+    fn a_bandwidth_is_read_in_the_unit_it_names() {
+        let in_hertz = read("Filter 1: ON PK Fc 1000 Hz Gain 3 dB BW Hz 250").expect("it reads");
+        let after = read("Filter 1: ON PK Fc 1000 Hz Gain 3 dB BW 250 Hz").expect("it reads");
+        let in_octaves = read("Filter 1: ON PK Fc 1000 Hz Gain 3 dB BW Oct 1").expect("it reads");
+
+        let q = |reading: &Reading| reading.profile.bands()[0].q.milli();
+        assert_eq!(q(&in_hertz), 4_000);
+        assert_eq!(q(&after), 4_000);
+        assert_eq!(q(&in_octaves), 1_414);
+    }
+
+    #[test]
+    fn a_value_past_what_a_band_holds_is_held_to_it_and_counted() {
+        let reading = read(
+            "Preamp: -400 dB\n\
+             Filter 1: ON PK Fc 1000 Hz Gain 300 dB Q 1\n\
+             Filter 2: ON PK Fc 1000 Hz Gain 3 dB Q 1\n",
+        )
+        .expect("it reads");
+
+        assert_eq!(reading.clamped, 2);
+        assert_eq!(reading.profile.bands().len(), 2);
+    }
+
+    #[test]
     fn a_profile_past_the_ceilings_is_refused_rather_than_truncated() {
-        let long = "Filter 1: ON PK Fc 1000 Hz Gain 1 dB Q 1\n".repeat(LINES_AT_MOST + 1);
-        assert!(matches!(read(&long), Err(Error::TooLarge { .. })));
+        let long = "x\n".repeat(LINES_AT_MOST + 1);
+        assert!(matches!(read(&long), Err(Error::TooManyLines { .. })));
 
         let wide = "x".repeat(LARGEST_PROFILE + 1);
         assert!(matches!(read(&wide), Err(Error::TooLarge { .. })));

@@ -33,7 +33,10 @@ impl PartialEq for Impulse {
 
 impl Impulse {
     pub fn new(rate: SampleRate, taps: Vec<Vec<f64>>) -> Option<Self> {
-        if taps.is_empty() || taps.iter().any(Vec::is_empty) {
+        if taps.is_empty()
+            || taps.iter().any(Vec::is_empty)
+            || taps.iter().flatten().any(|tap| !tap.is_finite())
+        {
             return None;
         }
         Some(Self {
@@ -446,6 +449,12 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_response_holding_a_tap_that_is_no_number_is_no_response() {
+        assert!(Impulse::new(RATE, vec![vec![0.5, f64::NAN, 0.25]]).is_none());
+        assert!(Impulse::new(RATE, vec![vec![1.0], vec![f64::INFINITY]]).is_none());
     }
 
     #[test]

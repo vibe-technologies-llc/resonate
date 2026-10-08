@@ -156,7 +156,7 @@ pub enum Error {
     #[error("{location} is not seekable")]
     NotSeekable { location: MediaLocation },
 
-    #[error("{location} is {container:?}, which is read by seeking, on a source that cannot seek")]
+    #[error("{location} is {container}, which is read by seeking, on a source that cannot seek")]
     ReadBySeeking {
         location: MediaLocation,
         container: Container,
