@@ -17,6 +17,12 @@ pub(crate) fn shared_picture(page: &str) -> Option<&str> {
 const PAGE_DATA_OPENS: &str = r#"<script id="__NEXT_DATA__" type="application/json">"#;
 const PAGE_DATA_CLOSES: &str = "</script>";
 
+pub(crate) fn stated(text: Option<&str>) -> Option<String> {
+    text.map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+}
+
 pub(crate) fn next_data(page: &str) -> Option<&str> {
     let from = page.find(PAGE_DATA_OPENS)? + PAGE_DATA_OPENS.len();
     let rest = &page[from..];

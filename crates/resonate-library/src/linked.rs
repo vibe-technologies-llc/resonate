@@ -21,6 +21,7 @@ const SPOTIFY_ALBUM: &str = "spotify:album:";
 const SPOTIFY_ALBUM_PAGE: &str = "https://open.spotify.com/album/";
 const SPOTIFY_ARTIST: &str = "spotify:artist:";
 const SPOTIFY_PLAYLIST: &str = "spotify:playlist:";
+const APPLE_MUSIC_PLAYLIST: &str = "pl.";
 const SPOTIFY_ID_LENGTH: usize = 22;
 const DEEZER_ARTIST_PAGE: &str = "https://www.deezer.com/artist/";
 const APPLE_MUSIC_IN_EVERY_STOREFRONT: &str = "us";
@@ -130,6 +131,7 @@ pub enum PlaylistLink {
     Deezer(u64),
     ListenBrainz(Mbid),
     Spotify(String),
+    AppleMusic { storefront: String, id: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -460,9 +462,31 @@ impl PlaylistLink {
                 ["playlist", id, ..] => Mbid::new(id).ok().map(Self::ListenBrainz),
                 _ => None,
             },
+            "music.apple.com" => match address.segments.as_slice() {
+                [storefront, "playlist", .., id] if names_a_storefront(storefront) => {
+                    names_an_apple_music_playlist(id).then(|| Self::AppleMusic {
+                        storefront: (*storefront).to_owned(),
+                        id: (*id).to_owned(),
+                    })
+                }
+                _ => None,
+            },
             _ => None,
         }
     }
+}
+
+fn names_a_storefront(storefront: &str) -> bool {
+    storefront.len() == 2 && storefront.chars().all(|letter| letter.is_ascii_lowercase())
+}
+
+fn names_an_apple_music_playlist(id: &str) -> bool {
+    id.strip_prefix(APPLE_MUSIC_PLAYLIST).is_some_and(|rest| {
+        !rest.is_empty()
+            && rest
+                .chars()
+                .all(|glyph| glyph.is_ascii_alphanumeric() || glyph == '-')
+    })
 }
 
 const HELD_UNDER_THE_ID: &str = "SELECT id, name FROM artists WHERE mbid = ?1 ORDER BY id LIMIT 1";
@@ -1040,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn a_link_to_a_deezer_listenbrainz_or_spotify_playlist_is_read_as_one_and_nothing_else_is() {
+    fn a_link_to_a_playlist_on_a_service_that_shows_one_is_read_as_one_and_nothing_else_is() {
         const PLAYLIST: &str = "d20c6058-b625-49ec-ab78-99cf15584b3d";
 
         assert_eq!(
@@ -1067,9 +1091,28 @@ mod tests {
                 "37i9dQZF1DXcBWIGoYBM5M".to_owned()
             )))
         );
+        assert_eq!(
+            FollowedLink::read(
+                "https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb"
+            ),
+            Some(FollowedLink::Playlist(PlaylistLink::AppleMusic {
+                storefront: "us".to_owned(),
+                id: "pl.f4d106fed2bd41149aaacabb233eb5eb".to_owned(),
+            }))
+        );
+        assert_eq!(
+            PlaylistLink::read("https://music.apple.com/gb/playlist/pl.u-AkAmPlyUxEAm9V?l=en"),
+            Some(PlaylistLink::AppleMusic {
+                storefront: "gb".to_owned(),
+                id: "pl.u-AkAmPlyUxEAm9V".to_owned(),
+            })
+        );
         for text in [
             "https://www.deezer.com/playlist/a-name",
             "https://listenbrainz.org/playlist/not-an-id",
+            "https://music.apple.com/us/playlist/todays-hits",
+            "https://music.apple.com/usa/playlist/x/pl.f4d106fed2bd41149aaacabb233eb5eb",
+            "https://music.apple.com/us/album/x/pl.f4d106fed2bd41149aaacabb233eb5eb",
             "https://listenbrainz.org/user/rob/playlists",
             "https://open.spotify.com/playlist/not-an-id",
             "https://www.deezer.com/playlist/3155776842 too",

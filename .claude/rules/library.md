@@ -2386,10 +2386,13 @@ starts.
   **Playlist link: every song it holds followed as a song link would be.** `PlaylistLink::read`
   takes `deezer.com/[lang/]playlist/<n>`, `listenbrainz.org/playlist/<mbid>` and a Spotify
   playlist (`open.spotify.com/[intl-xx/]playlist/<id>` or `spotify:playlist:<id>`, the id
-  twenty-two letters and digits);
+  twenty-two letters and digits) and an Apple Music one (`music.apple.com/<storefront>/playlist/
+  [<name>/]pl.<id>`, the storefront two lower-case letters, the id `pl.` then letters, digits and
+  dashes: `PlaylistLink::AppleMusic`);
   `Reference::playlist_linked` answers a `LinkedPlaylist`: its name and a `ListedSong` per song,
   `Recording` (ListenBrainz names recordings) or `Named` (`LinkNames`: Deezer's tracks carry ISRC,
-  title, artist, length, so no request a song; Spotify's name title, artists and length alone, so
+  title, artist, length, so no request a song; Spotify's and Apple Music's name title, artists and
+  length alone, so
   each is followed by the strict search a YouTube upload is). `Library::follow_playlist_link` follows each
   through the halves `follow_link` is made of (`follow_recording`, `follow_names`, `linked_to`), so
   a song is held, found or unnamed by the same rule as a pasted song (`Linked::Held` carries the

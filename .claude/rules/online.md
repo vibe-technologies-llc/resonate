@@ -254,8 +254,14 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
   `musicbrainz.org/recording/<mbid>`. Spotify: the public `/embed/playlist/<id>` page, whose
   `__NEXT_DATA__` (cut by `shared::next_data`, song.link's reader too) holds the playlist's `name`
   and a `trackList` of title, `subtitle` (the artists as billed) and length in milliseconds; no
-  account, no ISRC; the embed lists at most what Spotify puts on it (fifty to a hundred). A playlist
-  with no title names nothing.
+  account, no ISRC; the embed lists at most what Spotify puts on it (fifty to a hundred). Apple
+  Music: the public `/<storefront>/playlist/<id>` page (`apple::playlist_named`), whose
+  `serialized-server-data` script holds sections by `itemKind`: the `containerDetailHeaderLockup`
+  item's `title` is the name, each `trackLockup` item a song (`title`, `artistName` as billed, else
+  every `subtitleLinks` title joined, `duration` in milliseconds; a `contentDescriptor` kind other
+  than `song`, a music video, passed over); no account, no ISRC
+  (`a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page`, live). A playlist with
+  no title names nothing.
 
 ## ListenBrainz
 

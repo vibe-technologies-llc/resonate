@@ -3,7 +3,12 @@ use std::time::Duration;
 use resonate_library::{AlbumLink, AlbumNames, Barcode, Isrc, LinkNames, LookupOp, SongLink};
 use serde::Deserialize;
 
-use crate::{Client, Host, Result, client::LARGEST_DOCUMENT, deezer, shared::next_data};
+use crate::{
+    Client, Host, Result,
+    client::LARGEST_DOCUMENT,
+    deezer,
+    shared::{next_data, stated},
+};
 
 const A_SONG: &str = "song";
 const AN_ALBUM: &str = "album";
@@ -95,12 +100,6 @@ impl PageData {
             .filter_map(|link| link.unique_id.as_deref()?.strip_prefix(prefix))
             .find_map(|id| id.parse().ok())
     }
-}
-
-fn stated(text: Option<&str>) -> Option<String> {
-    text.map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

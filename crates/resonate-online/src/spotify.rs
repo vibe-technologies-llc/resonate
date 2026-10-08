@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::{
     Client, Host, Result,
     client::LARGEST_DOCUMENT,
-    shared::{next_data, on_host, page_of, picture_at, shared_picture},
+    shared::{next_data, on_host, page_of, picture_at, shared_picture, stated},
 };
 
 const ARTIST_PAGE: &str = "/artist/";
@@ -145,12 +145,6 @@ impl Listed {
             artist: Some(stated(self.subtitle.as_deref())?),
         })
     }
-}
-
-fn stated(text: Option<&str>) -> Option<String> {
-    text.map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned)
 }
 
 fn names_an_id(id: &str) -> bool {

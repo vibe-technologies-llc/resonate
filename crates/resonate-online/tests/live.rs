@@ -7,9 +7,9 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    AlbumLink, Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked,
-    Scrobble, Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording, songs_asked,
-    weighed_for,
+    AlbumLink, Billed, Error, Isrc, Link, ListedSong, LookupOp, Mbid, PlaylistLink, Reference,
+    Relation, ReleaseAsked, Scrobble, Scrobbler, Service, SongLink, StreamAsked, TokenHeld,
+    Wording, songs_asked, weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -350,6 +350,30 @@ fn the_reference_answers_an_artists_pressings_a_page_at_a_time() {
             .iter()
             .all(|pressing| pressing.group.is_some() && !pressing.media.is_empty())
     );
+}
+
+#[test]
+fn a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let link = PlaylistLink::read(
+        "https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb",
+    )
+    .expect("an Apple Music playlist link");
+
+    let playlist = online
+        .playlist_linked(&link)
+        .expect("Apple Music answered")
+        .expect("the page names the playlist");
+
+    assert_eq!(playlist.name, "Today’s Hits");
+    assert!(playlist.songs.len() >= 20, "{} songs", playlist.songs.len());
+    assert!(playlist.songs.iter().all(|song| matches!(
+        song,
+        ListedSong::Named(names) if names.title.is_some() && names.artist.is_some()
+    )));
 }
 
 #[test]
