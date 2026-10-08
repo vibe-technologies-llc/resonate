@@ -50,6 +50,12 @@ const A_LOVE_TOLD: &str = "INSERT INTO loves_told (service, recording) VALUES (?
 
 const A_LOVE_TAKEN_BACK: &str = "DELETE FROM loves_told WHERE service = ?1 AND recording = ?2";
 
+const THE_NAMES_OF_A_RECORDING: &str = "SELECT t.title, coalesce(t.artist, r.name) FROM tracks t
+       LEFT JOIN artists r ON r.id = t.artist_id
+      WHERE t.mbid = ?1 AND coalesce(t.artist, r.name) IS NOT NULL
+      ORDER BY t.favourite IS NULL, t.id
+      LIMIT 1";
+
 macro_rules! billed_columns {
     () => {
         "t.title, coalesce(t.artist, r.name), a.title, t.mbid, a.mbid,
@@ -122,6 +128,18 @@ pub enum Love {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Loved {
+    pub recording: Mbid,
+    pub named: Option<LovedNames>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LovedNames {
+    pub title: String,
+    pub artist: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TokenHeld {
     By(String),
     Unknown,
@@ -134,7 +152,7 @@ pub trait Scrobbler: Send + Sync {
 
     fn playing_now(&self, playing: &Billed) -> Result<()>;
 
-    fn love(&self, recording: &Mbid, love: Love) -> Result<()>;
+    fn love(&self, loved: &Loved, love: Love) -> Result<()>;
 
     fn token_held(&self) -> Result<TokenHeld>;
 }
@@ -326,18 +344,33 @@ pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Lov
             recordings(connection, THE_LOVES_TOLD, &[service.name()])?,
         ))
     })?;
-    let owed = loved
+    let owed: Vec<(&Mbid, Love)> = loved
         .difference(&told)
         .map(|recording| (recording, Love::Loved))
         .chain(
             told.difference(&loved)
                 .map(|recording| (recording, Love::TakenBack)),
         )
-        .take(LOVES_TOLD_AT_ONCE);
+        .take(LOVES_TOLD_AT_ONCE)
+        .collect();
+    let owed: Vec<(Loved, Love)> = inner.read(|connection| {
+        owed.iter()
+            .map(|(recording, love)| {
+                Ok((
+                    Loved {
+                        recording: (*recording).clone(),
+                        named: names_of(connection, recording)?,
+                    },
+                    *love,
+                ))
+            })
+            .collect()
+    })?;
 
     let mut said = LovesTold::default();
-    for (recording, love) in owed {
-        match scrobbler.love(recording, love) {
+    for (loved, love) in &owed {
+        let (recording, love) = (&loved.recording, *love);
+        match scrobbler.love(loved, love) {
             Ok(()) => match love {
                 Love::Loved => said.loved += 1,
                 Love::TakenBack => said.taken_back += 1,
@@ -356,6 +389,18 @@ pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Lov
         note_told(inner, service, recording, love)?;
     }
     Ok(said)
+}
+
+fn names_of(connection: &Connection, recording: &Mbid) -> Result<Option<LovedNames>> {
+    connection
+        .query_row(THE_NAMES_OF_A_RECORDING, [recording.as_str()], |row| {
+            Ok(LovedNames {
+                title: row.get(0)?,
+                artist: row.get(1)?,
+            })
+        })
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 fn recordings(connection: &Connection, sql: &str, binds: &[&str]) -> Result<BTreeSet<Mbid>> {

@@ -5,7 +5,7 @@ use std::{
 };
 
 use resonate_library::{
-    Billed, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Mbid, Scrobble,
+    Billed, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Loved, Mbid, Scrobble,
     Scrobbler, TokenHeld,
 };
 use serde::Deserialize;
@@ -137,11 +137,11 @@ impl Scrobbler for ListenBrainz {
         self.posted(&now_playing(playing))
     }
 
-    fn love(&self, recording: &Mbid, love: Love) -> resonate_library::Result<()> {
+    fn love(&self, loved: &Loved, love: Love) -> resonate_library::Result<()> {
         self.posted_to(
             RECORDING_FEEDBACK,
             LookupOp::Love,
-            &feedback(recording, love),
+            &feedback(&loved.recording, love),
         )
     }
 

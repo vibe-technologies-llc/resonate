@@ -118,10 +118,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - **Blocked on Shazam:** reached through an undocumented endpoint (`amp.shazam.com`); a change on
   its side stops recognition
 
-## Later: Scrobbling
-- A favourite is not loved on Last.fm (its API names a track by its names; the catalog tells loves
-  by recording)
-
 ## Later: MCP
 - An edit a model makes is not on the window's *Undo*: undo stacks live in the process that made it
 

@@ -456,6 +456,7 @@ const MIGRATIONS: &[&str] = &[
          PRIMARY KEY (track_id, field)
      ) STRICT, WITHOUT ROWID;",
     "ALTER TABLE tracks ADD COLUMN vault_bits INTEGER;",
+    "DELETE FROM loves_told WHERE service = 'lastfm';",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

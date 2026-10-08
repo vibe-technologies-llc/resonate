@@ -32,16 +32,17 @@ use resonate_library::{
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, LovesTold, LyricText,
-    LyricsAhead, LyricsAsked, Mbid, Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions,
-    OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder,
-    PollHandle, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Loved, LovedNames,
+    LovesTold, LyricText, LyricsAhead, LyricsAsked, Mbid, Medium, Missing, MissingTrack,
+    NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat,
+    PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
+    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
+    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -5390,6 +5391,7 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_against_no_row() -> Resu
 struct Told {
     batches: Mutex<Vec<Vec<Scrobble>>>,
     loves: Mutex<Vec<(Mbid, Love)>>,
+    named: Mutex<Vec<Option<LovedNames>>>,
     malformed: Option<&'static str>,
     love_refused: Option<(&'static str, u16)>,
     unreachable: std::sync::atomic::AtomicBool,
@@ -5447,14 +5449,15 @@ impl Scrobbler for Told {
         Ok(())
     }
 
-    fn love(&self, recording: &Mbid, love: Love) -> Result<()> {
+    fn love(&self, loved: &Loved, love: Love) -> Result<()> {
         match self.love_refused {
-            Some((refused, status)) if recording.as_str() == refused => Err(Error::Refused {
+            Some((refused, status)) if loved.recording.as_str() == refused => Err(Error::Refused {
                 op: LookupOp::Love,
                 status,
             }),
             _ => {
-                self.loves.lock().push((recording.clone(), love));
+                self.loves.lock().push((loved.recording.clone(), love));
+                self.named.lock().push(loved.named.clone());
                 Ok(())
             }
         }
@@ -5512,6 +5515,11 @@ fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmar
         Some(&(mbid(RECORDING), Love::TakenBack))
     );
     assert_eq!(library.tell_loves(&told)?, LovesTold::default());
+    let ada_named = Some(LovedNames {
+        title: "Named".to_owned(),
+        artist: "Ada".to_owned(),
+    });
+    assert_eq!(*told.named.lock(), vec![ada_named.clone(), ada_named]);
     Ok(())
 }
 

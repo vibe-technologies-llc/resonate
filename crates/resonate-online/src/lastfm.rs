@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, fmt::Write as _, sync::Arc, time::UNIX_EPOCH};
 
 use md5::{Digest, Md5};
 use resonate_library::{
-    Billed, ListeningService, LookupOp, Love, Mbid, Scrobble, Scrobbler, TokenHeld,
+    Billed, ListeningService, LookupOp, Love, Loved, LovedNames, Mbid, Scrobble, Scrobbler,
+    TokenHeld,
 };
 use serde::Deserialize;
 
@@ -19,6 +20,8 @@ const SCROBBLE: &str = "track.scrobble";
 const PLAYING_NOW: &str = "track.updateNowPlaying";
 const WHO_IS_SIGNED_IN: &str = "user.getInfo";
 const SIGN_IN: &str = "auth.getMobileSession";
+const LOVE: &str = "track.love";
+const UNLOVE: &str = "track.unlove";
 const AUTHENTICATION_FAILED: u32 = 4;
 const INVALID_API_KEY: u32 = 10;
 const INVALID_SESSION: u32 = 9;
@@ -111,8 +114,19 @@ impl Scrobbler for LastFm {
         .map(drop)
     }
 
-    fn love(&self, _recording: &Mbid, _love: Love) -> resonate_library::Result<()> {
-        Ok(())
+    fn love(&self, loved: &Loved, love: Love) -> resonate_library::Result<()> {
+        let Some(named) = &loved.named else {
+            tracing::debug!(
+                recording = %loved.recording,
+                "no track names the recording, so Last.fm is told nothing of it"
+            );
+            return Ok(());
+        };
+        let method = match love {
+            Love::Loved => LOVE,
+            Love::TakenBack => UNLOVE,
+        };
+        self.told(method, LookupOp::Love, loved_as(named)).map(drop)
     }
 
     fn token_held(&self) -> resonate_library::Result<TokenHeld> {
@@ -173,6 +187,12 @@ impl Fields {
             .with("format", ANSWERED_AS)
             .finish_as_form()
     }
+}
+
+fn loved_as(named: &LovedNames) -> Fields {
+    Fields::default()
+        .with("artist", &named.artist)
+        .with("track", &named.title)
 }
 
 fn scrobbled(batch: &[Scrobble]) -> Fields {
@@ -335,6 +355,21 @@ mod tests {
             Some("6")
         );
         assert!(!fields.0.contains_key("mbid[0]"));
+    }
+
+    #[test]
+    fn a_love_names_the_track_by_its_artist_and_title() {
+        let fields = loved_as(&LovedNames {
+            title: "Echoes".to_owned(),
+            artist: "Pink Floyd".to_owned(),
+        });
+
+        assert_eq!(fields.0.get("track").map(String::as_str), Some("Echoes"));
+        assert_eq!(
+            fields.0.get("artist").map(String::as_str),
+            Some("Pink Floyd")
+        );
+        assert_eq!(fields.0.len(), 2);
     }
 
     #[test]

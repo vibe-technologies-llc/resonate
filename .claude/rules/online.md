@@ -312,9 +312,14 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
   `track.updateNowPlaying` for what plays; `user.getInfo` answers who holds the session. An error
   in the answer is read by its code (`refused`): an invalid session, key or authentication is
   `Refused` 401 (the submitter holds that session back, as a refused ListenBrainz token), a rate
-  limit 429, the service down 503, the rest unreadable. **A favourite is not loved there**:
-  `track.love` names a track by artist and title and the catalog tells loves by recording, so
-  `love` answers done and sends nothing.
+  limit 429, the service down 503, the rest unreadable. **A favourite is loved there by its
+  names**: loves are owed by recording (`loves_told` per service), and `Library::tell_loves` hands
+  each `Scrobbler::love` a `Loved`: the recording and the `LovedNames` (title, artist) of the
+  catalog track carrying it, a favourite first (`THE_NAMES_OF_A_RECORDING`). Last.fm signs
+  `track.love` or `track.unlove` with `artist` and `track`; a recording no track names any more
+  is told nothing there and marked told. ListenBrainz reads the recording alone. Before this a
+  Last.fm love answered done unsent, so a migration step forgets every `loves_told` row of
+  `lastfm` and the next pass sends them.
 - **A session is asked once, by name and password, and the password is not kept.**
   `resonate_online::signed_in` asks `auth.getMobileSession`; `resonate lastfm --user` reads the
   password from standard input (echo off on a terminal, `input::a_line_unechoed`) and stores only
