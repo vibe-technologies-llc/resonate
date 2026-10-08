@@ -1,8 +1,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use resonate_library::{
-    Form, ImportOptions, ImportSummary, Library, PassKind, Passing, Sources, Vault, VaultObject,
-    Wanted,
+    Form, ImportOptions, ImportSummary, Library, PassKind, Passing, Reframing, Sources, Vault,
+    VaultObject, Wanted,
 };
 
 use crate::{
@@ -225,6 +225,7 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
     let mut held = 0_u64;
     let mut moved = Vec::new();
     let mut unreached = Vec::new();
+    let mut unframed = Vec::new();
     for object in &objects {
         let reads_back = match vault.verify(&object.path, object.form) {
             Ok(reads_back) => reads_back,
@@ -240,6 +241,20 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
         library.note_validated(&object.key, reads_back)?;
         if reads_back {
             held += 1;
+            let before_the_frames = object.form == Form::Wave
+                && vault
+                    .packed_before_the_frames(&object.path)
+                    .inspect_err(|error| {
+                        tracing::debug!(
+                            %error,
+                            path = %object.path.display(),
+                            "a vault object's frames could not be walked"
+                        );
+                    })
+                    .unwrap_or(false);
+            if before_the_frames {
+                unframed.push(object.path.clone());
+            }
         } else {
             moved.push((object.key, object.path.clone()));
         }
@@ -280,6 +295,8 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
         unreached.len()
     );
 
+    reframed(vault, &unframed, mending)?;
+
     let failing = moved.len() + covers_moved.len();
     if failing > 0 && mending {
         let keys: Vec<_> = moved.iter().map(|(key, _)| *key).collect();
@@ -309,6 +326,34 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
         (0, 0) => Ok(()),
         (moved, unreached) => Err(Error::ObjectsUnverified { moved, unreached }),
     }
+}
+
+fn reframed(vault: &Vault, unframed: &[PathBuf], mending: bool) -> Result<()> {
+    if unframed.is_empty() {
+        return Ok(());
+    }
+    if !mending {
+        said!(
+            "packed as one frame by an earlier build, so a seek back in one starts it over: {}; \
+             --apply repacks them in frames",
+            unframed.len()
+        );
+        return Ok(());
+    }
+
+    let mut repacked = 0_u64;
+    for path in unframed {
+        match vault.reframe(path)? {
+            Reframing::Reframed => repacked += 1,
+            Reframing::AlreadyFramed => {}
+            Reframing::NotHeld => said!("did not repack as what went in: {}", path.display()),
+        }
+    }
+    said!(
+        "repacked in frames {repacked} of the {} packed as one frame",
+        unframed.len()
+    );
+    Ok(())
 }
 
 fn prune(library: &Library, args: &VaultArgs) -> Result<()> {

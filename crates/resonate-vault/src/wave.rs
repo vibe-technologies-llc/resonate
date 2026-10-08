@@ -39,7 +39,7 @@ pub(crate) fn outgrows_a_wave(frames: Frames, channels: ChannelCount) -> bool {
     u128::from(frames.get()) * u128::from(channels.get()) * sample_bytes > u128::from(LARGEST_PCM)
 }
 pub(crate) const ARCHIVED_AT: i32 = 19;
-const PACKED_FRAME_BYTES: u64 = 8 << 20;
+pub(crate) const PACKED_FRAME_BYTES: u64 = 8 << 20;
 const FORETOLD_FROM_BYTES: u64 = 32 << 20;
 const SLICES_FORETOLD_FROM: u64 = 4;
 const SLICE_BYTES: usize = 2 << 20;
@@ -162,10 +162,42 @@ pub(crate) fn compressed_in_frames(
     frame_bytes: u64,
     halt: Halt<'_>,
 ) -> Result<Packed> {
-    let written = |source| Error::io(VaultOp::Write, into, source);
     let read = |source| Error::io(VaultOp::Read, from, source);
     let source = File::open(from).map_err(read)?;
     let length = source.metadata().map_err(read)?.len();
+    packed_in_frames(
+        Unpacked {
+            reading: std::io::BufReader::new(source),
+            length,
+            from,
+        },
+        into,
+        smaller_than,
+        frame_bytes,
+        halt,
+    )
+}
+
+pub(crate) struct Unpacked<'a, R> {
+    pub(crate) reading: R,
+    pub(crate) length: u64,
+    pub(crate) from: &'a Path,
+}
+
+pub(crate) fn packed_in_frames<R: Read>(
+    unpacked: Unpacked<'_, R>,
+    into: &Path,
+    smaller_than: Option<u64>,
+    frame_bytes: u64,
+    halt: Halt<'_>,
+) -> Result<Packed> {
+    let Unpacked {
+        mut reading,
+        length,
+        from,
+    } = unpacked;
+    let written = |source| Error::io(VaultOp::Write, into, source);
+    let read = |source| Error::io(VaultOp::Read, from, source);
     let target = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
     let mut counted = Counted {
         inner: BufWriter::new(target),
@@ -174,7 +206,6 @@ pub(crate) fn compressed_in_frames(
     let outgrown =
         |counted: &Counted<_>| smaller_than.is_some_and(|ceiling| counted.written >= ceiling);
 
-    let mut reading = std::io::BufReader::new(source);
     let mut buffer = vec![0_u8; PACKED_A_READ_AT_A_TIME];
     let mut left = length;
     while left > 0 {

@@ -122,7 +122,9 @@ gives them no type). Decoders: `audio.md`.
   pointed back at its own file where that is still there (`Library::release_the_rows_of`, weighed
   again by the next `--import`; one the vault holds the only copy of is counted and left), and every
   album naming such a cover lets it go (`Library::let_go_of_vault_covers`), then the run ends well
-  unless something went unreached. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
+  unless something went unreached. A WAVE object that reads back but was packed as one zstd frame
+  naming no length (`Vault::packed_before_the_frames`; an earlier build's) is counted, and with
+  `--apply` repacked in frames from itself (`Vault::reframe`), whatever else failed. Writes `tag` passes over by design (`Unwritten::is_a_failure`) are not
   failures. A cancelled scan asks the reference nothing after. Handles are one
   `resonate_library::PassHandle` (`ScanHandle` etc. aliases); a dying thread answers
   `Error::Stopped { pass }` after the panic message goes to an error record (`pass::what_it_said`),

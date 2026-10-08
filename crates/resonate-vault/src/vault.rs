@@ -27,6 +27,7 @@ use crate::{
     key::VaultKey,
     ogg,
     pcm::{self, Digest},
+    unpacking::{self, Unpacking},
     wave,
 };
 
@@ -86,6 +87,13 @@ impl Drop for Staged {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reframing {
+    AlreadyFramed,
+    Reframed,
+    NotHeld,
 }
 
 pub struct Taking<'a> {
@@ -618,6 +626,43 @@ impl Vault {
             }
             None => cover::pixels_of_jxl(&bytes).is_ok(),
         })
+    }
+
+    pub fn packed_before_the_frames(&self, path: &Path) -> Result<bool> {
+        self.inside(path)?;
+        Ok(unpacking::frames_of(path)
+            .map_err(|source| Error::io(VaultOp::Walk, path, source))?
+            .is_none())
+    }
+
+    pub fn reframe(&self, path: &Path) -> Result<Reframing> {
+        if !self.packed_before_the_frames(path)? {
+            return Ok(Reframing::AlreadyFramed);
+        }
+        let Some(key) = named(path) else {
+            return Ok(Reframing::NotHeld);
+        };
+        let unpacking =
+            Unpacking::open(path).map_err(|source| Error::io(VaultOp::Read, path, source))?;
+        let length = unpacking.len();
+        let staging = self.staged(&compressed_name(WAVE_EXTENSION))?;
+        wave::packed_in_frames(
+            wave::Unpacked {
+                reading: unpacking,
+                length,
+                from: path,
+            },
+            &staging,
+            None,
+            wave::PACKED_FRAME_BYTES,
+            Halt::NEVER,
+        )?;
+        if self.read_back_packed(&staging, None)?.key != key {
+            return Ok(Reframing::NotHeld);
+        }
+
+        self.landed(&staging, path)?;
+        Ok(Reframing::Reframed)
     }
 
     pub fn forget(&self, path: &Path) -> Result<bool> {

@@ -15,7 +15,8 @@ use resonate_codec::{
 };
 use resonate_core::{AudioBuffer, MediaLocation, SampleData, SampleFormat, SourceId, StreamSpec};
 use resonate_vault::{
-    Error, Form, Halt, Keeping, Kept, Refusal, Replacing, Taking, Vault, VaultFiles, VaultKey,
+    Error, Form, Halt, Keeping, Kept, Reframing, Refusal, Replacing, Taking, Vault, VaultFiles,
+    VaultKey,
 };
 
 const RATE: u32 = 44_100;
@@ -716,6 +717,54 @@ fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
     fs::write(&held.path, &bytes).expect("a meddled object");
 
     assert!(!vault.verify(&held.path, Form::Wave).unwrap_or(false));
+}
+
+#[test]
+fn a_wave_packed_before_the_frames_is_repacked_in_frames_and_reads_back_the_same() {
+    let tree = Tree::new();
+    let path = tree.write("unframed.wav", &floating(&signal(FRAMES)));
+    let vault = tree.vault();
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+    let unpacked = zstd::decode_all(fs::read(&held.path).expect("an object").as_slice())
+        .expect("an object that unpacks");
+    fs::write(
+        &held.path,
+        zstd::encode_all(unpacked.as_slice(), 3).expect("packed as one frame"),
+    )
+    .expect("an object as an older build packed it");
+
+    assert!(vault.packed_before_the_frames(&held.path).expect("a walk"));
+    assert!(
+        vault
+            .verify(&held.path, Form::Wave)
+            .expect("a verified object")
+    );
+
+    assert_eq!(
+        vault.reframe(&held.path).expect("a repacking"),
+        Reframing::Reframed
+    );
+    assert!(!vault.packed_before_the_frames(&held.path).expect("a walk"));
+    assert!(
+        vault
+            .verify(&held.path, Form::Wave)
+            .expect("a verified object")
+    );
+    assert_eq!(
+        zstd::decode_all(fs::read(&held.path).expect("an object").as_slice())
+            .expect("an object that unpacks"),
+        unpacked
+    );
+    assert_eq!(
+        vault.reframe(&held.path).expect("a repacking"),
+        Reframing::AlreadyFramed
+    );
+    assert!(
+        fs::read_dir(tree.root.join("vault").join("staging"))
+            .map(|entries| entries.count() == 0)
+            .unwrap_or(true),
+        "a repacking left something in staging"
+    );
 }
 
 fn past_what_a_wave_holds() -> Vec<u8> {

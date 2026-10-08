@@ -1,7 +1,9 @@
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    os::unix::fs::FileExt as _,
+    path::Path,
+    sync::Arc,
 };
 
 const RIFF: &[u8; 4] = b"RIFF";
@@ -26,10 +28,45 @@ const RLE_BLOCK: u32 = 1;
 const RESERVED_BLOCK: u32 = 3;
 const FAR_AHEAD: u64 = 4 << 20;
 
-type Unpacked = zstd::stream::read::Decoder<'static, BufReader<File>>;
+type Unpacked = zstd::stream::read::Decoder<'static, BufReader<Opened>>;
+
+struct Opened {
+    file: Arc<File>,
+    at: u64,
+}
+
+impl Opened {
+    fn at(file: &Arc<File>, at: u64) -> Self {
+        Self {
+            file: Arc::clone(file),
+            at,
+        }
+    }
+}
+
+impl Read for Opened {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        let read = self.file.read_at(into, self.at)?;
+        self.at += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for Opened {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        let target = match to {
+            SeekFrom::Start(at) => Some(at),
+            SeekFrom::End(by) => self.file.metadata()?.len().checked_add_signed(by),
+            SeekFrom::Current(by) => self.at.checked_add_signed(by),
+        }
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+        self.at = target;
+        Ok(target)
+    }
+}
 
 pub(crate) struct Unpacking {
-    path: PathBuf,
+    file: Arc<File>,
     unpacked: Unpacked,
     unpacked_to: u64,
     at: u64,
@@ -52,7 +89,8 @@ enum Index {
 
 impl Unpacking {
     pub(crate) fn open(path: &Path) -> io::Result<Self> {
-        let mut unpacked = unpacked_from(path, 0)?;
+        let file = Arc::new(File::open(path)?);
+        let mut unpacked = unpacked_from(&file, 0)?;
         let mut head = [0_u8; RIFF_HEADER as usize];
         unpacked.read_exact(&mut head)?;
         let (named, declared) = head.split_at(RIFF.len());
@@ -64,13 +102,17 @@ impl Unpacking {
             .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
 
         Ok(Self {
-            path: path.to_path_buf(),
-            unpacked: unpacked_from(path, 0)?,
+            unpacked: unpacked_from(&file, 0)?,
+            file,
             unpacked_to: 0,
             at: 0,
             len: u64::from(u32::from_le_bytes(declared)) + RIFF_HEADER,
             index: Index::Unread,
         })
+    }
+
+    pub(crate) const fn len(&self) -> u64 {
+        self.len
     }
 
     fn catch_up(&mut self) -> io::Result<()> {
@@ -79,12 +121,12 @@ impl Unpacking {
         if behind || far_ahead {
             match self.frame_holding(self.at) {
                 Some(framed) if behind || framed.unpacked_at > self.unpacked_to => {
-                    self.unpacked = unpacked_from(&self.path, framed.packed_at)?;
+                    self.unpacked = unpacked_from(&self.file, framed.packed_at)?;
                     self.unpacked_to = framed.unpacked_at;
                 }
                 Some(_) => {}
                 None if behind => {
-                    self.unpacked = unpacked_from(&self.path, 0)?;
+                    self.unpacked = unpacked_from(&self.file, 0)?;
                     self.unpacked_to = 0;
                 }
                 None => {}
@@ -98,7 +140,7 @@ impl Unpacking {
 
     fn frame_holding(&mut self, at: u64) -> Option<Framed> {
         if self.index == Index::Unread {
-            self.index = frames_of(&self.path)
+            self.index = frames_in(&self.file)
                 .ok()
                 .flatten()
                 .map_or(Index::Unheld, Index::Held);
@@ -111,14 +153,12 @@ impl Unpacking {
     }
 }
 
-fn unpacked_from(path: &Path, packed_at: u64) -> io::Result<Unpacked> {
-    let mut file = File::open(path)?;
-    file.seek(SeekFrom::Start(packed_at))?;
-    zstd::stream::read::Decoder::new(file)
+fn unpacked_from(file: &Arc<File>, packed_at: u64) -> io::Result<Unpacked> {
+    zstd::stream::read::Decoder::new(Opened::at(file, packed_at))
 }
 
 struct Walking {
-    file: BufReader<File>,
+    file: BufReader<Opened>,
     at: u64,
 }
 
@@ -149,10 +189,13 @@ impl Walking {
 }
 
 pub(crate) fn frames_of(path: &Path) -> io::Result<Option<Vec<Framed>>> {
-    let file = File::open(path)?;
+    frames_in(&Arc::new(File::open(path)?))
+}
+
+fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
     let length = file.metadata()?.len();
     let mut walking = Walking {
-        file: BufReader::new(file),
+        file: BufReader::new(Opened::at(file, 0)),
         at: 0,
     };
     let mut framed = Vec::new();
@@ -352,6 +395,41 @@ mod tests {
         assert_eq!(&earlier[..], &whole[200_000..200_064]);
         assert_eq!(held.map(|held| held.unpacked_at), Some(3 * FRAME_BYTES));
         assert!(held.is_some_and(|held| held.packed_at > 0));
+    }
+
+    #[test]
+    fn a_seek_back_reads_the_object_it_opened_after_another_is_landed_under_its_name() {
+        const FRAME_BYTES: u64 = 64 << 10;
+
+        let folder = env::temp_dir().join(format!("resonate-unpacking-renewed-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let path = folder.join("held.wav.zst");
+        let packed = |name: &str, step: u32| {
+            let from = folder.join(name);
+            let body: Vec<u8> = (0..300_000_u32).map(|at| (at * step % 251) as u8).collect();
+            let mut whole = RIFF.to_vec();
+            whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            whole.extend_from_slice(&body);
+            fs::write(&from, &whole).expect("written");
+            let into = folder.join(format!("{name}.zst"));
+            crate::wave::compressed_in_frames(&from, &into, None, FRAME_BYTES, crate::Halt::NEVER)
+                .expect("packed");
+            (whole, into)
+        };
+        let (opened, first) = packed("first.wav", 1);
+        let (_, renewal) = packed("renewal.wav", 7);
+        fs::rename(&first, &path).expect("landed");
+
+        let mut reading = Unpacking::open(&path).expect("an unpacking");
+        reading.seek(SeekFrom::Start(290_000)).expect("a seek");
+        reading.read_exact(&mut [0_u8; 64]).expect("a read");
+        fs::rename(&renewal, &path).expect("the renewal landed over it");
+        reading.seek(SeekFrom::Start(70_000)).expect("a seek back");
+        let mut earlier = [0_u8; 64];
+        reading.read_exact(&mut earlier).expect("a read");
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(&earlier[..], &opened[70_000..70_064]);
     }
 
     #[test]

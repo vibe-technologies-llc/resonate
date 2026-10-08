@@ -276,7 +276,15 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
 the vault root ending `.zst` is an `Unpacking` (inner extension as `FormatHint`), decoded as read,
 not decompressed into memory; anything else is a plain open. **A seek backward, or more than
 `FAR_AHEAD` (4 MiB) forward, restarts at the frame holding the target** (`unpacking::frames_of`
-indexes frame headers once); no content size: restart from the start. The binary registers it
+indexes frame headers once); no content size: restart from the start. **Every restart reads the file
+the reader opened, not its path**: one `File` held in an `Arc`, each decoder and the index walk
+reading it by position (`Opened`, `FileExt::read_at`), so a renewal landed over the path mid-play
+leaves the reader on the object and the index it began with
+(`a_seek_back_reads_the_object_it_opened_after_another_is_landed_under_its_name`). An object an
+earlier build packed as one frame naming no length is repacked in frames by `Vault::reframe`
+(`vault --verify --apply`): decoded through `Unpacking` straight into `wave::packed_in_frames` (the
+packer taking any reader, `wave::Unpacked`), staged, read back to its key, then landed over itself
+(`a_wave_packed_before_the_frames_is_repacked_in_frames_and_reads_back_the_same`). The binary registers it
 wherever it opens a track to play or read (`held_over`). Bus, playlists, resumption, queue never see
 an object's path.
 
