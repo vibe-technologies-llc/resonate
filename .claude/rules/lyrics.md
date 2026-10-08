@@ -130,7 +130,9 @@ dependency (tested without a window).
   (`Identified::NAMED`; `re`, `tool` are one). `ti`, `ar`, `length`: `Declared`. `al`, `au`, `by`,
   `re`/`tool`, `ve`: `Credits`. `offset` shifts every moment. A bracket neither a moment nor one of
   the ten is the line it was written on (`[Chorus]` prints): what cannot be read as structure is
-  content, as in `Search::read`.
+  content, as in `Search::read`. Such a bracket ahead of a line's stamps heads that timed line
+  (`[Chorus] [00:12.00]text` is `[Chorus] text` at 12 s;
+  `a_marker_ahead_of_the_stamps_still_lets_them_time_the_line`).
 - **A non-arithmetic value is as if unwritten.** Blank tag: passed over. Unparsable `[offset:]`:
   shift stays. Unparsable `[length:]`: sheet declares none, not zero (zero would make every sheet
   name another track). `span` reads a length (`mm:ss`, `mm:ss.xx`, `h:mm:ss`, told apart by

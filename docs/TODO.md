@@ -96,9 +96,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
 - `sqlite_stat1` is gathered only by a scan that changed rows; a catalog filled by import, delivery
   or a cancelled first scan runs with none
-- `pictures_of_albums` binds a placeholder an album unchunked (SQLite's 32 766 limit), unlike
-  `tracks_with_ids`; `filtered_counts` applies the music filters by replacing `t.hidden = 0` in
-  SQL text
+- `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
 - The analysis cache's crash leftovers (`<pid>-<n>.staged`) are neither swept nor counted by `trim`
 
 ## Providers and network
@@ -132,8 +130,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - The hosted hifi and Monochrome services are registered whenever `online` is on, with no opt-in of
   their own; the hifi token request claims another site's `Origin` and `Referer`
 - The device sign-in asks for `w_usr w_sub`, though the provider only reads
-- `Debug` is derived on secret-holding types (`lastfm::Application`, `lastfm::Session`, the window's
-  `Online` and `Supplying`), unlike the masked ones in `config.rs`
 - DASH `$Time$` and `$Number%0Nd$` templates are not filled, and a BaseURL with no trailing slash
   loses its last segment
 - `stall.rs` and `trust.rs` are byte-identical in three provider crates, as are `retry_after`,
@@ -225,8 +221,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
 - The true-peak guard oversamples 8× with 96 taps at every rate (BS.1770 uses 2× from 96 kHz); a
   shaped-phase design runs under the `DESIGNED` lock
-- `tracks.isrc`, `albums.mbid` and `artists.mbid` have no index; `follow_names` looks them up a
-  link at a time
 - Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
   `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
 - A playlist import missing a file rescans every catalog path and allocates a component vector
@@ -267,9 +261,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   `tests/found/`; `fuzz/seeds/` is never replayed by `cargo test`
 - `Encoding::OF_THIS_BUILD` is bumped by hand: a `flacenc` upgrade or a changed `TUKEY_ALPHA` or
   `ARCHIVED_AT` leaves old objects called current
-- `packaging/resonate.spec`'s version is tied to nothing; the PKGBUILD's follows Cargo
-- The Flatpak grants `--share=ipc` and `--socket=fallback-x11` to a Wayland-only build
-- Unused: `tracing`'s `attributes` feature (no `#[instrument]`) and `resonate-ui`'s `libc`
 - `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in
   `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
 - `resonate-mcp`'s error variants carry `&'static str` field names beside its own `ArgumentName`;
@@ -339,8 +330,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   1 024-frame window, leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- A partly timed LRC drops its untimed lines (section heads, credits, translations) unsaid, and a
-  leading `[Chorus]` stops stamp reading, so `[Chorus] [00:12.00]text` is plain text
+- A partly timed LRC drops its untimed lines (section heads, credits, translations) unsaid: placing
+  one needs a moment that neither lights it nor ends the timed line beside it early
 - **Blocked on gpui:** the sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on
   a whole pixel vertically (`SUBPIXEL_VARIANTS_Y = 1`) and cosmic-text hints every size, so a type
   size in motion shimmers and hops; the line only brightens

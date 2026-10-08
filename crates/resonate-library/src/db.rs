@@ -5363,27 +5363,28 @@ pub(crate) fn pictures_of_albums(
     if albums.is_empty() {
         return Ok(Vec::new());
     }
-    let sql = format!(
-        "SELECT a.id, {} FROM albums a
-          WHERE (a.cover_print IS NOT NULL OR a.cover_path IS NOT NULL) AND a.id IN ({})",
-        store::the_picture_of!("a"),
-        vec!["?"; albums.len()].join(", ")
-    );
-    let binds: Vec<Value> = albums
-        .iter()
-        .map(|album| Value::Integer(album.get() as i64))
-        .collect();
-    let held: AHashMap<i64, Option<String>> = inner
-        .read(|connection| {
-            rows(connection, &sql, binds, |row| {
+    let held: AHashMap<i64, Option<String>> = inner.read(|connection| {
+        let mut held = AHashMap::with_capacity(albums.len());
+        for batch in albums.chunks(IDS_READ_AT_ONCE) {
+            let sql = format!(
+                "SELECT a.id, {} FROM albums a
+                  WHERE (a.cover_print IS NOT NULL OR a.cover_path IS NOT NULL) AND a.id IN ({})",
+                store::the_picture_of!("a"),
+                vec!["?"; batch.len()].join(", ")
+            );
+            let binds: Vec<Value> = batch
+                .iter()
+                .map(|album| Value::Integer(album.get() as i64))
+                .collect();
+            held.extend(rows(connection, &sql, binds, |row| {
                 Ok(Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, Option<String>>(1)?,
                 )))
-            })
-        })?
-        .into_iter()
-        .collect();
+            })?);
+        }
+        Ok(held)
+    })?;
 
     Ok(albums
         .iter()

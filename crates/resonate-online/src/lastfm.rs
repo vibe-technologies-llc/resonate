@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fmt::Write as _, sync::Arc, time::UNIX_EPOCH};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Write as _},
+    sync::Arc,
+    time::UNIX_EPOCH,
+};
 
 use md5::{Digest, Md5};
 use resonate_library::{
@@ -32,16 +37,32 @@ const REFUSED_FOR_THE_SESSION: u16 = 401;
 const REFUSED_FOR_NOW: u16 = 429;
 const UNAVAILABLE: u16 = 503;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Application {
     pub key: String,
     pub secret: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl fmt::Debug for Application {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Application")
+            .field("key", &self.key)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Session {
     pub name: String,
     pub key: String,
+}
+
+impl fmt::Debug for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Session")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct LastFm {
@@ -232,14 +253,14 @@ fn billed(fields: Fields, billed: &Billed, at: Option<usize>) -> Fields {
         )
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 struct Answer {
     error: Option<u32>,
     session: Option<SessionDoc>,
     user: Option<UserDoc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct SessionDoc {
     name: String,
     key: String,
@@ -294,6 +315,25 @@ mod tests {
     use resonate_core::ListenId;
 
     use super::*;
+
+    #[test]
+    fn an_application_and_a_session_print_neither_secret_nor_session_key() {
+        let application = Application {
+            key: "public-key".to_owned(),
+            secret: "application-hush".to_owned(),
+        };
+        let session = Session {
+            name: "listener".to_owned(),
+            key: "session-sesame".to_owned(),
+        };
+
+        let printed = format!("{application:?} {session:?}");
+
+        assert!(printed.contains("public-key"));
+        assert!(printed.contains("listener"));
+        assert!(!printed.contains("application-hush"));
+        assert!(!printed.contains("session-sesame"));
+    }
 
     fn heard(title: &str, seconds: u64) -> Scrobble {
         Scrobble {

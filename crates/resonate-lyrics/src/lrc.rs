@@ -308,6 +308,7 @@ impl Reading {
         let mut rest = line.trim_start_matches('\u{feff}').trim();
         let mut moments = Vec::new();
         let mut identified = false;
+        let mut heading: Vec<&str> = Vec::new();
 
         while let Some((inside, tail)) = brackets(rest) {
             match Bracket::read(inside) {
@@ -316,13 +317,26 @@ impl Reading {
                     self.identify(tag, value);
                     identified = true;
                 }
+                Bracket::Text if moments.is_empty() && heads_a_timed_line(tail) => {
+                    heading.push(&rest[..rest.len() - tail.len()]);
+                }
                 Bracket::Text => break,
             }
             rest = tail.trim_start();
         }
 
-        let text = rest.trim();
-        let (voice, text) = voiced_text(text);
+        let (voice, sung) = voiced_text(rest.trim());
+        let headed;
+        let text = if heading.is_empty() {
+            sung
+        } else {
+            headed = heading
+                .into_iter()
+                .chain([sung])
+                .collect::<Vec<_>>()
+                .join(" ");
+            headed.as_str()
+        };
         let stamped = Stamped::read(text);
         if moments.is_empty()
             && let Some(first) = stamped.as_ref().and_then(Stamped::first_sung)
@@ -488,6 +502,18 @@ impl<'a> Bracket<'a> {
 
         Self::Identifying { tag, value }
     }
+}
+
+fn heads_a_timed_line(mut rest: &str) -> bool {
+    while let Some((inside, tail)) = brackets(rest.trim_start()) {
+        match Bracket::read(inside) {
+            Bracket::Moment(_) => return true,
+            Bracket::Identifying { .. } => return false,
+            Bracket::Text => rest = tail,
+        }
+    }
+
+    false
 }
 
 fn brackets(line: &str) -> Option<(&str, &str)> {
@@ -914,6 +940,20 @@ mod tests {
         assert_eq!(
             timed(&lyrics),
             [(Duration::from_secs(1), "[Chorus] all that you touch")]
+        );
+    }
+
+    #[test]
+    fn a_marker_ahead_of_the_stamps_still_lets_them_time_the_line() {
+        let lyrics = lyrics("[Chorus] [00:12.00]all that you touch\n[00:15.00]all that you see")
+            .expect("a set");
+
+        assert_eq!(
+            timed(&lyrics),
+            [
+                (Duration::from_secs(12), "[Chorus] all that you touch"),
+                (Duration::from_secs(15), "all that you see"),
+            ]
         );
     }
 

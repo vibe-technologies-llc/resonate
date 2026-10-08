@@ -940,6 +940,39 @@ mod tests {
         Mbid::new(id).expect("a well-formed mbid")
     }
 
+    #[test]
+    fn a_song_an_album_or_an_artist_held_under_an_identifier_is_found_off_an_index() {
+        let connection = Connection::open_in_memory().expect("an in-memory catalog");
+        crate::schema::configure(&connection, crate::schema::Role::Writing)
+            .expect("the pragmas apply");
+        crate::schema::lay_out(&connection).expect("the schema lays out");
+
+        for (sql, index) in [
+            (HELD_BY_ISRC, "tracks_by_isrc"),
+            (HELD_BY_RECORDING, "tracks_by_recording"),
+            (HELD_UNDER_THE_ID, "artists_by_mbid"),
+            (HELD_ALBUM, "albums_by_release"),
+        ] {
+            let steps: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .and_then(|mut statement| {
+                    let asked = [GROUP, RELEASE];
+                    let bound = &asked[..statement.parameter_count()];
+                    statement
+                        .query_map(rusqlite::params_from_iter(bound), |row| {
+                            row.get::<_, String>(3)
+                        })?
+                        .collect()
+                })
+                .expect("the planner answers");
+
+            assert!(
+                steps.iter().any(|step| step.contains(index)),
+                "{index} is not what the lookup reads: {steps:?}"
+            );
+        }
+    }
+
     fn elsewhere(url: &str) -> Option<SongLink> {
         Some(SongLink::Elsewhere(url.to_owned()))
     }

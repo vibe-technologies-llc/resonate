@@ -35,7 +35,10 @@ with no second list. Desktop entry and metainfo `<provides>` are held to `MIME_T
   `org.mpris.MediaPlayer2.` plus its id; this player claims `resonate`),
   `org.freedesktop.Notifications`, system-bus `org.bluez` (headset controls, `mpris.md`),
   `discord-ipc-0`..`-9` plus Discord and Vesktop runtime directories. Snap Discord lives on host
-  `/tmp`, outside the sandbox.
+  `/tmp`, outside the sandbox. No `--share=ipc`, no `x11` or `fallback-x11`: gpui is built with
+  `wayland` alone (`the_flatpak_grants_no_x11_to_a_wayland_only_build`).
+- **The spec's `Version` is the workspace's** (`the_rpm_spec_builds_the_version_cargo_declares`);
+  the PKGBUILD's `pkgver()` reads `Cargo.toml` itself.
 
 **Every package installs one `resonate.desktop` and `resonate.svg`; the Flatpak renames them
 while building.** flatpak-builder exports only app-id-named files, so the manifest has

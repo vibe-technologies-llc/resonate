@@ -461,6 +461,9 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN numbered_by_its_stem INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE retagged_fields ADD COLUMN wrote TEXT;
      ALTER TABLE retagged_fields ADD COLUMN wrote_known INTEGER NOT NULL DEFAULT 0;",
+    "CREATE INDEX tracks_by_isrc ON tracks(isrc);
+     CREATE INDEX albums_by_release ON albums(mbid);
+     CREATE INDEX artists_by_mbid ON artists(mbid);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

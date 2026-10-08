@@ -142,7 +142,7 @@ wayland-protocols = {
     features = ["client", "staging"]
 }
 
-tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = {
     version = "0.3.23",
     default-features = false,

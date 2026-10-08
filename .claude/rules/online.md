@@ -336,6 +336,10 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
   the session key (`lastfm-session`); `--forget` clears it. The window asks the same call through
   `Scrobblers::signed_in_to_lastfm` (a `LastfmSignIn` in, a `LastfmSession` out, neither printing
   a secret in its `Debug`), which the binary's `ByToken` answers with `lastfm_signed_in`.
+  `lastfm::Application` and `lastfm::Session` likewise print the key and name alone, and the
+  window's `settings::Online` (so `Supplying`) prints `<withheld>` for every token, password,
+  secret and the contact (`an_application_and_a_session_print_neither_secret_nor_session_key`,
+  `the_online_settings_print_no_secret_and_no_contact`).
 
 ## LRCLIB
 

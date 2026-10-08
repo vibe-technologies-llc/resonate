@@ -2240,7 +2240,9 @@ starts.
   single-spaced: *Pink  Floyd* and *pink floyd year:1971* are one ask), `None` under three letters
   (not sent; `asks_elsewhere` is its `is_some`); `Library::unheld_among` asks the catalog about
   those recordings alone (`WHERE mbid IN (…)` under `tracks_by_recording`,
-  `release_tracks_by_recording`: a `MIGRATIONS` step) instead of reading every recording id.
+  `release_tracks_by_recording`: a `MIGRATIONS` step); a link's ISRC, an album's release id and an artist's
+  id are found off `tracks_by_isrc`, `albums_by_release`, `artists_by_mbid` (a later step;
+  `a_song_an_album_or_an_artist_held_under_an_identifier_is_found_off_an_index`) instead of reading every recording id.
   `still_answering` narrows songs found for one search to those every folded word of another begins
   a word of (title, credit, a release's title): what the window shows while asking
   (`songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more`).

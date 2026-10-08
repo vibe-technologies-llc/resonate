@@ -1,5 +1,5 @@
 use std::{
-    mem,
+    fmt, mem,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -515,7 +515,7 @@ impl Setting {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Online {
     pub enabled: bool,
     pub after_scan: bool,
@@ -536,6 +536,66 @@ pub struct Online {
     pub tidal_refresh_token: String,
     pub hifi_api: String,
     pub monochrome: String,
+}
+
+struct Withheld;
+
+impl fmt::Debug for Withheld {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<withheld>")
+    }
+}
+
+fn withheld(secret: &str) -> Option<Withheld> {
+    (!secret.is_empty()).then_some(Withheld)
+}
+
+impl fmt::Debug for Online {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            enabled,
+            after_scan,
+            studies,
+            lyrics,
+            contact,
+            acoustid_key,
+            audd_token,
+            listenbrainz_token,
+            lastfm_key,
+            lastfm_secret,
+            lastfm_session,
+            subsonic,
+            subsonic_user,
+            subsonic_password,
+            tidal_client_id,
+            tidal_client_secret,
+            tidal_refresh_token,
+            hifi_api,
+            monochrome,
+        } = self;
+
+        f.debug_struct("Online")
+            .field("enabled", enabled)
+            .field("after_scan", after_scan)
+            .field("studies", studies)
+            .field("lyrics", lyrics)
+            .field("contact", &withheld(contact))
+            .field("acoustid_key", &withheld(acoustid_key))
+            .field("audd_token", &withheld(audd_token))
+            .field("listenbrainz_token", &withheld(listenbrainz_token))
+            .field("lastfm_key", &withheld(lastfm_key))
+            .field("lastfm_secret", &withheld(lastfm_secret))
+            .field("lastfm_session", &withheld(lastfm_session))
+            .field("subsonic", subsonic)
+            .field("subsonic_user", subsonic_user)
+            .field("subsonic_password", &withheld(subsonic_password))
+            .field("tidal_client_id", tidal_client_id)
+            .field("tidal_client_secret", &withheld(tidal_client_secret))
+            .field("tidal_refresh_token", &withheld(tidal_refresh_token))
+            .field("hifi_api", hifi_api)
+            .field("monochrome", monochrome)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -885,6 +945,42 @@ mod tests {
 
     fn kept(name: &str) -> Binding {
         Binding::Profile(ProfileName::new(name).expect("a usable name"))
+    }
+
+    #[test]
+    fn the_online_settings_print_no_secret_and_no_contact() {
+        let online = Online {
+            contact: "someone at an address".to_owned(),
+            subsonic_user: "listener".to_owned(),
+            subsonic_password: "subsonic-sesame".to_owned(),
+            tidal_client_secret: "tidal-hush".to_owned(),
+            tidal_refresh_token: "tidal-sesame".to_owned(),
+            lastfm_secret: "lastfm-hush".to_owned(),
+            lastfm_session: "lastfm-sesame".to_owned(),
+            listenbrainz_token: "listenbrainz-sesame".to_owned(),
+            ..Online::default()
+        };
+        let supplying = Supplying {
+            inbox: None,
+            online: &online,
+            asking: Asking::EveryProvider,
+        };
+
+        let printed = format!("{supplying:?}");
+
+        assert!(printed.contains("listener"));
+        assert!(printed.contains("<withheld>"));
+        for secret in [
+            "someone at an address",
+            "subsonic-sesame",
+            "tidal-hush",
+            "tidal-sesame",
+            "lastfm-hush",
+            "lastfm-sesame",
+            "listenbrainz-sesame",
+        ] {
+            assert!(!printed.contains(secret), "{secret} was printed");
+        }
     }
 
     #[test]

@@ -135,3 +135,38 @@ fn the_flatpak_exports_the_desktop_entry_and_icon_under_its_id() {
         "flatpak-builder rewrites a launchable naming the entry it renames, and no other"
     );
 }
+
+#[test]
+fn the_rpm_spec_builds_the_version_cargo_declares() {
+    let spec = packaging("resonate.spec");
+
+    let declared = spec
+        .lines()
+        .find_map(|line| line.strip_prefix("Version:"))
+        .map(str::trim)
+        .expect("the spec declares a version");
+
+    assert_eq!(
+        declared,
+        env!("CARGO_PKG_VERSION"),
+        "the spec's Version is not the workspace's; a release archive would not match it"
+    );
+}
+
+#[test]
+fn the_flatpak_grants_no_x11_to_a_wayland_only_build() {
+    let manifest = packaging(FLATPAK_MANIFEST);
+
+    let granted: Vec<&str> = manifest
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .map(|grant| grant.trim_matches('"'))
+        .collect();
+
+    for refused in ["--share=ipc", "--socket=x11", "--socket=fallback-x11"] {
+        assert!(
+            !granted.contains(&refused),
+            "the manifest grants {refused}, though gpui is built for Wayland alone"
+        );
+    }
+}

@@ -8,9 +8,7 @@ command: resonate
 rename-desktop-file: resonate.desktop
 rename-icon: resonate
 finish-args:
-  - --share=ipc
   - --socket=wayland
-  - --socket=fallback-x11
   - --device=dri
   - --share=network
   - --filesystem=home
