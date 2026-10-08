@@ -1406,6 +1406,20 @@ is never named.
   over the clamp: taffy measures such a box at min-content width, and wrapping clamped text drew
   nothing (bar title/artist/album blank every track once `opens` took the clamp). Those boxes are
   cut by `kit::cut_to_fit` where they must end in an ellipsis; a `flex_shrink` cell keeps the clamp.
+- **gpui truncates the runs it is handed, once for every measure.** gpui 0.2.2's
+  `TextLayout::layout` moves one `Vec<TextRun>` into its measure closure and `truncate_line` cuts
+  it in place (`update_runs_after_truncation`) on every call. If taffy measures a cut text narrower
+  first and wider afterwards, the wider layout keeps the narrow runs. A 0 px measure cuts them to
+  the ellipsis's three bytes. Whatever the runs carry then stops there: underline, highlight colour,
+  weight. Glyphs past the cut keep the last run's colour, so a hover link looks whole, but its
+  underline ends after three letters. This is invisible on a name that fits, since an uncut text
+  never touches its runs. A grid with `minmax(0, 1fr)` tracks causes it: taffy's track sizing
+  measures the item at the column's 0 base size even when the grid's size is definite, and
+  `min_w(0)` turns a min-content probe below into `Definite(0)`. An absolute box around the grid
+  does not help, because the grid's own sizing makes the probe. `uniform_list` rows escape it, since
+  the list lays each row out at its width. No newer gpui than 0.2.2 is published. Found by printing
+  every measure's available space from a `[patch]`ed gpui copy
+  (`MEASURE known=None avail=Definite(0px) … runs=[39]`, then `avail=Definite(200px) … runs=[3]`).
 
 ## Driven by tests
 

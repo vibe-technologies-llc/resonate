@@ -136,6 +136,16 @@ sits last in its category, not worked until it moves. Everything else is open.
   `escaped` and `is_a_document`: a `ureq` bump is made three times
 
 ## Window
+- A name cut with an ellipsis in a pane drawn as plain divs (Top results' songs, found songs above
+  all, whose credits run long) loses its runs past the first three bytes: the hover underline
+  stops after *Ada* of *Adam Skorupa & …*, and a matched run past there is not lit. The pane's
+  one-cell grid (`RootView::region`, and `Part`'s) measures its item at a column estimate of 0
+  during track sizing, laying the row out at 0 px before its real width (`ui.md`: gpui's
+  truncation mutates the runs it is handed). Neither an absolute box around either grid nor
+  `min_h(0)` on the pane stops it; a definite width on the pane or the results list does. The fix
+  replaces both grids with a box that stretches the pane without measuring it, which wants every
+  pane root to fill the height itself; `uniform_list` panes are untouched (they lay rows out at
+  their width)
 - *Play*, *Shuffle*, *Next* or *Last* on a playlist from the index reads it whole on the window's
   thread (`entries_of` → `Library::playlist_entries`), a smart one running its query over the
   catalog; the tracks heading already does this on the background executor
