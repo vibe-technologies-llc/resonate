@@ -40,6 +40,12 @@ const EARLIER_MARKED_THROUGH: &str = "UPDATE earlier_submissions SET through = m
 
 const EARLIER_ALL_TOLD: &str = "DELETE FROM earlier_submissions WHERE service = ?1";
 
+const STILL_MARKED: &str = "SELECT EXISTS (SELECT 1 FROM submissions WHERE service = ?1)
+             OR EXISTS (SELECT 1 FROM earlier_submissions WHERE service = ?1)";
+
+const NO_LONGER_TOLD: &str = "DELETE FROM submissions WHERE service = ?1;
+     DELETE FROM earlier_submissions WHERE service = ?1";
+
 const THE_LOVED_RECORDINGS: &str = "SELECT DISTINCT mbid FROM tracks
       WHERE favourite IS NOT NULL AND mbid IS NOT NULL";
 
@@ -519,6 +525,25 @@ fn earlier_mark_through(inner: &Inner, service: ListeningService, through: u64) 
             .execute(EARLIER_MARKED_THROUGH, params![service.name(), through])
             .map(drop)
             .map_err(|source| Error::store(StoreOp::Update, source))
+    })
+}
+
+pub(crate) fn stop_telling(inner: &Inner, service: ListeningService) -> Result<bool> {
+    let marked: bool = inner.read(|connection| {
+        connection
+            .query_row(STILL_MARKED, params![service.name()], |row| row.get(0))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+    if !marked {
+        return Ok(false);
+    }
+    inner.write(|transaction| {
+        for forgetting in NO_LONGER_TOLD.split(';') {
+            transaction
+                .execute(forgetting.trim(), params![service.name()])
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        }
+        Ok(true)
     })
 }
 

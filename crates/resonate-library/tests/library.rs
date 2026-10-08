@@ -1753,6 +1753,79 @@ fn removing_a_root_whose_directory_is_gone_still_clears_it() -> Result<()> {
 }
 
 #[test]
+fn an_album_titled_composed_on_one_track_and_decomposed_on_another_is_one_album() -> Result<()> {
+    let tree = Tree::new();
+    for (file, album) in [
+        ("01.wav", "\u{c1}g\u{e6}tis byrjun"),
+        ("02.wav", "A\u{301}g\u{e6}tis byrjun"),
+    ] {
+        tree.write(
+            &format!("rip/{file}"),
+            &Wav::new()
+                .text(TITLE, file)
+                .text(ARTIST, "Sigur Ros")
+                .text(ALBUM, album)
+                .build(),
+        );
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(library.albums(&AlbumQuery::default())?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_row_under_a_folder_deeper_than_the_walk_reads_is_kept_rather_than_pruned() -> Result<()> {
+    let tree = Tree::new();
+    let nested = ["d"; 36].join("/");
+    let deep = tree.write(
+        &format!("{nested}/one.wav"),
+        &Wav::new().text(TITLE, "Deep").build(),
+    );
+    let narrow = tree.path().join(["d"; 10].join("/"));
+
+    let library = Library::open_in_memory()?;
+    scan(
+        &library,
+        &ScanOptions {
+            roots: vec![narrow],
+            ..options(&tree)
+        },
+    )?;
+    let held = library
+        .track_at(&deep, None)?
+        .expect("the narrow root reached the file");
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.removed, 0);
+    assert_eq!(
+        library.track_at(&deep, None)?.map(|row| row.id),
+        Some(held.id)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_root_gone_from_the_disc_is_cleared_however_its_path_is_spelt() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("one.wav", &Wav::new().text(TITLE, "Gone").build());
+    let root = tree.path().canonicalize().expect("a real directory");
+    let spelt_otherwise = root
+        .join("..")
+        .join(root.file_name().expect("a named folder"));
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    fs::remove_dir_all(&root).expect("a removable directory");
+
+    assert!(library.remove_root(&spelt_otherwise.join("."))?);
+    assert!(library.roots()?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
     let tree = Tree::new();
     tree.write(
@@ -2603,6 +2676,37 @@ fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> R
     )?;
 
     assert_eq!(titles(&all(&library)?), vec!["Keep", "One"]);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes_first()
+-> Result<()> {
+    let tree = Tree::new();
+    let shared = Tree::new();
+    shared.write("inner/one.wav", &Wav::new().text(TITLE, "One").build());
+    fs::create_dir_all(tree.path().join("albums")).expect("a writable temporary directory");
+
+    for (named, target) in [
+        ("albums/a", shared.path().to_path_buf()),
+        ("albums/b", shared.path().join("inner")),
+        ("albums/c", shared.path().to_path_buf()),
+    ] {
+        os::unix::fs::symlink(&target, tree.path().join(named))
+            .expect("the fixture tree takes a link");
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(
+        &library,
+        &ScanOptions {
+            follow_symlinks: true,
+            ..options(&tree)
+        },
+    )?;
+
+    assert_eq!(titles(&all(&library)?), vec!["One"]);
     Ok(())
 }
 
@@ -5797,6 +5901,36 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
         2,
         "forgetting the history took the count with it"
     );
+    Ok(())
+}
+
+#[test]
+fn a_service_no_longer_told_holds_the_history_back_no_longer() -> Result<()> {
+    const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let told = Told::default();
+    assert!(library.submit_listens(&told)?.started);
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    beside(&database)
+        .execute_batch(&format!(
+            "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
+        ))
+        .expect("the history is moved back past a year");
+    let a_year = HistoryKept::parse("365").expect("a span of days");
+
+    assert_eq!(library.age_the_history(a_year)?.listens, 0);
+    assert!(library.stop_telling(told.service())?);
+    assert!(!library.stop_telling(told.service())?);
+    assert_eq!(library.age_the_history(a_year)?.listens, 2);
     Ok(())
 }
 
@@ -17240,6 +17374,37 @@ fn why_passed_over(summary: &RetagSummary) -> Vec<Unwritten> {
 }
 
 #[test]
+fn a_track_number_read_off_the_file_name_is_never_written_into_the_file() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "03 - Echos.aiff",
+        &Aiff::new().text(ARTIST, "The Orbiters").build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(
+        library
+            .track_at(&file, None)?
+            .expect("the scanned row")
+            .track_number,
+        Some(3),
+        "the file name numbered nothing"
+    );
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
+    let preview = retagged(&library, false)?;
+
+    for write in &preview.retagging.writes {
+        assert!(
+            !fields_of(write).contains(&TagField::TrackNumber),
+            "a number guessed from the file name was offered"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write(
@@ -23288,6 +23453,8 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
     library.favour(Favoured::Track(echoes.id), true)?;
     let playlist = library.create_playlist("Meddle")?;
     library.add_to_playlist(playlist, &[Cut::whole(MediaLocation::local(&before))])?;
+    let ahead = LyricsAhead::ZERO.earlier().earlier();
+    library.hold_lyrics_ahead(&MediaLocation::local(&before), None, ahead)?;
 
     let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
     moved(&before, &after);
@@ -23302,6 +23469,11 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
     assert_eq!(row.id, echoes.id);
     assert_eq!(row.plays, 1);
     assert!(row.favourite.is_some());
+    assert_eq!(
+        library.lyrics_ahead(&row.location, None)?,
+        ahead,
+        "the lyric offset stayed behind at the old path"
+    );
     assert_eq!(all(&library)?.len(), 2);
     let entries = library.playlist_entries(playlist, None)?;
     assert_eq!(entries.len(), 1);

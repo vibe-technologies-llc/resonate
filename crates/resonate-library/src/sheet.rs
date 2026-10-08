@@ -254,7 +254,7 @@ pub fn resolved(file: PathBuf, beside: &Path) -> MediaLocation {
     }))
 }
 
-fn settled(file: &Path) -> PathBuf {
+pub(crate) fn settled(file: &Path) -> PathBuf {
     let held = path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
     let mut whole = PathBuf::new();
 

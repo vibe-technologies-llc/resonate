@@ -69,11 +69,11 @@ use resonate_engine::{
 };
 use resonate_library::{
     Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
-    Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, LookupOp, Missing,
-    MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing, Playlist,
-    PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions, RetagSummary,
-    RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter, TRIES_BEFORE_GIVING_UP,
-    UnheldRelease, Vault, VaultFiles, Want, folded_letters,
+    Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService, LookupOp,
+    Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing,
+    Playlist, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter,
+    TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -414,6 +414,7 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
         None => Library::open(&path)?,
     };
     library.filter_music(config.music_filters());
+    stop_telling_what_has_no_account(&library, config);
     age_the_history(&library, config.history_kept());
     library.deliver_into(delivery_folder(config));
     Ok(library)
@@ -424,6 +425,29 @@ fn delivery_folder(config: &Config) -> Option<DeliveryFolder> {
         path: config.music_folder.clone()?,
         layout: config.organise_as(),
     })
+}
+
+fn stop_telling_what_has_no_account(library: &Library, config: &Config) {
+    let unaccounted = [
+        (
+            ListeningService::ListenBrainz,
+            config.listenbrainz_token.is_none(),
+        ),
+        (ListeningService::LastFm, config.lastfm_session.is_none()),
+    ];
+    for (service, unaccounted) in unaccounted {
+        if !unaccounted {
+            continue;
+        }
+        match library.stop_telling(service) {
+            Ok(true) => tracing::info!(
+                service = service.name(),
+                "a service no longer signed in to holds the history back no longer"
+            ),
+            Ok(false) => {}
+            Err(error) => tracing::warn!(%error, "a service's mark could not be let go of"),
+        }
+    }
 }
 
 fn age_the_history(library: &Library, kept: HistoryKept) {

@@ -2504,8 +2504,12 @@ fn settle(landed: &[Move]) {
 
 pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut stale_lyrics = prepared(tx, "DELETE FROM lyrics_kept WHERE path = ?1")?;
+    let mut stale_offsets = prepared(tx, "DELETE FROM lyrics_ahead WHERE path = ?1")?;
+    let mut stale_refusals = prepared(tx, "DELETE FROM lyrics_refused WHERE path = ?1")?;
     let mut stale_tracks = prepared(tx, "DELETE FROM tracks WHERE path = ?1")?;
     let mut lyrics = prepared(tx, "UPDATE lyrics_kept SET path = ?2 WHERE path = ?1")?;
+    let mut offsets = prepared(tx, "UPDATE lyrics_ahead SET path = ?2 WHERE path = ?1")?;
+    let mut refusals = prepared(tx, "UPDATE lyrics_refused SET path = ?2 WHERE path = ?1")?;
     let mut tracks = prepared(tx, "UPDATE tracks SET path = ?2 WHERE path = ?1")?;
     let mut entries = prepared(tx, "UPDATE playlist_entries SET path = ?2 WHERE path = ?1")?;
     let mut touched = prepared(
@@ -2520,12 +2524,17 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
         let from = store::path_text(from_path)?;
         let to = store::path_text(to_path)?;
 
-        for statement in [&mut stale_lyrics, &mut stale_tracks] {
+        for statement in [
+            &mut stale_lyrics,
+            &mut stale_offsets,
+            &mut stale_refusals,
+            &mut stale_tracks,
+        ] {
             statement
                 .execute(params![to])
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
         }
-        for statement in [&mut lyrics, &mut tracks] {
+        for statement in [&mut lyrics, &mut offsets, &mut refusals, &mut tracks] {
             statement
                 .execute(params![from, to])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;

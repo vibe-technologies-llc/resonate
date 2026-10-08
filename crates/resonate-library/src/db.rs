@@ -43,7 +43,7 @@ use crate::{
     ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings,
     Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery,
     TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey, VaultObject,
-    Verdict, Waits, Want, Window, Word,
+    Verdict, Waits, Want, Window, Word, alternatives,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -60,7 +60,7 @@ use crate::{
     renamed::{ADDED, NamesMoved, RENAMED_TRIGGERS, RETITLED, Renamed},
     resumed,
     retag::{self, Followed, TrackToTag},
-    scan, schema, scrobble, search, share, songs, spelling, statistics, store,
+    scan, schema, scrobble, search, share, sheet, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
     undo::{self, Step},
@@ -325,7 +325,8 @@ const VAULT_OBJECTS_UNHELD: &str = "SELECT key, form, path, bytes, sample_rate, 
 const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, tracks.span_frames,
             tracks.answered IS NOT NULL, tracks.title, tracks.artist, tracks.artist_mbid,
             tracks.mbid, tracks.release_track_mbid, tracks.isrc,
-            tracks.track_number, tracks.disc_number, tracks.album_id,
+            CASE WHEN tracks.numbered_by_its_stem THEN NULL ELSE tracks.track_number END,
+            tracks.disc_number, tracks.album_id,
             a.answered IS NOT NULL, a.release_title,
             artists.answered IS NOT NULL, artists.name, artists.mbid,
             a.mbid, a.release_group, a.date, a.label, a.catalog_number, a.barcode,
@@ -1402,6 +1403,7 @@ impl Library {
             .map_err(|source| Error::store(StoreOp::Open, source))?;
         store::reconcile_artists(&mut writer)?;
         store::refold_the_index(&mut writer)?;
+        store::compose_the_album_keys(&mut writer)?;
         store::word_the_titles(&mut writer)?;
         store::settle_the_credits_if_owed(&mut writer)?;
 
@@ -1729,6 +1731,10 @@ impl Library {
         scrobble::tell_earlier(&self.inner, service)
     }
 
+    pub fn stop_telling(&self, service: ListeningService) -> Result<bool> {
+        scrobble::stop_telling(&self.inner, service)
+    }
+
     pub fn earlier_listens_owed(&self, service: ListeningService) -> Result<bool> {
         scrobble::earlier_owed(&self.inner, service)
     }
@@ -2034,7 +2040,7 @@ impl Library {
     }
 
     pub fn remove_root(&self, path: &Path) -> Result<bool> {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let canonical = path.canonicalize().unwrap_or_else(|_| sheet::settled(path));
         let _walking = self.inner.walk_the_tree()?;
 
         self.inner.write(|transaction| {
@@ -2056,9 +2062,8 @@ impl Library {
             transaction
                 .execute("DELETE FROM roots WHERE id = ?1", params![id])
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
-            transaction
-                .execute_batch(store::ORPHANS)
-                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            store::sweep_orphans(transaction)?;
+            alternatives::settle_if_owed(transaction)?;
 
             Ok(true)
         })
@@ -2082,9 +2087,8 @@ impl Library {
                 )
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
             if forgotten > 0 {
-                transaction
-                    .execute_batch(store::ORPHANS)
-                    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+                store::sweep_orphans(transaction)?;
+                alternatives::settle_if_owed(transaction)?;
             }
             Ok(forgotten > 0)
         })

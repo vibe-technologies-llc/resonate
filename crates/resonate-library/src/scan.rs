@@ -777,7 +777,7 @@ fn walk_all(
     work: &Sender<Job>,
     vault: Option<&Path>,
 ) -> Result<Vec<PathBuf>> {
-    let mut visited = AHashSet::new();
+    let mut visited = Visited::default();
     let mut mounted = Vec::new();
     for root in roots.walked {
         let walking = Walking {
@@ -819,11 +819,22 @@ fn mend_what_dead_writers_left(entries: &[fs::DirEntry]) {
     }
 }
 
-fn walk(
-    walking: &Walking<'_>,
-    visited: &mut AHashSet<PathBuf>,
-    mounted: &mut Vec<PathBuf>,
-) -> Result<bool> {
+#[derive(Default)]
+struct Visited {
+    targets: AHashSet<PathBuf>,
+    walked: AHashSet<PathBuf>,
+}
+
+impl Visited {
+    fn first_time_through(&mut self, directory: &Path) -> bool {
+        match directory.canonicalize() {
+            Ok(canonical) => self.walked.insert(canonical),
+            Err(_) => true,
+        }
+    }
+}
+
+fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>) -> Result<bool> {
     let Walking {
         options, progress, ..
     } = *walking;
@@ -836,6 +847,13 @@ fn walk(
             return Ok(false);
         }
         if walking.is_the_vault(&directory) {
+            continue;
+        }
+        if options.follow_symlinks && !visited.first_time_through(&directory) {
+            tracing::debug!(
+                path = %directory.display(),
+                "stepping past a directory this walk has already been through by another link"
+            );
             continue;
         }
         let device = volumes::device(&directory);
@@ -852,8 +870,11 @@ fn walk(
             tracing::warn!(
                 path = %directory.display(),
                 limit = MAX_DEPTH.get(),
-                "skipping a directory deeper than the walk reads"
+                "keeping what the catalog holds under a directory deeper than the walk reads"
             );
+            if !kept_unread(walking, &directory) {
+                return Ok(false);
+            }
             continue;
         }
 
@@ -950,7 +971,7 @@ fn kept_unread(walking: &Walking<'_>, path: &Path) -> bool {
         .all(|id| walking.work.send(Job::Unread(id)).is_ok())
 }
 
-fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>) -> bool {
+fn followed(path: &Path, visited: &mut Visited, walking: &Walking<'_>) -> bool {
     let Ok(target) = path.canonicalize() else {
         return false;
     };
@@ -965,15 +986,19 @@ fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>)
         );
         return false;
     }
-    if visited.insert(target) {
-        return true;
+    if visited
+        .targets
+        .iter()
+        .any(|walked| target.starts_with(walked))
+    {
+        tracing::debug!(
+            path = %path.display(),
+            "stepping past a link to a directory this walk has already been down"
+        );
+        return false;
     }
-
-    tracing::debug!(
-        path = %path.display(),
-        "stepping past a link to a directory this walk has already been down"
-    );
-    false
+    visited.targets.insert(target);
+    true
 }
 
 struct Walking<'a> {
@@ -1574,6 +1599,7 @@ fn cut_into_rows(
             tags: track.titled(),
             embeds_a_picture,
             named_by_its_stem: false,
+            numbered_by_its_stem: false,
             packets: None,
         });
     }
@@ -1618,30 +1644,37 @@ fn names_the_same_title(tagged: Option<&str>, parsed: &str) -> bool {
     }
 }
 
-fn name_from_stem(path: &Path, tags: &mut TagSet) -> bool {
+#[derive(Clone, Copy, Default)]
+struct Stemmed {
+    named: bool,
+    numbered: bool,
+}
+
+fn name_from_stem(path: &Path, tags: &mut TagSet) -> Stemmed {
+    let mut stemmed = Stemmed::default();
     if tags.title.is_some() && tags.artist.is_some() {
-        return false;
+        return stemmed;
     }
     let Some(stem) = path.file_stem() else {
-        return false;
+        return stemmed;
     };
     let Some(named) = stem::read(&stem.to_string_lossy()) else {
-        return false;
+        return stemmed;
     };
 
-    let mut named_it = false;
     if tags.artist.is_none() && names_the_same_title(tags.title.as_deref(), &named.title) {
-        named_it |= named.artist.is_some();
+        stemmed.named |= named.artist.is_some();
         tags.artist = named.artist;
     }
     if tags.track_number.is_none() {
+        stemmed.numbered = named.track_number.is_some();
         tags.track_number = named.track_number;
     }
     if tags.title.is_none() {
         tags.title = Some(named.title);
-        named_it = true;
+        stemmed.named = true;
     }
-    named_it
+    stemmed
 }
 
 fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackRecord>> {
@@ -1670,7 +1703,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
     {
         return Ok(cut_into_rows(&cutting, cut, &info, embeds_a_picture));
     }
-    let named_by_its_stem = name_from_stem(&candidate.path, &mut info.tags);
+    let stemmed = name_from_stem(&candidate.path, &mut info.tags);
 
     Ok(vec![TrackRecord {
         root_id: candidate.root_id,
@@ -1686,7 +1719,8 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
         span: None,
         tags: info.tags,
         embeds_a_picture,
-        named_by_its_stem,
+        named_by_its_stem: stemmed.named,
+        numbered_by_its_stem: stemmed.numbered,
         packets,
     }])
 }

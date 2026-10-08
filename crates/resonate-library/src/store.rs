@@ -20,6 +20,7 @@ use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
     types::Value,
 };
+use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
@@ -84,6 +85,7 @@ pub struct TrackRecord {
     pub tags: TagSet,
     pub embeds_a_picture: bool,
     pub named_by_its_stem: bool,
+    pub numbered_by_its_stem: bool,
     pub packets: Option<PacketDigest>,
 }
 
@@ -407,6 +409,7 @@ pub(crate) fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> R
         "UPDATE OR IGNORE artist_links SET artist_id = ?2 WHERE artist_id = ?1",
         "UPDATE OR IGNORE artist_releases SET artist_id = ?2 WHERE artist_id = ?1",
         "UPDATE OR IGNORE track_credits SET artist_id = ?2 WHERE artist_id = ?1",
+        "UPDATE OR IGNORE dismissed_releases SET artist_id = ?2 WHERE artist_id = ?1",
     ] {
         tx.execute(statement, params![gone, keeps])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -832,19 +835,71 @@ pub fn decibels(value: Option<f64>) -> Option<Decibels> {
 }
 
 pub fn album_key(title: &str, owner: Option<&str>) -> String {
-    format!(
+    composed(&format!(
         "{}{UNIT_SEPARATOR}{}",
         title.to_lowercase(),
         owner.unwrap_or_default().to_lowercase()
-    )
+    ))
 }
 
 pub fn sleeve_key(title: &str, folder: &Path) -> String {
-    format!(
+    composed(&format!(
         "{UNIT_SEPARATOR}{SLEEVE_TIER}{UNIT_SEPARATOR}{}{UNIT_SEPARATOR}{}",
         title.to_lowercase(),
         folder.display()
+    ))
+}
+
+fn composed(key: &str) -> String {
+    key.nfc().collect()
+}
+
+pub fn compose_the_album_keys(connection: &mut Connection) -> Result<usize> {
+    let wanted: bool = queried(
+        connection,
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'album_keys_composed_wanted')",
+        [],
+        |row| row.get(0),
     )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if !wanted {
+        return Ok(0);
+    }
+
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    let decomposed: Vec<String> = {
+        let mut statement = tx
+            .prepare("SELECT key FROM album_keys")
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+            .map_err(|source| Error::store(StoreOp::Query, source))?
+            .into_iter()
+            .filter(|key| composed(key) != *key)
+            .collect()
+    };
+    let rekeyed = decomposed.len();
+    for key in decomposed {
+        let named = composed(&key);
+        match album_keyed(&tx, &named)? {
+            Some(_) => cached(&tx, "DELETE FROM album_keys WHERE key = ?1", params![key])
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Delete, source))?,
+            None => re_key_album(&tx, &key, &named)?,
+        }
+    }
+    tx.execute_batch("DROP TABLE album_keys_composed_wanted")
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.commit()
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    if rekeyed > 0 {
+        tracing::info!(rekeyed, "album keys were composed as every new key is");
+    }
+
+    Ok(rekeyed)
 }
 
 pub fn release_key(release: &str) -> String {
@@ -1948,11 +2003,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
              genre, lyrics, release_title, asked, answered, named_by_its_stem, packets,
-             title_sort, artist_sort
+             title_sort, artist_sort, numbered_by_its_stem
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
@@ -1972,6 +2027,9 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              track_number       = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.track_number
                  ELSE excluded.track_number END,
+             numbered_by_its_stem = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.numbered_by_its_stem
+                 ELSE excluded.numbered_by_its_stem END,
              disc_number        = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.disc_number
                  ELSE excluded.disc_number END,
@@ -2106,6 +2164,7 @@ fn track(
             record.packets.map(|digest| digest.0.cast_signed()),
             named(record.tags.title_sort.as_deref()),
             named(record.tags.artist_sort.as_deref()),
+            record.numbered_by_its_stem,
         ],
         |row| {
             Ok(Stored {
@@ -2437,6 +2496,7 @@ mod tests {
             },
             embeds_a_picture: false,
             named_by_its_stem: false,
+            numbered_by_its_stem: false,
             packets: None,
         }
     }
@@ -2488,6 +2548,35 @@ mod tests {
         assert!(read.is_empty(), "a file that is not there gave a cover");
         land_covers(&tx, &mut cache, read).expect("nothing to land lands");
         assert!(!cache.covered.contains(&id));
+    }
+
+    #[test]
+    fn an_artist_taken_over_hands_its_dismissed_releases_to_the_one_that_keeps() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("foreign keys are kept");
+        let tx = connection.transaction().expect("a transaction");
+        tx.execute_batch(
+            "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
+             INSERT INTO artists (id, key, name) VALUES (2, 'sigur rós', 'Sigur Rós');
+             INSERT INTO dismissed_releases (artist_id, mbid)
+                  VALUES (1, 'b0a5a0e4-0000-4000-8000-000000000001');",
+        )
+        .expect("two spellings of one artist");
+
+        take_over_artist(&tx, 1, 2).expect("the artist is taken over");
+
+        let held: Vec<i64> = tx
+            .prepare("SELECT artist_id FROM dismissed_releases")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get(0))?
+                    .collect::<rusqlite::Result<_>>()
+            })
+            .expect("the dismissals read");
+        assert_eq!(held, vec![2]);
     }
 
     fn year_of(scanned: [Option<&str>; 2]) -> Option<i64> {

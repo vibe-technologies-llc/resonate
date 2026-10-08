@@ -106,7 +106,13 @@ rows read via `Player::media` like any unscanned row.
   skipped midnight begins the day at its first hour, `Calendar::midnight_of`); *today* = the
   calendar's day of now; no-play day = zero row (nothing draws around a gap). Nothing stored that
   history does not say. (`a_listen_late_in_a_utc_day_is_counted_on_the_day_the_listener_was_living`)
-- **History is kept as long as the listener says, never past what a service was told.**
+- **History is kept as long as the listener says, never past what a service was told, and a
+  service no longer signed in to holds nothing back.** Every open of the catalog by the binary
+  first asks `Library::stop_telling` for each service its settings hold no account for (no
+  `listenbrainz-token`, no `lastfm-session`): that service's `submissions` and
+  `earlier_submissions` rows go (read first, so a reader-only process writes nothing where none
+  stands), and signing in again starts afresh like any first token
+  (`a_service_no_longer_told_holds_the_history_back_no_longer`).
   `HistoryKept` = `Forever` (default) or days. `Library::age_the_history` deletes `listens`,
   `unheld_listens`, `passes`, `playlist_plays` older than it (`forgotten_before`); a listen goes
   only at or behind the lowest `submissions` mark, so history aged while ListenBrainz was
@@ -479,10 +485,14 @@ rows read via `Player::media` like any unscanned row.
     (`a_volume_retired_for_good_forgets_its_rows_and_is_no_longer_remembered`,
     `a_folder_whose_files_are_still_there_is_not_retired`).
 - **Every walk hazard but a lost worker is stepped past.**
-  - Directory past `MAX_DEPTH`: warned over, skipped (not failing scan and prune).
+  - Directory past `MAX_DEPTH`: warned over, not read, every row `Known::at_or_under` names kept
+    (`a_row_under_a_folder_deeper_than_the_walk_reads_is_kept_rather_than_pruned`).
   - Symlink: weighed only where it names a directory (and `follow_symlinks` is on); one naming a
-    directory this walk has been down is stepped past, so two albums linked to a shared folder walk
-    it once, not abort (the set is what a cycle meets on its second pass: skipping terminates).
+    directory this walk has been down, or inside one, is stepped past, so two albums linked to a
+    shared folder walk it once, not abort (the set is what a cycle meets on its second pass:
+    skipping terminates). Following links, every directory is walked once by its canonical path
+    (`Visited::first_time_through`), whichever link reached it first
+    (`a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes_first`).
   - A link whose canonical target is inside a registered root, or holds one, is never followed
     (`Walking::reaches_a_root`, over every root `roots` holds, not only the walked). The set holds
     only link targets, so a link to a folder inside its own root was walked beside it, every file
@@ -569,7 +579,8 @@ rows read via `Player::media` like any unscanned row.
   of the *name*, leaves a group alone where its one row is already keyed by its own fold.
   Otherwise keeps one row (with an `mbid`, then lowest id: what enrichment, portrait, genres, links
   hang off); the rest hand over tracks, albums, genres, links, kept releases, credits via
-  `store::take_over_artist` (`UPDATE OR IGNORE` except tracks and albums; the survivor also takes
+  `store::take_over_artist` (`UPDATE OR IGNORE` except tracks and albums, `dismissed_releases`
+  among them, else a dismissal cascades away with the absorbed row; the survivor also takes
   the favourite, portrait, tagged sort name it lacks) and are deleted; survivor rekeyed and renamed
   to the group's most marked spelling. No sentinel key against an unreached row is needed: every
   key is a fold or `to_lowercase` of the same name and folding is idempotent, so rows whose keys
@@ -603,7 +614,11 @@ rows read via `Player::media` like any unscanned row.
   count the best copy alone (`HOLDS_A_BEST_COPY`), an album whose every track is another's
   alternative leaves the albums pane. `Track::alternatives` = copies a row stands for (`+N` beside
   the title); `Library::alternatives_of` = what the menu offers to play instead. A best copy that
-  goes puts `ON DELETE SET NULL` on rows under it; the end-of-scan pass crowns the next.
+  goes puts `ON DELETE SET NULL` on rows under it; the end-of-scan pass crowns the next, and so
+  does every other removal at once (`remove_root`, `forget_delivered`, `delete_tracks` each run
+  `store::sweep_orphans` then `alternatives::settle_if_owed`). `remove_root` matches a root whose
+  folder has gone by its lexical spelling (`sheet::settled`: absolute, `.` and `..` read), not as
+  typed (`a_root_gone_from_the_disc_is_cleared_however_its_path_is_spelt`).
 - **Music filters narrow listings, keep the catalog whole.** `MusicFilters` = supported extension
   selection + `MinimumLength` bounded to ten minutes. `Library::filter_music` sets it for this
   opened catalog (binary fills it from config before any listing), drops the suggestion cache.
@@ -686,7 +701,12 @@ rows read via `Player::media` like any unscanned row.
   is in (`a_spelling_names_one_number_whichever_language_spells_it`: one number per spelling across
   the six; `a_disc_past_twelve_is_composed_in_every_language_it_is_numbered_in`).
 - **`album_keys.key` format**: changing it means a rescan (old keys match nothing); `ORPHANS`
-  removes albums nothing points at.
+  removes albums nothing points at. Every key is composed (NFC, `store::composed`) after
+  lowercasing, so a title tagged precomposed on one track and decomposed on another is one album
+  (`an_album_titled_composed_on_one_track_and_decomposed_on_another_is_one_album`); the
+  `MIGRATIONS` step bringing that in leaves `album_keys_composed_wanted`, and
+  `store::compose_the_album_keys` (in `Library::build`) rewrites every stored key to its composed
+  form once, dropping one whose composed form another key already holds.
 - **Albums proving to share a release are gathered; both keys name the survivor.** A release id the
   *pass* finds arrives after grouping: a rip split over two folders, or halves declaring different
   owners, can hold one release in two albums. `gather_under` (in `land_release`, after release
@@ -856,7 +876,10 @@ rows read via `Player::media` like any unscanned row.
   file naming no title is read through `stem.rs` first, so `tagged_title IS NULL` means neither tags
   nor file name said anything, and `title` is the bare stem `store::title` falls back to.
   `stem::read` takes a leading number as track only where punctuation parts it (`03.`, `03 -`,
-  `7)`, `003_`) or it is padded (`03 So What`); a number a space alone parts, unpadded, is the
+  `7)`, `003_`) or it is padded (`03 So What`); such a number is a guess, marked
+  `tracks.numbered_by_its_stem` (a `MIGRATIONS` step): a lookup's seat number replaces it
+  (`land_recording`), and `TRACKS_TO_TAG` reads it as no number, so it is never written into the
+  file (`a_track_number_read_off_the_file_name_is_never_written_into_the_file`); a number a space alone parts, unpadded, is the
   title's (*99 Luftballons*, *21 Guns*;
   `a_number_only_a_space_parts_from_the_title_is_the_titles_own_unless_padded`). **A name the file's
   *name* gave is not a tag; renaming is not retagging.** `tracks.named_by_its_stem` (a `MIGRATIONS`
@@ -1848,8 +1871,9 @@ guard; re-keys a sleeve-keyed album after moves land (both under *Schema and gro
   (`a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track`). `settle`
   fsyncs written folders; `Library::files_moved`, one transaction, rewrites `tracks.path`,
   `playlist_entries.path` (touching those playlists' `modified`), `lyrics_kept.path`,
-  `resume_rows.uri`: plays, playlist rows, kept lyrics, kept queue follow the file, not a rescan
-  into a new row. It first deletes any `tracks`/`lyrics_kept` row at the destination (path-keyed,
+  `lyrics_ahead.path`, `lyrics_refused.path`, `resume_rows.uri`: plays, playlist rows, kept
+  lyrics, a lyric offset and refusal, kept queue follow the file, not a rescan into a new row. It
+  first deletes any `tracks` or lyric row at the destination (path-keyed,
   else the `UPDATE` is refused; `standing` weighs the *file*, so a row whose file had gone, untidied
   by a scan of another root, once failed all 256 moves of its batch). `playlist_entries` and
   `resume_rows` need no delete (not path-unique); indexes `playlist_entries_by_path`,

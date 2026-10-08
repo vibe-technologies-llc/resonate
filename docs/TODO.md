@@ -6,18 +6,11 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- A track number guessed from the file name is written into the file: `name_from_stem` fills
-  `track_number`, `retag::offered` writes `TrackNumber`/`DiscNumber` unconditionally and
-  `land_recording`'s `coalesce` keeps the guess over a lookup's number
 - Walking back a tag run overwrites edits made since: `retagged_fields` keeps only the value
   before, not the one the run wrote, so a title fixed in another tagger afterwards is reverted
 - The organise undo record is written once after the whole apply: a run killed mid-way leaves the
   previous run's record (so *Put the last run back* walks back the wrong run), and a failing
   `note_organised` drops the `OrganiseSummary` the open queue relocates from
-- Organising or hand-moving a track loses its lyric offset and refusal: `files_moved` does not
-  rewrite `lyrics_ahead` or `lyrics_refused`, keyed by path, and the orphan sweep then deletes them
-- Listening history stops aging once a scrobbler was ever used: `FORGET_THE_LISTENS` keeps every
-  listen past `min(through)` of `submissions`, and no row of `submissions` is ever deleted
 - A delivery whose `claim_album_keys` fails leaves the placed file where it landed (the `weighed`
   failure removes it, this one does not), and the next attempt lands `Name (2).flac` beside it
 - A dead writer's whole copy is written over the track unchecked: `finished_writing_back` runs
@@ -27,11 +20,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   sweep): under Flatpak's pid namespace a crashed run's journal or staged file reads as living for
   ever, and a host `resonate` reads a sandboxed live writer as dead, rolling it back or deleting
   its staged file
-- `remove_root` and `forget_delivered` run `store::ORPHANS` without
-  `alternatives::settle_if_owed`, so copies of a song whose best copy went all show as best until
-  some later scan
-- Merging two artists (`take_over_artist`) moves six tables but not `dismissed_releases`, which
-  cascades away: releases dismissed under the absorbed spelling come back
 - A vault root that is an unmounted mountpoint is filled on the root filesystem: `Vault::open`
   checks only `is_dir`, so `NotThere` never fires for an fstab mountpoint, and no marker names a
   folder as a vault
@@ -57,12 +45,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   swapped (`Span::between`) instead of refusing
 - A cue sheet whose `INDEX 01` moves makes a new row and prunes the old with its plays, listens,
   favourite and playlist places: `moves::cuts_moved` follows only an identical set of cuts
-- Album grouping keys are lowercased but not normalised (`album_key`, `sleeve_key`), unlike
-  artists through `folded_letters`: an album tagged in NFC on one track and NFD on another splits
-- A folder more than 32 levels below a root is passed over without `kept_unread`, so the next scan
-  prunes the rows beneath it with their plays
-- A directory symlink to a folder inside another followed symlink's target is walked again
-  (`followed` records only symlink targets): the files below are catalogued under two paths
 - An undecodable packet with no declared duration is dropped rather than played as silence
   (`frames == 0` → `continue`), shifting every later sample earlier; which readers leave `dur`
   at zero not weighed
@@ -158,8 +140,6 @@ sits last in its category, not worked until it moves. Everything else is open.
 - A file whose name is not UTF-8 is counted `Unnamed` and never catalogued
 - A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read in
   `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
-- `remove_root` given a vanished root in another spelling than stored answers `Ok(false)`
-  (`canonicalize` fails, the raw spelling is matched)
 - `sqlite_stat1` is gathered only by a scan that changed rows; a catalog filled by import, delivery
   or a cancelled first scan runs with none
 - `pictures_of_albums` binds a placeholder an album unchunked (SQLite's 32 766 limit), unlike
@@ -366,7 +346,7 @@ sits last in its category, not worked until it moves. Everything else is open.
 - Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths beyond
   `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested
 - The Output and Processing settings panes have no test pressing their controls
-- The scan is never fed a folder past the depth limit, a non-UTF-8 name or nested symlink targets
+- The scan is never fed a non-UTF-8 name
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame`
   failed once when the whole workspace's tests ran at once, passed alone eight times after; its
   frame counts assume the engine thread keeps pace with the test's pulls

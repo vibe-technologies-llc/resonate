@@ -1086,7 +1086,10 @@ pub(crate) fn land_recording(
                  artist = coalesce(CASE WHEN ?1 OR tagged_artist IS NULL THEN ?3 END, artist),
                  artist_id = CASE WHEN ?1 OR tagged_artist IS NULL
                                   THEN coalesce(?4, artist_id) ELSE artist_id END,
-                 track_number = coalesce(track_number, ?5),
+                 track_number = CASE WHEN numbered_by_its_stem
+                                     THEN coalesce(?5, track_number)
+                                     ELSE coalesce(track_number, ?5) END,
+                 numbered_by_its_stem = numbered_by_its_stem AND ?5 IS NULL,
                  disc_number  = coalesce(disc_number,  ?6),
                  mbid = coalesce(mbid, ?7),
                  isrc = coalesce(isrc, ?8),
@@ -1906,6 +1909,7 @@ mod tests {
             },
             embeds_a_picture: false,
             named_by_its_stem: false,
+            numbered_by_its_stem: false,
             packets: None,
         }
     }
