@@ -132,6 +132,7 @@ pub enum PlaylistLink {
     ListenBrainz(Mbid),
     Spotify(String),
     AppleMusic { storefront: String, id: String },
+    Youtube(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,6 +147,7 @@ pub enum FollowedLink {
 pub enum ListedSong {
     Recording(Mbid),
     Named(LinkNames),
+    Uploaded(LinkNames),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -462,6 +464,12 @@ impl PlaylistLink {
                 ["playlist", id, ..] => Mbid::new(id).ok().map(Self::ListenBrainz),
                 _ => None,
             },
+            "youtube.com" | "m.youtube.com" | "music.youtube.com" => (address.first()
+                == Some("playlist"))
+            .then(|| asked_for(address.query, "list"))
+            .flatten()
+            .filter(|list| names_an_id(list) && !list.starts_with(YOUTUBE_MUSIC_ALBUMS))
+            .map(|list| Self::Youtube(list.to_owned())),
             "music.apple.com" => match address.segments.as_slice() {
                 [storefront, "playlist", .., id] if names_a_storefront(storefront) => {
                     names_an_apple_music_playlist(id).then(|| Self::AppleMusic {
@@ -1101,6 +1109,26 @@ mod tests {
             }))
         );
         assert_eq!(
+            FollowedLink::read(
+                "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI&si=x"
+            ),
+            Some(FollowedLink::Playlist(PlaylistLink::Youtube(
+                "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI".to_owned()
+            )))
+        );
+        assert_eq!(
+            PlaylistLink::read(
+                "https://music.youtube.com/playlist?list=PL4fGSI1pDJn6puJdseH2Rt9sMvt9E2M4i"
+            ),
+            Some(PlaylistLink::Youtube(
+                "PL4fGSI1pDJn6puJdseH2Rt9sMvt9E2M4i".to_owned()
+            ))
+        );
+        assert!(matches!(
+            FollowedLink::read("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL4fGSI1pDJn6p"),
+            Some(FollowedLink::Song(_))
+        ));
+        assert_eq!(
             PlaylistLink::read("https://music.apple.com/gb/playlist/pl.u-AkAmPlyUxEAm9V?l=en"),
             Some(PlaylistLink::AppleMusic {
                 storefront: "gb".to_owned(),
@@ -1111,6 +1139,9 @@ mod tests {
             "https://www.deezer.com/playlist/a-name",
             "https://listenbrainz.org/playlist/not-an-id",
             "https://music.apple.com/us/playlist/todays-hits",
+            "https://music.youtube.com/playlist?list=OLAK5uy_kq2V0jSBZ1sgV9BFMyZZgdJvfNTI8sV9o",
+            "https://www.youtube.com/playlist",
+            "https://www.youtube.com/playlist?list=not%20an%20id",
             "https://music.apple.com/usa/playlist/x/pl.f4d106fed2bd41149aaacabb233eb5eb",
             "https://music.apple.com/us/album/x/pl.f4d106fed2bd41149aaacabb233eb5eb",
             "https://listenbrainz.org/user/rob/playlists",

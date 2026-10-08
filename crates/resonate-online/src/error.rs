@@ -28,6 +28,7 @@ pub enum Host {
     SongLink,
     ListenBrainz,
     LastFm,
+    Youtube,
 }
 
 impl Host {
@@ -53,6 +54,7 @@ impl Host {
             Self::SongLink => "https://song.link",
             Self::ListenBrainz => "https://api.listenbrainz.org",
             Self::LastFm => "https://ws.audioscrobbler.com/2.0/",
+            Self::Youtube => "https://www.youtube.com",
         }
     }
 }

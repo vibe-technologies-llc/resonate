@@ -2388,12 +2388,15 @@ starts.
   playlist (`open.spotify.com/[intl-xx/]playlist/<id>` or `spotify:playlist:<id>`, the id
   twenty-two letters and digits) and an Apple Music one (`music.apple.com/<storefront>/playlist/
   [<name>/]pl.<id>`, the storefront two lower-case letters, the id `pl.` then letters, digits and
-  dashes: `PlaylistLink::AppleMusic`);
+  dashes: `PlaylistLink::AppleMusic`) and a YouTube one (`[m.|music.]youtube.com/playlist?list=<id>`,
+  never an `OLAK5uy_` album list, and never a `watch` link carrying a `list`, which is the song:
+  `PlaylistLink::Youtube`);
   `Reference::playlist_linked` answers a `LinkedPlaylist`: its name and a `ListedSong` per song,
   `Recording` (ListenBrainz names recordings) or `Named` (`LinkNames`: Deezer's tracks carry ISRC,
   title, artist, length, so no request a song; Spotify's and Apple Music's name title, artists and
   length alone, so
-  each is followed by the strict search a YouTube upload is). `Library::follow_playlist_link` follows each
+  each is followed by the strict search a YouTube upload is; YouTube's entries are
+  `ListedSong::Uploaded`, followed as a pasted upload is, `Footage::Filmed`). `Library::follow_playlist_link` follows each
   through the halves `follow_link` is made of (`follow_recording`, `follow_names`, `linked_to`), so
   a song is held, found or unnamed by the same rule as a pasted song (`Linked::Held` carries the
   track). `Library::fill_playlist_named` (`playlist::fill`) puts held tracks into the list of that

@@ -35,9 +35,9 @@ sits last in its category, not worked until it moves. Everything else is open.
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
-- A pasted TIDAL or YouTube playlist link is taken as words; a Spotify playlist is read off its
-  embed page, which lists at most its first hundred songs, and an Apple Music one off its public
-  page, neither naming an ISRC
+- A pasted TIDAL playlist link is taken as words; a Spotify playlist is read off its embed page and
+  a YouTube one off its public page, each listing at most its first hundred songs, and an Apple
+  Music one off its public page, none naming an ISRC
 - **Blocked on a service:** a lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 

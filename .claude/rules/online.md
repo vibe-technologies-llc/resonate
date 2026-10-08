@@ -260,8 +260,16 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
   item's `title` is the name, each `trackLockup` item a song (`title`, `artistName` as billed, else
   every `subtitleLinks` title joined, `duration` in milliseconds; a `contentDescriptor` kind other
   than `song`, a music video, passed over); no account, no ISRC
-  (`a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page`, live). A playlist with
-  no title names nothing.
+  (`a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page`, live). YouTube
+  (`Host::Youtube`, the others' pace): the public `/playlist?list=<id>` page's `ytInitialData`
+  (cut at the first `;</script>`), its name at `metadata.playlistMetadataRenderer.title`; the
+  whole document is walked for entries rather than read down one path (`uploads_in`), since the
+  page's layout moves: a `lockupViewModel` of `LOCKUP_CONTENT_TYPE_VIDEO` (title, the first
+  metadata part as the channel, length off a `thumbnailBadgeViewModel` that reads as a clock) or
+  the older `playlistVideoRenderer` (title runs, `shortBylineText`, `lengthSeconds`), each a
+  `ListedSong::Uploaded`; the page holds the first hundred, the rest behind a continuation not
+  asked (`a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page`, live). A playlist
+  with no title names nothing.
 
 ## ListenBrainz
 

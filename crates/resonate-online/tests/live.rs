@@ -377,6 +377,30 @@ fn a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page() {
 }
 
 #[test]
+fn a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let link = PlaylistLink::read(
+        "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+    )
+    .expect("a YouTube playlist link");
+
+    let playlist = online
+        .playlist_linked(&link)
+        .expect("YouTube answered")
+        .expect("the page names the playlist");
+
+    assert!(!playlist.name.is_empty());
+    assert!(playlist.songs.len() >= 20, "{} songs", playlist.songs.len());
+    assert!(playlist.songs.iter().all(|song| matches!(
+        song,
+        ListedSong::Uploaded(names) if names.title.is_some() && names.length.is_some()
+    )));
+}
+
+#[test]
 fn musicbrainz_names_the_artist_a_spotify_page_belongs_to() {
     let Some(client) = reached() else {
         return;

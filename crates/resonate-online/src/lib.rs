@@ -21,6 +21,7 @@ mod soundcloud;
 mod spotify;
 mod wikidata;
 mod wikipedia;
+mod youtube;
 
 pub use crate::{
     acoustid::AcoustId,

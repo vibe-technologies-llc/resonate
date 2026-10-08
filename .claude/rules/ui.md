@@ -2147,7 +2147,7 @@ is never named.
   nothing could name. Artist link opens the page: held: at once; else MusicBrainz-named via
   `land_artist_found` (as pressing a searched artist). Deezer, Spotify, Apple Music, TIDAL, YouTube,
   SoundCloud, Bandcamp, Amazon Music artist links are caught too, followed by the artist MusicBrainz
-  files their page under. **A Deezer, ListenBrainz, Spotify or Apple Music playlist link fills a playlist of what is
+  files their page under. **A Deezer, ListenBrainz, Spotify, Apple Music or YouTube playlist link fills a playlist of what is
   held and wants the rest**: `followed_a_playlist` wants every found song (`want_found`, the
   downloads list), then `Library::fill_playlist_named` on the background executor puts the held
   songs into the playlist of that name (made where none is; a list of that name gains only what it

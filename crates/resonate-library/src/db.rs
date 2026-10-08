@@ -3592,6 +3592,9 @@ impl Library {
                 ListedSong::Named(names) => {
                     self.follow_names(reference, names, linked::Footage::Heard)?
                 }
+                ListedSong::Uploaded(names) => {
+                    self.follow_names(reference, names, linked::Footage::Filmed)?
+                }
             };
             match song {
                 Linked::Held { track, .. } => followed.held.push(track),

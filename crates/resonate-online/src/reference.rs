@@ -13,6 +13,7 @@ use resonate_library::{
 use crate::{
     Client, Error, Identity, Result, apple, client::passed_over_when_refused, commons, coverart,
     deezer, linked, listenbrainz, lrclib, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
+    youtube,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -162,6 +163,7 @@ impl Reference for Online {
             PlaylistLink::AppleMusic { storefront, id } => {
                 Ok(apple::playlist_named(&self.client, storefront, id)?)
             }
+            PlaylistLink::Youtube(list) => Ok(youtube::playlist_named(&self.client, list)?),
         }
     }
 
