@@ -1581,6 +1581,96 @@ mod tests {
         assert_eq!(searched, "", "the token was typed into the search as well");
     }
 
+    struct SignsInWithOnePassword;
+
+    impl resonate_library::Scrobblers for SignsInWithOnePassword {
+        fn under(&self, _: String) -> Arc<dyn resonate_library::Scrobbler> {
+            unreachable!("no ListenBrainz token is given here")
+        }
+
+        fn signed_in_to_lastfm(
+            &self,
+            asked: &resonate_library::LastfmSignIn,
+        ) -> resonate_library::Result<resonate_library::LastfmSession> {
+            let right = asked.key == "a key"
+                && asked.secret == "a secret"
+                && asked.user == "listener"
+                && asked.password == "right";
+            if !right {
+                return Err(resonate_library::Error::Refused {
+                    op: resonate_library::LookupOp::Token,
+                    status: 401,
+                });
+            }
+            Ok(resonate_library::LastfmSession {
+                name: "listener".to_owned(),
+                key: "a session key".to_owned(),
+            })
+        }
+    }
+
+    fn type_into(driven: &mut Driven, nth: usize, typed: &str) {
+        driven.focus(move |root| &root.lastfm[nth]);
+        driven.cx.simulate_input(typed);
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global.scrobblers = Some(Arc::new(SignsInWithOnePassword));
+                global.online.enabled = true;
+            });
+        });
+        let session =
+            |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("last.fm password");
+        driven.settle();
+
+        type_into(&mut driven, 0, "a key");
+        driven.cx.simulate_keystrokes("enter");
+        type_into(&mut driven, 1, "a secret");
+        type_into(&mut driven, 2, "listener");
+        type_into(&mut driven, 3, "wrong");
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| {
+            !root.lastfm_signing.is_asking() && root.lastfm[3].read(cx).text().is_empty()
+        });
+
+        assert_eq!(driven.read(session), "");
+        assert_eq!(
+            driven.read(|_, cx| {
+                let online = &cx.global::<ResonateApp>().online;
+                (online.lastfm_key.clone(), online.lastfm_secret.clone())
+            }),
+            ("a key".to_owned(), "a secret".to_owned())
+        );
+
+        type_into(&mut driven, 3, "right");
+        driven.click("lastfm-sign-in");
+        driven.until(|root, cx| !session(root, cx).is_empty());
+
+        assert_eq!(driven.read(session), "a session key");
+        assert_eq!(
+            driven.read(|root, cx| root.lastfm[3].read(cx).text().to_owned()),
+            ""
+        );
+
+        driven.click("lastfm-sign-out");
+
+        assert_eq!(driven.read(session), "");
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.lastfm_key.clone()),
+            "a key"
+        );
+    }
+
     #[gpui::test]
     fn the_earlier_plays_are_asked_for_by_the_second_press_alone(cx: &mut TestAppContext) {
         let library = catalog();

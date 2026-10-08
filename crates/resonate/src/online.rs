@@ -211,6 +211,19 @@ impl resonate_library::Scrobblers for ByToken {
     fn under(&self, token: String) -> Arc<dyn Scrobbler> {
         listenbrainz(&self.config, token)
     }
+
+    fn signed_in_to_lastfm(
+        &self,
+        asked: &resonate_library::LastfmSignIn,
+    ) -> resonate_library::Result<resonate_library::LastfmSession> {
+        let application = Application {
+            key: asked.key.clone(),
+            secret: asked.secret.clone(),
+        };
+        let Session { name, key } =
+            lastfm_signed_in(&self.config, &application, &asked.user, &asked.password)?;
+        Ok(resonate_library::LastfmSession { name, key })
+    }
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]

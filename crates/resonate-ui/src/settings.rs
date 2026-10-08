@@ -175,6 +175,9 @@ pub enum SettingKey {
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
+    LastfmKey,
+    LastfmSecret,
+    LastfmSession,
     ListenFrom,
     ListenFor,
     Equaliser,
@@ -230,7 +233,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 85] = [
+    pub const ALL: [Self; 88] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -264,6 +267,9 @@ impl SettingKey {
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
+        Self::LastfmKey,
+        Self::LastfmSecret,
+        Self::LastfmSession,
         Self::ListenFrom,
         Self::ListenFor,
         Self::Equaliser,
@@ -354,6 +360,9 @@ pub enum Setting {
     AcoustidKey(String),
     AuddToken(String),
     ListenbrainzToken(String),
+    LastfmKey(String),
+    LastfmSecret(String),
+    LastfmSession(String),
     ListenFrom(Listening),
     ListenFor(Duration),
     Equaliser(bool),
@@ -447,6 +456,9 @@ impl Setting {
             Self::AcoustidKey(_) => SettingKey::AcoustidKey,
             Self::AuddToken(_) => SettingKey::AuddToken,
             Self::ListenbrainzToken(_) => SettingKey::ListenbrainzToken,
+            Self::LastfmKey(_) => SettingKey::LastfmKey,
+            Self::LastfmSecret(_) => SettingKey::LastfmSecret,
+            Self::LastfmSession(_) => SettingKey::LastfmSession,
             Self::ListenFrom(_) => SettingKey::ListenFrom,
             Self::ListenFor(_) => SettingKey::ListenFor,
             Self::Equaliser(_) => SettingKey::Equaliser,
@@ -513,6 +525,9 @@ pub struct Online {
     pub acoustid_key: String,
     pub audd_token: String,
     pub listenbrainz_token: String,
+    pub lastfm_key: String,
+    pub lastfm_secret: String,
+    pub lastfm_session: String,
     pub subsonic: String,
     pub subsonic_user: String,
     pub subsonic_password: String,

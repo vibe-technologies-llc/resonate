@@ -6,6 +6,7 @@ mod desktop;
 mod equaliser;
 mod filters;
 mod find;
+mod lastfm;
 mod library;
 mod online;
 mod output;
@@ -27,6 +28,7 @@ pub(crate) use crate::views::settings::{
     curve::{HeldBand, Plotted},
     equaliser::marked_at,
     find::{Category, Group},
+    lastfm::{LastfmAccount, LastfmSigning},
     subsonic::Account,
     tidal::{SigningIn, TidalAccount},
 };
@@ -435,6 +437,7 @@ impl RootView {
             Group::Recognition => self.recognition_group(cx),
             Group::Listening => self.listening_group(cx),
             Group::Submitting => self.submitting_group(cx),
+            Group::Lastfm => self.lastfm_group(cx),
             Group::LookUpNow => self.look_up_group(cx),
             Group::Notifications => self.notifications_group(cx),
             Group::Discord => self.discord_group(cx),
@@ -561,6 +564,7 @@ impl RootView {
                 self.clear_audd_token(cx);
             }
             Group::Submitting => self.clear_listenbrainz_token(cx),
+            Group::Lastfm => self.forget_the_lastfm_account(cx),
             Group::Listening => {
                 self.listen.update(cx, |listen, cx| {
                     listen.choose(Listening::Desktop, cx);
@@ -626,6 +630,16 @@ impl RootView {
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
         let token_given = !self.audd.read(cx).text().trim().is_empty();
         let submitting_given = !self.listenbrainz.read(cx).text().trim().is_empty();
+        let lastfm_given = {
+            let online = &cx.global::<ResonateApp>().online;
+            [
+                &online.lastfm_key,
+                &online.lastfm_secret,
+                &online.lastfm_session,
+            ]
+            .iter()
+            .any(|given| !given.trim().is_empty())
+        };
         let listen = self.listen.read(cx);
         let listening_from = listen.from().clone();
         let listening_for = listen.length();
@@ -656,6 +670,7 @@ impl RootView {
             key_given,
             token_given,
             submitting_given,
+            lastfm_given,
             listening_from,
             listening_for,
             resume,

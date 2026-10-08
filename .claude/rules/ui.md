@@ -112,8 +112,21 @@ is never named.
   - A server address (Subsonic, custom hifi-api, custom Monochrome) must begin `http://` or
     `https://` with a host after it (`reads_as_a_server`); else a toast, nothing stored (bare
     `music.local:4533` once failed every poll silently).
+- **Last.fm is signed in to from its group; the password is typed, sent once and never kept.**
+  Online's *Last.fm* group (`views/settings/lastfm.rs`) holds four `Field`s (`LastfmAccount`): API
+  key and shared secret, kept as `lastfm-key`/`lastfm-secret` on enter or on leaving as an
+  account's fields are, and user name and password, kept nowhere. Enter in either of those, or
+  *Sign in to Last.fm* (greyed while Online is off, the build has no `Scrobblers`, a field is
+  empty or a sign-in is out), keeps what is typed of key and secret, then asks
+  `Scrobblers::signed_in_to_lastfm` on the background executor; the answer empties the password
+  either way, and a session is written as `lastfm-session` and the global's, toasting the name it
+  is under; a refusal says which things could be wrong, anything else that Last.fm was not
+  reached. With a session kept the group draws key and secret over *Sign out of Last.fm*, which
+  forgets the session alone. The binary's submitter reads the file, so a session given or forgotten
+  is what the next submission carries
+  (`last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept`).
 - **A secret is drawn as marks.** `Field::masked` (Subsonic password, TIDAL client secret and
-  refresh token, AcoustID/AudD/ListenBrainz keys) shapes one `•` per letter; `Shown` maps every
+  refresh token, AcoustID/AudD/ListenBrainz keys, Last.fm key, secret and password) shapes one `•` per letter; `Shown` maps every
   content offset (caret, selection, marked range, IME bounds) to the drawn line and a pointer back:
   editing is a plain field's. Copies and cuts nothing
   (`a_masked_field_draws_a_mark_a_letter_and_maps_every_offset_both_ways`).

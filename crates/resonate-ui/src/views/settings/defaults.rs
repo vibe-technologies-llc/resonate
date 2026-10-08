@@ -53,6 +53,7 @@ pub(crate) struct Standing {
     pub(crate) key_given: bool,
     pub(crate) token_given: bool,
     pub(crate) submitting_given: bool,
+    pub(crate) lastfm_given: bool,
     pub(crate) listening_from: Listening,
     pub(crate) listening_for: Duration,
     pub(crate) resume: bool,
@@ -95,6 +96,7 @@ impl Standing {
             key_given: false,
             token_given: false,
             submitting_given: false,
+            lastfm_given: false,
             listening_from: Listening::Desktop,
             listening_for: CLIP_BY_DEFAULT,
             resume: RESUME,
@@ -177,6 +179,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Contact => standing.contact_given,
         Group::Recognition => standing.key_given || standing.token_given,
         Group::Submitting => standing.submitting_given,
+        Group::Lastfm => standing.lastfm_given,
         Group::Listening => {
             standing.listening_from != Listening::Desktop
                 || standing.listening_for != CLIP_BY_DEFAULT
@@ -260,6 +263,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Recognition
         | Group::Listening
         | Group::Submitting
+        | Group::Lastfm
         | Group::Colour
         | Group::Layout
         | Group::WindowButtons

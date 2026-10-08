@@ -70,7 +70,8 @@ use crate::{
         reorder::{self, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
         search::{self, SearchShows, TopEntry, TopRun},
         settings::{
-            Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
+            Account, Category, FILTER_PLACEHOLDER, HeldBand, LastfmAccount, LastfmSigning, Plotted,
+            SigningIn, TidalAccount,
         },
         slider::{Grab, Rail},
         transport::{Handovers, Resolved, ShownCover},
@@ -550,6 +551,7 @@ pub struct RootView {
     pub(crate) listenbrainz: Entity<Field>,
     pub(crate) subsonic: [Entity<Field>; 3],
     pub(crate) tidal: [Entity<Field>; 5],
+    pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
@@ -647,6 +649,7 @@ pub struct RootView {
     window_size_settled: Task<()>,
     token_checked: Task<()>,
     pub(crate) signing_in: SigningIn,
+    pub(crate) lastfm_signing: LastfmSigning,
     parts: Parts,
 }
 
@@ -862,6 +865,7 @@ impl RootView {
 
         let subsonic = Account::fields(&online, window, cx);
         let tidal = TidalAccount::fields(&online, window, cx);
+        let lastfm = LastfmAccount::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -1032,6 +1036,7 @@ impl RootView {
             listenbrainz,
             subsonic,
             tidal,
+            lastfm,
             discord_app,
             discord_icon,
             organising,
@@ -1129,6 +1134,7 @@ impl RootView {
             window_size_settled: Task::ready(()),
             token_checked: Task::ready(()),
             signing_in: SigningIn::default(),
+            lastfm_signing: LastfmSigning::default(),
             parts: Parts::of(&cx.entity(), cx),
         };
         cx.observe_window_bounds(window, |this, window, cx| {
@@ -3328,6 +3334,7 @@ impl RootView {
         .into_iter()
         .chain(&self.subsonic)
         .chain(&self.tidal)
+        .chain(&self.lastfm)
     }
 
     fn editing(&self, window: &Window, cx: &App) -> bool {

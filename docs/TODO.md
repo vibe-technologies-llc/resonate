@@ -119,8 +119,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   its side stops recognition
 
 ## Later: Scrobbling
-- Last.fm is signed in to from the command line alone (`resonate lastfm`); the window has no group
-  for it, and a favourite is not loved there (its API names a track by its names)
+- A favourite is not loved on Last.fm (its API names a track by its names; the catalog tells loves
+  by recording)
 
 ## Later: MCP
 - An edit a model makes is not on the window's *Undo*: undo stacks live in the process that made it

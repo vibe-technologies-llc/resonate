@@ -181,8 +181,8 @@ Defaults and meanings: `config.rs` and `views/settings/`; below are the decision
   `online` is on (`providers.md`). `monochrome`: optional custom Monochrome streamer; blank/absent
   uses `tracks.monochrome.st` while `online` is on (`providers.md`).
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered with Last.fm (empty by
-  default, like every key); `lastfm-session`: written by `resonate lastfm --user`, cleared by
-  `--forget`. All three are needed before anything is scrobbled there; `Config`'s `Debug` and
+  default, like every key); `lastfm-session`: written by `resonate lastfm --user` or the Online
+  card's *Last.fm* group, cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is scrobbled there; `Config`'s `Debug` and
   `Accounts`' print none of them.
 - `history-kept`: `forever` or whole days; every command opening the catalog first forgets listens
   and skipped time older than that.

@@ -318,7 +318,9 @@ counts toward `may_be_pictured`, so a catalog enriched before a source joined is
 - **A session is asked once, by name and password, and the password is not kept.**
   `resonate_online::signed_in` asks `auth.getMobileSession`; `resonate lastfm --user` reads the
   password from standard input (echo off on a terminal, `input::a_line_unechoed`) and stores only
-  the session key (`lastfm-session`); `--forget` clears it.
+  the session key (`lastfm-session`); `--forget` clears it. The window asks the same call through
+  `Scrobblers::signed_in_to_lastfm` (a `LastfmSignIn` in, a `LastfmSession` out, neither printing
+  a secret in its `Debug`), which the binary's `ByToken` answers with `lastfm_signed_in`.
 
 ## LRCLIB
 

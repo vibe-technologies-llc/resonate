@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeSet,
+    fmt,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -140,6 +141,39 @@ pub trait Scrobbler: Send + Sync {
 
 pub trait Scrobblers: Send + Sync {
     fn under(&self, token: String) -> Arc<dyn Scrobbler>;
+
+    fn signed_in_to_lastfm(&self, asked: &LastfmSignIn) -> Result<LastfmSession>;
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct LastfmSignIn {
+    pub key: String,
+    pub secret: String,
+    pub user: String,
+    pub password: String,
+}
+
+impl fmt::Debug for LastfmSignIn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LastfmSignIn")
+            .field("key", &self.key)
+            .field("user", &self.user)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct LastfmSession {
+    pub name: String,
+    pub key: String,
+}
+
+impl fmt::Debug for LastfmSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LastfmSession")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

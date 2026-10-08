@@ -109,6 +109,7 @@ pub(crate) enum Group {
     Recognition,
     Listening,
     Submitting,
+    Lastfm,
     LookUpNow,
     Notifications,
     Discord,
@@ -128,7 +129,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 58] = [
+    pub(crate) const ALL: [Self; 59] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -171,6 +172,7 @@ impl Group {
         Self::Recognition,
         Self::Listening,
         Self::Submitting,
+        Self::Lastfm,
         Self::LookUpNow,
         Self::Notifications,
         Self::Discord,
@@ -232,6 +234,7 @@ impl Group {
             | Self::Recognition
             | Self::Listening
             | Self::Submitting
+            | Self::Lastfm
             | Self::LookUpNow => Category::Online,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
@@ -295,6 +298,7 @@ impl Group {
             Self::Recognition => "Recognition",
             Self::Listening => "Listening",
             Self::Submitting => "ListenBrainz",
+            Self::Lastfm => "Last.fm",
             Self::LookUpNow => "Look up now",
             Self::Notifications => "Notifications",
             Self::Discord => "Discord",
@@ -362,6 +366,7 @@ impl Group {
             Self::Recognition => RECOGNITION_HINT,
             Self::Listening => LISTENING_HINT,
             Self::Submitting => SUBMITTING_HINT,
+            Self::Lastfm => LASTFM_HINT,
             Self::LookUpNow => LOOKUP_HINT,
             Self::Notifications => NOTIFICATIONS_HINT,
             Self::Discord => DISCORD_HINT,
@@ -493,8 +498,11 @@ impl Group {
                  name that tune seconds clip"
             }
             Self::Submitting => {
-                "scrobble scrobbling last.fm lastfm listens history submit plays heard token \
-                 profile statistics"
+                "scrobble scrobbling listens history submit plays heard token profile statistics"
+            }
+            Self::Lastfm => {
+                "scrobble scrobbling last.fm lastfm audioscrobbler sign in log in session api key \
+                 secret user name password account"
             }
             Self::LookUpNow => "enrich refresh musicbrainz covers portraits",
             Self::Notifications => "notify popup toast banner song track change desktop osd",
@@ -590,6 +598,11 @@ impl Group {
             Self::Recognition => &[SettingKey::AcoustidKey, SettingKey::AuddToken],
             Self::Listening => &[SettingKey::ListenFrom, SettingKey::ListenFor],
             Self::Submitting => &[SettingKey::ListenbrainzToken],
+            Self::Lastfm => &[
+                SettingKey::LastfmKey,
+                SettingKey::LastfmSecret,
+                SettingKey::LastfmSession,
+            ],
             Self::Notifications => &[SettingKey::Notify],
             Self::Discord => &[SettingKey::Discord, SettingKey::DiscordApp],
             Self::DiscordShows => &[
@@ -1004,6 +1017,13 @@ pub(crate) const LISTENING_HINT: &str = "What Listen records — the desktop's o
                                          microphone — and for how long, before it asks Shazam \
                                          and whatever else is keyed what the song is. Ctrl+L or \
                                          the ear in the header opens it.";
+
+pub(crate) const LASTFM_HINT: &str = "A Last.fm session, which has every play this library \
+                                      counts scrobbled there as it is counted, and the song \
+                                      playing told as playing now. Signed in to under the API \
+                                      key and secret of an API account made on last.fm; the \
+                                      password is sent once and never kept. Nothing is sent \
+                                      without a session or while online is off.";
 
 pub(crate) const SUBMITTING_HINT: &str = "A ListenBrainz user token, which has every play this \
                                           library counts told to that service as it is counted — \

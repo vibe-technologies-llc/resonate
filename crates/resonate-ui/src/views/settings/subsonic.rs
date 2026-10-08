@@ -186,6 +186,7 @@ impl RootView {
             }
         }
         self.put_back_the_tidal_account(window, cx);
+        self.put_back_the_lastfm_account(window, cx);
         self.leave_the_account(window, cx);
     }
 
@@ -204,12 +205,14 @@ impl RootView {
             }
         }
         self.give_what_is_typed_of_the_tidal_account(window, cx)
+            || self.give_what_is_typed_of_the_lastfm_account(window, cx)
     }
 
     pub(crate) fn an_account_field_is_focused(&self, window: &Window, cx: &App) -> bool {
         self.subsonic
             .iter()
             .chain(&self.tidal)
+            .chain(&self.lastfm)
             .any(|field| field.read(cx).is_focused(window))
     }
 

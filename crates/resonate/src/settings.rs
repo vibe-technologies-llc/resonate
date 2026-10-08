@@ -198,6 +198,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 (!token.is_empty()).then(|| token.into()),
             )
         }
+        Setting::LastfmKey(key) => given_or_cleared(ConfigKey::LastfmKey, key),
+        Setting::LastfmSecret(secret) => given_or_cleared(ConfigKey::LastfmSecret, secret),
+        Setting::LastfmSession(session) => given_or_cleared(ConfigKey::LastfmSession, session),
         Setting::ListenFrom(from) => (ConfigKey::ListenFrom, Some(from.written().into())),
         Setting::ListenFor(length) => (
             ConfigKey::ListenFor,
@@ -384,6 +387,9 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::AcoustidKey => ConfigKey::AcoustidKey,
         SettingKey::AuddToken => ConfigKey::AuddToken,
         SettingKey::ListenbrainzToken => ConfigKey::ListenbrainzToken,
+        SettingKey::LastfmKey => ConfigKey::LastfmKey,
+        SettingKey::LastfmSecret => ConfigKey::LastfmSecret,
+        SettingKey::LastfmSession => ConfigKey::LastfmSession,
         SettingKey::ListenFrom => ConfigKey::ListenFrom,
         SettingKey::ListenFor => ConfigKey::ListenFor,
         SettingKey::Equaliser => ConfigKey::Equaliser,
