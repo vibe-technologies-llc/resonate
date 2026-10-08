@@ -94,8 +94,8 @@ sits last in its category, not worked until it moves. Everything else is open.
 ## Later: Equaliser and DSP extras
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
-- A downmix folds by position alone: a `Discrete(n)` source is truncated one for one; a stream's own
-  downmix coefficients are not read
+- A downmix folds by position, or unplaced channels in turn: a stream's own downmix coefficients
+  are not read
 - Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
   1 024-frame window, leaves the first second and a half of an unstudied track unextended
 

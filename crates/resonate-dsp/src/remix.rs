@@ -114,7 +114,7 @@ fn matrix(input: ChannelLayout, output: ChannelLayout) -> Vec<f64> {
     let outputs = output.count().get() as usize;
 
     if sources.len() != inputs || targets.len() != outputs {
-        return one_for_one(inputs, outputs);
+        return in_turn(inputs, outputs);
     }
 
     let mut rows = vec![0.0; outputs * inputs];
@@ -130,11 +130,13 @@ fn matrix(input: ChannelLayout, output: ChannelLayout) -> Vec<f64> {
     within_full_scale(rows, inputs)
 }
 
-fn one_for_one(inputs: usize, outputs: usize) -> Vec<f64> {
+fn in_turn(inputs: usize, outputs: usize) -> Vec<f64> {
     let mut rows = vec![0.0; outputs * inputs];
-    for channel in 0..outputs.min(inputs) {
-        if let Some(cell) = rows.get_mut(channel * inputs + channel) {
-            *cell = UNITY;
+    let deepest = inputs.div_ceil(outputs).max(1);
+    let gain = UNITY / deepest as f64;
+    for channel in 0..inputs {
+        if let Some(cell) = rows.get_mut((channel % outputs) * inputs + channel) {
+            *cell = gain;
         }
     }
     rows
@@ -417,15 +419,36 @@ mod tests {
     }
 
     #[test]
-    fn a_discrete_layout_is_truncated_one_channel_for_one() {
+    fn a_discrete_layout_wider_than_the_sink_folds_every_channel_in_turn_at_one_level() {
         let three = ChannelCount::new(3).expect("3 is in range");
+        let four = ChannelCount::new(4).expect("4 is in range");
         let frame = [1.0, 2.0, 3.0];
-        let kept = run(
-            ChannelLayout::Discrete(three),
-            ChannelLayout::Stereo,
-            &frame,
-        );
 
-        assert_eq!(kept, vec![1.0, 2.0]);
+        assert_eq!(
+            run(
+                ChannelLayout::Discrete(three),
+                ChannelLayout::Stereo,
+                &frame
+            ),
+            vec![2.0, 1.0]
+        );
+        assert_eq!(
+            run(
+                ChannelLayout::Stereo,
+                ChannelLayout::Discrete(four),
+                &[1.0, 2.0]
+            ),
+            vec![1.0, 2.0, 0.0, 0.0],
+            "a narrower source still reaches the first outputs one for one"
+        );
+        assert_eq!(
+            run(
+                ChannelLayout::Discrete(four),
+                ChannelLayout::Stereo,
+                &[1.0, 1.0, 1.0, 1.0]
+            ),
+            vec![1.0, 1.0],
+            "every channel full scale at once still meets full scale and no more"
+        );
     }
 }

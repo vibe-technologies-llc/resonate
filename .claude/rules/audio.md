@@ -924,9 +924,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (`keeping_the_channels_outranks_keeping_the_depth`). `Remix` (`resonate-dsp`) runs first, so
   resampler and dither cost the sink's channels. Matrix from `ChannelPosition`: channel the target
   has: copied at unity (`UNITY`); lacking: folded into nearest neighbours at −3 dB (`MINUS_3_DB`);
-  LFE dropped, not folded; unfed target channel silent. Routing by position, never index (index
-  one-for-one only where a layout's positions are unknown). Each row scaled to gains summing to at
-  most one: no downmix clips a full-scale source.
+  LFE dropped, not folded; unfed target channel silent. Routing by position, never index; only where
+  a layout's positions are unknown (`ChannelLayout::Discrete` either side) are channels routed by
+  index, **in turn**: channel *i* to output *i* mod the output count, every cell the one gain
+  `1 / ceil(inputs / outputs)` (`in_turn`), so a wider unplaced source loses no channel and keeps
+  its balance, and a narrower one reaches the first outputs one for one
+  (`a_discrete_layout_wider_than_the_sink_folds_every_channel_in_turn_at_one_level`). Each row
+  scaled to gains summing to at most one: no downmix clips a full-scale source.
 - **The chain is f64 from decoded word to sink word.** `Processor::process`/`flush` take `f64`
   slices; the engine widens the decoder's output exactly into `Output::widened`
   (`SampleData::widen_into`), narrows once, into the sink's word, in `Output::stage` (an f32
