@@ -1108,7 +1108,7 @@ fn a_vaulted_row_whose_file_has_gone_is_studied_out_of_its_object() -> Result<()
             &[(TITLE, "Floating"), (ARTIST, "Ada")],
         ),
     );
-    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
     rescanned(&library, &tree)?;
     let imported = library

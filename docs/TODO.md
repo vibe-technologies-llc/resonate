@@ -6,13 +6,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Defects
-- Walking back a tag run overwrites edits made since: `retagged_fields` keeps only the value
-  before, not the one the run wrote, so a title fixed in another tagger afterwards is reverted
-- The organise undo record is written once after the whole apply: a run killed mid-way leaves the
-  previous run's record (so *Put the last run back* walks back the wrong run), and a failing
-  `note_organised` drops the `OrganiseSummary` the open queue relocates from
-- A delivery whose `claim_album_keys` fails leaves the placed file where it landed (the `weighed`
-  failure removes it, this one does not), and the next attempt lands `Name (2).flac` beside it
 - A dead writer's whole copy is written over the track unchecked: `finished_writing_back` runs
   `copied_over` with nothing in the `.resonate-whole` copy to say the track is as it was, so an
   edit made by another program between the crash and the next scan is lost
@@ -20,16 +13,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   sweep): under Flatpak's pid namespace a crashed run's journal or staged file reads as living for
   ever, and a host `resonate` reads a sandboxed live writer as dead, rolling it back or deleting
   its staged file
-- A vault root that is an unmounted mountpoint is filled on the root filesystem: `Vault::open`
-  checks only `is_dir`, so `NotThere` never fires for an fstab mountpoint, and no marker names a
-  folder as a vault
-- A favourite star set in the window keeps what the window set: `favour`'s overlay is cleared only
-  on a failed write, `favours` prefers it, so an unfavourite from MCP or the CLI is never shown
-- The window's picture cache keeps a failed read as no cover for the session (`PlayerModel::art`
-  answers any held entry; the engine retries `Look::Failed` after 30 s, the window never asks);
-  a release cover whose fetch failed once is held as `None` in `released_covers` likewise
-- A cue sheet whose `INDEX 01` moves makes a new row and prunes the old with its plays, listens,
-  favourite and playlist places: `moves::cuts_moved` follows only an identical set of cuts
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth

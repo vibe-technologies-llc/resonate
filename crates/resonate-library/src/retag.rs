@@ -578,6 +578,7 @@ pub(crate) struct Undoing {
     pub path: PathBuf,
     pub pictured: bool,
     pub was: Held,
+    pub wrote: Vec<(TagField, Option<String>)>,
 }
 
 impl Undoing {
@@ -586,7 +587,27 @@ impl Undoing {
             path: write.path.clone(),
             pictured: write.picture.is_some(),
             was: write.was.clone(),
+            wrote: write
+                .was
+                .fields
+                .iter()
+                .map(|(field, _)| {
+                    let wrote = write
+                        .edits
+                        .iter()
+                        .find(|edit| edit.field == *field)
+                        .map(|edit| edit.value.clone());
+                    (*field, wrote)
+                })
+                .collect(),
         }
+    }
+
+    fn wrote(&self, field: TagField) -> Option<&str> {
+        self.wrote
+            .iter()
+            .find(|(written, _)| *written == field)
+            .and_then(|(_, wrote)| wrote.as_deref())
     }
 }
 
@@ -661,6 +682,7 @@ fn apply(
     let mut followed = Vec::with_capacity(planned.len());
     let mut landed = Vec::with_capacity(planned.len());
     let mut unwritten = Vec::new();
+    let mut unconfirmed = Vec::new();
     for write in planned {
         if progress.is_cancelled() {
             unwritten.push(write.path.clone());
@@ -686,7 +708,9 @@ fn apply(
                 retagging.writes.push(write);
             }
             Err(why) => {
-                if !noted.keeps_a_note_of(why) {
+                if noted.keeps_a_note_of(why) {
+                    unconfirmed.push(write.path.clone());
+                } else {
                     unwritten.push(write.path.clone());
                 }
                 retagging.pass_over(&write.path, why, progress);
@@ -695,7 +719,14 @@ fn apply(
     }
 
     let noted_again = noted.noted_before(&unwritten);
-    library.files_retagged(&followed, &unwritten, noted_again.as_deref())?;
+    library.files_retagged(
+        &followed,
+        &Unlanded {
+            unwritten: &unwritten,
+            unconfirmed: &unconfirmed,
+        },
+        noted_again.as_deref(),
+    )?;
     Ok(landed)
 }
 
@@ -804,12 +835,24 @@ fn wrote(write: &Written, field: TagField) -> Option<Option<String>> {
         .map(|edit| Some(edit.value.clone()))
 }
 
+pub(crate) struct Unlanded<'a> {
+    pub unwritten: &'a [PathBuf],
+    pub unconfirmed: &'a [PathBuf],
+}
+
 pub(crate) fn files_retagged(
     tx: &Transaction<'_>,
     followed: &[Followed],
-    unwritten: &[PathBuf],
+    unlanded: &Unlanded<'_>,
     noted_again: Option<&[KeptRetag]>,
 ) -> Result<()> {
+    let unwritten = unlanded.unwritten;
+    for path in unlanded.unconfirmed {
+        let path = store::path_text(path)?;
+        tx.prepare_cached("UPDATE retagged_fields SET wrote_known = 0 WHERE path = ?1")
+            .and_then(|mut statement| statement.execute(params![path]))
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
     let mut statement = tx
         .prepare(
             "UPDATE tracks
@@ -982,11 +1025,18 @@ fn note_again(tx: &Transaction<'_>, kept: &[KeptRetag]) -> Result<()> {
             statement.execute(params![path, held.pictured, held.rated, held.picture])
         })
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
-        for (field, was) in &held.fields {
+        for kept in &held.fields {
+            let (wrote, known) = match &kept.wrote {
+                Wrote::Unrecorded => (None, false),
+                Wrote::As(wrote) => (wrote.as_deref(), true),
+            };
             tx.prepare_cached(
-                "INSERT OR REPLACE INTO retagged_fields (path, field, was) VALUES (?1, ?2, ?3)",
+                "INSERT OR REPLACE INTO retagged_fields (path, field, was, wrote, wrote_known)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )
-            .and_then(|mut statement| statement.execute(params![path, field.as_str(), was]))
+            .and_then(|mut statement| {
+                statement.execute(params![path, kept.field.as_str(), kept.was, wrote, known])
+            })
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
     }
@@ -1081,8 +1131,9 @@ pub(crate) fn note_what_was_there(
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
         for (field, was) in &held.was.fields {
             tx.execute(
-                "INSERT OR REPLACE INTO retagged_fields (path, field, was) VALUES (?1, ?2, ?3)",
-                params![path, field.as_str(), was],
+                "INSERT OR REPLACE INTO retagged_fields (path, field, was, wrote, wrote_known)
+                 VALUES (?1, ?2, ?3, ?4, 1)",
+                params![path, field.as_str(), was, held.wrote(*field)],
             )
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
@@ -1096,7 +1147,29 @@ pub(crate) struct KeptRetag {
     pub pictured: bool,
     pub rated: Option<i64>,
     pub picture: Option<i64>,
-    pub fields: Vec<(TagField, Option<String>)>,
+    pub fields: Vec<KeptField>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeptField {
+    pub field: TagField,
+    pub was: Option<String>,
+    pub wrote: Wrote,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Wrote {
+    Unrecorded,
+    As(Option<String>),
+}
+
+impl KeptField {
+    fn still_as_written(&self, tags: &TagSet) -> bool {
+        match &self.wrote {
+            Wrote::Unrecorded => true,
+            Wrote::As(wrote) => self.field.read(tags) == *wrote,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1154,26 +1227,35 @@ fn undone(
             .is_some()
             .then(|| tags.rated(&location).ok())
             .flatten();
-        let (edits, taken): (Vec<_>, Vec<_>) =
-            kept.fields.iter().partition(|(_, was)| was.is_some());
+        let standing: Vec<&KeptField> = kept
+            .fields
+            .iter()
+            .filter(|field| field.still_as_written(&held.tags))
+            .collect();
+        if standing.len() < kept.fields.len() {
+            tracing::debug!(
+                path = %kept.path.display(),
+                "a field edited since the run wrote it is left as it now stands"
+            );
+        }
+        let (edits, taken): (Vec<&KeptField>, Vec<&KeptField>) = standing
+            .iter()
+            .copied()
+            .partition(|kept| kept.was.is_some());
         retagging.writes.push(Written {
             track,
             path: kept.path.clone(),
-            was: Held::of(
-                &held.tags,
-                kept.fields.iter().map(|(field, _)| *field),
-                rated,
-            ),
+            was: Held::of(&held.tags, standing.iter().map(|kept| kept.field), rated),
             edits: edits
                 .into_iter()
-                .filter_map(|(field, was)| {
+                .filter_map(|kept| {
                     Some(TagEdit {
-                        field: *field,
-                        value: was.clone()?,
+                        field: kept.field,
+                        value: kept.was.clone()?,
                     })
                 })
                 .collect(),
-            taken: taken.into_iter().map(|(field, _)| *field).collect(),
+            taken: taken.into_iter().map(|kept| kept.field).collect(),
             unpictured: kept.pictured && put_back.is_none(),
             picture: put_back,
             popularity,
@@ -1205,7 +1287,8 @@ pub(crate) fn retagged_picture(
 pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRetag>> {
     let mut statement = connection
         .prepare(
-            "SELECT r.path, r.pictured, r.rated, f.field, f.was, r.picture_id
+            "SELECT r.path, r.pictured, r.rated, f.field, f.was, r.picture_id, f.wrote,
+                    coalesce(f.wrote_known, 0)
                FROM retagged r LEFT JOIN retagged_fields f ON f.path = r.path
               ORDER BY r.path, f.field",
         )
@@ -1219,13 +1302,15 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, Option<i64>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, bool>(7)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut kept: Vec<KeptRetag> = Vec::new();
-    for (path, pictured, rated, field, was, picture) in rows {
+    for (path, pictured, rated, field, was, picture, wrote, wrote_known) in rows {
         let path = PathBuf::from(path);
         if kept.last().is_none_or(|last| last.path != path) {
             kept.push(KeptRetag {
@@ -1239,7 +1324,15 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
         if let (Some(last), Some(field)) =
             (kept.last_mut(), field.as_deref().and_then(TagField::named))
         {
-            last.fields.push((field, was));
+            last.fields.push(KeptField {
+                field,
+                was,
+                wrote: if wrote_known {
+                    Wrote::As(wrote)
+                } else {
+                    Wrote::Unrecorded
+                },
+            });
         }
     }
     Ok(kept)

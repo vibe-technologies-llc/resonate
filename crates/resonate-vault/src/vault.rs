@@ -34,6 +34,7 @@ use crate::{
 pub(crate) const AUDIO: &str = "audio";
 pub(crate) const COVERS: &str = "covers";
 pub(crate) const STAGING: &str = "staging";
+const MARKER: &str = ".resonate-vault";
 pub(crate) const COVER_EXTENSION: &str = "jxl";
 const PICTURE_EXTENSIONS: [&str; 6] = [COVER_EXTENSION, "jpg", "png", "webp", "gif", "bmp"];
 const AS_IT_CAME: [ImageFormat; 5] = [
@@ -250,14 +251,31 @@ impl Vault {
         let root = root.into();
         fs::create_dir_all(&root)
             .map_err(|source| Error::io(VaultOp::MakeFolder, &root, source))?;
+        Self::marked(&root)?;
         Self::open(root)
+    }
+
+    fn marked(root: &Path) -> Result<()> {
+        let marker = root.join(MARKER);
+        fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&marker)
+            .map(drop)
+            .map_err(|source| Error::io(VaultOp::MakeFolder, &marker, source))
+    }
+
+    fn is_a_vault(root: &Path) -> bool {
+        root.join(MARKER).is_file() || root.join(AUDIO).is_dir()
     }
 
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        if !root.is_dir() {
+        if !root.is_dir() || !Self::is_a_vault(&root) {
             return Err(Error::NotThere { path: root });
         }
+        Self::marked(&root)?;
         for folder in [AUDIO, COVERS, STAGING] {
             let made = root.join(folder);
             fs::create_dir_all(&made)
@@ -1801,6 +1819,7 @@ mod tests {
         let root = mount.join("vault");
 
         let opened = Vault::open(&root);
+        let mount_left_empty = Vault::open(&mount);
         let left_bare = fs::read_dir(&mount).map(|entries| entries.count()).ok();
         let made = Vault::make(&root).map(|vault| vault.root().to_path_buf());
         let reopened = Vault::open(&root).is_ok();
@@ -1810,6 +1829,10 @@ mod tests {
             matches!(opened, Err(Error::NotThere { .. })),
             "{:?}",
             opened.err()
+        );
+        assert!(
+            matches!(mount_left_empty, Err(Error::NotThere { .. })),
+            "an empty folder was opened as a vault"
         );
         assert_eq!(
             left_bare,

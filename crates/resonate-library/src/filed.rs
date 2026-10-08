@@ -113,9 +113,11 @@ pub(crate) fn filed(
     }
     tagged(&path, want, &album);
 
-    library
-        .claim_album_keys(want.album, &keys_for(&path, &root, &album, want))
-        .map_err(Unfiled::Catalog)?;
+    if let Err(error) = library.claim_album_keys(want.album, &keys_for(&path, &root, &album, want))
+    {
+        let _ = fs::remove_file(&path);
+        return Err(Unfiled::Catalog(error));
+    }
     Ok(Filed { path, root })
 }
 

@@ -666,8 +666,10 @@ fn run(
         };
         if options.apply {
             let roots: AHashSet<PathBuf> = library.roots()?.into_iter().collect();
-            apply(library, &mut plan, &roots, progress);
-            library.note_organised(&still_to_walk_back(noted, &plan.moves))?;
+            apply(library, &mut plan, &roots, progress, Noting::Not);
+            if let Err(error) = library.note_organised(&still_to_walk_back(noted, &plan.moves)) {
+                tracing::warn!(%error, "what the walk back left to put back was not noted");
+            }
         }
         return Ok(OrganiseSummary {
             stats: progress.snapshot(),
@@ -707,10 +709,7 @@ fn run(
     let roots: AHashSet<PathBuf> = planner.namings.keys().cloned().collect();
     let mut plan = planner.settle();
     if options.apply {
-        apply(library, &mut plan, &roots, progress);
-        if !plan.moves.is_empty() {
-            library.note_organised(&plan.moves)?;
-        }
+        apply(library, &mut plan, &roots, progress, Noting::Afresh);
     }
 
     Ok(OrganiseSummary {
@@ -1832,11 +1831,29 @@ enum Pruning {
     Holds,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Noting {
+    Not,
+    Afresh,
+    After(usize),
+}
+
+impl Noting {
+    const fn past(self, landed: usize) -> Self {
+        match self {
+            Self::Not => Self::Not,
+            Self::Afresh => Self::After(landed),
+            Self::After(noted) => Self::After(noted + landed),
+        }
+    }
+}
+
 fn apply(
     library: &Library,
     plan: &mut Plan,
     roots: &AHashSet<PathBuf>,
     progress: &OrganiseProgress,
+    mut noting: Noting,
 ) {
     let asked = mem::take(&mut plan.moves);
     let mut landed = Vec::with_capacity(asked.len());
@@ -1846,7 +1863,10 @@ fn apply(
             break;
         }
 
-        let applied = batch_moved(library, batch, progress);
+        let applied = batch_moved(library, batch, progress, noting);
+        if !applied.landed.is_empty() {
+            noting = noting.past(applied.landed.len());
+        }
         landed.extend(applied.landed);
         plan.refused.extend(applied.refused);
     }
@@ -1864,9 +1884,14 @@ fn apply(
     plan.moves = landed;
 }
 
-fn batch_moved(library: &Library, batch: &[Move], progress: &OrganiseProgress) -> Applied {
+fn batch_moved(
+    library: &Library,
+    batch: &[Move],
+    progress: &OrganiseProgress,
+    noting: Noting,
+) -> Applied {
     let mut made: Vec<PathBuf> = Vec::new();
-    let applied = batch_landing(library, batch, progress, &mut made);
+    let applied = batch_landing(library, batch, progress, noting, &mut made);
     take_back_the_empty(&made);
     applied
 }
@@ -1875,6 +1900,7 @@ fn batch_landing(
     library: &Library,
     batch: &[Move],
     progress: &OrganiseProgress,
+    noting: Noting,
     made: &mut Vec<PathBuf>,
 ) -> Applied {
     let mut done: Vec<Renamed> = Vec::new();
@@ -1911,7 +1937,7 @@ fn batch_landing(
     }
 
     settle(&landed);
-    if let Err(error) = library.files_moved(&landed) {
+    if let Err(error) = library.files_moved(&landed, noting) {
         tracing::warn!(
             %error,
             "the catalog was not rewritten, so the files it names were put back"
@@ -2165,15 +2191,27 @@ const MOVED_ITSELF: i64 = 0;
 const MOVED_BESIDE: i64 = 1;
 const CARRIED_ALONG: i64 = 2;
 
+pub(crate) fn noted(tx: &Transaction<'_>, landed: &[Move], noting: Noting) -> Result<()> {
+    match noting {
+        Noting::Not => Ok(()),
+        Noting::Afresh => note_organised(tx, landed),
+        Noting::After(noted) => noted_from(tx, landed, noted),
+    }
+}
+
 pub(crate) fn note_organised(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     tx.execute("DELETE FROM organised", [])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    noted_from(tx, landed, 0)
+}
+
+fn noted_from(tx: &Transaction<'_>, landed: &[Move], first_unit: usize) -> Result<()> {
     let mut noted = prepared(
         tx,
         "INSERT INTO organised (unit, part, rows, moved_from, moved_to)
          VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
-    for (unit, planned) in landed.iter().enumerate() {
+    for (unit, planned) in (first_unit..).zip(landed) {
         let parts =
             iter::once((MOVED_ITSELF, planned.rows, &planned.from, &planned.to))
                 .chain(planned.companions.iter().map(|companion| {
@@ -2752,6 +2790,33 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn a_run_is_noted_batch_by_batch_as_its_moves_land_and_a_new_run_starts_the_note_afresh() {
+        let moved = |name: &str| Move {
+            from: PathBuf::from(format!("/music/{name}.flac")),
+            to: PathBuf::from(format!("/music/Filed/{name}.flac")),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        };
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+
+        library
+            .files_moved(&[moved("a")], Noting::Afresh)
+            .expect("the first batch landed");
+        library
+            .files_moved(&[moved("b")], Noting::Afresh.past(1))
+            .expect("the second batch landed");
+        let after_two_batches = library.last_organised().expect("the note reads");
+        library
+            .files_moved(&[moved("c")], Noting::Afresh)
+            .expect("another run's first batch landed");
+        let after_another_run = library.last_organised().expect("the note reads");
+
+        assert_eq!(after_two_batches, vec![moved("a"), moved("b")]);
+        assert_eq!(after_another_run, vec![moved("c")]);
+    }
+
     const NOWHERE: &str = "/nowhere/resonate";
 
     fn comfortably_numb() -> Named<'static> {
@@ -2800,13 +2865,16 @@ mod tests {
             .expect("a row appended");
 
         library
-            .files_moved(&[Move {
-                from: PathBuf::from("/music/a.flac"),
-                to: PathBuf::from("/music/Artist/a.flac"),
-                rows: 1,
-                companions: Vec::new(),
-                sidecars: Vec::new(),
-            }])
+            .files_moved(
+                &[Move {
+                    from: PathBuf::from("/music/a.flac"),
+                    to: PathBuf::from("/music/Artist/a.flac"),
+                    rows: 1,
+                    companions: Vec::new(),
+                    sidecars: Vec::new(),
+                }],
+                Noting::Not,
+            )
             .expect("a move followed");
 
         assert!(matches!(library.undo(), Err(Error::PlaylistChanged(changed)) if changed == id));
@@ -3904,7 +3972,7 @@ mod tests {
         let library = Library::open_in_memory().expect("an in-memory catalog");
         progress.cancel();
 
-        let applied = batch_moved(&library, &batch, &progress);
+        let applied = batch_moved(&library, &batch, &progress, Noting::Not);
 
         assert!(applied.landed.is_empty());
         assert!(applied.refused.is_empty());

@@ -2414,9 +2414,11 @@ impl Library {
         self.inner.walk_the_tree()
     }
 
-    pub(crate) fn files_moved(&self, landed: &[Move]) -> Result<()> {
-        self.inner
-            .write(|transaction| organise::files_moved(transaction, landed))
+    pub(crate) fn files_moved(&self, landed: &[Move], noting: organise::Noting) -> Result<()> {
+        self.inner.write(|transaction| {
+            organise::files_moved(transaction, landed)?;
+            organise::noted(transaction, landed, noting)
+        })
     }
 
     pub(crate) fn staging(&self, staged: &Path) -> Result<()> {
@@ -2508,11 +2510,11 @@ impl Library {
     pub(crate) fn files_retagged(
         &self,
         followed: &[Followed],
-        unwritten: &[PathBuf],
+        unlanded: &retag::Unlanded<'_>,
         noted_again: Option<&[retag::KeptRetag]>,
     ) -> Result<()> {
         self.inner.write(|transaction| {
-            retag::files_retagged(transaction, followed, unwritten, noted_again)
+            retag::files_retagged(transaction, followed, unlanded, noted_again)
         })
     }
 

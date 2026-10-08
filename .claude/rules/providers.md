@@ -156,8 +156,8 @@ API's document was asked: `resonate_providers::is_a_page`, read by Subsonic and 
   process and live ones;
   `what_a_killed_poll_staged_in_the_music_folder_is_taken_away_by_the_next_poll`), lands by `hard_link`
   under the first free name `take_in::candidates` offers (nothing overwritten), tags via `FileTags`.
-  A landing the decoder cannot probe, or whose decode disagrees with the wanted length, is removed
-  and counted `unkept`. **It joins the album it was wanted for, not one of its own**:
+  A landing the decoder cannot probe, whose decode disagrees with the wanted length, or whose album
+  keys cannot be claimed, is removed and counted `unkept`. **It joins the album it was wanted for, not one of its own**:
   `Library::claim_album_keys` names the album by the keys the scan will compute, before any scan
   reads it. As each filing is noted the lane scans the roots it landed under (incrementally) and
   `Library::pair_what_landed` pairs each unheld want with the rooted row at its offered path: an

@@ -76,6 +76,8 @@ const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
 const FETCHES_AT_ONCE: usize = 6;
 
+const A_FAILED_COVER_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(60);
+
 const OWED_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
 const SCAN_POLL: Duration = Duration::from_millis(100);
@@ -808,11 +810,13 @@ pub struct LibraryModel {
     favourite_album_ids: AHashSet<AlbumId>,
     favourite_artist_ids: AHashSet<ArtistId>,
     favoured: AHashMap<Favoured, bool>,
+    favours_written: Vec<(Favoured, bool)>,
     charted: Arc<Chart>,
     covers: Recent<AtSide<AlbumId>, Option<Picture>>,
     decoding: AHashSet<AtSide<AlbumId>>,
     released_covers: Recent<AtSide<Mbid>, Option<Picture>>,
     fetching_covers: AHashSet<Mbid>,
+    covers_unfetched: AHashMap<Mbid, Instant>,
     magnified: Option<Magnifying<AlbumId>>,
     portraits: Recent<AtSide<ArtistId>, Option<Picture>>,
     decoding_portraits: AHashSet<AtSide<ArtistId>>,
@@ -1021,11 +1025,13 @@ impl LibraryModel {
             favourite_album_ids: AHashSet::new(),
             favourite_artist_ids: AHashSet::new(),
             favoured: AHashMap::new(),
+            favours_written: Vec::new(),
             charted: Arc::default(),
             covers: Recent::new(COVERS_HELD),
             decoding: AHashSet::new(),
             released_covers: Recent::new(RELEASED_COVERS_HELD),
             fetching_covers: AHashSet::new(),
+            covers_unfetched: AHashMap::new(),
             magnified: None,
             portraits: Recent::new(PORTRAITS_HELD),
             decoding_portraits: AHashSet::new(),
@@ -2348,10 +2354,9 @@ impl LibraryModel {
             Wanted::TheSearch,
             Change::Favour { favourite },
             move |library| library.favour(what, favourite).map(|_| None),
-            move |this, edited, _| {
-                if edited == Edited::Failed {
-                    this.unfavour_what_did_not_save(what, named_before);
-                }
+            move |this, edited, _| match edited {
+                Edited::Failed => this.unfavour_what_did_not_save(what, named_before),
+                Edited::Landed => this.favours_written.push((what, favourite)),
             },
             cx,
         );
@@ -3695,7 +3700,13 @@ impl LibraryModel {
         if reference.is_none() && group.is_none() {
             return None;
         }
-        if self.fetching_covers.contains(release) || self.fetching_covers.len() >= FETCHES_AT_ONCE {
+        if self.fetching_covers.contains(release)
+            || self.fetching_covers.len() >= FETCHES_AT_ONCE
+            || self
+                .covers_unfetched
+                .get(release)
+                .is_some_and(|failed| failed.elapsed() < A_FAILED_COVER_IS_ASKED_AGAIN_AFTER)
+        {
             return None;
         }
         self.fetching_covers.insert(release.clone());
@@ -3721,10 +3732,13 @@ impl LibraryModel {
         let side = wanted.side;
         cx.spawn(async move |this, cx| {
             let (art, answered) = fetched.await;
-            let art = art.unwrap_or_else(|error| {
-                tracing::warn!(%error, "a found song's cover could not be fetched");
-                None
-            });
+            let (art, answered) = match art {
+                Ok(art) => (art, answered),
+                Err(error) => {
+                    tracing::warn!(%error, "a found song's cover could not be fetched");
+                    (None, false)
+                }
+            };
             let drawing = this.update(cx, |_, cx| {
                 cx.global::<Drawer>()
                     .draw(move || art.as_ref().and_then(|art| drawn_within(art, side)))
@@ -3736,8 +3750,11 @@ impl LibraryModel {
             let landed = this.update(cx, |this, cx| {
                 this.fetching_covers.remove(&wanted.key);
                 if answered || decoded.is_some() {
+                    this.covers_unfetched.remove(&wanted.key);
                     this.released_covers.insert(wanted, decoded).forget(cx);
                     cx.notify();
+                } else {
+                    this.covers_unfetched.insert(wanted.key, Instant::now());
                 }
             });
             let _ = landed;
@@ -4066,6 +4083,11 @@ impl LibraryModel {
                 let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
                 if self.take(loaded) == Grew::Moved {
                     self.read(Wanted::ThePage, cx);
+                }
+                for (written, favourite) in mem::take(&mut self.favours_written) {
+                    if self.favoured.get(&written) == Some(&favourite) {
+                        self.favoured.remove(&written);
+                    }
                 }
                 if gone == Some(self.selection) {
                     self.select(Selection::Everything, cx);

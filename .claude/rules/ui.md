@@ -775,7 +775,11 @@ is never named.
   ask queueing the read, so `PlayerModel::art` reads `Player::art_read` (`NotYet`/`Answered`/
   `Nothing`, `TagsRead`'s shape); `NotYet` goes in `unsettled` against the `media_revision` asked
   at, not `pictures`, asked again once it moves (caching that first `None` left the playback bar's
-  cover empty for any file the catalog does not cover, even one with its own picture).
+  cover empty for any file the catalog does not cover, even one with its own picture); `Failed`
+  (the engine's read failed) is held in `unread` and asked again after
+  `A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER`, never cached as no picture. A release cover whose fetch
+  failed is likewise left out of `released_covers`, asked again after
+  `A_FAILED_COVER_IS_ASKED_AGAIN_AFTER`.
   `LibraryModel::warm_the_covers` fills the album cache ahead of the grid once a run:
   `COVERS_WARMED` (256) albums declaring a picture, at the grid's side, decoded one at a time in its
   own task (never more than one decode queued: an on-screen cell waits behind at most one), skipping
@@ -1447,7 +1451,9 @@ is never named.
 - **The star says what was favoured from the press on, not the next read.** It drew the last catalog
   read, and bar and queue rows read `LibraryModel::named`, a cache nothing re-reads: a press wrote
   the favourite, the star stayed empty, the next press (still reading *not a favourite*) wrote it
-  again. `LibraryModel::favour` records the write in `favoured` (`Favoured` -> answer), puts it into
+  again. `LibraryModel::favour` records the write in `favoured` (`Favoured` -> answer) until the read
+  after its write lands (`favours_written`; an entry a later press changed stays), so a favourite
+  taken away from MCP or the command line is drawn as the catalog holds it; it puts the answer into
   the `named` row where the track is cached, and notifies before the write runs. `favours` is what
   every star, cell and menu asks (own row's read the fallback); `favoured_album`/`favoured_artist`
   go through it, `favours_track` reads a resolved `Track`. **Bar, queue and an opened playlist ask

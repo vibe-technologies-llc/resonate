@@ -117,7 +117,11 @@ nothing. `keep`'s `Kept` fallback follows a `NoSmaller` that landed nothing: no 
 
 **The catalog names an object by its place inside the vault, never the vault's place.**
 `Vault::open` canonicalises an existing root and makes the three folders, never the root
-(`Vault::make` does where asked: `binary.md`); `Vault::within` gives the relative path `vault_path`,
+(`Vault::make` does where asked: `binary.md`). **A folder is a vault only where it says so**:
+`Vault::make` writes `.resonate-vault` in the root; `open` refuses a folder holding neither it nor
+an `audio/` (an older vault, marked as it opens) as `Error::NotThere`, so an fstab mount point with
+nothing mounted is never filled on the root filesystem; the settings pane makes the folder it
+names a vault (off the window's thread) before storing the key; `Vault::within` gives the relative path `vault_path`,
 `vault_objects.path`, `cover_path` hold; `Vault::at` reverses it, refusing anything but plain names.
 
 **Validation runs on the staging file before the rename** (a dedup hit is never at risk from a

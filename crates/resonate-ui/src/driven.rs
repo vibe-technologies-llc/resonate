@@ -740,12 +740,13 @@ mod tests {
             "tab never reached the row's star"
         );
         driven.cx.simulate_keystrokes("enter");
-        driven.settle();
-        assert!(driven.read(|root, cx| {
-            root.library
-                .read(cx)
-                .favours(resonate_library::Favoured::Track(track), false)
-        }));
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library
+                .tracks()
+                .iter()
+                .any(|row| row.id == track && library.favours_track(row))
+        });
     }
 
     #[gpui::test]

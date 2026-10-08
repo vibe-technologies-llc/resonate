@@ -128,6 +128,7 @@ pub enum ArtRead {
     NotYet,
     Answered(Arc<CoverArt>),
     Nothing,
+    Failed,
 }
 
 struct Asking {
@@ -522,7 +523,8 @@ impl Shelf {
     fn art_read(&self, location: &MediaLocation) -> ArtRead {
         match self.held.lock().art(location) {
             Look::Found(art) => ArtRead::Answered(art),
-            Look::Nothing | Look::Failed(_) => ArtRead::Nothing,
+            Look::Nothing => ArtRead::Nothing,
+            Look::Failed(_) => ArtRead::Failed,
             Look::Unasked | Look::Pending => ArtRead::NotYet,
         }
     }

@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -65,6 +65,14 @@ const STEPS_PER_PIXEL: f32 = 4.0;
 const PICTURES_HELD: NonZeroUsize = held(256);
 
 const DECODES_AT_ONCE: usize = 4;
+
+const A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
+
+enum Drew {
+    Settled(Option<Picture>),
+    NotYet,
+    Failed,
+}
 
 const SEEK_STEP_SECONDS: i64 = 5;
 
@@ -289,6 +297,7 @@ pub struct PlayerModel {
     pictures: Recent<AtSide<MediaLocation>, Option<Picture>>,
     decoding: AHashSet<AtSide<MediaLocation>>,
     unsettled: AHashMap<AtSide<MediaLocation>, u64>,
+    unread: AHashMap<AtSide<MediaLocation>, Instant>,
     scale: Scale,
     magnified: Option<Magnifying<MediaLocation>>,
     grain: Grain,
@@ -329,6 +338,7 @@ impl PlayerModel {
             pictures: Recent::new(PICTURES_HELD),
             decoding: AHashSet::new(),
             unsettled: AHashMap::new(),
+            unread: AHashMap::new(),
             scale: Scale::ONE,
             magnified: None,
             grain: Grain::default(),
@@ -496,6 +506,10 @@ impl PlayerModel {
         if self.decoding.contains(&wanted)
             || self.decoding.len() >= DECODES_AT_ONCE
             || self.unsettled.get(&wanted) == Some(&self.reads)
+            || self
+                .unread
+                .get(&wanted)
+                .is_some_and(|failed| failed.elapsed() < A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER)
         {
             return None;
         }
@@ -508,21 +522,26 @@ impl PlayerModel {
         let drawing = cx
             .global::<Drawer>()
             .draw(move || match player.art_read(&asked) {
-                ArtRead::Answered(art) => Some(drawn_within(art.as_ref(), side)),
-                ArtRead::Nothing => Some(None),
-                ArtRead::NotYet => None,
+                ArtRead::Answered(art) => Drew::Settled(drawn_within(art.as_ref(), side)),
+                ArtRead::Nothing => Drew::Settled(None),
+                ArtRead::NotYet => Drew::NotYet,
+                ArtRead::Failed => Drew::Failed,
             });
         cx.spawn(async move |this, cx| {
-            let drawn = drawing.await.unwrap_or(Some(None));
+            let drawn = drawing.await.unwrap_or(Drew::Settled(None));
             let landed = this.update(cx, |this, cx| {
                 this.decoding.remove(&wanted);
                 match drawn {
-                    Some(decoded) => {
+                    Drew::Settled(decoded) => {
                         this.unsettled.remove(&wanted);
+                        this.unread.remove(&wanted);
                         this.pictures.insert(wanted, decoded).forget(cx);
                     }
-                    None => {
+                    Drew::NotYet => {
                         this.unsettled.insert(wanted, asked_at);
+                    }
+                    Drew::Failed => {
+                        this.unread.insert(wanted, Instant::now());
                     }
                 }
                 cx.notify();

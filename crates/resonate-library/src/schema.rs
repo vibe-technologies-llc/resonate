@@ -459,6 +459,8 @@ const MIGRATIONS: &[&str] = &[
     "DELETE FROM loves_told WHERE service = 'lastfm';",
     "CREATE TABLE album_keys_composed_wanted (since INTEGER) STRICT;",
     "ALTER TABLE tracks ADD COLUMN numbered_by_its_stem INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE retagged_fields ADD COLUMN wrote TEXT;
+     ALTER TABLE retagged_fields ADD COLUMN wrote_known INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

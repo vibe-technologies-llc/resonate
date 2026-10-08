@@ -1031,10 +1031,67 @@ pub fn apply(
         None => None,
     };
 
+    follow_a_cut_that_moved(tx, record)?;
     let stored = track(tx, record, performer_id, album_id, generation)?;
     index(tx, &stored, record)?;
     Ok(true)
 }
+
+fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result<()> {
+    let (Some(existing), Some(span)) = (record.existing, record.span) else {
+        return Ok(());
+    };
+    let path = path_text(&record.path)?;
+    let (span_start, _) = span_columns(Some(span));
+    let id = existing.get() as i64;
+    let held: Option<(i64, Option<i64>, Option<String>)> = queried(
+        tx,
+        "SELECT span_start, track_number, tagged_title FROM tracks WHERE id = ?1 AND path = ?2",
+        params![id, path],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .optional()
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((was_at, number, title)) = held else {
+        return Ok(());
+    };
+    if was_at == span_start {
+        return Ok(());
+    }
+    let same_number = number.is_some() && number == record.tags.track_number.map(i64::from);
+    let same_title = title.is_some() && title == record.tags.title;
+    if !same_number && !same_title {
+        return Ok(());
+    }
+    let taken: bool = queried(
+        tx,
+        "SELECT EXISTS (SELECT 1 FROM tracks WHERE path = ?1 AND span_start = ?2)",
+        params![path, span_start],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if taken {
+        return Ok(());
+    }
+    cached(
+        tx,
+        "UPDATE tracks SET span_start = ?2 WHERE id = ?1",
+        params![id, span_start],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    for following in CUT_FOLLOWERS {
+        cached(tx, following, params![path, was_at, span_start])
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+    Ok(())
+}
+
+const CUT_FOLLOWERS: [&str; 4] = [
+    "UPDATE playlist_entries SET span_start = ?3 WHERE path = ?1 AND span_start = ?2",
+    "UPDATE OR IGNORE lyrics_kept SET span_start = ?3 WHERE path = ?1 AND span_start = ?2",
+    "UPDATE OR IGNORE lyrics_ahead SET span_start = ?3 WHERE path = ?1 AND span_start = ?2",
+    "UPDATE OR IGNORE lyrics_refused SET span_start = ?3 WHERE path = ?1 AND span_start = ?2",
+];
 
 fn delivered_at(tx: &Transaction<'_>, record: &TrackRecord) -> Result<bool> {
     let path = path_text(&record.path)?;

@@ -7449,6 +7449,46 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
     Ok(())
 }
 
+#[test]
+fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Result<()> {
+    let (tree, library) = scanned_sheet();
+    let held = MediaLocation::local(tree.path().join("Meddle.wav"));
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the third cut");
+    library.track_played(&held, echoes.span, Duration::ZERO)?;
+    let playlist = library.create_playlist("Side Two")?;
+    library.add_to_playlist(playlist, &[Cut::of(&echoes)])?;
+
+    tree.write(
+        "Meddle.cue",
+        MEDDLE_SHEET
+            .replace("INDEX 01 00:00:40", "INDEX 01 00:00:45")
+            .as_bytes(),
+    );
+    scan(&library, &options(&tree))?;
+
+    let moved = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the third cut, still there");
+    assert_eq!(moved.id, echoes.id, "the cut became a row of its own");
+    assert_eq!(moved.plays, 1);
+    assert_eq!(
+        moved.span.map(FrameSpan::start),
+        Some(Frames(44_100 / 75 * 45))
+    );
+    let entries = library.playlist_entries(playlist, None)?;
+    assert!(
+        entries[0].track.is_some(),
+        "the playlist row lost the cut it named"
+    );
+    Ok(())
+}
+
 const MEDDLE_TWO_TRACK_SHEET: &str = r#"PERFORMER "Pink Floyd"
 TITLE "Meddle (the other sheet)"
 FILE "Meddle.wav" WAVE
@@ -17468,6 +17508,41 @@ fn walked_back(library: &Library, apply: bool) -> Result<RetagSummary> {
 }
 
 #[test]
+fn walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    retagged(&library, true)?;
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+
+    fs::write(
+        &file,
+        Aiff::new()
+            .text(TITLE, "Echoes (Live)")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    )
+    .expect("another tagger rewrote the file");
+    walked_back(&library, true)?;
+
+    assert_eq!(
+        tags_of(&file).title.as_deref(),
+        Some("Echoes (Live)"),
+        "the walk back wrote over a title edited since the run"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again()
 -> Result<()> {
     let tree = Tree::new();
@@ -19379,7 +19454,7 @@ fn a_real_picture(width: u32, height: u32) -> CoverArt {
 }
 
 fn opened_with_a_vault(held: &Tree) -> Result<(Library, Arc<Vault>)> {
-    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(Arc::clone(&vault))?;
     Ok((library, vault))
 }
@@ -19578,7 +19653,7 @@ fn an_object_kept_under_an_older_encoder_is_weighed_again_and_stamped_with_this_
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let database = tree.path().join("library.db");
-    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
@@ -19624,7 +19699,7 @@ fn a_row_whose_source_has_gone_is_not_weighed_again_and_keeps_its_object() -> Re
     let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let database = tree.path().join("library.db");
-    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
@@ -20013,7 +20088,7 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     std::os::unix::fs::symlink(&first, &through).expect("a second spelling of the vault");
 
     {
-        let vault = Arc::new(Vault::open(&through).expect("a writable vault"));
+        let vault = Arc::new(Vault::make(&through).expect("a writable vault"));
         let library = Library::open_with_vault(&catalog, vault)?;
         scan(&library, &options(&tree))?;
         let summary = vaulted(&library, true)?;
@@ -20172,7 +20247,7 @@ fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carrie
             .build(),
     );
     let database = tree.path().join("library.db");
-    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_with_vault(&database, vault)?;
     scan(&library, &options(&tree))?;
     beside(&database)

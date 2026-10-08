@@ -796,7 +796,13 @@ rows read via `Player::media` like any unscanned row.
   `settle_the_album`: if the album the scan made for the new folder holds nothing else and every
   moved row came from one album, gather into that one via `enriched::gather` (new folder's key
   names the old album; release, cover, favourite kept); else the row joins the album the scan filed
-  it under. **A file a sheet cuts is followed whole.** `cuts_moved` groups rows sharing a path
+  it under. **A cue track whose `INDEX 01` moved is the row it was**: a sheet edited in place
+  re-cuts its file, and `store::follow_a_cut_that_moved` moves the stored row the walk pairs with
+  the cut onto the new start where its track number or tagged title agrees and nothing stands
+  there, carrying playlist rows and kept lyrics, offset and refusal (`CUT_FOLLOWERS`), so plays,
+  listens, favourite and playlist places stay
+  (`a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it`). **A file a sheet cuts
+  is followed whole.** `cuts_moved` groups rows sharing a path
   (gone: every row, file missing; new: every row, none of the path's rows older than the scan),
   pairing groups alike in size, codec, every cut's start and length, each the one group of that
   shape per side, where sheet titles or file name agree; `files_moved` moves the whole path.
@@ -1756,6 +1762,11 @@ the undo record keeps fields by `TagField::as_str`.
   landed but reads back otherwise keeps its note**: the file changed, so `Noted::keeps_a_note_of`
   holds `Unconfirmed` out of what is forgotten; the catalog does not follow it (next scan reads the
   new size; `a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back`).
+  **The note keeps what the run wrote beside what it replaced** (`retagged_fields.wrote`,
+  `wrote_known`: a `MIGRATIONS` step), and the walk back leaves a field whose file no longer holds
+  what was written (another tagger edited it since;
+  `walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since`); a write that landed but
+  read back otherwise is noted as not knowing what it wrote, so its fields are put back as before.
   `RetagOptions::undo` plans from that record, not the catalog: each field read before written back,
   one the run added removed (`Writing::taken`), an added cover taken out (`Writing::unpictured`,
   through `uncovered`), rating put back; all through the same `apply`, which reads every file back,
@@ -1953,6 +1964,12 @@ guard; re-keys a sleeve-keyed album after moves land (both under *Schema and gro
   (`what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies`).
 - **The last applied run can be walked back.** `organised` (a `MIGRATIONS` step) holds what the last
   apply landed (units, companions and sidecars, landing order), each moving apply replacing it.
+  **Noted batch by batch, in the transaction the catalog follows the files in**
+  (`organise::Noting`: the first batch landing anything clears the last run's note, later ones
+  append), so a run killed part way leaves the note of what it moved, never the run before
+  (`a_run_is_noted_batch_by_batch_as_its_moves_land_and_a_new_run_starts_the_note_afresh`); a walk
+  back failing to note what it left is a warning, the summary the queue relocates from still
+  answered.
   `OrganiseOptions::walk_back` plans from it, not a layout: units in reverse, each
   `Move::reversed` (chains and parked cycles undo in the order that makes room), through the same
   `apply` (batches, catalog following, a sheet's `FILE` line renamed back, made folders pruned).

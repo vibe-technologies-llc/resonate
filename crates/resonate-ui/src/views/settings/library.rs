@@ -10,7 +10,7 @@ use gpui::{
 use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{
     Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout, OrganiseStats,
-    OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Wanted, Written,
+    OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Vault, Wanted, Written,
 };
 
 use crate::{
@@ -26,6 +26,8 @@ use crate::{
 };
 
 const FOLDER_GROUP: &str = "folder";
+
+const VAULT_NOT_MADE: &str = "That folder could not be made a vault";
 
 const NO_MUSIC_FOLDER: &str = "No primary music folder is chosen. Choose the folder new songs should \
                                be kept in.";
@@ -1241,9 +1243,24 @@ impl RootView {
             return;
         }
 
-        self.store(&Setting::Vault(folder.clone()), cx);
-        self.vault_named = Some(folder);
-        cx.notify();
+        let making = folder.clone();
+        let made = cx
+            .background_executor()
+            .spawn(async move { Vault::make(&making).map(drop) });
+        self.making_the_vault = cx.spawn(async move |this, cx| {
+            let made = made.await;
+            let _ = this.update(cx, |this, cx| match made {
+                Ok(()) => {
+                    this.store(&Setting::Vault(folder.clone()), cx);
+                    this.vault_named = Some(folder);
+                    cx.notify();
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "the folder chosen for the vault could not be made one");
+                    this.report(Notice::Trouble(VAULT_NOT_MADE.to_owned()), cx);
+                }
+            });
+        });
     }
 
     fn preview_the_import(
