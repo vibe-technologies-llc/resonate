@@ -2175,23 +2175,26 @@ fn play_queue(
     let mut listening = Listening::default();
     let mut counted: Option<Listen> = None;
     let mut keeping = Keeping::default();
+    let mut outcome = Played::default();
+    let mut acted = Ok(());
 
     loop {
         select! {
             recv(events) -> event => {
                 let Ok(event) = event else { break };
                 readout.clear();
-                if announce(event) {
+                outcome.hears(&event);
+                if announce(event, &player) {
                     break;
                 }
-                readout.draw(&player.state());
+                readout.draw(&player);
             }
             recv(sampled) -> _ => {
                 count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
                 if keeps {
                     keep_the_queue(&player, library.as_deref(), &mut keeping);
                 }
-                readout.draw(&player.state());
+                readout.draw(&player);
             }
             recv(keys) -> pressed => {
                 let Ok(pressed) = pressed else {
@@ -2202,7 +2205,10 @@ fn play_queue(
                     Pressed::Acted(Action::Quit) => break,
                     Pressed::Acted(action) => {
                         readout.clear();
-                        act(&player, action, help)?;
+                        acted = act(&player, action, help);
+                        if acted.is_err() {
+                            break;
+                        }
                     }
                     Pressed::Typing(typed) => readout.typing(typed),
                     Pressed::Unknown(line) => {
@@ -2210,7 +2216,7 @@ fn play_queue(
                         told!("unknown key {line:?}; ? for help");
                     }
                 }
-                readout.draw(&player.state());
+                readout.draw(&player);
             }
             recv(quitting) -> _ => break,
         }
@@ -2228,7 +2234,36 @@ fn play_queue(
     }
     drop(mpris);
     drop(player);
-    Ok(())
+    acted?;
+    outcome.played_anything()
+}
+
+#[derive(Default)]
+struct Played {
+    started: bool,
+    failed: usize,
+    finished: bool,
+}
+
+impl Played {
+    const fn hears(&mut self, event: &Event) {
+        match event {
+            Event::TrackStarted(_) => self.started = true,
+            Event::Failed { .. } => self.failed += 1,
+            Event::QueueFinished => self.finished = true,
+            _ => {}
+        }
+    }
+
+    const fn played_anything(&self) -> Result<()> {
+        if !self.finished || self.started || self.failed == 0 {
+            Ok(())
+        } else {
+            Err(Error::NothingPlayed {
+                failed: self.failed,
+            })
+        }
+    }
 }
 
 fn at_percent(percent: u8) -> Result<Volume> {
@@ -2311,10 +2346,10 @@ fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Op
     }
 }
 
-fn announce(event: Event) -> bool {
+fn announce(event: Event, player: &Player) -> bool {
     match event {
-        Event::TrackStarted(track) => said!("started  track {track}"),
-        Event::TrackFinished(track) => said!("finished track {track}"),
+        Event::TrackStarted(track) => said!("started  {}", readout::billing(player, track)),
+        Event::TrackFinished(track) => said!("finished {}", readout::billing(player, track)),
         Event::OutputChanged(status) => said!(
             "output   {} [{mode:?}] on sink {sink}",
             status.negotiated,
@@ -2323,11 +2358,11 @@ fn announce(event: Event) -> bool {
         ),
         Event::Underrun { missing } => told!("underrun {missing} frames"),
         Event::Failed { track, error } => {
-            told!("track {track} failed");
+            told!("{} failed", readout::billing(player, track));
             report(&error);
         }
         Event::Waiting { track, error } => {
-            told!("track {track} waits for a device");
+            told!("{} waits for a device", readout::billing(player, track));
             report(&error);
         }
         Event::CommandFailed { command, error } => {
@@ -2877,6 +2912,33 @@ mod tests {
 
     use super::*;
     use crate::cli::RepeatArg;
+
+    #[test]
+    fn a_queue_that_finished_with_every_track_failed_is_no_success() {
+        let track = resonate_core::TrackId::new(1).expect("an id");
+        let failed = || Event::Failed {
+            track,
+            error: resonate_engine::Error::QueueEmpty,
+        };
+
+        let mut every_one_failed = Played::default();
+        for event in [failed(), failed(), Event::QueueFinished] {
+            every_one_failed.hears(&event);
+        }
+        let mut one_played = Played::default();
+        for event in [failed(), Event::TrackStarted(track), Event::QueueFinished] {
+            one_played.hears(&event);
+        }
+        let mut left_early = Played::default();
+        left_early.hears(&failed());
+
+        assert!(matches!(
+            every_one_failed.played_anything(),
+            Err(Error::NothingPlayed { failed: 2 })
+        ));
+        assert!(one_played.played_anything().is_ok());
+        assert!(left_early.played_anything().is_ok());
+    }
 
     fn wanted_at(tried: Option<SystemTime>, misses: u32) -> Want {
         Want {

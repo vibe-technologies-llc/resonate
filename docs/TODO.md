@@ -23,37 +23,13 @@ sits last in its category, not worked until it moves. Everything else is open.
 - A vault root that is an unmounted mountpoint is filled on the root filesystem: `Vault::open`
   checks only `is_dir`, so `NotThere` never fires for an fstab mountpoint, and no marker names a
   folder as a vault
-- The TIDAL device sign-in ends on any transient error while it polls (a 429, 502, 503 or timeout
-  through `asked(...)?`), though RFC 8628 keeps polling and reads 429 as `slow_down`
-- Subsonic and Monochrome do not class a 401, 403, exhausted 429 or an HTML 200 as the provider
-  away (`is_the_provider_away`), so every want in a poll repeats the ladder against a server that
-  locks out repeated failures; only TIDAL and hifi map 401 to `Unwelcome`
-- `online::reach(false)` is dropped where the process client was not made yet (`CLIENT.get()`
-  `None`): a client made later starts reaching
-- The AutoEq cache keeps a body before it is read: a captive portal's 200 is kept as an unreadable
-  profile for 90 days or an empty catalogue for 30, a fresh entry never refetched
 - A favourite star set in the window keeps what the window set: `favour`'s overlay is cleared only
   on a failed write, `favours` prefers it, so an unfavourite from MCP or the CLI is never shown
 - The window's picture cache keeps a failed read as no cover for the session (`PlayerModel::art`
   answers any held entry; the engine retries `Look::Failed` after 30 s, the window never asks);
   a release cover whose fetch failed once is held as `None` in `released_covers` likewise
-- `resonate play` exits 0 when every track failed to open or decode: `announce` prints the
-  failure and `play_queue` ends `Ok` on `QueueFinished`
-- MPRIS `Seek` ignores `CanSeek`: a large forward seek on a stream that cannot seek skips the track
-- MCP: a playlist resource that does not exist answers -32603 rather than -32002 (`Resource::at`
-  takes any name), and `remove_from_playlist` with `through_row` before `row` removes the range
-  swapped (`Span::between`) instead of refusing
 - A cue sheet whose `INDEX 01` moves makes a new row and prunes the old with its plays, listens,
   favourite and playlist places: `moves::cuts_moved` follows only an identical set of cuts
-- An undecodable packet with no declared duration is dropped rather than played as silence
-  (`frames == 0` → `continue`), shifting every later sample earlier; which readers leave `dur`
-  at zero not weighed
-- The LAME gain and peak are read after any `Xing`/`Info` header without checking a LAME encoder
-  string or its CRC: a Xing header with no LAME extension levels the track by whatever bytes follow
-- Ctrl-C at the Last.fm password prompt leaves echo off: `a_line_unechoed` installs no restore,
-  only `play` has one
-- `library = ""` is taken as an empty path, not the default, and no path setting (`library`,
-  `vault`, `inbox`, `music-folder`, `convolution`) expands `~`
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth
@@ -210,8 +186,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Command line and bus
-- The terminal player never says what plays: `started  track 18446744073709551615` for a file the
-  catalog lacks, and the readout shows no title or artist
 - `play`, `queue` and a window launch take a folder or an M3U, PLS or XSPF file as one track
   (`queue_items` expands `.cue` alone)
 - The command line cannot mark a favourite, want a track or dismiss a missing one; only the window
@@ -220,19 +194,13 @@ sits last in its category, not worked until it moves. Everything else is open.
   running window or player, and nothing says so
 - `resonate queue --playlist` sends one unchunked `AddTracks`, a catalog lookup a row behind the
   client's 2 s timeout: a large playlist reports failure, lands anyway and a retry doubles it
-- `play_queue` skips recording the last play and leaving the presenter and scrobbler when `act`
-  fails
 - MCP opens a fresh D-Bus connection for every player call, a subscribed now-playing resource
   twice a second on the one answering thread
 - MCP lists are unpaginated (`cursor` ignored), `list_playlists` and the resource list are
-  unbounded, rebuilt every 500 ms once listed; any playlist name can be subscribed to
+  unbounded, rebuilt every 500 ms once listed
 - MCP `start_scan` hard-codes an incremental scan following no links and ignores
   `enrich-after-scan`, though passes start as the CLI starts them
 - MCP tools answer `structuredContent` with no `outputSchema`
-- MPRIS metadata passes the raw `date` as `xesam:contentCreated` (not ISO 8601), the whole artist
-  string as one `xesam:artist`, and offers no `xesam:userRating` or `xesam:asText`
-- The start lock falls back to `/tmp/resonate-starting.lock` without `XDG_RUNTIME_DIR`: another
-  user holding it stalls every launch 15 s
 - Discord: the socket is looked for in four fixed places (not Canary, PTB, other Flatpak layouts),
   and a frame split across writes times out mid-read, dropping the session
 - `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI alone
@@ -340,9 +308,8 @@ sits last in its category, not worked until it moves. Everything else is open.
   K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
   `landed_or_standing` exists for it
-- TIDAL's `slow_down`, a transient error mid-poll, a CDN status on a segment, Subsonic's 401/403
-  classing and a Subsonic break mid-download are untested; the hosted hifi path's hosts are
-  constants no fake server can stand in for, so it runs only live
+- TIDAL's `slow_down`, a CDN status on a segment and a Subsonic break mid-download are untested;
+  the hosted hifi path's hosts are constants no fake server can stand in for, so it runs only live
 - Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths beyond
   `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested
 - The Output and Processing settings panes have no test pressing their controls

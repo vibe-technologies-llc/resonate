@@ -14,7 +14,7 @@ use md5::{Digest, Md5};
 use resonate_core::{Isrc, Mbid, SourceId};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
-    Result,
+    Result, is_a_page,
 };
 use serde::Deserialize;
 use ureq::{
@@ -428,7 +428,14 @@ impl Subsonic {
     fn read(&self, bytes: &[u8], op: ProviderOp) -> Result<Vec<Song>> {
         let answer: Answer = serde_json::from_slice(bytes).map_err(|error| {
             tracing::debug!(%error, "a Subsonic answer was not the document expected");
-            self.unreadable(op)
+            if is_a_page(bytes) {
+                Error::NotTheService {
+                    provider: self.source.clone(),
+                    op,
+                }
+            } else {
+                self.unreadable(op)
+            }
         })?;
         if answer.response.status != OK {
             let code = answer.response.error.map_or(0, |refusal| refusal.code);

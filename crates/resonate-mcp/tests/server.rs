@@ -1110,6 +1110,20 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         ]
     );
 
+    assert_eq!(
+        error_code(
+            &server,
+            &request(
+                "tools/call",
+                json!({
+                    "name": "remove_from_playlist",
+                    "arguments": { "playlist": "Late Night", "row": 1, "through_row": 0 },
+                }),
+            ),
+        ),
+        -32_602,
+        "a range written back to front was taken"
+    );
     let dropped = called(
         &server,
         "remove_from_playlist",
@@ -1825,19 +1839,16 @@ fn a_resource_nobody_offers_is_refused_and_one_that_cannot_be_read_fails() {
         "{answer}"
     );
 
-    let absent = asked(
-        &server,
-        &request(
-            "resources/read",
-            json!({ "uri": "resonate://library/playlist/Morning" }),
+    assert_eq!(
+        error_code(
+            &server,
+            &request(
+                "resources/read",
+                json!({ "uri": "resonate://library/playlist/Morning" }),
+            ),
         ),
-    )
-    .expect("a read of a playlist nobody made to be answered");
-    assert!(
-        absent["error"]["message"]
-            .as_str()
-            .is_some_and(|said| said.contains("no playlist named Morning")),
-        "{absent}"
+        -32_002,
+        "a playlist nobody made is a resource nobody offers"
     );
 }
 

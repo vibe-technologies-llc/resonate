@@ -419,6 +419,9 @@ pub enum Error {
     #[error("nothing named is a file, URI or cue track that plays")]
     NothingPlayableNamed,
 
+    #[error("none of the {failed} tracks queued could be played")]
+    NothingPlayed { failed: usize },
+
     #[error("no player is on the session bus; start one with resonate play or open the window")]
     NothingRunning,
 

@@ -124,6 +124,38 @@ pub(crate) fn cancel_when_told(cancel: impl Fn() + Send + 'static) -> Option<Int
     }
 }
 
+#[cfg(feature = "online")]
+pub(crate) fn leave_when_told() -> Option<Interrupting> {
+    let watched = match Signals::new(ASKING_TO_LEAVE) {
+        Ok(watched) => watched,
+        Err(error) => {
+            tracing::warn!(%error, "no signal watch; an interrupt may leave the terminal unechoed");
+            return None;
+        }
+    };
+    let handle = watched.handle();
+
+    let spawned = thread::Builder::new()
+        .name("resonate-interrupt".to_owned())
+        .spawn(move || {
+            let mut watched = watched;
+            if let Some(signal) = watched.forever().next() {
+                heard(signal);
+                leave(signal);
+            }
+        });
+    match spawned {
+        Ok(thread) => Some(Interrupting {
+            handle,
+            thread: Some(thread),
+        }),
+        Err(error) => {
+            tracing::warn!(%error, "no signal thread; an interrupt may leave the terminal unechoed");
+            None
+        }
+    }
+}
+
 fn stop_the_pass(mut watched: Signals, cancel: &impl Fn()) {
     let mut told = false;
     for signal in watched.forever() {

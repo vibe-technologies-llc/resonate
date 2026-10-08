@@ -31,8 +31,9 @@ stream offer carries an `Opening` the poll opens only for the offer it takes, so
 race searches and an untaken offer costs nothing more
 (`a_search_is_answered_without_the_download_being_asked_for` in each hosted provider's tests,
 `an_offer_the_race_did_not_take_is_never_opened`). `Error::is_the_provider_away` marks provider (not
-want) errors: `Io`, `Unwelcome`, `StillQueued`, `Untrusted`, `Refused` 500+; `TurnedAway` and 404
-are the want's. **A file still arriving is neither miss nor provider away**: `StillArriving` counts
+want) errors: `Io`, `Unwelcome`, `StillQueued`, `Untrusted`, `NotTheService` (a page where the
+API's document was asked: `resonate_providers::is_a_page`, read by Subsonic and Monochrome),
+`Refused` 401, 403, 429 (an exhausted retry) and 500+; `TurnedAway` and 404 are the want's. **A file still arriving is neither miss nor provider away**: `StillArriving` counts
 `refused`, the want stays unstamped and due, the provider is still asked about the rest.
 
 - **`Delivery::File(PathBuf)`**: audio on disk, copied by the vault, left in place (a provider's
@@ -344,8 +345,10 @@ and Subsonic only where client id and refresh token are given (secret sent where
 - **Signed in from the window or `resonate tidal`.** `resonate_providers::SignsIn` is the seam,
   `TidalSignIn` its one implementation, handed to the window as `Lookups::signs_in` by
   `providers::signs_in`. The device flow polls every `interval` (at least `ASKED_EVERY_AT_LEAST`,
-  longer on `slow_down`) until a refresh token, `AuthorizationLapsed`, `AuthorizationDenied` or the
-  cancel (`Ok(None)`); `Debug` never prints the device code. The *A TIDAL account* group's *Sign in
+  longer on `slow_down` and on a 429) until a refresh token, `AuthorizationLapsed`,
+  `AuthorizationDenied` or the cancel (`Ok(None)`), asking again through an unreached server or a
+  500+ (`sign_in::Passing`, as RFC 8628 keeps polling;
+  `a_device_sign_in_asks_again_through_a_server_that_did_not_answer_this_time`); `Debug` never prints the device code. The *A TIDAL account* group's *Sign in
   to TIDAL* writes the token into the field, the global `Online` and `tidal-refresh-token`.
   `resonate tidal` is the same flow windowless (`providers::sign_in_to_tidal`): refuses with
   `OnlineOff` or `NoTidalClient` before asking, prints link and code, waits with the first

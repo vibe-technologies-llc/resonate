@@ -146,7 +146,7 @@ impl AutoEq {
             .text_of(LookupOp::Devices, INDEX_PATH, LARGEST_INDEX)
             .map_err(|error| self.refused(error, EqOp::Index))?;
 
-        let Some(text) = told else {
+        let Some(text) = told.filter(|text| !Catalogue::read(text).devices().is_empty()) else {
             return Err(resonate_eq::Error::Unreadable {
                 provider: self.source.clone(),
                 op: EqOp::Index,
@@ -165,10 +165,23 @@ impl AutoEq {
         let told = self
             .text_of(LookupOp::Correction, &path, LARGEST_PROFILE)
             .map_err(|error| self.refused(error, EqOp::Fetch))?;
+        if told
+            .as_deref()
+            .is_some_and(|text| !reads_as_a_correction(text))
+        {
+            return Err(resonate_eq::Error::Unreadable {
+                provider: self.source.clone(),
+                op: EqOp::Fetch,
+            });
+        }
 
         self.keep_profile(device, told.as_deref());
         Ok(told)
     }
+}
+
+fn reads_as_a_correction(text: &str) -> bool {
+    read_profile(text).is_ok_and(|profile| !profile.is_transparent())
 }
 
 pub(crate) fn parametric_path(device: &DeviceId) -> Option<String> {
@@ -213,6 +226,20 @@ mod tests {
 
     const INDEX: &str = include_str!("../tests/fixtures/autoeq_index.md");
     const PARAMETRIC_TEXT: &str = include_str!("../tests/fixtures/autoeq_parametric.txt");
+
+    #[test]
+    fn a_page_that_is_no_correction_is_not_read_as_one() {
+        assert!(reads_as_a_correction(PARAMETRIC_TEXT));
+        assert!(!reads_as_a_correction(
+            "<html><body>Sign in to the network to continue</body></html>"
+        ));
+        assert!(
+            Catalogue::read("<html><body>Sign in</body></html>")
+                .devices()
+                .is_empty()
+        );
+        assert!(!Catalogue::read(INDEX).devices().is_empty());
+    }
 
     #[test]
     fn a_captured_index_maps_to_the_devices_it_names() {

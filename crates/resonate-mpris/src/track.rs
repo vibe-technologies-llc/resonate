@@ -8,8 +8,8 @@ use resonate_core::{
     CivilDate, Frames, MediaLocation, PlaylistId, SECONDS_PER_DAY, TrackId, seconds_since_the_epoch,
 };
 use resonate_engine::{
-    Asleep, MediaInfo, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest, TagSet,
-    Until,
+    Asleep, LISTED_APART_BY, MediaInfo, PlaybackState, PlayerState, QueueItem, RepeatMode,
+    StreamDigest, TagSet, Until,
 };
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
@@ -329,6 +329,55 @@ fn absorb_plays(fields: &mut HashMap<String, OwnedValue>, heard: Option<Heard>) 
     if let Some(played) = heard.played {
         insert(fields, "xesam:lastUsed", utc_stamp(played));
     }
+    insert(
+        fields,
+        "xesam:userRating",
+        if heard.favourite {
+            FAVOURITE_RATING
+        } else {
+            UNRATED
+        },
+    );
+}
+
+const FAVOURITE_RATING: f64 = 1.0;
+const UNRATED: f64 = 0.0;
+const LEAST_MONTH: u32 = 1;
+const MOST_MONTH: u32 = 12;
+const LEAST_DAY: u32 = 1;
+const MOST_DAY: u32 = 31;
+
+fn listed(names: &str) -> Vec<String> {
+    names
+        .split(LISTED_APART_BY)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+pub(crate) fn iso_8601(date: &str) -> Option<String> {
+    let date = date.trim();
+    let digits = |from: usize, to: usize| -> Option<u32> {
+        let run = date.get(from..to)?;
+        run.bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| run.parse().ok())
+            .flatten()
+    };
+    let year = digits(0, 4)?;
+    let rest = date.get(4..).unwrap_or_default();
+    let parted = rest.starts_with(['-', '.', '/']);
+    let at = |field: usize| if parted { 5 + 3 * field } else { 4 + 2 * field };
+    let month = digits(at(0), at(0) + 2).filter(|month| (LEAST_MONTH..=MOST_MONTH).contains(month));
+    let day = month
+        .and_then(|_| digits(at(1), at(1) + 2))
+        .filter(|day| (LEAST_DAY..=MOST_DAY).contains(day));
+    Some(format!(
+        "{year:04}-{:02}-{:02}T00:00:00Z",
+        month.unwrap_or(LEAST_MONTH),
+        day.unwrap_or(LEAST_DAY)
+    ))
 }
 
 pub fn utc_stamp(at: SystemTime) -> String {
@@ -349,20 +398,23 @@ fn absorb_tags(fields: &mut HashMap<String, OwnedValue>, tags: &TagSet) {
     if let Some(title) = tags.title.as_ref() {
         insert(fields, "xesam:title", title.clone());
     }
-    if let Some(artist) = tags.artist.as_ref() {
-        insert(fields, "xesam:artist", vec![artist.clone()]);
+    if let Some(artist) = tags.artist.as_deref() {
+        insert(fields, "xesam:artist", listed(artist));
     }
     if let Some(album) = tags.album.as_ref() {
         insert(fields, "xesam:album", album.clone());
     }
-    if let Some(album_artist) = tags.album_artist.as_ref() {
-        insert(fields, "xesam:albumArtist", vec![album_artist.clone()]);
+    if let Some(album_artist) = tags.album_artist.as_deref() {
+        insert(fields, "xesam:albumArtist", listed(album_artist));
     }
-    if let Some(genre) = tags.genre.as_ref() {
-        insert(fields, "xesam:genre", vec![genre.clone()]);
+    if let Some(genre) = tags.genre.as_deref() {
+        insert(fields, "xesam:genre", listed(genre));
     }
-    if let Some(date) = tags.date.as_ref() {
-        insert(fields, "xesam:contentCreated", date.clone());
+    if let Some(created) = tags.date.as_deref().and_then(iso_8601) {
+        insert(fields, "xesam:contentCreated", created);
+    }
+    if let Some(lyrics) = tags.lyrics.as_ref() {
+        insert(fields, "xesam:asText", lyrics.clone());
     }
     if let Some(track) = tags
         .track_number
@@ -373,11 +425,11 @@ fn absorb_tags(fields: &mut HashMap<String, OwnedValue>, tags: &TagSet) {
     if let Some(disc) = tags.disc_number.and_then(|value| i32::try_from(value).ok()) {
         insert(fields, "xesam:discNumber", disc);
     }
-    if let Some(composer) = tags.credits.composer.as_ref() {
-        insert(fields, "xesam:composer", vec![composer.clone()]);
+    if let Some(composer) = tags.credits.composer.as_deref() {
+        insert(fields, "xesam:composer", listed(composer));
     }
-    if let Some(lyricist) = tags.credits.lyricist.as_ref() {
-        insert(fields, "xesam:lyricist", vec![lyricist.clone()]);
+    if let Some(lyricist) = tags.credits.lyricist.as_deref() {
+        insert(fields, "xesam:lyricist", listed(lyricist));
     }
     if let Some(comment) = tags.comment.as_ref() {
         insert(fields, "xesam:comment", vec![comment.clone()]);
@@ -405,6 +457,36 @@ mod tests {
     use std::time::UNIX_EPOCH;
 
     use super::*;
+
+    #[test]
+    fn a_date_is_offered_as_iso_8601_to_the_precision_it_was_written_and_nonsense_as_nothing() {
+        assert_eq!(iso_8601("1971").as_deref(), Some("1971-01-01T00:00:00Z"));
+        assert_eq!(iso_8601("1971-10").as_deref(), Some("1971-10-01T00:00:00Z"));
+        assert_eq!(
+            iso_8601("1971-10-30").as_deref(),
+            Some("1971-10-30T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("19711030").as_deref(),
+            Some("1971-10-30T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("1971.10.30 12:00").as_deref(),
+            Some("1971-10-30T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("1971-13-40").as_deref(),
+            Some("1971-01-01T00:00:00Z")
+        );
+        assert_eq!(iso_8601("Oct 1971"), None);
+        assert_eq!(iso_8601(""), None);
+    }
+
+    #[test]
+    fn names_a_tag_lists_apart_are_offered_apart() {
+        assert_eq!(listed("Ada; Ben"), vec!["Ada", "Ben"]);
+        assert_eq!(listed("Simon & Garfunkel"), vec!["Simon & Garfunkel"]);
+    }
 
     fn at(seconds: i64) -> SystemTime {
         let magnitude = Duration::from_secs(seconds.unsigned_abs());
@@ -598,6 +680,7 @@ mod tests {
             Some(Heard {
                 plays: 0,
                 played: None,
+                favourite: false,
             }),
         );
         assert_eq!(count(&never_played, "xesam:useCount"), Some(0));
@@ -612,6 +695,7 @@ mod tests {
             Some(Heard {
                 plays: 7,
                 played: Some(at(1_000_000_000)),
+                favourite: false,
             }),
         );
         assert_eq!(count(&played, "xesam:useCount"), Some(7));

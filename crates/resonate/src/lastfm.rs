@@ -6,7 +6,7 @@ use crate::{Result, config::Config};
 pub fn sign_in(config: &Config, settings: &Path, user: Option<&str>, forget: bool) -> Result<()> {
     use resonate_online::Application;
 
-    use crate::{Error, config, error::ConfigKey, input, online};
+    use crate::{Error, config, error::ConfigKey, input, online, signals};
 
     if forget {
         config::clear(settings, ConfigKey::LastfmSession)?;
@@ -31,7 +31,9 @@ pub fn sign_in(config: &Config, settings: &Path, user: Option<&str>, forget: boo
     };
 
     told!("type the Last.fm password for {user}, then enter:");
+    let leaving = signals::leave_when_told();
     let password = input::a_line_unechoed().map_err(|source| Error::ReadPassword { source })?;
+    drop(leaving);
     let session = match online::lastfm_signed_in(config, &application, user, &password) {
         Ok(session) => session,
         Err(resonate_library::Error::Refused { .. }) => return Err(Error::LastfmRefused),

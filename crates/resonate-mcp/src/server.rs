@@ -349,7 +349,14 @@ impl Server {
             return Err(Refusal::UnknownMethod(MethodName::new(method)));
         }
         let asked: Reading = parameters(method, params)?;
-        if Resource::at(&asked.uri).is_none() {
+        let held = match Resource::at(&asked.uri) {
+            Some(Resource::Playlist(name)) => {
+                matches!(self.library.playlist_named(name.as_str()), Ok(Some(_)))
+            }
+            Some(_) => true,
+            None => false,
+        };
+        if !held {
             return Err(Refusal::UnknownResource(ResourceUri::new(asked.uri)));
         }
         Ok(asked.uri)
@@ -426,7 +433,14 @@ impl Server {
                 let resource = Resource::at(&asked.uri).ok_or_else(|| {
                     Refusal::UnknownResource(ResourceUri::new(asked.uri.as_str()))
                 })?;
-                let read = resource.read(&self.library, &*self.players, &self.passes)?;
+                let read = match resource.read(&self.library, &*self.players, &self.passes) {
+                    Err(Error::NoSuchPlaylist(_)) => {
+                        return Err(
+                            Refusal::UnknownResource(ResourceUri::new(asked.uri.as_str())).into(),
+                        );
+                    }
+                    read => read?,
+                };
                 Ok(Resource::contents(&asked.uri, &read))
             }
             RESOURCES_SUBSCRIBE => {

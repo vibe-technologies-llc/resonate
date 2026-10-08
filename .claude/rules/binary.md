@@ -82,7 +82,15 @@ gives them no type). Decoders: `audio.md`.
   warning). `RESONATE_LOG` goes through `EnvFilter::try_new`; unparsable warns and falls back to
   `DEFAULT_LOG` (the one setting where silent fallback would hide the diagnostics sought).
 - **`play` with nothing to play exits 1** (`NoFileNamed`, `NothingPlayableNamed`), no empty
-  transport.
+  transport; nor does a queue that ran out with every track failed and none started
+  (`Played`, `Error::NothingPlayed`; a signal or `q` ending it early is no failure). A key whose
+  command fails ends the loop through the same farewell (last play counted, presenter and submitter
+  left) before the error is answered. **It names what plays**: `readout::billing` = the digest's
+  title and artist where it is the row's, else the file's stem, said on start, finish and failure
+  and drawn at the readout's end.
+- **A password prompt restores the terminal on a signal.** `resonate lastfm` reads the password
+  under `signals::leave_when_told`: the first interrupt leaves through `signals::leave`, echo back
+  on.
 - **`play` takes a key at a time on a terminal.** `input::KeyAtATime` leaves canonical mode and
   echo via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
@@ -174,6 +182,8 @@ Defaults and meanings: `config.rs` and `views/settings/`; below are the decision
   default 0. Both in Settings → Filters, change listings at once, keep excluded rows and files (no
   rescan to undo); they do not restrict explicit playback or file operations; a positive minimum
   passes over rows of unknown length.
+- **A path key reads blank as unset and `~` as the home folder** (`config::a_path`: `library`,
+  `vault`, `inbox`, `music-folder`, `convolution`); `~name` stays as written.
 - `music-folder`: the one ordinary folder new songs are copied into (drops: `ui.md`, `library.md`'s
   *Taking files in*; a provider's delivery with no vault open: `providers.md`), filed by
   `organise-as` when `file-dropped` is on; never the vault. Choosing stores the canonical path,

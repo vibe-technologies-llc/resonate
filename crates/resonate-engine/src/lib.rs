@@ -27,9 +27,9 @@ pub use resonate_analysis::{
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,
-    FormatHint, Hinting, ImageFormat, LocalFiles, Media, MediaInfo, MediaProvider, MediaStream,
-    PacketSpan, Packing, Percentiles, Raster, Reading, ReplayGain, Sources, StreamProfile, TagSet,
-    TopLevelBox, Variability, WINDOW,
+    FormatHint, Hinting, ImageFormat, LISTED_APART_BY, LocalFiles, Media, MediaInfo, MediaProvider,
+    MediaStream, PacketSpan, Packing, Percentiles, Raster, Reading, ReplayGain, Sources,
+    StreamProfile, TagSet, TopLevelBox, Variability, WINDOW,
 };
 pub use resonate_core::{
     Locator, MediaLocation, Resumable, Resumption, SourceId, Span,

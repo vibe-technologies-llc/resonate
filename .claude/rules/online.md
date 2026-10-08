@@ -40,7 +40,9 @@ counted play), only under a token or a session the listener signed in for.
   `Followed` reads only the `contact` key (`config::contact_in`), only where the config file's mtime
   moved, keeping what was said where the key will not read. `Client::reach` is a switch `exchange`
   reads before taking a turn: off, `Error::Offline` with nothing sent; `Setting::Online` stored in
-  the window calls `online::reach`, so *Reach the network* off stops every service. Every seam's
+  the window calls `online::reach`, so *Reach the network* off stops every service. The binary
+  keeps the switch in `online::REACHING` too, set on the process client every time it is handed
+  out, so a switch turned off before the client was first made still holds. Every seam's
   error reads `Offline` as `NetworkDown`.
 - **Pacing reserves a slot (no sleep after a call), one queue per process.** `Client::pace`
   reserves from a `Pacing` (`BTreeMap<Host, Instant>` behind a `parking_lot::Mutex`): next slot =
@@ -403,7 +405,9 @@ condition; `lyricists` = `Lyricists::local_choosing_by_the_locale` + an `Lrclib`
 the library where there is one, so the catalog keeps what each fetched); `fingerprinters` and
 `recognisers` register the printers and recognisers above. `reference_asked_for` and
 `corrections_asked_for` = the same two or `Error::OnlineOff` (the second asks
-`Corrected::has_a_source`, not the key again). Without the feature the twins answer `None`,
+`Corrected::has_a_source`, not the key again). **An AutoEq answer is kept only once it reads**:
+an index naming no device, or a profile `read_profile` makes no correction of (a captive portal's
+page), is `Unreadable`, never cached for the index's 30 days or a device's 90. Without the feature the twins answer `None`,
 `Error::NoReference`, `Corrected::uncorrected()` and the stubs, so `main.rs` reads the same names
 either way. All is built over the one `Arc<Client>` in `online::CLIENT` (made on first use over
 `INTRODUCTION`; `online::YIELDING` holds its yielding twin): one agent and its connections per

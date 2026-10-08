@@ -900,7 +900,14 @@ impl Tool {
         let asked: Dropped = self.taken(arguments)?;
         let dropping = match (asked.row, asked.through_row, asked.matching) {
             (Some(row), through, None) => {
-                Dropping::Rows(Span::between(row, through.unwrap_or(row)))
+                let through = through.unwrap_or(row);
+                if through < row {
+                    return Err(Refusal::OutOfRange {
+                        tool: self,
+                        field: "through_row",
+                    });
+                }
+                Dropping::Rows(Span::between(row, through))
             }
             (None, None, Some(matching)) => Dropping::Matching(matching),
             _ => {

@@ -1,6 +1,7 @@
 use std::{io, time::Duration};
 
-use resonate_engine::{Asleep, PlaybackState, PlayerState, RepeatMode, TrackState, Until};
+use resonate_core::TrackId;
+use resonate_engine::{Asleep, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until};
 use unicode_width::UnicodeWidthChar as _;
 
 const CLEAR_THE_LINE: &str = "\r\x1b[K";
@@ -37,12 +38,17 @@ impl Readout {
         }
     }
 
-    pub fn draw(&mut self, state: &PlayerState) {
+    pub fn draw(&mut self, player: &Player) {
         if !self.live {
             return;
         }
+        let state = player.state();
+        let billed = state
+            .current
+            .map(|current| billing(player, current.id))
+            .unwrap_or_default();
         crate::said::raw(CLEAR_THE_LINE);
-        let line = line_of(state, &self.typing);
+        let line = line_of(&state, &billed, &self.typing);
         let shown = match columns() {
             Some(columns) => within(&line, columns.saturating_sub(LEFT_FOR_THE_CARET)),
             None => line,
@@ -53,7 +59,29 @@ impl Readout {
     }
 }
 
-pub fn line_of(state: &PlayerState, typing: &str) -> String {
+pub fn billing(player: &Player, track: TrackId) -> String {
+    if let Some(digest) = player.digest().filter(|digest| digest.track == track) {
+        let tags = &digest.info.tags;
+        match (tags.title.as_deref(), tags.artist.as_deref()) {
+            (Some(title), Some(artist)) => return format!("{title} — {artist}"),
+            (Some(title), None) => return title.to_owned(),
+            _ => {}
+        }
+    }
+    player
+        .queue()
+        .iter()
+        .find(|row| row.id == track)
+        .and_then(|row| {
+            row.location
+                .as_path()?
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| format!("track {track}"))
+}
+
+pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
     let mut line = format!(
         "{} {}  vol {:.0}%",
         glyph(state.playback),
@@ -71,6 +99,10 @@ pub fn line_of(state: &PlayerState, typing: &str) -> String {
     if let Some(asleep) = state.sleeping {
         line.push_str("  ");
         line.push_str(&sleeping(asleep));
+    }
+    if !billed.is_empty() {
+        line.push_str("  ");
+        line.push_str(billed);
     }
     if !typing.is_empty() {
         line.push_str("  > ");
@@ -174,12 +206,12 @@ mod tests {
 
     #[test]
     fn the_readout_says_where_the_track_is_and_how_loud() {
-        assert_eq!(line_of(&playing(83, 296), ""), "▶ 1:23 / 4:56  vol 80%");
+        assert_eq!(line_of(&playing(83, 296), "", ""), "▶ 1:23 / 4:56  vol 80%");
         assert_eq!(
-            line_of(&playing(3_725, 4_000), ""),
+            line_of(&playing(3_725, 4_000), "", ""),
             "▶ 1:02:05 / 1:06:40  vol 80%"
         );
-        assert_eq!(line_of(&PlayerState::default(), ""), "■ -:--  vol 100%");
+        assert_eq!(line_of(&PlayerState::default(), "", ""), "■ -:--  vol 100%");
     }
 
     #[test]
@@ -195,7 +227,7 @@ mod tests {
         };
 
         assert_eq!(
-            line_of(&state, ":z tr"),
+            line_of(&state, "", ":z tr"),
             "▶ 0:00 / 1:00  vol 80%  shuffle  repeat queue  sleep in 12:34  > :z tr"
         );
     }

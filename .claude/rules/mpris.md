@@ -54,7 +54,8 @@ id, so play-order positions never reach a client)
   and dropped, not owed forever. A cover, and a `TrackAdded` that missed `ANNOUNCE_BUDGET`
   (100 ms), are owed likewise. A row leaving the queue is forgotten (owed bounded by the queue).
 - **A method does what the spec says, including nothing.** `SetPosition` before start, past end or
-  for another track: ignored. `Seek` past end = `Next`. Offsets via `unsigned_abs` (`i64::MIN`
+  for another track: ignored. `Seek` and `SetPosition` where `CanSeek` is false: ignored (a large
+  forward seek on a stream that cannot seek once skipped the track). `Seek` past end = `Next`. Offsets via `unsigned_abs` (`i64::MIN`
   saturates). `SetRate(0.0)` pauses. `Next` and `Previous` do nothing where `CanGoNext` /
   `CanGoPrevious` say false (`service::can_go_next`, `can_go_previous`, one arithmetic for both
   property and method), so the last row of a non-repeating queue is not ended and a lone first row
@@ -67,6 +68,12 @@ id, so play-order positions never reach a client)
 
 ## What the metadata carries
 
+- **Fields are the spec's shapes, not the tags' text.** `xesam:contentCreated` is ISO 8601
+  (`track::iso_8601`: a tag's year, year-month or date, parted or not, written
+  `YYYY-MM-DDT00:00:00Z`; a month or day out of range falls to the first; no leading year, no
+  field). Artist, album artist, genre, composer and lyricist are lists, a tag's values split on
+  `LISTED_APART_BY` (re-exported by the engine). `xesam:userRating` is 1 for a catalog favourite, 0
+  for another catalog row (`Heard::favourite`), absent with no row; `xesam:asText` the tag's words.
 - **Covers.** `mpris:artUrl` wants a URI: `art::Pictures` lays the playing cover under
   `resonate-art-<pid>-<n>/` in `$XDG_RUNTIME_DIR` (temp dir if unset/relative), named by a digest of
   its bytes (an album's tracks share a file; same-size existing file reused). Folder 0700 via a
@@ -186,7 +193,8 @@ as domain values (`Seeking`, `TrackId`).
   next and heard now, raises it and leaves (else a second window, engine and stream write the same
   resumption). Headless `resonate play` can't raise. The name is claimed only after the engine
   starts, so `starting::one_window_at_a_time` takes an exclusive lock on `resonate-starting.lock`
-  under `$XDG_RUNTIME_DIR` before asking the bus and holds it until `Mpris::start` claimed the
+  under `$XDG_RUNTIME_DIR` (none: `resonate-starting-<uid>.lock` in the temp folder, so another
+  user's lock never stalls a launch) before asking the bus and holds it until `Mpris::start` claimed the
   name; a second launch waits at most `WAITS_AT_MOST` (15 s) for a wedged first; an untakeable lock
   starts the window as before.
 - **A player is chosen by name; one reading of the bus serves every way of choosing.** `ours` =

@@ -2088,6 +2088,7 @@ fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
         Heard {
             plays: 3,
             played: None,
+            favourite: false,
         },
     );
     harness.load_all(std::slice::from_ref(&counted));
@@ -2105,6 +2106,7 @@ fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
         Heard {
             plays: 4,
             played: Some(UNIX_EPOCH + Duration::from_secs(2_000_000_000)),
+            favourite: false,
         },
     );
 
@@ -2137,6 +2139,7 @@ fn what_the_catalog_has_counted_reaches_the_bus_as_a_use_count_and_a_date() {
         Heard {
             plays: 12,
             played: Some(UNIX_EPOCH + Duration::from_secs(1_000_000_000)),
+            favourite: false,
         },
     );
     harness.remember(
@@ -2145,6 +2148,7 @@ fn what_the_catalog_has_counted_reaches_the_bus_as_a_use_count_and_a_date() {
         Heard {
             plays: 0,
             played: None,
+            favourite: false,
         },
     );
 
@@ -2220,6 +2224,7 @@ fn two_rows_cut_out_of_one_file_are_counted_apart() {
         Heard {
             plays: 7,
             played: None,
+            favourite: false,
         },
     );
     harness.remember(
@@ -2228,6 +2233,7 @@ fn two_rows_cut_out_of_one_file_are_counted_apart() {
         Heard {
             plays: 3,
             played: None,
+            favourite: false,
         },
     );
 

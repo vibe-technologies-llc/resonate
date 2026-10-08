@@ -174,6 +174,7 @@ impl Host for Desktop {
             Ok(track) => track.map(|track| Heard {
                 plays: track.plays,
                 played: track.played,
+                favourite: track.favourite.is_some(),
             }),
             Err(error) => {
                 tracing::debug!(%error, "a play count asked for on the session bus could not be read");

@@ -57,7 +57,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   107 dB lower, -18 LUFS = no change; outside 60-120 dB ignored). Neither declared: iTunes Sound
   Check (`iTunNORM`; ID3 `COMM` note, MP4 free-form item from box scan; ten fields; gain = louder
   of first two as `-10*log10(v/1000)` dB, peak = louder of fields 7/8 over 32 768), then LAME
-  header radio/audiophile gains (`mpa::encoder_gain`, set ones only, peak 8.23 fixed point).
+  header radio/audiophile gains (`mpa::encoder_gain`, set ones only, peak 8.23 fixed point, read
+  only where the tag after the `Xing`/`Info` note names an encoder in `LAME_ENCODERS`: whatever
+  bytes follow a bare Xing header are no gain).
   Tag-declared peaks stand beside a fallback's gain
   (`a_gain_aimed_at_another_reference_is_heard_against_ours_and_kept_as_written`,
   `sound_check_levels_a_track_naming_no_replay_gain_and_never_one_that_does`,
@@ -353,7 +355,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   frame whose segmentation is not the reference encoder's is refused as FFmpeg refuses it); tests
   carry their own encoder.
 - **An undecodable packet plays as the silence it would have lasted.** `DecodeError` gives `fill`
-  the packet's length via its `PacketSpan`; frames marked `silent`: stream keeps its length,
+  the packet's length via its `PacketSpan` (one declaring no length lasts as long as the last packet
+  that decoded, `Coded::last_lasted`, rather than being dropped and pulling every later sample
+  early); frames marked `silent`: stream keeps its length,
   position its clock, handed out at most `SILENCE_HANDED_OUT_AT_ONCE` (8 192) frames a block, so a
   packet declaring hours costs blocks, not a buffer that long. **Holes are counted; all-holes streams refused:** `Decoder::holes` answers a
   `Holes`; `SILENT_PACKETS_BEFORE_REFUSING` failures with no packet ever decoded =

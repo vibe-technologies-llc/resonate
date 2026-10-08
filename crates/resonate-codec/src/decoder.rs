@@ -360,6 +360,7 @@ struct Coded {
     silent: bool,
     holes: Holes,
     sounded: bool,
+    last_lasted: Frames,
     undecodable: Undecodable,
     ahead: Option<Packet>,
     trailing: usize,
@@ -551,6 +552,7 @@ impl Decoder {
                         silent: false,
                         holes: Holes::default(),
                         sounded: false,
+                        last_lasted: Frames::ZERO,
                         undecodable: Undecodable::default(),
                         ahead: None,
                         trailing: padding_past_an_open_window(&info),
@@ -852,9 +854,18 @@ impl Decoder {
                         });
                     }
                     coded.sounded = true;
+                    coded.last_lasted = Frames(decoded.frames() as u64);
                     (decoded.frames(), false)
                 }
                 Err(errors::Error::DecodeError(reason)) => {
+                    let span = if span.frames == Frames::ZERO {
+                        PacketSpan {
+                            frames: coded.last_lasted,
+                            ..span
+                        }
+                    } else {
+                        span
+                    };
                     coded.holes = coded.holes.noted(span.frames);
                     let refused = coded.undecodable == Undecodable::Refused
                         || (!coded.sounded

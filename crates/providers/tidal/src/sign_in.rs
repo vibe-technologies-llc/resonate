@@ -28,6 +28,8 @@ const ASKED_EVERY_WHEN_UNSAID: Duration = Duration::from_secs(2);
 const LARGEST_ANSWER: u64 = 64 * 1024;
 const BAD_REQUEST: u16 = 400;
 const UNAUTHORISED: u16 = 401;
+const TOO_MANY_REQUESTS: u16 = 429;
+const SERVER_ERRORS_FROM: u16 = 500;
 const SECURE: &str = "https://";
 
 #[derive(Deserialize)]
@@ -170,6 +172,26 @@ impl TidalSignIn {
     }
 }
 
+enum Passing {
+    SlowDown,
+    Again(Error),
+    Ended(Error),
+}
+
+impl Passing {
+    fn of(error: Error) -> Self {
+        match error {
+            Error::Refused {
+                status: TOO_MANY_REQUESTS,
+                ..
+            } => Self::SlowDown,
+            Error::Refused { status, .. } if status >= SERVER_ERRORS_FROM => Self::Again(error),
+            Error::Io { .. } => Self::Again(error),
+            error => Self::Ended(error),
+        }
+    }
+}
+
 fn waited(every: Duration, until: Instant, cancelled: &(dyn Fn() -> bool + Sync)) -> bool {
     let next = Instant::now().checked_add(every).unwrap_or(until);
     while Instant::now() < next.min(until) {
@@ -233,10 +255,14 @@ impl SignsIn for TidalSignIn {
                     provider: self.source.clone(),
                 });
             }
-            match self.asked(client, authorizing)? {
-                Answered::Granted(token) => return Ok(Some(token)),
-                Answered::Pending => {}
-                Answered::SlowDown => every += SLOWED_BY,
+            match self.asked(client, authorizing).map_err(Passing::of) {
+                Ok(Answered::Granted(token)) => return Ok(Some(token)),
+                Ok(Answered::Pending) => {}
+                Ok(Answered::SlowDown) | Err(Passing::SlowDown) => every += SLOWED_BY,
+                Err(Passing::Again(error)) => {
+                    tracing::debug!(%error, "TIDAL's sign-in did not answer this time; asking again");
+                }
+                Err(Passing::Ended(error)) => return Err(error),
             }
         }
     }

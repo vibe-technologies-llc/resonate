@@ -7,7 +7,7 @@ use std::{fmt::Write as _, sync::Arc, time::Duration};
 use resonate_core::{Isrc, SourceId};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
-    Result,
+    Result, is_a_page,
 };
 use serde::Deserialize;
 use ureq::{
@@ -308,7 +308,14 @@ impl Monochrome {
             .map(|searched| searched.tracks)
             .map_err(|error| {
                 tracing::debug!(%error, "a Monochrome search answer was not the document expected");
-                self.unreadable(ProviderOp::Search)
+                if is_a_page(bytes) {
+                    Error::NotTheService {
+                        provider: self.source.clone(),
+                        op: ProviderOp::Search,
+                    }
+                } else {
+                    self.unreadable(ProviderOp::Search)
+                }
             })
     }
 
@@ -456,10 +463,18 @@ mod tests {
     }
 
     #[test]
-    fn a_search_answer_that_is_not_the_document_expected_is_unreadable() {
+    fn a_search_answer_that_is_not_the_document_expected_is_unreadable_and_a_page_the_server_away()
+    {
+        assert!(matches!(
+            Monochrome::hosted().read(br#"{"tracks": 7}"#),
+            Err(Error::Unreadable {
+                op: ProviderOp::Search,
+                ..
+            })
+        ));
         assert!(matches!(
             Monochrome::hosted().read(b"<html>busy</html>"),
-            Err(Error::Unreadable {
+            Err(Error::NotTheService {
                 op: ProviderOp::Search,
                 ..
             })

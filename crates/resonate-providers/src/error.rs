@@ -59,6 +59,9 @@ pub enum Error {
     )]
     Untrusted { provider: SourceId, op: ProviderOp },
 
+    #[error("{op:?} was answered with a page rather than the {provider} provider's own answer")]
+    NotTheService { provider: SourceId, op: ProviderOp },
+
     #[error("{file:?} is still arriving in the {provider} provider and is asked for again later")]
     StillArriving { provider: SourceId, file: PathBuf },
 
@@ -73,6 +76,11 @@ pub enum Error {
 }
 
 const SERVER_TROUBLE: u16 = 500;
+const TURNED_AWAY_WHOEVER_ASKS: [u16; 3] = [401, 403, 429];
+
+pub fn is_a_page(bytes: &[u8]) -> bool {
+    bytes.trim_ascii_start().first() == Some(&b'<')
+}
 
 impl Error {
     pub fn is_the_provider_away(&self) -> bool {
@@ -80,8 +88,11 @@ impl Error {
             Self::Io { .. }
             | Self::Unwelcome { .. }
             | Self::StillQueued { .. }
-            | Self::Untrusted { .. } => true,
-            Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
+            | Self::Untrusted { .. }
+            | Self::NotTheService { .. } => true,
+            Self::Refused { status, .. } => {
+                *status >= SERVER_TROUBLE || TURNED_AWAY_WHOEVER_ASKS.contains(status)
+            }
             Self::Unreadable { .. }
             | Self::TurnedAway { .. }
             | Self::OffItsHosts { .. }
@@ -133,6 +144,15 @@ mod tests {
             op: ProviderOp::Playback,
         };
         let untrusted = Error::Untrusted {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+        };
+        let refused_whoever_asks = [401, 403, 429].map(|status| Error::Refused {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            status,
+        });
+        let a_page = Error::NotTheService {
             provider,
             op: ProviderOp::Search,
         };
@@ -144,6 +164,10 @@ mod tests {
         assert!(unwelcome.is_the_provider_away());
         assert!(queued.is_the_provider_away());
         assert!(untrusted.is_the_provider_away());
+        assert!(refused_whoever_asks.iter().all(Error::is_the_provider_away));
+        assert!(a_page.is_the_provider_away());
+        assert!(is_a_page(b"\n  <!DOCTYPE html><html>"));
+        assert!(!is_a_page(br#"{"subsonic-response":{}}"#));
     }
 
     #[test]

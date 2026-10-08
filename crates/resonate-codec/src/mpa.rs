@@ -46,6 +46,7 @@ const XING_FIELDS: [(u8, u64); 4] = [
 ];
 const LAME_TAG_BYTES: usize = 19;
 const LAME_PEAK_AT: usize = 11;
+const LAME_ENCODERS: [&[u8]; 5] = [b"LAME", b"Lavc", b"Lavf", b"GOGO", b"L3.99"];
 const LAME_GAINS_AT: [usize; 2] = [15, 17];
 const LAME_PEAK_FULL_SCALE: f32 = 8_388_608.0;
 const LAME_TRACK_GAIN: u16 = 0b001;
@@ -245,6 +246,12 @@ fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
         .map(|(_, bytes)| bytes)
         .sum();
     let lame = bytes_at::<LAME_TAG_BYTES, S>(source, xing_at + XING_NOTE_BYTES + fields)?;
+    if !LAME_ENCODERS
+        .iter()
+        .any(|encoder| lame.starts_with(encoder))
+    {
+        return None;
+    }
 
     let peak = u32::from_be_bytes(lame.get(LAME_PEAK_AT..LAME_PEAK_AT + 4)?.try_into().ok()?);
     let mut gain = ReplayGain {
@@ -473,6 +480,14 @@ mod tests {
         assert_eq!(gain.track_gain.map(Decibels::get), Some(-6.5));
         assert_eq!(gain.track_peak, Some(0.5));
         assert_eq!(gain.album_gain, None, "an unset audiophile gain was read");
+
+        let mut unnamed = file.clone();
+        unnamed[lame..lame + 9].copy_from_slice(&[0x55; 9]);
+        assert_eq!(
+            encoder_gain(&mut Cursor::new(unnamed)),
+            ReplayGain::default(),
+            "bytes after a Xing header no encoder named were read as its gains"
+        );
 
         file[lame + 15..lame + 17].copy_from_slice(&0_u16.to_be_bytes());
         assert_eq!(encoder_gain(&mut Cursor::new(file)).track_gain, None);

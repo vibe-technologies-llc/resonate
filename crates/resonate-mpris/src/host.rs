@@ -12,6 +12,7 @@ pub enum Opened {
 pub struct Heard {
     pub plays: u32,
     pub played: Option<SystemTime>,
+    pub favourite: bool,
 }
 
 pub trait Host: Send + Sync + 'static {

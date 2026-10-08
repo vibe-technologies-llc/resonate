@@ -231,6 +231,9 @@ impl PlayerInterface {
         let Some(current) = self.shared.player.state().current else {
             return Ok(());
         };
+        if !self.can_seek() {
+            return Ok(());
+        }
         let delta = micros_to_frames_signed(offset, current.source.rate.hz());
         if reaches_past_the_end(&current, delta) {
             return self.shared.settle(Command::Next);
@@ -243,7 +246,7 @@ impl PlayerInterface {
         let Some(current) = state.current else {
             return Ok(());
         };
-        if track_id.as_str() != track_path(current.id).as_str() {
+        if track_id.as_str() != track_path(current.id).as_str() || !self.can_seek() {
             return Ok(());
         }
         let Ok(position) = u64::try_from(position) else {

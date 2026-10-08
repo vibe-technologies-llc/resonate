@@ -19,10 +19,13 @@ pub(crate) fn one_window_at_a_time() -> Option<Starting> {
 }
 
 fn lock_path() -> PathBuf {
-    env::var_os("XDG_RUNTIME_DIR")
-        .filter(|dir| !dir.is_empty())
-        .map_or_else(env::temp_dir, PathBuf::from)
-        .join(LOCK_NAME)
+    match env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
+        Some(runtime) => PathBuf::from(runtime).join(LOCK_NAME),
+        None => env::temp_dir().join(format!(
+            "resonate-starting-{}.lock",
+            rustix::process::getuid().as_raw()
+        )),
+    }
 }
 
 fn taken(path: &Path, waits_at_most: Duration) -> Option<Starting> {

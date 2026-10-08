@@ -7,7 +7,7 @@ mod sign_in;
 
 pub use crate::{
     delivery::{Delivered, Delivery, Extension, Obtained, Opened, Opening},
-    error::{Error, ProviderOp, Result},
+    error::{Error, ProviderOp, Result, is_a_page},
     identity::Identity,
     pacing::Pacing,
     provider::{

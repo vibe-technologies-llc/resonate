@@ -1,6 +1,11 @@
 use std::sync::{Arc, atomic::AtomicBool};
 #[cfg(feature = "online")]
-use std::{fs, path::PathBuf, sync::OnceLock, time::SystemTime};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{OnceLock, atomic::Ordering},
+    time::SystemTime,
+};
 
 #[cfg(feature = "online")]
 use parking_lot::Mutex;
@@ -33,6 +38,9 @@ static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
 #[cfg(feature = "online")]
 static YIELDING: OnceLock<Arc<Client>> = OnceLock::new();
 
+#[cfg(feature = "online")]
+static REACHING: AtomicBool = AtomicBool::new(true);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Asking {
     ForTheListener,
@@ -49,7 +57,9 @@ fn identity(contact: Option<String>) -> Identity {
 
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    Arc::clone(CLIENT.get_or_init(|| Arc::new(Client::introduced(introduction(config).clone()))))
+    let client = CLIENT.get_or_init(|| Arc::new(Client::introduced(introduction(config).clone())));
+    client.reach(REACHING.load(Ordering::Relaxed));
+    Arc::clone(client)
 }
 
 #[cfg(feature = "online")]
@@ -121,6 +131,7 @@ pub fn introduce(_contact: Option<&str>) {}
 
 #[cfg(all(feature = "online", feature = "ui"))]
 pub fn reach(on: bool) {
+    REACHING.store(on, Ordering::Relaxed);
     if let Some(client) = CLIENT.get() {
         client.reach(on);
     }

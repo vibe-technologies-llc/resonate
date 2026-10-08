@@ -773,6 +773,34 @@ fn a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token() {
 }
 
 #[test]
+fn a_device_sign_in_asks_again_through_a_server_that_did_not_answer_this_time() {
+    let fake = Fake::serving(|asked, before, _| {
+        let asked_already = before
+            .iter()
+            .filter(|earlier| earlier.path == "/auth/token")
+            .count();
+        match (asked.path.as_str(), asked_already) {
+            ("/auth/device", _) => device_code(),
+            ("/auth/token", 0) => Canned::refused(503, "{}"),
+            ("/auth/token", 1) => Canned::refused(502, "<html>bad gateway</html>"),
+            ("/auth/token", _) => Canned::json(
+                r#"{"access_token":"fresh-access","refresh_token":"fresh-refresh","expires_in":604800}"#,
+            ),
+            _ => Canned::refused(404, "{}"),
+        }
+    });
+    let signing_in = fake.signing_in();
+    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+
+    let token = signing_in
+        .authorized(&client(), &authorizing, &never)
+        .expect("an answer through the servers' bad moments")
+        .expect("not cancelled");
+
+    assert_eq!(token.into_string(), "fresh-refresh");
+}
+
+#[test]
 fn a_device_sign_in_turned_down_or_left_to_lapse_says_which() {
     let denied = Fake::serving(|asked, _, _| match asked.path.as_str() {
         "/auth/device" => device_code(),

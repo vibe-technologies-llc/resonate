@@ -778,8 +778,8 @@ impl Config {
         let config = self;
         match at.key {
             ConfigKey::Sink => config.sink = Some(NodeName::new(at.string(value)?)),
-            ConfigKey::Library => config.library = Some(PathBuf::from(at.string(value)?)),
-            ConfigKey::Vault => config.vault = Some(PathBuf::from(at.string(value)?)),
+            ConfigKey::Library => config.library = a_path(at.string(value)?),
+            ConfigKey::Vault => config.vault = a_path(at.string(value)?),
             ConfigKey::Quality => config.quality = Some(at.one_of(value, quality)?),
             ConfigKey::FilterPhase => {
                 config.filter_phase = Some(at.one_of(value, filter_phase)?);
@@ -847,10 +847,8 @@ impl Config {
                 let seconds = at.within(value, &LISTENS_FOR_SECONDS)?;
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
-            ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
-            ConfigKey::MusicFolder => {
-                config.music_folder = given(at.string(value)?).map(PathBuf::from);
-            }
+            ConfigKey::Inbox => config.inbox = a_path(at.string(value)?),
+            ConfigKey::MusicFolder => config.music_folder = a_path(at.string(value)?),
             ConfigKey::MusicExtensions => {
                 let array = value
                     .as_array()
@@ -874,9 +872,7 @@ impl Config {
                 );
             }
             ConfigKey::FileDropped => config.file_dropped = Some(at.boolean(value)?),
-            ConfigKey::Convolution => {
-                config.convolution = given(at.string(value)?).map(PathBuf::from);
-            }
+            ConfigKey::Convolution => config.convolution = a_path(at.string(value)?),
             ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
             ConfigKey::SubsonicPassword => {
@@ -1311,6 +1307,22 @@ fn given(text: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_owned())
 }
 
+const HOME: &str = "~";
+
+fn a_path(text: &str) -> Option<PathBuf> {
+    let text = given(text)?;
+    let under_home = match text.strip_prefix(HOME) {
+        Some("") => Some(""),
+        Some(rest) => rest.strip_prefix('/'),
+        None => None,
+    };
+    let home = env::var_os("HOME").filter(|home| !home.is_empty());
+    match (under_home, home) {
+        (Some(rest), Some(home)) => Some(PathBuf::from(home).join(rest)),
+        _ => Some(PathBuf::from(text)),
+    }
+}
+
 fn layout(text: &str) -> Option<Layout> {
     Layout::read(text).ok()
 }
@@ -1557,6 +1569,32 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn a_blank_path_is_the_default_and_a_leading_tilde_is_the_home_folder() {
+        let config = read(
+            r#"
+            library = ""
+            vault = "  "
+            music-folder = "~/Music"
+            inbox = "~"
+            convolution = "~elsewhere/room.wav"
+            "#,
+        )
+        .expect("a well formed document");
+        let home = env::var_os("HOME").map(PathBuf::from);
+
+        assert_eq!(config.library, None);
+        assert_eq!(config.vault, None);
+        assert_eq!(
+            config.convolution,
+            Some(PathBuf::from("~elsewhere/room.wav"))
+        );
+        if let Some(home) = home {
+            assert_eq!(config.music_folder, Some(home.join("Music")));
+            assert_eq!(config.inbox, Some(home));
+        }
     }
 
     #[test]

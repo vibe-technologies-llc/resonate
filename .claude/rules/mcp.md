@@ -24,7 +24,8 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   with `isError` and the whole `source` chain as text; `Tool::run` returns `Result<Result<Value>,
   Refusal>` to keep them apart. Resources/prompts have no `isError`: a failed read is JSON-RPC
   `InternalError` with the same chain (`Unanswered`); a URI naming no resource is
-  `Refusal::UnknownResource`, spec `-32002`.
+  `Refusal::UnknownResource`, spec `-32002`, as is a playlist resource naming no playlist (read or
+  subscribed: the template answers any name, the catalog decides).
 - **Never answered**: notifications, messages with `result`/`error` (no requests of its own). **A
   batch gets one array**, in order, whatever version was negotiated; empty = `Refusal::EmptyBatch`.
 - `initialize` echoes the asked version if in `PROTOCOLS`, else the latest.
@@ -91,8 +92,9 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   stacks are this process's: a model's change is not on the window's *Undo*, though a window beside
   the session draws it (`Library::written_elsewhere`).
 - **A playlist row is named by position**: `playlist_tracks` answers each `row`;
-  `remove_from_playlist` takes `row`..`through_row` (one `Span`, statement and undo step) or every
-  row a search matches; past the end = `Error::NotInThePlaylist`. **Only rows asked for are read**:
+  `remove_from_playlist` takes `row`..`through_row` (one `Span`, statement and undo step; a
+  `through_row` before `row` is `Refusal::OutOfRange`, never the range turned round) or every row a
+  search matches; past the end = `Error::NotInThePlaylist`. **Only rows asked for are read**:
   `Library::playlist_entries_within` puts the limit in `LIMIT` (a saved query's cap lowered to it),
   counts `matched` separately, so a hundred-thousand-row or self-filling playlist costs a few
   hundred. The resource list uses `Library::playlist_names`, no row counted (read every tick).
