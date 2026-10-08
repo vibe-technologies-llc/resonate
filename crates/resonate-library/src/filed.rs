@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs,
     io::{self, Read, Write},
     num::NonZeroU32,
     path::{Path, PathBuf},
@@ -11,7 +11,7 @@ use std::{
 use resonate_codec::{
     DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
 };
-use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming};
+use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming, writer::Held};
 
 use crate::{
     Error, Library, Want,
@@ -103,9 +103,10 @@ pub(crate) fn filed(
 
     let staged = staged_beside(&whole);
     library.staging(&staged).map_err(Unfiled::Catalog)?;
-    let landed = staged_from(reader, &staged).and_then(|()| placed(&staged, &whole));
+    let landed = staged_from(reader, &staged)
+        .and_then(|held| placed(&staged, &whole).map(|path| (path, held)));
     staged_away(library, &staged);
-    let path = landed?;
+    let path = landed.map(|(path, _)| path)?;
 
     if let Err(unfiled) = weighed(&path, want) {
         let _ = fs::remove_file(&path);
@@ -178,15 +179,16 @@ fn staged_beside(whole: &Path) -> PathBuf {
     ))
 }
 
-fn staged_from(reader: &mut dyn Read, staged: &Path) -> std::result::Result<(), Unfiled> {
-    let mut file = File::create(staged)?;
+fn staged_from(reader: &mut dyn Read, staged: &Path) -> std::result::Result<Held, Unfiled> {
+    let held = Held::made(staged)?;
+    let mut file = held.file();
     let copied = io::copy(&mut reader.take(LARGEST_FILED + 1), &mut file)?;
     if copied > LARGEST_FILED {
         return Err(Unfiled::TooLarge);
     }
     file.flush()?;
     file.sync_all()?;
-    Ok(())
+    Ok(held)
 }
 
 fn placed(staged: &Path, whole: &Path) -> std::result::Result<PathBuf, Unfiled> {

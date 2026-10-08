@@ -5,14 +5,6 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 **Blocked on …** = waits on the named outside thing (hardware, upstream crate, service, format),
 sits last in its category, not worked until it moves. Everything else is open.
 
-## Defects
-- A dead writer's whole copy is written over the track unchecked: `finished_writing_back` runs
-  `copied_over` with nothing in the `.resonate-whole` copy to say the track is as it was, so an
-  edit made by another program between the crash and the next scan is lost
-- Writer liveness is judged by pid alone (`journal::is_running`, `writing.rs`, the vault's staging
-  sweep): under Flatpak's pid namespace a crashed run's journal or staged file reads as living for
-  ever, and a host `resonate` reads a sandboxed live writer as dead, rolling it back or deleting
-  its staged file
 ## Playback and output
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth
@@ -62,6 +54,9 @@ sits last in its category, not worked until it moves. Everything else is open.
   families 2 and 3 would also need projection decoding
 
 ## Tagging
+- A write back staged in the spool folder (`written_back_from_elsewhere`, the track's folder
+  refusing a new file) keeps no whole copy beside the track: a crash part way leaves the track torn
+  with nothing to finish it, and the staged copy under `/var/tmp` swept by nothing
 - A tag landed in place never asks `Taken::still_stands`, as the staged path does: a page another
   program changed between the overlay's read and `land` is put back
 - A landing on the closest pressing (`Fit::Wider`, `Fit::Narrower`) is written into the files as a

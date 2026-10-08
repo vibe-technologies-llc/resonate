@@ -23,6 +23,7 @@ mod stamp;
 pub mod text;
 mod time;
 mod volume;
+pub mod writer;
 
 pub use crate::{
     appearance::{

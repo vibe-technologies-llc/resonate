@@ -21,7 +21,10 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{DEEPEST_FOLDER_A_SHEET_NAMES, the_folder_a_cue_names};
-use resonate_core::{AlbumId, MediaLocation, TrackId, names_a_picture};
+use resonate_core::{
+    AlbumId, MediaLocation, TrackId, names_a_picture,
+    writer::{self, Held, Writer},
+};
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
 
 use crate::{
@@ -41,7 +44,6 @@ const COMPONENT_BYTES: usize = 255;
 const SHEET_EXTENSION: &str = "cue";
 const STAGED: &str = ".resonate-staging";
 const PARKED: &str = "resonate-parked";
-const RUNNING_PROCESSES: &str = "/proc";
 const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
 const SEPARATOR_STANDS_IN: char = '-';
@@ -655,7 +657,7 @@ fn run(
     }
 
     if options.apply {
-        sweep_what_a_killed_run_staged(library);
+        sweep_what_a_dead_writer_staged(library);
     }
 
     if options.walk_back {
@@ -2068,15 +2070,17 @@ fn landed_onto(library: &Library, from: &Path, to: &Path) -> Result<Renamed> {
 
 fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
     let staged = noted_staging(library, to)?;
-    let landed = copied_whole(from, &staged).and_then(|()| {
-        fs::rename(&staged, to).map_err(|source| Error::Move {
-            op: MoveOp::Copy,
-            path: to.to_path_buf(),
-            source,
-        })
+    let landed = copied_whole(from, &staged).and_then(|held| {
+        fs::rename(&staged, to)
+            .map(|()| held)
+            .map_err(|source| Error::Move {
+                op: MoveOp::Copy,
+                path: to.to_path_buf(),
+                source,
+            })
     });
     staged_left(library, &staged);
-    landed
+    landed.map(drop)
 }
 
 fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
@@ -2120,21 +2124,7 @@ pub(crate) fn swept(staged: &Path) -> io::Result<()> {
     }
 }
 
-fn sweep_what_a_killed_run_staged(library: &Library) {
-    sweep_what_was_staged(library, Sparing::Others);
-}
-
-pub(crate) fn sweep_what_a_killed_process_staged(library: &Library) {
-    sweep_what_was_staged(library, Sparing::OthersAndThisProcess);
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Sparing {
-    Others,
-    OthersAndThisProcess,
-}
-
-fn sweep_what_was_staged(library: &Library, sparing: Sparing) {
+pub(crate) fn sweep_what_a_dead_writer_staged(library: &Library) {
     let left = match library.staged_writes() {
         Ok(left) => left,
         Err(error) => {
@@ -2144,15 +2134,7 @@ fn sweep_what_was_staged(library: &Library, sparing: Sparing) {
     };
 
     for write in left {
-        let ours = write.pid == process::id();
-        let still_writing = if ours {
-            sparing == Sparing::OthersAndThisProcess
-        } else {
-            Path::new(RUNNING_PROCESSES)
-                .join(write.pid.to_string())
-                .exists()
-        };
-        if still_writing {
+        if writer::writer_of(&write.path, write.pid) == Writer::Living {
             continue;
         }
         tracing::info!(
@@ -2344,27 +2326,29 @@ fn same_bytes(one: &Path, other: &Path) -> io::Result<bool> {
     }
 }
 
-fn copied_whole(from: &Path, to: &Path) -> Result<()> {
-    let held = fs::metadata(from).map_err(|source| Error::Move {
+fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
+    let copy_failed = |source| Error::Move {
+        op: MoveOp::Copy,
+        path: to.to_path_buf(),
+        source,
+    };
+    let mut source = fs::File::open(from).map_err(|source| Error::Move {
         op: MoveOp::Copy,
         path: from.to_path_buf(),
         source,
     })?;
-    fs::copy(from, to).map_err(|source| Error::Move {
+    let stood = source.metadata().map_err(|source| Error::Move {
         op: MoveOp::Copy,
-        path: to.to_path_buf(),
+        path: from.to_path_buf(),
         source,
     })?;
+    let held = Held::taken_over(to).map_err(copy_failed)?;
+    let mut written = held.file();
+    io::copy(&mut source, &mut written)
+        .and_then(|_| written.set_permissions(stood.permissions()))
+        .map_err(copy_failed)?;
 
-    let written = fs::File::options()
-        .write(true)
-        .open(to)
-        .map_err(|source| Error::Move {
-            op: MoveOp::Copy,
-            path: to.to_path_buf(),
-            source,
-        })?;
-    if let Ok(stamp) = held.modified()
+    if let Ok(stamp) = stood.modified()
         && let Err(source) = written.set_modified(stamp)
     {
         let error = Error::Move {
@@ -2375,11 +2359,8 @@ fn copied_whole(from: &Path, to: &Path) -> Result<()> {
         tracing::debug!(%error, "a copied file carries the time it was copied at");
     }
 
-    written.sync_all().map_err(|source| Error::Move {
-        op: MoveOp::Copy,
-        path: to.to_path_buf(),
-        source,
-    })
+    written.sync_all().map_err(copy_failed)?;
+    Ok(held)
 }
 
 fn left_behind(done: &[Renamed]) {
@@ -3799,6 +3780,7 @@ mod tests {
         let killed = folder.join(format!("01 Echoes.wav{STAGED}"));
         let still_writing = folder.join(format!("02 Fearless.wav{STAGED}"));
         let not_ours = folder.join("03 San Tropez.wav");
+        let sandboxed = folder.join(format!("04 One of These Days.wav{STAGED}"));
         for (left, bytes) in [
             (&killed, b"half a file".as_slice()),
             (&still_writing, b"a copy under way"),
@@ -3807,11 +3789,18 @@ mod tests {
             fs::write(left, bytes).expect("a writable folder");
             library.staging(left).expect("it is noted");
         }
+        let held = Held::made(&sandboxed).expect("a copy another namespace holds");
+        library.staging(&sandboxed).expect("it is noted");
 
         let init = 1_u32;
         let gone = u32::MAX;
         let aside = Connection::open(&catalog).expect("the same catalog");
-        for (left, pid) in [(&killed, gone), (&still_writing, init), (&not_ours, gone)] {
+        for (left, pid) in [
+            (&killed, gone),
+            (&still_writing, init),
+            (&not_ours, gone),
+            (&sandboxed, gone),
+        ] {
             aside
                 .execute(
                     "UPDATE staged_writes SET pid = ?2 WHERE path = ?1",
@@ -3820,12 +3809,16 @@ mod tests {
                 .expect("the pid a run wrote under");
         }
 
-        sweep_what_a_killed_run_staged(&library);
+        sweep_what_a_dead_writer_staged(&library);
 
         assert!(!killed.exists(), "what a killed run staged is still there");
         assert!(
             still_writing.exists(),
             "a run still writing lost its staging file"
+        );
+        assert!(
+            sandboxed.exists(),
+            "a run holding its staging file in another namespace lost it"
         );
         assert!(not_ours.exists(), "a file not named as staged was taken");
         let noted: Vec<PathBuf> = library
@@ -3834,7 +3827,8 @@ mod tests {
             .into_iter()
             .map(|write| write.path)
             .collect();
-        assert_eq!(noted, vec![still_writing]);
+        assert_eq!(noted, vec![still_writing, sandboxed]);
+        drop(held);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
@@ -3859,7 +3853,7 @@ mod tests {
             )
             .expect("the pid a poll wrote under");
 
-        sweep_what_a_killed_process_staged(&library);
+        sweep_what_a_dead_writer_staged(&library);
 
         assert!(!killed.exists(), "what a killed poll staged is still there");
         assert!(

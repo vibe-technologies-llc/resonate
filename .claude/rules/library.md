@@ -1665,8 +1665,8 @@ the undo record keeps fields by `TagField::as_str`.
   copies to a staged sibling `.<stem>.<pid>-<n>.<ext>` (`staged_beside`; extension kept, lofty reads
   the kind off it), writes tags into the copy, `sync_all`s, renames over the file, syncs the folder,
   removing the copy on any failure. A killed writer's copy is swept by the next write to that track:
-  `sweep_what_a_dead_writer_staged` removes a sibling `staged_by` reads as this track's, staged by a
-  pid neither ours nor under `/proc`
+  `sweep_what_a_dead_writer_staged` removes a sibling `staged_by` reads as this track's whose writer
+  `writer::writer_of` reads as gone (the copy is `Held` from creation: `rust-style.md`)
   (`a_copy_a_dead_writer_staged_beside_the_track_is_swept_and_no_other`); the scan never catalogs it
   meanwhile (dot-names are passed over). **The copy lands only over the file it was taken from.**
   `Taken::of` asks `access(W_OK)` first: an unwritable file is refused `PermissionDenied`, not
@@ -1712,10 +1712,20 @@ the undo record keeps fields by `TagField::as_str`.
   everything and both names, at the price of a second copy and a window where the file is part
   rewritten. Before that window the synced copy is renamed `.<name>.<pid>-<n>.resonate-whole`
   (`journal::WholeCopy`); a write-back failing part way renames it `.resonate-torn` and answers
-  `codec::Error::WrittenBackPartway` naming it, never removing the one whole copy. A dead writer's
-  whole copy, and any torn one, is finished by the next write to that track or the scan of its
-  folder (`Mended::WrittenBack`), never swept as left over
-  (`a_track_a_dead_writer_left_part_written_back_is_finished_from_its_whole_copy`). A copy staged
+  `codec::Error::WrittenBackPartway` naming it, never removing the one whole copy. **The whole copy
+  says what the track was:** `stood_beside` appends to the tagged bytes an FNV-1a hash of each 4 KiB
+  page of the track as it stood, the track's and the copy's lengths and a check, `STOOD_MAGIC`
+  last; the write-back lays the copy over in page-aligned chunks (`laid_over`), so a crash leaves
+  each page old or new. A dead writer's whole copy, and any torn one, is finished by the next write
+  to that track or the scan of its folder, never swept as left over, and only over a track still
+  between the two (`Stood::standing`: length between both, every page the copy's or hashing as it
+  stood): written back (`Mended::WrittenBack`), already all the copy's (`Mended::Finished`), or a
+  page neither, another program's edit since the crash, left as it stands and the copy dropped
+  (`Mended::ChangedSince`); a record failing its check writes nothing (`Mended::Unreadable`); a copy
+  an older build left with no record is written back whole
+  (`a_track_a_dead_writer_tore_partway_through_writing_back_is_finished`,
+  `a_track_another_program_changed_after_a_dead_writer_is_not_written_over`,
+  `a_track_a_dead_writer_left_part_written_back_is_finished_from_its_whole_copy`). A copy staged
   in the spool folder (the track's own folder refusing one) is kept there, named by the error
   (`a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link`,
   `a_track_with_two_names_keeps_both_and_both_read_the_write`,
@@ -1956,11 +1966,12 @@ guard; re-keys a sleeve-keyed album after moves land (both under *Schema and gro
   plan cannot find it. `noted_staging` writes its path and this process's pid into `staged_writes`
   (fourth `MIGRATIONS` step), committed before a byte of the copy or rewritten sheet is written;
   `staged_left` removes the file where it stands and drops the row once it is gone, landed or not
-  (an unremovable file keeps its row). A run that applies begins with
-  `sweep_what_a_killed_run_staged`: removes each noted file (only a regular file whose name ends
-  `STAGED`, so a row never costs a file it did not name), skipping a row whose pid is another
-  process `/proc` still holds (`Walk` is this process's alone; a window and a
-  `resonate organise --apply` may both be copying). A preview writes and sweeps nothing
+  (an unremovable file keeps its row). The copy holds its file from creation to rename
+  (`Held::taken_over`, `rust-style.md`). A run that applies begins with
+  `sweep_what_a_dead_writer_staged`: removes each noted file (only a regular file whose name ends
+  `STAGED`, so a row never costs a file it did not name), skipping one `writer::writer_of` reads as
+  still written, the row's pid the fallback (`Walk` is this process's alone; a window, a poll's
+  delivery and a `resonate organise --apply` may all be copying). A preview writes and sweeps nothing
   (`what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies`).
 - **The last applied run can be walked back.** `organised` (a `MIGRATIONS` step) holds what the last
   apply landed (units, companions and sidecars, landing order), each moving apply replacing it.

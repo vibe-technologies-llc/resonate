@@ -107,10 +107,11 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 `VaultKey`: 16 bytes as 32 lowercase hex letters, fanned two deep. `Flac`/`Wave`: MD5 of decoded
 interleaved PCM (FLAC's STREAMINFO digest, so `metaflac` agrees); `Kept`, covers: MD5 of stored
 bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder (and the one
-above if the fanout folder was made). **Staging files carry the writer's pid, which is how they are
-swept**: `Vault::open` removes those whose process `/proc` no longer holds
-(`Sweeping::WhatCrashed`); `Vault::sweep_the_staging` (`--prune`) also takes files not named by a
-pid, never a living process's. No `/proc`: every pid reads as living.
+above if the fanout folder was made). **A staging file is held by its writer, which is how it is
+swept**: `Vault::staged` creates it `Held` (`rust-style.md`); `Vault::open` removes those
+`writer::writer_of` reads as gone (`Sweeping::WhatCrashed`), the pid in the name the fallback;
+`Vault::sweep_the_staging` (`--prune`) also takes files not named by a pid, never a living
+writer's.
 
 **A staging file is a `Staged`; drop removes it**: failure between `File::create` and rename leaves
 nothing. `keep`'s `Kept` fallback follows a `NoSmaller` that landed nothing: no orphan in `audio/`.

@@ -152,8 +152,8 @@ API's document was asked: `resonate_providers::is_a_page`, read by Subsonic and 
   renders the path under the folder's `Naming`, stages bytes as hidden
   `.<name>.<pid>-<n>.resonate-delivery` beside it (at most `LARGEST_FILED`), noted in
   `staged_writes` before a byte is written as organise notes its own, so a poll killed mid-filing
-  leaves a file the next poll sweeps (`organise::sweep_what_a_killed_process_staged`, sparing this
-  process and live ones;
+  leaves a file the next poll sweeps (`organise::sweep_what_a_dead_writer_staged`, sparing a file
+  its writer holds, `rust-style.md`;
   `what_a_killed_poll_staged_in_the_music_folder_is_taken_away_by_the_next_poll`), lands by `hard_link`
   under the first free name `take_in::candidates` offers (nothing overwritten), tags via `FileTags`.
   A landing the decoder cannot probe, whose decode disagrees with the wanted length, or whose album

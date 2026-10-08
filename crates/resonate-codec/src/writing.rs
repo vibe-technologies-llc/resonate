@@ -25,7 +25,10 @@ use lofty::{
     probe::Probe,
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
-use resonate_core::{Decibels, MediaLocation, naming};
+use resonate_core::{
+    Decibels, MediaLocation, naming,
+    writer::{self, Held, Writer},
+};
 use rustix::fs::XattrFlags;
 
 use crate::{
@@ -466,9 +469,12 @@ impl TagSink for FileTags {
         })?;
         let rechunked = match tag_in_front_of_a_riff(path) {
             Ok(Some(riff_at)) => {
-                let staged = staged_beside(path);
-                if let Err(source) = chunked(path, &staged, riff_at) {
-                    let _ = fs::remove_file(&staged);
+                let staged = Staged::beside(path).map_err(|source| Error::Io {
+                    location: location.clone(),
+                    source,
+                })?;
+                if let Err(source) = chunked(path, staged.held.file(), riff_at) {
+                    let _ = fs::remove_file(&staged.path);
                     return Err(Error::Io {
                         location: location.clone(),
                         source,
@@ -484,9 +490,10 @@ impl TagSink for FileTags {
                 });
             }
         };
-        let written = self.written(path, rechunked.as_deref(), location, writing, taken);
+        let staged = rechunked.as_ref().map(|staged| staged.path.as_path());
+        let written = self.written(path, staged, location, writing, taken);
         if written.is_err()
-            && let Some(staged) = rechunked
+            && let Some(staged) = staged
         {
             let _ = fs::remove_file(staged);
         }
@@ -517,7 +524,7 @@ fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
     Ok((header.starts_with(RIFF) && header[8..] == *WAVE).then_some(riff_at))
 }
 
-fn chunked(path: &Path, staged: &Path, riff_at: u64) -> io::Result<()> {
+fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
     let mut file = File::open(path)?;
     let mut tag = vec![0_u8; usize::try_from(riff_at).unwrap_or(usize::MAX)];
     file.read_exact(&mut tag)?;
@@ -531,7 +538,7 @@ fn chunked(path: &Path, staged: &Path, riff_at: u64) -> io::Result<()> {
         .checked_add(CHUNK_HEADER_BYTES + padded)
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
 
-    let mut written = io::BufWriter::new(File::create(staged)?);
+    let mut written = io::BufWriter::new(staged);
     written.write_all(RIFF)?;
     written.write_all(&grown.to_le_bytes())?;
     written.write_all(WAVE)?;
@@ -954,7 +961,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
     mend_what_a_dead_writer_left(path);
     sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
-        Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
+        Ok(Some(staged)) => return landed_through(&staged.path, path, location, saving),
         Ok(None) => {}
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {}
         Err(source) => return Err(unread(source)),
@@ -963,32 +970,29 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         return Ok(());
     }
 
-    let staged = staged_beside(path);
-    match fs::copy(path, &staged) {
-        Ok(_) => landed_through(&staged, path, location, saving),
+    match copied_beside(path, folder_of(path)) {
+        Ok(staged) => landed_through(&staged.path, path, location, saving),
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {
-            let _ = fs::remove_file(&staged);
             landed_from_elsewhere(path, location, saving)
         }
-        Err(source) => {
-            let _ = fs::remove_file(&staged);
-            Err(unread(source))
-        }
+        Err(source) => Err(unread(source)),
     }
 }
 
 fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
     for folder in crate::spool::spooled_under() {
-        let staged = staged_in(&folder, path);
-        match fs::copy(path, &staged) {
-            Ok(_) => {
-                return landed_by(&staged, path, location, saving, written_back_from_elsewhere);
+        match copied_beside(path, &folder) {
+            Ok(staged) => {
+                return landed_by(
+                    &staged.path,
+                    path,
+                    location,
+                    saving,
+                    written_back_from_elsewhere,
+                );
             }
-            Err(source) => {
-                let _ = fs::remove_file(&staged);
-                refused = source;
-            }
+            Err(source) => refused = source,
         }
     }
     Err(Error::Io {
@@ -997,17 +1001,32 @@ fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<
     })
 }
 
-fn cloned_beside(path: &Path) -> io::Result<Option<PathBuf>> {
+fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
     let file = File::open(path)?;
-    let staged = staged_beside(path);
-    let into = File::create_new(&staged)?;
-    if let Err(error) = rustix::fs::ioctl_ficlone(&into, &file) {
+    let staged = Staged::beside(path)?;
+    if let Err(error) = rustix::fs::ioctl_ficlone(staged.held.file(), &file) {
         tracing::trace!(path = %path.display(), %error, "the file cannot be cloned");
-        drop(into);
-        fs::remove_file(&staged)?;
+        fs::remove_file(&staged.path)?;
         return Ok(None);
     }
     Ok(Some(staged))
+}
+
+fn copied_beside(path: &Path, folder: &Path) -> io::Result<Staged> {
+    let staged = Staged::within(folder, path)?;
+    let copied = File::open(path).and_then(|mut from| {
+        let permissions = from.metadata()?.permissions();
+        let mut into = staged.held.file();
+        io::copy(&mut from, &mut into)?;
+        into.set_permissions(permissions)
+    });
+    match copied {
+        Ok(()) => Ok(staged),
+        Err(error) => {
+            let _ = fs::remove_file(&staged.path);
+            Err(error)
+        }
+    }
 }
 
 fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<bool> {
@@ -1109,12 +1128,28 @@ fn landed_by(
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
 const ATTRIBUTE_READS_AT_MOST: usize = 4;
-const RUNNING_PROCESSES: &str = "/proc";
 const STAGED_BY_AND_COUNTED: char = '-';
 const LONGEST_LETTER_BYTES: usize = 4;
 
-fn staged_beside(path: &Path) -> PathBuf {
-    staged_in(path.parent().unwrap_or(Path::new("")), path)
+struct Staged {
+    path: PathBuf,
+    held: Held,
+}
+
+impl Staged {
+    fn beside(path: &Path) -> io::Result<Self> {
+        Self::within(folder_of(path), path)
+    }
+
+    fn within(folder: &Path, path: &Path) -> io::Result<Self> {
+        let staged = staged_in(folder, path);
+        let held = Held::made(&staged)?;
+        Ok(Self { path: staged, held })
+    }
+}
+
+fn folder_of(path: &Path) -> &Path {
+    path.parent().unwrap_or(Path::new(""))
 }
 
 fn staged_in(folder: &Path, path: &Path) -> PathBuf {
@@ -1160,13 +1195,10 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
         let Some(writer) = staged_by(path, &entry.file_name()) else {
             continue;
         };
-        let alive = Path::new(RUNNING_PROCESSES)
-            .join(writer.to_string())
-            .exists();
-        if writer == process::id() || alive {
+        let left = entry.path();
+        if writer::writer_of(&left, writer) == Writer::Living {
             continue;
         }
-        let left = entry.path();
         match fs::remove_file(&left) {
             Ok(()) => {
                 tracing::info!(path = %left.display(), "swept a copy a tag write cut short left behind")
@@ -1410,10 +1442,16 @@ mod tests {
         for path in [&track, &left, &ours, &another, &hidden] {
             fs::write(path, b"fLaC").expect("a writable temporary file");
         }
+        let sandboxed = folder
+            .root
+            .join(format!(".Echoes.{NEVER_A_PROCESS}-4.flac"));
+        let held = Held::made(&sandboxed).expect("a copy a writer in another namespace holds");
 
         sweep_what_a_dead_writer_staged(&track);
 
         assert!(!left.exists(), "a dead writer's copy was left");
+        assert!(sandboxed.exists(), "a held copy was swept");
+        drop(held);
         for kept in [&track, &ours, &another, &hidden] {
             assert!(kept.exists(), "{} was swept", kept.display());
         }

@@ -15,7 +15,10 @@ use resonate_codec::{
     Codec, Container, CoverArt, DecodeStatus, Decoder, ImageFormat, MediaInfo, Sources, Speakers,
     TagSet, probe,
 };
-use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
+use resonate_core::{
+    AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec,
+    writer::{self, Held, Writer},
+};
 
 use crate::{
     bare, blanks, chunks, cover,
@@ -52,8 +55,6 @@ const LONGEST_EXTENSION: usize = 8;
 const COPY_BYTES: usize = 1 << 20;
 const SIXTEEN_BIT_CEILING: u8 = 16;
 const LARGEST_DELIVERY: u64 = wave::LARGEST_PCM;
-const PROCESSES: &str = "/proc";
-
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
 pub struct Vault {
@@ -62,29 +63,32 @@ pub struct Vault {
     landing: Mutex<()>,
 }
 
-struct Staged(PathBuf);
+struct Staged {
+    path: PathBuf,
+    _held: Held,
+}
 
 impl Deref for Staged {
     type Target = Path;
 
     fn deref(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 
 impl AsRef<Path> for Staged {
     fn as_ref(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 
 impl Drop for Staged {
     fn drop(&mut self) {
-        match fs::remove_file(&self.0) {
+        match fs::remove_file(&self.path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
-                tracing::warn!(path = %self.0.display(), %error, "a staging file could not be taken away");
+                tracing::warn!(path = %self.path.display(), %error, "a staging file could not be taken away");
             }
         }
     }
@@ -1234,11 +1238,12 @@ impl Vault {
 
     fn staged(&self, extension: &str) -> Result<Staged> {
         let nth = STAGED.fetch_add(1, Ordering::Relaxed);
-        Ok(Staged(
-            self.root
-                .join(STAGING)
-                .join(format!("{}-{nth}.{extension}", process::id())),
-        ))
+        let path = self
+            .root
+            .join(STAGING)
+            .join(format!("{}-{nth}.{extension}", process::id()));
+        let held = Held::made(&path).map_err(|source| Error::io(VaultOp::Stage, &path, source))?;
+        Ok(Staged { path, _held: held })
     }
 
     fn landed(&self, staging: &Path, target: &Path) -> Result<u64> {
@@ -1351,11 +1356,10 @@ fn staged_by(path: &Path) -> StagedBy {
         .and_then(|name| name.to_str())
         .and_then(|name| name.split_once('-'))
         .and_then(|(pid, _)| pid.parse::<u32>().ok());
-    match pid {
+    match pid.map(|pid| writer::writer_of(path, pid)) {
         None => StagedBy::Unnamed,
-        Some(pid) if pid == process::id() || !Path::new(PROCESSES).is_dir() => StagedBy::Living,
-        Some(pid) if Path::new(PROCESSES).join(pid.to_string()).exists() => StagedBy::Living,
-        Some(_) => StagedBy::Gone,
+        Some(Writer::Living) => StagedBy::Living,
+        Some(Writer::Gone) => StagedBy::Gone,
     }
 }
 
@@ -1619,16 +1623,21 @@ mod tests {
         for path in [&crashed, &living, &unnamed] {
             fs::write(path, b"half an object").expect("a staged write");
         }
+        let sandboxed = staging.join(format!("{PAST_EVERY_PID}-8.flac"));
+        let held = Held::made(&sandboxed).expect("a staged write another namespace holds");
 
         let vault = Vault::open(&root).expect("a vault");
+        let sandboxed_after_opening = sandboxed.exists();
         let crashed_after_opening = crashed.exists();
         let living_after_opening = living.exists();
         let unnamed_after_opening = unnamed.exists();
         let pruned = vault.sweep_the_staging().expect("a sweep");
         let living_after_pruning = living.exists();
         let unnamed_after_pruning = unnamed.exists();
+        drop(held);
         let _ = fs::remove_dir_all(&root);
 
+        assert!(sandboxed_after_opening);
         assert!(!crashed_after_opening);
         assert!(living_after_opening);
         assert!(unnamed_after_opening);

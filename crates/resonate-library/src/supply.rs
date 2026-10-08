@@ -1105,7 +1105,7 @@ fn run(
     options: PollOptions,
     progress: &PollProgress,
 ) -> Result<PollSummary> {
-    organise::sweep_what_a_killed_process_staged(library);
+    organise::sweep_what_a_dead_writer_staged(library);
     scanned_and_paired(library, &[])?;
     let lanes = Lanes {
         library,

@@ -51,3 +51,19 @@ otherwise be refused by the filesystem, failing a write the file itself allows. 
 names (`journal::kept_by`, `writing::staged_by`) takes a stem that is a prefix of the track's as
 naming it only where the name sits at the limit; a cut whole copy whose prefix names more than one
 file is left where it is (`Mended::Unplaced`).
+
+## A file another run may sweep
+
+**A staging file, journal or whole copy another run may take away is held under
+`resonate_core::writer::Held` for its whole life, and a sweeper asks `writer::writer_of`.** An
+`flock` held is a living writer whatever pid namespace either side runs in: Flatpak's sandbox has
+pids of its own, so a pid read through `/proc` cannot say whether a sandboxed run, or a host one
+seen from the sandbox, still lives. A file nobody holds is gone once untouched for `UNHELD_AND_UNTOUCHED_FOR` (10 s,
+covering a writer between creating the file and locking it), sooner where its stamped pid has no
+`/proc` entry; where the filesystem refuses locks the stamp alone decides (this process, or no
+`/proc`: living). `Held::made` creates a fresh name; `Held::taken_over` reuses a fixed one, refusing
+`WouldBlock` while a living writer holds it. The pid stays in a name only to keep names apart and
+for that fallback. Users: the tag writer's staged copies, undo journals and whole copies
+(`resonate-codec`), the vault's staging, organise's and a delivery's staged files
+(`a_held_file_is_living_whatever_process_its_stamp_names`,
+`an_unheld_file_left_alone_is_gone_though_its_stamp_names_a_running_process`).

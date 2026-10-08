@@ -4,7 +4,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 
 | File | Scope | Covers |
 |---|---|---|
-| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's |
+| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
