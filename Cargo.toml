@@ -98,7 +98,7 @@ opus-rs = { version = "0.1.37", default-features = false, features = ["std", "he
 lofty = { version = "0.25.4", default-features = false, features = ["id3v2_compression_support"] }
 
 flacenc = { version = "0.5.1", default-features = false, features = ["par"] }
-zstd = { version = "0.14.0", default-features = false }
+zstd = { version = "0.14.1", default-features = false }
 zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
 jxl-oxide = { version = "0.12.6", default-features = false }
