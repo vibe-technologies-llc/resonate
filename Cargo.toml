@@ -117,7 +117,7 @@ rusqlite = {
     features = ["bundled", "cache", "functions", "hooks"]
 }
 
-toml_edit = { version = "0.25.16", default-features = false, features = ["parse", "display"] }
+toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
