@@ -2260,8 +2260,16 @@ starts.
   `Reference::find_songs`, answers `Found`s: recording, title, credit, length, the release meant
   (`meant_release`), `performer` (first credited artist MusicBrainz names by id, as
   `Performer::Elsewhere`, no request of its own). Leaves out recordings in `tracks.mbid` or
-  `release_tracks.recording_mbid`; drops a second recording of the same folded title and credit; to
-  `FOUND_ELSEWHERE_AT_MOST` (12). Halves are public apart (the window keeps the reference's answer
+  `release_tracks.recording_mbid` and recordings on bootlegs alone naming no ISRC
+  (`is_worth_offering`: nothing a provider can find; one the answer names no release for stays,
+  `want_found` reading its releases);
+  **of the takes of one folded title and credit offers the one a provider can deliver**
+  (`the_take_worth_offering`: one naming an ISRC first, then the best standing and kind of release
+  it is on, then the most releases, then MusicBrainz's order), so a song MusicBrainz lists a
+  hundred times over (every compilation, every bootlegged concert, all scored alike) is offered as
+  the album's recording, the one its artist's page lists
+  (`of_a_songs_takes_the_one_coded_and_on_its_album_is_offered_and_one_nobody_can_deliver_is_not`);
+  to `FOUND_ELSEWHERE_AT_MOST` (12). Halves are public apart (the window keeps the reference's answer
   and reweighs it): `songs_asked` = words as sent (title, artist, album words only, lower-cased,
   single-spaced: *Pink  Floyd* and *pink floyd year:1971* are one ask), `None` under three letters
   (not sent; `asks_elsewhere` is its `is_some`); `Library::unheld_among` asks the catalog about

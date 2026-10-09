@@ -128,6 +128,16 @@ Searches answer candidates; the strict taking rule lives in `enrich.rs` (one rul
   `songs_by_search` requires the artist (each word of `SPELT_LOOSELY_FROM` letters or more spelt
   loosely), the title only ranks; an empty answer falls back to the pair below. Title not
   required: MusicBrainz tokenises it as entered, so a phrase misses *You F O* under `"you fo"`.
+  **A title by an artist is asked first among recordings naming an ISRC** (`+isrc:*`,
+  `Coded::Required`): MusicBrainz scores every recording of a title alike, so *Teardrop* by Massive
+  Attack answered compilation copies and bootlegged concerts ahead of the album's recording; the
+  ISRC-coded ones are the releases a provider can find, the album's first among them. Taken where a
+  recording's title holds every word of the title asked (`names_the_title`), else the query is asked
+  without the ISRC, its answer taken where not empty, the coded one otherwise. Words read as no title
+  by an artist are asked the same way (`songs_coded_search`: `+(recording:(…) artist:(…))
+  +isrc:*`) in place of the loose dismax words, wherever one recording of that answer holds every
+  word in its title or credit (`answers_every_word`); else the dismax words as below (the loose
+  words answered *Teardrop massive attack* with covers titled *Teardrop (Massive Attack)*).
   **Words read as no title by an artist are asked twice**: as the phrase an artist is credited
   under (`songs_credited_search`, answer leads) and as loose dismax words (dismax alone ranks a
   recording *titled* with the words, e.g. a cover or *Twenty One Pilots* by someone else, above the

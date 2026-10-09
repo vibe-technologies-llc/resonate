@@ -100,6 +100,34 @@ fn a_title_by_an_artist_is_found_however_the_title_is_spelt() {
 }
 
 #[test]
+fn a_song_musicbrainz_lists_a_hundred_times_over_finds_its_albums_recording_first() {
+    const TEARDROP_ON_MEZZANINE: &str = "f3bba4cd-8018-468b-902e-bc8f029593e5";
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    for typed in ["Teardrop by Massive Attack", "teardrop massive attack"] {
+        let asked = songs_asked(typed).expect("words worth asking");
+        let found = weighed_for(
+            &asked,
+            online.find_songs(&asked).expect("musicbrainz answered"),
+        );
+        let most_released = found
+            .iter()
+            .filter(|matched| matched.title == "Teardrop" && !matched.isrcs.is_empty())
+            .max_by_key(|matched| matched.releases.len())
+            .unwrap_or_else(|| panic!("{typed} found no Teardrop naming an ISRC"));
+
+        assert_eq!(
+            most_released.recording.as_str(),
+            TEARDROP_ON_MEZZANINE,
+            "{typed}"
+        );
+    }
+}
+
+#[test]
 fn an_artists_name_alone_finds_the_songs_credited_to_it() {
     let Some(client) = reached() else {
         return;

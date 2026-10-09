@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    cmp::Reverse,
+    time::{Duration, SystemTime},
+};
 
 use ahash::AHashSet;
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, WantId};
@@ -398,24 +401,59 @@ pub fn artists_still_answering(artists: &[ArtistFound], text: &str) -> Vec<Artis
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Coded {
+    ByAnIsrc,
+    Uncoded,
+}
+
+fn is_worth_offering(matched: &RecordingMatch) -> bool {
+    let issued_officially = matched
+        .releases
+        .iter()
+        .any(|release| standing_of(&release.issued) != Standing::Otherwise);
+    matched.releases.is_empty() || issued_officially || !matched.isrcs.is_empty()
+}
+
+fn the_take_worth_offering(matched: &RecordingMatch) -> (Coded, Standing, Meant, Reverse<usize>) {
+    let coded = match matched.isrcs.is_empty() {
+        true => Coded::Uncoded,
+        false => Coded::ByAnIsrc,
+    };
+    let (standing, meant) = matched
+        .releases
+        .iter()
+        .map(|release| (standing_of(&release.issued), meant_as(&release.issued)))
+        .min()
+        .unwrap_or((Standing::Otherwise, Meant::Otherwise));
+    (coded, standing, meant, Reverse(matched.releases.len()))
+}
+
 pub(crate) fn found_among(
     matches: Vec<RecordingMatch>,
     held: impl Fn(&Mbid) -> bool,
 ) -> Vec<Found> {
-    let mut seen = AHashSet::new();
-    let mut found = Vec::new();
+    let mut takes: Vec<((String, String), Vec<RecordingMatch>)> = Vec::new();
     for matched in matches {
-        if held(&matched.recording) {
+        if held(&matched.recording) || !is_worth_offering(&matched) {
             continue;
         }
-        let artist = matched.credited_as();
         let named = (
             store::folded_letters(&matched.title),
-            store::folded_letters(&artist),
+            store::folded_letters(&matched.credited_as()),
         );
-        if !seen.insert(named) {
-            continue;
+        match takes.iter_mut().find(|(seen, _)| *seen == named) {
+            Some((_, same)) => same.push(matched),
+            None => takes.push((named, vec![matched])),
         }
+    }
+
+    let mut found = Vec::new();
+    for (_, same) in takes {
+        let Some(matched) = same.into_iter().min_by_key(the_take_worth_offering) else {
+            continue;
+        };
+        let artist = matched.credited_as();
         found.push(Found {
             performer: leading_performer(&matched.credit),
             release: meant_release(&matched.releases).cloned(),
@@ -678,11 +716,12 @@ mod tests {
 
     #[test]
     fn a_song_found_twice_is_offered_once_and_what_the_catalog_holds_not_at_all() {
+        let meddle = || vec![issued(ONE, "1971-10-30", "Album", &[], "Official")];
         let found = found_among(
             vec![
-                matched(ONE, "Echoes", "Pink Floyd", Vec::new()),
-                matched(TWO, "echoes", "Pink Floyd", Vec::new()),
-                matched(THREE, "Echoes (live)", "Pink Floyd", Vec::new()),
+                matched(ONE, "Echoes", "Pink Floyd", meddle()),
+                matched(TWO, "echoes", "Pink Floyd", meddle()),
+                matched(THREE, "Echoes (live)", "Pink Floyd", meddle()),
             ],
             |recording| recording.as_str() == THREE,
         );
@@ -694,7 +733,8 @@ mod tests {
 
     #[test]
     fn a_found_song_is_performed_by_the_first_credited_artist_musicbrainz_identifies() {
-        let mut collaboration = matched(ONE, "Heroes Tonight", "Janji", Vec::new());
+        let released = || vec![issued(ONE, "2015-06-15", "Single", &[], "Official")];
+        let mut collaboration = matched(ONE, "Heroes Tonight", "Janji", released());
         collaboration.credit = vec![
             Credit {
                 name: "Janji".to_owned(),
@@ -707,7 +747,7 @@ mod tests {
                 mbid: Some(mbid(TWO)),
             },
         ];
-        let unidentified = matched(THREE, "Echoes", "Pink Floyd", Vec::new());
+        let unidentified = matched(THREE, "Echoes", "Pink Floyd", released());
 
         let found = found_among(vec![collaboration, unidentified], |_| false);
 
@@ -737,6 +777,60 @@ mod tests {
             },
             ..released(id, Some(date))
         }
+    }
+
+    #[test]
+    fn of_a_songs_takes_the_one_coded_and_on_its_album_is_offered_and_one_nobody_can_deliver_is_not()
+     {
+        const FOUR: &str = "f3bba4cd-8018-468b-902e-bc8f029593e5";
+        const FIVE: &str = "a31e069b-1025-4700-971d-c6cfe937e31a";
+        let compiled = matched(
+            ONE,
+            "Teardrop",
+            "Massive Attack",
+            vec![issued(ONE, "2001", "Album", &["Compilation"], "Official")],
+        );
+        let bootlegged = matched(
+            TWO,
+            "Teardrop (live)",
+            "Massive Attack",
+            vec![issued(TWO, "1998", "Album", &["Live"], "Bootleg")],
+        );
+        let unreleased = matched(THREE, "Angel", "Massive Attack", Vec::new());
+        let mut on_the_album = matched(
+            FOUR,
+            "Teardrop",
+            "Massive Attack",
+            vec![
+                issued(FOUR, "2006", "Album", &["Compilation"], "Official"),
+                issued(FOUR, "1998-04-20", "Album", &[], "Official"),
+            ],
+        );
+        on_the_album.isrcs = vec![resonate_core::Isrc::new("GBAAA9800322").expect("an isrc")];
+        let mut coded_live = matched(
+            FIVE,
+            "Teardrop (live)",
+            "Massive Attack",
+            vec![issued(FIVE, "2006", "Album", &["Live"], "Bootleg")],
+        );
+        coded_live.isrcs = vec![resonate_core::Isrc::new("GBAAA0600010").expect("an isrc")];
+
+        let found = found_among(
+            vec![compiled, bootlegged, unreleased, on_the_album, coded_live],
+            |_| false,
+        );
+
+        assert_eq!(
+            found
+                .iter()
+                .map(|found| (found.recording.as_str(), found.title.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (FOUR, "Teardrop"),
+                (THREE, "Angel"),
+                (FIVE, "Teardrop (live)")
+            ]
+        );
     }
 
     #[test]

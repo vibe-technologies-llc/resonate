@@ -5,7 +5,7 @@ use resonate_library::{
     ByArtist, Credit, Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Isrc, Issued,
     LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
     RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, SongsAsked,
-    Wording,
+    Wording, folded_letters,
 };
 use serde::Deserialize;
 
@@ -17,6 +17,7 @@ use crate::{
 
 const FOUND_AT_MOST: u32 = 5;
 const SONGS_FOUND_AT_MOST: u32 = 25;
+const AN_ISRC_HELD: &str = "+isrc:*";
 const ALBUMS_FOUND_AT_MOST: u32 = 25;
 const SPELT_LOOSELY_FROM: usize = 4;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
@@ -722,18 +723,86 @@ pub(crate) fn find_recording(
         .collect())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Coded {
+    Required,
+    Either,
+}
+
 pub(crate) fn find_songs(client: &Client, asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
     if let Some(by) = &asked.by {
-        let found = songs_found(client, &songs_by_search(by))?;
+        let coded = songs_found(client, &songs_by_search(by, Coded::Required))?;
+        if names_the_title(&coded, &by.title) {
+            return Ok(coded);
+        }
+        let found = songs_found(client, &songs_by_search(by, Coded::Either))?;
         if !found.is_empty() {
             return Ok(found);
+        }
+        if !coded.is_empty() {
+            return Ok(coded);
         }
     }
 
     let mut found = songs_found(client, &songs_credited_search(&asked.words))?;
-    found.extend(songs_found(client, &songs_search(&asked.words))?);
+    let coded = match songs_coded_search(&asked.words) {
+        Some(path) => songs_found(client, &path)?,
+        None => Vec::new(),
+    };
+    if answers_every_word(&coded, &asked.words) {
+        found.extend(coded);
+    } else {
+        found.extend(songs_found(client, &songs_search(&asked.words))?);
+    }
 
     Ok(found)
+}
+
+fn answers_every_word(found: &[RecordingMatch], words: &str) -> bool {
+    let asked = folded_words(words);
+    !asked.is_empty()
+        && found.iter().any(|matched| {
+            let named: Vec<String> = folded_words(&matched.title)
+                .into_iter()
+                .chain(folded_words(&matched.credited_as()))
+                .collect();
+            asked
+                .iter()
+                .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+        })
+}
+
+fn songs_coded_search(words: &str) -> Option<String> {
+    let words: Vec<&str> = words
+        .split(|letter: char| !letter.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    let words = words.join(" ");
+    Some(searched(
+        "/recording/",
+        &format!("+(recording:({words}) artist:({words})) {AN_ISRC_HELD}"),
+        SONGS_FOUND_AT_MOST,
+    ))
+}
+
+fn folded_words(text: &str) -> Vec<String> {
+    text.split(|letter: char| !letter.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(folded_letters)
+        .collect()
+}
+
+fn names_the_title(found: &[RecordingMatch], title: &str) -> bool {
+    let asked = folded_words(title);
+    found.iter().any(|matched| {
+        let titled = folded_words(&matched.title);
+        asked
+            .iter()
+            .all(|word| titled.iter().any(|named| named.starts_with(word.as_str())))
+    })
 }
 
 fn songs_found(client: &Client, path: &str) -> Result<Vec<RecordingMatch>> {
@@ -761,7 +830,7 @@ fn songs_search(words: &str) -> String {
     searched_in_words("/recording/", words, None, SONGS_FOUND_AT_MOST)
 }
 
-fn songs_by_search(by: &ByArtist) -> String {
+fn songs_by_search(by: &ByArtist, coded: Coded) -> String {
     let words_of = |text: &str| -> Vec<String> {
         text.split(|letter: char| !letter.is_alphanumeric())
             .filter(|word| !word.is_empty())
@@ -778,13 +847,17 @@ fn songs_by_search(by: &ByArtist) -> String {
     let titled = words_of(&by.title);
     let quoted = lucene_quoted(&by.title);
     let query = match (named.is_empty(), titled.is_empty()) {
-        (true, _) => format!("recording:{quoted}"),
+        (true, _) => format!("+recording:{quoted}"),
         (false, true) => format!("+artist:({})", named.join(" AND ")),
         (false, false) => format!(
             "+artist:({}) recording:({}) recording:{quoted}",
             named.join(" AND "),
             titled.join(" ")
         ),
+    };
+    let query = match coded {
+        Coded::Required => format!("{query} {AN_ISRC_HELD}"),
+        Coded::Either => query,
     };
 
     searched("/recording/", &query, SONGS_FOUND_AT_MOST)
@@ -1925,10 +1998,12 @@ mod tests {
 
     #[test]
     fn a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely() {
-        let path = songs_by_search(&ByArtist {
+        let by = ByArtist {
             title: "you f o".to_owned(),
             artist: "stela cole".to_owned(),
-        });
+        };
+        let path = songs_by_search(&by, Coded::Either);
+        let coded = songs_by_search(&by, Coded::Required);
 
         assert!(path.starts_with("/recording/?"), "{path}");
         assert!(
@@ -1941,6 +2016,79 @@ mod tests {
             "{path}"
         );
         assert!(!path.contains("dismax"), "{path}");
+        assert!(
+            coded.contains(&format!(
+                "query={}",
+                crate::query::escape_query(
+                    r#"+artist:(stela~ AND cole~) recording:(you f o) recording:"you f o" +isrc:*"#
+                )
+            )),
+            "{coded}"
+        );
+    }
+
+    #[test]
+    fn an_answer_names_the_title_only_where_a_recording_is_titled_with_every_word_asked() {
+        let titled = |title: &str| RecordingMatch {
+            recording: Mbid::new("f3bba4cd-8018-468b-902e-bc8f029593e5").expect("an mbid"),
+            score: 100,
+            title: title.to_owned(),
+            credit: Vec::new(),
+            length: None,
+            isrcs: Vec::new(),
+            releases: Vec::new(),
+        };
+
+        assert!(names_the_title(
+            &[titled("Angel"), titled("Teardrop")],
+            "teardrop"
+        ));
+        assert!(names_the_title(&[titled("Téardrop (live)")], "Tear"));
+        assert!(!names_the_title(&[titled("Angel")], "teardrop"));
+        assert!(!names_the_title(&[], "teardrop"));
+    }
+
+    #[test]
+    fn words_are_asked_of_titles_and_credits_among_recordings_naming_an_isrc() {
+        let path = songs_coded_search("teardrop: massive attack").expect("words to ask");
+
+        assert!(
+            path.contains(&format!(
+                "query={}",
+                crate::query::escape_query(
+                    "+(recording:(teardrop massive attack) artist:(teardrop massive attack)) +isrc:*"
+                )
+            )),
+            "{path}"
+        );
+        assert_eq!(songs_coded_search(" - "), None);
+    }
+
+    #[test]
+    fn an_answer_answers_the_words_where_one_recording_holds_each_in_its_title_or_credit() {
+        let by = |title: &str, artist: &str| RecordingMatch {
+            recording: Mbid::new("f3bba4cd-8018-468b-902e-bc8f029593e5").expect("an mbid"),
+            score: 100,
+            title: title.to_owned(),
+            credit: vec![Credit {
+                name: artist.to_owned(),
+                joined_by: String::new(),
+                mbid: None,
+            }],
+            length: None,
+            isrcs: Vec::new(),
+            releases: Vec::new(),
+        };
+
+        assert!(answers_every_word(
+            &[by("Teardrop", "Massive Attack")],
+            "teardrop massive att"
+        ));
+        assert!(!answers_every_word(
+            &[by("Teardrop", "José González")],
+            "teardrop massive attack"
+        ));
+        assert!(!answers_every_word(&[by("Teardrop", "Massive Attack")], ""));
     }
 
     #[test]
