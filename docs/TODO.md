@@ -135,8 +135,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Command line and bus
-- `play`, `queue` and a window launch take a folder or an M3U, PLS or XSPF file as one track
-  (`queue_items` expands `.cue` alone)
 - The command line cannot mark a favourite, want a track or dismiss a missing one; only the window
   and MCP can
 - A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is not heard by a

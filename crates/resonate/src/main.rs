@@ -42,6 +42,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     ffi::{OsStr, OsString},
+    fs,
     io::{self, IsTerminal as _},
     mem,
     num::NonZeroUsize,
@@ -60,7 +61,8 @@ use resonate_codec::{
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
-    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
+    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec,
+    Volume, names_audio,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
@@ -71,9 +73,9 @@ use resonate_library::{
     Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
     Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService, LookupOp,
     Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing,
-    Playlist, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter,
-    TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
+    Playlist, PlaylistFormat, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter,
+    TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -2761,6 +2763,7 @@ fn keep_the_queue(player: &Player, library: Option<&Library>, keeping: &mut Keep
 }
 
 const SHEET_EXTENSION: &str = "cue";
+const FOLDERS_DEEP: usize = 32;
 
 fn local_path(argument: &Path) -> PathBuf {
     argument
@@ -2840,14 +2843,98 @@ fn queue_items(arguments: &[OsString]) -> Vec<QueueItem> {
             });
             continue;
         }
-        let sheet = names_a_sheet(&location)
-            .then(|| location.as_path().map(Path::to_path_buf))
-            .flatten();
+        items.extend(items_of(&sources, location, &mut minting));
+    }
+    items
+}
 
-        match sheet {
-            Some(path) => items.extend(sheet_items(&sources, &path, &mut minting)),
-            None => items.push(QueueItem::whole(minting.mint(), location)),
+fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed) -> Vec<QueueItem> {
+    let Some(path) = location.as_path().map(Path::to_path_buf) else {
+        return vec![QueueItem::whole(minting.mint(), location)];
+    };
+    if path.is_dir() {
+        return folder_items(sources, &path, minting, FOLDERS_DEEP);
+    }
+    if names_a_sheet(&location) {
+        return sheet_items(sources, &path, minting);
+    }
+    if PlaylistFormat::named_by(&path).is_some() {
+        return listed_items(&path, minting);
+    }
+    vec![QueueItem::whole(minting.mint(), location)]
+}
+
+fn listed_items(path: &Path, minting: &mut Unclaimed) -> Vec<QueueItem> {
+    match cuts_listed_in(path) {
+        Ok(cuts) => cuts
+            .into_iter()
+            .map(|cut| QueueItem {
+                id: minting.mint(),
+                location: cut.location,
+                span: cut.span,
+            })
+            .collect(),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "a playlist could not be read");
+            Vec::new()
         }
+    }
+}
+
+fn listed_in_order(folder: &Path) -> Vec<PathBuf> {
+    let mut listed: Vec<PathBuf> = match fs::read_dir(folder) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|entry| !entry.file_name().as_encoded_bytes().starts_with(b"."))
+            .map(|entry| entry.path())
+            .collect(),
+        Err(error) => {
+            tracing::warn!(%error, folder = %folder.display(), "a folder could not be read");
+            Vec::new()
+        }
+    };
+    listed.sort();
+    listed
+}
+
+fn folder_items(
+    sources: &Sources,
+    folder: &Path,
+    minting: &mut Unclaimed,
+    deeper: usize,
+) -> Vec<QueueItem> {
+    let Some(deeper) = deeper.checked_sub(1) else {
+        tracing::warn!(folder = %folder.display(), "a folder nested too deep was not queued");
+        return Vec::new();
+    };
+    let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) = listed_in_order(folder)
+        .into_iter()
+        .partition(|path| path.is_dir());
+    let sheets: BTreeMap<&Path, Vec<(MediaLocation, FrameSpan)>> = files
+        .iter()
+        .filter(|file| names_a_sheet(&MediaLocation::local(file)))
+        .map(|sheet| (sheet.as_path(), sheet_cuts(sources, sheet)))
+        .collect();
+    let cut_from: BTreeSet<PathBuf> = sheets
+        .values()
+        .flatten()
+        .filter_map(|(location, _)| location.as_path().map(from_here))
+        .collect();
+
+    let mut items = Vec::new();
+    for file in &files {
+        if let Some(cuts) = sheets.get(file.as_path()) {
+            items.extend(cuts.iter().map(|(location, span)| QueueItem {
+                id: minting.mint(),
+                location: location.clone(),
+                span: Some(*span),
+            }));
+        } else if names_audio(file) && !cut_from.contains(&from_here(file)) {
+            items.push(QueueItem::whole(minting.mint(), MediaLocation::local(file)));
+        }
+    }
+    for inside in &folders {
+        items.extend(folder_items(sources, inside, minting, deeper));
     }
     items
 }
@@ -3225,6 +3312,83 @@ mod tests {
         assert_eq!(cuts.len(), 2, "a sheet was stored as one row");
         assert!(cuts.iter().all(|cut| cut.span.is_some()
             && cut.location.as_path() == Some(from_here(&folder.join("whole.wav")).as_path())));
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn a_folder_is_queued_as_the_audio_inside_it_and_its_sheet_as_the_rows_it_cuts() {
+        let folder = env::temp_dir().join(format!("resonate-queued-folder-{}", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(folder.join("Album/CD2")).expect("a scratch folder");
+        for name in [
+            "Album/02.wav",
+            "Album/01.wav",
+            "Album/CD2/01.wav",
+            "Album/.hidden.wav",
+        ] {
+            fs::write(folder.join(name), analyse::tests::silent_wave()).expect("a wave file");
+        }
+        fs::write(folder.join("Album/notes.txt"), b"words").expect("a note");
+        fs::create_dir_all(folder.join("Rip")).expect("a scratch folder");
+        fs::write(folder.join("Rip/whole.wav"), analyse::tests::silent_wave()).expect("a wave");
+        fs::write(
+            folder.join("Rip/whole.cue"),
+            "FILE \"whole.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 \
+             AUDIO\n    INDEX 01 00:00:30\n",
+        )
+        .expect("a sheet");
+        let named = |items: Vec<QueueItem>| {
+            items
+                .into_iter()
+                .map(|item| {
+                    (
+                        item.location.as_path().map(Path::to_path_buf),
+                        item.span.is_some(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let album = named(queue_items(&[folder.join("Album").into_os_string()]));
+        let rip = named(queue_items(&[folder.join("Rip").into_os_string()]));
+
+        let at = |name: &str| Some(from_here(&folder.join(name)));
+        assert_eq!(
+            album,
+            [
+                (at("Album/01.wav"), false),
+                (at("Album/02.wav"), false),
+                (at("Album/CD2/01.wav"), false)
+            ]
+        );
+        assert_eq!(
+            rip,
+            [(at("Rip/whole.wav"), true), (at("Rip/whole.wav"), true)]
+        );
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn a_playlist_is_queued_as_the_rows_it_lists() {
+        let folder = env::temp_dir().join(format!("resonate-queued-list-{}", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        for name in ["one.wav", "two.wav"] {
+            fs::write(folder.join(name), analyse::tests::silent_wave()).expect("a wave file");
+        }
+        fs::write(folder.join("mix.m3u8"), "#EXTM3U\ntwo.wav\none.wav\n").expect("a list");
+
+        let queued: Vec<_> = queue_items(&[folder.join("mix.m3u8").into_os_string()])
+            .into_iter()
+            .map(|item| item.location.as_path().map(Path::to_path_buf))
+            .collect();
+
+        assert_eq!(
+            queued,
+            [Some(folder.join("two.wav")), Some(folder.join("one.wav"))]
+        );
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }

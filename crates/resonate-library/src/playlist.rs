@@ -1152,6 +1152,27 @@ fn dropped_where(inner: &Inner, id: PlaylistId, edit: Edit, question: Going<'_>)
     Ok(dropped)
 }
 
+pub fn cuts_listed_in(path: &Path) -> Result<Vec<Cut>> {
+    let mut rates = HashMap::new();
+    Ok(sheet::read(path)?
+        .sheet
+        .locations
+        .into_iter()
+        .map(|listed| {
+            if listed.timed.is_whole() {
+                return Cut::whole(listed.location);
+            }
+            match probed_rate(&listed.location, &mut rates) {
+                Some(rate) => Cut {
+                    span: listed.timed.at(rate),
+                    location: listed.location,
+                },
+                None => Cut::whole(listed.location),
+            }
+        })
+        .collect())
+}
+
 pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported> {
     let reading = sheet::read(path)?;
     let short = reading.sheet.short();

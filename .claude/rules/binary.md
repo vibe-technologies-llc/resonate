@@ -48,6 +48,13 @@ Every file argument goes through it (`Exec=resonate %U` hands over a `file://` p
   queue, never the whole file. A `.cue` argument or `OpenUri` becomes its rows via `sheet_items`;
   each `FILE` line is found as the scan finds it (`codec::the_file_a_cue_names`: folder, exact
   name, case, then stem among audio): `FILE "ALBUM.WAV"` reaches `album.flac`.
+- **A folder or a playlist argument is what it holds** (`items_of`, for `play`, `queue` and a window
+  launch): an M3U, PLS or XSPF file becomes the rows it lists (`resonate_library::cuts_listed_in`,
+  a timed row cut at the file's rate); a folder its audio (`names_audio`, dot-names passed over) in
+  name order, each `.cue` in it as the rows it cuts and the files a sheet cuts not again, then its
+  folders the same way, at most `FOLDERS_DEEP` (32) down
+  (`a_folder_is_queued_as_the_audio_inside_it_and_its_sheet_as_the_rows_it_cuts`,
+  `a_playlist_is_queued_as_the_rows_it_lists`). A playlist inside a folder is not followed.
 
 ## What this build advertises
 

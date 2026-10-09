@@ -117,7 +117,7 @@ pub use crate::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
         RetagHandle, ScanHandle, TakeInHandle,
     },
-    playlist::Filled,
+    playlist::{Filled, cuts_listed_in},
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
         SavedQuery, SearchResults, SortOrder, TrackQuery,

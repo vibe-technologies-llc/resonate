@@ -429,14 +429,15 @@ impl PlaylistFormat {
     ];
 
     pub fn of(path: &Path) -> Self {
-        let Some(extension) = path.extension().and_then(OsStr::to_str) else {
-            return Self::default();
-        };
+        Self::named_by(path).unwrap_or_default()
+    }
 
+    pub fn named_by(path: &Path) -> Option<Self> {
+        let extension = path.extension().and_then(OsStr::to_str)?;
         Self::EXTENSIONS
             .into_iter()
             .find(|(named, _)| named.eq_ignore_ascii_case(extension))
-            .map_or_else(Self::default, |(_, format)| format)
+            .map(|(_, format)| format)
     }
 
     pub const fn extension(self) -> &'static str {
