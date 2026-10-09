@@ -8,6 +8,7 @@ use crate::{
     Refusal, Result,
     completions::Completable,
     controlling::Reach,
+    error::Field,
     passes::Passes,
     resources::{Resource, over},
     tools::{Tool, WindowArg},
@@ -151,7 +152,7 @@ impl Prompt {
         Ok(match self {
             Self::BuildAPlaylist => {
                 let asked: Briefed = self.taken(arguments)?;
-                let brief = self.given(BRIEF, &asked.brief)?;
+                let brief = self.given(Field(BRIEF), &asked.brief)?;
                 let named = match asked.name.as_deref().map(str::trim) {
                     Some(name) if !name.is_empty() => format!("under the name {name}"),
                     _ => "under a short name of your choosing that none of the playlists below \
@@ -224,11 +225,7 @@ impl Prompt {
         })
     }
 
-    fn given<'a>(
-        self,
-        argument: &'static str,
-        value: &'a str,
-    ) -> std::result::Result<&'a str, Refusal> {
+    fn given(self, argument: Field, value: &str) -> std::result::Result<&str, Refusal> {
         let value = value.trim();
         if value.is_empty() {
             return Err(Refusal::BlankArgument {

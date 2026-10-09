@@ -222,14 +222,10 @@ sits last in its category, not worked until it moves. Everything else is open.
   `ARCHIVED_AT` leaves old objects called current
 - `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in
   `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
-- `resonate-mcp`'s error variants carry `&'static str` field names beside its own `ArgumentName`;
-  `library::Error::NotAVaultKey` carries a bare `Box<str>`
 
 ## Testing
 - The MPRIS bus tests skip without a session bus and CI's `cargo test` gives them none, so all but
   the `dbus-run-session` ones pass having run nothing
-- `a_lame_encoded_rip_declares_the_priming_its_xing_header_carries` always skips in CI: `lame` is
-  not in `ARCH_PACKAGES`
 - `downgrade`, `MAX_RENEGOTIATIONS` and `Error::Renegotiation` are untested (the only
   `FormatChanged` test answers the spec asked for)
 - Loudness and the print have no reference: no test against `ffmpeg -af ebur128` or EBU 3341/3342,

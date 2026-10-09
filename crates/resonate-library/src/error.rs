@@ -119,6 +119,12 @@ pub enum StoreOp {
     Transaction,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum KeyColumn {
+    AlbumCover,
+    VaultObject,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SchemaFingerprint(pub u32);
 
@@ -321,8 +327,8 @@ pub enum Error {
         code: i64,
     },
 
-    #[error("{named} is not a vault key")]
-    NotAVaultKey { named: Box<str> },
+    #[error("the catalog's {held_in:?} holds what is not a vault key")]
+    NotAVaultKey { held_in: KeyColumn },
 
     #[error("no vault is open, so nothing can be kept in one")]
     NoVault,

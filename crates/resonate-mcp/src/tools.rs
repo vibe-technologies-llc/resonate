@@ -12,6 +12,7 @@ use crate::{
     catalog::{self, Wanted},
     controlling::Reach,
     edits::{self, Dropping, Filling, Marking},
+    error::Field,
     passes::{Pass, Passes},
     transport::{self, Action, Adding},
 };
@@ -647,7 +648,7 @@ impl Tool {
             Self::WantTracks => {
                 let asked: WantingTracks = self.taken(arguments)?;
                 let release_tracks: Vec<ReleaseTrackId> = self
-                    .capped("release_track_ids", asked.release_track_ids)?
+                    .capped(Field("release_track_ids"), asked.release_track_ids)?
                     .into_iter()
                     .map(ReleaseTrackId::of)
                     .collect();
@@ -752,7 +753,7 @@ impl Tool {
             .map(TrackId::of)
             .map_err(|_| Refusal::Unreadable {
                 tool: self,
-                field: "queue_id",
+                field: Field("queue_id"),
             })
     }
 
@@ -760,7 +761,7 @@ impl Tool {
         let asked: Seeked = self.taken(arguments)?;
         let out_of_range = || Refusal::OutOfRange {
             tool: self,
-            field: "seconds",
+            field: Field("seconds"),
         };
         let span = Duration::try_from_secs_f64(asked.seconds.abs()).map_err(|_| out_of_range())?;
 
@@ -775,7 +776,7 @@ impl Tool {
         let asked: Loudness = self.taken(arguments)?;
         let out_of_range = || Refusal::OutOfRange {
             tool: self,
-            field: "percent",
+            field: Field("percent"),
         };
         if !(0.0..=WHOLE).contains(&asked.percent) {
             return Err(out_of_range());
@@ -802,17 +803,17 @@ impl Tool {
         match (track_ids, query) {
             (Some(ids), None) => Ok(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query)) => Ok(Wanted::Matching {
-                query: self.unblank("query", query)?,
+                query: self.unblank(Field("query"), query)?,
                 most: rows(limit, QUEUED_BY_DEFAULT),
             }),
             (Some(_), Some(_)) | (None, None) => Err(Refusal::OneOf {
                 tool: self,
-                fields: &["track_ids", "query"],
+                fields: &[Field("track_ids"), Field("query")],
             }),
         }
     }
 
-    fn unblank(self, field: &'static str, text: String) -> std::result::Result<String, Refusal> {
+    fn unblank(self, field: Field, text: String) -> std::result::Result<String, Refusal> {
         if text.trim().is_empty() {
             return Err(Refusal::BlankField { tool: self, field });
         }
@@ -821,7 +822,7 @@ impl Tool {
 
     fn track_ids(self, ids: Vec<NonZeroU64>) -> std::result::Result<Vec<TrackId>, Refusal> {
         Ok(self
-            .capped("track_ids", ids)?
+            .capped(Field("track_ids"), ids)?
             .into_iter()
             .map(TrackId::of)
             .collect())
@@ -829,7 +830,7 @@ impl Tool {
 
     fn capped(
         self,
-        field: &'static str,
+        field: Field,
         ids: Vec<NonZeroU64>,
     ) -> std::result::Result<Vec<NonZeroU64>, Refusal> {
         if ids.len() > MOST_ROWS {
@@ -845,16 +846,16 @@ impl Tool {
     fn marking(self, arguments: Value) -> std::result::Result<Marking, Refusal> {
         let asked: Marked = self.taken(arguments)?;
         let favoured: Vec<Favoured> = self
-            .capped("track_ids", asked.track_ids)?
+            .capped(Field("track_ids"), asked.track_ids)?
             .into_iter()
             .map(|id| Favoured::Track(TrackId::of(id)))
             .chain(
-                self.capped("album_ids", asked.album_ids)?
+                self.capped(Field("album_ids"), asked.album_ids)?
                     .into_iter()
                     .map(|id| Favoured::Album(AlbumId::of(id))),
             )
             .chain(
-                self.capped("artist_ids", asked.artist_ids)?
+                self.capped(Field("artist_ids"), asked.artist_ids)?
                     .into_iter()
                     .map(|id| Favoured::Artist(ArtistId::of(id))),
             )
@@ -862,7 +863,7 @@ impl Tool {
         if favoured.is_empty() {
             return Err(Refusal::AtLeastOneOf {
                 tool: self,
-                fields: &["track_ids", "album_ids", "artist_ids"],
+                fields: &[Field("track_ids"), Field("album_ids"), Field("artist_ids")],
             });
         }
 
@@ -878,17 +879,17 @@ impl Tool {
             (None, None, None) => Filling::Empty,
             (Some(ids), None, None) => Filling::Rows(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query), None) => Filling::Rows(Wanted::Matching {
-                query: self.unblank("query", query)?,
+                query: self.unblank(Field("query"), query)?,
                 most: rows(asked.limit, QUEUED_BY_DEFAULT),
             }),
             (None, None, Some(query)) => Filling::Search {
-                query: self.unblank("fills_from", query)?,
+                query: self.unblank(Field("fills_from"), query)?,
                 most: asked.limit.map(|most| most.clamp(1, MOST_ROWS)),
             },
             _ => {
                 return Err(Refusal::AtMostOneOf {
                     tool: self,
-                    fields: &["track_ids", "query", "fills_from"],
+                    fields: &[Field("track_ids"), Field("query"), Field("fills_from")],
                 });
             }
         };
@@ -904,7 +905,7 @@ impl Tool {
                 if through < row {
                     return Err(Refusal::OutOfRange {
                         tool: self,
-                        field: "through_row",
+                        field: Field("through_row"),
                     });
                 }
                 Dropping::Rows(Span::between(row, through))
@@ -913,7 +914,7 @@ impl Tool {
             _ => {
                 return Err(Refusal::OneOf {
                     tool: self,
-                    fields: &["row", "matching"],
+                    fields: &[Field("row"), Field("matching")],
                 });
             }
         };
@@ -931,7 +932,7 @@ impl Tool {
             (None, Some(at)) => Ok(at.until()),
             (Some(_), Some(_)) | (None, None) => Err(Refusal::OneOf {
                 tool: self,
-                fields: &["minutes", "at"],
+                fields: &[Field("minutes"), Field("at")],
             }),
         }
     }

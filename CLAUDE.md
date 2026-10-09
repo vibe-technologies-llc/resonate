@@ -150,7 +150,7 @@ Invariants the layering protects (the rules files have the rest):
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
   `formats`; the last needs `pw-cli`), `resonate-listen` (`capture`, `reconnect`, `microphone`; the
   last two need `pw-cli`), `resonate-mpris --test bus` (session bus), `resonate-codec --test
-  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`), `resonate-library --test library` (ffmpeg),
+  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`), `resonate-library --test library` (ffmpeg),
   `resonate-online --test live` (`RESONATE_ONLINE_TESTS`), `resonate --test terminal` (`setsid`, a
   pseudo-terminal). The reconnect, `formats` and
   `microphone` tests host their own daemon; the mpris notification and headset presses run under

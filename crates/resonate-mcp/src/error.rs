@@ -143,6 +143,23 @@ impl fmt::Display for PromptName {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Field(pub &'static str);
+
+impl fmt::Display for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+fn listed(fields: &[Field]) -> String {
+    fields
+        .iter()
+        .map(|field| field.0)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ArgumentName(Box<str>);
 
@@ -202,10 +219,7 @@ pub enum Refusal {
     },
 
     #[error("{prompt} needs a {argument} that is not blank")]
-    BlankArgument {
-        prompt: Prompt,
-        argument: &'static str,
-    },
+    BlankArgument { prompt: Prompt, argument: Field },
 
     #[error("the arguments of {tool} are not what it takes")]
     BadArguments {
@@ -214,39 +228,39 @@ pub enum Refusal {
         source: serde_json::Error,
     },
 
-    #[error("{tool} takes exactly one of {}", fields.join(", "))]
+    #[error("{tool} takes exactly one of {}", listed(fields))]
     OneOf {
         tool: Tool,
-        fields: &'static [&'static str],
+        fields: &'static [Field],
     },
 
-    #[error("{tool} takes at least one of {}", fields.join(", "))]
+    #[error("{tool} takes at least one of {}", listed(fields))]
     AtLeastOneOf {
         tool: Tool,
-        fields: &'static [&'static str],
+        fields: &'static [Field],
     },
 
-    #[error("{tool} takes no more than one of {}", fields.join(", "))]
+    #[error("{tool} takes no more than one of {}", listed(fields))]
     AtMostOneOf {
         tool: Tool,
-        fields: &'static [&'static str],
+        fields: &'static [Field],
     },
 
     #[error("{field} is outside the range {tool} takes")]
-    OutOfRange { tool: Tool, field: &'static str },
+    OutOfRange { tool: Tool, field: Field },
 
     #[error("{tool} takes no more than {most} {field}")]
     TooMany {
         tool: Tool,
-        field: &'static str,
+        field: Field,
         most: usize,
     },
 
     #[error("{field} is not a value {tool} can read")]
-    Unreadable { tool: Tool, field: &'static str },
+    Unreadable { tool: Tool, field: Field },
 
     #[error("{tool} needs a {field} that is not blank, a blank one matching the whole library")]
-    BlankField { tool: Tool, field: &'static str },
+    BlankField { tool: Tool, field: Field },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

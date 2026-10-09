@@ -34,16 +34,16 @@ use crate::{
     CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, Learning, LifeSpan, Link, Listen, ListeningService,
-    LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
-    MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER,
-    REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease, Reference, Release,
-    ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings,
-    Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery,
-    TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey, VaultObject,
-    Verdict, Waits, Want, Window, Word, alternatives,
+    KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan, Link, Listen,
+    ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing, MissingTrack,
+    MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
+    Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease,
+    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
+    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
+    Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
+    VaultObject, Verdict, Waits, Want, Window, Word, alternatives,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -2641,8 +2641,11 @@ impl Library {
                     Vec::new(),
                     |row| {
                         let key: String = row.get(0)?;
-                        Ok(VaultKey::read(&key).map_err(|_| Error::NotAVaultKey {
-                            named: key.into_boxed_str(),
+                        Ok(VaultKey::read(&key).map_err(|_| {
+                            tracing::warn!(key, "an album's cover key does not read as one");
+                            Error::NotAVaultKey {
+                                held_in: KeyColumn::AlbumCover,
+                            }
                         }))
                     },
                 )
@@ -6878,8 +6881,11 @@ impl RawVaultObject {
     }
 
     fn into_object(self, inner: &Inner) -> Result<VaultObject> {
-        let key = VaultKey::read(&self.key).map_err(|_| Error::NotAVaultKey {
-            named: self.key.clone().into_boxed_str(),
+        let key = VaultKey::read(&self.key).map_err(|_| {
+            tracing::warn!(key = self.key, "a vault object's key does not read as one");
+            Error::NotAVaultKey {
+                held_in: KeyColumn::VaultObject,
+            }
         })?;
 
         Ok(VaultObject {

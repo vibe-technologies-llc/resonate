@@ -85,8 +85,8 @@ pub use crate::{
         REFRESH_AFTER, REFRESH_SPREAD, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS, Waits,
     },
     error::{
-        EncodedColumn, Error, FieldName, LayoutFault, MoveOp, OrderedColumn, PlaylistName, Result,
-        SchemaFingerprint, StoreOp, TagName,
+        EncodedColumn, Error, FieldName, KeyColumn, LayoutFault, MoveOp, OrderedColumn,
+        PlaylistName, Result, SchemaFingerprint, StoreOp, TagName,
     },
     filed::DeliveryFolder,
     filters::{MinimumLength, MusicExtensions, MusicFilters},
