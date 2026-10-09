@@ -14,6 +14,15 @@ rows read via `Player::media` like any unscanned row.
 
 ## Schema and grouping
 
+- **A catalog on disc is checked and kept before it is migrated.** Where `lay_out` finds a stamp a
+  prefix names but not this build's, it runs `PRAGMA quick_check` first (any answer but `ok`:
+  `Error::CatalogDamaged`, logged with what SQLite said, the catalog left unmigrated), then `VACUUM
+  INTO` a copy beside it named `<catalog>.before-<stamp>` (`schema::kept_before`), staged as
+  `….part` under `writer::Held` and renamed once synced; a copy already there is kept, one another
+  run holds is left to it. A migration is irreversible (one step deletes `loves_told` rows), so an
+  older build's way back is that copy: listens, favourites, playlists and wants as they stood
+  (`a_catalog_on_disc_is_kept_as_it_stood_before_it_is_migrated`,
+  `a_damaged_catalog_is_refused_and_left_unmigrated`). A catalog in memory keeps nothing.
 - **Schema = `V1` + `MIGRATIONS`; catalogs migrate, not break.** Change = new SQL step appended
   (`ALTER TABLE`, table/index, row rewrite); never edit `V1` or a written step (strands stamped
   catalogs). `PRAGMA user_version` = `fingerprint_after`: compile-time FNV-1a over `V1` text then
@@ -286,7 +295,8 @@ rows read via `Player::media` like any unscanned row.
   of refusing; the `MIGRATIONS` step adding the column carries every such code out of the sum.
   (`a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own`)
   `schema::restate_the_statistics` (`PRAGMA analysis_limit` + `PRAGMA optimize` on the writer after
-  a scan that changed anything) is the other half: with no `sqlite_stat1` the planner picks join
+  a scan that changed anything, cancelled or not, a vault import that kept or deduped a row, a poll
+  that kept a delivery, a playlist import) is the other half: with no `sqlite_stat1` the planner picks join
   order from hardcoded guesses. `configure` gives a connection a page cache and a 256 MiB memory map
   (`MEMORY_MAPPED_BYTES`; the 2 MB default had each pooled reader re-reading pages it had just
   read). **Cache size follows the connection's job** (page cache is per connection; `READER_POOL` is
@@ -1886,7 +1896,20 @@ guard; re-keys a sleeve-keyed album after moves land (both under *Schema and gro
   `MOVES_PER_BATCH` (256) at a time; cancel heard before each move (landed moves settled and
   followed by the catalog, rest not begun) (`a_cancel_is_heard_between_the_moves_of_a_batch`). Per
   move: `standing` re-weigh (vanished source `SourceGone`, destination now taken `Collided`), rename
-  with sidecars, record in `done`. Sidecars weighed apart (`with_the_sidecars_that_can_go`): gone
+  with sidecars, record in `done`. **Every rename refuses an existing name**:
+  `unreplacing::renamed_over_nothing` is `renameat2(RENAME_NOREPLACE)`, falling back to
+  `hard_link` then unlink (also refusing atomically), then a checked `rename`, where a filesystem
+  lacks the flag; a file appearing between the re-weigh and the rename is an `AlreadyExists` move
+  failure, never overwritten (`a_file_appearing_where_a_track_lands_is_never_renamed_over`). Used
+  by organise's landing, its copy's last step and `put_back`, by a delivery's filing and the
+  drop-in. **A destination that is another hard link of the same file is no rename**
+  (`another_link_of`: the same inode under a second directory entry, told from one entry read
+  under another case by the folders' inodes and the exact names a listing holds): it lands as
+  `Landing::Linked`, the source's name taken away with the copied sources once the catalog
+  committed, nothing to put back
+  (`a_track_landing_on_another_name_of_its_own_file_keeps_that_name_and_lets_the_old_one_go`);
+  `rename` on two links of one inode does nothing, which once moved the row, left the old name and
+  had every scan and organise repeat it. Sidecars weighed apart (`with_the_sidecars_that_can_go`): gone
   since: dropped; destination now taken: stays; track moves without (`rename` once overwrote the
   file there; a deleted sidecar refused its track on every undo)
   (`a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track`). `settle`
@@ -2086,7 +2109,10 @@ starts.
   refusal (`Passing::is_a_refusal`). Different file under the name: `name (2).ext` and on (to 999,
   then `Unwritable`).
 - **A copy is whole, read back, then named.** Bytes to hidden `.<name>.<pid>.resonate-part`,
-  compared in `COMPARED_AT_ONCE` (256 KiB) pieces, synced, `hard_link`ed to the name (refuses an
+  held under `writer::Held` while written; a run sweeps every folder it lands in once, taking the
+  `.resonate-part` files whose writer `writer::writer_of` reads as gone (a killed drop-in's, which
+  the scan skips as a dot-name and no catalog notes:
+  `what_a_dead_drop_in_staged_is_taken_away_by_the_next_and_a_living_ones_is_left`). Compared in `COMPARED_AT_ONCE` (256 KiB) pieces, synced, `hard_link`ed to the name (refuses an
   existing name atomically: a file made meanwhile is never overwritten), `rename` where no links;
   staged file always removed. Not reading back: `Unverified`, not kept (`nothing_is_left_staged_…`;
   `a_byte_for_byte_copy_already_there_is_held_and_a_different_one_is_kept_beside_it`).

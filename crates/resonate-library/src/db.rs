@@ -2291,7 +2291,9 @@ impl Library {
     }
 
     pub fn import_playlist(&self, path: &Path, name: Option<&str>) -> Result<Imported> {
-        playlist::import(&self.inner, path, name)
+        let imported = playlist::import(&self.inner, path, name)?;
+        self.inner.restate_the_statistics();
+        Ok(imported)
     }
 
     pub fn export_playlist(&self, id: PlaylistId, path: &Path) -> Result<Exported> {
@@ -2412,6 +2414,10 @@ impl Library {
 
     pub(crate) fn walk_the_tree(&self) -> Result<Walk> {
         self.inner.walk_the_tree()
+    }
+
+    pub(crate) fn restate_the_statistics(&self) {
+        self.inner.restate_the_statistics();
     }
 
     pub(crate) fn files_moved(&self, landed: &[Move], noting: organise::Noting) -> Result<()> {

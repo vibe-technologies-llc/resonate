@@ -5302,6 +5302,7 @@ dependencies = [
  "resonate-vault",
  "rusqlite",
  "rustfft",
+ "rustix 1.1.5",
  "smallvec",
  "thiserror 2.0.21",
  "tracing",

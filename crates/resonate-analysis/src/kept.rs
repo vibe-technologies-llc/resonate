@@ -8,7 +8,10 @@ use std::{
 };
 
 use resonate_codec::Codec;
-use resonate_core::{Chromaprint, FrameSpan, MediaLocation, SampleFormat, SampleRate};
+use resonate_core::{
+    Chromaprint, FrameSpan, MediaLocation, SampleFormat, SampleRate,
+    writer::{self, Held, Writer as Holding},
+};
 
 use crate::{
     Analysis, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum, Stereo, Study,
@@ -120,9 +123,12 @@ impl KeptAnalyses {
             process::id(),
             STAGED.fetch_add(1, Ordering::Relaxed)
         ));
-        let landed = File::create(&staged)
-            .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()))
-            .and_then(|()| fs::rename(&staged, path));
+        let landed = Held::made(&staged).and_then(|held| {
+            let mut file = held.file();
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            fs::rename(&staged, path)
+        });
         if landed.is_err() {
             let _ = fs::remove_file(&staged);
         }
@@ -133,15 +139,28 @@ impl KeptAnalyses {
         let Ok(entries) = fs::read_dir(&self.dir) else {
             return;
         };
-        let mut kept: Vec<(SystemTime, u64, PathBuf)> = entries
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|kind| kind == KEPT_AS))
-            .filter_map(|entry| {
-                let held = entry.metadata().ok()?;
-                Some((held.modified().ok()?, held.len(), entry.path()))
-            })
-            .collect();
-        let mut total: u64 = kept.iter().map(|(_, size, _)| size).sum();
+        let mut kept: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
+        let mut staged_by_the_living = 0;
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let Ok(held) = entry.metadata() else {
+                continue;
+            };
+            if path.extension().is_some_and(|kind| kind == STAGED_AS) {
+                match stamp_of_staged(&path) {
+                    Some(stamp) if writer::writer_of(&path, stamp) == Holding::Gone => {
+                        let _ = fs::remove_file(&path);
+                    }
+                    _ => staged_by_the_living += held.len(),
+                }
+            } else if path.extension().is_some_and(|kind| kind == KEPT_AS)
+                && let Ok(modified) = held.modified()
+            {
+                kept.push((modified, held.len(), path));
+            }
+        }
+        let mut total: u64 =
+            kept.iter().map(|(_, size, _)| size).sum::<u64>() + staged_by_the_living;
         kept.sort_by_key(|(modified, ..)| *modified);
         for (_, size, path) in kept {
             if total <= self.at_most {
@@ -152,6 +171,10 @@ impl KeptAnalyses {
             }
         }
     }
+}
+
+fn stamp_of_staged(path: &Path) -> Option<u32> {
+    path.file_stem()?.to_str()?.split_once('-')?.0.parse().ok()
 }
 
 fn nanos_since_the_epoch(at: SystemTime) -> u64 {
@@ -656,5 +679,31 @@ mod tests {
 
         kept.keep(&location, None, &analysed());
         assert_eq!(kept.recalled(&location, None), None);
+    }
+
+    #[test]
+    fn what_a_dead_writer_staged_is_swept_and_a_living_ones_is_counted_and_left() {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+        let folder = Folder::new();
+        let dir = folder.0.join("kept");
+        fs::create_dir_all(&dir).expect("a folder");
+        let dead = dir.join(format!("{NEVER_A_PROCESS}-0.{STAGED_AS}"));
+        let living = dir.join(format!("{}-999.{STAGED_AS}", process::id()));
+        fs::write(&dead, b"half").expect("a file");
+        fs::write(&living, [0; 64]).expect("a file");
+        let kept = KeptAnalyses::at(dir).holding_at_most(64);
+        let file = folder.0.join("track.wav");
+        fs::write(&file, b"audio").expect("a file");
+        let location = MediaLocation::local(&file);
+
+        kept.keep(&location, None, &analysed());
+
+        assert!(!dead.exists(), "what a dead writer staged was left");
+        assert!(living.exists(), "what a living writer staged was taken");
+        assert_eq!(
+            kept.recalled(&location, None),
+            None,
+            "what a living writer staged was not counted against the bound"
+        );
     }
 }

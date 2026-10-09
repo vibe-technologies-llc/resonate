@@ -68,8 +68,11 @@ named by FNV-1a of path, span, size, mtime; where only a vault object serves the
 `Player::analyse` asks it before decoding, keeps what it decoded. Another `JUDGED_UNDER` stamp reads
 as nothing; judgement unwritten (`read` runs `judged` over kept spectrum and levels). Reader trusts
 no shape: envelope with no lanes, over `ENVELOPE_LANES`, or columns of no frames → nothing.
-Unreadable files deleted; writes staged + renamed; past `KEPT_BYTES_AT_MOST` least lately used go
-first. Cache: failure = debug record + decode. Headless commands keep nothing.
+Unreadable files deleted; writes staged (`<pid>-<n>.staged`, under `writer::Held`) + renamed;
+`trim` takes away what a dead writer staged and counts what a living one is writing; past
+`KEPT_BYTES_AT_MOST` least lately used go first
+(`what_a_dead_writer_staged_is_swept_and_a_living_ones_is_counted_and_left`). Cache: failure =
+debug record + decode. Headless commands keep nothing.
 
 ## The verdict
 

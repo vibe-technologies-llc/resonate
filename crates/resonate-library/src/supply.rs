@@ -1148,8 +1148,12 @@ fn run(
     }
     scanned_and_paired(library, &lanes.filed.into_inner())?;
 
+    let stats = progress.snapshot();
+    if stats.kept > 0 {
+        library.restate_the_statistics();
+    }
     Ok(PollSummary {
-        stats: progress.snapshot(),
+        stats,
         cancelled: progress.is_cancelled(),
     })
 }

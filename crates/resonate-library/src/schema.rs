@@ -1,6 +1,18 @@
+use std::{
+    ffi::OsStr,
+    fs::{self, File},
+    io,
+    path::{Path, PathBuf},
+};
+
+use resonate_core::{naming::named_within, writer::Held};
 use rusqlite::{Connection, Transaction, TransactionBehavior, functions::FunctionFlags};
 
 use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
+
+const KEPT_BEFORE: &str = ".before-";
+const STAGED: &str = ".part";
+const UNDAMAGED: &str = "ok";
 
 pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_after(V1, MIGRATIONS);
 
@@ -916,7 +928,86 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
     if stamped(connection)? == Some(SCHEMA_FINGERPRINT) {
         return Ok(());
     }
-    lay_out_through(connection, V1, MIGRATIONS)
+    migrated(connection, V1, MIGRATIONS)
+}
+
+fn migrated(connection: &Connection, first: &str, steps: &[&str]) -> Result<()> {
+    let found = stamped(connection)?;
+    if found == Some(fingerprint_after(first, steps)) {
+        return Ok(());
+    }
+    if let Some(found) = found.filter(|found| steps_taken(first, steps, *found).is_some()) {
+        keep_before_migrating(connection, found)?;
+    }
+    lay_out_through(connection, first, steps)
+}
+
+pub fn kept_before(catalog: &Path, found: SchemaFingerprint) -> PathBuf {
+    let name = catalog.file_name().unwrap_or(OsStr::new(""));
+    catalog.with_file_name(named_within("", name, format!("{KEPT_BEFORE}{found}")))
+}
+
+fn damage_found(connection: &Connection) -> Result<Vec<String>> {
+    let mut checking = connection
+        .prepare("PRAGMA quick_check")
+        .map_err(|source| Error::store(StoreOp::Check, source))?;
+    let said = checking
+        .query_map([], |row| row.get::<_, String>(0))
+        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        .map_err(|source| Error::store(StoreOp::Check, source))?;
+    Ok(said.into_iter().filter(|said| said != UNDAMAGED).collect())
+}
+
+fn keep_before_migrating(connection: &Connection, found: SchemaFingerprint) -> Result<()> {
+    let Some(catalog) = connection
+        .path()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+    else {
+        return Ok(());
+    };
+    let damage = damage_found(connection)?;
+    if !damage.is_empty() {
+        tracing::error!(?damage, catalog = %catalog.display(), "the catalog is damaged; it is not migrated");
+        return Err(Error::CatalogDamaged { path: catalog });
+    }
+
+    let kept = kept_before(&catalog, found);
+    if kept.exists() {
+        return Ok(());
+    }
+    let name = kept.file_name().unwrap_or(OsStr::new(""));
+    let staged = kept.with_file_name(named_within("", name, STAGED));
+    let held = match Held::taken_over(&staged) {
+        Ok(held) => held,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+        Err(source) => {
+            return Err(Error::Io {
+                path: staged,
+                source,
+            });
+        }
+    };
+    let Some(written_to) = staged.to_str() else {
+        return Err(Error::NonUtf8Path { path: staged });
+    };
+    connection
+        .execute("VACUUM INTO ?1", [written_to])
+        .map_err(|source| Error::store(StoreOp::KeepBeforeMigrating, source))?;
+    let landed = File::open(&staged)
+        .and_then(|copy| copy.sync_all())
+        .and_then(|()| fs::rename(&staged, &kept))
+        .and_then(|()| match kept.parent() {
+            Some(folder) => File::open(folder).and_then(|folder| folder.sync_all()),
+            None => Ok(()),
+        });
+    drop(held);
+    landed.map_err(|source| Error::Io {
+        path: kept.clone(),
+        source,
+    })?;
+    tracing::info!(kept = %kept.display(), "the catalog as it stood is kept before it is migrated");
+    Ok(())
 }
 
 fn lay_out_through(connection: &Connection, first: &str, steps: &[&str]) -> Result<()> {
@@ -1164,6 +1255,91 @@ mod tests {
             .expect("the second process opened what the first migrated");
         assert_eq!(columns_of_held(&second), vec!["id", "name"]);
         drop((first, second));
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    fn scratch(named: &str) -> PathBuf {
+        let folder = env::temp_dir().join(format!("resonate-schema-{}-{named}", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        folder
+    }
+
+    fn on_disc(catalog: &Path) -> Connection {
+        let connection = Connection::open(catalog).expect("a catalog on disc");
+        configure(&connection, Role::Writing).expect("the pragmas apply");
+        connection
+    }
+
+    #[test]
+    fn a_catalog_on_disc_is_kept_as_it_stood_before_it_is_migrated() {
+        let folder = scratch("kept-before");
+        let catalog = folder.join("library.db");
+        let before = fingerprint_after(FIRST, &[]);
+        let first = on_disc(&catalog);
+        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
+        first
+            .execute_batch("INSERT INTO held (id) VALUES (7);")
+            .expect("a row is held");
+        drop(first);
+
+        let opened = on_disc(&catalog);
+        migrated(&opened, FIRST, &[NAMED]).expect("the catalog migrates");
+        let kept = Connection::open(kept_before(&catalog, before)).expect("the copy opens");
+
+        assert_eq!(columns_of_held(&opened), vec!["id", "name"]);
+        assert_eq!(columns_of_held(&kept), vec!["id"]);
+        assert_eq!(stamped(&kept).expect("the copy's stamp"), Some(before));
+        assert_eq!(
+            kept.query_row("SELECT id FROM held", [], |row| row.get::<_, i64>(0))
+                .expect("the row was kept"),
+            7
+        );
+        assert!(
+            fs::read_dir(&folder)
+                .expect("the folder lists")
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(STAGED)),
+            "the staged copy was left behind"
+        );
+        drop((opened, kept));
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_damaged_catalog_is_refused_and_left_unmigrated() {
+        const PAGE: usize = 4096;
+        let folder = scratch("damaged");
+        let catalog = folder.join("library.db");
+        let first = on_disc(&catalog);
+        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
+        first
+            .execute_batch(
+                "CREATE INDEX held_backwards ON held (id DESC);
+                 WITH RECURSIVE counted(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counted
+                                               WHERE n < 4000)
+                 INSERT INTO held (id) SELECT n FROM counted;
+                 PRAGMA wal_checkpoint(TRUNCATE);",
+            )
+            .expect("rows are held");
+        drop(first);
+        let mut bytes = fs::read(&catalog).expect("the catalog reads");
+        let last_page = bytes.len() / PAGE - 1;
+        bytes[last_page * PAGE..].fill(0xA5);
+        fs::write(&catalog, &bytes).expect("the catalog is damaged");
+
+        let opened = on_disc(&catalog);
+        let refused = migrated(&opened, FIRST, &[NAMED]);
+
+        assert!(
+            matches!(&refused, Err(Error::CatalogDamaged { path }) if *path == catalog),
+            "{refused:?}"
+        );
+        assert_eq!(
+            stamped(&opened).expect("the stamp reads"),
+            Some(fingerprint_after(FIRST, &[]))
+        );
+        drop(opened);
         let _ = fs::remove_dir_all(&folder);
     }
 

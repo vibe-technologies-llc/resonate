@@ -74,16 +74,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Catalog
-- Nothing guards the catalog's listens, favourites, playlists and wants: no copy before a migration
-  (irreversible, `DELETE FROM loves_told` among them), no `integrity_check`, no `.backup`; an older
-  build then fails `SchemaMismatch` with no way back
-- Organise renames after a `symlink_metadata` check (`renamed_onto`, `landed_onto`,
-  `take_in::place`, `filed::placed`): a file appearing between is overwritten; nothing uses
-  `RENAME_NOREPLACE`
-- A killed drop-in leaves its hidden `.<name>.<pid>.resonate-part` in the music folder: not in
-  `staged_writes`, skipped by the scan as a dot-name, swept by nothing
-- Organising onto another hard link of the same inode renames nothing yet moves the row; the next
-  scan adds the old name back and every organise repeats it
 - On a case-insensitive volume two destinations differing in case both preview and the second is
   refused `Collided` at apply (`claimed` is keyed by exact path)
 - A cross-filesystem organise copy (`copied_whole`) keeps the mtime alone, dropping xattrs and
@@ -94,10 +84,7 @@ sits last in its category, not worked until it moves. Everything else is open.
 - A file whose name is not UTF-8 is counted `Unnamed` and never catalogued
 - A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read in
   `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
-- `sqlite_stat1` is gathered only by a scan that changed rows; a catalog filled by import, delivery
-  or a cancelled first scan runs with none
 - `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
-- The analysis cache's crash leftovers (`<pid>-<n>.staged`) are neither swept nor counted by `trim`
 
 ## Providers and network
 - A device sign-in's cancel is heard only between polls (each request is bounded by the API

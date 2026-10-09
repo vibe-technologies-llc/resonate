@@ -248,8 +248,12 @@ fn run(
         }
     }
 
+    let stats = progress.snapshot();
+    if stats.vaulted + stats.deduped > 0 {
+        library.restate_the_statistics();
+    }
     Ok(ImportSummary {
-        stats: progress.snapshot(),
+        stats,
         plan,
         cancelled: progress.is_cancelled(),
     })

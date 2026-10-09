@@ -64,6 +64,7 @@ covering a writer between creating the file and locking it), sooner where its st
 `/proc`: living). `Held::made` creates a fresh name; `Held::taken_over` reuses a fixed one, refusing
 `WouldBlock` while a living writer holds it. The pid stays in a name only to keep names apart and
 for that fallback. Users: the tag writer's staged copies, undo journals and whole copies
-(`resonate-codec`), the vault's staging, organise's and a delivery's staged files
+(`resonate-codec`), the vault's staging, organise's and a delivery's staged files, a drop-in's
+`.resonate-part`, the analysis cache's `.staged` writes, the catalog's copy kept before a migration
 (`a_held_file_is_living_whatever_process_its_stamp_names`,
 `an_unheld_file_left_alone_is_gone_though_its_stamp_names_a_running_process`).

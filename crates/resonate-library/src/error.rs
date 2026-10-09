@@ -108,6 +108,8 @@ pub enum StoreOp {
     Open,
     LayOut,
     Migrate,
+    Check,
+    KeepBeforeMigrating,
     Analyse,
     Prepare,
     Insert,
@@ -344,6 +346,12 @@ pub enum Error {
         #[source]
         source: Box<rusqlite::Error>,
     },
+
+    #[error(
+        "catalog {path} failed its integrity check and is left as it stands, unmigrated",
+        path = path.display()
+    )]
+    CatalogDamaged { path: PathBuf },
 
     #[error("catalog was written to schema {found}, this build writes {expected}")]
     SchemaMismatch {

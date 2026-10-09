@@ -33,7 +33,7 @@ use crate::{
     filed,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
-    scan, store, volumes,
+    scan, store, unreplacing, volumes,
 };
 
 pub const DEFAULT_LAYOUT: &str = "{albumartist}/{album}/{disc}{track} {title}";
@@ -1814,6 +1814,7 @@ fn names_audio(file: &Path) -> bool {
 enum Landing {
     Renamed,
     Copied,
+    Linked,
 }
 
 struct Renamed {
@@ -2044,7 +2045,19 @@ fn renamed_onto(
 }
 
 fn landed_onto(library: &Library, from: &Path, to: &Path) -> Result<Renamed> {
-    let how = match fs::rename(from, to) {
+    if another_link_of(from, to) {
+        return Ok(Renamed {
+            from: from.to_path_buf(),
+            to: to.to_path_buf(),
+            how: Landing::Linked,
+        });
+    }
+    let renamed = if is_the_same_file(from, to) {
+        fs::rename(from, to)
+    } else {
+        unreplacing::renamed_over_nothing(from, to)
+    };
+    let how = match renamed {
         Ok(()) => Landing::Renamed,
         Err(source) if source.kind() == io::ErrorKind::CrossesDevices => {
             if !already_copied(from, to) {
@@ -2071,7 +2084,7 @@ fn landed_onto(library: &Library, from: &Path, to: &Path) -> Result<Renamed> {
 fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
     let staged = noted_staging(library, to)?;
     let landed = copied_whole(from, &staged).and_then(|held| {
-        fs::rename(&staged, to)
+        unreplacing::renamed_over_nothing(&staged, to)
             .map(|()| held)
             .map_err(|source| Error::Move {
                 op: MoveOp::Copy,
@@ -2284,6 +2297,33 @@ fn is_the_same_file(one: &Path, other: &Path) -> bool {
     one.dev() == other.dev() && one.ino() == other.ino()
 }
 
+fn listed_as_named(path: &Path) -> bool {
+    let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    fs::read_dir(folder).is_ok_and(|listed| listed.flatten().any(|entry| entry.file_name() == name))
+}
+
+fn is_the_same_folder(one: &Path, other: &Path) -> bool {
+    let (Ok(one), Ok(other)) = (fs::metadata(one), fs::metadata(other)) else {
+        return false;
+    };
+    one.dev() == other.dev() && one.ino() == other.ino()
+}
+
+fn another_link_of(from: &Path, to: &Path) -> bool {
+    if from == to || !is_the_same_file(from, to) {
+        return false;
+    }
+    let (Some(from_folder), Some(to_folder)) = (from.parent(), to.parent()) else {
+        return false;
+    };
+    if !is_the_same_folder(from_folder, to_folder) {
+        return true;
+    }
+    from.file_name() != to.file_name() && listed_as_named(from) && listed_as_named(to)
+}
+
 fn as_the_volume_names_it(from: &Path, to: PathBuf) -> PathBuf {
     if to == from || !is_the_same_file(from, &to) {
         return to;
@@ -2364,7 +2404,10 @@ fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
 }
 
 fn left_behind(done: &[Renamed]) {
-    for step in done.iter().filter(|step| step.how == Landing::Copied) {
+    for step in done
+        .iter()
+        .filter(|step| matches!(step.how, Landing::Copied | Landing::Linked))
+    {
         if let Err(source) = fs::remove_file(&step.from) {
             let error = Error::Move {
                 op: MoveOp::Discard,
@@ -2484,8 +2527,12 @@ fn take_back_the_empty(made: &[PathBuf]) {
 fn put_back(done: &[Renamed]) {
     for step in done.iter().rev() {
         let (op, taken) = match step.how {
-            Landing::Renamed => (MoveOp::Rename, fs::rename(&step.to, &step.from)),
+            Landing::Renamed => (
+                MoveOp::Rename,
+                unreplacing::renamed_over_nothing(&step.to, &step.from),
+            ),
             Landing::Copied => (MoveOp::Discard, fs::remove_file(&step.to)),
+            Landing::Linked => continue,
         };
         if let Err(source) = taken {
             let error = Error::Move {
@@ -3742,6 +3789,47 @@ mod tests {
             sidecars: Vec::new(),
         };
         assert_eq!(standing(&onto_itself), None);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_track_landing_on_another_name_of_its_own_file_keeps_that_name_and_lets_the_old_one_go() {
+        let folder = a_folder_of_its_own();
+        let from = folder.join("old.wav");
+        let to = folder.join("new.wav");
+        fs::write(&from, b"held").expect("a writable temporary file");
+        fs::hard_link(&from, &to).expect("a second name for a temporary file");
+        let library = Library::open_in_memory().expect("a catalog in memory");
+
+        let landed = landed_onto(&library, &from, &to).expect("the track lands");
+        let linked = landed.how == Landing::Linked;
+        left_behind(&[landed]);
+
+        assert!(linked, "a second name of the same file was renamed onto");
+        assert!(!from.exists(), "the old name was left standing");
+        assert_eq!(fs::read(&to).expect("the new name stands"), b"held");
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_file_appearing_where_a_track_lands_is_never_renamed_over() {
+        let folder = a_folder_of_its_own();
+        let from = folder.join("moving.wav");
+        let to = folder.join("appeared.wav");
+        fs::write(&from, b"moving").expect("a writable temporary file");
+        fs::write(&to, b"appeared").expect("a writable temporary file");
+        let library = Library::open_in_memory().expect("a catalog in memory");
+
+        let refused = landed_onto(&library, &from, &to);
+
+        assert!(
+            matches!(&refused, Err(Error::Move { source, .. }) if source.kind() == io::ErrorKind::AlreadyExists),
+            "a file that appeared was renamed over"
+        );
+        assert_eq!(fs::read(&to).expect("still standing"), b"appeared");
+        assert_eq!(fs::read(&from).expect("still standing"), b"moving");
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

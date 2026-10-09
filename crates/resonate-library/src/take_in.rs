@@ -13,11 +13,15 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::renamed_cue;
-use resonate_core::{names_a_picture, names_audio, naming};
+use resonate_core::{
+    names_a_picture, names_audio, naming,
+    writer::{self, Held, Writer},
+};
 
 use crate::{
     Error, Result,
     pass::{Cancelling, PassHandle, PassKind, TakeInHandle},
+    unreplacing,
 };
 
 const SHEET_EXTENSION: &str = "cue";
@@ -350,7 +354,7 @@ impl Content {
         }
     }
 
-    fn staged_at(&self, staged: &Path) -> std::result::Result<u64, Passing> {
+    fn staged_at(&self, staged: &Path, _held: &Held) -> std::result::Result<u64, Passing> {
         match self {
             Self::Whole(source) => {
                 let bytes = fs::copy(source, staged).map_err(|error| refused_copy(&error))?;
@@ -391,6 +395,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
         .store(summary.passed.len() as u64, Ordering::Relaxed);
 
     let mut renames = Renames::default();
+    let mut swept = AHashSet::new();
     for item in items {
         if progress.is_cancelled() {
             summary.cancelled = true;
@@ -398,7 +403,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
         }
 
         let (relative, content) = aimed(&item, &renames.beside(&item));
-        match land(&item, &relative, &content, &into) {
+        match land(&item, &relative, &content, &into, &mut swept) {
             Ok(Stood::Landed(landed)) => {
                 if item.role == Role::Audio {
                     renames.note(&item.from, &landed.to);
@@ -636,6 +641,7 @@ fn land(
     relative: &Path,
     content: &Content,
     into: &Path,
+    swept: &mut AHashSet<PathBuf>,
 ) -> std::result::Result<Stood, Passing> {
     let source = item.from.canonicalize().map_err(|_| Passing::SourceGone)?;
     if source.starts_with(into) {
@@ -649,15 +655,20 @@ fn land(
     let whole = into.join(relative);
     let folder = whole.parent().unwrap_or(into);
     fs::create_dir_all(folder).map_err(|error| unwritable(&error))?;
+    if swept.insert(folder.to_path_buf()) {
+        sweep_what_a_dead_drop_in_staged(folder);
+    }
 
     let staged = staged_beside(&whole);
-    let outcome = content.staged_at(&staged).and_then(|bytes| {
+    let held = Held::taken_over(&staged).map_err(|error| unwritable(&error))?;
+    let outcome = content.staged_at(&staged, &held).and_then(|bytes| {
         File::open(&staged)
             .and_then(|file| file.sync_all())
             .map_err(|_| Passing::Unverified)?;
         place(&staged, content, &whole).map(|stood| (stood, bytes))
     });
     let _ = fs::remove_file(&staged);
+    drop(held);
 
     outcome.map(|(stood, bytes)| match stood {
         Placed::Named { to, renamed } => Stood::Landed(Landed {
@@ -690,6 +701,39 @@ fn staged_beside(whole: &Path) -> PathBuf {
         whole.file_name().unwrap_or_default(),
         format!(".{}.{STAGED_SUFFIX}", process::id()),
     ))
+}
+
+fn stamp_of_staged(name: &str) -> Option<u32> {
+    name.strip_prefix('.')?
+        .strip_suffix(STAGED_SUFFIX)?
+        .strip_suffix('.')?
+        .rsplit_once('.')?
+        .1
+        .parse()
+        .ok()
+}
+
+fn sweep_what_a_dead_drop_in_staged(folder: &Path) {
+    let Ok(listed) = fs::read_dir(folder) else {
+        return;
+    };
+    for entry in listed.flatten() {
+        let Some(stamp) = entry.file_name().to_str().and_then(stamp_of_staged) else {
+            continue;
+        };
+        let path = entry.path();
+        if writer::writer_of(&path, stamp) != Writer::Gone {
+            continue;
+        }
+        match fs::remove_file(&path) {
+            Ok(()) => {
+                tracing::debug!(staged = %path.display(), "what a dead drop-in staged was taken away")
+            }
+            Err(error) => {
+                tracing::debug!(%error, staged = %path.display(), "what a dead drop-in staged is left")
+            }
+        }
+    }
 }
 
 pub(crate) fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
@@ -729,16 +773,16 @@ fn place(staged: &Path, content: &Content, whole: &Path) -> std::result::Result<
                 });
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(_) => {
-                if candidate.exists() {
-                    continue;
+            Err(_) => match unreplacing::renamed_over_nothing(staged, &candidate) {
+                Ok(()) => {
+                    return Ok(Placed::Named {
+                        to: candidate,
+                        renamed,
+                    });
                 }
-                fs::rename(staged, &candidate).map_err(|error| unwritable(&error))?;
-                return Ok(Placed::Named {
-                    to: candidate,
-                    renamed,
-                });
-            }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(unwritable(&error)),
+            },
         }
     }
     Err(Passing::Unwritable)
@@ -818,6 +862,33 @@ mod tests {
         .expect("a folder to copy into")
         .join()
         .expect("the pass finishes")
+    }
+
+    #[test]
+    fn what_a_dead_drop_in_staged_is_taken_away_by_the_next_and_a_living_ones_is_left() {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+        let scratch = Scratch::new("dead-staged");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        let song = written(&from, "song.flac", b"song");
+        let dead = written(
+            &into,
+            &format!(".old.flac.{NEVER_A_PROCESS}.{STAGED_SUFFIX}"),
+            b"half",
+        );
+        let living = written(&into, &format!(".new.flac.7.{STAGED_SUFFIX}"), b"half");
+        let held = Held::taken_over(&living).expect("a living writer holds its file");
+
+        let summary = taken_in(vec![song], &into);
+
+        assert_eq!(summary.stats.copied, 1);
+        assert!(!dead.exists(), "what a dead drop-in staged was left behind");
+        assert!(
+            living.exists(),
+            "what a living drop-in staged was taken away"
+        );
+        assert_eq!(stamp_of_staged(".a.b.flac.42.resonate-part"), Some(42));
+        assert_eq!(stamp_of_staged(".a.flac.resonate-part"), None);
+        drop(held);
     }
 
     #[test]

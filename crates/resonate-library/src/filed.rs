@@ -16,7 +16,7 @@ use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming
 use crate::{
     Error, Library, Want,
     organise::{self, Layout, Named, Naming},
-    scan, store, take_in,
+    scan, store, take_in, unreplacing,
 };
 
 pub(crate) const STAGED_SUFFIX: &str = "resonate-delivery";
@@ -200,10 +200,11 @@ fn placed(staged: &Path, whole: &Path) -> std::result::Result<PathBuf, Unfiled> 
             Ok(()) => return Ok(candidate),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(_) if candidate.exists() => {}
-            Err(_) => {
-                fs::rename(staged, &candidate)?;
-                return Ok(candidate);
-            }
+            Err(_) => match unreplacing::renamed_over_nothing(staged, &candidate) {
+                Ok(()) => return Ok(candidate),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            },
         }
     }
     Err(Unfiled::Io(io::Error::from(io::ErrorKind::AlreadyExists)))

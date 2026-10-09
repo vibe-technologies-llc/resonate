@@ -633,7 +633,7 @@ fn run(
         changed += removed + tidied;
     }
     inner.write(alternatives::settle_if_owed)?;
-    if changed > 0 && !cancelled {
+    if changed > 0 {
         inner.restate_the_statistics();
     }
 
