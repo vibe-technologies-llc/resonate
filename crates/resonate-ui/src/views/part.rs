@@ -30,9 +30,8 @@ impl Region {
     fn holding(self, drawn: AnyElement) -> AnyElement {
         let holder = div().size_full();
         match self {
-            Self::Header | Self::Transport => holder.flex().flex_col(),
+            Self::Header | Self::Transport | Self::Pane => holder.flex().flex_col(),
             Self::Sidebar => holder.flex(),
-            Self::Pane => holder.grid().grid_cols(1).grid_rows(1),
         }
         .child(drawn)
         .into_any_element()

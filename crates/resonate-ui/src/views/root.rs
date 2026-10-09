@@ -4611,12 +4611,7 @@ impl RootView {
                 self.grid_width.seen_in(window.viewport_size().width);
                 let shown = self.pane_shown(cx);
                 motion::faded_in(
-                    div()
-                        .size_full()
-                        .grid()
-                        .grid_cols(1)
-                        .grid_rows(1)
-                        .child(self.content(cx)),
+                    div().size_full().flex().flex_col().child(self.content(cx)),
                     shown,
                     motion::ARRIVES_OVER,
                 )

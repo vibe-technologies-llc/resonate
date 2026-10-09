@@ -1036,9 +1036,13 @@ is never named.
   `Part` observes the root (`cx.notify()` on `RootView` redraws all four); a hover/scroll/frame
   asked inside a region notifies it alone (gpui names the view a listener was painted under). A
   cached view is laid out from a style, not content, so `Region::laid_out` declares sizes: header
-  and bar fixed heights, sidebar its width, pane the rest in a one-cell grid, track `minmax(0, 1fr)`
-  (never wider than its region whatever least width its content asks; a flex row honoured a pane
-  root's automatic minimum).
+  and bar fixed heights, sidebar its width, pane the rest. **The pane is held in flex columns, its
+  root the one item** (`Region::holding`, `RootView::region`): the width is the cross axis,
+  stretched to the region's and never measured, with no automatic minimum (a flex row honoured a
+  pane root's, growing past the region at the narrowest window); a pane root fills the height by
+  `flex_1` or `size_full`. A one-cell grid (`minmax(0, 1fr)`) held it for a while and broke every
+  cut name drawn in plain divs: taffy's track sizing measured the root at a column estimate of 0
+  first, and gpui cut the name's runs to the ellipsis there for good (below).
   - `PlayerModel::refresh` reports a poll as `Moved`: `Clock` if only position and sink latency
     changed (the `held_still` reading `Grain::shows` makes), else `More`. Root observer: `More`
     notifies itself; `Clock` → `Parts::the_clock_moved` (bar, plus pane where
@@ -1420,6 +1424,10 @@ is never named.
   the list lays each row out at its width. No newer gpui than 0.2.2 is published. Found by printing
   every measure's available space from a `[patch]`ed gpui copy
   (`MEASURE known=None avail=Definite(0px) … runs=[39]`, then `avail=Definite(200px) … runs=[3]`).
+  The pane is no longer a grid (above); the same probe over a Top results row shows no measure at
+  0 px and runs left whole. Any new layout around a plain-div listing is checked the same way: an
+  `eprintln!` in `TextLayout::layout`'s measure closure of a `[patch.crates-io]` gpui copy, a driven
+  test rendering a long cut name.
 
 ## Driven by tests
 
