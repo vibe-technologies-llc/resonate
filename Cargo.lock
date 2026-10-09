@@ -5264,6 +5264,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-fetch"
+version = "0.1.0"
+dependencies = [
+ "resonate-core",
+ "resonate-providers",
+ "rustls",
+ "rustls-native-certs",
+ "tracing",
+ "ureq",
+ "webpki-root-certs",
+]
+
+[[package]]
 name = "resonate-inbox"
 version = "0.1.0"
 dependencies = [
@@ -5339,14 +5352,12 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "resonate-core",
+ "resonate-fetch",
  "resonate-providers",
- "rustls",
- "rustls-native-certs",
  "serde",
  "serde_json",
  "tracing",
  "ureq",
- "webpki-root-certs",
 ]
 
 [[package]]
@@ -5375,6 +5386,7 @@ dependencies = [
  "resonate-codec",
  "resonate-core",
  "resonate-eq",
+ "resonate-fetch",
  "resonate-library",
  "resonate-listen",
  "resonate-lyrics",
@@ -5417,14 +5429,12 @@ dependencies = [
  "md-5 0.11.0",
  "parking_lot",
  "resonate-core",
+ "resonate-fetch",
  "resonate-providers",
- "rustls",
- "rustls-native-certs",
  "serde",
  "serde_json",
  "tracing",
  "ureq",
- "webpki-root-certs",
 ]
 
 [[package]]
@@ -5434,15 +5444,13 @@ dependencies = [
  "base64 0.23.1",
  "parking_lot",
  "resonate-core",
+ "resonate-fetch",
  "resonate-providers",
  "roxmltree 0.21.1",
- "rustls",
- "rustls-native-certs",
  "serde",
  "serde_json",
  "tracing",
  "ureq",
- "webpki-root-certs",
 ]
 
 [[package]]

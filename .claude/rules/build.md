@@ -15,8 +15,12 @@ paths:
   Every push to `master`, every pull request (and `workflow_dispatch`), in `archlinux` containers:
   clippy, the headless and whole-workspace builds and tests, the DSP bench under its ceilings, the
   layering refusals and the fuzz build. A runnable command added to `CLAUDE.md` goes into the
-  workflow too; a crate added to the layering refusals gets a `refuse` line. `RUSTFLAGS` is emptied
-  over `target-cpu=native`. The formatter is local only: a hosted runner cannot install
+  workflow too; a crate added to the layering refusals gets a `refuse` line. The job has four
+  shapes: `refuse` (names a crate's tree must not hold), `refuse_headless` (the same without
+  default features), `only` (the workspace crates a crate may reach, nothing else),
+  `reached_by_the_binary_alone` (`cargo tree -i`: no workspace crate but the binary depends on it,
+  for `online`, `mcp`, `discord`); `resonate-mpris`'s direct normal edges are checked for
+  `resonate-codec`. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local only: a hosted runner cannot install
   `rust-formatter`.
 - **`rpm-release.yml`** builds the Fedora binary and source RPMs (`fedora:44` container) when a
   release is published or the workflow is run manually against a selected branch; both are kept as

@@ -19,7 +19,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, providers/*, the binary's `providers.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic, TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic, TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
@@ -47,7 +47,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Twenty-two crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Twenty-three crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -68,6 +68,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-listen     capture the desktop or a microphone, and the recogniser seam
   ├── resonate-eq         profile formats, the profile store, the AutoEq catalogue and its seam
   ├── resonate-providers  the provider seam: an identity in, media out  (filled by providers/*)
+  ├── resonate-fetch      what every network provider shares: agents, trust, Retry-After, resuming
   ├── providers/inbox     resonate-inbox, a folder of the listener's
   ├── providers/monochrome resonate-monochrome, a Monochrome track streamer  [`online`]
   ├── providers/subsonic  resonate-subsonic, a Subsonic server  [`online`]
@@ -78,7 +79,8 @@ resonate            bin: CLI, tracing, wiring
 The tree says what each crate is *for*, not every edge: `cargo tree` is the authority, and the
 `layering` job in `.github/workflows/ci.yml` holds the refusals. Edges worth knowing: only the
 binary (and the detached `fuzz/`, for `resonate-mcp`) reaches `resonate-online`, `resonate-mcp` and
-`resonate-discord`; a provider crate reaches the seam and core alone; `resonate-listen` reaches core
+`resonate-discord`; a provider crate reaches the seam, core and (over the network)
+`resonate-fetch` alone; `resonate-listen` reaches core
 and `resonate-pipewire` alone (its own PipeWire client per recording, never the engine's
 single-stream slot); `resonate-analysis` reaches `resonate-dsp`.
 

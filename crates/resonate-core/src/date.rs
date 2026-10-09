@@ -43,6 +43,18 @@ impl CivilDate {
         Self { year, month, day }
     }
 
+    pub fn day_since_the_epoch(self) -> i64 {
+        let year = self.year - i64::from(self.month <= 2);
+        let era = year.div_euclid(YEARS_PER_ERA);
+        let year_of_era = year - era * YEARS_PER_ERA;
+        let months_from_march = (self.month + MONTHS_PER_YEAR - MARCH) % MONTHS_PER_YEAR;
+        let day_of_year = (DAYS_PER_FIVE_MONTHS * months_from_march + 2) / 5 + self.day - 1;
+        let day_of_era =
+            year_of_era * DAYS_PER_COMMON_YEAR + year_of_era / 4 - year_of_era / 100 + day_of_year;
+
+        era * DAYS_PER_ERA + day_of_era - DAYS_FROM_0000_03_01_TO_THE_EPOCH
+    }
+
     pub fn at(moment: SystemTime) -> Self {
         Self::of_day(seconds_since_the_epoch(moment).div_euclid(SECONDS_PER_DAY))
     }
@@ -118,5 +130,12 @@ mod tests {
             }
         );
         assert_eq!(CivilDate::of_day(19_782).month_named(), "Feb");
+    }
+
+    #[test]
+    fn a_date_is_counted_back_to_the_day_it_was_read_from() {
+        for day in [-800_000, -1, 0, 59, 60, 19_782, 2_932_896] {
+            assert_eq!(CivilDate::of_day(day).day_since_the_epoch(), day);
+        }
     }
 }

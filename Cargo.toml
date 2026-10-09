@@ -10,6 +10,7 @@ members = [
     "crates/resonate-pipewire",
     "crates/resonate-engine",
     "crates/resonate-eq",
+    "crates/resonate-fetch",
     "crates/resonate-library",
     "crates/resonate-listen",
     "crates/resonate-lyrics",
@@ -177,6 +178,7 @@ resonate-dsp = { version = "0.1.0", path = "crates/resonate-dsp" }
 resonate-pipewire = { version = "0.1.0", path = "crates/resonate-pipewire" }
 resonate-engine = { version = "0.1.0", path = "crates/resonate-engine" }
 resonate-eq = { version = "0.1.0", path = "crates/resonate-eq" }
+resonate-fetch = { version = "0.1.0", path = "crates/resonate-fetch" }
 resonate-library = { version = "0.1.0", path = "crates/resonate-library" }
 resonate-listen = { version = "0.1.0", path = "crates/resonate-listen" }
 resonate-lyrics = { version = "0.1.0", path = "crates/resonate-lyrics" }

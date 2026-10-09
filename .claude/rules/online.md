@@ -72,8 +72,8 @@ counted play), only under a token or a session the listener signed in for.
   `Lookups::for_the_pass`, `resonate enrich`, the lookup after `resonate scan`, the MCP server), so
   its pictures and studies yield too; whatever a listener waits on (search, artist page, want,
   followed link, `share`, `analyse --recognise`) asks as the listener.
-- **Busy: three more tries, wait doubling; `Retry-After` in seconds, capped.** Busy = 503
-  (MusicBrainz's too-fast answer), 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT` doubling,
+- **Busy: three more tries, wait doubling; `Retry-After` in seconds or an HTTP date, capped.**
+  Busy = 503 (MusicBrainz's too-fast answer), 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT` doubling,
   `RETRY_AFTER_AT_MOST` (a pass must not park for minutes a service names). The fourth answer is
   returned whatever it says. **A host busy through every retry is asked once, not four times, until
   it answers anything else** (`Pacing`'s `stayed_busy`; `retries_owed` answers none): an album's

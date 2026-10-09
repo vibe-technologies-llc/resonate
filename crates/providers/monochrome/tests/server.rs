@@ -166,6 +166,7 @@ impl Fake {
         self.monochrome().waiting(Patience {
             answered_within: IMPATIENT,
             broken_off_after: IMPATIENT,
+            resumed_after: IMPATIENT / 8,
         })
     }
 

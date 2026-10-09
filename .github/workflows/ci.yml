@@ -120,6 +120,25 @@ jobs:
             held=$(held_by -p "$crate" --no-default-features)
             check "$crate without its default features" "$held" "$@"
           }
+          only() {
+            local crate=$1 reached
+            shift
+            for reached in $(held_by -p "$crate" -e normal | grep '^resonate' | grep -vx "$crate" || true); do
+              if ! printf '%s\n' "$@" | grep -qx "$reached"; then
+                echo "::error::$crate reaches $reached"
+                failed=1
+              fi
+            done
+          }
+          reached_by_the_binary_alone() {
+            local crate=$1 by
+            for by in $(held_by --workspace -i "$crate" | grep '^resonate' | grep -vx "$crate" || true); do
+              if [ "$by" != resonate ]; then
+                echo "::error::$crate is reached by $by"
+                failed=1
+              fi
+            done
+          }
           refuse resonate-core symphonia pipewire gpui serde
           refuse resonate-library ureq serde serde_json
           refuse resonate-eq gpui resonate-engine resonate-library ureq
@@ -127,14 +146,29 @@ jobs:
           refuse resonate-codec resonate-dsp resonate-pipewire
           refuse resonate-dsp resonate-eq resonate-codec resonate-pipewire
           refuse resonate-pipewire resonate-codec resonate-dsp
-          refuse resonate-providers resonate-library resonate-codec resonate-vault gpui
-          refuse resonate-tidal resonate-library resonate-codec resonate-vault resonate-engine gpui
-          refuse resonate-monochrome resonate-library resonate-codec resonate-vault resonate-engine gpui
+          refuse resonate-providers gpui
+          refuse resonate-fetch gpui
+          refuse resonate-inbox gpui
+          refuse resonate-subsonic gpui
+          refuse resonate-tidal gpui
+          refuse resonate-monochrome gpui
+          only resonate-providers resonate-core
+          only resonate-fetch resonate-core resonate-providers
+          only resonate-inbox resonate-core resonate-providers
+          only resonate-subsonic resonate-core resonate-providers resonate-fetch
+          only resonate-tidal resonate-core resonate-providers resonate-fetch
+          only resonate-monochrome resonate-core resonate-providers resonate-fetch
           refuse resonate-analysis gpui resonate-engine resonate-library ureq
           refuse resonate-discord gpui resonate-library ureq
-          refuse resonate-listen gpui resonate-engine resonate-library ureq
+          refuse resonate-listen gpui ureq
+          only resonate-listen resonate-core resonate-pipewire
           refuse resonate-lyrics gpui resonate-engine resonate-library ureq
           refuse resonate-mpris gpui resonate-library
+          check "resonate-mpris outside its tests" "$(held_by -p resonate-mpris -e normal --depth 1)" resonate-codec
+          refuse resonate-mcp gpui resonate-ui resonate-online
+          reached_by_the_binary_alone resonate-online
+          reached_by_the_binary_alone resonate-mcp
+          reached_by_the_binary_alone resonate-discord
           refuse_headless resonate serde_json gpui ureq
           exit "$failed"
 

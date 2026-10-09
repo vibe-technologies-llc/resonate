@@ -12,6 +12,7 @@ resonate-analysis.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-eq.workspace = true
+resonate-fetch.workspace = true
 resonate-library.workspace = true
 resonate-listen.workspace = true
 resonate-lyrics.workspace = true

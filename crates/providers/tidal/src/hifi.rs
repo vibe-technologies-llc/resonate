@@ -5,13 +5,15 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
+use resonate_fetch::retry_after_of;
 use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use ureq::{Agent, http::header::AUTHORIZATION};
 
 use crate::{
     MediaHosts,
-    asker::{Asker, Sent, media_agent, retry_after},
+    asker::{Asker, Sent, media_agent},
     played::{self, Finds, Playback, Player, TrackId, named_by},
 };
 
@@ -44,12 +46,13 @@ struct Wrapped<T> {
 
 #[derive(Deserialize)]
 struct Listed {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "listings_readable")]
     items: Vec<Listing>,
 }
 
 #[derive(Deserialize)]
 struct Listing {
+    #[serde(deserialize_with = "id_spelt")]
     id: u64,
     #[serde(default)]
     isrc: Option<String>,
@@ -57,8 +60,37 @@ struct Listing {
 
 #[derive(Deserialize)]
 struct WebListed {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "listings_readable")]
     items: Vec<Listing>,
+}
+
+fn listings_readable<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<Listing>, D::Error> {
+    let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
+    Ok(listed
+        .into_iter()
+        .filter_map(|listing| {
+            serde_json::from_value(listing)
+                .inspect_err(|error| {
+                    tracing::debug!(%error, "a listing that does not read is passed over");
+                })
+                .ok()
+        })
+        .collect())
+}
+
+fn id_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<u64, D::Error> {
+    match Value::deserialize(deserializer)? {
+        Value::Number(id) => id
+            .as_u64()
+            .ok_or_else(|| serde::de::Error::custom("a track id is a whole number")),
+        Value::String(id) => id
+            .trim()
+            .parse()
+            .map_err(|_| serde::de::Error::custom("a track id is a whole number")),
+        _ => Err(serde::de::Error::custom("a track id is a whole number")),
+    }
 }
 
 #[derive(Deserialize)]
@@ -402,7 +434,7 @@ impl HifiApi {
         let sent = self.asker.sent(op, || self.asker.agent.get(url).call())?;
         match sent {
             Sent::Answered(response) if response.status().as_u16() == ACCEPTED => {
-                let wait = retry_after(&response)
+                let wait = retry_after_of(&response)
                     .unwrap_or(QUEUE_LOOKED_AT_LEAST_EVERY)
                     .clamp(QUEUE_LOOKED_AT_LEAST_EVERY, QUEUE_LOOKED_AT_MOST_EVERY);
                 let pending: Pending = self
@@ -523,6 +555,25 @@ impl Provider for HifiApi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_listing_spelling_its_id_as_text_is_read_and_one_that_does_not_read_passed_over() {
+        let listed: WebListed = serde_json::from_str(
+            r#"{"items": [{"id": "77", "isrc": "GBN9Y1100089"}, {"id": null}, 5, {"id": 78}]}"#,
+        )
+        .expect("a listing");
+        let none: WebListed = serde_json::from_str(r#"{"items": null}"#).expect("a listing");
+
+        assert_eq!(
+            listed
+                .items
+                .iter()
+                .map(|listing| listing.id)
+                .collect::<Vec<_>>(),
+            [77, 78]
+        );
+        assert!(none.items.is_empty());
+    }
 
     #[test]
     fn a_queued_request_is_named_only_by_letters_digits_and_dashes() {

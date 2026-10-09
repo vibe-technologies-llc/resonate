@@ -4,17 +4,14 @@ use std::{
 };
 
 use resonate_core::SourceId;
+use resonate_fetch::unreached;
 use resonate_providers::{Authorizing, Client, Error, ProviderOp, RefreshToken, Result, SignsIn};
 use serde::Deserialize;
 use ureq::{Agent, Body, http};
 
-use crate::{
-    Endpoints,
-    asker::{api_agent, unreached},
-    source,
-};
+use crate::{Endpoints, asker::api_agent, source};
 
-const SCOPE: &str = "r_usr w_usr w_sub";
+const SCOPE: &str = "r_usr";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const PENDING: &str = "authorization_pending";
 const SLOW_DOWN: &str = "slow_down";

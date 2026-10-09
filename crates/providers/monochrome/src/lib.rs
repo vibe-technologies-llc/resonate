@@ -1,30 +1,18 @@
-mod fetched;
-mod stall;
-mod trust;
-
-use std::{fmt::Write as _, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use resonate_core::{Isrc, SourceId};
+pub use resonate_fetch::Patience;
+use resonate_fetch::{
+    ASKED_LATER, Ranged, Trusted, asking_agent, configured, downloading_agent, escaped,
+    is_a_document, retry_after_of, unreached,
+};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
     Result, is_a_page,
 };
-use serde::Deserialize;
-use ureq::{
-    Agent, Body,
-    config::{Config, ConfigBuilder},
-    http::{self, header::RETRY_AFTER},
-    typestate::AgentScope,
-    unversioned::{
-        resolver::DefaultResolver,
-        transport::{Connector as _, DefaultConnector},
-    },
-};
-
-use crate::{
-    fetched::{Fetched, as_io},
-    stall::BrokenOffAfter,
-};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+use ureq::{Agent, Body, http};
 
 const MONOCHROME: &str = "monochrome";
 const HOSTED_SERVER: &str = "https://tracks.monochrome.st";
@@ -34,76 +22,54 @@ const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
 const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
-const ASKED_LATER: [u16; 4] = [429, 502, 503, 504];
 const GONE_FROM_THE_SERVER: [u16; 2] = [404, 410];
-const DOCUMENT_TYPES: [&str; 3] = ["text/", "json", "xml"];
-const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
-const BROKEN_OFF_AFTER: Duration = Duration::from_secs(30);
-const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
-const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Patience {
-    pub answered_within: Duration,
-    pub broken_off_after: Duration,
-}
-
-impl Default for Patience {
-    fn default() -> Self {
-        Self {
-            answered_within: ANSWERED_WITHIN,
-            broken_off_after: BROKEN_OFF_AFTER,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Trusted {
-    BuiltInRoots,
-    SystemStoreToo,
-}
-
-fn configured(patience: Patience, trusted: Trusted) -> ConfigBuilder<AgentScope> {
-    let builder = Agent::config_builder()
-        .user_agent(USER_AGENT)
-        .timeout_connect(Some(CONNECTED_WITHIN))
-        .timeout_recv_response(Some(patience.answered_within))
-        .http_status_as_error(false);
-    match trusted {
-        Trusted::BuiltInRoots => builder,
-        Trusted::SystemStoreToo => builder.tls_config(trust::system_and_built_in()),
-    }
-}
-
-fn asking_agent(patience: Patience, trusted: Trusted) -> Agent {
-    configured(patience, trusted)
-        .timeout_global(Some(patience.answered_within))
-        .build()
-        .new_agent()
-}
-
-fn downloading_agent(patience: Patience, trusted: Trusted) -> Agent {
-    let config: Config = configured(patience, trusted).build();
-    Agent::with_parts(
-        config,
-        DefaultConnector::new().chain(BrokenOffAfter(patience.broken_off_after)),
-        DefaultResolver::default(),
+fn downloading(patience: Patience, trusted: Trusted) -> Agent {
+    downloading_agent(
+        configured(patience.answered_within, trusted).build(),
+        patience.broken_off_after,
     )
+}
+
+fn listings_readable<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<Listing>, D::Error> {
+    let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
+    Ok(listed
+        .into_iter()
+        .filter_map(|listing| {
+            serde_json::from_value(listing)
+                .inspect_err(|error| {
+                    tracing::debug!(%error, "a Monochrome listing that does not read is passed over");
+                })
+                .ok()
+        })
+        .collect())
+}
+
+fn id_spelt<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::String(id)) => Some(id),
+        Some(Value::Number(id)) => id.as_u64().map(|id| id.to_string()),
+        _ => None,
+    })
 }
 
 #[derive(Deserialize)]
 struct Searched {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "listings_readable")]
     tracks: Vec<Listing>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct Listing {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "id_spelt")]
     track_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "id_spelt")]
     id: Option<String>,
     #[serde(default)]
     isrc: Option<String>,
@@ -164,42 +130,12 @@ fn wordings(identity: &Identity) -> Vec<String> {
         .collect()
 }
 
-fn escaped(text: &str) -> String {
-    text.bytes()
-        .fold(String::with_capacity(text.len()), |mut written, byte| {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-                written.push(char::from(byte));
-            } else {
-                let _ = write!(written, "%{byte:02X}");
-            }
-            written
-        })
-}
-
-fn is_a_document(mime: Option<&str>) -> bool {
-    mime.is_some_and(|mime| {
-        let mime = mime.to_ascii_lowercase();
-        DOCUMENT_TYPES.iter().any(|kind| mime.contains(kind))
-    })
-}
-
-fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
-        .map(Duration::from_secs)
-}
-
 #[derive(Clone)]
 pub struct Monochrome {
     source: SourceId,
     server: String,
     trusted: Trusted,
+    patience: Patience,
     asking: Agent,
     downloading: Agent,
     pacing: Arc<Pacing>,
@@ -220,8 +156,9 @@ impl Monochrome {
             source: SourceId::new(MONOCHROME).unwrap_or_else(|_| SourceId::local()),
             server: server.trim().trim_end_matches('/').to_owned(),
             trusted,
+            patience,
             asking: asking_agent(patience, trusted),
-            downloading: downloading_agent(patience, trusted),
+            downloading: downloading(patience, trusted),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
     }
@@ -229,8 +166,9 @@ impl Monochrome {
     #[must_use]
     pub fn waiting(self, patience: Patience) -> Self {
         Self {
+            patience,
             asking: asking_agent(patience, self.trusted),
-            downloading: downloading_agent(patience, self.trusted),
+            downloading: downloading(patience, self.trusted),
             ..self
         }
     }
@@ -248,7 +186,7 @@ impl Monochrome {
             }
             let status = response.status().as_u16();
             if retried < RETRIES_AT_MOST && ASKED_LATER.contains(&status) {
-                let wait = retry_after(&response)
+                let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
                 tracing::debug!(
@@ -271,17 +209,7 @@ impl Monochrome {
 
     fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
         tracing::debug!(%error, ?op, "the Monochrome server could not be reached");
-        if trust::certificate_refused(&error) {
-            return Error::Untrusted {
-                provider: self.source.clone(),
-                op,
-            };
-        }
-        Error::Io {
-            provider: self.source.clone(),
-            op,
-            source: as_io(error),
-        }
+        unreached(self.source.clone(), op, error)
     }
 
     fn unreadable(&self, op: ProviderOp) -> Error {
@@ -352,10 +280,11 @@ impl Monochrome {
         if is_a_document(response.body().mime_type()) {
             return Err(self.unreadable(op));
         }
-        Ok(Opened::Reading(Box::new(Fetched::continuing(
+        Ok(Opened::Reading(Box::new(Ranged::continuing(
             self.downloading.clone(),
             url,
             response,
+            self.patience.resumed_after,
         ))))
     }
 }
@@ -479,6 +408,30 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn a_numeric_id_is_read_an_odd_listing_passed_over_and_a_null_list_is_none() {
+        let read = Monochrome::hosted()
+            .read(
+                br#"{"tracks": [
+                    {"trackId": 154140652551016448, "isrc": "GBN9Y1100065"},
+                    {"trackId": ["odd"], "isrc": 7},
+                    "not a listing"
+                ]}"#,
+            )
+            .expect("a search answer");
+        let none = Monochrome::hosted()
+            .read(br#"{"tracks": null}"#)
+            .expect("a search answer");
+        let isrc = Isrc::new(ECHOES_ISRC).expect("an isrc");
+
+        assert_eq!(
+            the_one_asked_for(&isrc, &read),
+            Some(TrackId("154140652551016448".to_owned()))
+        );
+        assert_eq!(read.len(), 1);
+        assert!(none.is_empty());
     }
 
     #[test]

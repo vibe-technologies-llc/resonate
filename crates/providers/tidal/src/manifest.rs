@@ -129,24 +129,89 @@ fn numbered(attribute: Option<&str>) -> Result<Option<u64>, Unread> {
         .transpose()
 }
 
-fn filled(template: &str, representation: &str, bandwidth: &str, number: u64) -> String {
-    template
-        .replace("$RepresentationID$", representation)
-        .replace("$Bandwidth$", bandwidth)
-        .replace("$Number$", &number.to_string())
-        .replace("$$", "$")
+struct Named<'a> {
+    representation: &'a str,
+    bandwidth: &'a str,
+    number: u64,
+    time: u64,
+}
+
+fn padded_width(format: Option<&str>) -> Option<usize> {
+    format?.strip_prefix('0')?.strip_suffix('d')?.parse().ok()
+}
+
+fn filled(template: &str, named: &Named<'_>) -> String {
+    let mut written = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(at) = rest.find('$') {
+        written.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let Some(end) = after.find('$') else {
+            written.push_str(&rest[at..]);
+            return written;
+        };
+        let identifier = &after[..end];
+        let (name, format) = identifier
+            .split_once('%')
+            .map_or((identifier, None), |(name, format)| (name, Some(format)));
+        let value = match name {
+            "" => Some("$".to_owned()),
+            "RepresentationID" => Some(named.representation.to_owned()),
+            "Bandwidth" => Some(named.bandwidth.to_owned()),
+            "Number" => Some(named.number.to_string()),
+            "Time" => Some(named.time.to_string()),
+            _ => None,
+        };
+        match value {
+            Some(value) => {
+                let width = padded_width(format).unwrap_or(0);
+                written.push_str(&format!("{value:0>width$}"));
+            }
+            None => written.push_str(&rest[at..at + end + 2]),
+        }
+        rest = &after[end + 1..];
+    }
+    written.push_str(rest);
+    written
 }
 
 fn resolved(base: Option<&str>, url: String) -> Result<String, Unread> {
     if url.contains("://") {
         return Ok(url);
     }
-    let base = base
+    let (scheme, rest) = base
         .map(str::trim)
-        .filter(|base| base.contains("://"))
+        .and_then(|base| base.split_once("://"))
         .ok_or(Unread::NoMedia)?;
-    let folder = base.rsplit_once('/').map_or(base, |(folder, _)| folder);
-    Ok(format!("{folder}/{}", url.trim_start_matches('/')))
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if let Some(elsewhere) = url.strip_prefix("//") {
+        return Ok(format!("{scheme}://{elsewhere}"));
+    }
+    if url.starts_with('/') {
+        return Ok(format!("{scheme}://{authority}{url}"));
+    }
+    match path.rsplit_once('/') {
+        Some((folder, _)) => Ok(format!("{scheme}://{authority}/{folder}/{url}")),
+        None => Ok(format!("{scheme}://{authority}/{url}")),
+    }
+}
+
+fn base_of(representation: Node<'_, '_>) -> Option<String> {
+    let mut named: Vec<&str> = representation
+        .ancestors()
+        .filter_map(|node| {
+            node.children()
+                .find(|child| child.tag_name().name() == "BaseURL")
+                .and_then(|base| base.text())
+        })
+        .collect();
+    named.reverse();
+    named.into_iter().fold(None, |base, url| {
+        resolved(base.as_deref(), url.trim().to_owned())
+            .ok()
+            .or(base)
+    })
 }
 
 fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
@@ -191,10 +256,15 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
 
     let mut segments = 0_u64;
     let mut ticks = 0_u64;
+    let mut at = 0_u64;
+    let mut starts = Vec::new();
     for step in template
         .descendants()
         .filter(|node| node.tag_name().name() == "S")
     {
+        if let Some(stated) = numbered(step.attribute("t"))? {
+            at = stated;
+        }
         let lasting = numbered(step.attribute("d"))?.ok_or(Unread::NotTheDocument)?;
         let repeated = numbered(step.attribute("r"))?.unwrap_or(0);
         let count = repeated.checked_add(1).ok_or(Unread::TooManySegments)?;
@@ -206,24 +276,37 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
             .checked_mul(count)
             .and_then(|lasted| ticks.checked_add(lasted))
             .ok_or(Unread::TooManySegments)?;
+        for _ in 0..count {
+            starts.push(at);
+            at = at.checked_add(lasting).ok_or(Unread::TooManySegments)?;
+        }
     }
     if segments == 0 {
         return Err(Unread::NoMedia);
     }
 
-    let id = representation.attribute("id").unwrap_or_default();
+    let representation_id = representation.attribute("id").unwrap_or_default();
     let bandwidth = representation.attribute("bandwidth").unwrap_or_default();
-    let base = first(&document, "BaseURL").and_then(|node| node.text());
-    let mut urls = Vec::with_capacity(usize::try_from(segments + 1).unwrap_or_default());
+    let base = base_of(representation);
+    let named = |number, time| Named {
+        representation: representation_id,
+        bandwidth,
+        number,
+        time,
+    };
+    let mut urls = Vec::with_capacity(starts.len() + 1);
     urls.push(resolved(
-        base,
-        filled(initialization, id, bandwidth, start),
+        base.as_deref(),
+        filled(initialization, &named(start, 0)),
     )?);
-    let end = start
+    start
         .checked_add(segments)
         .ok_or(Unread::NumberedPastTheEnd)?;
-    for number in start..end {
-        urls.push(resolved(base, filled(media, id, bandwidth, number))?);
+    for (number, time) in (start..).zip(starts) {
+        urls.push(resolved(
+            base.as_deref(),
+            filled(media, &named(number, time)),
+        )?);
     }
 
     Ok(Manifest::Media(Media {
@@ -389,6 +472,77 @@ mod tests {
             Ok("https://sp-ad-cf.audio.tidal.com/mediatracks/abc/3.mp4".to_owned())
         );
         assert_eq!(resolved(None, "3.mp4".to_owned()), Err(Unread::NoMedia));
+    }
+
+    #[test]
+    fn a_base_url_is_resolved_as_a_uri_reference_whatever_its_trailing_slash() {
+        assert_eq!(
+            resolved(Some("https://cdn.audio.tidal.com"), "3.mp4".to_owned()),
+            Ok("https://cdn.audio.tidal.com/3.mp4".to_owned())
+        );
+        assert_eq!(
+            resolved(Some("https://cdn.audio.tidal.com/a/b/"), "3.mp4".to_owned()),
+            Ok("https://cdn.audio.tidal.com/a/b/3.mp4".to_owned())
+        );
+        assert_eq!(
+            resolved(
+                Some("https://cdn.audio.tidal.com/a/b?k=/x"),
+                "3.mp4".to_owned()
+            ),
+            Ok("https://cdn.audio.tidal.com/a/3.mp4".to_owned())
+        );
+        assert_eq!(
+            resolved(
+                Some("https://cdn.audio.tidal.com/a/b/"),
+                "/c/3.mp4".to_owned()
+            ),
+            Ok("https://cdn.audio.tidal.com/c/3.mp4".to_owned())
+        );
+        assert_eq!(
+            resolved(
+                Some("https://cdn.audio.tidal.com/a/"),
+                "//b.audio.tidal.com/3.mp4".to_owned()
+            ),
+            Ok("https://b.audio.tidal.com/3.mp4".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_template_fills_time_and_padded_numbers_and_leaves_what_it_does_not_know() {
+        let named = Named {
+            representation: "FLAC",
+            bandwidth: "1004547",
+            number: 7,
+            time: 352_256,
+        };
+
+        assert_eq!(
+            filled(
+                "$RepresentationID$/$Number%05d$-$Time$-$Bandwidth$$$.mp4",
+                &named
+            ),
+            "FLAC/00007-352256-1004547$.mp4"
+        );
+        assert_eq!(filled("$Unknown$/$Number", &named), "$Unknown$/$Number");
+    }
+
+    #[test]
+    fn a_dash_manifest_timed_by_its_segments_names_each_by_the_tick_it_starts_at() {
+        let manifest = r#"<MPD><BaseURL>https://cdn.audio.tidal.com/tracks/</BaseURL><Period><AdaptationSet><BaseURL>abc/</BaseURL><Representation id="FLAC" codecs="flac" bandwidth="1"><SegmentTemplate timescale="44100" initialization="init.mp4" media="$Time$.mp4"><SegmentTimeline><S t="100" d="10" r="1"/><S d="5"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>"#;
+
+        let Ok(Manifest::Media(media)) = read_document(DASH, manifest.as_bytes()) else {
+            panic!("a manifest");
+        };
+
+        assert_eq!(
+            media.urls,
+            [
+                "https://cdn.audio.tidal.com/tracks/abc/init.mp4",
+                "https://cdn.audio.tidal.com/tracks/abc/100.mp4",
+                "https://cdn.audio.tidal.com/tracks/abc/110.mp4",
+                "https://cdn.audio.tidal.com/tracks/abc/120.mp4",
+            ]
+        );
     }
 
     #[test]

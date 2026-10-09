@@ -100,40 +100,18 @@ sits last in its category, not worked until it moves. Everything else is open.
 - The analysis cache's crash leftovers (`<pid>-<n>.staged`) are neither swept nor counted by `trim`
 
 ## Providers and network
-- A TIDAL media request has no retry: one 429, 502 or 503 on any of a DASH track's ~100 segments
-  aborts the delivery (`Piece::resumed` returns on `Refused`; the API's `Asker::sent` retries,
-  the media agent does not)
-- A broken download is resumed `RESUMES_AT_MOST` times back to back with no wait and no pacing
-  (Monochrome and TIDAL `resumed`), so a two-second Wi-Fi drop exhausts them
-- TIDAL media allows 120 s for the whole body (`timeout_recv_body` is not restarted per read): a
-  hi-res single-URL FLAC on a slow link resumes every two minutes, and a CDN answering a Range with
-  200 never progresses past what 120 s carries
-- The TIDAL and hifi API agent has no overall deadline: a body arriving a byte at a time hangs
-  `find`, and a sign-in's cancel is heard only between polls
-- Subsonic downloads never resume (`downloaded` hands back the bare reader): a reset mid-file
-  starts the next poll from byte 0
-- A provider left behind as late runs on: Subsonic's `found` can issue ten `search3` calls of 20 s
-  each against the poll's 30 s, the abandoned thread carrying on
+- A device sign-in's cancel is heard only between polls (each request is bounded by the API
+  agent's 20 s)
 - The inbox takes a file as settled after two quiet seconds of mtime and ctime, no size compared:
   a torrent client writing sporadically delivers half a file, and the refusal burns the want's offer
-- One odd listing fails the whole answer: Monochrome's `Listing` ids, hifi's `id: u64` and
-  Subsonic's `Isrcs` refuse a numeric id or a `null` list rather than skipping that item
-- A non-I/O `ureq` error (body over the limit, bad URI, protocol) is `ConnectionRefused` in the
-  provider crates, marking the provider away; `resonate-online` classes these in `from_ureq`
 - `Refused` is collapsed into `Unreadable` at the equaliser and lyric seams, so a 429 from LRCLIB
   or GitHub cannot be backed off from
 - Threads of one `Client` do not share a backoff until a request gives up: on a 503 four cover
-  threads climb their own 2-4-8 s ladders; `Retry-After` is read as seconds only, never an HTTP
-  date, in four copies of the parser
+  threads climb their own 2-4-8 s ladders
 - A rotated TIDAL refresh token is kept in memory alone where there is no settings path, and a
   failed write only warns: the next run has lost the sign-in
 - The hosted hifi and Monochrome services are registered whenever `online` is on, with no opt-in of
   their own; the hifi token request claims another site's `Origin` and `Referer`
-- The device sign-in asks for `w_usr w_sub`, though the provider only reads
-- DASH `$Time$` and `$Number%0Nd$` templates are not filled, and a BaseURL with no trailing slash
-  loses its last segment
-- `stall.rs` and `trust.rs` are byte-identical in three provider crates, as are `retry_after`,
-  `escaped` and `is_a_document`: a `ureq` bump is made three times
 
 ## Window
 - A name cut with an ellipsis in a pane drawn as plain divs (Top results' songs, found songs above
@@ -259,10 +237,6 @@ sits last in its category, not worked until it moves. Everything else is open.
   AccessKit, which only Zed's `main` has
 
 ## Build and checks
-- The `layering` job holds only part of the stated refusals: no line for `resonate-mcp`,
-  `resonate-inbox` or `resonate-subsonic`; `resonate-listen` and the provider crates refuse a
-  handful of names rather than everything but core and the seam; nothing checks that only the
-  binary reaches `online`, `mcp` and `discord`, or that `codec` stays a dev-dependency of `mpris`
 - No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
   (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,
@@ -287,7 +261,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
   `landed_or_standing` exists for it
-- TIDAL's `slow_down`, a CDN status on a segment and a Subsonic break mid-download are untested;
+- TIDAL's `slow_down` is untested;
   the hosted hifi path's hosts are constants no fake server can stand in for, so it runs only live
 - Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths beyond
   `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested

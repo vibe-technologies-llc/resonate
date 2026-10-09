@@ -59,6 +59,11 @@ pub enum Error {
     )]
     Untrusted { provider: SourceId, op: ProviderOp },
 
+    #[error(
+        "{op:?} could not be sent: the {provider} provider's server address does not read as one"
+    )]
+    Unaddressable { provider: SourceId, op: ProviderOp },
+
     #[error("{op:?} was answered with a page rather than the {provider} provider's own answer")]
     NotTheService { provider: SourceId, op: ProviderOp },
 
@@ -89,6 +94,7 @@ impl Error {
             | Self::Unwelcome { .. }
             | Self::StillQueued { .. }
             | Self::Untrusted { .. }
+            | Self::Unaddressable { .. }
             | Self::NotTheService { .. } => true,
             Self::Refused { status, .. } => {
                 *status >= SERVER_TROUBLE || TURNED_AWAY_WHOEVER_ASKS.contains(status)
@@ -152,6 +158,10 @@ mod tests {
             op: ProviderOp::Search,
             status,
         });
+        let unaddressable = Error::Unaddressable {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+        };
         let a_page = Error::NotTheService {
             provider,
             op: ProviderOp::Search,
@@ -165,6 +175,7 @@ mod tests {
         assert!(queued.is_the_provider_away());
         assert!(untrusted.is_the_provider_away());
         assert!(refused_whoever_asks.iter().all(Error::is_the_provider_away));
+        assert!(unaddressable.is_the_provider_away());
         assert!(a_page.is_the_provider_away());
         assert!(is_a_page(b"\n  <!DOCTYPE html><html>"));
         assert!(!is_a_page(br#"{"subsonic-response":{}}"#));

@@ -7,18 +7,19 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use flate2::{Compression, write::GzEncoder};
 use parking_lot::{Condvar, Mutex, RwLock};
+use resonate_fetch::retry_after;
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
 use ureq::{
     Agent, Body,
     http::{
         HeaderMap, Response, StatusCode, Uri,
-        header::{AUTHORIZATION, LOCATION, RETRY_AFTER, USER_AGENT},
+        header::{AUTHORIZATION, LOCATION, USER_AGENT},
     },
 };
 
@@ -779,11 +780,7 @@ fn busy(status: StatusCode) -> bool {
 }
 
 fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
-    headers
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(|seconds| Duration::from_secs(seconds).min(RETRY_AFTER_AT_MOST))
+    retry_after(headers, SystemTime::now()).map(|asked_for| asked_for.min(RETRY_AFTER_AT_MOST))
 }
 
 fn cooling_off(headers: &HeaderMap, by_default: Duration) -> Duration {
@@ -1603,11 +1600,14 @@ mod tests {
     }
 
     #[test]
-    fn a_retry_after_is_honoured_in_seconds_and_capped_at_ten() {
+    fn a_retry_after_is_honoured_in_seconds_or_as_a_date_and_capped_at_ten() {
         let with = |value: Option<&str>| {
             let mut headers = HeaderMap::new();
             if let Some(value) = value {
-                headers.insert(RETRY_AFTER, HeaderValue::from_str(value).expect("ascii"));
+                headers.insert(
+                    ureq::http::header::RETRY_AFTER,
+                    HeaderValue::from_str(value).expect("ascii"),
+                );
             }
             cooling_off(&headers, RETRY_AFTER_BY_DEFAULT)
         };
@@ -1616,9 +1616,11 @@ mod tests {
         assert_eq!(with(Some("3")), Duration::from_secs(3));
         assert_eq!(with(Some(" 7 ")), Duration::from_secs(7));
         assert_eq!(with(Some("600")), RETRY_AFTER_AT_MOST);
+        assert_eq!(with(Some("Wed, 21 Oct 2015 07:28:00 GMT")), Duration::ZERO);
         assert_eq!(
-            with(Some("Wed, 21 Oct 2015 07:28:00 GMT")),
-            RETRY_AFTER_BY_DEFAULT
+            with(Some("Fri, 01 Jan 9999 00:00:00 GMT")),
+            RETRY_AFTER_AT_MOST
         );
+        assert_eq!(with(Some("whenever")), RETRY_AFTER_BY_DEFAULT);
     }
 }

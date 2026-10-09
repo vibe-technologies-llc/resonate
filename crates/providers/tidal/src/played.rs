@@ -7,7 +7,7 @@ use ureq::Agent;
 
 use crate::{
     MediaHosts,
-    fetched::{Fetched, Unfetched},
+    fetched::Fetched,
     manifest::{self, Container, Manifest, Media},
     remux::{Remuxed, Unremuxable},
 };
@@ -174,18 +174,19 @@ impl Player<'_> {
 
 fn downloaded(provider: &SourceId, agent: Agent, media: Media) -> Result<Opened> {
     let op = ProviderOp::Download;
-    let fetched = Fetched::opened(agent, media.urls).map_err(|unfetched| match unfetched {
-        Unfetched::Io(source) => Error::Io {
-            provider: provider.clone(),
-            op,
-            source,
-        },
-        Unfetched::Refused(status) => Error::Refused {
-            provider: provider.clone(),
-            op,
-            status,
-        },
-    })?;
+    let fetched =
+        Fetched::opened(agent, media.urls).map_err(|unfetched| match unfetched.status() {
+            Some(status) => Error::Refused {
+                provider: provider.clone(),
+                op,
+                status,
+            },
+            None => Error::Io {
+                provider: provider.clone(),
+                op,
+                source: unfetched.into_io(),
+            },
+        })?;
     match media.container {
         Container::Flac => Ok(Opened::Reading(Box::new(fetched))),
         Container::Mp4 => match Remuxed::opened(fetched, media.timeline) {

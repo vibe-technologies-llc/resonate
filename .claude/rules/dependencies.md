@@ -40,6 +40,9 @@ is the authority); add a crate or boundary here, add it there.
   `mcp`, `discord`), so `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and
   `--exclude resonate-ui --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui,
   UI. `-discord`: core, engine vocabulary, serde; no gpui, library, HTTP client.
+- A provider crate reaches core, the seam and (a network one) `resonate-fetch`, and nothing else
+  of the workspace: the job's `only` lines name what each may reach rather than refusing a few
+  names. `resonate-listen` likewise reaches core and `-pipewire` alone.
 - `resonate-codec` is a *dev*-dependency of `resonate-mpris` alone (`tests/bus.rs` implements a
   `MediaProvider`, needing the codec's `Error`); the library half sees the engine via `Player` only.
 
@@ -109,15 +112,17 @@ is the authority); add a crate or boundary here, add it there.
   dependency is one more thing a package must link.
 - **`smallvec`** (`union`, `const_generics`): collections built repeatedly and nearly always small;
   built once or unbounded in ordinary use (queue, playlist, catalog read) stays `Vec`.
-- **`rustls-native-certs`**, **`webpki-root-certs`**, **`rustls`**: Subsonic, TIDAL, Monochrome
-  providers', for a server behind a private CA (`providers.md`). First reads the system store;
+- **`rustls-native-certs`**, **`webpki-root-certs`**, **`rustls`**: `resonate-fetch`'s (what the
+  Subsonic, TIDAL and Monochrome providers share), for a server behind a private CA
+  (`providers.md`). First reads the system store;
   second is the Mozilla roots as DER (`RootCerts::Specific` takes certificates; no other way to add
   the built-in set beside the system's). `rustls` (`std` alone) only downcasts a refused
   certificate out of ureq's `io::Error`, so matches ureq's version. Not ureq's `platform-verifier`
   (on Linux reads the system store alone, fails where empty).
 - **`resonate-subsonic`, `-tidal`, `-monochrome`** take `ureq`, `serde`, `serde_json` themselves
-  (network providers are told to), not via `resonate-online`; binary takes them only under
-  `online`. Subsonic: `md-5` (token). TIDAL: `base64` (`alloc`; base64 manifests), `roxmltree`
+  (network providers are told to), and `resonate-fetch` for the plumbing they share, not
+  `resonate-online`; binary takes them only under `online`. `resonate-fetch` is core, the seam,
+  `ureq` and the three certificate crates alone; `resonate-online` takes it for `retry_after`. Subsonic: `md-5` (token). TIDAL: `base64` (`alloc`; base64 manifests), `roxmltree`
   (`std`, no `positions`; DASH MPD). gpui holds `roxmltree` 0.20, this is 0.21: a second copy of a
   small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s (`alloc`); the oneshot `Drawer::draw` returns a cover by.

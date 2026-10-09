@@ -6,7 +6,7 @@ use ureq::{
 };
 
 #[derive(Debug)]
-pub(crate) struct BrokenOffAfter(pub(crate) Duration);
+pub struct BrokenOffAfter(pub Duration);
 
 impl Connector<Box<dyn Transport>> for BrokenOffAfter {
     type Out = Stalling;
@@ -24,7 +24,7 @@ impl Connector<Box<dyn Transport>> for BrokenOffAfter {
 }
 
 #[derive(Debug)]
-pub(crate) struct Stalling {
+pub struct Stalling {
     inner: Box<dyn Transport>,
     broken_off_after: Duration,
 }

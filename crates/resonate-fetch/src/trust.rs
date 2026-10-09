@@ -17,13 +17,13 @@ static SYSTEM_AND_BUILT_IN: LazyLock<RootCerts> = LazyLock::new(|| {
     RootCerts::Specific(Arc::new(built_in.chain(held).collect()))
 });
 
-pub(crate) fn system_and_built_in() -> TlsConfig {
+pub fn system_and_built_in() -> TlsConfig {
     TlsConfig::builder()
         .root_certs(SYSTEM_AND_BUILT_IN.clone())
         .build()
 }
 
-pub(crate) fn certificate_refused(error: &ureq::Error) -> bool {
+pub fn certificate_refused(error: &ureq::Error) -> bool {
     let refused = match error {
         ureq::Error::Rustls(error) => Some(error),
         ureq::Error::Io(error) => error

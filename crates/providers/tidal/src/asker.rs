@@ -1,23 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
 use resonate_core::SourceId;
+use resonate_fetch::{
+    Patience, Trusted, asking_agent, configured, downloading_agent, retry_after_of, unreached,
+};
 use resonate_providers::{Error, Pacing, ProviderOp, Result};
 use serde::Deserialize;
-use ureq::{
-    Agent, Body,
-    http::{self, header::RETRY_AFTER},
-};
-
-use crate::{fetched::as_io, trust};
+use ureq::{Agent, Body, http};
 
 const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
 const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
-const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
-const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const MEDIA_ANSWERED_WITHIN: Duration = Duration::from_secs(30);
-const MEDIA_READ_WITHIN: Duration = Duration::from_secs(120);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const TOO_MANY_REQUESTS: u16 = 429;
 const UNAVAILABLE: u16 = 503;
@@ -40,59 +35,20 @@ pub(crate) struct Asker {
 }
 
 pub(crate) fn api_agent() -> Agent {
-    Agent::config_builder()
-        .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
-        .timeout_connect(Some(CONNECTED_WITHIN))
-        .timeout_recv_response(Some(ANSWERED_WITHIN))
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
+    asking_agent(Patience::default(), Trusted::BuiltInRoots)
 }
 
 fn listeners_server_agent() -> Agent {
-    Agent::config_builder()
-        .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
-        .tls_config(trust::system_and_built_in())
-        .timeout_connect(Some(CONNECTED_WITHIN))
-        .timeout_recv_response(Some(ANSWERED_WITHIN))
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
+    asking_agent(Patience::default(), Trusted::SystemStoreToo)
 }
 
 pub(crate) fn media_agent() -> Agent {
-    Agent::config_builder()
-        .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
-        .timeout_connect(Some(CONNECTED_WITHIN))
-        .timeout_recv_response(Some(MEDIA_ANSWERED_WITHIN))
-        .timeout_recv_body(Some(MEDIA_READ_WITHIN))
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .build()
-        .new_agent()
-}
-
-pub(crate) fn unreached(provider: SourceId, op: ProviderOp, error: ureq::Error) -> Error {
-    if trust::certificate_refused(&error) {
-        return Error::Untrusted { provider, op };
-    }
-    Error::Io {
-        provider,
-        op,
-        source: as_io(error),
-    }
-}
-
-pub(crate) fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
-        .map(Duration::from_secs)
+    downloading_agent(
+        configured(MEDIA_ANSWERED_WITHIN, Trusted::BuiltInRoots)
+            .max_redirects(0)
+            .build(),
+        Patience::default().broken_off_after,
+    )
 }
 
 impl Asker {
@@ -137,7 +93,7 @@ impl Asker {
             }
             let status = response.status().as_u16();
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
-                let wait = retry_after(&response)
+                let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
                 tracing::debug!(status, ?wait, ?op, provider = %self.source, "a provider's server asked to be asked later");
@@ -177,34 +133,5 @@ impl Asker {
             tracing::debug!(%error, ?op, provider = %self.source, "a provider's answer was not the document expected");
             self.unreadable(op)
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io;
-
-    use super::*;
-
-    #[test]
-    fn a_certificate_this_build_does_not_trust_is_untrusted_and_a_refused_connection_unreached() {
-        let provider = SourceId::new("hifi-api").expect("a nameable source");
-        let refused_certificate = ureq::Error::Rustls(rustls::Error::InvalidCertificate(
-            rustls::CertificateError::NotValidForName,
-        ));
-        let refused_connection = ureq::Error::Io(io::Error::from(io::ErrorKind::ConnectionRefused));
-
-        let untrusted = unreached(provider.clone(), ProviderOp::Search, refused_certificate);
-        let not_reached = unreached(provider, ProviderOp::Search, refused_connection);
-
-        assert!(matches!(
-            untrusted,
-            Error::Untrusted {
-                op: ProviderOp::Search,
-                ..
-            }
-        ));
-        assert!(untrusted.is_the_provider_away());
-        assert!(matches!(not_reached, Error::Io { .. }));
     }
 }

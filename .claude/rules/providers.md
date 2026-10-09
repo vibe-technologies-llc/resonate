@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-providers/**/*.rs"
+  - "crates/resonate-fetch/**/*.rs"
   - "crates/providers/**/*.rs"
   - "crates/resonate/src/providers.rs"
   - "crates/resonate-library/src/supply.rs"
@@ -195,7 +196,8 @@ API's document was asked: `resonate_providers::is_a_page`, read by Subsonic and 
 
 1. Crate `crates/providers/<name>/`, package `resonate-<name>`, on `resonate-core`,
    `resonate-providers` and what reaches its source. A network provider uses `ureq` itself (not
-   `resonate-online`) and identifies itself per `online.md` (name and version).
+   `resonate-online`) through `resonate-fetch` (below) and identifies itself per `online.md` (name
+   and version).
 2. A workspace member and `[workspace.dependencies]` entry.
 3. A binary dependency and one `.and(..)` in `providers::registry` (inbox by `with_inbox`), gated
    on settings. `Accounts` builds network providers: `Accounts::of` off `Config` for a headless run
@@ -229,6 +231,37 @@ for `INBOX_QUIET_FOR`, it polls as `Prompted::ByTheInbox`, raising no notice. **
 window was open is asked about on open**: the first look weighs the folder's newest file (later of
 modification and change time: a copy keeping its old time still changed status on landing) against
 `Library::last_tried` (`landed_since`).
+
+## What every network provider shares
+
+`resonate-fetch` (`crates/resonate-fetch`, on core, the seam and `ureq` alone; the layering job's
+`only` lines hold it) is the HTTP plumbing Subsonic, TIDAL and Monochrome had each copied, so a
+`ureq` bump is made once:
+
+- **Agents**: `USER_AGENT`, `Patience` (`answered_within`, `broken_off_after`, `resumed_after`),
+  `Trusted` (`BuiltInRoots`, or `SystemStoreToo` for a listener's own server), `asking_agent`
+  (`timeout_global` of `answered_within`, so a body arriving a byte at a time cannot hang `find`),
+  `downloading_agent` (`stall.rs`'s `BrokenOffAfter` chained after ureq's `DefaultConnector`: a
+  silent socket closes, one still delivering is read however long; no whole-body deadline).
+- **`unreached` classes a `ureq::Error` once**: a refused certificate is `Untrusted`; I/O, timeout,
+  unknown host, connect/proxy/TLS failure is `Io` (away); `BadUri`/`Http` is `Unaddressable` (the
+  server setting does not read as an address; away); a body over its limit, a protocol error or a
+  redirect failure is `Unreadable`, the want's (`an_answer_too_large_or_malformed_is_unreadable_and_no_refused_connection`).
+  `as_io` is the same reading for a `Read` path.
+- **`retry_after` reads seconds or any of HTTP's three date forms** (IMF-fixdate, RFC 850,
+  asctime) against the clock; a past date is no wait. `resonate-online`'s client reads it too.
+- **`Ranged` is a download that resumes.** It asks again from where it stopped with `Range:
+  bytes=<read>-`, up to `RESUMES_AT_MOST` (5) times running: a `206` whose `Content-Range` starts
+  there is read on, a `200` is read past what was held, another refusal ends it. The first resume
+  is at once, each later one waits `waited_before` (`resumed_after` doubling, at most 8 s), or what
+  a 429/502/503/504's `Retry-After` names: a Wi-Fi drop of seconds is ridden out, a reset
+  connection costs nothing. `Ranged::opened` asks a first request answered 429/502/503/504 again
+  the same way.
+- `escaped` (every byte but the unreserved percent-encoded), `is_a_document` (`text/`, JSON or XML:
+  an error document, never a song).
+- **One odd listing never fails the answer**: each provider reads its list through a
+  `*_readable` deserializer taking `null` as empty and passing over an item that does not read, and
+  an id as a string or a number (`a_numeric_id_is_read_an_odd_listing_passed_over_and_a_null_list_is_none`).
 
 ## The inbox
 
@@ -267,12 +300,14 @@ the inbox only where all three are given and `online` is on.
   `told` logs those two as a sentence alone
   (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
 - **Deadline for an answer, for a download silence alone.** API requests carry
-  `Patience::answered_within` as `timeout_global`. A download may run minutes: its agent bounds the
-  head alone and `stall.rs` each read (`BrokenOffAfter`, a connector chained after ureq's
-  `DefaultConnector`, capping reads at `Patience::broken_off_after`): a silent socket closes, one
-  still delivering is read however long. The connector is ureq's `unversioned` API, outside its
-  semver promise; weigh a ureq bump against the stall tests.
-- **Private CA reached.** Both agents trust `trust::system_and_built_in` (Mozilla roots plus system
+  `Patience::answered_within` as `timeout_global`, and the whole search (up to ten `search3` pages)
+  is held to it too, each page asked within what is left: a search the poll has left behind stops
+  asking rather than running on (`Error::Io` `TimedOut` once spent). A download may run minutes: its
+  agent bounds each read alone (`downloading_agent`). The connector is ureq's `unversioned` API,
+  outside its semver promise; weigh a ureq bump against the stall tests.
+- **A download that breaks off is resumed** through `Ranged`
+  (`a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped`).
+- **Private CA reached.** Both agents trust `Trusted::SystemStoreToo` (Mozilla roots plus system
   store); a certificate the handshake still refuses is `Error::Untrusted`, not a refused
   connection.
 - **It delivers the server's original file, only a file**, keyed by song id, hinted by `suffix` (not
@@ -328,10 +363,19 @@ and Subsonic only where client id and refresh token are given (secret sent where
   host `audio.tidal.com` or under it, refusing a user-info `@`, a bracketed literal, a host merely
   ending in the name; one URL off them fails the whole manifest as `Error::OffItsHosts` before a
   byte is fetched. The media agent follows no redirect.
-- **A segment that breaks off is asked again from where it stopped** with `Range`, up to
-  `RESUMES_AT_MOST` times running. `find` reads the playback answer and manifest and offers the
-  media; the first segment is fetched when the offer is opened, so a CDN refusing it is the
-  provider's `Refused` under `ProviderOp::Download` (offer falls through, not a failed keep).
+- **A segment is a `Ranged`**: one that breaks off is asked again from where it stopped, one the
+  CDN answers 429/502/503/504 is asked again after its wait
+  (`a_segment_the_cdn_asks_to_be_asked_for_later_is_asked_for_again`). The media agent bounds each
+  read, not the body, so a hi-res file on a slow link is never cut at a fixed length. `find` reads
+  the playback answer and manifest and offers the media; the first segment is fetched when the
+  offer is opened, so a CDN refusing it is the provider's `Refused` under `ProviderOp::Download`
+  (offer falls through, not a failed keep).
+- **A DASH template is filled as the standard spells it**: `$RepresentationID$`, `$Bandwidth$`,
+  `$Number$` and `$Time$` (each segment's start tick off the timeline, an `S`'s `t` restarting it),
+  a `%0<width>d` padding, `$$`; an unknown identifier is left as written. A relative URL resolves
+  as a URI reference against the `BaseURL`s in scope (MPD, Period, AdaptationSet, Representation,
+  each against the one above): a path beside the base's last segment, `/…` on its host, `//…` on
+  its scheme, the base's query never read as a path.
 - **Later segments are fetched ahead.** `Fetched` streams the first and keeps `SEGMENTS_AHEAD` (3)
   more coming whole, each on its own `resonate-tidal-segment` thread handing bytes over a channel
   of one, read in order, topped up as each drains: a segment's round trip overlaps reading the
@@ -344,7 +388,8 @@ and Subsonic only where client id and refresh token are given (secret sent where
   Every delivery keyed `track/<id>`, extension `flac`.
 - **Signed in from the window or `resonate tidal`.** `resonate_providers::SignsIn` is the seam,
   `TidalSignIn` its one implementation, handed to the window as `Lookups::signs_in` by
-  `providers::signs_in`. The device flow polls every `interval` (at least `ASKED_EVERY_AT_LEAST`,
+  `providers::signs_in`. The device flow asks the `r_usr` scope alone (the provider reads, never
+  writes) and polls every `interval` (at least `ASKED_EVERY_AT_LEAST`,
   longer on `slow_down` and on a 429) until a refresh token, `AuthorizationLapsed`,
   `AuthorizationDenied` or the cancel (`Ok(None)`), asking again through an unreached server or a
   500+ (`sign_in::Passing`, as RFC 8628 keeps polling;
@@ -384,7 +429,7 @@ URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 - **401 is the server's account turned away** (`Unwelcome`, away); 403/404 that track unavailable
   (`Nothing`); else `Refused`. A custom server gets no `Authorization` header.
 - **Custom server trusted as Subsonic's is**: `HifiApi::at` uses `Asker::of_the_listeners_server`
-  (system store beside built-in roots, `trust.rs`); hosted service, TIDAL's API and CDN keep
+  (`Trusted::SystemStoreToo`); hosted service, TIDAL's API and CDN keep
   built-in roots alone. A refused certificate anywhere in the crate is `Error::Untrusted` via
   `asker::unreached`.
 
@@ -407,11 +452,10 @@ one. The binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services
   the offer is taken, so a refused download is the provider's `Refused` under
   `ProviderOp::Download`. A 404/410 there is the track gone, `Opened::Gone`; a download whose
   `Content-Type` names text, JSON or XML is `Unreadable`, never streamed as a song.
-- **A download that breaks off is asked again from where it stopped** (`fetched.rs`) with `Range:
-  bytes=<read>-`, up to `RESUMES_AT_MOST` times running: a `206` whose `Content-Range` starts there
-  is read on, a `200` is read past what was held. A file runs to hundreds of megabytes, so each
-  read, not the whole, is bounded: `stall.rs`'s `BrokenOffAfter` as Subsonic's.
+- **A download that breaks off is asked again from where it stopped**: a `Ranged`. A file runs to
+  hundreds of megabytes, so each read, not the whole, is bounded (`downloading_agent`).
 - **Paces as Subsonic does**: `ASKED_APART`; 429/502/503/504 asked again after `Retry-After` up to
   `RETRIES_AT_MOST`, then the `Refused` it was. User-Agent bare.
-- **Custom server trusted as Subsonic's is** (`trust.rs`); hosted keeps built-in roots alone.
+- **Custom server trusted as Subsonic's is** (`Trusted::SystemStoreToo`); hosted keeps built-in
+  roots alone.
   A refused certificate is `Error::Untrusted`.

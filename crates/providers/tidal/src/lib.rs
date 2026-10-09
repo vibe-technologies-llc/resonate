@@ -6,7 +6,6 @@ mod manifest;
 mod played;
 mod remux;
 mod sign_in;
-mod trust;
 
 use std::time::{Duration, Instant};
 

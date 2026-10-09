@@ -23,6 +23,7 @@ const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
 
 enum Sent {
     Whole,
+    CutAfter(usize),
     StallingAfter(usize),
     Dripping { bytes: usize, apart: Duration },
 }
@@ -53,6 +54,21 @@ impl Canned {
         }
     }
 
+    fn audio_from(from: usize) -> Self {
+        Self {
+            status: 206,
+            headers: vec![
+                ("Content-Type", "audio/flac".to_owned()),
+                (
+                    "Content-Range",
+                    format!("bytes {from}-{}/{}", AUDIO.len() - 1, AUDIO.len()),
+                ),
+            ],
+            body: AUDIO[from..].to_vec(),
+            sent: Sent::Whole,
+        }
+    }
+
     fn unavailable() -> Self {
         Self {
             status: 503,
@@ -71,9 +87,10 @@ struct Asked {
     method: String,
     query: Option<String>,
     offset: Option<usize>,
+    from: Option<usize>,
 }
 
-fn asked_from(target: &str) -> Asked {
+fn asked_from(target: &str, range: Option<&str>) -> Asked {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let parameter = |name: &str| {
         query
@@ -87,6 +104,9 @@ fn asked_from(target: &str) -> Asked {
         method: path.rsplit('/').next().unwrap_or_default().to_owned(),
         query: parameter("query"),
         offset: parameter("songOffset").and_then(|offset| offset.parse().ok()),
+        from: range
+            .and_then(|range| range.strip_prefix("bytes="))
+            .and_then(|range| range.trim_end_matches('-').parse().ok()),
     }
 }
 
@@ -128,6 +148,7 @@ impl Fake {
         self.subsonic().waiting(Patience {
             answered_within: IMPATIENT,
             broken_off_after: IMPATIENT,
+            resumed_after: IMPATIENT / 8,
         })
     }
 
@@ -146,16 +167,23 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+    let mut range = None;
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
             Ok(0) | Err(_) => return,
             Ok(_) if header == "\r\n" => break,
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some((name, value)) = header.split_once(':')
+                    && name.eq_ignore_ascii_case("range")
+                {
+                    range = Some(value.trim().to_owned());
+                }
+            }
         }
     }
     let target = request_line.split(' ').nth(1).unwrap_or_default();
-    let asked = asked_from(target);
+    let asked = asked_from(target, range.as_deref());
     let nth = heard.lock().len();
     let canned = answering(&asked, nth);
     heard.lock().push(asked);
@@ -174,6 +202,9 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     match canned.sent {
         Sent::Whole => {
             let _ = stream.write_all(&canned.body);
+        }
+        Sent::CutAfter(bytes) => {
+            let _ = stream.write_all(&canned.body[..bytes]);
         }
         Sent::StallingAfter(bytes) => {
             let _ = stream.write_all(&canned.body[..bytes]);
@@ -417,6 +448,42 @@ fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
     assert!(broken_off.is_err());
     assert_eq!(bytes, AUDIO[..AUDIO.len() / 2]);
     assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+}
+
+#[test]
+fn a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
+    let half = AUDIO.len() / 2;
+    let fake = Fake::serving(move |asked, _| match (asked.method.as_str(), asked.from) {
+        ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+        (_, Some(from)) => Canned::audio_from(from),
+        _ => Canned::audio().sent(Sent::CutAfter(half)),
+    });
+
+    let delivered = streamed(fake.impatient().find(&echoes()).expect("an answer"));
+    let downloads: Vec<_> = fake
+        .heard
+        .lock()
+        .iter()
+        .filter(|asked| asked.method == "download")
+        .map(|asked| asked.from)
+        .collect();
+
+    assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
+    assert_eq!(downloads, [None, Some(half)]);
+}
+
+#[test]
+fn a_song_that_does_not_read_is_passed_over_and_a_numeric_id_is_read() {
+    let fake = Fake::serving(|asked, _| match asked.method.as_str() {
+        "search3" => Canned::json(format!(
+            r#"{{"subsonic-response":{{"status":"ok","searchResult3":{{"song":[{{"id":["odd"]}},{{"id":42,"title":"Echoes","suffix":"flac","musicBrainzId":"{ECHOES}","isrc":[null,"{ECHOES_ISRC}"]}}]}}}}}}"#
+        )),
+        _ => Canned::audio(),
+    });
+
+    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
+
+    assert_eq!(delivered, Some(("42".to_owned(), AUDIO.to_vec())));
 }
 
 #[test]

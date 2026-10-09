@@ -1,34 +1,27 @@
-mod stall;
-mod trust;
-
 use std::{
     fmt::{self, Write as _},
+    io,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use md5::{Digest, Md5};
 use resonate_core::{Isrc, Mbid, SourceId};
+pub use resonate_fetch::Patience;
+use resonate_fetch::{
+    Ranged, Trusted, asking_agent, configured, downloading_agent, escaped, is_a_document,
+    retry_after_of, unreached,
+};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
     Result, is_a_page,
 };
-use serde::Deserialize;
-use ureq::{
-    Agent, Body,
-    config::{Config, ConfigBuilder},
-    http::{self, header::RETRY_AFTER},
-    typestate::AgentScope,
-    unversioned::{
-        resolver::DefaultResolver,
-        transport::{Connector as _, DefaultConnector},
-    },
-};
-
-use crate::stall::BrokenOffAfter;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+use ureq::{Agent, Body, http};
 
 const SUBSONIC: &str = "subsonic";
 const SPOKEN_AS: &str = "1.16.1";
@@ -41,11 +34,6 @@ const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
 const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const TOO_MANY_REQUESTS: u16 = 429;
 const UNAVAILABLE: u16 = 503;
-const DOCUMENT_TYPES: [&str; 3] = ["text/", "json", "xml"];
-const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
-const BROKEN_OFF_AFTER: Duration = Duration::from_secs(30);
-const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
-const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const OK: &str = "ok";
 const REST: &str = "rest";
@@ -76,44 +64,53 @@ impl fmt::Debug for Server {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Patience {
-    pub answered_within: Duration,
-    pub broken_off_after: Duration,
+fn downloading(patience: Patience) -> Agent {
+    downloading_agent(
+        configured(patience.answered_within, Trusted::SystemStoreToo).build(),
+        patience.broken_off_after,
+    )
 }
 
-impl Default for Patience {
-    fn default() -> Self {
-        Self {
-            answered_within: ANSWERED_WITHIN,
-            broken_off_after: BROKEN_OFF_AFTER,
-        }
+fn songs_readable<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<Song>, D::Error> {
+    let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
+    Ok(listed
+        .into_iter()
+        .filter_map(|song| {
+            serde_json::from_value(song)
+                .inspect_err(|error| {
+                    tracing::debug!(%error, "a Subsonic song that does not read is passed over");
+                })
+                .ok()
+        })
+        .collect())
+}
+
+fn id_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<String, D::Error> {
+    match Value::deserialize(deserializer)? {
+        Value::String(id) => Ok(id),
+        Value::Number(id) => Ok(id.to_string()),
+        _ => Err(serde::de::Error::custom(
+            "a song id is a string or a number",
+        )),
     }
 }
 
-fn configured(patience: Patience) -> ConfigBuilder<AgentScope> {
-    Agent::config_builder()
-        .user_agent(USER_AGENT)
-        .tls_config(trust::system_and_built_in())
-        .timeout_connect(Some(CONNECTED_WITHIN))
-        .timeout_recv_response(Some(patience.answered_within))
-        .http_status_as_error(false)
-}
-
-fn asking_agent(patience: Patience) -> Agent {
-    configured(patience)
-        .timeout_global(Some(patience.answered_within))
-        .build()
-        .new_agent()
-}
-
-fn downloading_agent(patience: Patience) -> Agent {
-    let config: Config = configured(patience).build();
-    Agent::with_parts(
-        config,
-        DefaultConnector::new().chain(BrokenOffAfter(patience.broken_off_after)),
-        DefaultResolver::default(),
-    )
+fn isrcs_readable<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error> {
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::String(one)) => vec![one],
+        Some(Value::Array(many)) => many
+            .into_iter()
+            .filter_map(|held| match held {
+                Value::String(held) => Some(held),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    })
 }
 
 #[derive(Clone)]
@@ -122,6 +119,7 @@ pub struct Subsonic {
     server: Server,
     asking: Agent,
     downloading: Agent,
+    patience: Patience,
     salted: Arc<AtomicU64>,
     pacing: Arc<Pacing>,
 }
@@ -148,42 +146,29 @@ struct Refusal {
 
 #[derive(Default, Deserialize)]
 struct Found {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "songs_readable")]
     song: Vec<Song>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct Song {
+    #[serde(deserialize_with = "id_spelt")]
     id: String,
     #[serde(default)]
     suffix: Option<String>,
     #[serde(default, rename = "musicBrainzId")]
     recording: Option<String>,
-    #[serde(default)]
-    isrc: Isrcs,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-enum Isrcs {
-    #[default]
-    None,
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Isrcs {
-    fn holds(&self, isrc: &Isrc) -> bool {
-        let named = |held: &String| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc);
-        match self {
-            Self::None => false,
-            Self::One(held) => named(held),
-            Self::Many(held) => held.iter().any(named),
-        }
-    }
+    #[serde(default, deserialize_with = "isrcs_readable")]
+    isrc: Vec<String>,
 }
 
 impl Song {
+    fn holds(&self, isrc: &Isrc) -> bool {
+        self.isrc
+            .iter()
+            .any(|held| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc))
+    }
+
     fn is_the_recording(&self, recording: &Mbid) -> bool {
         self.recording
             .as_deref()
@@ -200,7 +185,7 @@ fn the_one_asked_for<'a>(identity: &Identity, songs: &'a [Song]) -> Option<&'a S
         identity
             .isrc
             .as_ref()
-            .and_then(|isrc| songs.iter().find(|song| song.isrc.holds(isrc)))
+            .and_then(|isrc| songs.iter().find(|song| song.holds(isrc)))
     })
 }
 
@@ -220,25 +205,6 @@ fn wordings(identity: &Identity) -> Vec<String> {
         .into_iter()
         .chain([title.to_owned()])
         .collect()
-}
-
-fn is_a_document(mime: Option<&str>) -> bool {
-    mime.is_some_and(|mime| {
-        let mime = mime.to_ascii_lowercase();
-        DOCUMENT_TYPES.iter().any(|kind| mime.contains(kind))
-    })
-}
-
-fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
-        .map(Duration::from_secs)
 }
 
 fn told(error: &ureq::Error) -> Option<String> {
@@ -270,8 +236,9 @@ impl Subsonic {
         Self {
             source: SourceId::new(SUBSONIC).unwrap_or_else(|_| SourceId::local()),
             server,
-            asking: asking_agent(Patience::default()),
-            downloading: downloading_agent(Patience::default()),
+            asking: asking_agent(Patience::default(), Trusted::SystemStoreToo),
+            downloading: downloading(Patience::default()),
+            patience: Patience::default(),
             salted: Arc::new(AtomicU64::new(0)),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
@@ -280,18 +247,35 @@ impl Subsonic {
     #[must_use]
     pub fn waiting(self, patience: Patience) -> Self {
         Self {
-            asking: asking_agent(patience),
-            downloading: downloading_agent(patience),
+            asking: asking_agent(patience, Trusted::SystemStoreToo),
+            downloading: downloading(patience),
+            patience,
             ..self
         }
     }
 
     fn called(&self, agent: &Agent, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
+        self.called_within(agent, op, url, None)
+    }
+
+    fn called_within(
+        &self,
+        agent: &Agent,
+        op: ProviderOp,
+        url: &str,
+        deadline: Option<Instant>,
+    ) -> Result<http::Response<Body>> {
         let mut retried = 0;
         loop {
             self.pacing.paced();
-            let response = agent
-                .get(url)
+            let mut request = agent.get(url);
+            if let Some(deadline) = deadline {
+                request = request
+                    .config()
+                    .timeout_global(Some(self.left_before(deadline, op)?))
+                    .build();
+            }
+            let response = request
                 .call()
                 .map_err(|error| self.unreachable(op, error))?;
             if response.status().is_success() {
@@ -299,7 +283,7 @@ impl Subsonic {
             }
             let status = response.status().as_u16();
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
-                let wait = retry_after(&response)
+                let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
                 tracing::debug!(
@@ -367,23 +351,7 @@ impl Subsonic {
                 );
             }
         }
-        if trust::certificate_refused(&error) {
-            return Error::Untrusted {
-                provider: self.source.clone(),
-                op,
-            };
-        }
-        let source = match error {
-            ureq::Error::Io(source) => source,
-            ureq::Error::Timeout(_) => std::io::Error::from(std::io::ErrorKind::TimedOut),
-            ureq::Error::HostNotFound => std::io::Error::from(std::io::ErrorKind::NotFound),
-            _ => std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
-        };
-        Error::Io {
-            provider: self.source.clone(),
-            op,
-            source,
-        }
+        unreached(self.source.clone(), op, error)
     }
 
     fn unreadable(&self, op: ProviderOp) -> Error {
@@ -393,7 +361,18 @@ impl Subsonic {
         }
     }
 
-    fn searched(&self, words: &str, offset: usize) -> Result<Vec<Song>> {
+    fn left_before(&self, deadline: Instant, op: ProviderOp) -> Result<Duration> {
+        deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or_else(|| Error::Io {
+                provider: self.source.clone(),
+                op,
+                source: io::Error::from(io::ErrorKind::TimedOut),
+            })
+    }
+
+    fn searched(&self, words: &str, offset: usize, deadline: Instant) -> Result<Vec<Song>> {
         let op = ProviderOp::Search;
         let url = self.url(
             "search3",
@@ -405,15 +384,16 @@ impl Subsonic {
                 ("albumCount", "0"),
             ],
         );
-        let response = self.called(&self.asking, op, &url)?;
+        let response = self.called_within(&self.asking, op, &url, Some(deadline))?;
         let bytes = self.read_whole(op, response)?;
         self.read(&bytes, op)
     }
 
     fn found(&self, identity: &Identity) -> Result<Option<Song>> {
+        let deadline = Instant::now() + self.patience.answered_within;
         for words in wordings(identity) {
             for page in 0..PAGES_AT_MOST {
-                let songs = self.searched(&words, page * SONGS_A_PAGE)?;
+                let songs = self.searched(&words, page * SONGS_A_PAGE, deadline)?;
                 if let Some(song) = the_one_asked_for(identity, &songs) {
                     return Ok(Some(song.clone()));
                 }
@@ -463,22 +443,13 @@ impl Subsonic {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
         }
-        Ok(Opened::Reading(Box::new(
-            response.into_body().into_reader(),
-        )))
+        Ok(Opened::Reading(Box::new(Ranged::continuing(
+            self.downloading.clone(),
+            url.to_owned(),
+            response,
+            self.patience.resumed_after,
+        ))))
     }
-}
-
-fn escaped(text: &str) -> String {
-    text.bytes()
-        .fold(String::with_capacity(text.len()), |mut written, byte| {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-                written.push(char::from(byte));
-            } else {
-                let _ = write!(written, "%{byte:02X}");
-            }
-            written
-        })
 }
 
 impl Provider for Subsonic {
@@ -552,29 +523,6 @@ mod tests {
         assert!(printed.contains("listener"));
         assert!(printed.contains("music.local"));
         assert!(!printed.contains("sesame"));
-    }
-
-    #[test]
-    fn a_certificate_the_client_does_not_trust_is_told_apart_from_a_refused_connection() {
-        let refused_certificate = ureq::Error::Rustls(rustls::Error::InvalidCertificate(
-            rustls::CertificateError::UnknownIssuer,
-        ));
-        let refused_connection =
-            ureq::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionRefused));
-        let subsonic = subsonic();
-
-        let untrusted = subsonic.unreachable(ProviderOp::Search, refused_certificate);
-        let unreached = subsonic.unreachable(ProviderOp::Search, refused_connection);
-
-        assert!(matches!(
-            untrusted,
-            Error::Untrusted {
-                op: ProviderOp::Search,
-                ..
-            }
-        ));
-        assert!(untrusted.is_the_provider_away());
-        assert!(matches!(unreached, Error::Io { .. }));
     }
 
     #[test]

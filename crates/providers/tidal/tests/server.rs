@@ -553,6 +553,31 @@ fn a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped() {
 }
 
 #[test]
+fn a_segment_the_cdn_asks_to_be_asked_for_later_is_asked_for_again() {
+    let fake = tidal_server("FULL", on_itself, |asked, nth, before| {
+        let asked_before = before.iter().any(|earlier| earlier.path == asked.path);
+        match (asked_before, nth) {
+            (false, 0 | 2) => Canned {
+                headers: vec![("Retry-After", "0".to_owned())],
+                ..Canned::refused(503, "")
+            },
+            _ => Canned::media(&segmented()[nth]),
+        }
+    });
+
+    let delivered = streamed(fake.tidal().find(&by_isrc()).expect("an answer"));
+
+    assert_native_flac(&delivered.expect("a delivery").2);
+    let asked_for: Vec<usize> = fake
+        .paths()
+        .iter()
+        .filter_map(|path| segment(path))
+        .filter(|nth| [0, 2].contains(nth))
+        .collect();
+    assert_eq!(asked_for.len(), 4);
+}
+
+#[test]
 fn a_refresh_token_turned_away_is_the_account_and_not_the_want() {
     let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
         "/auth/token" => Canned::refused(

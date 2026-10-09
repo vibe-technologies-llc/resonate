@@ -63,7 +63,7 @@ fn turned_away(error: &Error) -> &'static str {
         Error::AuthorizationLapsed { .. } => "The TIDAL code lapsed before it was approved",
         Error::AuthorizationDenied { .. } => "TIDAL was told not to sign in",
         Error::Unwelcome { .. } => "TIDAL refused the client id",
-        Error::Io { .. } => "TIDAL could not be reached",
+        Error::Io { .. } | Error::Unaddressable { .. } => "TIDAL could not be reached",
         Error::Refused { .. } => "TIDAL refused the sign-in",
         Error::Untrusted { .. } => "TIDAL's certificate is not one this build trusts",
         Error::StillArriving { .. }
