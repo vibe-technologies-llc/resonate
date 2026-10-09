@@ -2027,7 +2027,7 @@ impl RootView {
 
     fn way_back(&self, cx: &mut Context<Self>) -> Div {
         let label = self
-            .way_back_to()
+            .way_back_to(cx)
             .unwrap_or_else(|| SharedString::new_static(self.in_front(cx).label()));
 
         div().flex().child(self.in_the_pane_ring(

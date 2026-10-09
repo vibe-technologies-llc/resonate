@@ -2535,8 +2535,16 @@ is never named.
   stepped by key) keeps the page it left in `came_from` whenever pane or selection moved, and holds
   the stack through the `show_everything` an unscoping landing runs, so mouse-back returns Albums to
   the Tracks it came from as well as album to list
-  (`the_way_back_and_forward_crosses_from_one_category_to_another`). Escape (`RootView::step_back`)
-  on an unscoped page steps back only where the way back leads to a scope (`goes_back_to_a_scope`),
+  (`the_way_back_and_forward_crosses_from_one_category_to_another`). **The page's way back keeps to
+  the tab pressed; a link is followed back across.** Each `Wayback` says how it was left
+  (`Leaving::ByALink` for `opened`, `Leaving::ByATab` for `choose_pane`); the chevron and Escape
+  (`RootView::step_back`, named by `way_back_to`) take `way_back_within`: the newest page standing
+  under the category in front, or one left by a link before any tab press is passed, skipping the
+  page shown. So album → artist → back returns to the album, but album → artist → *Albums* tab →
+  back steps to that album, then to the albums, and never to the artist's tab; a page passed over
+  stays for the mouse's back button, which keeps the whole history
+  (`the_way_back_on_the_page_keeps_to_the_tab_pressed_and_follows_a_link_across`). Escape on an
+  unscoped page steps back only where that way back leads to a scope (`goes_back_to_a_scope`),
   never flipping tabs. The way back is `kit::way_back` at the page's top left, chevron + name (*‹
   Tracks*, *‹ Hypnotize*); with nothing left behind it, it reads the category the page stands under
   and goes there, clearing the scope (replacing a ghost *Show all* that cleared the scope rather

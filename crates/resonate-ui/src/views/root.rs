@@ -221,6 +221,13 @@ struct Wayback {
     selection: Selection,
     at: LeftAt,
     named: SharedString,
+    left_by: Leaving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Leaving {
+    ByALink,
+    ByATab,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1889,6 +1896,10 @@ impl RootView {
 
         let arrived = (self.pane, self.library.read(cx).selection());
         if arrived != (leaving.pane, leaving.selection) {
+            let leaving = Wayback {
+                left_by: Leaving::ByATab,
+                ..leaving
+            };
             Self::keep_wayback(&mut self.came_from, leaving);
             self.goes_forward.clear();
         }
@@ -2902,6 +2913,7 @@ impl RootView {
             selection: self.library.read(cx).selection(),
             at: self.top_row(),
             named: self.here(cx),
+            left_by: Leaving::ByALink,
         }
     }
 
@@ -2918,6 +2930,7 @@ impl RootView {
             selection,
             at,
             named: _,
+            left_by: _,
         } = wayback;
         self.library
             .update(cx, |library, cx| library.select(selection, cx));
@@ -2925,27 +2938,51 @@ impl RootView {
         self.landing_on = pane.lands_where_it_was_left().then_some(at);
     }
 
-    pub(crate) fn way_back_to(&self) -> Option<SharedString> {
-        self.came_from.last().map(|back| back.named.clone())
+    fn way_back_within(&self, standing: (Pane, Selection)) -> Option<usize> {
+        let category = in_front_of(standing.0, standing.1);
+        let mut crossed_a_tab = false;
+        for (at, back) in self.came_from.iter().enumerate().rev() {
+            if (back.pane, back.selection) == standing {
+                continue;
+            }
+            let under_it = in_front_of(back.pane, back.selection) == category;
+            if under_it || (!crossed_a_tab && back.left_by == Leaving::ByALink) {
+                return Some(at);
+            }
+            crossed_a_tab |= back.left_by == Leaving::ByATab;
+        }
+        None
+    }
+
+    fn page_shown(&self, cx: &App) -> (Pane, Selection) {
+        (self.pane, self.library.read(cx).selection())
+    }
+
+    pub(crate) fn way_back_to(&self, cx: &App) -> Option<SharedString> {
+        self.way_back_within(self.page_shown(cx))
+            .map(|at| self.came_from[at].named.clone())
     }
 
     pub(crate) fn step_back(&mut self, cx: &mut Context<Self>) {
-        if self.goes_back() {
-            self.go_back(cx);
-        } else {
-            let category = self.in_front(cx);
-            self.choose_pane(category, cx);
+        match self.way_back_within(self.page_shown(cx)) {
+            Some(at) => self.go_back_to(at, cx),
+            None => {
+                let category = self.in_front(cx);
+                self.choose_pane(category, cx);
+            }
         }
     }
 
-    pub(crate) fn goes_back(&self) -> bool {
-        !self.came_from.is_empty()
+    fn go_back_to(&mut self, at: usize, cx: &mut Context<Self>) {
+        let back = self.came_from.remove(at);
+        let current = self.here_now(cx);
+        Self::keep_wayback(&mut self.goes_forward, current);
+        self.restore_wayback(back, cx);
     }
 
-    fn goes_back_to_a_scope(&self) -> bool {
-        self.came_from
-            .last()
-            .is_some_and(|back| back.selection != Selection::Everything)
+    fn goes_back_to_a_scope(&self, cx: &App) -> bool {
+        self.way_back_within(self.page_shown(cx))
+            .is_some_and(|at| self.came_from[at].selection != Selection::Everything)
     }
 
     pub(crate) fn go_back(&mut self, cx: &mut Context<Self>) {
@@ -3469,7 +3506,7 @@ impl RootView {
         window.focus(&self.focus);
         if self.search.read(cx).text().is_empty() {
             let scoped = self.library.read(cx).selection() != Selection::Everything;
-            if scoped || self.goes_back_to_a_scope() {
+            if scoped || self.goes_back_to_a_scope(cx) {
                 self.step_back(cx);
             }
         } else {

@@ -1450,6 +1450,85 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_way_back_on_the_page_keeps_to_the_tab_pressed_and_follows_a_link_across(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged(
+            "01.wav",
+            1,
+            &[
+                (b"INAM", "Echoes"),
+                (b"IPRD", "Meddle"),
+                (b"IART", "Pink Floyd"),
+            ],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .clone();
+        let album = crate::Selection::Album(track.album_id.expect("an album the tags named"));
+        let artist = crate::Selection::Artist(track.artist_id.expect("an artist the tags named"));
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        let standing = |driven: &mut Driven| {
+            driven.read(|root, cx| (root.in_front(cx), root.library.read(cx).selection()))
+        };
+        let stepped_back = |driven: &mut Driven| {
+            driven
+                .cx
+                .update(|_, cx| root.update(cx, |root, cx| root.step_back(cx)));
+            driven.settle();
+        };
+        driven.click("tab-albums");
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.opened(album, cx));
+        });
+        driven.settle();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.opened(artist, cx));
+        });
+        driven.settle();
+
+        stepped_back(&mut driven);
+        let followed_back = standing(&mut driven);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.opened(artist, cx));
+        });
+        driven.settle();
+        driven.click("tab-albums");
+        let pressed = standing(&mut driven);
+        stepped_back(&mut driven);
+        let within_the_tab = standing(&mut driven);
+        stepped_back(&mut driven);
+        let at_its_top = standing(&mut driven);
+        stepped_back(&mut driven);
+        let stays = standing(&mut driven);
+
+        assert_eq!(
+            followed_back,
+            (Pane::Albums, album),
+            "a link was not followed back"
+        );
+        assert_eq!(pressed.0, Pane::Albums);
+        assert_eq!(within_the_tab, (Pane::Albums, album));
+        assert_eq!(at_its_top, (Pane::Albums, crate::Selection::Everything));
+        assert_eq!(stays.0, Pane::Albums, "the way back left the tab pressed");
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
+        driven.settle();
+        assert_ne!(
+            standing(&mut driven).0,
+            Pane::Albums,
+            "the mouse's back button no longer crosses to the tab left"
+        );
+    }
+
+    #[gpui::test]
     fn the_way_back_lands_on_the_pixel_the_list_was_left_at(cx: &mut TestAppContext) {
         let folder = Folder::new();
         for nth in 0..80 {
