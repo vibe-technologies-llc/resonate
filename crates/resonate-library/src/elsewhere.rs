@@ -4,12 +4,13 @@ use std::{
 };
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, WantId};
+use resonate_core::{AlbumId, ArtistId, Isrc, ReleaseTrackId, WantId, titles, words_of_a_name};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
     AlbumMatch, ByArtist, Column, Credit, Error, Issued, Mbid, RecordingMatch, RecordingRelease,
-    Release, Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, store,
+    Release, Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, linked::LENGTHS_AGREE_WITHIN,
+    spelt_alike, store,
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
@@ -50,6 +51,7 @@ pub struct Found {
     pub release: Option<RecordingRelease>,
     pub releases: Vec<RecordingRelease>,
     pub performer: Option<Performer>,
+    pub isrcs: Vec<Isrc>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,16 +73,12 @@ impl Found {
     }
 
     fn answers(&self, words: &[String]) -> bool {
-        let named: Vec<String> = [self.title.as_str(), self.artist.as_str()]
-            .into_iter()
-            .chain(self.releases.iter().map(|release| release.title.as_str()))
-            .flat_map(str::split_whitespace)
-            .map(store::folded_letters)
-            .collect();
-
-        words
-            .iter()
-            .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+        let named = words_of_names(
+            [self.title.as_str(), self.artist.as_str()]
+                .into_iter()
+                .chain(self.releases.iter().map(|release| release.title.as_str())),
+        );
+        every_word_begins_one(words, &named)
     }
 }
 
@@ -97,6 +95,23 @@ pub(crate) fn folded_words_asked(text: &str) -> Vec<String> {
         .map(store::folded_letters)
         .filter(|word| !word.is_empty())
         .collect()
+}
+
+fn name_words_asked(text: &str) -> Vec<String> {
+    words_asked(text)
+        .iter()
+        .flat_map(|word| words_of_a_name(word))
+        .collect()
+}
+
+fn words_of_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    names.into_iter().flat_map(words_of_a_name).collect()
+}
+
+fn every_word_begins_one(words: &[String], named: &[String]) -> bool {
+    words
+        .iter()
+        .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,19 +140,11 @@ impl AlbumMatch {
 }
 
 fn answered_by_name(title: &str, artist: &str, words: &[String]) -> bool {
-    let named: Vec<String> = [title, artist]
-        .into_iter()
-        .flat_map(str::split_whitespace)
-        .map(store::folded_letters)
-        .collect();
-
-    words
-        .iter()
-        .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+    every_word_begins_one(words, &words_of_names([title, artist]))
 }
 
 pub(crate) fn albums_kept_named_by(kept: Vec<AlbumFound>, text: &str) -> Vec<AlbumFound> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -156,7 +163,7 @@ pub(crate) fn albums_kept_named_by(kept: Vec<AlbumFound>, text: &str) -> Vec<Alb
 }
 
 pub(crate) fn albums_named_by(matches: &[AlbumMatch], text: &str) -> Vec<AlbumFound> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -188,7 +195,7 @@ pub(crate) fn albums_named_by(matches: &[AlbumMatch], text: &str) -> Vec<AlbumFo
 }
 
 pub(crate) fn artists_named_by(matches: &[RecordingMatch], text: &str) -> Vec<ArtistFound> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -199,14 +206,7 @@ pub(crate) fn artists_named_by(matches: &[RecordingMatch], text: &str) -> Vec<Ar
         let Some(mbid) = &credit.mbid else {
             continue;
         };
-        let folded: Vec<String> = credit
-            .name
-            .split_whitespace()
-            .map(store::folded_letters)
-            .collect();
-        let answers = words
-            .iter()
-            .all(|word| folded.iter().any(|name| name.starts_with(word.as_str())));
+        let answers = every_word_begins_one(&words, &words_of_a_name(&credit.name));
         if answers && seen.insert(mbid.clone()) {
             named.push(ArtistFound {
                 mbid: mbid.clone(),
@@ -252,6 +252,7 @@ fn worth(release: &RecordingRelease) -> (Standing, Meant, bool, String) {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SongsAsked {
     pub words: String,
+    pub typed: String,
     pub by: Option<ByArtist>,
 }
 
@@ -298,6 +299,7 @@ pub fn songs_asked(text: &str) -> Option<SongsAsked> {
 
     (letters >= FEWEST_LETTERS_ASKED_ELSEWHERE).then(|| SongsAsked {
         words: lowered(&words.join(" ")),
+        typed: lowered(&words_typed(text).join(" ")),
         by: ByArtist::read(text).map(|by| ByArtist {
             title: lowered(&by.title),
             artist: lowered(&by.artist),
@@ -308,6 +310,7 @@ pub fn songs_asked(text: &str) -> Option<SongsAsked> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Likeness {
     Same,
+    Spelt,
     Within,
     Apart,
 }
@@ -337,14 +340,21 @@ pub fn weighed_for(asked: &SongsAsked, matches: Vec<RecordingMatch>) -> Vec<Reco
     let Some(by) = &asked.by else {
         return matches;
     };
+    if !matches.iter().any(|matched| by.answered_by(matched)) {
+        return matches;
+    }
     let artist = letters_of(&by.artist);
     let title = letters_of(&by.title);
     let as_credited = |matched: &RecordingMatch| {
-        std::iter::once(matched.credited_as())
+        let likeness = std::iter::once(matched.credited_as())
             .chain(matched.credit.iter().map(|credit| credit.name.clone()))
             .map(|name| likeness(&artist, &letters_of(&name)))
             .min()
-            .unwrap_or(Likeness::Apart)
+            .unwrap_or(Likeness::Apart);
+        match likeness > Likeness::Spelt && by.credits(matched) {
+            true => Likeness::Spelt,
+            false => likeness,
+        }
     };
     let as_titled = |matched: &RecordingMatch| likeness(&title, &letters_of(&matched.title));
 
@@ -363,7 +373,7 @@ pub fn weighed_for(asked: &SongsAsked, matches: Vec<RecordingMatch>) -> Vec<Reco
 }
 
 pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -376,7 +386,7 @@ pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
 }
 
 pub fn albums_still_answering(albums: &[AlbumFound], text: &str) -> Vec<AlbumFound> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -389,7 +399,7 @@ pub fn albums_still_answering(albums: &[AlbumFound], text: &str) -> Vec<AlbumFou
 }
 
 pub fn artists_still_answering(artists: &[ArtistFound], text: &str) -> Vec<ArtistFound> {
-    let words = folded_words_asked(text);
+    let words = name_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -429,12 +439,82 @@ fn the_take_worth_offering(matched: &RecordingMatch) -> (Coded, Standing, Meant,
     (coded, standing, meant, Reverse(matched.releases.len()))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Fit {
+    Titled,
+    Answered,
+    Partly,
+}
+
+fn word_answers(word: &str, named: &[String]) -> bool {
+    named
+        .iter()
+        .any(|name| name.starts_with(word) || spelt_alike(word, name))
+}
+
+fn same_words(one: &[String], other: &[String]) -> bool {
+    let mut one = one.to_vec();
+    let mut other = other.to_vec();
+    one.sort_unstable();
+    other.sort_unstable();
+    one == other || one.concat() == other.concat()
+}
+
+fn fit_of(matched: &RecordingMatch, asked: &SongsAsked) -> Fit {
+    let titled = words_of_a_name(titles::dequalified(&matched.title));
+    if let Some(by) = &asked.by
+        && by.answered_by(matched)
+    {
+        return match same_words(&titled, &words_of_a_name(&by.title)) {
+            true => Fit::Titled,
+            false => Fit::Answered,
+        };
+    }
+
+    let words = words_of_a_name(&asked.typed);
+    let credited = words_of_a_name(&matched.credited_as());
+    let named: Vec<String> = titled.iter().chain(&credited).cloned().collect();
+    if !words.is_empty() && (same_words(&titled, &words) || same_words(&named, &words)) {
+        return Fit::Titled;
+    }
+    match !words.is_empty() && words.iter().all(|word| word_answers(word, &named)) {
+        true => Fit::Answered,
+        false => Fit::Partly,
+    }
+}
+
+fn codes_alike(offered: &RecordingMatch, takes: &[RecordingMatch]) -> Vec<Isrc> {
+    let lasts_alike = |take: &RecordingMatch| match (offered.length, take.length) {
+        (Some(offered), Some(take)) => offered.abs_diff(take) <= LENGTHS_AGREE_WITHIN,
+        _ => take.recording == offered.recording,
+    };
+    let mut codes: Vec<Isrc> = Vec::new();
+    for code in offered.isrcs.iter().chain(
+        takes
+            .iter()
+            .filter(|take| lasts_alike(take))
+            .flat_map(|take| &take.isrcs),
+    ) {
+        if !codes.contains(code) {
+            codes.push(code.clone());
+        }
+    }
+    codes
+}
+
+struct Takes {
+    named: (String, String),
+    first: usize,
+    same: Vec<RecordingMatch>,
+}
+
 pub(crate) fn found_among(
     matches: Vec<RecordingMatch>,
+    asked: Option<&SongsAsked>,
     held: impl Fn(&Mbid) -> bool,
 ) -> Vec<Found> {
-    let mut takes: Vec<((String, String), Vec<RecordingMatch>)> = Vec::new();
-    for matched in matches {
+    let mut takes: Vec<Takes> = Vec::new();
+    for (place, matched) in matches.into_iter().enumerate() {
         if held(&matched.recording) || !is_worth_offering(&matched) {
             continue;
         }
@@ -442,17 +522,40 @@ pub(crate) fn found_among(
             store::folded_letters(&matched.title),
             store::folded_letters(&matched.credited_as()),
         );
-        match takes.iter_mut().find(|(seen, _)| *seen == named) {
-            Some((_, same)) => same.push(matched),
-            None => takes.push((named, vec![matched])),
+        match takes.iter_mut().find(|seen| seen.named == named) {
+            Some(seen) => seen.same.push(matched),
+            None => takes.push(Takes {
+                named,
+                first: place,
+                same: vec![matched],
+            }),
         }
     }
 
+    if let Some(asked) = asked {
+        takes.sort_by_cached_key(|takes| {
+            let fit = takes
+                .same
+                .iter()
+                .map(|matched| fit_of(matched, asked))
+                .min()
+                .unwrap_or(Fit::Partly);
+            let released_on: usize = takes
+                .same
+                .iter()
+                .map(|matched| matched.releases.len())
+                .sum();
+            (fit, Reverse(released_on), takes.first)
+        });
+    }
+
     let mut found = Vec::new();
-    for (_, same) in takes {
-        let Some(matched) = same.into_iter().min_by_key(the_take_worth_offering) else {
+    for Takes { same, .. } in takes {
+        let Some(matched) = same.iter().min_by_key(|take| the_take_worth_offering(take)) else {
             continue;
         };
+        let isrcs = codes_alike(matched, &same);
+        let matched = matched.clone();
         let artist = matched.credited_as();
         found.push(Found {
             performer: leading_performer(&matched.credit),
@@ -462,6 +565,7 @@ pub(crate) fn found_among(
             title: matched.title,
             artist,
             length: matched.length,
+            isrcs,
         });
         if found.len() == FOUND_ELSEWHERE_AT_MOST {
             break;
@@ -723,6 +827,7 @@ mod tests {
                 matched(TWO, "echoes", "Pink Floyd", meddle()),
                 matched(THREE, "Echoes (live)", "Pink Floyd", meddle()),
             ],
+            None,
             |recording| recording.as_str() == THREE,
         );
 
@@ -749,7 +854,7 @@ mod tests {
         ];
         let unidentified = matched(THREE, "Echoes", "Pink Floyd", released());
 
-        let found = found_among(vec![collaboration, unidentified], |_| false);
+        let found = found_among(vec![collaboration, unidentified], None, |_| false);
 
         assert_eq!(found[0].artist, "Janji & Johnning");
         assert_eq!(
@@ -817,6 +922,7 @@ mod tests {
 
         let found = found_among(
             vec![compiled, bootlegged, unreleased, on_the_album, coded_live],
+            None,
             |_| false,
         );
 
@@ -829,6 +935,115 @@ mod tests {
                 (FOUR, "Teardrop"),
                 (THREE, "Angel"),
                 (FIVE, "Teardrop (live)")
+            ]
+        );
+    }
+
+    fn numbered(n: usize) -> String {
+        format!("{n:08x}-0000-4000-8000-000000000000")
+    }
+
+    fn on_releases(n: usize, title: &str, artist: &str, releases: usize) -> RecordingMatch {
+        matched(
+            &numbered(n),
+            title,
+            artist,
+            (0..releases)
+                .map(|release| issued(&numbered(1000 + release), "1999", "Album", &[], "Official"))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_song_titled_with_the_words_and_on_the_most_releases_leads_whoever_is_named_after_them() {
+        let asked = songs_asked("stand by me").expect("words worth asking");
+        let mut answer: Vec<RecordingMatch> = (0..15)
+            .map(|n| on_releases(n, &format!("Song {n}"), "The Stand by Me", 1))
+            .collect();
+        answer.push(on_releases(20, "Stand by Me", "Vivian Vance Kelly", 3));
+        answer.push(on_releases(21, "Stand by Me", "Ben E. King", 40));
+        answer.push(on_releases(22, "Stand Up, Sit Down", "Akili and Me", 1));
+
+        let found = found_among(answer, Some(&asked), |_| false);
+
+        assert_eq!(found.len(), FOUND_ELSEWHERE_AT_MOST);
+        assert_eq!(
+            found
+                .iter()
+                .take(3)
+                .map(|found| found.artist.as_str())
+                .collect::<Vec<_>>(),
+            ["Ben E. King", "Vivian Vance Kelly", "The Stand by Me"]
+        );
+        assert!(found.iter().all(|found| found.artist != "Akili and Me"));
+    }
+
+    #[test]
+    fn a_word_typed_without_its_apostrophe_or_mistyped_still_answers_a_found_song() {
+        let creep = songs_asked("creep").expect("words worth asking");
+        let found = found_among(
+            vec![
+                on_releases(1, "Days", "Creep", 1),
+                on_releases(2, "Creep", "Radiohead", 130),
+            ],
+            Some(&creep),
+            |_| false,
+        );
+        assert_eq!(found[0].artist, "Radiohead");
+
+        let dont = songs_asked("dont stop me now").expect("words worth asking");
+        let found = found_among(
+            vec![
+                on_releases(1, "Can’t Stop Me Now", "Pitbull", 11),
+                on_releases(2, "Don’t Stop Me Now", "Queen", 249),
+            ],
+            Some(&dont),
+            |_| false,
+        );
+        assert_eq!(found[0].artist, "Queen");
+
+        let mistyped = songs_asked("bohemian rapsody").expect("words worth asking");
+        let found = found_among(
+            vec![
+                on_releases(1, "Bohemian Trapsody", "Logic", 2),
+                on_releases(2, "Bohemian Rhapsody", "Queen", 353),
+            ],
+            Some(&mistyped),
+            |_| false,
+        );
+        assert_eq!(found[0].artist, "Queen");
+
+        assert_eq!(
+            still_answering(
+                &found_among(vec![on_releases(3, "Can't", "Someone", 1)], None, |_| false),
+                "cant"
+            )
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_found_song_carries_the_codes_of_every_take_of_it_as_long_as_it() {
+        let isrc = |code: &str| resonate_core::Isrc::new(code).expect("an isrc");
+        let mut album = on_releases(1, "Bohemian Rhapsody", "Queen", 3);
+        album.length = Some(Duration::from_secs(355));
+        album.isrcs = vec![isrc("GBUM71029604"), isrc("GBCEE0400076")];
+        let mut remaster = on_releases(2, "Bohemian Rhapsody", "Queen", 2);
+        remaster.length = Some(Duration::from_secs(358));
+        remaster.isrcs = vec![isrc("GBCEG7900018")];
+        let mut live = on_releases(3, "Bohemian Rhapsody", "Queen", 1);
+        live.length = Some(Duration::from_secs(301));
+        live.isrcs = vec![isrc("GBCEE0500364")];
+
+        let found = found_among(vec![album, remaster, live], None, |_| false);
+
+        assert_eq!(
+            found[0].isrcs,
+            [
+                isrc("GBUM71029604"),
+                isrc("GBCEE0400076"),
+                isrc("GBCEG7900018")
             ]
         );
     }
@@ -860,6 +1075,7 @@ mod tests {
                     issued(THREE, "1971-10-30", "Album", &[], "Official"),
                 ],
             )],
+            None,
             |_| false,
         );
         let [found] = found.as_slice() else {
@@ -948,6 +1164,7 @@ mod tests {
             songs_asked("You F O by  Stela Cole"),
             Some(SongsAsked {
                 words: "you f o stela cole".to_owned(),
+                typed: "you f o by stela cole".to_owned(),
                 by: Some(ByArtist {
                     title: "you f o".to_owned(),
                     artist: "stela cole".to_owned(),
@@ -1006,8 +1223,19 @@ mod tests {
         let unknown_title = songs_asked("purple rain by stela cole").expect("words worth asking");
         assert_eq!(
             weighed_for(&unknown_title, answered.clone()),
-            vec![another, remixed, you_f_o.clone()],
-            "a title nothing matches keeps every song by the artist"
+            answered,
+            "a reading no answer bears out weighs nothing"
+        );
+        let misread = songs_asked("stand by me").expect("words worth asking");
+        let plain_answer = vec![
+            matched(ONE, "Stand by Me", "Ben E. King", Vec::new()),
+            matched(TWO, "Teenage Frustration", "The Stand by Me", Vec::new()),
+            matched(THREE, "P.I.C.", "≠ME", Vec::new()),
+        ];
+        assert_eq!(
+            weighed_for(&misread, plain_answer.clone()),
+            plain_answer,
+            "a title holding by is not narrowed to whoever is called what follows it"
         );
         let plain = songs_asked("you f o").expect("words worth asking");
         assert_eq!(weighed_for(&plain, answered.clone()), answered);
@@ -1024,6 +1252,7 @@ mod tests {
             release: Some(released.clone()),
             releases: vec![released],
             performer: None,
+            isrcs: Vec::new(),
         }
     }
 

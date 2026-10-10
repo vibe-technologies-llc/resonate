@@ -101,6 +101,7 @@ struct HeldWant {
     offered: Option<String>,
     misses: i64,
     forgotten: Vec<(String, i64)>,
+    isrcs: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -279,12 +280,13 @@ pub(crate) fn land_release(
                         track
                             .length
                             .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX)),
-                        track.isrc,
+                        track.isrcs.first(),
                         release_track_haystack(release, track),
                     ],
                     |row| row.get(0),
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            code(tx, row, &track.isrcs)?;
             write_links(
                 tx,
                 "release_track_links",
@@ -543,14 +545,32 @@ pub(crate) fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> 
         .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
+pub(crate) fn code(tx: &Transaction<'_>, release_track: i64, isrcs: &[String]) -> Result<()> {
+    let mut insert = tx
+        .prepare_cached(
+            "INSERT INTO release_track_isrcs (release_track_id, isrc) VALUES (?1, ?2)
+             ON CONFLICT DO NOTHING",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    for isrc in isrcs {
+        insert
+            .execute(params![release_track, isrc])
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    }
+    Ok(())
+}
+
 fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
     let mut statement = tx
         .prepare(
             "SELECT rt.track_mbid, rt.recording_mbid, rt.disc, rt.position, words_of(rt.title),
-                    w.wanted, w.tried, w.offered, w.misses, w.id
+                    w.wanted, w.tried, w.offered, w.misses, w.id, rt.id
                FROM wants w JOIN release_tracks rt ON rt.id = w.release_track_id
               WHERE rt.album_id = ?1",
         )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let mut coded_as = tx
+        .prepare("SELECT isrc FROM release_track_isrcs WHERE release_track_id = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let mut forgotten_for = tx
         .prepare(
@@ -572,19 +592,28 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
                 offered: row.get(7)?,
                 misses: row.get(8)?,
                 forgotten: Vec::new(),
+                isrcs: Vec::new(),
             };
-            Ok((row.get::<_, i64>(9)?, want))
+            Ok((row.get::<_, i64>(9)?, row.get::<_, i64>(10)?, want))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     held.into_iter()
-        .map(|(id, want)| {
+        .map(|(id, release_track, want)| {
             let forgotten = forgotten_for
                 .query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
-            Ok(HeldWant { forgotten, ..want })
+            let isrcs = coded_as
+                .query_map(params![release_track], |row| row.get(0))
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            Ok(HeldWant {
+                forgotten,
+                isrcs,
+                ..want
+            })
         })
         .collect()
 }
@@ -612,6 +641,7 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     for (_, row, want) in landing {
+        code(tx, row, &want.isrcs)?;
         let landed = insert
             .execute(params![
                 row,
@@ -1929,7 +1959,7 @@ mod tests {
             recording: recording.map(|id| Mbid::new(id).expect("a well-formed mbid")),
             track: None,
             length: None,
-            isrc: None,
+            isrcs: Vec::new(),
             links: Vec::new(),
         }
     }

@@ -200,6 +200,7 @@ impl RawSong {
                 .map(Duration::from_millis),
             release: Some(release.clone()),
             releases: vec![release],
+            isrcs: Vec::new(),
             performer: self
                 .performer
                 .map(|artist| ArtistId::new(artist as u64))
@@ -258,7 +259,7 @@ mod tests {
                         recording: None,
                         track: None,
                         length: None,
-                        isrc: None,
+                        isrcs: Vec::new(),
                         links: Vec::new(),
                     })
                     .collect(),

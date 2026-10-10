@@ -14,7 +14,7 @@ use ahash::AHashSet;
 use crossbeam_channel::{SendError, Sender, bounded};
 use parking_lot::Mutex;
 use resonate_analysis::Verdict;
-use resonate_core::{AlbumId, ArtistId, Chromaprint, TrackId};
+use resonate_core::{AlbumId, ArtistId, Chromaprint, TrackId, titles::dequalified};
 
 use crate::{
     AlbumToAsk, ArtistMatch, ArtistProfile, ArtistRelease, ArtistToAsk, CoverArt, Credit, Error,
@@ -865,27 +865,6 @@ impl Accepted {
     }
 }
 
-const VERSION_QUALIFIERS: &[&str] = &[
-    "albumversion",
-    "singleversion",
-    "cleanversion",
-    "explicitversion",
-    "explicit",
-    "clean",
-    "radioedit",
-    "remaster",
-    "remastered",
-    "bonustrack",
-    "deluxeedition",
-    "monoversion",
-    "stereoversion",
-    "originalmix",
-];
-
-const DATED_QUALIFIERS: &[&str] = &["remaster", "remastered"];
-
-const BRACKETS: &[(char, char)] = &[('(', ')'), ('[', ']')];
-
 const YEAR_DIGITS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -902,53 +881,6 @@ type ReleaseWeight = (Option<Spelling>, bool, bool, u8);
 
 fn a_year(text: &str) -> bool {
     text.len() == YEAR_DIGITS && text.bytes().all(|digit| digit.is_ascii_digit())
-}
-
-fn a_dated_qualifier(folded: &str) -> bool {
-    DATED_QUALIFIERS.iter().any(|word| {
-        folded.strip_suffix(word).is_some_and(a_year)
-            || folded.strip_prefix(word).is_some_and(a_year)
-    })
-}
-
-fn a_version_qualifier(inside: &str) -> bool {
-    let folded = folded_title(inside);
-    VERSION_QUALIFIERS.contains(&folded.as_str()) || a_dated_qualifier(&folded)
-}
-
-fn without_a_bracket_that<'a>(
-    title: &'a str,
-    qualifies: &impl Fn(&str) -> bool,
-) -> Option<&'a str> {
-    for (opening, closing) in BRACKETS {
-        let Some(inside) = title.strip_suffix(*closing) else {
-            continue;
-        };
-        let Some(opened) = inside.rfind(*opening) else {
-            continue;
-        };
-        if !qualifies(&inside[opened + opening.len_utf8()..]) {
-            continue;
-        }
-        let kept = inside[..opened].trim_end();
-        if !kept.is_empty() {
-            return Some(kept);
-        }
-    }
-
-    None
-}
-
-pub(crate) fn without_brackets_that(title: &str, qualifies: impl Fn(&str) -> bool) -> &str {
-    let mut kept = title.trim_end();
-    while let Some(shorter) = without_a_bracket_that(kept, &qualifies) {
-        kept = shorter;
-    }
-    kept
-}
-
-fn dequalified(title: &str) -> &str {
-    without_brackets_that(title, a_version_qualifier)
 }
 
 fn same_name(found: Option<&str>, named: &str) -> Option<Spelling> {

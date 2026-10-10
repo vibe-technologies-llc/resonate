@@ -262,7 +262,7 @@ pub struct Want {
     pub recording: Option<Mbid>,
     pub track: Option<Mbid>,
     pub release: Option<Mbid>,
-    pub isrc: Option<Isrc>,
+    pub isrcs: Vec<Isrc>,
     pub length: Option<Duration>,
     pub disc: u32,
     pub position: u32,

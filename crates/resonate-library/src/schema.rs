@@ -476,6 +476,13 @@ const MIGRATIONS: &[&str] = &[
     "CREATE INDEX tracks_by_isrc ON tracks(isrc);
      CREATE INDEX albums_by_release ON albums(mbid);
      CREATE INDEX artists_by_mbid ON artists(mbid);",
+    "CREATE TABLE release_track_isrcs (
+         release_track_id INTEGER NOT NULL REFERENCES release_tracks(id) ON DELETE CASCADE,
+         isrc             TEXT NOT NULL,
+         PRIMARY KEY (release_track_id, isrc)
+     ) STRICT, WITHOUT ROWID;
+     INSERT INTO release_track_isrcs (release_track_id, isrc)
+     SELECT id, isrc FROM release_tracks WHERE isrc IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1410,6 +1417,37 @@ mod tests {
             0
         );
         lay_out(&connection).expect("opening again is idempotent");
+    }
+
+    #[test]
+    fn a_release_rows_code_is_carried_into_the_codes_it_now_keeps() {
+        let connection = opened();
+        let coding = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("CREATE TABLE release_track_isrcs"))
+            .expect("the step that keeps every code");
+        lay_out_through(&connection, V1, &MIGRATIONS[..coding])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO albums (id, title) VALUES (1, 'Meddle');
+                 INSERT INTO release_tracks (id, album_id, disc, position, number, title, isrc, folded)
+                 VALUES (1, 1, 1, 1, '1', 'Echoes', 'GBN9Y1100065', 'echoes'),
+                        (2, 1, 1, 2, '2', 'Seamus', NULL, 'seamus');",
+            )
+            .expect("a release is stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let kept: Vec<(i64, String)> = connection
+            .prepare("SELECT release_track_id, isrc FROM release_track_isrcs")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the codes are read");
+        assert_eq!(kept, [(1, "GBN9Y1100065".to_owned())]);
     }
 
     #[test]

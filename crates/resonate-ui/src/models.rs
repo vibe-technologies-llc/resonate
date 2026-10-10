@@ -1626,7 +1626,11 @@ impl LibraryModel {
                 .spawn(async move {
                     let artists = library.unheld_artists_among(&answered.songs, &asked);
                     let albums = library.unheld_albums_among(&answered.albums, &asked);
-                    (library.unheld_among(answered.songs.to_vec()), artists, albums)
+                    (
+                        library.unheld_among(answered.songs.to_vec(), songs_asked(&asked).as_ref()),
+                        artists,
+                        albums,
+                    )
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
@@ -2291,6 +2295,7 @@ impl LibraryModel {
                 release,
                 releases: Vec::new(),
                 performer: performer.clone(),
+                isrcs: Vec::new(),
             };
             self.downloads.landing(found, now);
             self.downloads.wanted(&recording, *want, fetched_by);
@@ -6854,6 +6859,7 @@ mod tests {
             release: None,
             releases: Vec::new(),
             performer: None,
+            isrcs: Vec::new(),
         }
     }
 

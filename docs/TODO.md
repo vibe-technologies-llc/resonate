@@ -87,6 +87,8 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
 
 ## Providers and network
+- A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here, so a
+  song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome only
 - A device sign-in's cancel is heard only between polls (each request is bounded by the API
   agent's 20 s)
 - The inbox takes a file as settled after two quiet seconds of mtime and ctime, no size compared:
@@ -150,6 +152,9 @@ sits last in its category, not worked until it moves. Everything else is open.
 - AutoEq's suggestion takes the first measurer `INDEX.md` lists for a device, none ranked
 
 ## Search
+- A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for a
+  title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
+  (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
 - A pasted TIDAL playlist link is taken as words; a Spotify playlist is read off its embed page and
   a YouTube one off its public page, each listing at most its first hundred songs, and an Apple
   Music one off its public page, none naming an ISRC

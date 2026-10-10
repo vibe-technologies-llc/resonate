@@ -310,7 +310,7 @@ fn on_itself(own: &str) -> String {
 
 fn by_isrc() -> Identity {
     Identity {
-        isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
         artist: Some("Pink Floyd".to_owned()),
         ..Identity::named("Echoes")
     }
@@ -318,7 +318,7 @@ fn by_isrc() -> Identity {
 
 fn ncs_song() -> Identity {
     Identity {
-        isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
+        isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
         artist: Some("Janji".to_owned()),
         ..Identity::named("Heroes Tonight")
     }
@@ -386,6 +386,32 @@ fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
             .all(|asked| asked.authorization.as_deref() == Some(BEARER))
     );
     assert!(heard[3..].iter().all(|asked| asked.authorization.is_none()));
+}
+
+#[test]
+fn every_code_of_the_want_is_asked_for_until_one_names_the_track() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+    let two_codes = Identity {
+        isrcs: vec![
+            Isrc::new("USSM12409270").expect("an isrc"),
+            Isrc::new(ECHOES_ISRC).expect("an isrc"),
+        ],
+        ..by_isrc()
+    };
+
+    let (key, ..) =
+        streamed(fake.tidal().find(&two_codes).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    let searched: Vec<String> = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.path == "/openapi/tracks")
+        .map(|asked| asked.query)
+        .collect();
+    assert_eq!(searched.len(), 2);
+    assert!(searched[0].contains("filter%5Bisrc%5D=USSM12409270"));
+    assert!(searched[1].contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}")));
 }
 
 #[test]

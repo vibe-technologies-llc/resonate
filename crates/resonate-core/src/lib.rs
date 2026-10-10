@@ -22,6 +22,7 @@ mod span;
 mod stamp;
 pub mod text;
 mod time;
+pub mod titles;
 mod volume;
 pub mod writer;
 
@@ -35,7 +36,7 @@ pub use crate::{
     channel::{ChannelCount, ChannelLayout, ChannelPosition},
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     error::{Error, Result},
-    fold::{folded_letters, is_lettered},
+    fold::{folded_letters, is_lettered, words_of_a_name},
     format::{BitDepth, RateFamily, Ratio, SampleFormat, SampleRate, StreamSpec},
     hints::{MeasuredGain, TrackHints},
     id::{AlbumId, ArtistId, ListenId, PlaylistId, ReleaseTrackId, TrackId, WantId},

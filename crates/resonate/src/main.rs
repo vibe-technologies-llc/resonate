@@ -3038,7 +3038,7 @@ mod tests {
             recording: None,
             track: None,
             release: None,
-            isrc: None,
+            isrcs: Vec::new(),
             length: None,
             disc: 1,
             position: 1,

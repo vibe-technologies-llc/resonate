@@ -9,15 +9,15 @@ use std::{
 };
 
 use md5::{Digest, Md5};
-use resonate_core::{Isrc, Mbid, SourceId};
+use resonate_core::{Mbid, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
     Ranged, Trusted, asking_agent, configured, downloading_agent, escaped, is_a_document,
     retry_after_of, unreached,
 };
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
-    Result, is_a_page,
+    Choosing, Delivery, Error, Extension, Identity, Listed, Obtained, Opened, Opening, Pacing,
+    Provider, ProviderOp, Result, is_a_page,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -160,13 +160,23 @@ struct Song {
     recording: Option<String>,
     #[serde(default, deserialize_with = "isrcs_readable")]
     isrc: Vec<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    artist: Option<String>,
+    #[serde(default)]
+    duration: Option<u64>,
 }
 
 impl Song {
-    fn holds(&self, isrc: &Isrc) -> bool {
-        self.isrc
-            .iter()
-            .any(|held| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc))
+    fn listed(&self) -> Listed<'_> {
+        Listed {
+            isrcs: self.isrc.iter().map(String::as_str).collect(),
+            title: self.title.as_deref().unwrap_or_default(),
+            version: None,
+            artists: self.artist.as_deref().into_iter().collect(),
+            length: self.duration.map(Duration::from_secs),
+        }
     }
 
     fn is_the_recording(&self, recording: &Mbid) -> bool {
@@ -176,35 +186,18 @@ impl Song {
     }
 }
 
-fn the_one_asked_for<'a>(identity: &Identity, songs: &'a [Song]) -> Option<&'a Song> {
+fn weighed(identity: &Identity, songs: &[Song], choosing: &mut Choosing<Song>) -> Option<Song> {
     let by_recording = identity
         .recording
         .as_ref()
         .and_then(|recording| songs.iter().find(|song| song.is_the_recording(recording)));
-    by_recording.or_else(|| {
-        identity
-            .isrc
-            .as_ref()
-            .and_then(|isrc| songs.iter().find(|song| song.holds(isrc)))
-    })
-}
-
-fn wordings(identity: &Identity) -> Vec<String> {
-    let title = identity.title.trim();
-    if title.is_empty() {
-        return Vec::new();
+    if let Some(song) = by_recording {
+        return Some(song.clone());
     }
-    let artist = identity
-        .artist
-        .as_deref()
-        .map(str::trim)
-        .filter(|artist| !artist.is_empty());
-
-    artist
-        .map(|artist| format!("{title} {artist}"))
-        .into_iter()
-        .chain([title.to_owned()])
-        .collect()
+    for song in songs {
+        choosing.weigh(identity, &song.listed(), song.clone());
+    }
+    None
 }
 
 fn told(error: &ureq::Error) -> Option<String> {
@@ -391,18 +384,36 @@ impl Subsonic {
 
     fn found(&self, identity: &Identity) -> Result<Option<Song>> {
         let deadline = Instant::now() + self.patience.answered_within;
-        for words in wordings(identity) {
+        let mut choosing = Choosing::default();
+        let wordings = identity.wordings();
+        for words in &wordings {
             for page in 0..PAGES_AT_MOST {
-                let songs = self.searched(&words, page * SONGS_A_PAGE, deadline)?;
-                if let Some(song) = the_one_asked_for(identity, &songs) {
-                    return Ok(Some(song.clone()));
+                let songs = self.searched(words, page * SONGS_A_PAGE, deadline)?;
+                if let Some(song) = weighed(identity, &songs, &mut choosing) {
+                    return Ok(Some(song));
                 }
                 if songs.len() < SONGS_A_PAGE {
                     break;
                 }
             }
+            if choosing.holds_a_coded_listing() {
+                break;
+            }
         }
-        Ok(None)
+        let seen = choosing.seen();
+        let chosen = choosing.chosen().map(|(song, taken)| {
+            tracing::debug!(song = song.id, ?taken, "the Subsonic server holds the song");
+            song
+        });
+        if chosen.is_none() {
+            tracing::debug!(
+                title = identity.title,
+                asked = wordings.len(),
+                seen,
+                "the Subsonic server holds nothing coded or named as the song"
+            );
+        }
+        Ok(chosen)
     }
 
     fn read(&self, bytes: &[u8], op: ProviderOp) -> Result<Vec<Song>> {
@@ -458,7 +469,7 @@ impl Provider for Subsonic {
     }
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
-        if identity.recording.is_none() && identity.isrc.is_none() {
+        if identity.recording.is_none() && !identity.may_be_listed() {
             return Ok(Obtained::Nothing);
         }
         let Some(song) = self.found(identity)? else {
@@ -553,31 +564,40 @@ mod tests {
     }
 
     #[test]
-    fn a_song_is_taken_by_its_recording_and_then_by_its_isrc_and_never_by_its_title() {
+    fn a_song_is_taken_by_its_recording_then_by_any_of_its_codes_then_by_its_name_and_length() {
         let songs = subsonic()
             .read(SEARCHED.as_bytes(), ProviderOp::Search)
             .expect("a search answer");
         assert_eq!(songs.len(), 3);
+        let id = |identity: &Identity| {
+            let mut choosing = Choosing::default();
+            weighed(identity, &songs, &mut choosing)
+                .or_else(|| choosing.chosen().map(|(song, _)| song))
+                .map(|song| song.id)
+        };
 
         let by_recording = Identity {
             recording: Some(Mbid::new(ECHOES).expect("an mbid")),
             ..Identity::named("Echoes")
         };
-        assert_eq!(
-            the_one_asked_for(&by_recording, &songs).map(|song| song.id.as_str()),
-            Some("song-2")
-        );
+        assert_eq!(id(&by_recording).as_deref(), Some("song-2"));
 
         let by_isrc = Identity {
-            isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+            isrcs: vec![
+                resonate_core::Isrc::new("GBN9Y1100000").expect("an isrc"),
+                resonate_core::Isrc::new(ECHOES_ISRC).expect("an isrc"),
+            ],
             ..Identity::named("Echoes")
         };
-        assert_eq!(
-            the_one_asked_for(&by_isrc, &songs).map(|song| song.id.as_str()),
-            Some("song-3")
-        );
+        assert_eq!(id(&by_isrc).as_deref(), Some("song-3"));
 
-        assert_eq!(the_one_asked_for(&Identity::named("Echoes"), &songs), None);
+        let named = Identity {
+            artist: Some("Pink Floyd".to_owned()),
+            length: Some(Duration::from_secs(1412)),
+            ..Identity::named("Echoes")
+        };
+        assert_eq!(id(&named).as_deref(), Some("song-2"));
+        assert_eq!(id(&Identity::named("Echoes")), None);
     }
 
     #[test]
@@ -589,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn a_want_with_no_identifier_is_not_searched_for() {
+    fn a_want_with_no_identifier_and_nothing_to_name_it_by_is_not_searched_for() {
         assert!(matches!(
             subsonic().find(&Identity::named("Echoes")),
             Ok(Obtained::Nothing)

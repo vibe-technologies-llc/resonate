@@ -8311,7 +8311,7 @@ fn release_row(position: u32, title: &str, links: Vec<Link>) -> ReleaseTrack {
         recording: None,
         track: None,
         length: Some(Duration::from_millis(1_000 * u64::from(position))),
-        isrc: None,
+        isrcs: Vec::new(),
         links,
     }
 }
@@ -10967,7 +10967,7 @@ fn forgetting_a_match_takes_away_the_recording_ids_and_codes_it_stamped() -> Res
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let mut rows = orbits_rows();
     rows[0].recording = Some(mbid(RECORDING));
-    rows[0].isrc = Some("GBN9Y1100089".to_owned());
+    rows[0].isrcs = vec!["GBN9Y1100089".to_owned()];
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
@@ -14394,7 +14394,7 @@ fn a_paired_track_receives_the_identifiers_its_release_row_holds() -> Result<()>
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
         track: Some(mbid(RELEASE_TRACK)),
-        isrc: Some("GBAYE7100195".to_owned()),
+        isrcs: vec!["GBAYE7100195".to_owned()],
         ..rows[0].clone()
     };
     let fake = Arc::new(Fake::new(Canned {
@@ -15013,7 +15013,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
     rows.push(ReleaseTrack {
         recording: Some(mbid(ORBITERS)),
         track: Some(mbid(RELEASE_TRACK)),
-        isrc: Some("GBN9Y1100089".to_owned()),
+        isrcs: vec!["GBN9Y1100089".to_owned()],
         ..release_row(
             4,
             "San Tropez",
@@ -15051,7 +15051,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
     assert_eq!(identity.recording, Some(mbid(ORBITERS)));
     assert_eq!(identity.track, Some(mbid(RELEASE_TRACK)));
     assert_eq!(identity.release, Some(mbid(RELEASE)));
-    assert_eq!(identity.isrc, Some(Isrc::new("GBN9Y1100089")?));
+    assert_eq!(identity.isrcs, [Isrc::new("GBN9Y1100089")?]);
     assert_eq!(identity.length, Some(Duration::from_millis(4_000)));
     assert_eq!(identity.disc, Some(1));
     assert_eq!(identity.position, Some(4));
@@ -22653,6 +22653,49 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     Ok(())
 }
 
+#[test]
+fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_release_where_one_is_gone()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let mut release = meddle_release();
+    release.media[0].tracks[1].isrcs = vec!["GBN9Y1100065".to_owned(), "GBN9Y1100066".to_owned()];
+    let fake = Fake::new(Canned {
+        releases: vec![release],
+        ..Canned::default()
+    });
+    let matched = echoes_found();
+    let gone = matched.releases[0].clone();
+    let found = resonate_library::Found {
+        recording: matched.recording,
+        title: matched.title,
+        artist: "Pink Floyd".to_owned(),
+        length: matched.length,
+        release: Some(gone),
+        releases: matched.releases,
+        performer: None,
+        isrcs: vec![Isrc::new("GBN9Y1100066")?, Isrc::new("USX9P1100001")?],
+    };
+
+    library.want_found(&fake, &found)?;
+
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1);
+    assert_eq!(
+        wants[0].album_title, "Meddle",
+        "the release that read was the next one"
+    );
+    assert_eq!(
+        wants[0].identity().isrcs,
+        [
+            Isrc::new("GBN9Y1100065")?,
+            Isrc::new("GBN9Y1100066")?,
+            Isrc::new("USX9P1100001")?
+        ],
+        "the release's codes first, then those its takes carry"
+    );
+    Ok(())
+}
+
 const A_SPOTIFY_LINK: &str = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";
 
 fn linked_to_spotify() -> SongLink {
@@ -22710,7 +22753,7 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
     let mut rows = orbits_rows();
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
-        isrc: Some("GBAYE7100195".to_owned()),
+        isrcs: vec!["GBAYE7100195".to_owned()],
         ..rows[0].clone()
     };
     let identifying = Arc::new(Fake::new(Canned {

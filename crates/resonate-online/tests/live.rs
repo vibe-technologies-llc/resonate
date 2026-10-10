@@ -7,9 +7,9 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    AlbumLink, Billed, Error, Isrc, Link, ListedSong, LookupOp, Mbid, PlaylistLink, Reference,
-    Relation, ReleaseAsked, Scrobble, Scrobbler, Service, SongLink, StreamAsked, TokenHeld,
-    Wording, songs_asked, weighed_for,
+    AlbumLink, Billed, Error, Isrc, Library, Link, ListedSong, LookupOp, Mbid, PlaylistLink,
+    Reference, Relation, ReleaseAsked, Scrobble, Scrobbler, Service, SongLink, StreamAsked,
+    TokenHeld, Wording, songs_asked, weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -148,6 +148,39 @@ fn an_artists_name_alone_finds_the_songs_credited_to_it() {
             .map(|matched| &matched.title)
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn a_title_holding_by_or_typed_without_its_apostrophe_finds_the_song_first() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let library = Library::open_in_memory().expect("a catalog in memory");
+
+    for (typed, sung_by) in [
+        ("stand by me", "Ben E. King"),
+        ("dont stop me now", "Queen"),
+    ] {
+        let asked = songs_asked(typed).expect("words worth asking");
+        let answered = weighed_for(
+            &asked,
+            online.find_songs(&asked).expect("musicbrainz answered"),
+        );
+        let found = library
+            .unheld_among(answered, Some(&asked))
+            .expect("the catalog read");
+
+        assert_eq!(
+            found.first().map(|found| found.artist.as_str()),
+            Some(sung_by),
+            "{typed}: {:?}",
+            found
+                .iter()
+                .map(|found| (&found.title, &found.artist))
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[test]

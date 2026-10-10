@@ -30,7 +30,7 @@ pub struct ReleaseTrack {
     pub recording: Option<Mbid>,
     pub track: Option<Mbid>,
     pub length: Option<Duration>,
-    pub isrc: Option<String>,
+    pub isrcs: Vec<String>,
     pub links: Vec<Link>,
 }
 
@@ -573,7 +573,7 @@ mod tests {
             recording: None,
             track: None,
             length: None,
-            isrc: None,
+            isrcs: Vec::new(),
             links: Vec::new(),
         }
     }

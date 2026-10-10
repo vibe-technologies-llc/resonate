@@ -178,10 +178,10 @@ fn keys_most_exact_first(identity: &Identity) -> Vec<String> {
     [
         identity.recording.as_ref().map(|mbid| mbid.as_str()),
         identity.track.as_ref().map(|mbid| mbid.as_str()),
-        identity.isrc.as_ref().map(|isrc| isrc.as_str()),
     ]
     .into_iter()
     .flatten()
+    .chain(identity.isrcs.iter().map(|isrc| isrc.as_str()))
     .map(str::to_ascii_lowercase)
     .collect()
 }
@@ -269,7 +269,7 @@ mod tests {
         Identity {
             recording: Some(Mbid::new(ECHOES).expect("an mbid")),
             track: Some(Mbid::new(ECHOES_TRACK).expect("an mbid")),
-            isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+            isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
             ..Identity::named("Echoes")
         }
     }

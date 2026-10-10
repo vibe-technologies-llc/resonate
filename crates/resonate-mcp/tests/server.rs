@@ -1268,7 +1268,7 @@ fn a_track_an_album_is_short_of_is_listed_and_wanted() {
             recording: None,
             track: None,
             length: Some(Duration::from_secs(200)),
-            isrc: None,
+            isrcs: Vec::new(),
             links: Vec::new(),
         })
         .collect();

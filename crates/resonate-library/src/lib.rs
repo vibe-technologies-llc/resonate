@@ -148,7 +148,7 @@ pub use crate::{
     },
     share::Shared,
     songs::AlbumNotHeld,
-    spelling::Spellings,
+    spelling::{Spellings, spelt_alike},
     statistics::{Day, Listened, MostListened, Statistics, Window},
     store::folded_letters,
     studies::{Agreement, HEARD_AT_LEAST, Heard, HeardAs, Studied, StudiedTrack, StudyFilter},

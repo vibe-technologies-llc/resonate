@@ -22,6 +22,19 @@ pub fn folded_letters(text: &str) -> String {
     folded.nfc().collect()
 }
 
+const JOINING_MARKS: [char; 4] = ['\'', '\u{2019}', '\u{02bc}', '`'];
+
+pub fn words_of_a_name(text: &str) -> Vec<String> {
+    folded_letters(text)
+        .chars()
+        .filter(|glyph| !JOINING_MARKS.contains(glyph))
+        .collect::<String>()
+        .split(|glyph: char| !is_lettered(glyph))
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 pub fn is_lettered(glyph: char) -> bool {
     glyph.is_alphanumeric() || is_combining_mark(glyph)
 }
@@ -68,6 +81,19 @@ const fn spelled_out(letter: char) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_words_of_a_name_are_folded_joined_across_an_apostrophe_and_cut_at_anything_else() {
+        assert_eq!(
+            words_of_a_name("Don’t Stop Me Now"),
+            ["dont", "stop", "me", "now"]
+        );
+        assert_eq!(words_of_a_name("Can't"), ["cant"]);
+        assert_eq!(words_of_a_name("You F.O."), ["you", "f", "o"]);
+        assert_eq!(words_of_a_name("AC/DC"), ["ac", "dc"]);
+        assert_eq!(words_of_a_name("Björk — Jóga"), ["bjork", "joga"]);
+        assert!(words_of_a_name("!!!").is_empty());
+    }
 
     #[test]
     fn a_mark_is_an_accent_only_on_a_latin_greek_or_cyrillic_letter() {

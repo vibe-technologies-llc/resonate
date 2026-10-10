@@ -4067,7 +4067,7 @@ mod tests {
                         recording: Some(mbid(HEROES_TONIGHT)),
                         track: None,
                         length: None,
-                        isrc: Some(HEROES_TONIGHT_ISRC.to_owned()),
+                        isrcs: vec![HEROES_TONIGHT_ISRC.to_owned()],
                         links: Vec::new(),
                     }],
                 }],
@@ -4117,7 +4117,7 @@ mod tests {
             fn find(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
                 self.asked.lock().push(Asked {
                     recording: identity.recording.clone(),
-                    isrc: identity.isrc.clone(),
+                    isrc: identity.isrcs.first().cloned(),
                     artist: identity.artist.clone(),
                 });
                 Ok(Obtained::Nothing)
@@ -4586,6 +4586,7 @@ mod tests {
                 release: matched.releases.first().cloned(),
                 releases: matched.releases,
                 performer: None,
+                isrcs: Vec::new(),
             }
         }
 

@@ -5,8 +5,10 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
-use resonate_fetch::retry_after_of;
-use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
+use resonate_fetch::{escaped, retry_after_of};
+use resonate_providers::{
+    Choosing, Delivery, Error, Identity, Listed as Weighed, Obtained, Provider, ProviderOp, Result,
+};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use ureq::{Agent, http::header::AUTHORIZATION};
@@ -28,6 +30,7 @@ const MANIFEST_DOMAIN: &str = "manifest.tidal.com";
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const LISTED_AT_MOST: usize = 25;
 const TRACKS_TRIED_AT_MOST: usize = 5;
+const CODES_ASKED_AT_MOST: usize = 4;
 const TOKEN_LASTS_WHEN_UNSAID: Duration = Duration::from_secs(300);
 const RENEWED_BEFORE: Duration = Duration::from_secs(30);
 const QUEUED_FOR_AT_MOST: Duration = Duration::from_secs(20);
@@ -61,12 +64,50 @@ struct Listing {
 #[derive(Deserialize)]
 struct WebListed {
     #[serde(default, deserialize_with = "listings_readable")]
-    items: Vec<Listing>,
+    items: Vec<WebListing>,
 }
 
-fn listings_readable<'de, D: Deserializer<'de>>(
+#[derive(Deserialize)]
+struct WebListing {
+    #[serde(deserialize_with = "id_spelt")]
+    id: u64,
+    #[serde(default)]
+    isrc: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    duration: Option<u64>,
+    #[serde(default)]
+    artists: Vec<Named>,
+}
+
+#[derive(Deserialize)]
+struct Named {
+    #[serde(default)]
+    name: String,
+}
+
+impl WebListing {
+    fn weighed(&self) -> Weighed<'_> {
+        Weighed {
+            isrcs: self.isrc.as_deref().into_iter().collect(),
+            title: self.title.as_deref().unwrap_or_default(),
+            version: self.version.as_deref(),
+            artists: self
+                .artists
+                .iter()
+                .map(|artist| artist.name.as_str())
+                .collect(),
+            length: self.duration.map(Duration::from_secs),
+        }
+    }
+}
+
+fn listings_readable<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned>(
     deserializer: D,
-) -> std::result::Result<Vec<Listing>, D::Error> {
+) -> std::result::Result<Vec<T>, D::Error> {
     let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
     Ok(listed
         .into_iter()
@@ -195,32 +236,6 @@ fn source() -> SourceId {
     SourceId::new(HIFI_API).unwrap_or_else(|_| SourceId::local())
 }
 
-fn encoded_query(text: &str) -> String {
-    let mut encoded = String::with_capacity(text.len());
-    let digits = b"0123456789ABCDEF";
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push('%');
-            encoded.push(char::from(digits[usize::from(byte >> 4)]));
-            encoded.push(char::from(digits[usize::from(byte & 0x0f)]));
-        }
-    }
-    encoded
-}
-
-fn title_artist_query(title: &str, artist: Option<&str>) -> Option<String> {
-    let title = title.trim();
-    let artist = artist.map(str::trim).filter(|artist| !artist.is_empty());
-    match (title.is_empty(), artist) {
-        (true, None) => None,
-        (true, Some(artist)) => Some(artist.to_owned()),
-        (false, None) => Some(title.to_owned()),
-        (false, Some(artist)) => Some(format!("{title} {artist}")),
-    }
-}
-
 fn manifest_hosts() -> MediaHosts {
     MediaHosts {
         scheme: "https".to_owned(),
@@ -329,20 +344,44 @@ impl HifiApi {
         Ok(bearer)
     }
 
-    fn hosted_tracks_named_by(
-        &self,
-        isrc: &Isrc,
-        title: &str,
-        artist: Option<&str>,
-    ) -> Result<Vec<TrackId>> {
+    fn hosted_tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
+        let mut choosing = Choosing::default();
+        let wordings = identity.wordings();
+        for words in &wordings {
+            for listing in self.hosted_listings(words)? {
+                choosing.weigh(identity, &listing.weighed(), TrackId(listing.id));
+            }
+            if choosing.holds_a_coded_listing() {
+                break;
+            }
+        }
+        let seen = choosing.seen();
+        let ranked: Vec<TrackId> = choosing
+            .ranked()
+            .into_iter()
+            .map(|(track, taken)| {
+                tracing::debug!(track = track.0, ?taken, "TIDAL lists the song");
+                track
+            })
+            .take(TRACKS_TRIED_AT_MOST)
+            .collect();
+        if ranked.is_empty() {
+            tracing::debug!(
+                title = identity.title,
+                asked = wordings.len(),
+                seen,
+                "TIDAL lists nothing coded or named as the song"
+            );
+        }
+        Ok(ranked)
+    }
+
+    fn hosted_listings(&self, words: &str) -> Result<Vec<WebListing>> {
         let op = ProviderOp::Search;
-        let Some(query) = title_artist_query(title, artist) else {
-            return Ok(Vec::new());
-        };
         let bearer = self.token(op, TIDAL_TOKEN, TokenService::Tidal)?;
         let url = format!(
             "{TIDAL_API}search/tracks?query={}&limit={LISTED_AT_MOST}&offset=0&countryCode=US",
-            encoded_query(&query)
+            escaped(words)
         );
         let sent = self.asker.sent(op, || {
             self.asker
@@ -360,13 +399,7 @@ impl HifiApi {
             Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
         };
         let listed: WebListed = self.asker.parsed(op, &bytes)?;
-        Ok(listed
-            .items
-            .into_iter()
-            .filter(|listing| named_by(isrc, listing.isrc.as_deref()))
-            .map(|listing| TrackId(listing.id))
-            .take(TRACKS_TRIED_AT_MOST)
-            .collect())
+        Ok(listed.items)
     }
 
     fn hosted_delivery(&self, track: TrackId) -> Result<Option<Delivery>> {
@@ -490,33 +523,20 @@ impl HifiApi {
 }
 
 impl Finds for HifiApi {
-    fn tracks_named_by(
-        &self,
-        isrc: &Isrc,
-        title: &str,
-        artist: Option<&str>,
-    ) -> Result<Vec<TrackId>> {
+    fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
         if self.hosted {
-            return self.hosted_tracks_named_by(isrc, title, artist);
+            return self.hosted_tracks_for(identity);
         }
-        let op = ProviderOp::Search;
-        let url = format!(
-            "{}/search/?i={}&limit={LISTED_AT_MOST}",
-            self.server,
-            isrc.as_str()
-        );
-        let Answered::Ready(bytes) = self.asked(op, &url)? else {
-            return Ok(Vec::new());
-        };
-        let listed: Wrapped<Listed> = self.asker.parsed(op, &bytes)?;
-        Ok(listed
-            .data
-            .items
-            .into_iter()
-            .filter(|listing| named_by(isrc, listing.isrc.as_deref()))
-            .map(|listing| TrackId(listing.id))
-            .take(TRACKS_TRIED_AT_MOST)
-            .collect())
+        let mut tracks: Vec<TrackId> = Vec::new();
+        for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
+            for track in self.tracks_coded(isrc)? {
+                if !tracks.contains(&track) {
+                    tracks.push(track);
+                }
+            }
+        }
+        tracks.truncate(TRACKS_TRIED_AT_MOST);
+        Ok(tracks)
     }
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
@@ -539,6 +559,29 @@ impl Finds for HifiApi {
             media: &self.media,
         }
         .delivered(track, &playback.data)
+    }
+}
+
+impl HifiApi {
+    fn tracks_coded(&self, isrc: &Isrc) -> Result<Vec<TrackId>> {
+        let op = ProviderOp::Search;
+        let url = format!(
+            "{}/search/?i={}&limit={LISTED_AT_MOST}",
+            self.server,
+            isrc.as_str()
+        );
+        let Answered::Ready(bytes) = self.asked(op, &url)? else {
+            return Ok(Vec::new());
+        };
+        let listed: Wrapped<Listed> = self.asker.parsed(op, &bytes)?;
+        Ok(listed
+            .data
+            .items
+            .into_iter()
+            .filter(|listing| named_by(isrc, listing.isrc.as_deref()))
+            .map(|listing| TrackId(listing.id))
+            .take(TRACKS_TRIED_AT_MOST)
+            .collect())
     }
 }
 
@@ -613,16 +656,27 @@ mod tests {
     }
 
     #[test]
-    fn a_hosted_search_uses_the_names_and_encodes_them_as_a_query() {
-        let query = title_artist_query(" Heroes Tonight ", Some(" Janji & Johnning "))
-            .expect("a title and artist");
+    fn a_hosted_listing_is_weighed_by_its_title_version_artists_and_length() {
+        let listed: WebListed = serde_json::from_str(
+            r#"{"items": [{"id": 77, "isrc": "GBN9Y1100089", "title": "Heroes Tonight",
+                "version": "Remastered", "duration": 208,
+                "artists": [{"name": "Janji"}, {"name": "Johnning"}]}]}"#,
+        )
+        .expect("a listing");
+        let weighed = listed.items[0].weighed();
 
-        assert_eq!(query, "Heroes Tonight Janji & Johnning");
-        assert_eq!(
-            encoded_query(&query),
-            "Heroes%20Tonight%20Janji%20%26%20Johnning"
+        assert_eq!(weighed.isrcs, ["GBN9Y1100089"]);
+        assert_eq!(weighed.version, Some("Remastered"));
+        assert_eq!(weighed.artists, ["Janji", "Johnning"]);
+        assert_eq!(weighed.length, Some(Duration::from_secs(208)));
+        assert!(
+            Identity {
+                artist: Some("Janji & Johnning".to_owned()),
+                length: Some(Duration::from_secs(209)),
+                ..Identity::named("Heroes Tonight")
+            }
+            .named_alike(&weighed)
         );
-        assert_eq!(title_artist_query("  ", None), None);
     }
 
     #[test]

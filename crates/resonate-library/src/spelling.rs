@@ -722,6 +722,12 @@ fn better_spelt(spelling: &str, than: &str) -> bool {
     (store::marks_in(spelling), spelling) > (store::marks_in(than), than)
 }
 
+pub fn spelt_alike(typed: &str, named: &str) -> bool {
+    typed == named
+        || furthest_from(letters_in(typed))
+            .is_some_and(|furthest| apart_by(typed, named, furthest).is_some())
+}
+
 fn letters_in(run: &str) -> usize {
     run.chars().count()
 }
@@ -1163,5 +1169,15 @@ mod tests {
         assert_eq!(apart_by("floyd", "flood", 1), Some(1));
         assert_eq!(apart_by("floyd", "blues", 1), None);
         assert_eq!(apart_by("floyd", "fl", 1), None);
+    }
+
+    #[test]
+    fn a_word_is_spelt_alike_within_what_its_length_affords_and_a_short_one_only_exactly() {
+        assert!(spelt_alike("rapsody", "rhapsody"));
+        assert!(spelt_alike("stella", "stela"));
+        assert!(spelt_alike("wierzynkiewcz", "wierzynkiewicz"));
+        assert!(spelt_alike("me", "me"));
+        assert!(!spelt_alike("me", "my"));
+        assert!(!spelt_alike("cole", "kale"));
     }
 }

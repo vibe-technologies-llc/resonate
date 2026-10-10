@@ -1,9 +1,14 @@
-use crate::{Column, Reach, Word};
+use std::iter;
+
+use resonate_core::words_of_a_name;
+
+use crate::{Column, Reach, RecordingMatch, Word, spelt_alike};
 
 const BY: &str = "by";
 const DASHES: [&str; 3] = ["-", "–", "—"];
 const MARKS_OF_THE_GRAMMAR: [char; 2] = [':', '"'];
 const DENIED: char = '-';
+const AN_ARTICLE: &str = "the";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Meant {
@@ -52,6 +57,29 @@ impl ByArtist {
         })
     }
 
+    pub fn answered_by(&self, matched: &RecordingMatch) -> bool {
+        self.credits(matched) && self.titles(matched)
+    }
+
+    pub fn credits(&self, matched: &RecordingMatch) -> bool {
+        let typed = without_an_article(&self.artist);
+        !typed.is_empty()
+            && iter::once(matched.credited_as())
+                .chain(matched.credit.iter().map(|credit| credit.name.clone()))
+                .any(|name| spelt_alike(&typed, &without_an_article(&name)))
+    }
+
+    fn titles(&self, matched: &RecordingMatch) -> bool {
+        let titled = words_of_a_name(&matched.title);
+        let typed = words_of_a_name(&self.title);
+        let every_word_answers = typed.iter().all(|word| {
+            titled
+                .iter()
+                .any(|named| named.starts_with(word.as_str()) || spelt_alike(word, named))
+        });
+        every_word_answers || (!typed.is_empty() && titled.concat().contains(&typed.concat()))
+    }
+
     pub fn words(&self) -> String {
         format!("{} {}", self.title, self.artist)
     }
@@ -85,9 +113,54 @@ impl ByArtist {
     }
 }
 
+fn without_an_article(name: &str) -> String {
+    let words = words_of_a_name(name);
+    match words.split_first() {
+        Some((first, rest)) if first == AN_ARTICLE && !rest.is_empty() => rest.concat(),
+        _ => words.concat(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Credit, Mbid};
+
+    fn credited(title: &str, artists: &[&str]) -> RecordingMatch {
+        RecordingMatch {
+            recording: Mbid::new("8e4b7d3c-6a6c-4b8e-9c5e-1e2f3a4b5c6d").expect("an mbid"),
+            score: 100,
+            title: title.to_owned(),
+            credit: artists
+                .iter()
+                .map(|name| Credit {
+                    name: (*name).to_owned(),
+                    joined_by: String::new(),
+                    mbid: None,
+                })
+                .collect(),
+            length: None,
+            isrcs: Vec::new(),
+            releases: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_reading_is_borne_out_only_by_an_answer_crediting_the_artist_and_naming_the_title() {
+        let stand = ByArtist::read("stand by me").expect("a reading");
+        let stela = ByArtist::read("you fo by stella cole").expect("a reading");
+
+        assert!(!stand.answered_by(&credited("Stand Up, Sit Down", &["Akili and Me"])));
+        assert!(!stand.answered_by(&credited("チョコレート", &["≠ME"])));
+        assert!(stand.credits(&credited("チョコレート", &["≠ME"])));
+        assert!(stela.answered_by(&credited("You F.O.", &["Stela Cole"])));
+        assert!(!stela.answered_by(&credited("Candyland", &["Stela Cole"])));
+        assert!(
+            ByArtist::read("creep by the radiohead")
+                .expect("a reading")
+                .answered_by(&credited("Creep", &["Radiohead"]))
+        );
+    }
 
     fn by(title: &str, artist: &str) -> Option<ByArtist> {
         Some(ByArtist {

@@ -21,10 +21,34 @@ provider named, for a poll only it can answer (below).
 ## What a provider is handed and answers
 
 `Want::identity()` builds an `Identity`: identifiers (`recording`, `track`, `release` as `Mbid`;
-`isrc`), search material (title, artist, album, length, disc, position), and the MusicBrainz `Link`s
-of track and release (`track_on(Service::Tidal)`, `release_on(..)` find a provider's own page; ask
-the track's first). A provider needing an identifier (an unenriched row has titles alone) answers
-`Nothing` without one: **a guess is never written**, hence `resonate-inbox` never matches a title.
+`isrcs`, every code the want's row holds), search material (title, artist, album, length, disc,
+position), and the MusicBrainz `Link`s of track and release (`track_on(Service::Tidal)`,
+`release_on(..)` find a provider's own page; ask the track's first).
+
+## Which listing is the song (`listing.rs`)
+
+**A listing is taken by any of the want's codes, else only named alike, and the seam alone
+decides.** A searching provider turns each listing into a `Listed` (codes, title, a version the
+service names apart, artists, length) and hands it to a `Choosing` with the item it would deliver;
+`Choosing::ranked` answers listings holding one of `Identity::isrcs` (as long as the want within
+`LENGTHS_AGREE_WITHIN`, 5 s, nearest first, so a wrong master is not downloaded and then refused for
+30 days), and only where none is coded, listings `Identity::named_alike`: the want has a length and
+an artist; lengths within `A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY` (2 s); titles equal once
+`resonate_core::titles::bare` (version brackets, a dashed version such as *- Remastered 2011*, a
+guest bracket) and `words_of_a_name` folded both; the want's lead artist (`Identity::lead_artist`:
+the credit before its first join, *feat.*, *&*, *x*, a comma) one of the listing's. A live, remix,
+acoustic or instrumental take is no qualifier, so it never equals a plain title. Why: re-releases
+and regional issues carry codes MusicBrainz never lists, and the strict name rule (a length agreeing
+to two seconds beside title and lead artist) is no guess; the delivered file is weighed again
+(`lasts_as_long_as`). `Identity::may_be_listed` (a code, or an artist and a length) is what a
+searching provider asks before any request; `Identity::wordings` is what it searches with, shared:
+`"{title} {lead}"`, `"{lead} {title}"`, `"{bare title} {lead}"`, `"{title}"`, deduplicated, the
+search stopping at the first wording holding a coded listing (Monochrome's search recalls by
+wording order: *Queen Bohemian Rhapsody* lists what *Bohemian Rhapsody Queen* does not). A
+provider answering `Nothing` says at debug how many wordings it asked and listings it saw
+(`any_of_the_wants_codes_takes_a_listing_as_long_as_it_and_the_nearest_wins`,
+`a_listing_under_another_code_is_taken_only_named_alike_and_only_where_none_is_coded`).
+`resonate-inbox` matches no name: a file is named by an identifier or not at all.
 
 `Provider::find` answers `Obtained::Nothing`, `Obtained::Found(Delivery)`, or `Err` where it could
 not be asked (`Providers::first` logs, counts `refused`, goes on). **Finding is not downloading**: a
@@ -289,12 +313,12 @@ delivered ahead of it.
 named by `subsonic`, `subsonic-user`, `subsonic-password`; `providers::registry` registers it after
 the inbox only where all three are given and `online` is on.
 
-- **Asked by identifiers, never a title.** No recording MBID and no ISRC: `Nothing`, no request.
-  Else `search3` in words (title and artist, then title alone: Gonic matches the whole query against
-  the title), `SONGS_A_PAGE` at a time up to `PAGES_AT_MOST`. A song is taken only where its
-  `musicBrainzId` is the recording or its `isrc` (one code or a list as OpenSubsonic writes it, read
-  via `Isrc::new`) holds the want's, so a tribute band's *Echoes* is never delivered for Pink
-  Floyd's.
+- **Asked by recording, then by the seam's choice.** No recording MBID and not
+  `may_be_listed`: `Nothing`, no request. Else `search3` by each of `Identity::wordings` (title
+  alone last: Gonic matches the whole query against the title), `SONGS_A_PAGE` at a time up to
+  `PAGES_AT_MOST`. A song whose `musicBrainzId` is the recording is taken at once; else the songs
+  go to a `Choosing` (`isrc` one code or a list as OpenSubsonic writes it, `title`, `artist`,
+  `duration` in seconds), so a tribute band's *Echoes* is never delivered for Pink Floyd's.
 - **The log never sees a request's address.** Every URL carries the user, token and salt, and
   ureq's `BadUri` and `Http` errors print the whole of it (a `subsonic` setting with no scheme), so
   `told` logs those two as a sentence alone
@@ -334,10 +358,12 @@ the inbox only where all three are given and `online` is on.
 and Subsonic only where client id and refresh token are given (secret sent where given) and
 `online` is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a track row.
 
-- **Asked by link and ISRC, never a title.** The TIDAL track MusicBrainz links the recording to
-  (`Identity::track_on(Service::Tidal)`) is asked first; failing that, the OpenAPI is asked for the
-  ISRC and a listing taken only where its own `isrc` is the want's, at most `TRACKS_TRIED_AT_MOST`.
-  Neither: `Nothing`, no request, no sign-in.
+- **Asked by link and code, never a name.** The TIDAL track MusicBrainz links the recording to
+  (`Identity::track_on(Service::Tidal)`) is asked first; failing that, the OpenAPI is asked for
+  each of the want's codes in turn (up to `CODES_ASKED_AT_MOST`) and a listing taken only where its
+  own `isrc` is that code, at most `TRACKS_TRIED_AT_MOST` in all. The endpoint filters by code and
+  has no text search here, so no name match. Neither link nor code: `Nothing`, no request, no
+  sign-in.
 - **It signs in with the listener's refresh token alone.** No client id or secret is built in: the
   listener brings the application the token was issued to. 400/401 at the token endpoint is
   `Error::Unwelcome` under `ProviderOp::SignIn` (provider away). **A rotated token is handed
@@ -402,8 +428,8 @@ and Subsonic only where client id and refresh token are given (secret sent where
   (`a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked`).
 - **Paces and identifies itself as the Subsonic client does**; `Account`'s `Debug` prints neither
   secret nor token. `asker.rs` is the pacing, retrying and reading both TIDAL providers share;
-  `played.rs` what follows a playback answer, with `played::found` (link-then-ISRC order) written
-  once over the `Finds` trait each implements.
+  `played.rs` what follows a playback answer, with `played::found` (link first, then
+  `Finds::tracks_for` the identity) written once over the `Finds` trait each implements.
 
 ## A hifi-api server
 
@@ -415,10 +441,12 @@ playback tokens are cached until shortly before expiry and sent only to their ow
 `played.rs` reads the manifest through the same checks as a TIDAL account; the service's manifest
 URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 
-- **Asked by link and ISRC, never a title**, via `played::found`: the linked track first; else the
-  hosted flow searches TIDAL's web API by title and artist, taking only listings whose own `isrc` is
-  the want's, up to `TRACKS_TRIED_AT_MOST`. A custom server keeps the hifi-api routes with
-  `data.items` checked by ISRC.
+- **Asked by link, then by the seam's choice**, via `played::found`: the linked track first; else
+  the hosted flow searches TIDAL's web API by each of `Identity::wordings` (`id`, `isrc`, `title`,
+  `version`, `duration` in seconds, `artists`, through a `Choosing`), up to
+  `TRACKS_TRIED_AT_MOST` ranked tracks tried in turn. A custom server keeps the hifi-api routes,
+  asked by each code (`/search/?i=`, up to `CODES_ASKED_AT_MOST`) with `data.items` checked by
+  ISRC.
 - **A request the server queues is waited for, withdrawn past the provider's patience.** A server
   whose accounts are all busy answers `202` with a `requestId`; the provider asks
   `/playback/requests/<id>` again after its `Retry-After` (held between
@@ -440,14 +468,13 @@ URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 `tracks.monochrome.st` by default; the `monochrome` setting and *Monochrome server* field (in the
 *A TIDAL account* group, beside the hifi-api override) name another, clearing restores the hosted
 one. The binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services. Two routes:
-`/search/tracks?q=<words>&limit=` answers `tracks` listings (`trackId`, `isrc`, `playable`),
-`/track/<trackId>` the whole FLAC.
+`/search/tracks?q=<words>&limit=` answers `tracks` listings (`trackId`, `isrc`, `playable`,
+`title`, `artistNames`, `duration` in milliseconds), `/track/<trackId>` the whole FLAC.
 
-- **Asked by ISRC alone, never a title.** Listings carry no MusicBrainz id and the search does not
-  read an ISRC as its query, so no ISRC: `Nothing`, no request; else searched in words (title and
-  artist, then title alone, `LISTED_AT_MOST` listings), a listing taken only where its own `isrc`
-  (via `Isrc::new`) is the want's and it is not `playable: false`. A `trackId` is used only if all
-  digits (it goes into the path).
+- **Asked in words, chosen by the seam.** Listings carry no MusicBrainz id and the search does not
+  read an ISRC as its query; not `may_be_listed`: `Nothing`, no request; else searched by each of
+  `Identity::wordings` (`LISTED_AT_MOST` listings each) through a `Choosing`, a `playable: false`
+  listing passed over. A `trackId` is used only if all digits (it goes into the path).
 - **What lands is the server's FLAC**, keyed `track/<trackId>`, extension `flac`, opened only when
   the offer is taken, so a refused download is the provider's `Refused` under
   `ProviderOp::Download`. A 404/410 there is the track gone, `Opened::Gone`; a download whose

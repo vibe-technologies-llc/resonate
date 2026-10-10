@@ -1,14 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
-use resonate_core::{Isrc, SourceId};
+use resonate_core::SourceId;
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
     ASKED_LATER, Ranged, Trusted, asking_agent, configured, downloading_agent, escaped,
     is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider, ProviderOp,
-    Result, is_a_page,
+    Choosing, Delivery, Error, Extension, Identity, Listed, Obtained, Opened, Opening, Pacing,
+    Provider, ProviderOp, Result, is_a_page,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -75,6 +75,12 @@ struct Listing {
     isrc: Option<String>,
     #[serde(default)]
     playable: Option<bool>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    artist_names: Vec<String>,
+    #[serde(default)]
+    duration: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,12 +95,21 @@ impl TrackId {
 }
 
 impl Listing {
-    fn is_the_recording(&self, isrc: &Isrc) -> bool {
-        self.playable != Some(false)
-            && self
-                .isrc
-                .as_deref()
-                .is_some_and(|held| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc))
+    fn weigh(&self, identity: &Identity, choosing: &mut Choosing<TrackId>) {
+        if self.playable == Some(false) {
+            return;
+        }
+        let Some(track) = self.track() else {
+            return;
+        };
+        let listed = Listed {
+            isrcs: self.isrc.as_deref().into_iter().collect(),
+            title: self.title.as_deref().unwrap_or_default(),
+            version: None,
+            artists: self.artist_names.iter().map(String::as_str).collect(),
+            length: self.duration.map(Duration::from_millis),
+        };
+        choosing.weigh(identity, &listed, track);
     }
 
     fn track(&self) -> Option<TrackId> {
@@ -103,31 +118,6 @@ impl Listing {
             .or(self.id.as_deref())
             .and_then(TrackId::read)
     }
-}
-
-fn the_one_asked_for(isrc: &Isrc, listings: &[Listing]) -> Option<TrackId> {
-    listings
-        .iter()
-        .filter(|listing| listing.is_the_recording(isrc))
-        .find_map(Listing::track)
-}
-
-fn wordings(identity: &Identity) -> Vec<String> {
-    let title = identity.title.trim();
-    if title.is_empty() {
-        return Vec::new();
-    }
-    let artist = identity
-        .artist
-        .as_deref()
-        .map(str::trim)
-        .filter(|artist| !artist.is_empty());
-
-    artist
-        .map(|artist| format!("{title} {artist}"))
-        .into_iter()
-        .chain([title.to_owned()])
-        .collect()
 }
 
 #[derive(Clone)]
@@ -259,13 +249,33 @@ impl Monochrome {
         self.read(&bytes)
     }
 
-    fn found(&self, identity: &Identity, isrc: &Isrc) -> Result<Option<TrackId>> {
-        for words in wordings(identity) {
-            if let Some(track) = the_one_asked_for(isrc, &self.searched(&words)?) {
-                return Ok(Some(track));
+    fn found(&self, identity: &Identity) -> Result<Option<TrackId>> {
+        let mut choosing = Choosing::default();
+        let wordings = identity.wordings();
+        for words in &wordings {
+            for listing in self.searched(words)? {
+                listing.weigh(identity, &mut choosing);
+            }
+            if choosing.holds_a_coded_listing() {
+                break;
             }
         }
-        Ok(None)
+        let seen = choosing.seen();
+        match choosing.chosen() {
+            Some((track, taken)) => {
+                tracing::debug!(track = track.0, ?taken, "Monochrome lists the song");
+                Ok(Some(track))
+            }
+            None => {
+                tracing::debug!(
+                    title = identity.title,
+                    asked = wordings.len(),
+                    seen,
+                    "Monochrome lists nothing coded or named as the song"
+                );
+                Ok(None)
+            }
+        }
     }
 
     fn downloaded(&self, track: &TrackId) -> Result<Opened> {
@@ -295,10 +305,10 @@ impl Provider for Monochrome {
     }
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
-        let Some(isrc) = &identity.isrc else {
+        if !identity.may_be_listed() {
             return Ok(Obtained::Nothing);
-        };
-        let Some(track) = self.found(identity, isrc)? else {
+        }
+        let Some(track) = self.found(identity)? else {
             return Ok(Obtained::Nothing);
         };
         let downloading = self.clone();
@@ -312,7 +322,17 @@ impl Provider for Monochrome {
 
 #[cfg(test)]
 mod tests {
+    use resonate_providers::Taken;
+
     use super::*;
+
+    fn the_one_asked_for(identity: &Identity, listings: &[Listing]) -> Option<(TrackId, Taken)> {
+        let mut choosing = Choosing::default();
+        for listing in listings {
+            listing.weigh(identity, &mut choosing);
+        }
+        choosing.chosen()
+    }
 
     const SEARCHED: &str = include_str!("../tests/fixtures/search.json");
     const ECHOES_ISRC: &str = "GBN9Y1100065";
@@ -354,30 +374,58 @@ mod tests {
         assert_eq!(TrackId::read("12?x=1"), None);
     }
 
+    fn coded(code: &str) -> Identity {
+        Identity {
+            isrcs: vec![resonate_core::Isrc::new(code).expect("an isrc")],
+            ..Identity::named("Echoes")
+        }
+    }
+
     #[test]
-    fn a_listing_is_taken_by_its_isrc_and_never_by_its_title() {
+    fn a_listing_is_taken_by_any_of_the_wants_codes_or_by_its_name_where_none_is_coded() {
         let listings = Monochrome::hosted()
             .read(SEARCHED.as_bytes())
             .expect("a search answer");
         assert_eq!(listings.len(), 3);
-        let isrc = Isrc::new(ECHOES_ISRC).expect("an isrc");
-        let another = Isrc::new("USSM12409299").expect("an isrc");
+        let echoes = Identity {
+            isrcs: vec![
+                resonate_core::Isrc::new("USSM12409299").expect("an isrc"),
+                resonate_core::Isrc::new(ECHOES_ISRC).expect("an isrc"),
+            ],
+            ..coded("USSM12409299")
+        };
+        let named = Identity {
+            artist: Some("Pink Floyd".to_owned()),
+            length: Some(Duration::from_millis(1_413_000)),
+            ..coded("USSM12409299")
+        };
+        let named_but_longer = Identity {
+            length: Some(Duration::from_millis(1_420_000)),
+            ..named.clone()
+        };
 
         assert_eq!(
-            the_one_asked_for(&isrc, &listings),
-            Some(TrackId("154140652551016448".to_owned()))
+            the_one_asked_for(&echoes, &listings),
+            Some((TrackId("154140652551016448".to_owned()), Taken::ByItsCode))
         );
-        assert_eq!(the_one_asked_for(&another, &listings), None);
+        assert_eq!(the_one_asked_for(&coded("USSM12409299"), &listings), None);
+        assert_eq!(
+            the_one_asked_for(&named, &listings),
+            Some((TrackId("154140652551016448".to_owned()), Taken::NamedAlike))
+        );
+        assert_eq!(the_one_asked_for(&named_but_longer, &listings), None);
     }
 
     #[test]
     fn a_listing_that_cannot_be_played_is_passed_over() {
-        let isrc = Isrc::new(ECHOES_ISRC).expect("an isrc");
         let withheld = Listing {
             track_id: Some("1".to_owned()),
             id: None,
             isrc: Some(ECHOES_ISRC.to_owned()),
             playable: Some(false),
+            title: None,
+            artist_names: Vec::new(),
+            duration: None,
         };
         let playable = Listing {
             track_id: Some("2".to_owned()),
@@ -386,8 +434,8 @@ mod tests {
         };
 
         assert_eq!(
-            the_one_asked_for(&isrc, &[withheld, playable]),
-            Some(TrackId("2".to_owned()))
+            the_one_asked_for(&coded(ECHOES_ISRC), &[withheld, playable]),
+            Some((TrackId("2".to_owned()), Taken::ByItsCode))
         );
     }
 
@@ -424,18 +472,16 @@ mod tests {
         let none = Monochrome::hosted()
             .read(br#"{"tracks": null}"#)
             .expect("a search answer");
-        let isrc = Isrc::new(ECHOES_ISRC).expect("an isrc");
-
         assert_eq!(
-            the_one_asked_for(&isrc, &read),
-            Some(TrackId("154140652551016448".to_owned()))
+            the_one_asked_for(&coded(ECHOES_ISRC), &read),
+            Some((TrackId("154140652551016448".to_owned()), Taken::ByItsCode))
         );
         assert_eq!(read.len(), 1);
         assert!(none.is_empty());
     }
 
     #[test]
-    fn a_want_with_no_isrc_is_not_searched_for() {
+    fn a_want_with_no_code_and_nothing_to_name_it_by_is_not_searched_for() {
         assert!(matches!(
             Monochrome::at("http://127.0.0.1:9").find(&Identity::named("Echoes")),
             Ok(Obtained::Nothing)

@@ -254,7 +254,7 @@ fn found(listings: &[String]) -> Canned {
 
 fn echoes() -> Identity {
     Identity {
-        isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
         artist: Some("Pink Floyd".to_owned()),
         ..Identity::named("Echoes")
     }
@@ -321,10 +321,10 @@ fn the_listing_holding_the_wants_isrc_is_delivered_whole_as_flac() {
 }
 
 #[test]
-fn a_track_is_searched_for_by_title_and_artist_and_then_by_title_alone() {
+fn a_track_is_searched_for_by_title_and_artist_both_ways_round_and_then_by_title_alone() {
     let fake = Fake::serving(|asked, _| match asked {
-        Asked::Search(words) if words == "Echoes Pink Floyd" => found(&[]),
-        Asked::Search(_) => echoes_found(),
+        Asked::Search(words) if words == "Echoes" => echoes_found(),
+        Asked::Search(_) => found(&[]),
         _ => Canned::audio(),
     });
 
@@ -335,6 +335,7 @@ fn a_track_is_searched_for_by_title_and_artist_and_then_by_title_alone() {
         fake.heard(),
         vec![
             searched("Echoes Pink Floyd"),
+            searched("Pink Floyd Echoes"),
             searched("Echoes"),
             track(ECHOES, None)
         ]
@@ -342,32 +343,75 @@ fn a_track_is_searched_for_by_title_and_artist_and_then_by_title_alone() {
 }
 
 #[test]
-fn a_same_titled_listing_under_another_isrc_is_never_delivered() {
-    let fake = Fake::serving(|_, _| found(&[listing("176742690942394368", "USSM12409270")]));
+fn a_listing_under_another_isrc_is_delivered_only_named_as_the_want_and_as_long_as_it() {
+    let another = || found(&[listing("176742690942394368", "USSM12409270")]);
+    let measured = |seconds: u64| Identity {
+        length: Some(Duration::from_secs(seconds)),
+        ..echoes()
+    };
 
-    let obtained = fake.monochrome().find(&echoes()).expect("an answer");
-
-    assert!(matches!(obtained, Obtained::Nothing));
+    let fake = Fake::serving(move |asked, _| match asked {
+        Asked::Search(_) => another(),
+        _ => Canned::audio(),
+    });
+    let unmeasured = fake.monochrome().find(&echoes()).expect("an answer");
+    assert!(matches!(unmeasured, Obtained::Nothing));
     assert_eq!(
         fake.heard(),
-        vec![searched("Echoes Pink Floyd"), searched("Echoes")]
+        vec![
+            searched("Echoes Pink Floyd"),
+            searched("Pink Floyd Echoes"),
+            searched("Echoes")
+        ]
+    );
+
+    let too_long = Fake::serving(move |_, _| another());
+    assert!(matches!(
+        too_long
+            .monochrome()
+            .find(&measured(1416))
+            .expect("an answer"),
+        Obtained::Nothing
+    ));
+
+    let alike = Fake::serving(move |asked, _| match asked {
+        Asked::Search(_) => another(),
+        _ => Canned::audio(),
+    });
+    let delivered = streamed(alike.monochrome().find(&measured(1413)).expect("an answer"));
+    assert_eq!(
+        delivered.map(|(key, ..)| key),
+        Some("track/176742690942394368".to_owned())
     );
 }
 
 #[test]
-fn a_want_with_no_isrc_asks_the_server_nothing() {
-    let fake = Fake::serving(|_, _| echoes_found());
+fn a_want_with_no_code_is_searched_for_by_its_name_and_one_with_no_length_asks_nothing() {
+    let named = || Identity {
+        artist: Some("Pink Floyd".to_owned()),
+        ..Identity::named("Echoes")
+    };
+    let unmeasured = Fake::serving(|_, _| echoes_found());
 
-    let obtained = fake
-        .monochrome()
-        .find(&Identity {
-            artist: Some("Pink Floyd".to_owned()),
-            ..Identity::named("Echoes")
-        })
-        .expect("an answer");
+    let obtained = unmeasured.monochrome().find(&named()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
-    assert!(fake.heard().is_empty());
+    assert!(unmeasured.heard().is_empty());
+
+    let measured = Fake::serving(|asked, _| match asked {
+        Asked::Search(_) => echoes_found(),
+        _ => Canned::audio(),
+    });
+    let delivered = streamed(
+        measured
+            .monochrome()
+            .find(&Identity {
+                length: Some(Duration::from_millis(1_412_000)),
+                ..named()
+            })
+            .expect("an answer"),
+    );
+    assert!(delivered.is_some());
 }
 
 #[test]

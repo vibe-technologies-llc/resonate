@@ -128,7 +128,8 @@ Invariants the layering protects (the rules files have the rest):
   `Command::Remove` and `Command::Move` take one. `resonate-ui`'s `edit::Span` is a different type,
   a run of text edits.
 - **Core also carries what two mutually blind crates share**: `Resumption`, `Reordered`,
-  `Appearance`, `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`.
+  `Appearance`, `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles` (the
+  version qualifiers enrichment and the providers' name match both strip) and `words_of_a_name`.
 - **Everything else is a crate behind its own seam**: tag writing through `TagSink`, the vault,
   lyrics, providers, studies, the equaliser's I/O, Discord.
 

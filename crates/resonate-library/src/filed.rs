@@ -243,8 +243,8 @@ fn edits(want: &Want, album: &AlbumToFile) -> Vec<TagEdit> {
         want.release
             .as_ref()
             .and_then(|release| edit(TagField::MusicBrainzAlbumId, release.as_str())),
-        want.isrc
-            .as_ref()
+        want.isrcs
+            .first()
             .map(Isrc::as_str)
             .and_then(|isrc| edit(TagField::Isrc, isrc)),
     ]
@@ -317,7 +317,7 @@ mod tests {
             recording: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid")),
             track: None,
             release: None,
-            isrc: Some(Isrc::new("GBN9Y1100089").expect("an isrc")),
+            isrcs: vec![Isrc::new("GBN9Y1100089").expect("an isrc")],
             length: None,
             disc: 1,
             position: 6,

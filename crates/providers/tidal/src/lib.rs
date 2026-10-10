@@ -41,6 +41,7 @@ const NOT_READY_FOR_PLAYBACK: u16 = 4005;
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const JSON_API: &str = "application/vnd.api+json";
 const TRACKS_TRIED_AT_MOST: usize = 5;
+const CODES_ASKED_AT_MOST: usize = 4;
 
 #[derive(Clone)]
 struct Session {
@@ -301,12 +302,26 @@ impl Tidal {
 }
 
 impl Finds for Tidal {
-    fn tracks_named_by(
-        &self,
-        isrc: &Isrc,
-        _title: &str,
-        _artist: Option<&str>,
-    ) -> Result<Vec<TrackId>> {
+    fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
+        let mut tracks: Vec<TrackId> = Vec::new();
+        for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
+            for track in self.tracks_coded(isrc)? {
+                if !tracks.contains(&track) {
+                    tracks.push(track);
+                }
+            }
+        }
+        tracks.truncate(TRACKS_TRIED_AT_MOST);
+        Ok(tracks)
+    }
+
+    fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
+        self.delivery(track)
+    }
+}
+
+impl Tidal {
+    fn tracks_coded(&self, isrc: &Isrc) -> Result<Vec<TrackId>> {
         let op = ProviderOp::Search;
         let asked = self.asked(
             op,
@@ -340,7 +355,7 @@ impl Finds for Tidal {
             .collect())
     }
 
-    fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
+    fn delivery(&self, track: TrackId) -> Result<Option<Delivery>> {
         let op = ProviderOp::Playback;
         let asked = self.asked(
             op,

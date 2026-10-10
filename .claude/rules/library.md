@@ -1179,7 +1179,10 @@ rows read via `Player::media` like any unscanned row.
   columns, fills `year` only where the scan left none, stamps `answered`, deletes and reinserts
   `release_tracks`, `release_media`, `album_links`, writes each row's `release_track_links`. Wants
   under the album are read first (`wants_under`) and put back after, so a want survives a refresh
-  that changed row ids. `Carried` = what a want is put back *by*, most exact first: `Track` (release
+  that changed row ids, with every code its row held. **A release row keeps every code of its
+  recording** in `release_track_isrcs` (a `MIGRATIONS` step backfilled from `release_tracks.isrc`,
+  which stays the first code for the readers that use one); `WANTS_UNHELD` reads them, first code
+  first, into `Want::isrcs`, `Identity::isrcs` (`providers.md`). `Carried` = what a want is put back *by*, most exact first: `Track` (release
   track's own mbid), `Recording` (recording's), `Seat` (`(disc, position)` **where the title's
   words, `words_of`, still agree**: a re-edited release moving a track must not carry the want to
   whatever now sits there; a song taking another's seat carries nothing)
@@ -2268,8 +2271,23 @@ starts.
   it is on, then the most releases, then MusicBrainz's order), so a song MusicBrainz lists a
   hundred times over (every compilation, every bootlegged concert, all scored alike) is offered as
   the album's recording, the one its artist's page lists
-  (`of_a_songs_takes_the_one_coded_and_on_its_album_is_offered_and_one_nobody_can_deliver_is_not`);
-  to `FOUND_ELSEWHERE_AT_MOST` (12). Halves are public apart (the window keeps the reference's answer
+  (`of_a_songs_takes_the_one_coded_and_on_its_album_is_offered_and_one_nobody_can_deliver_is_not`).
+  **Songs are ranked before the cap, not left in MusicBrainz's order**: `found_among` (given the
+  `SongsAsked`; `None` keeps the answer's order, the one-recording link path) orders groups by
+  `Fit` (`Titled`: the title's words, or title and credit together, are the words asked, or the
+  by-reading's title and artist both match; `Answered`: every word asked begins or is `spelt_alike`
+  a word of title or credit; `Partly`), then by the releases the group's takes are on (a canonical
+  recording is on hundreds, a cover or a namesake band's song on one), then first place in the
+  answer; to `FOUND_ELSEWHERE_AT_MOST` (12). So *stand by me* leads with Ben E. King, not fifteen
+  songs by a band called *The Stand by Me*, and *creep* with Radiohead's
+  (`a_song_titled_with_the_words_and_on_the_most_releases_leads_whoever_is_named_after_them`).
+  **A found song carries the codes of every take of it as long as it**: `Found::isrcs` = the
+  offered take's ISRCs, then those of the group's other takes within `LENGTHS_AGREE_WITHIN`, so a
+  provider holding another master of the same song finds it
+  (`a_found_song_carries_the_codes_of_every_take_of_it_as_long_as_it`). Words are weighed by
+  `resonate_core::words_of_a_name` here (`Found::answers`, `still_answering`, `artists_named_by`,
+  `albums_named_by`, `albums_kept_named_by`): *cant* answers *Can't*, *fo* answers *F.O.*; the SQL
+  haystacks (`release_tracks.folded`, `discography_songs.folded`) keep their stored splitting. Halves are public apart (the window keeps the reference's answer
   and reweighs it): `songs_asked` = words as sent (title, artist, album words only, lower-cased,
   single-spaced: *Pink  Floyd* and *pink floyd year:1971* are one ask), `None` under three letters
   (not sent; `asks_elsewhere` is its `is_some`); `Library::unheld_among` asks the catalog about
@@ -2277,8 +2295,8 @@ starts.
   `release_tracks_by_recording`: a `MIGRATIONS` step); a link's ISRC, an album's release id and an artist's
   id are found off `tracks_by_isrc`, `albums_by_release`, `artists_by_mbid` (a later step;
   `a_song_an_album_or_an_artist_held_under_an_identifier_is_found_off_an_index`) instead of reading every recording id.
-  `still_answering` narrows songs found for one search to those every folded word of another begins
-  a word of (title, credit, a release's title): what the window shows while asking
+  `still_answering` narrows songs found for one search to those every word of another begins a word
+  of (title, credit, a release's title, all through `words_of_a_name`): what the window shows while asking
   (`songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more`).
 - **Songs of unheld releases are learnt in the lookup pass.** `Pass::learn_the_songs` runs after
   the album, track and artist lookups, before `cover_the_unheld`, **artist by artist**:
@@ -2367,7 +2385,10 @@ starts.
   asks `cover_what_was_wanted` after the want is out (`want_found` does both), so a poll starts
   before the sleeve arrives; answer saved on the album; a failed fetch or store does not cancel the
   want. Errors: `Error::UnknownRelease` (reference lacks the release), `Error::Unreleased`
-  (recording has none), `Error::NotOnTheRelease`. `store::ORPHANS` spares a trackless album only
+  (recording has none), `Error::NotOnTheRelease`; **a release answering either of the first and
+  last is not the end**: the next of the recording's releases in the order worth offering is tried,
+  up to `RELEASES_TRIED_AFTER_THE_FIRST` (3), before the error stands. The want's row is given every
+  code of `Found::isrcs` (`enriched::code`) beside the release's own. `store::ORPHANS` spares a trackless album only
   where found elsewhere and still wanted (a scan keeps it while the want stands, removes it once
   gone; an album scanned from a root still leaves with the root); the albums pane never shows one
   (`HOLDS_A_BEST_COPY` asks for a track)
@@ -2534,10 +2555,13 @@ starts.
   words as typed (`ui.md`). `words_asked` drops the *by* and the dash from the songs asked
   elsewhere (title and artist only), so `songs_kept_for`, `still_answering`, `unheld_matching`
   never look for a song called *by*; `songs_asked` answers a `SongsAsked` carrying the reading
-  beside the words (`ui.md`). **MusicBrainz's answer is weighed here**: `weighed_for` keeps matches
-  whose credit is nearest the typed artist (same letters, then one name holding the other; folded,
-  all but letters and digits dropped), of those the titles matching the typed title likewise, same
-  letters first; no title matching = every song of the artist kept (title perhaps misremembered).
+  beside the words (`ui.md`). **MusicBrainz's answer is weighed here, only where it bears the
+  reading out**: where no match is `ByArtist::answered_by` (credits the typed artist, exactly or
+  `spelt_alike`, and names the typed title), the answer passes unweighed, the reading being wrong
+  (*stand by me* is not *stand* by *me*; `resonate-online` then asked the words plainly); else
+  `weighed_for` keeps matches whose credit is nearest the typed artist (same letters, then spelt
+  alike, then one name holding the other; folded, all but letters and digits dropped), of those
+  the titles matching the typed title likewise, same letters first.
   The window weighs an answer before keeping it, `Library::found_elsewhere` before weighing it
   against the catalog.
   (`songs_asked_for_by_an_artist_keep_the_nearest_artist_and_the_titles_that_match`,

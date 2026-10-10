@@ -7,7 +7,7 @@ pub struct Identity {
     pub recording: Option<Mbid>,
     pub track: Option<Mbid>,
     pub release: Option<Mbid>,
-    pub isrc: Option<Isrc>,
+    pub isrcs: Vec<Isrc>,
     pub title: String,
     pub artist: Option<String>,
     pub album: Option<String>,

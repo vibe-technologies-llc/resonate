@@ -295,10 +295,10 @@ fn a_search_is_answered_without_the_download_being_asked_for() {
 }
 
 #[test]
-fn a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page() {
+fn a_song_is_searched_for_by_title_and_artist_both_ways_round_and_then_by_title_page_after_page() {
     let fake = Fake::serving(
         |asked, _| match (asked.method.as_str(), asked.query.as_deref()) {
-            ("search3", Some("Echoes Pink Floyd")) => found(&[]),
+            ("search3", Some("Echoes Pink Floyd" | "Pink Floyd Echoes")) => found(&[]),
             ("search3", _) if asked.offset == Some(0) => found(&tributes(A_PAGE)),
             ("search3", _) => found(&[song("floyd", ECHOES, "")]),
             _ => Canned::audio(),
@@ -314,6 +314,11 @@ fn a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page(
             (
                 "search3".to_owned(),
                 Some("Echoes Pink Floyd".to_owned()),
+                Some(0)
+            ),
+            (
+                "search3".to_owned(),
+                Some("Pink Floyd Echoes".to_owned()),
                 Some(0)
             ),
             ("search3".to_owned(), Some("Echoes".to_owned()), Some(0)),
@@ -334,7 +339,11 @@ fn a_short_page_ends_the_search_and_nothing_found_is_nothing_delivered() {
     let obtained = fake.subsonic().find(&echoes()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
-    assert_eq!(fake.heard().len(), 2);
+    assert_eq!(
+        fake.heard().len(),
+        3,
+        "a page for each wording, none past the short one"
+    );
 }
 
 #[test]
@@ -372,7 +381,7 @@ fn an_isrc_written_with_dashes_is_the_same_code() {
         _ => Canned::audio(),
     });
     let by_isrc = Identity {
-        isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
         ..Identity::named("Echoes")
     };
 

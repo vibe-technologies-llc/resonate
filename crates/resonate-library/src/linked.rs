@@ -1,7 +1,7 @@
 use std::{fmt, time::Duration};
 
 use ahash::AHashSet;
-use resonate_core::{AlbumId, ArtistId, Isrc, Mbid, Service, TrackId};
+use resonate_core::{AlbumId, ArtistId, Isrc, Mbid, Service, TrackId, titles};
 use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{
@@ -40,7 +40,7 @@ const HELD_ALBUM: &str = "SELECT a.id, coalesce(a.release_title, a.title),
     AND EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id)
   ORDER BY coalesce(a.mbid = ?2, 0) DESC, a.id
   LIMIT 1";
-pub(crate) const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(5);
+pub(crate) const LENGTHS_AGREE_WITHIN: Duration = resonate_providers::LENGTHS_AGREE_WITHIN;
 const SOUNDCLOUD_PAGES_NAMING_NO_ARTIST: [&str; 14] = [
     "discover",
     "search",
@@ -688,7 +688,7 @@ struct Reading {
 impl Reading {
     fn of(title: &str, artist: &str) -> Self {
         Self {
-            title: enrich::without_brackets_that(title, a_video_qualifier).to_owned(),
+            title: titles::without_brackets_that(title, a_video_qualifier).to_owned(),
             artist: artist.to_owned(),
         }
     }

@@ -32,19 +32,14 @@ pub(crate) fn named_by(isrc: &Isrc, held: Option<&str>) -> bool {
 }
 
 pub(crate) trait Finds {
-    fn tracks_named_by(
-        &self,
-        isrc: &Isrc,
-        title: &str,
-        artist: Option<&str>,
-    ) -> Result<Vec<TrackId>>;
+    fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>>;
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>>;
 }
 
 pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained> {
     let linked = identity.track_on(Service::Tidal).and_then(TrackId::linked);
-    if linked.is_none() && identity.isrc.is_none() {
+    if linked.is_none() && !identity.may_be_listed() {
         return Ok(Obtained::Nothing);
     }
     if let Some(track) = linked
@@ -52,11 +47,11 @@ pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained>
     {
         return Ok(Obtained::Found(delivery));
     }
-    let Some(isrc) = &identity.isrc else {
+    if !identity.may_be_listed() {
         return Ok(Obtained::Nothing);
-    };
+    }
     for track in finds
-        .tracks_named_by(isrc, &identity.title, identity.artist.as_deref())?
+        .tracks_for(identity)?
         .into_iter()
         .filter(|track| Some(*track) != linked)
     {

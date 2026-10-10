@@ -370,6 +370,7 @@ impl Unfinished {
                 release,
                 releases: Vec::new(),
                 performer: None,
+                isrcs: Vec::new(),
             },
             want: want.id,
             queued: want.wanted,
@@ -404,6 +405,7 @@ mod tests {
             release: None,
             releases: Vec::new(),
             performer: None,
+            isrcs: Vec::new(),
         }
     }
 

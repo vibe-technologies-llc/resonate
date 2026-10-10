@@ -781,7 +781,7 @@ fn week_row(position: u32, title: &str, recording: &str) -> ReleaseTrack {
         recording: Some(Mbid::new(recording).expect("an mbid")),
         track: None,
         length: Some(Duration::from_secs(u64::from(SECONDS))),
-        isrc: None,
+        isrcs: Vec::new(),
         links: Vec::new(),
     }
 }

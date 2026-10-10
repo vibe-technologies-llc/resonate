@@ -119,30 +119,37 @@ Searches answer candidates; the strict taking rule lives in `enrich.rs` (one rul
 - **A recording is asked three ways through one document**: mbid; ISRC (`/isrc/<code>`;
   `ISRC_INCLUDES` omit release-groups, which that endpoint answers 400 to, so a release read there
   carries its status alone; one ISRC names every take released under it, telling them apart is the
-  caller's); search. The search duration window `LENGTH_MAY_DIFFER_BY_MS` is wider than the five
-  seconds `enrich.rs` accepts (service gives the neighbourhood, library decides inside). `codes`
+  caller's); search. **A release's track keeps every code its recording is registered under**
+  (`ReleaseTrack::isrcs`, through `codes`): a provider may hold the song under its second. The
+  search duration window `LENGTH_MAY_DIFFER_BY_MS` is wider than the five seconds `enrich.rs` accepts (service gives the neighbourhood, library decides inside). `codes`
   drops what `Isrc::new` will not hold.
 - **The listener's words** (`find_songs`, the window's search for a song the catalog lacks) are
-  capped at `SONGS_FOUND_AT_MOST` (the library discards every named recording and second take
-  before offering the rest). **Words read as a title by an artist are asked as that first**:
-  `songs_by_search` requires the artist (each word of `SPELT_LOOSELY_FROM` letters or more spelt
-  loosely), the title only ranks; an empty answer falls back to the pair below. Title not
-  required: MusicBrainz tokenises it as entered, so a phrase misses *You F O* under `"you fo"`.
-  **A title by an artist is asked first among recordings naming an ISRC** (`+isrc:*`,
-  `Coded::Required`): MusicBrainz scores every recording of a title alike, so *Teardrop* by Massive
+  capped at `SONGS_FOUND_AT_MOST` (the library discards every named recording and second take, and
+  ranks the rest, before offering them). `find_songs` is `found_for` over the client: the whole
+  order of asking is one function over an `ask` closure, tested offline over canned answers
+  (`a_title_holding_by_no_answer_bears_out_is_asked_as_plain_words`). Words are split by
+  `resonate_core::words_of_a_name` (folded, an apostrophe joining, anything else cutting), so
+  *don't* is sent and weighed as *dont*, which MusicBrainz matches to *Don’t*. **Words read as a
+  title by an artist are asked as that first, and taken only where an answer bears the reading
+  out**: `songs_by_search` requires the artist (each word of `SPELT_LOOSELY_FROM` letters or more
+  spelt loosely), the title only ranks (MusicBrainz tokenises it as entered, so a phrase misses
+  *You F O* under `"you fo"`). Asked first among recordings naming an ISRC (`+isrc:*`,
+  `Coded::Required`: MusicBrainz scores every recording of a title alike, so *Teardrop* by Massive
   Attack answered compilation copies and bootlegged concerts ahead of the album's recording; the
-  ISRC-coded ones are the releases a provider can find, the album's first among them. Taken where a
-  recording's title holds every word of the title asked (`names_the_title`), else the query is asked
-  without the ISRC, its answer taken where not empty, the coded one otherwise. Words read as no title
-  by an artist are asked the same way (`songs_coded_search`: `+(recording:(…) artist:(…))
-  +isrc:*`) in place of the loose dismax words, wherever one recording of that answer holds every
-  word in its title or credit (`answers_every_word`); else the dismax words as below (the loose
-  words answered *Teardrop massive attack* with covers titled *Teardrop (Massive Attack)*).
-  **Words read as no title by an artist are asked twice**: as the phrase an artist is credited
-  under (`songs_credited_search`, answer leads) and as loose dismax words (dismax alone ranks a
-  recording *titled* with the words, e.g. a cover or *Twenty One Pilots* by someone else, above the
-  band's own songs: an artist-name search found none). **`find_albums` asks the same two ways of
-  `/release-group/`** (`albums_credited_search`, then `albums_search`, each `ALBUMS_FOUND_AT_MOST`),
+  coded ones are what a provider finds), then without; an answer is taken only where one recording
+  is `ByArtist::answered_by` (credits the typed artist exactly or `spelt_alike`, a leading *the*
+  aside, and names the typed title). Else the words go the plain way below, and what the reading's
+  artist sang is kept after that answer: *stand by me* is no song *stand* by an artist *me* (that
+  reading answered *Stand Up, Sit Down* by Akili and Me and the plain words were never asked).
+  **Plain words are asked as an artist's name and among coded recordings**
+  (`songs_credited_search`, `artist:"…"`, then `songs_coded_search`: `+(recording:(…)
+  artist:(…)) +isrc:*`), the coded answer kept where one recording holds every word in its title or
+  credit (`answers_every_word`, `Spelt::AsTyped`); **else asked again with words of
+  `SPELT_LOOSELY_FROM` letters or more spelt loosely** (`Spelt::Loosely`, `w~`), kept where a
+  recording holds every word as a word start or `spelt_alike` one (*bohemian rapsody*); else the
+  loose dismax words (`songs_search`; the loose words answered *Teardrop massive attack* with covers
+  titled *Teardrop (Massive Attack)*). The order of the answer is not its rank: the library ranks.
+  **`find_albums` asks the same two ways of `/release-group/`** (`albums_credited_search`, then `albums_search`, each `ALBUMS_FOUND_AT_MOST`),
   reading `primary-type`, `secondary-types`, `first-release-date` into an `AlbumMatch`; the library
   decides which are albums.
 - **A search answer is read for where each recording sits.** The index spells a medium's track list

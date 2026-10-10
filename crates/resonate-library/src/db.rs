@@ -106,6 +106,9 @@ const CD_SAMPLE_RATE: u32 = 44_100;
 const CD_SAMPLE_DEPTH: u8 = 16;
 
 const IDS_READ_AT_ONCE: usize = 500;
+
+const RELEASES_TRIED_AFTER_THE_FIRST: usize = 3;
+
 pub(crate) const TRACK_COLUMNS: &str =
     "tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album_id,
      tracks.track_number, tracks.disc_number, tracks.duration, tracks.sample_rate, tracks.channels,
@@ -364,7 +367,12 @@ macro_rules! wants_selected {
             album_title!(),
             ", rt.title, coalesce(rt.artist, ar.name),
                     w.wanted, w.tried, w.offered, w.misses,
-                    rt.recording_mbid, rt.track_mbid, a.mbid, rt.isrc, rt.length_ms, rt.disc,
+                    rt.recording_mbid, rt.track_mbid, a.mbid,
+                    coalesce(rt.isrc || ' ', '') ||
+                        coalesce((SELECT group_concat(c.isrc, ' ') FROM release_track_isrcs c
+                                   WHERE c.release_track_id = rt.id
+                                     AND c.isrc IS NOT rt.isrc), ''),
+                    rt.length_ms, rt.disc,
                     rt.position, rt.track_id
                FROM wants w
                JOIN release_tracks rt ON rt.id = w.release_track_id
@@ -2978,7 +2986,7 @@ impl Library {
                         took,
                         want.recording.as_ref().map(Mbid::as_str),
                         want.track.as_ref().map(Mbid::as_str),
-                        want.isrc.as_ref().map(Isrc::as_str),
+                        want.isrcs.first().map(Isrc::as_str),
                         key,
                         held,
                         declared.genre,
@@ -3392,10 +3400,10 @@ impl Library {
             return Ok(Vec::new());
         };
 
-        self.unheld_among(elsewhere::weighed_for(
-            &words,
-            reference.find_songs(&words)?,
-        ))
+        self.unheld_among(
+            elsewhere::weighed_for(&words, reference.find_songs(&words)?),
+            Some(&words),
+        )
     }
 
     pub fn unheld_artists_among(
@@ -3485,10 +3493,14 @@ impl Library {
         Ok(artist)
     }
 
-    pub fn unheld_among(&self, matches: Vec<RecordingMatch>) -> Result<Vec<Found>> {
+    pub fn unheld_among(
+        &self,
+        matches: Vec<RecordingMatch>,
+        asked: Option<&elsewhere::SongsAsked>,
+    ) -> Result<Vec<Found>> {
         let held = self.recordings_held_of(&matches)?;
 
-        Ok(elsewhere::found_among(matches, |recording| {
+        Ok(elsewhere::found_among(matches, asked, |recording| {
             held.contains(recording.as_str())
         }))
     }
@@ -3580,7 +3592,7 @@ impl Library {
         }
 
         Ok(
-            elsewhere::found_among(vec![RecordingMatch::from(recording)], |_| false)
+            elsewhere::found_among(vec![RecordingMatch::from(recording)], None, |_| false)
                 .into_iter()
                 .next()
                 .map_or(Linked::Unnamed, |found| Linked::Found(Box::new(found))),
@@ -3708,20 +3720,64 @@ impl Library {
         reference: &dyn Reference,
         found: &Found,
     ) -> Result<Uncovered<WantId>> {
-        let release = match &found.release {
-            Some(release) => release.id.clone(),
+        let releases: Vec<Mbid> = match &found.release {
+            Some(release) => std::iter::once(release.id.clone())
+                .chain(
+                    found
+                        .in_the_order_worth_offering()
+                        .into_iter()
+                        .map(|offered| offered.id.clone())
+                        .filter(|offered| *offered != release.id),
+                )
+                .collect(),
             None => reference
                 .recording(&found.recording)?
-                .and_then(|recording| {
-                    elsewhere::meant_release(&recording.releases).map(|release| release.id.clone())
+                .map(|recording| {
+                    elsewhere::in_the_order_worth_offering(&recording.releases)
+                        .into_iter()
+                        .map(|release| release.id.clone())
+                        .collect()
                 })
-                .ok_or_else(|| Error::Unreleased {
-                    recording: found.recording.clone(),
-                })?,
+                .unwrap_or_default(),
+        };
+        let Some((first, rest)) = releases.split_first() else {
+            return Err(Error::Unreleased {
+                recording: found.recording.clone(),
+            });
         };
 
-        let Uncovered { wanted, covering } =
-            self.want_from_release(reference, &release, std::slice::from_ref(&found.recording))?;
+        let mut failed = match self.want_found_on(reference, found, first) {
+            Ok(wanted) => return Ok(wanted),
+            Err(error) => error,
+        };
+        for release in rest.iter().take(RELEASES_TRIED_AFTER_THE_FIRST) {
+            if !matches!(
+                failed,
+                Error::UnknownRelease { .. } | Error::NotOnTheRelease { .. }
+            ) {
+                break;
+            }
+            tracing::debug!(%release, error = %failed, "a found song is wanted from its next release");
+            failed = match self.want_found_on(reference, found, release) {
+                Ok(wanted) => return Ok(wanted),
+                Err(error) => error,
+            };
+        }
+        Err(failed)
+    }
+
+    fn want_found_on(
+        &self,
+        reference: &dyn Reference,
+        found: &Found,
+        release: &Mbid,
+    ) -> Result<Uncovered<WantId>> {
+        let Uncovered { wanted, covering } = self.want_from_release(
+            reference,
+            release,
+            std::slice::from_ref(&found.recording),
+            &found.isrcs,
+        )?;
         wanted
             .into_iter()
             .next()
@@ -3731,7 +3787,7 @@ impl Library {
             })
             .ok_or_else(|| Error::NotOnTheRelease {
                 recording: found.recording.clone(),
-                release,
+                release: release.clone(),
             })
     }
 
@@ -3769,7 +3825,7 @@ impl Library {
             _ => Self::release_named(reference, &release)?,
         };
 
-        let Uncovered { wanted, covering } = self.want_from_landed(&landed, &recordings)?;
+        let Uncovered { wanted, covering } = self.want_from_landed(&landed, &recordings, &[])?;
         let wanted: AHashMap<Mbid, WantId> = wanted.into_iter().collect();
         Ok(Uncovered {
             wanted: songs
@@ -3875,15 +3931,17 @@ impl Library {
         reference: &dyn Reference,
         release: &Mbid,
         recordings: &[Mbid],
+        codes: &[Isrc],
     ) -> Result<Uncovered<Vec<(Mbid, WantId)>>> {
         let landed = Self::release_named(reference, release)?;
-        self.want_from_landed(&landed, recordings)
+        self.want_from_landed(&landed, recordings, codes)
     }
 
     fn want_from_landed(
         &self,
         landed: &Release,
         recordings: &[Mbid],
+        codes: &[Isrc],
     ) -> Result<Uncovered<Vec<(Mbid, WantId)>>> {
         let release = &landed.id;
         let now = SystemTime::now();
@@ -3896,6 +3954,8 @@ impl Library {
                     tracing::debug!(%recording, %release, "a song is not on the release it was wanted from");
                     continue;
                 };
+                let coded: Vec<String> = codes.iter().map(|code| code.as_str().to_owned()).collect();
+                enriched::code(transaction, row.get() as i64, &coded)?;
                 wanted.push((recording.clone(), elsewhere::want_in(transaction, row, now)?));
             }
             if wanted.is_empty()
@@ -7319,7 +7379,7 @@ struct RawWant {
     recording: Option<String>,
     track: Option<String>,
     release: Option<String>,
-    isrc: Option<String>,
+    isrcs: String,
     length_ms: Option<i64>,
     disc: i64,
     position: i64,
@@ -7342,7 +7402,7 @@ impl RawWant {
             recording: row.get(10)?,
             track: row.get(11)?,
             release: row.get(12)?,
-            isrc: row.get(13)?,
+            isrcs: row.get(13)?,
             length_ms: row.get(14)?,
             disc: row.get(15)?,
             position: row.get(16)?,
@@ -7361,7 +7421,11 @@ impl RawWant {
             recording: store::mbid_in(self.recording.as_deref()),
             track: store::mbid_in(self.track.as_deref()),
             release: store::mbid_in(self.release.as_deref()),
-            isrc: store::isrc_in(self.isrc.as_deref()),
+            isrcs: self
+                .isrcs
+                .split_whitespace()
+                .filter_map(|code| store::isrc_in(Some(code)))
+                .collect(),
             length: self
                 .length_ms
                 .map(|millis| Duration::from_millis(millis.max(0) as u64)),
