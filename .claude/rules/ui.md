@@ -1040,7 +1040,10 @@ is never named.
   root the one item** (`Region::holding`, `RootView::region`): the width is the cross axis,
   stretched to the region's and never measured, with no automatic minimum (a flex row honoured a
   pane root's, growing past the region at the narrowest window); a pane root fills the height by
-  `flex_1` or `size_full`. A one-cell grid (`minmax(0, 1fr)`) held it for a while and broke every
+  `flex_1` or `size_full`. **A `flex_1` root that is not itself a scroll container carries
+  `min_h(0)`**: the height is the main axis, whose automatic minimum is the content's, so the
+  lyrics root grew to the whole sheet's height, nothing inside it scrolled, and the pane never
+  reached `steady` to reveal a line. A one-cell grid (`minmax(0, 1fr)`) held it for a while and broke every
   cut name drawn in plain divs: taffy's track sizing measured the root at a column estimate of 0
   first, and gpui cut the name's runs to the ellipsis there for good (below).
   - `PlayerModel::refresh` reports a poll as `Moved`: `Clock` if only position and sink latency
