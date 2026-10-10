@@ -1,4 +1,6 @@
-use std::io::{Read, Write};
+#[cfg(test)]
+use std::io::Read;
+use std::io::Write;
 
 use crate::{Error, IpcOp, Result};
 
@@ -62,9 +64,7 @@ pub(crate) fn write_frame(out: &mut impl Write, opcode: Opcode, body: &[u8]) -> 
         })
 }
 
-pub(crate) fn read_frame(input: &mut impl Read) -> Result<Frame> {
-    let mut header = [0; HEADER];
-    read_exactly(input, &mut header)?;
+fn header_of(header: [u8; HEADER]) -> Result<(Opcode, usize)> {
     let [a, b, c, d, e, f, g, h] = header;
     let code = u32::from_le_bytes([a, b, c, d]);
     let length = u32::from_le_bytes([e, f, g, h]);
@@ -73,12 +73,36 @@ pub(crate) fn read_frame(input: &mut impl Read) -> Result<Frame> {
     if length > LARGEST_FRAME {
         return Err(Error::Oversized { length });
     }
-    let mut body = vec![0; length as usize];
+    Ok((opcode, length as usize))
+}
+
+pub(crate) fn split_frame(received: &mut Vec<u8>) -> Result<Option<Frame>> {
+    let Some(header) = received.first_chunk::<HEADER>() else {
+        return Ok(None);
+    };
+    let (opcode, length) = header_of(*header)?;
+    if received.len() < HEADER + length {
+        return Ok(None);
+    }
+
+    let body = received[HEADER..HEADER + length].to_vec();
+    received.drain(..HEADER + length);
+    Ok(Some(Frame { opcode, body }))
+}
+
+#[cfg(test)]
+pub(crate) fn read_frame(input: &mut impl Read) -> Result<Frame> {
+    let mut header = [0; HEADER];
+    read_exactly(input, &mut header)?;
+    let (opcode, length) = header_of(header)?;
+
+    let mut body = vec![0; length];
     read_exactly(input, &mut body)?;
 
     Ok(Frame { opcode, body })
 }
 
+#[cfg(test)]
 fn read_exactly(input: &mut impl Read, into: &mut [u8]) -> Result<()> {
     input.read_exact(into).map_err(|source| Error::Socket {
         op: IpcOp::Read,
@@ -132,6 +156,49 @@ mod tests {
         let refused = write_frame(&mut wire, Opcode::Frame, &body);
         assert!(matches!(refused, Err(Error::Oversized { .. })));
         assert!(wire.is_empty());
+    }
+
+    #[test]
+    fn a_frame_arriving_in_pieces_is_split_off_only_once_whole_and_the_next_kept() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, Opcode::Frame, br#"{"evt":"READY"}"#).expect("written");
+        write_frame(&mut wire, Opcode::Ping, b"{}").expect("written");
+        let (first, rest) = wire.split_at(5);
+        let (second, third) = rest.split_at(10);
+
+        let mut received = first.to_vec();
+        let after_the_first = split_frame(&mut received).expect("a header so far");
+        received.extend_from_slice(second);
+        let after_the_second = split_frame(&mut received).expect("half a body so far");
+        received.extend_from_slice(third);
+        let whole = split_frame(&mut received).expect("read");
+        let next = split_frame(&mut received).expect("read");
+        let none_left = split_frame(&mut received).expect("read");
+
+        assert_eq!(after_the_first, None);
+        assert_eq!(after_the_second, None);
+        assert_eq!(
+            whole,
+            Some(Frame {
+                opcode: Opcode::Frame,
+                body: br#"{"evt":"READY"}"#.to_vec()
+            })
+        );
+        assert_eq!(next.map(|frame| frame.opcode), Some(Opcode::Ping));
+        assert_eq!(none_left, None);
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn a_header_claiming_too_much_is_refused_before_its_body_arrives() {
+        let mut received = Vec::new();
+        received.extend_from_slice(&1_u32.to_le_bytes());
+        received.extend_from_slice(&(LARGEST_FRAME + 1).to_le_bytes());
+
+        assert!(matches!(
+            split_frame(&mut received),
+            Err(Error::Oversized { .. })
+        ));
     }
 
     #[test]

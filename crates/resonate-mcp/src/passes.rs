@@ -26,6 +26,7 @@ pub struct Lookups {
     pub providers: Arc<Providers>,
     pub studies: bool,
     pub lyrics: bool,
+    pub after_a_scan: bool,
 }
 
 impl Lookups {
@@ -36,6 +37,7 @@ impl Lookups {
             providers: Arc::new(Providers::none()),
             studies: EnrichOptions::default().studies,
             lyrics: EnrichOptions::default().lyrics,
+            after_a_scan: false,
         }
     }
 }
@@ -153,15 +155,25 @@ impl Watched for PollProgress {
 
 trait Ended {
     fn told(&self) -> Value;
+
+    fn ran_to_its_end(&self) -> bool;
 }
 
 impl Ended for ScanSummary {
     fn told(&self) -> Value {
         json!({ "stats": self.stats.told(), "cancelled": self.cancelled })
     }
+
+    fn ran_to_its_end(&self) -> bool {
+        !self.cancelled
+    }
 }
 
 impl Ended for EnrichSummary {
+    fn ran_to_its_end(&self) -> bool {
+        !self.cancelled
+    }
+
     fn told(&self) -> Value {
         let mut told = json!({ "stats": self.stats.told(), "cancelled": self.cancelled });
         if let Some(op) = self.stopped_by {
@@ -175,12 +187,16 @@ impl Ended for PollSummary {
     fn told(&self) -> Value {
         json!({ "stats": self.stats.told(), "cancelled": self.cancelled })
     }
+
+    fn ran_to_its_end(&self) -> bool {
+        !self.cancelled
+    }
 }
 
 enum Slot<Progress, Summary> {
     Idle,
     Running(PassHandle<Progress, Summary>),
-    Finished(Value),
+    Finished { told: Value, whole: bool },
 }
 
 impl<Progress: Watched, Summary: Ended> Slot<Progress, Summary> {
@@ -195,14 +211,20 @@ impl<Progress: Watched, Summary: Ended> Slot<Progress, Summary> {
         let Self::Running(handle) = std::mem::replace(self, Self::Idle) else {
             return;
         };
-        *self = Self::Finished(match handle.join() {
+        *self = match handle.join() {
             Ok(summary) => {
                 let mut told = summary.told();
                 told["state"] = json!("finished");
-                told
+                Self::Finished {
+                    told,
+                    whole: summary.ran_to_its_end(),
+                }
             }
-            Err(error) => json!({ "state": "failed", "error": said(&error) }),
-        });
+            Err(error) => Self::Finished {
+                told: json!({ "state": "failed", "error": said(&error) }),
+                whole: false,
+            },
+        };
     }
 
     fn state(&mut self) -> Value {
@@ -213,7 +235,15 @@ impl<Progress: Watched, Summary: Ended> Slot<Progress, Summary> {
                 "state": "running",
                 "progress": handle.progress().now().told(),
             }),
-            Self::Finished(told) => told.clone(),
+            Self::Finished { told, .. } => told.clone(),
+        }
+    }
+
+    fn ran_whole(&mut self) -> Option<bool> {
+        self.settled();
+        match self {
+            Self::Idle | Self::Running(_) => None,
+            Self::Finished { whole, .. } => Some(*whole),
         }
     }
 
@@ -233,6 +263,7 @@ struct Running {
     scan: Slot<ScanProgress, ScanSummary>,
     lookup: Slot<EnrichProgress, EnrichSummary>,
     poll: Slot<PollProgress, PollSummary>,
+    lookup_owed: bool,
 }
 
 impl Running {
@@ -274,6 +305,7 @@ impl Passes {
                 scan: Slot::Idle,
                 lookup: Slot::Idle,
                 poll: Slot::Idle,
+                lookup_owed: false,
             }),
         }
     }
@@ -285,7 +317,8 @@ impl Passes {
         Ok(())
     }
 
-    pub(crate) fn scan(&self, library: &Library, roots: &[PathBuf]) -> Result<Value> {
+    pub(crate) fn scan(&self, library: &Library, asked: &ScanAsked) -> Result<Value> {
+        let roots = asked.roots.as_slice();
         self.free(Pass::Scan)?;
         if let Some(missing) = roots.iter().find(|root| !root.is_dir()) {
             return Err(Error::NoSuchFolder {
@@ -297,12 +330,16 @@ impl Passes {
 
         let handle = library.scan(ScanOptions {
             roots: roots.to_vec(),
-            incremental: true,
-            follow_symlinks: false,
+            incremental: !asked.full,
+            follow_symlinks: asked.follow_links,
             extract_cover_art: true,
             workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
         })?;
-        self.running.borrow_mut().scan = Slot::Running(handle);
+        let looks_up_after = self.lookups.after_a_scan && self.lookups.reference.is_some();
+        let mut running = self.running.borrow_mut();
+        running.scan = Slot::Running(handle);
+        running.lookup_owed = looks_up_after;
+        drop(running);
 
         let walked: Vec<PathBuf> = if roots.is_empty() {
             library.roots()?
@@ -312,7 +349,29 @@ impl Passes {
         Ok(json!({
             "started": Pass::Scan.name(),
             "roots": walked.iter().map(|root| spoken(root)).collect::<Vec<_>>(),
+            "full": asked.full,
+            "follow_links": asked.follow_links,
+            "lookup_after": looks_up_after,
         }))
+    }
+
+    pub(crate) fn carry_on(&self, library: &Library) {
+        let mut running = self.running.borrow_mut();
+        if !running.lookup_owed {
+            return;
+        }
+        let Some(whole) = running.scan.ran_whole() else {
+            return;
+        };
+        running.lookup_owed = false;
+        drop(running);
+
+        if !whole {
+            return;
+        }
+        if let Err(error) = self.look_up(library, false) {
+            tracing::warn!(error = %said(&error), "the lookup a scan hands over to did not start");
+        }
     }
 
     fn admit(library: &Library, roots: &[PathBuf]) -> Result<()> {
@@ -413,6 +472,7 @@ impl Passes {
 
     pub fn drain(&self) {
         let mut running = self.running.borrow_mut();
+        running.lookup_owed = false;
         running.scan.stop();
         running.lookup.stop();
         running.poll.stop();
@@ -426,6 +486,12 @@ impl Drop for Passes {
     fn drop(&mut self) {
         self.drain();
     }
+}
+
+pub(crate) struct ScanAsked {
+    pub(crate) roots: Vec<PathBuf>,
+    pub(crate) full: bool,
+    pub(crate) follow_links: bool,
 }
 
 fn spoken(path: &Path) -> String {

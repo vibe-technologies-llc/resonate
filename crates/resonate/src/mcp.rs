@@ -34,6 +34,7 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
             )),
             studies: config.studies(),
             lyrics: config.fetches_lyrics(),
+            after_a_scan: config.enriches_after_scan(),
         });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 

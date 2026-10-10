@@ -265,6 +265,7 @@ impl Server {
             match told {
                 Heard::Stop => break,
                 Heard::Tick => {
+                    self.passes.carry_on(&self.library);
                     for notification in self.changed() {
                         written_out(&mut output, &notification)?;
                     }
@@ -363,6 +364,7 @@ impl Server {
     }
 
     pub fn answer(&self, line: &[u8]) -> Option<Value> {
+        self.passes.carry_on(&self.library);
         match serde_json::from_slice(line) {
             Ok(Value::Array(batch)) => self.answer_batch(batch),
             Ok(message) => self.answer_one(message),

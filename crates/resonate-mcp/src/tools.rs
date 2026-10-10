@@ -13,7 +13,7 @@ use crate::{
     controlling::Reach,
     edits::{self, Dropping, Filling, Marking},
     error::Field,
-    passes::{Pass, Passes},
+    passes::{Pass, Passes, ScanAsked},
     transport::{self, Action, Adding},
 };
 
@@ -272,7 +272,8 @@ impl Tool {
             Self::StartScan => "Start reading the library's folders into its catalog, or new \
                                 folders given as roots, which are kept as library roots from \
                                 then on. Answers at once; library_passes says how far it has \
-                                come. Needs no player."
+                                come. Where the settings ask for it, a lookup starts once the \
+                                scan runs to its end (lookup_after says so). Needs no player."
                 .to_owned(),
             Self::ForgetFolder => "Take a folder out of the library's roots, and every track \
                                    the catalog holds under it, including the plays and \
@@ -412,6 +413,17 @@ impl Tool {
                     "items": { "type": "string" },
                     "description": "Folders to add to the library and scan; none scans every \
                                     root the library already holds.",
+                },
+                "full": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Read every file again, not only those whose size or time \
+                                    moved since the last scan.",
+                },
+                "follow_links": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Walk into folders that symbolic links name.",
                 },
             }),
             Self::ForgetFolder => json!({
@@ -710,7 +722,14 @@ impl Tool {
             }
             Self::StartScan => {
                 let asked: Scanning = self.taken(arguments)?;
-                passes.scan(library, &asked.roots)
+                passes.scan(
+                    library,
+                    &ScanAsked {
+                        roots: asked.roots,
+                        full: asked.full,
+                        follow_links: asked.follow_links,
+                    },
+                )
             }
             Self::ForgetFolder => {
                 let asked: Forgetting = self.taken(arguments)?;
@@ -1151,6 +1170,10 @@ struct Sleeping {
 struct Scanning {
     #[serde(default)]
     roots: Vec<PathBuf>,
+    #[serde(default)]
+    full: bool,
+    #[serde(default)]
+    follow_links: bool,
 }
 
 #[derive(Deserialize)]

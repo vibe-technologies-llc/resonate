@@ -6,14 +6,23 @@ use std::{
     path::PathBuf,
     process,
     rc::Rc,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Volume};
 use resonate_engine::{Asleep, Placement, Until};
-use resonate_library::{AlbumQuery, Library, Mbid, Medium, Release, ReleaseTrack, ScanOptions};
-use resonate_mcp::{Controlling, Error, Reach, Row, Server, Tool};
+use resonate_library::{
+    AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
+    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Discography, GroupAsked, GroupMatch, Isrc,
+    Library, Link, LinkNames, LinkedPlaylist, LyricText, LyricsAsked, Mbid, Medium, PlaylistLink,
+    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked, StreamAsked,
+};
+use resonate_mcp::{Controlling, Error, Lookups, Reach, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking};
 use serde_json::{Value, json};
 
@@ -2438,4 +2447,188 @@ fn a_session_that_cannot_push_offers_no_subscription() {
         ),
         -32_601
     );
+}
+
+struct Silent {
+    source: SourceId,
+}
+
+impl Reference for Silent {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn release(&self, _id: &Mbid) -> resonate_library::Result<Option<Release>> {
+        Ok(None)
+    }
+
+    fn find_release(&self, _asked: &ReleaseAsked) -> resonate_library::Result<Vec<ReleaseMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn releases_by_barcode(
+        &self,
+        _barcode: &Barcode,
+    ) -> resonate_library::Result<Vec<BarcodeMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn recording(&self, _id: &Mbid) -> resonate_library::Result<Option<Recording>> {
+        Ok(None)
+    }
+
+    fn recordings_of_isrc(&self, _isrc: &Isrc) -> resonate_library::Result<Vec<Recording>> {
+        Ok(Vec::new())
+    }
+
+    fn find_recording(
+        &self,
+        _asked: &RecordingAsked,
+    ) -> resonate_library::Result<Vec<RecordingMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn find_songs(&self, _asked: &SongsAsked) -> resonate_library::Result<Vec<RecordingMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn release_group(&self, _id: &Mbid) -> resonate_library::Result<Option<ReleaseGroup>> {
+        Ok(None)
+    }
+
+    fn find_release_group(&self, _asked: &GroupAsked) -> resonate_library::Result<Vec<GroupMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn find_albums(&self, _words: &str) -> resonate_library::Result<Vec<AlbumMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn group_cover(&self, _group: &Mbid) -> resonate_library::Result<Option<CoverArt>> {
+        Ok(None)
+    }
+
+    fn artist(&self, _id: &Mbid) -> resonate_library::Result<Option<ArtistProfile>> {
+        Ok(None)
+    }
+
+    fn find_artist(&self, _name: &str) -> resonate_library::Result<Vec<ArtistMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn release_groups_of(
+        &self,
+        _artist: &Mbid,
+        _from: u32,
+    ) -> resonate_library::Result<Discography> {
+        Ok(Discography::default())
+    }
+
+    fn releases_of_group(&self, _group: &Mbid) -> resonate_library::Result<Vec<Release>> {
+        Ok(Vec::new())
+    }
+
+    fn releases_of_artist(
+        &self,
+        _artist: &Mbid,
+        _from: u32,
+    ) -> resonate_library::Result<ArtistPressings> {
+        Ok(ArtistPressings::default())
+    }
+
+    fn cover(
+        &self,
+        _release: &Mbid,
+        _group: Option<&Mbid>,
+    ) -> resonate_library::Result<Option<CoverArt>> {
+        Ok(None)
+    }
+
+    fn portrait(&self, _links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {
+        Ok(None)
+    }
+
+    fn streamed_at(&self, _asked: &StreamAsked) -> resonate_library::Result<Option<Link>> {
+        Ok(None)
+    }
+
+    fn lyrics(&self, _asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+        Ok(None)
+    }
+
+    fn song_linked(&self, _link: &SongLink) -> resonate_library::Result<Option<LinkNames>> {
+        Ok(None)
+    }
+
+    fn album_linked(&self, _link: &AlbumLink) -> resonate_library::Result<Option<AlbumNames>> {
+        Ok(None)
+    }
+
+    fn artist_linked(&self, _link: &ArtistLink) -> resonate_library::Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn playlist_linked(
+        &self,
+        _link: &PlaylistLink,
+    ) -> resonate_library::Result<Option<LinkedPlaylist>> {
+        Ok(None)
+    }
+
+    fn artist_at(&self, _page: &str) -> resonate_library::Result<Option<Mbid>> {
+        Ok(None)
+    }
+}
+
+fn looking_up(after_a_scan: bool) -> Server {
+    Server::new(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        Fake::default(),
+    )
+    .looking_up_with(Lookups {
+        reference: Some(Arc::new(Silent {
+            source: SourceId::new("musicbrainz").expect("a nameable source"),
+        })),
+        after_a_scan,
+        ..Lookups::none()
+    })
+}
+
+#[test]
+fn a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = looking_up(true);
+
+    let started = called(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()], "full": true, "follow_links": true }),
+    );
+    assert_eq!(once_settled(&server, "scan")["state"], "finished");
+    let lookup = once_settled(&server, "lookup");
+
+    assert_eq!(started["full"], true);
+    assert_eq!(started["follow_links"], true);
+    assert_eq!(started["lookup_after"], true);
+    assert_eq!(lookup["state"], "finished", "{lookup}");
+}
+
+#[test]
+fn a_scan_hands_over_to_no_lookup_where_the_settings_leave_it_to_be_asked_for() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = looking_up(false);
+
+    let started = called(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()] }),
+    );
+    assert_eq!(once_settled(&server, "scan")["state"], "finished");
+    let lookup = called(&server, "library_passes", json!({}))["lookup"].clone();
+
+    assert_eq!(started["full"], false);
+    assert_eq!(started["lookup_after"], false);
+    assert_eq!(lookup["state"], "idle", "{lookup}");
 }

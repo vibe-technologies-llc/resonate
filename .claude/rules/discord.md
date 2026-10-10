@@ -34,15 +34,20 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
 
 ## What is sent
 
-- **Frame**: little-endian opcode, length, JSON; at most `LARGEST_FRAME`. Handshake waits for
+- **Frame**: little-endian opcode, length, JSON; at most `LARGEST_FRAME`. What the socket gives is
+  kept in `Session::received` until a whole frame stands there (`frame::split_frame`), so a frame
+  Discord writes in pieces is read whole however far apart they arrive; a read never waits past
+  `ANSWERS_WITHIN` for the rest, and nothing read is lost to a timeout. Handshake waits for
   `READY` (`READY_WITHIN`); `ERROR` instead is `Refused` at once. `Close` 4000 = unknown
   application: warned once, waited out until the id changes. `Ping` gets `Pong`. `ERROR` to an
   activity keeps the session, counts a refusal; `due` re-offers the same activity after
   `SENT_AGAIN_AFTER_A_REFUSAL` doubled per refusal up to `SENT_AGAIN_AT_MOST`; a changed activity
   goes on normal spacing (`refusals_carried`). Closing would reconnect every few seconds to be
   refused the same payload.
-- **Socket search**: `$XDG_RUNTIME_DIR`, `$TMPDIR`, `/tmp`, each plain and under Flatpak, Snap,
-  Vesktop sandboxes, `discord-ipc-0` to `-9`, last answerer first. `find_among` passes over a
+- **Socket search**: `$XDG_RUNTIME_DIR`, `$TMPDIR`, `/tmp`, each plain and under every
+  `SANDBOXES` folder (Flatpak's `app/<id>` and `.flatpak/<id>/xdg-run` layouts for Discord, Canary,
+  PTB and Vesktop; Snap's `snap.discord`, `-canary`, `-ptb`), `discord-ipc-0` to `-9`, last
+  answerer first. `find_among` passes over a
   socket refusing the client (other `Close` code, handshake `ERROR`, unreadable frame), so a
   sibling or Vesktop beside a refusing Discord is reached; only 4000 ends the search (all Discords
   answer the same id alike). Nothing found: retry after `RETRY_AFTER_AT_FIRST`, doubling to

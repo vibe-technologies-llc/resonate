@@ -118,8 +118,14 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   or `failed` (error chain); `stop_pass` cancels at the next file. `Passes` holds a `Slot` per pass
   in a `RefCell` (one answering thread); a finished pass is joined when first asked after. Starting
   a running pass = `Error::AlreadyRunning`.
-- **Passes start as the CLI starts them.** A scan refuses a non-folder (`Error::NoSuchFolder`)
-  before anything starts; `Library::scan` registers the roots in one transaction once it holds the
+- **Passes start as the CLI starts them.** `start_scan` takes `full` and `follow_links` as
+  `resonate scan` takes `--full` and `--follow-links` (incremental, off links unless told). Where
+  `Lookups::after_a_scan` (the `enrich-after-scan` key) holds and a reference is reached, a scan
+  run to its end hands over to a lookup as the CLI's does: `Passes::carry_on`, asked before every
+  message and on every tick, starts it once the scan slot settles uncancelled (`lookup_after` in the
+  answer says it will;
+  `a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one`). A scan refuses a
+  non-folder (`Error::NoSuchFolder`) before anything starts; `Library::scan` registers the roots in one transaction once it holds the
   walk, so a refused scan keeps none
   (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). **Admission first**: filesystem
   root = `Error::FilesystemRoot`; a list taking the library past `MOST_ROOTS` (64) =

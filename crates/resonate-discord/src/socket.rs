@@ -16,20 +16,28 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Error, IpcOp, JsonOp, Result,
     activity::Activity,
-    frame::{Frame, Opcode, read_frame, write_frame},
+    frame::{Frame, Opcode, split_frame, write_frame},
 };
 
 const PROTOCOL: u8 = 1;
 const SOCKETS_PER_FOLDER: u8 = 10;
 const SOCKET_STEM: &str = "discord-ipc-";
 const SHARED_TEMPORARY: &str = "/tmp";
-const SANDBOXES: [&str; 4] = [
+const SANDBOXES: [&str; 11] = [
     "",
     "app/com.discordapp.Discord",
-    "snap.discord",
+    "app/com.discordapp.DiscordCanary",
+    "app/com.discordapp.DiscordPTB",
+    "app/dev.vencord.Vesktop",
+    ".flatpak/com.discordapp.Discord/xdg-run",
+    ".flatpak/com.discordapp.DiscordCanary/xdg-run",
     ".flatpak/dev.vencord.Vesktop/xdg-run",
+    "snap.discord",
+    "snap.discord-canary",
+    "snap.discord-ptb",
 ];
 const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
+const READ_AT_ONCE: usize = 4096;
 const READY_WITHIN: Duration = Duration::from_secs(5);
 const SET_ACTIVITY: &str = "SET_ACTIVITY";
 const DISPATCH: &str = "DISPATCH";
@@ -113,6 +121,7 @@ struct CloseDoc {
 pub(crate) struct Session {
     stream: UnixStream,
     nonce: u64,
+    received: Vec<u8>,
 }
 
 impl Session {
@@ -152,15 +161,17 @@ impl Session {
             op: IpcOp::Connect,
             source,
         })?;
-        stream
-            .set_read_timeout(Some(ANSWERS_WITHIN))
-            .and_then(|()| stream.set_write_timeout(Some(ANSWERS_WITHIN)))
-            .map_err(|source| Error::Socket {
-                op: IpcOp::Configure,
-                source,
-            })?;
+        configured(
+            stream
+                .set_read_timeout(Some(ANSWERS_WITHIN))
+                .and_then(|()| stream.set_write_timeout(Some(ANSWERS_WITHIN))),
+        )?;
 
-        let mut session = Self { stream, nonce: 0 };
+        let mut session = Self {
+            stream,
+            nonce: 0,
+            received: Vec::new(),
+        };
         let handshake = Handshake {
             v: PROTOCOL,
             client_id: app.to_string(),
@@ -206,8 +217,7 @@ impl Session {
 
     fn await_ready(&mut self) -> Result<()> {
         let deadline = Instant::now() + READY_WITHIN;
-        while Instant::now() < deadline {
-            let frame = read_frame(&mut self.stream)?;
+        while let Some(frame) = self.next_frame_by(deadline)? {
             if frame.opcode == Opcode::Frame {
                 let reply: ReplyDoc = decoded(&frame.body)?;
                 match (reply.cmd.as_deref(), reply.evt.as_deref()) {
@@ -227,6 +237,20 @@ impl Session {
             op: IpcOp::Read,
             source: io::ErrorKind::TimedOut.into(),
         })
+    }
+
+    fn next_frame_by(&mut self, deadline: Instant) -> Result<Option<Frame>> {
+        loop {
+            if let Some(frame) = split_frame(&mut self.received)? {
+                return Ok(Some(frame));
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Ok(None);
+            }
+            configured(self.stream.set_read_timeout(Some(left.min(ANSWERS_WITHIN))))?;
+            self.receive()?;
+        }
     }
 
     fn answer(&mut self, frame: Frame) -> Result<()> {
@@ -250,24 +274,39 @@ impl Session {
     }
 
     fn waiting(&mut self) -> Result<Option<Frame>> {
-        let configured = |result: io::Result<()>| {
-            result.map_err(|source| Error::Socket {
-                op: IpcOp::Configure,
-                source,
-            })
-        };
-        configured(self.stream.set_nonblocking(true))?;
-        let mut first = [0; 1];
-        let peeked = self.stream.read(&mut first);
-        configured(self.stream.set_nonblocking(false))?;
+        if let Some(frame) = split_frame(&mut self.received)? {
+            return Ok(Some(frame));
+        }
 
-        match peeked {
+        configured(self.stream.set_nonblocking(true))?;
+        let received = self.receive();
+        configured(self.stream.set_nonblocking(false))?;
+        received?;
+
+        split_frame(&mut self.received)
+    }
+
+    fn receive(&mut self) -> Result<()> {
+        let mut chunk = [0; READ_AT_ONCE];
+        match self.stream.read(&mut chunk) {
             Ok(0) => Err(Error::Socket {
                 op: IpcOp::Read,
                 source: io::ErrorKind::UnexpectedEof.into(),
             }),
-            Ok(_) => read_frame(&mut first.as_slice().chain(&mut self.stream)).map(Some),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Ok(read) => {
+                self.received.extend_from_slice(&chunk[..read]);
+                Ok(())
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(())
+            }
             Err(source) => Err(Error::Socket {
                 op: IpcOp::Read,
                 source,
@@ -278,6 +317,13 @@ impl Session {
     fn send(&mut self, opcode: Opcode, body: &[u8]) -> Result<()> {
         write_frame(&mut self.stream, opcode, body)
     }
+}
+
+fn configured(result: io::Result<()>) -> Result<()> {
+    result.map_err(|source| Error::Socket {
+        op: IpcOp::Configure,
+        source,
+    })
 }
 
 fn encoded(value: &impl Serialize) -> Result<Vec<u8>> {
@@ -298,6 +344,7 @@ fn decoded<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T> {
 mod tests {
     use std::{
         fs,
+        io::Write,
         os::unix::net::UnixListener,
         sync::{
             atomic::{AtomicU32, Ordering},
@@ -311,7 +358,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::activity::Playing;
+    use crate::{activity::Playing, frame::read_frame};
 
     const APP: &str = "1234567890123456789";
     static FOLDERS: AtomicU32 = AtomicU32::new(0);
@@ -371,6 +418,86 @@ mod tests {
         assert!(found.contains(&PathBuf::from(
             "/run/user/1000/.flatpak/dev.vencord.Vesktop/xdg-run/discord-ipc-0"
         )));
+        assert!(found.contains(&PathBuf::from(
+            "/run/user/1000/app/com.discordapp.DiscordCanary/discord-ipc-0"
+        )));
+        assert!(found.contains(&PathBuf::from("/tmp/snap.discord-ptb/discord-ipc-1")));
+    }
+
+    #[test]
+    fn a_ready_written_a_few_bytes_at_a_time_still_opens_the_session() {
+        let folder = Folder::new();
+        let path = folder.0.join("discord-ipc-0");
+        let listener = UnixListener::bind(&path).expect("bound");
+
+        let discord = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepted");
+            read_frame(&mut stream).expect("a handshake");
+            let mut wire = Vec::new();
+            write_frame(
+                &mut wire,
+                Opcode::Frame,
+                &serde_json::to_vec(&json!({ "cmd": "DISPATCH", "evt": "READY" })).expect("json"),
+            )
+            .expect("framed");
+            for piece in wire.chunks(wire.len() / 3 + 1) {
+                stream.write_all(piece).expect("written");
+                thread::sleep(Duration::from_millis(400));
+            }
+            read_frame(&mut stream).expect("an activity")
+        });
+
+        let mut session = Session::open(&path, app()).expect("a session");
+        session.set(None).expect("set");
+        let set = discord.join().expect("the fake Discord");
+
+        assert_eq!(body(&set)["cmd"], "SET_ACTIVITY");
+    }
+
+    #[test]
+    fn a_frame_drained_in_halves_is_read_whole_once_the_second_arrives() {
+        let folder = Folder::new();
+        let path = folder.0.join("discord-ipc-0");
+        let listener = UnixListener::bind(&path).expect("bound");
+
+        let (halfway, heard_half) = mpsc::channel();
+        let (go_on, told_to_go_on) = mpsc::channel::<()>();
+        let discord = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepted");
+            read_frame(&mut stream).expect("a handshake");
+            ready(&mut stream);
+            let mut wire = Vec::new();
+            write_frame(
+                &mut wire,
+                Opcode::Frame,
+                &serde_json::to_vec(&json!({ "evt": "ERROR", "data": { "code": 4002 } }))
+                    .expect("json"),
+            )
+            .expect("framed");
+            let (first, second) = wire.split_at(wire.len() / 2);
+            stream.write_all(first).expect("written");
+            halfway.send(()).expect("told");
+            told_to_go_on.recv().expect("told");
+            stream.write_all(second).expect("written");
+            stream
+        });
+
+        let mut session = Session::open(&path, app()).expect("a session");
+        heard_half.recv().expect("half sent");
+        thread::sleep(Duration::from_millis(50));
+        let at_half = session.drain();
+        go_on.send(()).expect("told");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let refused = loop {
+            match session.drain() {
+                Ok(()) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+                other => break other,
+            }
+        };
+        drop(discord.join().expect("the fake Discord"));
+
+        assert!(at_half.is_ok());
+        assert!(matches!(refused, Err(Error::Refused { code: 4002 })));
     }
 
     #[test]

@@ -135,11 +135,7 @@ sits last in its category, not worked until it moves. Everything else is open.
   twice a second on the one answering thread
 - MCP lists are unpaginated (`cursor` ignored), `list_playlists` and the resource list are
   unbounded, rebuilt every 500 ms once listed
-- MCP `start_scan` hard-codes an incremental scan following no links and ignores
-  `enrich-after-scan`, though passes start as the CLI starts them
 - MCP tools answer `structuredContent` with no `outputSchema`
-- Discord: the socket is looked for in four fixed places (not Canary, PTB, other Flatpak layouts),
-  and a frame split across writes times out mid-read, dropping the session
 - `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI alone
 
 ## Equaliser and DSP
