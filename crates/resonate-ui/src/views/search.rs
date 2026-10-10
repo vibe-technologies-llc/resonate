@@ -784,12 +784,7 @@ impl RootView {
         let albums_found = library.albums_found();
         let run = TopRun::of(library);
         let playing = self.playing_now(cx).track;
-        let pane = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .children(heading);
+        let pane = kit::pane().children(heading);
 
         if tracks.is_empty()
             && albums.is_empty()

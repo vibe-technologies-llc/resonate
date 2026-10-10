@@ -998,6 +998,15 @@ pub(crate) fn column_header() -> Div {
         .text_color(rgb(theme::faint()))
 }
 
+pub(crate) fn pane() -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w(px(0.0))
+        .min_h(px(0.0))
+}
+
 pub(crate) fn empty(icon: Icon, message: &'static str, more: Option<&'static str>) -> AnyElement {
     nothing_here(icon, message, more).into_any_element()
 }

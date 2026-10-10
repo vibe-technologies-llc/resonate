@@ -39,11 +39,7 @@ impl RootView {
         let shelves = (!nothing).then(|| self.favourite_shelves(held, &artists, &albums, cx));
         let listed = (held.tracks > 0).then(|| self.favourite_rows(&tracks, playing, cx));
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(favourites_heading(held, &reads))
             .when(nothing, |pane| {
                 pane.child(if narrowed {

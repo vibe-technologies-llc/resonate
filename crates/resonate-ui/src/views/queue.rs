@@ -593,11 +593,7 @@ impl RootView {
             .reaching(Shift::Queue)
             .map(|rows| Reaching::of(&queue, rows));
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .child(listing::columns(
                 "",

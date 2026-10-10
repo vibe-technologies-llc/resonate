@@ -110,11 +110,7 @@ impl RootView {
             );
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(suggestions_heading(offered.len()))
             .when(nothing, |pane| {
                 pane.child(empty(Icon::Suggestions, NOTHING_OFFERED, Some(SCAN_MORE)))
@@ -289,11 +285,7 @@ impl RootView {
                 ),
             );
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .child(listing::columns(
                 "#",

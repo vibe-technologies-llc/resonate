@@ -100,11 +100,7 @@ impl RootView {
         let footer = (!narrowing.narrows() && category.groups().any(can_be_put_back))
             .then(|| self.reset(category, cx));
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(self.settings_heading(&narrowing, category, cx))
             .child(
                 div()

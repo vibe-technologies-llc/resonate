@@ -275,11 +275,7 @@ impl RootView {
                 })
         });
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when(!nothing, |pane| {
@@ -637,11 +633,7 @@ impl RootView {
         let grid =
             (!nothing && drawn == ArtistsDrawn::Grid).then(|| self.artist_grid(&artists, cx));
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when_some(grid, Div::child)
@@ -789,11 +781,7 @@ impl RootView {
         let nothing = nothing && listing_shown;
         let found_nothing = found_nothing.filter(|_| listing_shown);
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading.flex_none())
             .when_some(records, |pane, records| {
                 pane.child(Scrollbars::of(cx).around(

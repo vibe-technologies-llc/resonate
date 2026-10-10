@@ -224,15 +224,7 @@ impl RootView {
             }
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .min_h(px(0.0))
-            .child(heading)
-            .child(body)
-            .into_any_element()
+        kit::pane().child(heading).child(body).into_any_element()
     }
 
     fn lyrics_heading(

@@ -221,11 +221,7 @@ impl RootView {
         let chart = library.charted();
         let nothing = counts.plays == 0;
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(self.statistics_heading(window, counts, cx))
             .when(nothing, |pane| {
                 pane.child(match window {

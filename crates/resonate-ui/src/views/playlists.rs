@@ -410,14 +410,7 @@ impl RootView {
             }
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .child(heading)
-            .child(listed)
-            .into_any_element()
+        kit::pane().child(heading).child(listed).into_any_element()
     }
 
     fn first_playlist_offers(&self, cx: &mut Context<Self>) -> Div {
@@ -780,11 +773,7 @@ impl RootView {
             .into_any_element()
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .when(!entries.is_empty(), |pane| {
                 pane.child(listing::columns(

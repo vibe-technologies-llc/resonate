@@ -152,11 +152,7 @@ impl RootView {
                 heading.child(listing::reads(&reads))
             });
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
+        kit::pane()
             .child(heading)
             .when(nothing, |pane| {
                 pane.child(if narrowed {

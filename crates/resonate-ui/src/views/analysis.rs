@@ -148,15 +148,7 @@ impl RootView {
             Studying::Done(drawn) => self.analysed(&drawn, played, &hearing, recognises, cx),
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .min_h(px(0.0))
-            .child(heading)
-            .child(body)
-            .into_any_element()
+        kit::pane().child(heading).child(body).into_any_element()
     }
 
     fn analysis_heading(
