@@ -6,6 +6,25 @@ dependent, easier first among equals). `Later:` = nice-to-have no listener waits
 sits last in its category, not worked until it moves. Everything else is open.
 
 ## Playback and output
+- An end-of-track or end-of-queue sleep on a DoP stream never fires: `fade_toward_sleep` fades a
+  `Silence::Marked` ring, which hushes at once without draining (`ring.rs` `fades` is false), so
+  the position freezes ten seconds short, the transport stays Playing all night (idle inhibit
+  held) and every Play re-silences after `quiet_within`
+- A stream open that fails and parks its row (`land_the_stream` drops the output before `fail`,
+  `unbound` unset) parks it at the decoder's position, a ring's depth past what was heard: when
+  the device or daemon returns, the first half second of the track (or after a seek) is skipped
+- An end-of-queue sleep under repeat-queue never fades (`sleep_is_due_in` asks
+  `ends_with_this_row`, not `wraps_next`), and a queue ended by `remove` or `fail` emits
+  `QueueFinished` leaving the timer armed: the next album loaded pauses at its end unasked
+- A row whose first bind fails (`NoSink`: headphones not yet connected) returns from `started`
+  before `TrackStarted` and before `renegotiations` resets; parked and played later it is never
+  announced, so `resonate play a b` with `b` failing exits 1 `NothingPlayed` though `a` played
+- `Insert { play: true }` at `Placement::Queued` lands the run at the end of the play-next block
+  and `jump_to` moves only its first row to the front: `resonate queue a b c --play` over two
+  queued rows plays a, the two queued rows, then b and c
+- Jumping to a queued row while another queued row plays restamps (`let_go_of_what_was_heard` ->
+  `rows_changed`) while the chosen row is out of `next`, stamping it as part of `order`: the
+  playlist badge and MPRIS `ActivePlaylist` go for that row's length
 - Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so do
   the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's depth
 - Choosing the sink already bound, or changing quality, filter phase, dither, restoration, noise
@@ -30,6 +49,16 @@ sits last in its category, not worked until it moves. Everything else is open.
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
 ## Formats
+- A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
+  `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the main decoder
+  misses them: a click at every mono/stereo switch of a low-bitrate podcast
+- A whole-file lyric sheet beside a cue-cut file is checked against the cut row before it is cut
+  (`Sidecar::held` reads with the row's `Wanted`, then `cut_of_the_file`): a sheet headed
+  `[ti:Meddle][length:46:45]` names "another track" for every row and the pane shows nothing; the
+  test's sheet has no header
+- Matroska's trailing `DiscardPadding` is taken from whichever track's block ends the file
+  (`read_cluster` sets `discarded` for every SimpleBlock and BlockGroup): a video frame last keeps
+  the Opus padding, another audio track's padding trims this one
 - A mid-stream change of rate or channel count (chained Ogg Vorbis, an MP3 going mono to stereo)
   fails the track with `ResetRequired`; nothing reopens the stream at the change
 - One DST frame that will not unpack fails the whole row as `Error::Io` rather than playing as a
@@ -74,6 +103,18 @@ sits last in its category, not worked until it moves. Everything else is open.
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Catalog
+- A cue sheet the scan cannot read (`read_sheet` answers `None` for an `EIO`, `ESTALE`, a sheet
+  read mid-rewrite as empty) claims nothing, so its file is probed whole and rows 2..N are pruned
+  with their plays, listens and favourites: against *what the scan could not read, it keeps*
+- A scan naming some roots tidies the rest by forgetting every path gone (`tidy_the_roots_beside`)
+  before any pairing could follow it: a hand move inside `~/Archive` is forgotten with its history
+  by a poll's delivery scan, *Add folder* or `resonate scan ~/Music`, and refound as new
+- A file retagged as it moved, paired by sound or packets, keeps the gone row's title, artist,
+  size, mtime and index entry (`moves::follow` updates root and generation alone) while
+  `settle_the_album` files it under the new album: unsearchable by its new names until reprobed
+- An album's `tagged_tracks` is one file's raw `TRACKTOTAL`, a disc's count on a set (this build's
+  own writer writes it per disc), weighed against a release's whole count: a 12 + 10 deluxe rip
+  misses its 22-track pressing and lands strictly on the 12-track standard edition
 - On a case-insensitive volume two destinations differing in case both preview and the second is
   refused `Collided` at apply (`claimed` is keyed by exact path)
 - A cross-filesystem organise copy (`copied_whole`) keeps the mtime alone, dropping xattrs and
@@ -87,6 +128,9 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
 
 ## Providers and network
+- Last.fm is sent a batch in requests of 50 (`LastFm::submit`) and answers `Err` at the first that
+  fails; the library marks nothing on such an error, so the chunks already taken are scrobbled
+  again next pass (`library.md` says the mark moves past what was told)
 - A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here, so a
   song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome only
 - A device sign-in's cancel is heard only between polls (each request is bounded by the API
@@ -103,6 +147,33 @@ sits last in its category, not worked until it moves. Everything else is open.
   their own; the hifi token request claims another site's `Origin` and `Referer`
 
 ## Window
+- *Forget* beside a library folder is one unarmed press (`forget_root` from a click or
+  `PressControl`) deleting every row under it with plays, favourites and enrichment, no undo and
+  no toast; *Reset everything* arms on a first press
+- *Take out of the queue* on a track queued twice sends one `Command::Remove` a row under the same
+  stale `queued.revision`: the first lands, the rest are refused `QueueChanged` into the log, the
+  toast says one went and *Put back* is hidden behind steps still standing over queued rows
+- The opened playlist's column header sorts by the window-wide `keeping`, `row_order` and
+  `row_reading` (`show_playlist` resets none): after *From now on* on one playlist, a header press
+  on another keeps it in order unasked; on a saved search or kept list it is a trouble toast
+- A track row's menu *Play* (hinted `enter`) queues that row alone; a click or Enter plays the
+  listing from it
+- The playlist menu's *Play* (index card, row, pinned sidebar row, the ⋯ mark) leaves shuffle on;
+  every other playlist *Play* sends `plays_in_order` first
+- An album or artist cell's menu queues through `listing_whole`, the search text and the tracks
+  pane's sort included: *Play* on an album the search listed for one track plays that track, in
+  title order where the tracks pane sorts so; dragging the same cell queues the album whole
+- The seek rail's `along` multiplies in `f32`: a release at the rail's end on a track past 2^24
+  frames (6:20 at 44.1 kHz) rounds a few frames past the end about half the time, refused
+  `SeekOutOfRange` with a toast (the analysis waveform's edge too)
+- The play button draws *Play* while a row opens (`Buffering`), and pressing it pauses
+- Time left floors to the second: `-0:00` through the last second, elapsed and left a second short
+  of the length
+- The visualiser's hints say sixth-octave bands tilted 3 dB an octave whatever `spectrum-bands`
+  and `spectrum-tilt` hold
+- A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which
+  joins any next composing edit whatever the selection: undo takes back the whole session, and
+  ctrl-a then a letter then undo empties the field with the old text out of reach
 - *Play*, *Shuffle*, *Next* or *Last* on a playlist from the index reads it whole on the window's
   thread (`entries_of` → `Library::playlist_entries`), a smart one running its query over the
   catalog; the tracks heading already does this on the background executor
@@ -127,6 +198,17 @@ sits last in its category, not worked until it moves. Everything else is open.
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Command line and bus
+- `resonate play` keeps the queue only on the 500 ms sample (`keep_the_queue`, itself throttled to
+  `KEPT_EVERY`) and not once more as it leaves: `n` then `q`, or a `resonate queue` just before
+  Ctrl-C, resumes on the row before
+- A launch handing files to an open window (`handed_to`) drops `--sink`, `--bit-perfect`,
+  `--quality`, `--dither`, `--library`, `--config` unsaid and exits 0
+- MCP `resources/unsubscribe` runs the subscribe check first, so a playlist discarded or renamed
+  since is `UnknownResource` and its URI read every tick for the session
+- MCP `show_queue` and the queue resource promise play order and list MPRIS `Tracks`, the
+  unshuffled list: with shuffle on a model names the wrong next song
+- The Discord socket search lacks `.flatpak/com.discordapp.DiscordPTB/xdg-run`, which
+  `discord.md` lists
 - The command line cannot mark a favourite, want a track or dismiss a missing one; only the window
   and MCP can
 - A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is not heard by a
@@ -141,6 +223,15 @@ sits last in its category, not worked until it moves. Everything else is open.
 - `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI alone
 
 ## Equaliser and DSP
+- An EqualizerAPO profile's `Preamp:` lines replace one another (`apo.rs` keeps the last) where
+  EqualizerAPO sums them: an AutoEq preamp plus a trim plays louder by the first, uncounted, and a
+  save writes the last alone
+- An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
+  1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`,
+  which pushes an undo step, so ctrl-z in a cell reaches the last cell's value and Enter writes it
+- Tab out of an open equaliser cell moves the caret on, commits nothing and leaves the cell drawn
+  open (`leave_figure` answers only while the figure holds focus); a press outside no longer
+  closes it; the Online and Library fields share the shape
 - Saving or exporting a profile rewrites it from the parsed model: comments, `Include:`, `Device:`,
   `If:`, filters past 32 and the original text encoding are lost; `export` is a bare `fs::write`;
   two writers stage to one fixed `.txt.new`
@@ -152,6 +243,14 @@ sits last in its category, not worked until it moves. Everything else is open.
 - AutoEq's suggestion takes the first measurer `INDEX.md` lists for a device, none ranked
 
 ## Search
+- The albums and artists panes match a search over hidden rows and other copies
+  (`Matching::grouped` takes neither `THE_BEST_COPY` nor `A_SHOWN_TRACK`): a hidden *Seamus* lists
+  *Meddle* and Pink Floyd for `seamus` while the tracks pane lists nothing
+- A multi-valued genre is one `tracks.genre` (`House; Disco`): `genre:=House` misses it, and
+  suggestions tally whole strings (a *House; Disco* card); a one-word genre card is a prefix
+  (`Reach::Begins`), so *Rock* holds *Rockabilly* and *Rocksteady* (artist mixes were made whole)
+- An album order by year read the other way flips `a.year IS NULL` too: the artist page and the
+  albums pane's default *Year* reading list undated rips first
 - A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for a
   title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
@@ -203,6 +302,13 @@ sits last in its category, not worked until it moves. Everything else is open.
   (zed #62455)
 
 ## Keyboard and accessibility
+- Enter or Space on a ringed control presses it twice: `PressControl` fires on key-down and gpui
+  0.2.2 turns the key-up on a focused element with click listeners into a `ClickEvent::Keyboard`
+  for `on_click` (`div.rs`); Next skips two, a switch flips back. The driven tests dispatch
+  key-down only
+- The keyboard reach keeps its row through `opened` and an order or reading change: after reaching
+  row 19, *Go to album* on a 10-track album and Enter plays its last track with nothing marked;
+  after a header press the edge stays on another song
 - The sleep timer is a mouse-down handler outside the focus ring with no key: a keyboard-only
   session cannot set one; seeking to or copying a lyric line is pointer-only too
 - An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
