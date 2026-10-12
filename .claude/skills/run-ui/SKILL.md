@@ -5,12 +5,10 @@ description: Launch, screenshot and stop the Resonate GPUI front end on the user
 
 # Running the Resonate UI
 
-The agent shell starts with no `WAYLAND_DISPLAY`, `DISPLAY` or `DBUS_SESSION_BUS_ADDRESS`, so gpui
-refuses to open a window. The compositor is fine; the variables have to be supplied.
+The agent shell has no `WAYLAND_DISPLAY`, `DISPLAY` or `DBUS_SESSION_BUS_ADDRESS`, so gpui refuses to
+open a window. Supply them.
 
 ## Recover the session environment
-
-Read it from a process already inside the session:
 
 ```bash
 SESSION_PID=$(pgrep -x plasmashell | head -1)
@@ -19,15 +17,14 @@ eval "$(tr '\0' '\n' < /proc/$SESSION_PID/environ |
         sed 's/^/export /')"
 ```
 
-Confirm the socket exists with `ls $XDG_RUNTIME_DIR/wayland-*` before blaming the app.
-`WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` open the window; `DBUS_SESSION_BUS_ADDRESS` is needed for
-anything through a portal, a screenshot included.
+Check `ls $XDG_RUNTIME_DIR/wayland-*`. `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` open the window;
+`DBUS_SESSION_BUS_ADDRESS` is needed for portals, screenshots included.
 
 ## Launch
 
-The `ui` feature is on by default, so the plain binary is the UI. It needs a PipeWire daemon as well
-as the compositor, because `Player::with_sources` starts the engine before the window opens. Point
-`--library` at a scratch database, populated with `resonate scan <roots>`, never the user's own.
+The `ui` feature is default, so the plain binary is the UI. It also needs a PipeWire daemon (the
+engine starts before the window opens). `--library` points at a scratch database filled by
+`resonate scan <roots>`, never the user's own.
 
 ```bash
 cargo build -p resonate
@@ -36,16 +33,14 @@ setsid env WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
     ./target/debug/resonate --library <db path> > /path/to/ui.log 2>&1 < /dev/null & disown
 ```
 
-`setsid` and `disown` are load-bearing: a plain `&` leaves the window in the tool call's shell and it
-dies when the call returns. Give it a second to map. The stderr warning that radv is not a conformant
-Vulkan implementation is normal.
+`setsid` and `disown` are load-bearing: a plain `&` dies when the tool call's shell returns. Allow a
+second to map. The radv "not a conformant Vulkan implementation" warning is normal.
 
 ## With no desktop session
 
-When `pgrep -x plasmashell` finds nothing (only the login greeter's `kwin_wayland`, owned by another
-user, is up) there is no session to recover. Host one: a private bus and a virtual `kwin_wayland`,
-the app and `spectacle` inside it, all under `dbus-run-session`. The user's PipeWire daemon in
-`/run/user/1000` still serves the engine.
+If `pgrep -x plasmashell` finds nothing (only the greeter's `kwin_wayland`, another user's), host
+one: a virtual `kwin_wayland`, the app and `spectacle` inside it, under `dbus-run-session`. The
+user's PipeWire in `/run/user/1000` still serves the engine.
 
 ```bash
 export XDG_RUNTIME_DIR=/run/user/1000
@@ -57,15 +52,14 @@ WAYLAND_DISPLAY=zz spectacle -b -n -f -o /path/to/shot.png
 pkill -x resonate
 ```
 
-Run that as a script through `dbus-run-session -- script.sh` and read the shot as below. Its
-`pkill -x kwin_wayland` is refused for the greeter's, which is harmless; kill your own by pid. Then
-check `pgrep -x resonate` is empty.
+Run it as `dbus-run-session -- script.sh`. `pkill -x kwin_wayland` is refused for the greeter's
+(harmless); kill your own by pid. Then check `pgrep -x resonate` is empty.
 
 ## The taskbar icon
 
-The compositor matches the window's `app_id` (`resonate`) against a desktop entry of that name and
-takes `Icon=` from it, so a tree that has never been packaged shows the generic mark. Install the two
-files the PKGBUILD installs, and again after either changes (they are copied, not linked):
+The compositor matches `app_id` (`resonate`) to a desktop entry of that name for `Icon=`, so an
+unpackaged tree shows the generic mark. Install the two files the PKGBUILD installs (copied, not
+linked: repeat after either changes):
 
 ```bash
 install -Dm644 packaging/resonate.desktop ~/.local/share/applications/resonate.desktop
@@ -75,14 +69,14 @@ update-desktop-database ~/.local/share/applications
 kbuildsycoca6 --noincremental
 ```
 
-A copy of the packaged icon standing there takes the accent and is put back when the accent is
-Resonate's own again. To read what the window writes without touching it, run with `XDG_DATA_HOME`
-at a scratch folder and read `icons/hicolor/scalable/apps/resonate.svg` under it.
+The window rewrites that icon to take the accent and restores it at Resonate's own accent. To read
+what it writes without touching the real one, run with `XDG_DATA_HOME` at a scratch folder and read
+`icons/hicolor/scalable/apps/resonate.svg` there.
 
 ## Screenshot
 
-KWin has no `grim`; use `spectacle`, which needs the D-Bus address. `-b` background, `-n` no
-notification, `-f` full screen:
+No `grim` on KWin; `spectacle` needs the D-Bus address (`-b` background, `-n` no notification, `-f`
+full screen):
 
 ```bash
 env WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
@@ -90,22 +84,20 @@ env WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
     spectacle -b -n -f -o /path/to/shot.png
 ```
 
-The screen is 4480x1440 and the window is not placed predictably: downscale the shot first
-(`PIL.Image.thumbnail((1400, 1400))`), read it to locate the window, then crop the original to it.
+The screen is 4480x1440 and the window placement is unpredictable: downscale first
+(`PIL.Image.thumbnail((1400, 1400))`), locate the window, crop the original.
 
 ## Stop
 
-`pkill -x resonate`, always when finished: it is the user's own desktop. Use `-x`; `pkill -f` matches
-the shell running the `pkill` itself and kills the tool call. Wait two seconds before relaunching, or
-the new window falls back to `org.mpris.MediaPlayer2.resonate.instance<pid>` and every `busctl` call
-to the plain name misses.
+`pkill -x resonate` when finished: it is the user's own desktop. Never `pkill -f` (it matches the
+calling shell and kills the tool call). Wait two seconds before relaunching, or the new window
+becomes `org.mpris.MediaPlayer2.resonate.instance<pid>` and `busctl` calls to the plain name miss.
 
 ## Driving playback without a pointer
 
-The window puts `org.mpris.MediaPlayer2.resonate` on the bus, so the transport, queue, inspector and
-lyrics pane can be filled from the shell. `AddTrack` with `NoTrack` as the anchor inserts at the
-*front*, so add in reverse or `GoTo` the row wanted; `Play` on an idle queue does nothing, `GoTo`
-starts it:
+The window owns `org.mpris.MediaPlayer2.resonate`, so transport, queue, inspector and lyrics can be
+filled from the shell. `AddTrack` with `NoTrack` as anchor inserts at the front: add in reverse or
+`GoTo` the wanted row. `Play` on an idle queue does nothing; `GoTo` starts it.
 
 ```bash
 uri="file://$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$file")"
@@ -117,25 +109,24 @@ busctl --user call org.mpris.MediaPlayer2.resonate /org/mpris/MediaPlayer2 \
     org.mpris.MediaPlayer2.TrackList GoTo o "$path"
 ```
 
-A lyric sidecar is seen by symlinking a track into a scratch folder and writing an `.lrc` beside the
-link, because the sidecar walks the folder of the path the queue holds.
+A lyric sidecar is found by symlinking a track into a scratch folder and writing an `.lrc` beside the
+link (the sidecar walks the folder of the queued path).
 
-KWin's focus-stealing prevention can leave a fresh window behind the terminal; ask the user to raise
-it, or activate it with `workspace.activeWindow = w` from a KWin script loaded through
+KWin focus-stealing prevention can leave a fresh window behind the terminal: ask the user to raise
+it, or set `workspace.activeWindow = w` from a KWin script loaded via
 `qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript`.
 
 ## What cannot be checked this way
 
-A screenshot proves layout and paint, not interaction: KWin exposes no synthetic input without the
-remote-desktop portal, and no `ydotool`, `wtype`, `dotool` or `xdotool` is installed. Temporary edits
-reach states a click would:
+A screenshot proves layout and paint, not interaction: no synthetic input without the remote-desktop
+portal, and no `ydotool`, `wtype`, `dotool` or `xdotool`. Temporary edits reach states a click would:
 
-- a pane: mark it `#[default]` on `Pane` (`crates/resonate-ui/src/views/root.rs`) and rebuild;
+- a pane: mark it `#[default]` on `Pane` (`crates/resonate-ui/src/views/root.rs`);
 - a search: call `model.set_query(...)` beside the `model.reload` at the end of `LibraryModel::new`;
-- a narrow window: shrink the `opening_size` the `bounds` in `app.rs` are centred on;
+- a narrow window: shrink the `opening_size` that `bounds` in `app.rs` is centred on;
 - a seam with nothing behind it: register a provider that answers.
 
-Revert them all before committing and check `git diff` for a leftover `#[default]`. Anything behind a
-click or keystroke (pane switcher, seek bar, device picker, search field) renders only in its default
-state here: confirm with the user, or exercise the layer underneath through `resonate play`,
-`resonate scan` and the library tests. Never report an interaction as working on a screenshot.
+Revert all before committing and check `git diff` for a leftover `#[default]`. Anything behind a
+click or keystroke renders only in its default state: confirm with the user, or exercise the layer
+beneath through `resonate play`, `resonate scan` and the library tests. Never report an interaction
+as working from a screenshot.
