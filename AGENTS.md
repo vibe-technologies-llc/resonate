@@ -89,10 +89,12 @@ updates it **in the same commit**:
 - A new crate, subcommand or invariant goes into `CLAUDE.md`, moving its crate count; a config key
   into `ConfigKey::ALL`, with any decision behind it in `binary.md`. A new crate with rules of its
   own gets a `.claude/rules/<name>.md` with a `paths:` list and a row in `CLAUDE.md`'s table.
-- `docs/TODO.md` holds **open work only**: `## Category` headings of `- Item` bullets by importance,
-  nice-to-haves under `Later:` headings at the bottom, anything waiting outside this tree marked
-  **Blocked on …**. Drop an item as it lands, add what the work uncovers, write what a landed item
-  became into the rules.
+- `docs/ROADMAP.md` holds **open work only** and points to `BUGS.md`, `FEATURES.md`,
+  `PERFORMANCE.md` and `TESTING.md`: `## Category` headings of `- [S] Item` bullets by importance,
+  the prefix giving complexity (`S`, `M`, `L`) and `· blocked: <blocker>` for anything waiting
+  outside this tree, which sits last in its category; nice-to-haves under `Later:` headings at the
+  bottom. Drop an item as it lands, add what the work uncovers, write what a landed item became
+  into the rules.
 - A new command worth running before a commit goes into `CLAUDE.md`'s commands, this file's checks
   and `.github/workflows/ci.yml` together.
 - This file names the rules and says how to read them; it does not restate the design. Where it and

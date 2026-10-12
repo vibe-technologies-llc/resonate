@@ -35,11 +35,13 @@ playback is the guiding constraint.
   hardware allows.
 - A **GPUI** front end, native on Wayland.
 
-`docs/TODO.md` is the roadmap, **open work only** (defects, gaps, what is not built): `## Category`
-headings of `- Item` bullets, most to least important; `Next` (work chosen to come next) first,
-`Defects` after, categories no listener waits on headed `Later:` below the rest. An item waiting on
-something outside this tree is **Blocked on …** the blocker. Drop an item as it lands, add what the
-work uncovers; what a landed item became goes into `.claude/rules/`.
+`docs/ROADMAP.md` is the roadmap, **open work only** (defects, gaps, what is not built): it points
+to `BUGS.md`, `FEATURES.md`, `PERFORMANCE.md` and `TESTING.md` beside it, each of `## Category`
+headings of `- [S] Item` bullets, most to least important. The bracket prefix is the complexity
+(`S`, `M`, `L`) and, where the entry waits on something outside this tree, `· blocked: <blocker>`;
+blocked entries sit last in their category. `Next` (work chosen to come next) is first, in
+`ROADMAP.md`; categories no listener waits on are headed `Later:` below the rest. Drop an item as it
+lands, add what the work uncovers; what a landed item became goes into `.claude/rules/`.
 
 `AGENTS.md` is this guidance for agents that do not load `.claude/rules/`. It points here rather
 than restating the design, so it changes only, in the same commit, when a rules file or check is
