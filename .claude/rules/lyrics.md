@@ -31,7 +31,11 @@ dependency (tested without a window).
   `Lyrics::within` shifts a line onto a cue row's clock.
 - **The pane sweeps a word-timed line** (only one `voices_in_play` names): unsung words sit at
   `UNSUNG_SHARE` of the way to the lit colour, the sung word is wiped letter by letter; the
-  highlight runs over one `StyledText` so the line wraps as unswept.
+  highlight runs over one `StyledText` so the line wraps as unswept. **A mark never wraps alone**:
+  gpui breaks before any non-word character, so a closing quote or `!` could stand on a line of its
+  own; `kept_with_its_marks` asks gpui's `LineWrapper` where it would break and turns the space before
+  that word into a newline (same byte length, so a sweep's offsets hold; a run of letters such as CJK
+  is left to gpui).
 - **A line goes out once sung; a blank line is a pause.** Synced sets carry starts, not ends, so
   `span_of` guesses: `sung_for` = `SUNG_BEFORE_THE_WORDS` + `SUNG_PER_LETTER` per letter, clamped to
   `SUNG_AT_LEAST`..`LIT_AT_MOST`; the line goes out there only where its voice's next line is at

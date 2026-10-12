@@ -1826,12 +1826,10 @@ impl RootView {
                 self.page_actions(Favoured::Album(id), favourite, true, true, cx)
                     .when(has_missing_tracks, |row| {
                         row.child(self.in_the_pane_ring(
-                            kit::button(
+                            kit::icon_button(
                                 "download-album-missing",
-                                Some(Icon::Download),
-                                "Get the rest",
+                                Icon::Download,
                                 GET_ALBUM_REST_HINT,
-                                Tone::Ghost,
                             ),
                             move |this, _, cx| {
                                 this.library
@@ -5005,7 +5003,7 @@ mod tests {
             driven.settle();
             assert!(
                 driven.read(|root, _| root.reaches(top, 0)),
-                "the artist is not reached first"
+                "the song is not reached first"
             );
             driven.cx.simulate_keystrokes("down down");
             driven.settle();
@@ -5020,6 +5018,46 @@ mod tests {
                 driven.read(|_, cx| model.read(cx).selection()),
                 Selection::Album(_)
             ));
+        }
+
+        #[gpui::test]
+        fn enter_straight_after_the_last_letter_reaches_the_results_typed_not_the_ones_before(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tagged(
+                "alpha.wav",
+                1,
+                &[(b"INAM", "Alpha"), (b"IART", "Pink Floyd")],
+            );
+            folder.tagged(
+                "zebra.wav",
+                1,
+                &[(b"INAM", "Zebra"), (b"IART", "Pink Floyd")],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::opened_in(cx, library, &folder);
+            driven.click("tab-tracks");
+            let top = Shift::Listing(Listed::Top);
+
+            driven.focus(|root| &root.search);
+            driven.cx.simulate_input("zebra");
+            assert!(
+                driven.read(|root, cx| root.library.read(cx).is_reading_the_search()),
+                "the read had settled before enter was pressed"
+            );
+            driven.cx.simulate_keystrokes("enter");
+            driven.until(|root, _| root.reaches(top, 0));
+            let titles = driven.read(|root, cx| {
+                root.library
+                    .read(cx)
+                    .listing()
+                    .iter()
+                    .map(|track| track.title.to_string())
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(titles, ["Zebra"]);
         }
 
         #[gpui::test]

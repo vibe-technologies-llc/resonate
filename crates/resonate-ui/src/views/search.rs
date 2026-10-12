@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{ops::Range, rc::Rc};
 
 use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
@@ -17,7 +17,7 @@ use crate::{
         listing,
         playlists::{Naming, SAVE_SEARCH_HINT},
         pointed::LitUnderThePointer,
-        reorder::{self, Listed, Shift},
+        reorder::{self, Listed, Shift, Step},
         root::{Pane, RootView},
         scrollbar::{SHELF_INSET, Scrollbars},
     },
@@ -104,10 +104,10 @@ fn playlist_told(name: &str, filled: Option<Filled>, wanted: usize, unnamed: usi
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TopEntry {
-    Artist(usize),
-    ArtistFound(usize),
     Song(usize),
     Found(usize),
+    Artist(usize),
+    ArtistFound(usize),
     Album(usize),
     AlbumFound(usize),
 }
@@ -116,10 +116,10 @@ type Entered = fn(usize) -> TopEntry;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TopRun {
-    artists: usize,
-    artists_found: usize,
     songs: usize,
     found: usize,
+    artists: usize,
+    artists_found: usize,
     albums: usize,
     albums_found: usize,
 }
@@ -127,10 +127,10 @@ pub(crate) struct TopRun {
 impl TopRun {
     pub(crate) fn of(library: &LibraryModel) -> Self {
         Self {
-            artists: library.artists().len().min(STRIP_AT_MOST),
-            artists_found: library.artists_found().len(),
             songs: library.listing().len().min(SONGS_AT_THE_TOP),
             found: library.found().len().min(FOUND_AT_THE_TOP),
+            artists: library.artists().len().min(STRIP_AT_MOST),
+            artists_found: library.artists_found().len(),
             albums: library.albums().len().min(STRIP_AT_MOST),
             albums_found: library.albums_found().len(),
         }
@@ -138,10 +138,10 @@ impl TopRun {
 
     const fn runs(self) -> [(usize, Entered); 6] {
         [
-            (self.artists, TopEntry::Artist),
-            (self.artists_found, TopEntry::ArtistFound),
             (self.songs, TopEntry::Song),
             (self.found, TopEntry::Found),
+            (self.artists, TopEntry::Artist),
+            (self.artists_found, TopEntry::ArtistFound),
             (self.albums, TopEntry::Album),
             (self.albums_found, TopEntry::AlbumFound),
         ]
@@ -163,15 +163,76 @@ impl TopRun {
     }
 
     pub(crate) const fn row_of(self, wanted: TopEntry) -> usize {
-        let to_songs = self.artists + self.artists_found;
-        let to_albums = to_songs + self.songs + self.found;
+        let to_artists = self.songs + self.found;
+        let to_albums = to_artists + self.artists + self.artists_found;
         match wanted {
-            TopEntry::Artist(at) => at,
-            TopEntry::ArtistFound(at) => self.artists + at,
-            TopEntry::Song(at) => to_songs + at,
-            TopEntry::Found(at) => to_songs + self.songs + at,
+            TopEntry::Song(at) => at,
+            TopEntry::Found(at) => self.songs + at,
+            TopEntry::Artist(at) => to_artists + at,
+            TopEntry::ArtistFound(at) => to_artists + self.artists + at,
             TopEntry::Album(at) => to_albums + at,
             TopEntry::AlbumFound(at) => to_albums + self.albums + at,
+        }
+    }
+
+    fn line_of(self, row: usize) -> Line {
+        let mut before = 0;
+        for ((rows, _), strip) in self.runs().into_iter().zip(STRIP_RUNS) {
+            if row < before + rows {
+                return match strip {
+                    true => Line::Strip(before..before + rows),
+                    false => Line::Row(row),
+                };
+            }
+            before += rows;
+        }
+        Line::Row(row)
+    }
+
+    pub(crate) fn line_beyond(self, row: usize, step: Step) -> Option<usize> {
+        let line = self.line_of(row);
+        match step {
+            Step::Below => {
+                let end = line.end();
+                (end < self.len()).then_some(end)
+            }
+            Step::Above => line
+                .start()
+                .checked_sub(1)
+                .map(|before| self.line_of(before).start()),
+        }
+    }
+
+    pub(crate) fn along_the_strip(self, row: usize, step: Step) -> Option<Option<usize>> {
+        let Line::Strip(cells) = self.line_of(row) else {
+            return None;
+        };
+        Some(match step {
+            Step::Below => (row + 1 < cells.end).then_some(row + 1),
+            Step::Above => (row > cells.start).then(|| row - 1),
+        })
+    }
+}
+
+const STRIP_RUNS: [bool; 6] = [false, false, true, true, true, true];
+
+enum Line {
+    Row(usize),
+    Strip(Range<usize>),
+}
+
+impl Line {
+    fn start(&self) -> usize {
+        match self {
+            Self::Row(row) => *row,
+            Self::Strip(cells) => cells.start,
+        }
+    }
+
+    fn end(&self) -> usize {
+        match self {
+            Self::Row(row) => row + 1,
+            Self::Strip(cells) => cells.end,
         }
     }
 }
@@ -815,29 +876,6 @@ impl RootView {
             .overflow_y_scroll()
             .track_scroll(&self.search_scroll);
 
-        if !artists.is_empty() {
-            let cells = artists
-                .iter()
-                .take(STRIP_AT_MOST)
-                .enumerate()
-                .map(|(at, artist)| {
-                    let cell = self.artist_cell_at(artist, ARTIST_AT_THE_TOP, cx);
-                    self.at_the_top(
-                        cell,
-                        run.row_of(TopEntry::Artist(at)),
-                        Some("search-artist-strip"),
-                    )
-                })
-                .collect();
-            sections = sections
-                .child(self.section_heading(Section::Artists, matched.artists, None, cx))
-                .child(self.strip("search-artist-strip", cells, cx));
-        }
-
-        if !artists_found.is_empty() {
-            sections = sections.child(self.artists_found_strip(&artists_found, Some(run), cx));
-        }
-
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
@@ -884,6 +922,29 @@ impl RootView {
             sections = sections
                 .child(self.section_heading(Section::Found, found.len(), Some(said), cx))
                 .child(rows);
+        }
+
+        if !artists.is_empty() {
+            let cells = artists
+                .iter()
+                .take(STRIP_AT_MOST)
+                .enumerate()
+                .map(|(at, artist)| {
+                    let cell = self.artist_cell_at(artist, ARTIST_AT_THE_TOP, cx);
+                    self.at_the_top(
+                        cell,
+                        run.row_of(TopEntry::Artist(at)),
+                        Some("search-artist-strip"),
+                    )
+                })
+                .collect();
+            sections = sections
+                .child(self.section_heading(Section::Artists, matched.artists, None, cx))
+                .child(self.strip("search-artist-strip", cells, cx));
+        }
+
+        if !artists_found.is_empty() {
+            sections = sections.child(self.artists_found_strip(&artists_found, Some(run), cx));
         }
 
         if !albums.is_empty() {
@@ -1128,5 +1189,62 @@ impl RootView {
 
     pub(crate) fn unreached() -> AnyElement {
         kit::empty(Icon::Search, UNREACHED, None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TopEntry, TopRun};
+    use crate::views::reorder::Step;
+
+    fn run() -> TopRun {
+        TopRun {
+            songs: 2,
+            found: 1,
+            artists: 3,
+            artists_found: 0,
+            albums: 4,
+            albums_found: 2,
+        }
+    }
+
+    #[test]
+    fn songs_come_before_the_artists_and_albums() {
+        let run = run();
+
+        assert_eq!(run.row_of(TopEntry::Song(0)), 0);
+        assert_eq!(run.row_of(TopEntry::Found(0)), 2);
+        assert_eq!(run.row_of(TopEntry::Artist(0)), 3);
+        assert_eq!(run.row_of(TopEntry::Album(0)), 6);
+        assert_eq!(run.row_of(TopEntry::AlbumFound(1)), 11);
+        assert_eq!(run.at(4), Some(TopEntry::Artist(1)));
+        assert_eq!(run.len(), 12);
+    }
+
+    #[test]
+    fn down_leaves_a_strip_for_the_line_below_and_up_for_the_line_above() {
+        let run = run();
+
+        assert_eq!(run.line_beyond(0, Step::Below), Some(1));
+        assert_eq!(run.line_beyond(2, Step::Below), Some(3));
+        assert_eq!(run.line_beyond(3, Step::Below), Some(6));
+        assert_eq!(run.line_beyond(5, Step::Below), Some(6));
+        assert_eq!(run.line_beyond(6, Step::Below), Some(10));
+        assert_eq!(run.line_beyond(11, Step::Below), None);
+        assert_eq!(run.line_beyond(10, Step::Above), Some(6));
+        assert_eq!(run.line_beyond(7, Step::Above), Some(3));
+        assert_eq!(run.line_beyond(4, Step::Above), Some(2));
+        assert_eq!(run.line_beyond(0, Step::Above), None);
+    }
+
+    #[test]
+    fn the_cells_of_a_strip_are_stepped_along_and_a_song_is_not_one() {
+        let run = run();
+
+        assert_eq!(run.along_the_strip(3, Step::Below), Some(Some(4)));
+        assert_eq!(run.along_the_strip(5, Step::Below), Some(None));
+        assert_eq!(run.along_the_strip(3, Step::Above), Some(None));
+        assert_eq!(run.along_the_strip(5, Step::Above), Some(Some(4)));
+        assert_eq!(run.along_the_strip(1, Step::Below), None);
     }
 }

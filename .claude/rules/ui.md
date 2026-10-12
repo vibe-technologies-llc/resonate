@@ -105,17 +105,24 @@ is never named.
   has no order of its own to change (`Shift::is_edited`: `delete`, `alt-up`, `alt-down` dead there).
   `ctrl-shift-left`/`right` step the queue wherever the caret is not in a field (in one,
   `SelectWordLeft`/`Right` outrank them).
+- **A search remembers the scroll it began over.** `set_query` records the browse pane's top row
+  when the query leaves empty (`left_for_the_search`) and, when it returns to empty on the same pane,
+  hands it to `landing_on`, so clearing a search lands the list where it was.
 - **A search is left for its results from the keyboard.** In the search box `down`, `tab`, `enter` all
   land on `RootView::go_to_the_results`: caret returns to the window, the first listed row is
-  reached. `tab` binds under `SEARCH_CONTEXT` to outrank the window's; from any other field
-  `tab_onward` is `focus_next`. A moved query drops a reach left in a listing
+  reached. A read the typing is still settling is hurried (`read_the_search_now`) and the reach waits
+  for it (`waiting_for_the_results`, cleared by the next keystroke), so `enter` straight after the
+  last letter lands on the new results, not on none or the old ones. `tab` binds under
+  `SEARCH_CONTEXT` to outrank the window's; from any other field `tab_onward` is `focus_next`. A moved query drops a reach left in a listing
   (`down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows`).
   - `Listed::Albums` steps in reading order (a page = whole grid rows); the reached cell wears
     `reached_ring`.
-  - *Top results* is one run, `Listed::Top`, in drawn order: held artists (`STRIP_AT_MOST`), artists
-    not held, held songs (`SONGS_AT_THE_TOP`), songs found beyond the library (`FOUND_AT_THE_TOP`),
-    held albums, albums not held. `search::TopRun` is the arithmetic; `RootView::press_at_the_top`
-    presses what `enter` reaches as a click would; `show_row` sets `reached_unseen` and
+  - *Top results* is one run, `Listed::Top`, in drawn order: held songs (`SONGS_AT_THE_TOP`), songs
+    found beyond the library (`FOUND_AT_THE_TOP`), held artists (`STRIP_AT_MOST`), artists not held,
+    held albums, albums not held. `up`/`down` move by drawn line: a song is a line, a strip is one
+    line whatever its cells, so `down` leaves a strip for the next section; `left`/`right` step the
+    cells of a reached strip (`TopRun::along_the_strip`) and seek everywhere else.
+    `search::TopRun` is the arithmetic; `RootView::press_at_the_top` presses what `enter` reaches as a click would; `show_row` sets `reached_unseen` and
     `kit::brought_into_view_within` scrolls page and strip just far enough
     (`the_artists_songs_and_albums_on_the_top_results_are_one_run_the_keys_walk_and_press`).
   - `Listed::Favourites`, `Missing`, `Suggested` carry the reach into those rows (`enter` plays a
@@ -314,7 +321,7 @@ is never named.
     as is and queues what Play would (`RootView::play_the_listing_from`: held rows where they are the
     whole listing, else `with_everything_listed`;
     `a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row`).
-  - An album adds the info mark (and *Get the rest* where tracks are missing); an artist adds one where
+  - An album adds the info mark (and the download mark, *Get the rest* on its hint, where tracks are missing); an artist adds one where
     it has genres, and the Albums/Tracks choice at the row's right. Play next, Add to queue, Add to
     playlist are not on the page. The row does not wrap (taffy sizes a wrapping flex item at
     min-content width).

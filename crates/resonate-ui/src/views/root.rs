@@ -610,11 +610,13 @@ pub struct RootView {
     pub(crate) missing_shows: MissingShows,
     pub(crate) playlists_drawn: PlaylistsDrawn,
     pub(crate) landing_on: Option<LeftAt>,
+    left_for_the_search: Option<(Pane, LeftAt)>,
     under_the_pointer: Option<UnderThePointer>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
+    waiting_for_the_results: bool,
     landed_by_a_jump: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
     pub(crate) queue_height: Rc<Cell<Pixels>>,
@@ -773,11 +775,15 @@ impl RootView {
             }
         })
         .detach();
-        cx.observe(&library, |this, library, cx| {
+        cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
             let relocated = library.update(cx, |model, _| model.take_relocations());
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
+            }
+            if this.waiting_for_the_results && !library.read(cx).is_reading_the_search() {
+                this.waiting_for_the_results = false;
+                this.reach_the_first_result(window, cx);
             }
             cx.notify();
         })
@@ -804,6 +810,7 @@ impl RootView {
                 return;
             }
 
+            this.waiting_for_the_results = false;
             let query = search.read(cx).text().to_owned();
             this.set_query(query, cx);
         })
@@ -1099,11 +1106,13 @@ impl RootView {
             missing_shows: MissingShows::default(),
             playlists_drawn: PlaylistsDrawn::default(),
             landing_on: None,
+            left_for_the_search: None,
             under_the_pointer: None,
             menu: None,
             record: None,
             left_at: AHashMap::new(),
             reach: None,
+            waiting_for_the_results: false,
             landed_by_a_jump: None,
             reached_unseen: Rc::default(),
             queue_height: Rc::default(),
@@ -2044,15 +2053,46 @@ impl RootView {
             return;
         };
         let row = match self.reach_in(shift, held) {
-            Some(reach) => step
-                .landing(reach.rows(), held)
-                .unwrap_or_else(|| step.end(reach.rows())),
+            Some(reach) => self.line_beyond(shift, reach, step, held, cx),
             None => self.opening_row(shift, held, cx),
         };
 
         self.reach = Some(Reach::at(shift, row));
         self.show_row(shift, row, cx);
         cx.notify();
+    }
+
+    fn line_beyond(&self, shift: Shift, reach: Reach, step: Step, held: usize, cx: &App) -> usize {
+        let end = step.end(reach.rows());
+        let landing = match shift {
+            Shift::Listing(Listed::Top) => TopRun::of(self.library.read(cx)).line_beyond(end, step),
+            _ => step.landing(reach.rows(), held),
+        };
+
+        landing.unwrap_or(end)
+    }
+
+    fn reach_along_the_strip(&mut self, step: Step, cx: &mut Context<Self>) -> bool {
+        if self.something_stands_over_the_pane() {
+            return false;
+        }
+        let Some((shift @ Shift::Listing(Listed::Top), held)) = self.reachable(cx) else {
+            return false;
+        };
+        let Some(reach) = self.reach_in(shift, held) else {
+            return false;
+        };
+        let at = step.end(reach.rows());
+        let Some(along) = TopRun::of(self.library.read(cx)).along_the_strip(at, step) else {
+            return false;
+        };
+        if let Some(row) = along {
+            self.reach = Some(Reach::at(shift, row));
+            self.show_row(shift, row, cx);
+            cx.notify();
+        }
+
+        true
     }
 
     fn reach_the_end(&mut self, step: Step, cx: &mut Context<Self>) {
@@ -3391,6 +3431,19 @@ impl RootView {
         if !self.search.read(cx).is_focused(window) {
             return;
         }
+        if self.library.read(cx).is_reading_the_search() {
+            self.waiting_for_the_results = true;
+            self.library
+                .update(cx, |library, cx| library.read_the_search_now(cx));
+            return;
+        }
+        self.reach_the_first_result(window, cx);
+    }
+
+    fn reach_the_first_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.search.read(cx).is_focused(window) {
+            return;
+        }
         window.focus(&self.focus);
         self.reach = None;
         self.reach_row(Step::Below, cx);
@@ -3559,6 +3612,21 @@ impl RootView {
         self.ordering = false;
     }
 
+    fn leave_the_scroll_for_the_search(&mut self) {
+        self.left_for_the_search = self
+            .pane
+            .lands_where_it_was_left()
+            .then(|| (self.pane, self.top_row()));
+    }
+
+    fn land_where_the_search_began(&mut self) {
+        let began = self.left_for_the_search.take();
+        self.landing_on = began
+            .filter(|(pane, _)| *pane == self.pane)
+            .map(|(_, at)| at)
+            .or(self.landing_on);
+    }
+
     fn set_query(&mut self, query: String, cx: &mut Context<Self>) {
         let was = self
             .library
@@ -3570,7 +3638,11 @@ impl RootView {
             return;
         }
         if was.is_empty() {
+            self.leave_the_scroll_for_the_search();
             self.open_the_search(cx);
+        }
+        if query.is_empty() {
+            self.land_where_the_search_began();
         }
         self.search_scroll.set_offset(point(px(0.0), px(0.0)));
         self.read_from_the_top(cx);
@@ -4767,10 +4839,14 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.send(Command::Next, cx)))
             .on_action(cx.listener(|this, _: &Previous, _, cx| this.send(Command::Previous, cx)))
             .on_action(cx.listener(|this, _: &SeekForward, _, cx| {
-                this.seek_by(seek_step(), cx);
+                if !this.reach_along_the_strip(Step::Below, cx) {
+                    this.seek_by(seek_step(), cx);
+                }
             }))
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
-                this.seek_by(-seek_step(), cx);
+                if !this.reach_along_the_strip(Step::Above, cx) {
+                    this.seek_by(-seek_step(), cx);
+                }
             }))
             .on_action(cx.listener(|this, _: &SeekFurtherForward, _, cx| {
                 this.seek_by(seek_further(), cx);

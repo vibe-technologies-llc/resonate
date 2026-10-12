@@ -1528,6 +1528,52 @@ mod tests {
         );
     }
 
+    fn eighty_tracks_scrolled(cx: &mut TestAppContext) -> (Driven, Pixels) {
+        let folder = Folder::new();
+        for nth in 0..80 {
+            folder.tagged(
+                &format!("{nth:02}.wav"),
+                1,
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 80);
+        let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+        driven.scroll_at(middle, 1_000.0);
+        driven.scroll_at(middle, 37.0);
+        let left_at = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
+
+        (driven, left_at)
+    }
+
+    #[gpui::test]
+    fn clearing_a_search_lands_the_tracks_where_they_were_scrolled(cx: &mut TestAppContext) {
+        let (mut driven, left_at) = eighty_tracks_scrolled(cx);
+
+        driven.focus(|root| &root.search);
+        driven.cx.simulate_input("track 7");
+        driven.settle();
+        driven.click("search-songs");
+        driven.read(|root, _| {
+            let base = root.track_rows.0.borrow().base_handle.clone();
+            base.set_offset(point(px(0.0), px(0.0)));
+        });
+        driven.cx.simulate_keystrokes("escape");
+        driven.until(|root, _| root.landing_on.is_none());
+        driven.settle();
+
+        let landed = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        assert!(
+            (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
+            "clearing the search landed at {landed:?} where the list was left at {left_at:?}"
+        );
+    }
+
     #[gpui::test]
     fn the_way_back_lands_on_the_pixel_the_list_was_left_at(cx: &mut TestAppContext) {
         let folder = Folder::new();

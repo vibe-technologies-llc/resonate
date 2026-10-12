@@ -4,9 +4,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Div, FontWeight, HighlightStyle, Hsla, MouseMoveEvent,
-    Pixels, Point, ScrollWheelEvent, SharedString, StyledText, canvas, div, fill,
-    linear_color_stop, linear_gradient, point, prelude::*, px, rgb, size,
+    AnyElement, App, Bounds, Canvas, Context, Div, Font, FontWeight, HighlightStyle, Hsla,
+    LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent, SharedString, StyledText,
+    canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
 use resonate_library::LyricsAhead;
@@ -512,6 +512,13 @@ impl RootView {
         } else {
             1.0
         };
+        let shown = kept_with_its_marks(
+            &line.text,
+            theme::ui(FontWeight::BOLD),
+            measures.words,
+            inside * share,
+            cx,
+        );
         let drawn = div()
             .w_full()
             .flex()
@@ -547,9 +554,9 @@ impl RootView {
                                 let unsung = motion::blended(theme::muted(), waiting, line.lead);
                                 words
                                     .text_color(rgb(unsung))
-                                    .child(swept(line.text, &sweep, unsung, sung))
+                                    .child(swept(shown, &sweep, unsung, sung))
                             }
-                            None => words.text_color(rgb(sung)).child(line.text),
+                            None => words.text_color(rgb(sung)).child(shown),
                         }
                     }),
             );
@@ -653,6 +660,57 @@ impl RootView {
             carried,
         })
     }
+}
+
+fn kept_with_its_marks(
+    text: &SharedString,
+    font: Font,
+    size: Pixels,
+    width: Pixels,
+    cx: &App,
+) -> SharedString {
+    if !text.contains(|mark: char| !mark.is_alphanumeric() && mark != ' ') {
+        return text.clone();
+    }
+    let mut wrapper = cx.text_system().line_wrapper(font, size);
+    let mended = mended(text, |segment| {
+        wrapper
+            .wrap_line(&[LineFragment::text(segment)], width)
+            .map(|boundary| boundary.ix)
+            .collect()
+    });
+
+    SharedString::from(mended)
+}
+
+fn mended(text: &str, mut breaking_at: impl FnMut(&str) -> Vec<usize>) -> String {
+    let mut mended = text.to_owned();
+    let mut from = 0;
+    while from <= mended.len() {
+        let end = mended[from..]
+            .find('\n')
+            .map_or(mended.len(), |at| from + at);
+        let segment = &mended[from..end];
+        let space = breaking_at(segment)
+            .into_iter()
+            .find(|at| leaves_a_mark_alone(segment, *at))
+            .and_then(|at| segment[..at].rfind(' '));
+        match space {
+            Some(space) => mended.replace_range(from + space..from + space + 1, "\n"),
+            None => from = end + 1,
+        }
+    }
+
+    mended
+}
+
+fn leaves_a_mark_alone(segment: &str, at: usize) -> bool {
+    let (before, after) = segment.split_at(at);
+    let rest = after.split(' ').next().unwrap_or_default();
+
+    before.chars().next_back().is_some_and(|last| last != ' ')
+        && !rest.is_empty()
+        && !rest.chars().any(char::is_alphanumeric)
 }
 
 fn swept(text: SharedString, sweep: &Sweep, unsung: u32, sung: u32) -> StyledText {
@@ -1056,5 +1114,65 @@ mod tests {
             })
             .is_none()
         );
+    }
+
+    fn breaking_before_the_last_letter(segment: &str) -> Vec<usize> {
+        if segment.len() > 12 {
+            vec![segment.len() - 1]
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn a_closing_quote_never_wraps_alone() {
+        let text = "she said \"hello world\"";
+
+        assert_eq!(
+            mended(text, breaking_before_the_last_letter),
+            "she said \"hello\nworld\""
+        );
+    }
+
+    #[test]
+    fn a_wrap_between_words_is_left_alone() {
+        let text = "she said hello world";
+
+        assert_eq!(mended(text, |_| vec![9]), text);
+    }
+
+    #[test]
+    fn a_wrap_inside_a_run_of_letters_is_left_alone() {
+        let text = "你好世界你好世界你好世界";
+        let wraps_in_the_middle = |segment: &str| {
+            if segment.len() > 12 {
+                vec![12]
+            } else {
+                Vec::new()
+            }
+        };
+
+        assert_eq!(mended(text, wraps_in_the_middle), text);
+    }
+
+    #[test]
+    fn a_mark_with_no_space_before_it_stays_put() {
+        let text = "\"unbroken\"";
+
+        assert_eq!(mended(text, |segment| vec![segment.len() - 1]), text);
+    }
+
+    #[test]
+    fn the_text_keeps_its_length_so_a_sweep_keeps_its_letters() {
+        let text = "say \"one two three\" again";
+        let mended = mended(text, |segment| {
+            if segment.len() > 14 {
+                vec![segment.len() - 1]
+            } else {
+                Vec::new()
+            }
+        });
+
+        assert_eq!(mended.len(), text.len());
     }
 }

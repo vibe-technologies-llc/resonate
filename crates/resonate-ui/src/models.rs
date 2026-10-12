@@ -1671,6 +1671,16 @@ impl LibraryModel {
         });
     }
 
+    pub fn is_reading_the_search(&self) -> bool {
+        self.in_flight.is_some_and(Wanted::reads_the_listing)
+    }
+
+    pub fn read_the_search_now(&mut self, cx: &mut Context<Self>) {
+        if self.is_reading_the_search() {
+            self.read(Wanted::TheSearch, cx);
+        }
+    }
+
     pub fn ask_elsewhere_now(&mut self, cx: &mut Context<Self>) {
         if self.is_asking_elsewhere() {
             self._finding = Task::ready(());
