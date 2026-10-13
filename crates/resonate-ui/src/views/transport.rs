@@ -843,7 +843,10 @@ impl RootView {
         let drawn = cover
             .pictured()
             .and_then(|pictured| self.drawn_cover(pictured, Drawn::NowPlaying, cx));
-        let drawn = self.held_through_a_change(drawn, cover.pictured().is_some());
+        let expected = cover
+            .pictured()
+            .is_some_and(|pictured| !self.is_pictureless(pictured, Drawn::NowPlaying, cx));
+        let drawn = self.held_through_a_change(drawn, expected);
         let (serial, leaving) = {
             let mut handovers = self.handovers.borrow_mut();
             handovers.cover.show(
@@ -908,7 +911,11 @@ impl RootView {
             });
             return Some((art, magnified));
         }
-        let held = shown.as_mut().filter(|_| expected)?;
+        if !expected {
+            *shown = None;
+            return None;
+        }
+        let held = shown.as_mut()?;
         let waiting_since = *held.waiting_since.get_or_insert_with(Instant::now);
         if waiting_since.elapsed() < COVER_HELD_FOR {
             return Some((held.art.clone(), held.magnified.clone()));

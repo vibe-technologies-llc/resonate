@@ -62,6 +62,15 @@ pub(crate) enum Pictured<'a> {
     },
 }
 
+impl Pictured<'_> {
+    pub(crate) fn parts(&self) -> (Option<AlbumId>, Option<&MediaLocation>) {
+        match self {
+            Self::Album(album) => (Some(*album), None),
+            Self::Track { album, file } => (*album, Some(file)),
+        }
+    }
+}
+
 pub(crate) struct Row {
     pub(crate) track: Option<TrackId>,
     pub(crate) favourite: bool,

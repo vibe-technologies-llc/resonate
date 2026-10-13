@@ -72,6 +72,7 @@ const NAMES_HELD: NonZeroUsize = held(4_096);
 const ALBUMS_HELD: NonZeroUsize = held(256);
 const PORTRAITS_HELD: NonZeroUsize = held(256);
 const DECODES_AT_ONCE: usize = 4;
+const DECODES_KEPT_FOR_WHAT_IS_SHOWN: usize = 1;
 const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
 const FETCHES_AT_ONCE: usize = 6;
@@ -3625,6 +3626,22 @@ impl LibraryModel {
 
     pub fn scaled_by(&mut self, scale: Scale) {
         self.scale = scale;
+    }
+
+    pub fn cover_is_absent(&self, id: AlbumId, drawn: Drawn) -> bool {
+        let wanted = AtSide {
+            key: id,
+            side: drawn.side(self.scale),
+        };
+        matches!(self.covers.peek(&wanted), Some(None))
+    }
+
+    pub fn cover_ahead(&mut self, id: AlbumId, drawn: Drawn, cx: &mut Context<Self>) -> bool {
+        if self.decoding.len() + DECODES_KEPT_FOR_WHAT_IS_SHOWN >= DECODES_AT_ONCE {
+            return false;
+        }
+        let _ = self.cover(id, drawn, cx);
+        true
     }
 
     pub fn cover(&mut self, id: AlbumId, drawn: Drawn, cx: &mut Context<Self>) -> Option<Picture> {

@@ -31,6 +31,10 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
         self.held.contains_key(key)
     }
 
+    pub(crate) fn peek(&self, key: &K) -> Option<&V> {
+        self.held.get(key).map(|held| &held.value)
+    }
+
     pub(crate) fn get(&mut self, key: &K) -> Option<&V> {
         let now = self.tick();
         let held = self.held.get_mut(key)?;
@@ -115,6 +119,18 @@ mod tests {
             Some(&30),
             "a forgotten entry still held a place"
         );
+    }
+
+    #[test]
+    fn a_peek_reads_a_value_without_keeping_it_from_eviction() {
+        let mut cache = filled(3, &[1, 2, 3]);
+
+        assert_eq!(cache.peek(&1), Some(&10));
+        assert_eq!(cache.peek(&9), None);
+        cache.insert(4, 40);
+
+        assert_eq!(cache.peek(&1), None, "a peek counted as a use");
+        assert_eq!(cache.peek(&2), Some(&20));
     }
 
     #[test]

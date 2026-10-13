@@ -490,6 +490,14 @@ impl PlayerModel {
         self.scale = scale;
     }
 
+    pub fn art_is_absent(&self, location: &MediaLocation, drawn: Drawn) -> bool {
+        let wanted = AtSide {
+            key: location.clone(),
+            side: drawn.side(self.scale),
+        };
+        matches!(self.pictures.peek(&wanted), Some(None))
+    }
+
     pub fn art(
         &mut self,
         location: &MediaLocation,

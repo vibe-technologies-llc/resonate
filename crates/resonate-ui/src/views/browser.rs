@@ -43,6 +43,7 @@ use crate::{
     },
 };
 
+const COVERS_AHEAD: usize = 48;
 const SEVERAL: &str = "Various artists";
 const FORGET_THE_MATCH: &str = "Not this record";
 const OTHER_PRESSINGS: &str = "Other pressings";
@@ -816,7 +817,7 @@ impl RootView {
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 this.reach_further(range.end, held, cx);
                                 let mut drawn = Vec::new();
-                                for index in range {
+                                for index in range.clone() {
                                     let listed_row = if rowed {
                                         rows.get(index).copied()
                                     } else {
@@ -883,6 +884,23 @@ impl RootView {
                                         }
                                         None => {}
                                     }
+                                }
+                                if !in_an_album {
+                                    let before =
+                                        range.start.saturating_sub(COVERS_AHEAD)..range.start;
+                                    let after = range.end..range.end + COVERS_AHEAD;
+                                    let albums = after.chain(before.rev()).filter_map(|index| {
+                                        let held = if rowed {
+                                            match rows.get(index).copied()? {
+                                                ListedRow::Held(held) => held,
+                                                _ => return None,
+                                            }
+                                        } else {
+                                            index
+                                        };
+                                        tracks.get(held)?.album_id
+                                    });
+                                    this.covers_ahead(albums, cx);
                                 }
                                 drawn
                             }),

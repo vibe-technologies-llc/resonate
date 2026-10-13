@@ -4632,10 +4632,7 @@ impl RootView {
         drawn: Drawn,
         cx: &mut Context<Self>,
     ) -> Option<(Picture, Magnified)> {
-        let (album, file) = match pictured {
-            Pictured::Album(album) => (Some(album), None),
-            Pictured::Track { album, file } => (album, Some(file)),
-        };
+        let (album, file) = pictured.parts();
 
         if let Some(album) = album
             && let Some(art) = self
@@ -4650,6 +4647,33 @@ impl RootView {
             .player
             .update(cx, |player, cx| player.art(file, drawn, cx))?;
         Some((art, Magnified::File(file.clone())))
+    }
+
+    pub(crate) fn is_pictureless(
+        &self,
+        pictured: Pictured<'_>,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (album, file) = pictured.parts();
+        let album_lacks =
+            album.is_none_or(|album| self.library.read(cx).cover_is_absent(album, drawn));
+        let file_lacks = file.is_none_or(|file| self.player.read(cx).art_is_absent(file, drawn));
+        album_lacks && file_lacks
+    }
+
+    pub(crate) fn covers_ahead(
+        &self,
+        albums: impl Iterator<Item = AlbumId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.library.update(cx, |library, cx| {
+            for album in albums {
+                if !library.cover_ahead(album, Drawn::InARow, cx) {
+                    break;
+                }
+            }
+        });
     }
 
     fn magnified_art(&self, magnified: &Magnified, cx: &mut Context<Self>) -> Option<Picture> {

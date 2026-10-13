@@ -452,6 +452,10 @@ is never named.
   (`NotYet`/`Answered`/`Nothing`); `NotYet` goes in `unsettled` against the `media_revision` asked at;
   `Failed` is held in `unread` and asked again after `A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER`; a failed
   release cover likewise (`A_FAILED_COVER_IS_ASKED_AGAIN_AFTER`, `released_covers`).
+  - **The tracks pane asks for row covers a screenful past what it draws**: after its rows, the
+    processor hands `RootView::covers_ahead` the albums of the `COVERS_AHEAD` (48) rows past each end of
+    the range, nearest first, to `LibraryModel::cover_ahead`, which leaves `DECODES_KEPT_FOR_WHAT_IS_SHOWN`
+    (1) of the `DECODES_AT_ONCE` slots free for rows on screen and says when none is spare.
   - `LibraryModel::warm_the_covers` fills the album cache ahead of the grid once a run: `COVERS_WARMED`
     (256) albums, one decode at a time, bounded under `COVERS_HELD` (warming more evicts its own work).
     `DECODES_AT_ONCE` (4) bounds in-flight decodes in the album and per-file caches: a cell asking while
@@ -626,7 +630,10 @@ is never named.
   - **A skip never blanks the panel.** While the next row opens the engine publishes no current track
     (`Buffering`, or `Paused`: `between_songs`): `RootView::playing` answers the song last resolved,
     `name_the_window` keeps its title, `held_through_a_change` draws the last cover
-    (`RootView::shown_cover`) up to `COVER_HELD_FOR`, `held_signal` holds the signal path.
+    (`RootView::shown_cover`) up to `COVER_HELD_FOR`, `held_signal` holds the signal path. **The last
+    cover is held only while the next song's picture is still unknown**: once the caches hold it as
+    absent (`RootView::is_pictureless`: `cover_is_absent`, `art_is_absent`, both `Recent::peek`) the
+    held cover is let go at once and the disc crossfades in, not after `COVER_HELD_FOR`.
   - **Title, artist, album are three elements**, each opening its page via `RootView::opens`:
     title/album scope the tracks pane to `Selection::Album`, artist to `Selection::Artist`. A scope
     whose album/artist the catalog no longer holds (`Browsed::gone`) becomes `Selection::Everything`
