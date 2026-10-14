@@ -171,8 +171,8 @@ pixels per side after checking dimensions. Albums group by title and album artis
 to the tagged artist. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music untouched.
 
-Filters combine folded text/artist/genre, album, minimum rate/depth, favourites and unplayed, with
-six stable orders and direction. Suggestions are explicit mixes of the actual library and its
+Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
+with six stable orders and direction, read off the search index below. Suggestions are explicit mixes of the actual library and its
 listening history. `Listening` counts heard time rather than sought position; its half-track or
 four-minute threshold feeds the local history and statistics. History filters cover all time and
 the last week/month/year. Document playlists preserve repeated songs, use revision checks for
@@ -186,6 +186,46 @@ true peak, clipping and bit use. Eight full results are cached in memory, invali
 summary studies are persisted. A `Watch` cancels decoding. The live visualizer subscribes to the
 engine tap only while visible and samples on a worker; it never involves Kotlin in the callback.
 The inspector probes the original document and displays both technical and tagged metadata.
+
+## Searching the documents
+
+`search.rs` keeps every document row in memory, folded through `folded_letters` (the desktop's
+fold, so *bjork* finds *Björk*): title, artist, album artist, album, genre, a year read off the
+first four digits of `date`, codec, rate, bits, channels, length, favourite and each counted
+listen's time; lyrics' kept `text` (never a Lyricsfile document) is folded with `[…]`/`<…>` stamps
+stripped. The index sits behind `Services::searching` and is rebuilt on the next ask once
+`Catalog::revision` moves; lyrics are a separate map read only for a `lyrics:` word and rebuilt when
+the `lyrics` table's count, `asked` sum or text length moves (lyrics are outside the update hook).
+`Spellings` is filled from the same rows on first need and kept with the index.
+
+`Search::read` is the grammar, the desktop's whole: every clause holds, so words match in any order
+(*floyd pink*), each piece of a bare word beginning a word of title, artist, album artist, album or
+genre, never lyrics; `title:`, `artist:` (artist or album artist), `album:`, `genre:`, `lyrics:`
+scope; quotes ask a run of whole words inside one name; `artist:=Air` asks the whole name (not
+*Airiel*); `-` denies one token; `or` alternates. Terms answered: `year:`, `length:`, `rate:`,
+`depth:` (`bits`), `codec:`, `plays:` (with `@` windows over listens), `played:`, `is:` lossless,
+lossy, mono, stereo, multichannel, hires, favourite. `added:` (a row keeps no added time) and
+`is:hidden`/`fake`/`suspect`/`misnamed` hold nothing, so their denial holds everything, as the
+desktop's `NOT coalesce(…, 0)` does for a row unable to answer. A text reading nothing (`!!!`)
+matches nothing. A lone undenied word of three letters or more also matches inside a word, below
+every other fit.
+
+Ranking weighs each lone word's best fit, the worst word deciding: whole name, then name prefix,
+then whole word, word prefix, inside a word; the words together as a whole name in any order (*floyd
+pink* is Pink Floyd) lift a row to that fit. Ties go to the column (title, artist, album, genre,
+lyrics), then favourites, then play count, then folded title and id. Exports:
+`search_library(text, limit)` answers a `LibrarySearch` (ranked tracks to `limit`, at most 500, the
+full `track_count`, the albums and artists holding them with those named by the words first, the
+*Reads* chips, completions from `Spellings::completing`, and `did_you_mean` only where nothing
+matched); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
+Kotlin index. `albums(order)`/`artists(order)` (`CollectionOrder`: alphabetical, artist, year newest
+first, recently added, plays) group in Rust: an album by folded title plus folded album artist,
+else artist (an empty album title is no album), its `key` what `album_tracks` takes back, in disc
+and track order with unnumbered rows last; an artist by folded name, holding every song whose
+artist or album artist folds to it. `artist_tracks("")` is the songs naming no artist alone, the
+*Unknown artist* group, never every song lacking an album artist. `filtered_tracks` reads the same
+index: its text is the grammar, its album, artist and genre compare folded, and a page costs a sort
+of the matches rather than an `OFFSET` walk.
 
 ## Online and downloads
 

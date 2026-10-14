@@ -2,9 +2,9 @@ use resonate_codec::MediaInfo;
 use rusqlite::{OptionalExtension, params};
 
 use crate::{
-    Error, Result, StoreOp, Track,
+    Error, Result, StoreOp,
     catalog::{Catalog, read},
-    features::{AnalysisReport, LibraryStatistics, TrackFilter, TrackOrder},
+    features::{AnalysisReport, LibraryStatistics},
 };
 
 type StoredLyrics = (Option<String>, Option<String>, String);
@@ -88,66 +88,6 @@ impl Catalog {
         Ok(())
     }
 
-    pub(crate) fn filtered(
-        &self,
-        filter: &TrackFilter,
-        offset: u32,
-        limit: u32,
-    ) -> Result<Vec<Track>> {
-        let columns: &[&str] = match filter.order {
-            TrackOrder::Title => &["d.title COLLATE NOCASE"],
-            TrackOrder::Album => &[
-                "d.album COLLATE NOCASE",
-                "d.album_artist COLLATE NOCASE",
-                "coalesce(d.disc_number, 1)",
-                "coalesce(d.track_number, 0)",
-            ],
-            TrackOrder::Artist => &[
-                "d.artist COLLATE NOCASE",
-                "d.album COLLATE NOCASE",
-                "coalesce(d.disc_number, 1)",
-                "coalesce(d.track_number, 0)",
-            ],
-            TrackOrder::Duration => &["d.duration_ms"],
-            TrackOrder::Added => &["d.id"],
-            TrackOrder::Plays => {
-                &["(SELECT count(*) FROM listens l WHERE l.track = d.id AND l.counted = 1)"]
-            }
-        };
-        let direction = if filter.descending { "DESC" } else { "ASC" };
-        let order = columns
-            .iter()
-            .map(|column| format!("{column} {direction}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT d.* FROM documents d WHERE instr(folded(d.title || ' ' || d.artist || ' ' || d.album || ' ' || d.album_artist), folded(?1)) > 0 AND (?2 = '' OR folded(d.genre) = folded(?2)) AND (?3 = '' OR folded(d.artist) = folded(?3)) AND (?4 = '' OR d.album = ?4) AND d.rate >= ?5 AND coalesce(d.bits, 0) >= ?6 AND (NOT ?7 OR d.favourite = 1) AND (NOT ?8 OR NOT EXISTS (SELECT 1 FROM listens l WHERE l.track = d.id AND l.counted = 1)) ORDER BY {order}, d.id LIMIT ?9 OFFSET ?10"
-        );
-        let connection = self.0.lock();
-        let mut query = connection
-            .prepare(&sql)
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        query
-            .query_map(
-                params![
-                    filter.text,
-                    filter.genre,
-                    filter.artist,
-                    filter.album,
-                    filter.minimum_rate,
-                    filter.minimum_bits,
-                    filter.favourites,
-                    filter.unplayed,
-                    limit.min(500),
-                    offset
-                ],
-                read,
-            )
-            .map_err(|source| Error::store(StoreOp::Read, source))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|source| Error::store(StoreOp::Read, source))
-    }
-
     pub(crate) fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -180,6 +120,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::Track;
 
     #[test]
     fn rescanning_an_untagged_delivery_keeps_its_selected_names() {
@@ -248,41 +189,5 @@ mod tests {
                 .art_revision,
             3
         );
-    }
-
-    #[test]
-    fn every_document_order_and_direction_is_valid_and_search_folds_unicode() {
-        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
-        catalog
-            .upsert(Track {
-                uri: "content://test/song.flac".into(),
-                title: "Björk — Song".into(),
-                ..Track::default()
-            })
-            .expect("an indexed song");
-        for order in [
-            TrackOrder::Title,
-            TrackOrder::Album,
-            TrackOrder::Artist,
-            TrackOrder::Duration,
-            TrackOrder::Added,
-            TrackOrder::Plays,
-        ] {
-            for descending in [true, false] {
-                let filter = TrackFilter {
-                    text: "BJÖRK".into(),
-                    order,
-                    descending,
-                    ..TrackFilter::default()
-                };
-                assert_eq!(
-                    catalog
-                        .filtered(&filter, 0, 100)
-                        .expect("a filtered ordering")
-                        .len(),
-                    1
-                );
-            }
-        }
     }
 }

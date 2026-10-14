@@ -64,7 +64,9 @@ included, is `InvalidUri`.
 
 `cargo test -p resonate-mobile` runs on the host. Its documents tests cover both schemes and
 `the_ios_document_types_admit_what_a_scan_admits` holds `ios/Resonate/Info.plist`'s declared
-extensions to `AUDIO_EXTENSIONS`. Target clippy runs through `android/check-native.py` and, for
+extensions to `AUDIO_EXTENSIONS`. `a_two_word_search_over_twenty_thousand_songs_answers_within_its_budget`
+holds the search index (`android.md`) to 30 ms, the best of five, over 20 000 rows (150 ms with
+debug assertions, where the workspace's optimised debug profile still runs it). Target clippy runs through `android/check-native.py` and, for
 iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the environment
 `ios/build-native.py` sets. The layering job refuses PipeWire, GPUI, MPRIS, Discord and Oboe in
 `resonate-mobile`'s iOS tree.

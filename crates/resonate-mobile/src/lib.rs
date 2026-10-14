@@ -9,6 +9,7 @@ mod online_tools;
 mod output;
 mod playback;
 mod playlists;
+mod search;
 mod sync;
 
 use std::{

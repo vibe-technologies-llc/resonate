@@ -26,6 +26,7 @@ pub(crate) struct Services {
     analysis: Mutex<Option<Arc<Watch>>>,
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
     listening: Mutex<(Listening, Option<i64>)>,
+    pub(crate) searching: crate::search::Searching,
 }
 
 impl Default for Services {
@@ -40,6 +41,7 @@ impl Default for Services {
             analysis: Mutex::new(None),
             analyses: Mutex::new(BTreeMap::new()),
             listening: Mutex::new((Listening::default(), None)),
+            searching: crate::search::Searching::default(),
         }
     }
 }
@@ -200,7 +202,9 @@ impl MobilePlayer {
         offset: u32,
         limit: u32,
     ) -> Result<Vec<Track>> {
-        self.catalog.filtered(&filter, offset, limit)
+        self.services
+            .searching
+            .filtered(&self.catalog, &filter, offset, limit)
     }
 
     pub fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
