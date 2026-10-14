@@ -192,10 +192,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] Selecting another profile while playing keeps the old filters' history in the new ones
 
 ## Search
-- [M] The phones still group albums and artists in Swift and Kotlin and open an artist page by raw
-  `artist == name || albumArtist == name`, so iOS's empty *Unknown artist* lists nearly every song;
-  `search_library`, `albums`, `artists`, `album_tracks`, `artist_tracks` and `highlights` answer
-  all of it at the boundary and wait to be called
+- [M] Android still groups albums and artists in Kotlin; `search_library`, `albums`, `artists`,
+  `album_tracks`, `artist_tracks` and `highlights` answer all of it at the boundary and wait to be
+  called there. Both phones open an artist page by raw `artist == name || albumArtist == name`
+  (iOS's `ArtistView`, `AlbumView`'s exact title match likewise), so iOS's empty *Unknown artist*
+  lists nearly every song
 - [S] The albums and artists panes match a search over hidden rows and other copies
   (`Matching::grouped` takes neither `THE_BEST_COPY` nor `A_SHOWN_TRACK`): a hidden *Seamus* lists
   *Meddle* and Pink Floyd for `seamus` while the tracks pane lists nothing

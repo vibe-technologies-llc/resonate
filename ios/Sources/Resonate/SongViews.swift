@@ -26,59 +26,265 @@ struct SongsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var grouping = Grouping.songs
+    @State private var scope = SearchScope.top
 
     var body: some View {
         @Bindable var library = library
+        @Bindable var search = library.songSearch
         List {
-            Section {
-                Picker("Show", selection: $grouping) {
-                    ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        Button("Playlists") { navigation.open(.playlists) }
-                        Button("Suggestions") { navigation.open(.suggestions) }
-                        Button("Online search") { navigation.open(.online) }
-                        Button("Filters") { navigation.filters = true }
-                    }
-                    .buttonStyle(.glass)
-                }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            }
-            .listRowSeparator(.hidden)
-            if library.tracks.isEmpty, !library.scanning, library.search.isEmpty {
-                EmptyLibrary()
+            if search.isAsked {
+                SearchResults(search: search, scope: $scope)
             } else {
-                switch grouping {
-                case .songs:
-                    if library.tracks.isEmpty {
-                        Text("No songs match").foregroundStyle(.secondary)
+                Section {
+                    Picker("Show", selection: $grouping) {
+                        ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
                     }
-                    ForEach(library.tracks, id: \.id) { track in
-                        TrackRow(track: track, current: library.snapshot?.current?.id == track.id) {
-                            library.play(library.tracks, selected: track)
+                    .pickerStyle(.segmented)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            Button("Playlists") { navigation.open(.playlists) }
+                            Button("Suggestions") { navigation.open(.suggestions) }
+                            Button("Online search") { navigation.open(.online) }
+                            Button("Filters") { navigation.filters = true }
                         }
+                        .buttonStyle(.glass)
                     }
-                case .albums:
-                    ForEach(albums(of: library.tracks), id: \.key) { group in
-                        NavigationLink(value: Destination.album(title: group.title, artist: group.artist)) {
-                            CollectionRow(track: group.tracks.first, title: group.title.isEmpty ? "Unknown album" : group.title, detail: "\(group.artist) · \(counted(group.tracks.count, "song"))")
-                        }
-                    }
-                case .artists:
-                    ForEach(artists(of: library.tracks), id: \.key) { group in
-                        NavigationLink(value: Destination.artist(group.title)) {
-                            CollectionRow(track: group.tracks.first, title: group.title.isEmpty ? "Unknown artist" : group.title, detail: "Artist · \(counted(group.tracks.count, "song"))", circle: true)
-                        }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    if grouping == .songs {
+                        FilterChips()
+                    } else {
+                        CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
                     }
                 }
+                .listRowSeparator(.hidden)
+                BrowsedMusic(grouping: grouping)
             }
         }
         .listStyle(.plain)
-        .searchable(text: $library.search, prompt: "Search your music")
+        .listSectionIndexVisibility(.visible)
+        .searchable(text: $search.text, prompt: "Search your music")
+        .searchScopes($scope, activation: .onSearchPresentation) {
+            ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .searchSuggestions { SearchSuggestions(search: search) }
+        .onSubmit(of: .search) { search.remember() }
         .navigationTitle("Resonate")
-        .toolbar { LibraryToolbar() }
+        .toolbar {
+            LibraryToolbar()
+            if search.asking, search.hasAnswer {
+                ToolbarItem(placement: .topBarLeading) { ProgressView() }
+            }
+        }
+    }
+}
+
+struct BrowsedMusic: View {
+    @Environment(Library.self) private var library
+    let grouping: Grouping
+
+    var body: some View {
+        if library.catalogEmpty {
+            EmptyLibrary()
+        } else {
+            switch grouping {
+            case .songs: BrowsedSongs()
+            case .albums: BrowsedAlbums()
+            case .artists: BrowsedArtists()
+            }
+        }
+    }
+}
+
+struct BrowsedSongs: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let tracks = library.tracks
+        if library.tracksRead, tracks.isEmpty, library.filtering {
+            ContentUnavailableView {
+                Label("No songs match these filters", systemImage: "line.3.horizontal.decrease.circle")
+            } description: {
+                Text("Change or reset the filters to see the rest of your library.")
+            } actions: {
+                Button("Reset filters") { library.setFilter(defaultTrackFilter()) }
+                    .buttonStyle(.glass)
+            }
+            .listRowSeparator(.hidden)
+        } else if library.trackRuns.isEmpty {
+            ForEach(tracks, id: \.id) { row($0, among: tracks) }
+        } else {
+            ForEach(library.trackRuns) { run in
+                Section {
+                    ForEach(tracks[tracks.clamped(run.rows)], id: \.id) { row($0, among: tracks) }
+                } header: {
+                    Text(run.letter)
+                }
+                .sectionIndexLabel(run.indexed ? run.letter : nil)
+            }
+        }
+    }
+
+    private func row(_ track: Track, among tracks: [Track]) -> some View {
+        TrackRow(track: track, current: library.snapshot?.current?.id == track.id) {
+            library.play(tracks, selected: track)
+        }
+    }
+}
+
+struct BrowsedAlbums: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let albums = library.albums
+        if library.albumRuns.isEmpty {
+            ForEach(albums, id: \.key) { link($0) }
+        } else {
+            ForEach(library.albumRuns) { run in
+                Section {
+                    ForEach(albums[albums.clamped(run.rows)], id: \.key) { link($0) }
+                } header: {
+                    Text(run.letter)
+                }
+                .sectionIndexLabel(run.indexed ? run.letter : nil)
+            }
+        }
+    }
+
+    private func link(_ album: AlbumHit) -> some View {
+        NavigationLink(value: album.destination) {
+            CollectionRow(track: library.artworkTrack(album.artworkTrack), title: album.shownTitle, detail: album.detail)
+        }
+    }
+}
+
+struct BrowsedArtists: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let artists = library.artists
+        if library.artistRuns.isEmpty {
+            ForEach(artists, id: \.name) { link($0) }
+        } else {
+            ForEach(library.artistRuns) { run in
+                Section {
+                    ForEach(artists[artists.clamped(run.rows)], id: \.name) { link($0) }
+                } header: {
+                    Text(run.letter)
+                }
+                .sectionIndexLabel(run.indexed ? run.letter : nil)
+            }
+        }
+    }
+
+    private func link(_ artist: ArtistHit) -> some View {
+        NavigationLink(value: artist.destination) {
+            CollectionRow(track: library.artworkTrack(artist.artworkTrack), title: artist.shownName, detail: artist.detail, circle: true)
+        }
+    }
+}
+
+struct CollectionOrderPicker: View {
+    @Binding var order: CollectionOrder
+    let grouping: Grouping
+
+    var body: some View {
+        Picker("Sort by", selection: $order) {
+            Text("Name").tag(CollectionOrder.alphabetical)
+            if grouping == .albums {
+                Text("Artist").tag(CollectionOrder.artist)
+                Text("Year").tag(CollectionOrder.year)
+            }
+            Text("Recently added").tag(CollectionOrder.added)
+            Text("Most played").tag(CollectionOrder.plays)
+        }
+        .pickerStyle(.menu)
+    }
+}
+
+struct FilterChips: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let filter = library.filter
+        let chips = FilterChip.of(filter)
+        if !chips.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(chips) { chip in
+                        Button { library.setFilter(chip.cleared(from: filter)) } label: {
+                            HStack(spacing: 6) {
+                                Text(chip.label)
+                                Image(systemName: "xmark").font(.caption.weight(.bold))
+                            }
+                        }
+                        .accessibilityLabel("Remove filter \(chip.label)")
+                    }
+                }
+                .buttonStyle(.glass)
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        }
+    }
+}
+
+enum FilterChip: Identifiable {
+    case favourites
+    case unplayed
+    case hiRes
+    case depth(UInt32)
+    case genre(String)
+    case artist(String)
+    case album(String)
+    case order(TrackOrder, descending: Bool)
+
+    static let orderNames: [(TrackOrder, String)] = [
+        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"),
+    ]
+
+    static func of(_ filter: TrackFilter) -> [FilterChip] {
+        var chips: [FilterChip] = []
+        if filter.favourites { chips.append(.favourites) }
+        if filter.unplayed { chips.append(.unplayed) }
+        if filter.minimumRate > 0 { chips.append(.hiRes) }
+        if filter.minimumBits > 0 { chips.append(.depth(filter.minimumBits)) }
+        if !filter.genre.isEmpty { chips.append(.genre(filter.genre)) }
+        if !filter.artist.isEmpty { chips.append(.artist(filter.artist)) }
+        if !filter.album.isEmpty { chips.append(.album(filter.album)) }
+        if filter.order != .title || filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
+        return chips
+    }
+
+    var id: String { label }
+
+    var label: String {
+        switch self {
+        case .favourites: "Favourites"
+        case .unplayed: "Unplayed"
+        case .hiRes: "Hi-res"
+        case .depth(let bits): "\(bits)-bit or more"
+        case .genre(let genre): "Genre: \(genre)"
+        case .artist(let artist): "Artist: \(artist)"
+        case .album(let album): "Album: \(album)"
+        case .order(let order, let descending):
+            "Sorted by \(Self.orderNames.first { $0.0 == order }?.1.lowercased() ?? "title")\(descending ? ", descending" : "")"
+        }
+    }
+
+    func cleared(from filter: TrackFilter) -> TrackFilter {
+        var cleared = filter
+        switch self {
+        case .favourites: cleared.favourites = false
+        case .unplayed: cleared.unplayed = false
+        case .hiRes: cleared.minimumRate = 0
+        case .depth: cleared.minimumBits = 0
+        case .genre: cleared.genre = ""
+        case .artist: cleared.artist = ""
+        case .album: cleared.album = ""
+        case .order:
+            cleared.order = .title
+            cleared.descending = false
+        }
+        return cleared
     }
 }
 
@@ -104,16 +310,6 @@ func albums(of tracks: [Track]) -> [Collected] {
         }
     }
     return order.compactMap { grouped[$0] }
-}
-
-func artists(of tracks: [Track]) -> [Collected] {
-    var order: [String] = []
-    var grouped: [String: [Track]] = [:]
-    for track in tracks {
-        if grouped[track.artist] == nil { order.append(track.artist) }
-        grouped[track.artist, default: []].append(track)
-    }
-    return order.map { Collected(key: $0, title: $0, artist: $0, tracks: grouped[$0] ?? []) }
 }
 
 struct EmptyLibrary: View {

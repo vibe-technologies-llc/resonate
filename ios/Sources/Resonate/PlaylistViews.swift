@@ -117,10 +117,8 @@ struct AddSongsSheet: View {
     @State private var chosen: [UInt64] = []
 
     var body: some View {
-        let folded = search.lowercased()
-        let tracks = library.allTracks.filter {
-            folded.isEmpty || $0.shownTitle.lowercased().contains(folded) || $0.artist.lowercased().contains(folded) || $0.album.lowercased().contains(folded)
-        }
+        let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
+        let tracks = library.allTracks.filter { $0.matches(folded: folded) }
         NavigationStack {
             List(tracks, id: \.id) { track in
                 Button {
@@ -139,6 +137,7 @@ struct AddSongsSheet: View {
                 }
                 .buttonStyle(.plain)
             }
+            .overlay { if tracks.isEmpty, !folded.isEmpty { NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass") } }
             .searchable(text: $search, prompt: "Find songs to add")
             .navigationTitle("Add songs")
             .navigationBarTitleDisplayMode(.inline)

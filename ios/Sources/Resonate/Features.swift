@@ -58,22 +58,22 @@ final class Features {
     var recognitionKey = ""
     var recognition: [RecognitionCandidate] = []
     var recognitionBusy = false
-    var artistAlbumsNext: UInt32?
     var analysis: AnalysisReport?
     var analysisBusy = false
     var analysisProgress: Float?
     var inspector: Inspector?
     var inspectorTrack: UInt64?
     var inspectorArtist: ArtistLookup = .idle
-    var artist: ArtistInformation?
     var playlists: [MusicPlaylist] = []
     var playlistRows: [Track] = []
     var openPlaylist: UInt64?
-    var onlineAlbums: [SearchAlbum] = []
-    var onlineArtists: [SearchArtist] = []
-    var onlineReleases: [SearchRelease] = []
-    var onlineSongs: [SearchSong] = []
-    var onlineCollection: OnlineCollection?
+    var onlineQuery = "" {
+        didSet { if onlineQuery != oldValue { askOnline() } }
+    }
+    var onlineMode = OnlineMode.songs {
+        didSet { if onlineMode != oldValue { askOnline() } }
+    }
+    var onlineResults: OnlineResults?
     var wanted: [WantedSong] = []
     var searching = false
     var enriching = false
@@ -87,7 +87,6 @@ final class Features {
     var playlistSync: PlaylistSync?
     var transferring = false
 
-    @ObservationIgnored private var artistRequest = 0
     @ObservationIgnored private var inspectorRequest = 0
     @ObservationIgnored private var inspectorArtistRequest = 0
     @ObservationIgnored private var statisticsRequest = 0
@@ -96,6 +95,8 @@ final class Features {
     @ObservationIgnored private var recognitionRequest = 0
     @ObservationIgnored private var lyricRequest = 0
     @ObservationIgnored private var searchRequest = 0
+    @ObservationIgnored private var onlinePending: Task<Void, Never>?
+    @ObservationIgnored private var onlineAnswers = OnlineAnswers()
     @ObservationIgnored private var submitting: Task<Void, Never>?
     @ObservationIgnored private var visualization: Task<Void, Never>?
     @ObservationIgnored private var syncPolling: Task<Void, Never>?
@@ -541,16 +542,6 @@ final class Features {
         })
     }
 
-    func onlineArtist(_ id: String) {
-        artistRequest += 1
-        let request = artistRequest
-        artist = nil
-        work { [weak self] native in
-            let found = try await Work.aside { try native.onlineArtist(id: id) }
-            if request == self?.artistRequest { self?.artist = found }
-        }
-    }
-
     func loadLyrics(_ id: UInt64, refresh: Bool = false) {
         lyricRequest += 1
         let request = lyricRequest
@@ -863,23 +854,6 @@ final class Features {
         work { native in native.cancelDownload() }
     }
 
-    func clearCollection() {
-        onlineCollection = nil
-    }
-
-    func openLink(_ text: String) {
-        onlineCollection = nil
-        onlineWork({ try $0.openOnlineLink(text: text) }) { [self] collection in
-            onlineSongs = collection.songs
-            onlineReleases = collection.releases
-            onlineArtists = collection.artists
-            onlineCollection = collection
-            if collection.songs.isEmpty, collection.releases.isEmpty, collection.artists.isEmpty {
-                library.notice("No music could be read from this link")
-            }
-        }
-    }
-
     func saveWanted(_ songs: [SearchSong]) {
         work { [weak self] native in
             let count = try await Work.aside {
@@ -930,55 +904,48 @@ final class Features {
         }
     }
 
-    func artistAlbums(_ id: String, from: UInt32 = 0) {
-        onlineWork({ try $0.artistAlbums(id: id, from: from) }) { [self] page in
-            if from == 0 {
-                onlineAlbums = page.albums
-            } else {
-                var seen = Set(onlineAlbums.map(\.id))
-                onlineAlbums += page.albums.filter { seen.insert($0.id).inserted }
-            }
-            artistAlbumsNext = page.next
+    func onlineAnswer<Value: Sendable>(_ ask: @escaping @Sendable (MobilePlayer) throws -> Value) async -> Value? {
+        do {
+            let native = try await library.player()
+            return try await Work.aside { try ask(native) }
+        } catch {
+            library.report(error)
+            return nil
         }
     }
 
-    func searchAlbums(_ text: String) {
-        clearCollection()
-        onlineWork({ try $0.searchAlbumsOnline(text: text) }) { [self] found in
-            onlineAlbums = found
-            artistAlbumsNext = nil
-        }
-    }
-
-    func searchArtists(_ text: String) {
-        clearCollection()
-        onlineWork({ try $0.searchArtistsOnline(text: text) }) { [self] found in onlineArtists = found }
-    }
-
-    func loadReleases(_ group: String) {
-        onlineWork({ try $0.onlineReleases(group: group) }) { [self] found in onlineReleases = found }
-    }
-
-    func releaseSongs(_ id: String) {
-        onlineWork({ try $0.releaseSongs(id: id) }) { [self] found in onlineSongs = found }
-    }
-
-    func searchOnline(_ text: String) {
-        clearCollection()
-        onlineWork({ try $0.searchOnline(text: text) }) { [self] found in onlineSongs = found }
-    }
-
-    private func onlineWork<Value: Sendable>(
-        _ action: @escaping @Sendable (MobilePlayer) throws -> Value,
-        publish: @escaping @MainActor @Sendable (Value) -> Void
-    ) {
+    private func askOnline() {
         searchRequest += 1
+        onlinePending?.cancel()
         let request = searchRequest
+        let asked = OnlineAsked(onlineQuery, in: onlineMode)
+
+        guard asked.isLink || asked.text.count >= OnlineAsked.shortest else {
+            searching = false
+            return
+        }
+        if let kept = onlineAnswers.answer(for: asked) {
+            onlineResults = OnlineResults(asked: asked, answer: kept)
+            searching = false
+            return
+        }
+
         searching = true
-        work { [weak self] native in
-            defer { if request == self?.searchRequest { self?.searching = false } }
-            let value = try await Work.aside { try action(native) }
-            await MainActor.run { if request == self?.searchRequest { publish(value) } }
+        onlinePending = Task { [weak self] in
+            do { try await Task.sleep(for: OnlineAsked.settle) } catch { return }
+            guard let self else { return }
+            defer { if request == searchRequest { searching = false } }
+
+            do {
+                let native = try await library.player()
+                let answer = try await Work.aside { try OnlineAnswer.asked(asked, of: native) }
+                guard request == searchRequest else { return }
+                onlineAnswers.keep(answer, for: asked)
+                onlineResults = OnlineResults(asked: asked, answer: answer)
+            } catch {
+                guard request == searchRequest else { return }
+                library.report(error)
+            }
         }
     }
 

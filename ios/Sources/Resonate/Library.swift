@@ -13,16 +13,30 @@ final class Library {
 
     let folders: Folders
     var allTracks: [Track] = []
-    var tracks: [Track] = []
+    var tracks: [Track] = [] {
+        didSet { trackRuns = filter.order == .title ? LetterRun.runs(of: tracks, named: \.shownTitle) : [] }
+    }
+    private(set) var trackRuns: [LetterRun] = []
+    private(set) var tracksRead = false
+    private(set) var catalogRead = false
+    private(set) var artworkTracks: [UInt64: Track] = [:]
+    private(set) var albums: [AlbumHit] = [] {
+        didSet { albumRuns = Self.runs(of: albums, in: collectionOrder) }
+    }
+    private(set) var albumRuns: [LetterRun] = []
+    private(set) var artists: [ArtistHit] = [] {
+        didSet { artistRuns = Self.runs(of: artists, in: collectionOrder) }
+    }
+    private(set) var artistRuns: [LetterRun] = []
+    var collectionOrder = CollectionOrder.alphabetical {
+        didSet { if collectionOrder != oldValue { reloadCollections() } }
+    }
     var queue: [Track] = []
     var snapshot: Snapshot?
     var status: String?
     var scanning = false
     var preferences: PlaybackPreferences?
     var filter: TrackFilter = defaultTrackFilter()
-    var search = "" {
-        didSet { reload() }
-    }
     var folderList: [MusicFolder] = []
 
     @ObservationIgnored private(set) var native: MobilePlayer?
@@ -33,10 +47,14 @@ final class Library {
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var scanTask: Task<Void, Never>?
     @ObservationIgnored private var queryRequest = 0
+    @ObservationIgnored private var catalogRequest = 0
+    @ObservationIgnored private var collectionRequest = 0
     @ObservationIgnored private let preferencesStore = PlaybackPreferencesStore()
     @ObservationIgnored let support: URL
     @ObservationIgnored lazy var features = Features(library: self)
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
+    @ObservationIgnored lazy var songSearch = SearchModel(library: self, remembering: true)
+    @ObservationIgnored lazy var shelfSearch = SearchModel(library: self, remembering: false)
 
     init() {
         support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -204,55 +222,127 @@ final class Library {
         }) { [self] next in preferences = next }
     }
 
+    var catalogEmpty: Bool { catalogRead && allTracks.isEmpty && !scanning }
+    var filtering: Bool { filter != defaultTrackFilter() }
+
+    func artworkTrack(_ id: UInt64) -> Track? {
+        artworkTracks[id]
+    }
+
     func setFilter(_ value: TrackFilter) {
         filter = value
-        reload()
+        songSearch.text = ""
+        reload(fresh: true)
     }
 
     func refresh() async {
         guard let native = try? await player() else { return }
+        catalogRequest += 1
+        let request = catalogRequest
+        let everything = defaultTrackFilter()
+
+        reloadCollections()
+        if filtering {
+            reload()
+        } else {
+            songSearch.refresh()
+            shelfSearch.refresh()
+        }
+
         do {
-            allTracks = try await Work.inOrder {
-                var found: [Track] = []
-                while true {
-                    let page = try native.filteredTracks(
-                        filter: defaultTrackFilter(),
-                        offset: UInt32(found.count),
-                        limit: Library.page
-                    )
-                    found += page
-                    if page.count < Library.page { return found }
-                }
+            let first = try await Work.aside { try native.filteredTracks(filter: everything, offset: 0, limit: Library.page) }
+            guard request == catalogRequest else { return }
+            if !catalogRead || first.count < Library.page {
+                publishCatalog(first)
             }
+            guard first.count == Library.page else { return }
+
+            let rest = try await Work.aside { try Library.pages(native, everything, from: Library.page) }
+            guard request == catalogRequest else { return }
+            publishCatalog(first + rest)
         } catch {
             report(error)
         }
-        reload()
     }
 
-    func reload() {
+    private func publishCatalog(_ rows: [Track]) {
+        allTracks = rows
+        artworkTracks = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+        catalogRead = true
+        if !filtering {
+            queryRequest += 1
+            tracks = rows
+            tracksRead = true
+        }
+    }
+
+    func reload(fresh: Bool = false) {
+        songSearch.refresh()
+        shelfSearch.refresh()
+        guard fresh || filtering else { return }
+
         queryRequest += 1
         let request = queryRequest
-        let query = {
-            var query = filter
-            query.text = search
-            return query
-        }()
+        let query = filter
         Task {
             guard let native = try? await player() else { return }
             do {
-                let found = try await Work.inOrder {
-                    var found: [Track] = []
-                    while true {
-                        let page = try native.filteredTracks(filter: query, offset: UInt32(found.count), limit: Library.page)
-                        found += page
-                        if page.count < Library.page { return found }
-                    }
+                let first = try await Work.aside { try native.filteredTracks(filter: query, offset: 0, limit: Library.page) }
+                guard request == queryRequest else { return }
+                if fresh || !tracksRead || first.count < Library.page {
+                    tracks = first
+                    tracksRead = true
                 }
-                if request == queryRequest { tracks = found }
+                guard first.count == Library.page else { return }
+
+                let rest = try await Work.aside { try Library.pages(native, query, from: Library.page) }
+                guard request == queryRequest else { return }
+                tracks = first + rest
             } catch {
                 report(error)
             }
+        }
+    }
+
+    func reloadCollections() {
+        collectionRequest += 1
+        let request = collectionRequest
+        let order = collectionOrder
+
+        Task {
+            guard let native = try? await player() else { return }
+            do {
+                let (albums, artists) = try await Work.aside { (try native.albums(order: order), try native.artists(order: order)) }
+                guard request == collectionRequest else { return }
+                self.albums = albums
+                self.artists = artists
+            } catch {
+                report(error)
+            }
+        }
+    }
+
+    nonisolated private static func pages(_ native: MobilePlayer, _ filter: TrackFilter, from offset: UInt32) throws -> [Track] {
+        var found: [Track] = []
+        while true {
+            let page = try native.filteredTracks(filter: filter, offset: offset + UInt32(found.count), limit: Library.page)
+            found += page
+            if page.count < Library.page { return found }
+        }
+    }
+
+    private static func runs(of albums: [AlbumHit], in order: CollectionOrder) -> [LetterRun] {
+        switch order {
+        case .alphabetical: LetterRun.runs(of: albums, named: \.title)
+        case .artist: LetterRun.runs(of: albums, named: \.artist)
+        case .year, .added, .plays: []
+        }
+    }
+
+    private static func runs(of artists: [ArtistHit], in order: CollectionOrder) -> [LetterRun] {
+        switch order {
+        case .alphabetical, .artist: LetterRun.runs(of: artists, named: \.name)
+        case .year, .added, .plays: []
         }
     }
 

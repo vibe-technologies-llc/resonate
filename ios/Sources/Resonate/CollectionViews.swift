@@ -11,21 +11,31 @@ enum Shelf: String, CaseIterable, Identifiable {
 }
 
 struct LibraryView: View {
+    private static let shelved = 12
+
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     var playlistsOnly = false
     @State private var shelf = Shelf.all
-    @State private var search = ""
+    @State private var playlistSearch = ""
     @State private var naming = false
 
     var body: some View {
-        let folded = search.lowercased()
+        @Bindable var shelfSearch = library.shelfSearch
+        let asked = playlistsOnly ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
+        let folded = asked.searchFolded
+        let answered = !asked.isEmpty && shelfSearch.hasAnswer
         let tracks = library.allTracks
         let favourites = tracks.filter(\.favourite)
-        let playlists = library.features.playlists.filter { folded.isEmpty || $0.name.lowercased().contains(folded) }
-        let albumGroups = albums(of: tracks).filter { folded.isEmpty || $0.title.lowercased().contains(folded) || $0.artist.lowercased().contains(folded) }
-        let artistGroups = artists(of: tracks).filter { folded.isEmpty || $0.title.lowercased().contains(folded) }
+        let playlists = library.features.playlists.filter { folded.isEmpty || $0.name.searchFolded.contains(folded) }
+        let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
+        let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
+        let matchedNothing = !playlistsOnly && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
         List {
+            if matchedNothing {
+                ContentUnavailableView.search(text: asked)
+                    .listRowSeparator(.hidden)
+            }
             if !playlistsOnly {
                 Picker("Show", selection: $shelf) {
                     ForEach(Shelf.allCases) { Text($0.rawValue).tag($0) }
@@ -62,44 +72,61 @@ struct LibraryView: View {
                         }
                     }
                     Button("Create playlist", systemImage: "plus") { naming = true }
-                    if playlists.isEmpty {
+                    if playlists.isEmpty, folded.isEmpty {
                         Text("Make a playlist for a mood, a moment, or your next journey.").foregroundStyle(.secondary)
+                    } else if playlists.isEmpty {
+                        Text("No playlists match “\(asked)”").foregroundStyle(.secondary)
                     }
                 }
             }
             if !playlistsOnly, shelf == .all || shelf == .albums {
                 Section("Albums") {
-                    if albumGroups.isEmpty {
+                    if albumHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your albums here.").foregroundStyle(.secondary)
+                    } else if albumHits.isEmpty, answered {
+                        Text("No albums match “\(asked)”").foregroundStyle(.secondary)
                     }
-                    ForEach(shelf == .all ? Array(albumGroups.prefix(12)) : albumGroups) { group in
-                        NavigationLink(value: Destination.album(title: group.title, artist: group.artist)) {
-                            CollectionRow(track: group.tracks.first, title: group.title.isEmpty ? "Unknown album" : group.title, detail: "\(group.artist) · \(counted(group.tracks.count, "song"))")
+                    ForEach(shelf == .all ? Array(albumHits.prefix(Self.shelved)) : albumHits, id: \.key) { album in
+                        NavigationLink(value: album.destination) {
+                            FoundCollectionRow(
+                                track: library.artworkTrack(album.artworkTrack),
+                                title: lit(album.shownTitle, by: asked, in: .album),
+                                detail: album.detail,
+                                disclosed: false
+                            )
                         }
                     }
-                    if shelf == .all, albumGroups.count > 12 {
+                    if shelf == .all, albumHits.count > Self.shelved {
                         Button("All albums") { shelf = .albums }
                     }
                 }
             }
             if !playlistsOnly, shelf == .all || shelf == .artists {
                 Section("Artists") {
-                    if artistGroups.isEmpty {
+                    if artistHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your artists here.").foregroundStyle(.secondary)
+                    } else if artistHits.isEmpty, answered {
+                        Text("No artists match “\(asked)”").foregroundStyle(.secondary)
                     }
-                    ForEach(shelf == .all ? Array(artistGroups.prefix(12)) : artistGroups) { group in
-                        NavigationLink(value: Destination.artist(group.title)) {
-                            CollectionRow(track: group.tracks.first, title: group.title.isEmpty ? "Unknown artist" : group.title, detail: "Artist · \(counted(group.tracks.count, "song"))", circle: true)
+                    ForEach(shelf == .all ? Array(artistHits.prefix(Self.shelved)) : artistHits, id: \.name) { artist in
+                        NavigationLink(value: artist.destination) {
+                            FoundCollectionRow(
+                                track: library.artworkTrack(artist.artworkTrack),
+                                title: lit(artist.shownName, by: asked, in: .artist),
+                                detail: artist.detail,
+                                circle: true,
+                                disclosed: false
+                            )
                         }
                     }
-                    if shelf == .all, artistGroups.count > 12 {
+                    if shelf == .all, artistHits.count > Self.shelved {
                         Button("All artists") { shelf = .artists }
                     }
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .searchable(text: $search, prompt: "Search your library")
+        .searchable(text: playlistsOnly ? $playlistSearch : $shelfSearch.text, prompt: playlistsOnly ? "Search playlists" : "Search your library")
         .navigationTitle(playlistsOnly ? "Playlists" : "Your library")
         .toolbar {
             LibraryToolbar()
@@ -292,10 +319,8 @@ struct FavouritesView: View {
     @State private var search = ""
 
     var body: some View {
-        let folded = search.lowercased()
-        let tracks = library.allTracks.filter {
-            $0.favourite && (folded.isEmpty || $0.shownTitle.lowercased().contains(folded) || $0.artist.lowercased().contains(folded) || $0.album.lowercased().contains(folded))
-        }
+        let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
+        let tracks = library.allTracks.filter { $0.favourite && $0.matches(folded: folded) }
         List {
             CollectionHeader(title: "Favourites", subtitle: "Your favourites", tracks: tracks)
             if tracks.isEmpty, folded.isEmpty {
@@ -304,6 +329,8 @@ struct FavouritesView: View {
                     Button("Browse songs") { navigation.tab = .songs }.buttonStyle(.glass)
                 }
                 .frame(maxWidth: .infinity)
+            } else if tracks.isEmpty {
+                NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
             }
             ForEach(tracks, id: \.id) { track in
                 TrackRow(track: track, current: library.snapshot?.current?.id == track.id) {
