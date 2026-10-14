@@ -84,6 +84,7 @@ final class Features {
     @ObservationIgnored private var submitting: Task<Void, Never>?
     @ObservationIgnored private var visualization: Task<Void, Never>?
     @ObservationIgnored private var syncPolling: Task<Void, Never>?
+    @ObservationIgnored private var nearby: NearbyDevices?
     @ObservationIgnored private var network: NWPathMonitor?
     @ObservationIgnored private var unmetered = false
     @ObservationIgnored var foreground = true
@@ -313,12 +314,14 @@ final class Features {
         while !Task.isCancelled {
             try? await Task.sleep(for: foreground || transferring ? Self.syncForeground : Self.syncBackground)
             do {
-                let (status, waiting, handoffs) = try await Work.aside {
+                let (status, waiting, handoffs, record) = try await Work.aside {
                     let status = native.syncStatus()
                     let waiting = try native.syncReceived()
                     let handoffs = status.standing == .off ? [] : try native.syncHandoffs()
-                    return (status, waiting, handoffs)
+                    return (status, waiting, handoffs, native.syncNearbyRecord())
                 }
+                if nearby == nil { nearby = NearbyDevices(native: native) }
+                nearby?.follow(record: record)
                 syncStatus = status
                 transferring = status.moving > 0 || !waiting.isEmpty
                 holdTransfers(transferring || downloading)

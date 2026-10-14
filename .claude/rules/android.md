@@ -253,8 +253,8 @@ succeeded; a failed landing deletes only the new document and pauses landing for
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a
-`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`), so beacons from devices on the same
-network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
+`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`), so beacons and Bonjour from devices on
+the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
 `SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait.

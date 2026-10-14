@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_sync::{Follow, Me, Nearby, Platform, Settings, Standing, Sync, SyncKey};
+use resonate_sync::{Broadcast, Follow, Me, Nearby, Platform, Settings, Standing, Sync, SyncKey};
 
 use crate::shelf::{Shelf, song};
 
@@ -38,6 +38,19 @@ fn device(
         .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .into_iter()
         .collect();
+    started(
+        folder,
+        key,
+        name,
+        shelf,
+        Nearby {
+            broadcast: Some(Broadcast { port: 0, told }),
+            bonjour: false,
+        },
+    )
+}
+
+fn started(folder: &Path, key: &SyncKey, name: &str, shelf: Arc<Shelf>, nearby: Nearby) -> Sync {
     let settings = Settings {
         server: Some(NO_SERVER_HERE.into()),
         trusted: None,
@@ -50,7 +63,7 @@ fn device(
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
-        nearby: Some(Nearby { port: 0, told }),
+        nearby: Some(nearby),
     };
     Sync::start(settings, shelf).expect("started")
 }
@@ -61,6 +74,21 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
         assert!(Instant::now() < deadline, "{what} never happened");
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn on_a_network() -> bool {
+    if_addrs::get_if_addrs().is_ok_and(|interfaces| {
+        interfaces
+            .iter()
+            .any(|interface| !interface.is_loopback() && interface.ip().is_ipv4())
+    })
+}
+
+fn nearby_of(sync: &Sync, name: &str) -> bool {
+    sync.shown()
+        .devices
+        .iter()
+        .any(|seen| seen.name == name && seen.nearby)
 }
 
 fn holds_title(shelf: &Shelf, title: &str) -> bool {
@@ -155,6 +183,116 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
     assert!(stranger.shown().devices.iter().all(|seen| !seen.nearby));
 
     drop(stranger);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
+    if !on_a_network() {
+        return;
+    }
+    let folder = scratch("platform");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.make_playlist("Evening", &["A"]);
+
+    let desk = started(
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Nearby::told_by_the_platform(),
+    );
+    let phone = started(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Nearby::told_by_the_platform(),
+    );
+    let desk_record = desk.nearby_record().expect("a record of the desk");
+    let phone_record = phone.nearby_record().expect("a record of the phone");
+    phone.nearby_heard(&desk_record);
+    desk.nearby_heard(&phone_record);
+
+    eventually("the playlist reaching the phone", || {
+        phone_shelf.playlist_named("Evening").is_some()
+    });
+    eventually("the phone seeing the desk nearby", || {
+        nearby_of(&phone, "Desk")
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_record_of_another_code_is_passed_over() {
+    let folder = scratch("stranger-record");
+    let desk = started(
+        &folder,
+        &SyncKey::minted().expect("a key"),
+        "Desk",
+        Arc::new(Shelf::holding(&[])),
+        Nearby::told_by_the_platform(),
+    );
+    let stranger = started(
+        &folder,
+        &SyncKey::minted().expect("a key"),
+        "Stranger",
+        Arc::new(Shelf::holding(&[])),
+        Nearby::told_by_the_platform(),
+    );
+    let Some(stranger_record) = stranger.nearby_record() else {
+        return;
+    };
+
+    desk.nearby_heard(&stranger_record);
+    desk.nearby_heard("not a record");
+    thread::sleep(Duration::from_secs(3));
+
+    assert!(desk.shown().devices.iter().all(|seen| !seen.nearby));
+
+    drop(stranger);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn two_devices_advertising_over_bonjour_find_each_other() {
+    if !on_a_network() {
+        return;
+    }
+    let folder = scratch("bonjour");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.make_playlist("Night", &["A"]);
+    let bonjour = Nearby {
+        broadcast: None,
+        bonjour: true,
+    };
+
+    let desk = started(
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        bonjour.clone(),
+    );
+    let phone = started(&folder, &key, "Phone", Arc::clone(&phone_shelf), bonjour);
+
+    eventually("the playlist reaching the phone over Bonjour", || {
+        phone_shelf.playlist_named("Night").is_some()
+    });
+    eventually("the desk seeing the phone nearby", || {
+        nearby_of(&desk, "Phone")
+    });
+
+    drop(phone);
     drop(desk);
     let _ = fs::remove_dir_all(&folder);
 }

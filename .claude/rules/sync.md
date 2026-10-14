@@ -57,7 +57,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
   (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
   with the other's device) and `Changes` (whether whole, a bundle; answered `Taken`). A `Beacon` is
-  a device, its QUIC port and whether it answers another.
+  a device, its QUIC port, whether it answers another and the addresses it may be dialled at.
 
 ## The ledger
 
@@ -108,6 +108,7 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 
 - **One thread, one current-thread tokio runtime, two UDP sockets** (`service.rs`): the quinn
   endpoint, client to the server and server to peers at once, and the beacon socket (`Nearby`).
+  Where Bonjour is on, `mdns-sd` runs a daemon thread of its own beside them.
   `Syncing` is the one state for the whole run; the server is a `Link` in it that comes and goes,
   so looks, peers and beacons carry on while the server is away. Connecting runs as a task handing
   back a `Link`. The server connection keeps alive every 25 s, so presence and the NAT mapping hold
@@ -147,18 +148,34 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 ## Nearby
 
 The server is the way across networks; on one network devices find each other themselves
-(`nearby.rs`), so a listener with no server reachable, or none at all, still syncs at home.
+(`nearby.rs`), so a listener with no server reachable, or none at all, still syncs at home. Two ways
+announce a device, both carrying the same sealed beacon, and either finds the others:
 
 - **A beacon is sealed like a record.** `RSN1` then `seal::sealed` of a `Beacon` under the space's
   key: only a device of the code opens it, and a fresh nonce each time leaves an onlooker nothing to
-  follow. Sent at start and every `BEACON_EVERY` (15 s, jittered) to `NEARBY_GROUP`
-  (239.255.41.73, one hop) and the broadcast address, port `NEARBY_PORT` (41734). Where the port is
-  taken the socket binds anywhere: it still sends, and hears answers.
-- **An unmet device answers by unicast**, so one that cannot hear multicast (Android without its
-  multicast lock, a taken port) is still found. **The lower `DeviceId` dials** the beacon's source
-  address at the port it names, at most every `DIAL_A_NEIGHBOUR_EVERY` (30 s); a want for a device
-  heard within `HEARD_FOR` (60 s) dials it too. Nothing is sent, heard or dialled while transfers
-  are not allowed.
+  follow. It names the QUIC port and at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 addresses
+  `addresses_here` reads off the interfaces that are up, not loopback, not point to point.
+- **Broadcast** (`Broadcast`): sent at start and every `BEACON_EVERY` (15 s, jittered) to
+  `NEARBY_GROUP` (239.255.41.73, one hop) and the broadcast address, port `NEARBY_PORT` (41734).
+  Where the port is taken the socket binds anywhere: it still sends, and hears answers. **An unmet
+  device answers by unicast**, so one that cannot hear multicast (a taken port, an Android without
+  its lock) is still found.
+- **Bonjour** (`Bonjour`, `mdns-sd`): the device advertises `_resonate-sync._udp` under a random
+  instance name for the run, the hex of the sealed beacon as TXT key `b` (`RECORD_KEY`; the fullest
+  record fits one TXT string, `the_fullest_record_fits_one_bonjour_text_string_and_reads_back`), and
+  browses the same type. The record is resealed only where the beacon it carries moved
+  (`Running::record`), checked at every beacon tick; withdrawn while transfers are not allowed.
+- **An iPhone announces through Apple's Bonjour, not ours.** Multicast and broadcast from an app's
+  own sockets need Apple's `com.apple.developer.networking.multicast` entitlement; Bonjour through
+  Network.framework does not (`NSBonjourServices` in `Info.plist` and the Local Network permission).
+  iOS runs with `Nearby::told_by_the_platform()` (no broadcast, no `mdns-sd`); Swift's
+  `NearbyDevices` advertises `Sync::nearby_record` with an `NWListener` and hands every record its
+  `NWBrowser` finds to `Sync::nearby_heard`, again every 15 s while it stands, so a dial that failed
+  is tried again.
+- **The lower `DeviceId` dials**, every address heard at once (where a datagram came from, where
+  Bonjour resolved it, what the beacon names), at most every `DIAL_A_NEIGHBOUR_EVERY` (30 s); a
+  want for a device heard within `HEARD_FOR` (60 s) dials it too. Nothing is sent, heard or dialled
+  while transfers are not allowed.
 - **A dial is mutual TLS like any peer, then `Meet`**: the certificate is the space's, so it says
   nothing of which device is there. Both sides then serve the connection (fetch either way), call it
   nearby (`SyncDevice::nearby`, also `online`), and each sends its whole `Ledger::snapshot` as one
@@ -169,9 +186,11 @@ The server is the way across networks; on one network devices find each other th
   `Appended`, so the server still gets all of it once back. Nothing is relayed: what came from the
   server or from one neighbour is not passed to another, since each device on the network meets each
   other one.
-- **Android holds a `WifiManager.MulticastLock` while sync runs** (`CHANGE_WIFI_MULTICAST_STATE`).
-  iOS sends and hears no beacon: multicast and broadcast need Apple's
-  `com.apple.developer.networking.multicast` entitlement (`docs/FEATURES.md`).
-- `Settings::nearby` = `Nearby::on_the_network()` on every front end; `None` beacons nowhere (the
-  server's tests). `crates/resonate-sync/tests/nearby.rs` pairs two devices over loopback with no
-  server: records both ways, a song fetched, a rename back; a device of another code meets nobody.
+- **Android holds a `WifiManager.MulticastLock` while sync runs** (`CHANGE_WIFI_MULTICAST_STATE`),
+  for the beacons and `mdns-sd` alike.
+- `Settings::nearby`: `Nearby::on_the_network()` on Linux and Android (broadcast and Bonjour),
+  `told_by_the_platform()` on iOS; `None` meets nobody here (the server's tests).
+  `crates/resonate-sync/tests/nearby.rs` pairs two devices over loopback beacons with no server
+  (records both ways, a song fetched, a rename back), over records handed across as Swift hands them,
+  and over real Bonjour; a beacon or record of another code meets nobody. The last two skip on a
+  machine with no IPv4 interface but loopback.

@@ -115,11 +115,12 @@ pub enum FromPeer {
     Taken,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Beacon {
     pub device: DeviceId,
     pub port: u16,
     pub answering: bool,
+    pub addresses: Vec<IpAddr>,
 }
 
 #[derive(Default)]
@@ -184,7 +185,12 @@ impl Writer {
     }
 
     pub fn address(&mut self, address: SocketAddr) {
-        match address.ip() {
+        self.ip(address.ip());
+        self.number(u64::from(address.port()));
+    }
+
+    pub fn ip(&mut self, ip: IpAddr) {
+        match ip {
             IpAddr::V4(ip) => {
                 self.byte(4);
                 self.fixed(&ip.octets());
@@ -194,7 +200,6 @@ impl Writer {
                 self.fixed(&ip.octets());
             }
         }
-        self.number(u64::from(address.port()));
     }
 
     pub fn device(&mut self, device: DeviceId) {
@@ -330,14 +335,18 @@ impl<'a> Reader<'a> {
     }
 
     pub fn address(&mut self) -> Result<SocketAddr> {
-        let ip = match self.byte()? {
-            4 => IpAddr::V4(Ipv4Addr::from(self.fixed::<4>()?)),
-            6 => IpAddr::V6(Ipv6Addr::from(self.fixed::<16>()?)),
-            tag => return Err(Error::Malformed(Malformed::Tag { tag })),
-        };
+        let ip = self.ip()?;
         let port =
             u16::try_from(self.number()?).map_err(|_| Error::Malformed(Malformed::Number))?;
         Ok(SocketAddr::new(ip, port))
+    }
+
+    pub fn ip(&mut self) -> Result<IpAddr> {
+        match self.byte()? {
+            4 => Ok(IpAddr::V4(Ipv4Addr::from(self.fixed::<4>()?))),
+            6 => Ok(IpAddr::V6(Ipv6Addr::from(self.fixed::<16>()?))),
+            tag => Err(Error::Malformed(Malformed::Tag { tag })),
+        }
     }
 
     pub fn device(&mut self) -> Result<DeviceId> {
@@ -721,6 +730,10 @@ impl Beacon {
         writer.device(self.device);
         writer.number(u64::from(self.port));
         writer.flag(self.answering);
+        writer.length(self.addresses.len());
+        for address in &self.addresses {
+            writer.ip(*address);
+        }
         writer.finish()
     }
 
@@ -731,6 +744,14 @@ impl Beacon {
             port: u16::try_from(reader.number()?)
                 .map_err(|_| Error::Malformed(Malformed::Number))?,
             answering: reader.flag()?,
+            addresses: {
+                let count = reader.count()?;
+                let mut addresses = Vec::with_capacity(count);
+                for _ in 0..count {
+                    addresses.push(reader.ip()?);
+                }
+                addresses
+            },
         };
         reader.done()?;
         Ok(beacon)
@@ -1198,11 +1219,16 @@ mod tests {
             device: DeviceId([9; DEVICE_BYTES]),
             port: u16::MAX,
             answering: false,
+            addresses: vec![
+                IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ],
         };
         let mut writer = Writer::new();
         writer.device(beacon.device);
         writer.number(u64::from(u16::MAX) + 1);
         writer.flag(false);
+        writer.length(0);
 
         assert_eq!(Beacon::decoded(&beacon.encoded()).expect("decoded"), beacon);
         assert!(matches!(

@@ -19,7 +19,11 @@
 	<key>UISupportsDocumentBrowser</key>
 	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Resonate sends songs directly between your own devices when they share a network.</string>
+	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_resonate-sync._udp</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>

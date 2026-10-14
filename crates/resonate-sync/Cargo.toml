@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 ahash.workspace = true
 flate2.workspace = true
+if-addrs.workspace = true
+mdns-sd.workspace = true
 parking_lot.workspace = true
 quinn.workspace = true
 rcgen.workspace = true

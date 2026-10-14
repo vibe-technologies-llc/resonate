@@ -28,7 +28,10 @@ use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
     key::{Derived, hex, random_bytes},
     ledger::{Follow, Me},
-    nearby::{BEACON_EVERY, LARGEST_BEACON, Nearby, beacon_bytes, beacon_of, bound},
+    nearby::{
+        BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here, beacon_bytes,
+        beacon_of, beacon_recorded, bound, record_of,
+    },
     peer::{Answering, Heard, blocking, dialled, fetch, holdings_of, meet, serve, tell},
     quic::{PeerIdentity, read_frame, send_frame, to_the_server, trusted_roots},
     seal::{opened, sealed},
@@ -118,6 +121,7 @@ enum Command {
         from: DeviceId,
     },
     Transfers(bool),
+    Heard(Beacon),
     Stop,
 }
 
@@ -128,6 +132,7 @@ pub struct Sync {
     code: String,
     device: DeviceId,
     nearby_port: Option<u16>,
+    running: Arc<Running>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
@@ -145,8 +150,11 @@ struct Running {
     to_server: ClientConfig,
     to_peers: ClientConfig,
     transfers_allowed: AtomicBool,
+    nearby: bool,
+    bonjour: bool,
     beacons: Option<tokio::net::UdpSocket>,
     told: Vec<SocketAddr>,
+    record: Mutex<Option<(Beacon, String)>>,
     events: UnboundedSender<Event>,
     answering: Arc<Answering>,
 }
@@ -193,7 +201,7 @@ struct Syncing {
     caught_up_once: bool,
     neighbour_caught_up: bool,
     neighbours: BTreeMap<DeviceId, Neighbour>,
-    heard: BTreeMap<DeviceId, (SocketAddr, Instant)>,
+    heard: BTreeMap<DeviceId, (Vec<SocketAddr>, Instant)>,
     dialled_at: BTreeMap<DeviceId, Instant>,
     peers: BTreeMap<DeviceId, Connection>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
@@ -224,7 +232,11 @@ impl Sync {
             .map_err(Error::Runtime)?;
         let socket = UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
             .map_err(Error::Bind)?;
-        let beacon_socket = settings.nearby.as_ref().map(bound).transpose()?;
+        let broadcast = settings
+            .nearby
+            .as_ref()
+            .and_then(|nearby| nearby.broadcast.as_ref());
+        let beacon_socket = broadcast.map(bound).transpose()?;
         let nearby_port = beacon_socket
             .as_ref()
             .and_then(|socket| socket.local_addr().ok())
@@ -271,22 +283,28 @@ impl Sync {
             to_server,
             to_peers,
             transfers_allowed: AtomicBool::new(settings.transfers_allowed),
-            beacons,
-            told: settings
+            nearby: settings.nearby.is_some(),
+            bonjour: settings
                 .nearby
-                .map(|nearby| nearby.told)
+                .as_ref()
+                .is_some_and(|nearby| nearby.bonjour),
+            beacons,
+            told: broadcast
+                .map(|broadcast| broadcast.told.clone())
                 .unwrap_or_default(),
+            record: Mutex::new(None),
             events,
             answering,
         });
 
         let (commands, received) = mpsc::unbounded_channel();
+        let ran_by = Arc::clone(&running);
         let thread = thread::Builder::new()
             .name("resonate-sync".into())
             .spawn(move || {
                 ran(
                     &runtime,
-                    running,
+                    ran_by,
                     Inbound {
                         commands: received,
                         events: events_received,
@@ -303,6 +321,7 @@ impl Sync {
             code: settings.key.code(),
             device,
             nearby_port,
+            running,
             thread: Some(thread),
         })
     }
@@ -321,6 +340,19 @@ impl Sync {
 
     pub fn shown(&self) -> Shown {
         self.shown.read().clone()
+    }
+
+    pub fn nearby_record(&self) -> Option<String> {
+        self.running.record()
+    }
+
+    pub fn nearby_heard(&self, record: &str) {
+        if !self.running.nearby {
+            return;
+        }
+        if let Some(beacon) = beacon_recorded(&self.running.derived, record) {
+            let _ = self.commands.send(Command::Heard(beacon));
+        }
     }
 
     pub fn fetch(&self, recordings: Vec<Recording>, from: DeviceId) {
@@ -377,6 +409,36 @@ impl Running {
         self.transfers_allowed.load(Ordering::Relaxed)
     }
 
+    fn beacon(&self, answering: bool) -> Option<Beacon> {
+        let port = self.endpoint.local_addr().ok()?.port();
+        Some(Beacon {
+            device: self.device,
+            port,
+            answering,
+            addresses: addresses_here(),
+        })
+    }
+
+    fn record(&self) -> Option<String> {
+        if !self.nearby || !self.transfers_allowed() {
+            return None;
+        }
+        let beacon = self.beacon(false)?;
+        let mut held = self.record.lock();
+        if let Some((was, record)) = held.as_ref()
+            && *was == beacon
+        {
+            return Some(record.clone());
+        }
+        let record = record_of(&self.derived, &beacon)
+            .inspect_err(
+                |error| tracing::debug!(%error, "this device's record could not be sealed"),
+            )
+            .ok()?;
+        *held = Some((beacon, record.clone()));
+        Some(record)
+    }
+
     fn transfer(&self, recording: &Recording, from: DeviceId, change: impl FnOnce(&mut Transfer)) {
         let mut shown = self.shown.write();
         let at = shown
@@ -410,6 +472,7 @@ fn ran(runtime: &Runtime, running: Arc<Running>, inbound: Inbound) {
 async fn run(running: Arc<Running>, mut inbound: Inbound) {
     let accepting = tokio::spawn(accept_peers(Arc::clone(&running)));
     let mut syncing = Syncing::new(Arc::clone(&running));
+    let mut bonjour = running.bonjour.then(Bonjour::started).flatten();
     let mut watch = interval(WATCH_EVERY);
     watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut beacon_at = Instant::now();
@@ -438,7 +501,17 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
             }
             command = inbound.commands.recv() => match command {
                 None | Some(Command::Stop) => break,
-                Some(Command::Transfers(allowed)) => syncing.transfers(allowed).await,
+                Some(Command::Transfers(allowed)) => {
+                    let started = syncing.transfers(allowed).await;
+                    if let Some(bonjour) = bonjour.as_mut() {
+                        syncing.advertise(bonjour);
+                    }
+                    started
+                }
+                Some(Command::Heard(beacon)) => {
+                    syncing.heard_nearby(beacon, &[], None).await;
+                    Ok(())
+                }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch(recordings)).await,
             },
             Some(event) = inbound.events.recv() => syncing.event(event).await,
@@ -447,8 +520,23 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                 syncing.beacon_heard(&beacon[..length], from).await;
                 Ok(())
             }
+            found = found_nearby(bonjour.as_ref()) => {
+                match found {
+                    Found::Record { record, at } => {
+                        if let Some(beacon) = beacon_recorded(&running.derived, &record) {
+                            syncing.heard_nearby(beacon, &at, None).await;
+                        }
+                    }
+                    Found::Nothing => {}
+                    Found::Ended => bonjour = None,
+                }
+                Ok(())
+            }
             () = sleep_until(beacon_at) => {
                 syncing.beacon().await;
+                if let Some(bonjour) = bonjour.as_mut() {
+                    syncing.advertise(bonjour);
+                }
                 beacon_at = Instant::now() + jittered(BEACON_EVERY);
                 Ok(())
             }
@@ -459,6 +547,9 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
         }
     }
     syncing.bye().await;
+    if let Some(bonjour) = bonjour {
+        bonjour.end();
+    }
     accepting.abort();
     leave(&running).await;
 }
@@ -473,6 +564,13 @@ async fn next_frame(server: &mut Option<Link>) -> Option<Result<FromServer>> {
 async fn until(at: Option<Instant>) {
     match at {
         Some(at) => sleep_until(at).await,
+        None => pending().await,
+    }
+}
+
+async fn found_nearby(bonjour: Option<&Bonjour>) -> Found {
+    match bonjour {
+        Some(bonjour) => bonjour.found().await,
         None => pending().await,
     }
 }
@@ -1239,33 +1337,54 @@ impl Syncing {
     }
 
     fn beacon_bytes(&self, answering: bool) -> Option<Vec<u8>> {
-        let port = self.running.endpoint.local_addr().ok()?.port();
-        let beacon = Beacon {
-            device: self.running.device,
-            port,
-            answering,
-        };
-        beacon_bytes(&self.running.derived, beacon)
+        let beacon = self.running.beacon(answering)?;
+        beacon_bytes(&self.running.derived, &beacon)
             .inspect_err(|error| tracing::debug!(%error, "a beacon could not be sealed"))
             .ok()
     }
 
+    fn advertise(&self, bonjour: &mut Bonjour) {
+        let port = self
+            .running
+            .endpoint
+            .local_addr()
+            .ok()
+            .map(|local| local.port());
+        match (self.running.record(), port) {
+            (Some(record), Some(port)) => bonjour.advertise(&record, port),
+            (None, _) | (_, None) => bonjour.withdraw(),
+        }
+    }
+
     async fn beacon_heard(&mut self, bytes: &[u8], from: SocketAddr) {
-        if !self.running.transfers_allowed() {
+        if let Some(beacon) = beacon_of(&self.running.derived, bytes) {
+            self.heard_nearby(beacon, &[from.ip()], Some(from)).await;
+        }
+    }
+
+    async fn heard_nearby(
+        &mut self,
+        beacon: Beacon,
+        seen_at: &[IpAddr],
+        answer_to: Option<SocketAddr>,
+    ) {
+        if !self.running.transfers_allowed() || beacon.device == self.running.device {
             return;
         }
-        let Some(beacon) = beacon_of(&self.running.derived, bytes) else {
-            return;
-        };
-        if beacon.device == self.running.device {
-            return;
+        let mut candidates = Vec::new();
+        for ip in seen_at.iter().chain(&beacon.addresses) {
+            let candidate = SocketAddr::new(*ip, beacon.port);
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
         }
-        let at = SocketAddr::new(from.ip(), beacon.port);
-        self.heard.insert(beacon.device, (at, Instant::now()));
+        self.heard
+            .insert(beacon.device, (candidates, Instant::now()));
         if self.neighbours.contains_key(&beacon.device) {
             return;
         }
         if !beacon.answering
+            && let Some(from) = answer_to
             && let Some(socket) = self.running.beacons.as_ref()
             && let Some(answer) = self.beacon_bytes(true)
             && let Err(error) = socket.send_to(&answer, from).await
@@ -1282,8 +1401,8 @@ impl Syncing {
         let Some(at) = self
             .heard
             .get(&device)
-            .filter(|(_, heard)| now.duration_since(*heard) < HEARD_FOR)
-            .map(|(at, _)| *at)
+            .filter(|(at, heard)| !at.is_empty() && now.duration_since(*heard) < HEARD_FOR)
+            .map(|(at, _)| at.clone())
         else {
             return;
         };
@@ -1297,10 +1416,10 @@ impl Syncing {
         self.dialled_at.insert(device, now);
         let running = Arc::clone(&self.running);
         tokio::spawn(async move {
-            let event = match neighbour_dialled(&running, at, device).await {
+            let event = match neighbour_dialled(&running, &at, device).await {
                 Ok((met, connection)) => Event::Met(met, connection),
                 Err(error) => {
-                    tracing::debug!(%error, %at, "a device on this network could not be reached");
+                    tracing::debug!(%error, ?at, "a device on this network could not be reached");
                     Event::Unmet(device)
                 }
             };
@@ -1344,10 +1463,10 @@ impl Syncing {
 
 async fn neighbour_dialled(
     running: &Arc<Running>,
-    at: SocketAddr,
+    at: &[SocketAddr],
     device: DeviceId,
 ) -> Result<(DeviceId, Connection)> {
-    let connection = dialled(&running.endpoint, &running.to_peers, &[at], device).await?;
+    let connection = dialled(&running.endpoint, &running.to_peers, at, device).await?;
     let met = meet(&connection, running.device, true).await?;
     tokio::spawn(serve(
         connection.clone(),

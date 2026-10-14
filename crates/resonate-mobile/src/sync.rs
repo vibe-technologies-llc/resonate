@@ -151,6 +151,16 @@ pub struct HandedOff {
     pub playing: bool,
 }
 
+#[cfg(not(target_os = "ios"))]
+fn nearby() -> Nearby {
+    Nearby::on_the_network()
+}
+
+#[cfg(target_os = "ios")]
+const fn nearby() -> Nearby {
+    Nearby::told_by_the_platform()
+}
+
 #[uniffi::export]
 pub fn sync_new_code() -> Result<String> {
     SyncKey::minted()
@@ -246,6 +256,20 @@ impl MobilePlayer {
             running
                 .sync
                 .allow_transfers(unmetered || running.metered_allowed);
+        }
+    }
+
+    pub fn sync_nearby_record(&self) -> Option<String> {
+        self.syncing
+            .running
+            .lock()
+            .as_ref()
+            .and_then(|running| running.sync.nearby_record())
+    }
+
+    pub fn sync_nearby_heard(&self, record: String) {
+        if let Some(running) = self.syncing.running.lock().as_ref() {
+            running.sync.nearby_heard(&record);
         }
     }
 
@@ -427,7 +451,7 @@ impl MobilePlayer {
             staging: folder.join(STAGING),
             transfers_allowed: config.metered_allowed
                 || self.syncing.unmetered.load(Ordering::Acquire),
-            nearby: Some(Nearby::on_the_network()),
+            nearby: Some(nearby()),
         };
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;

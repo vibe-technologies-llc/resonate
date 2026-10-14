@@ -67,7 +67,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-mcp        catalog and player over MCP  [`mcp`]
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
-  ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons  [`sync`]
+  ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons and Bonjour  [`sync`]
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
