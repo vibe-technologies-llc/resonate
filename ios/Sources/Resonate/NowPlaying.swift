@@ -5,7 +5,7 @@ import UIKit
 
 @MainActor
 final class NowPlaying {
-    private static let artworkEdge: CGFloat = 384
+    nonisolated private static let artworkEdge: CGFloat = 384
     private static let secondsPerMillisecond = 0.001
 
     private unowned let library: Library
@@ -176,15 +176,25 @@ final class NowPlaying {
         let id = track.id
         Task {
             guard let image = await library.features.artwork(track) else { return }
+            let thumbnail = await Task.detached(priority: .utility) { Self.thumbnail(of: image) }.value
             guard shownTrack == id else { return }
-            let edge = Self.artworkEdge
-            let scale = min(1, edge / max(image.size.width, image.size.height))
-            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            let thumbnail = UIGraphicsImageRenderer(size: size).image { _ in
-                image.draw(in: CGRect(origin: .zero, size: size))
-            }
-            artwork = MPMediaItemArtwork(boundsSize: size) { _ in thumbnail }
+            artwork = Self.artwork(thumbnail)
             if let state = library.snapshot { update(state) }
         }
+    }
+
+    nonisolated private static func thumbnail(of image: UIImage) -> UIImage {
+        let scale = min(1, artworkEdge / max(image.size.width, image.size.height, 1))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    nonisolated private static func artwork(_ thumbnail: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: thumbnail.size) { @Sendable _ in thumbnail }
     }
 }

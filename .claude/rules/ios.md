@@ -60,7 +60,14 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   in Resonate from elsewhere is copied into `local` and played.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), reports the route to Rust,
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
-  and drives the remote commands and now-playing info (artwork bounded at 384 px).
+  and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
+  the main actor).
+- **A closure a framework may call off the main thread is never formed on the main actor.** Swift 6
+  makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
+  queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in
+  `_dispatch_assert_queue_fail`. Such a closure is built in a `nonisolated` function or marked
+  `@Sendable` (`NowPlaying.artwork`, `Features.watchNetwork`); `MainActor.assumeIsolated` only where
+  the framework delivers on the main thread (remote commands, notifications on `.main`).
 - Secrets (provider credentials, scrobbling, AcoustID key, sync key) live in the keychain,
   `AfterFirstUnlockThisDeviceOnly`; plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.

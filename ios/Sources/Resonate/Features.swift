@@ -295,7 +295,7 @@ final class Features {
     private func watchNetwork() {
         guard network == nil else { return }
         let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
+        monitor.pathUpdateHandler = { @Sendable [weak self] path in
             let free = path.status == .satisfied && !path.isExpensive && !path.isConstrained
             Task { @MainActor in self?.networkChanged(free) }
         }
