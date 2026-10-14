@@ -24,7 +24,6 @@ enum Grouping: String, CaseIterable, Identifiable {
 
 struct SongsView: View {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     @State private var grouping = Grouping.songs
     @State private var scope = SearchScope.top
 
@@ -40,16 +39,8 @@ struct SongsView: View {
                         ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            Button("Playlists") { navigation.open(.playlists) }
-                            Button("Suggestions") { navigation.open(.suggestions) }
-                            Button("Online search") { navigation.open(.online) }
-                            Button("Filters") { navigation.filters = true }
-                        }
-                        .buttonStyle(.glass)
-                    }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .labelsHidden()
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     if grouping == .songs {
                         FilterChips()
                     } else {
@@ -68,8 +59,12 @@ struct SongsView: View {
         }
         .searchSuggestions { SearchSuggestions(search: search) }
         .onSubmit(of: .search) { search.remember() }
+        .onAppear { search.recallRecents() }
         .navigationTitle("Resonate")
         .toolbar {
+            if grouping == .songs, !search.isAsked {
+                ToolbarItem(placement: .topBarTrailing) { FilterButton() }
+            }
             LibraryToolbar()
             if search.asking, search.hasAnswer {
                 ToolbarItem(placement: .topBarLeading) { ProgressView() }
@@ -209,21 +204,52 @@ struct FilterChips: View {
         let chips = FilterChip.of(filter)
         if !chips.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
+                HStack(spacing: 6) {
                     ForEach(chips) { chip in
                         Button { library.setFilter(chip.cleared(from: filter)) } label: {
-                            HStack(spacing: 6) {
-                                Text(chip.label)
-                                Image(systemName: "xmark").font(.caption.weight(.bold))
-                            }
+                            FilterToken(label: chip.label)
                         }
+                        .buttonStyle(.borderless)
                         .accessibilityLabel("Remove filter \(chip.label)")
                     }
                 }
-                .buttonStyle(.glass)
+                .padding(.horizontal, 16)
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .scrollClipDisabled()
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
         }
+    }
+}
+
+struct FilterToken: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).lineLimit(1)
+            Image(systemName: "xmark")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.quaternary, in: .capsule)
+        .contentShape(.capsule)
+    }
+}
+
+struct FilterButton: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        let filtering = library.filtering
+        Button("Filter and sort", systemImage: filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") {
+            navigation.filters = true
+        }
+        .accessibilityValue(filtering ? "On" : "Off")
     }
 }
 

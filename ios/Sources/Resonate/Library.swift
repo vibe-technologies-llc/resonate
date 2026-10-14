@@ -133,6 +133,7 @@ final class Library {
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
     @ObservationIgnored lazy var songSearch = SearchModel(library: self, remembering: true)
     @ObservationIgnored lazy var shelfSearch = SearchModel(library: self, remembering: false)
+    @ObservationIgnored lazy var tabSearch = SearchModel(library: self, remembering: true)
 
     init() {
         support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -545,6 +546,7 @@ final class Library {
         } else {
             songSearch.refresh()
             shelfSearch.refresh()
+            tabSearch.refresh()
         }
 
         do {
@@ -577,6 +579,7 @@ final class Library {
     func reload(fresh: Bool = false) {
         songSearch.refresh()
         shelfSearch.refresh()
+        tabSearch.refresh()
         guard fresh || filtering else { return }
 
         queryRequest += 1

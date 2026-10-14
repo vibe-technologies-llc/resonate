@@ -25,7 +25,7 @@ struct ResonateApp: App {
 }
 
 enum Root: Hashable {
-    case songs, library, queue, settings
+    case songs, library, queue, settings, search
 }
 
 enum Destination: Hashable {
@@ -78,12 +78,24 @@ final class Navigation {
     var choosingFolder = false
     var sleepTimer = false
     var filters = false
+    var searchPlace = SearchPlace.library
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
     }
 
+    func searchOnline() {
+        nowPlaying = false
+        searchPlace = .online
+        tab = .search
+    }
+
     func open(_ destination: Destination) {
+        guard destination != .online else {
+            searchOnline()
+            return
+        }
+
         nowPlaying = false
         let root = tab == .settings && !destination.belongsToSettings ? Root.library : tab
         tab = root
@@ -125,6 +137,9 @@ struct RootView: View {
             }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
+            }
+            Tab(value: Root.search, role: .search) {
+                stack(.search) { SearchTab() }
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)

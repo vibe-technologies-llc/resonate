@@ -64,10 +64,7 @@ final class Features {
     var onlineQuery = "" {
         didSet { if onlineQuery != oldValue { askOnline() } }
     }
-    var onlineMode = OnlineMode.songs {
-        didSet { if onlineMode != oldValue { askOnline() } }
-    }
-    var onlineResults: OnlineResults?
+    var onlineFound = OnlineFound()
     var wanted: [WantedSong] = []
     var searching = false
     var enriching = false
@@ -193,7 +190,12 @@ final class Features {
             await MainActor.run {
                 self?.online = enabled
                 self?.settings.set(enabled, forKey: "online")
-                if enabled { self?.enrichment.begin() } else { self?.enrichment.read() }
+                if enabled {
+                    self?.enrichment.begin()
+                    self?.askOnline()
+                } else {
+                    self?.enrichment.read()
+                }
             }
             try await self?.applySync(native)
         }
@@ -895,14 +897,16 @@ final class Features {
         searchRequest += 1
         onlinePending?.cancel()
         let request = searchRequest
-        let asked = OnlineAsked(onlineQuery, in: onlineMode)
+        let text = onlineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chain = OnlineAsked.chain(text)
 
-        guard asked.isLink || asked.text.count >= OnlineAsked.shortest else {
+        guard online, !chain.isEmpty else {
             searching = false
             return
         }
-        if let kept = onlineAnswers.answer(for: asked) {
-            onlineResults = OnlineResults(asked: asked, answer: kept)
+        let kept = chain.compactMap { onlineAnswers.answer(for: $0) }
+        if kept.count == chain.count {
+            onlineFound = OnlineFound(text: text, answers: kept)
             searching = false
             return
         }
@@ -915,15 +919,25 @@ final class Features {
 
             do {
                 let native = try await library.player()
-                let answer = try await Work.aside { try OnlineAnswer.asked(asked, of: native) }
-                guard request == searchRequest else { return }
-                onlineAnswers.keep(answer, for: asked)
-                onlineResults = OnlineResults(asked: asked, answer: answer)
+                for asked in chain {
+                    guard request == searchRequest else { return }
+                    let landed = try await answer(asked, by: native)
+                    guard request == searchRequest else { return }
+                    onlineFound = onlineFound.landing(landed, for: text)
+                }
             } catch {
                 guard request == searchRequest else { return }
                 library.report(error)
             }
         }
+    }
+
+    private func answer(_ asked: OnlineAsked, by native: MobilePlayer) async throws -> OnlineAnswer {
+        if let kept = onlineAnswers.answer(for: asked) { return kept }
+
+        let fresh = try await Work.aside { try OnlineAnswer.asked(asked, of: native) }
+        onlineAnswers.keep(fresh, for: asked)
+        return fresh
     }
 
     @ObservationIgnored private var visualizers = 0
