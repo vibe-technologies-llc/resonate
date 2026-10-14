@@ -78,6 +78,7 @@ final class Navigation {
     var choosingFolder = false
     var sleepTimer = false
     var filters = false
+    var songsGrouping = Grouping.songs
     var searchPlace = SearchPlace.library
 
     func path(_ root: Root) -> Binding<[Destination]> {

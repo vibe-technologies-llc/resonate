@@ -280,6 +280,7 @@ struct SuggestionsView: View {
     private func mix(_ title: String, apply: @escaping () -> Void) -> some View {
         Button {
             apply()
+            navigation.songsGrouping = .songs
             navigation.tab = .songs
             navigation.paths[.songs] = []
         } label: {

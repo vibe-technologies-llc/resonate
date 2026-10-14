@@ -24,18 +24,20 @@ enum Grouping: String, CaseIterable, Identifiable {
 
 struct SongsView: View {
     @Environment(Library.self) private var library
-    @State private var grouping = Grouping.songs
+    @Environment(Navigation.self) private var navigation
     @State private var scope = SearchScope.top
 
     var body: some View {
         @Bindable var library = library
+        @Bindable var navigation = navigation
+        let grouping = navigation.songsGrouping
         @Bindable var search = library.songSearch
         List {
             if search.isAsked {
                 SearchResults(search: search, scope: $scope)
             } else {
                 Section {
-                    Picker("Show", selection: $grouping) {
+                    Picker("Show", selection: $navigation.songsGrouping) {
                         ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
