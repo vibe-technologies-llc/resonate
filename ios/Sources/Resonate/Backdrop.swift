@@ -13,14 +13,16 @@ struct BackdropView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var scheme
     let track: Track?
+    let moving: Bool
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?) {
+    init(track: Track?, moving: Bool = true) {
         self.track = track
+        self.moving = moving
         _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) })
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
     }
@@ -68,12 +70,12 @@ struct BackdropView: View {
 
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
-        if reduceMotion { return .still }
+        if reduceMotion || !moving { return .still }
         return .flowing(framesPerSecond: lowPower ? 30 : 60)
     }
 
     private var wantsEnergy: Bool {
-        visible && phase == .active && !reduceMotion && rendering.drawsMesh
+        visible && moving && phase == .active && !reduceMotion && rendering.drawsMesh
     }
 
     private func listen(_ wanted: Bool) {

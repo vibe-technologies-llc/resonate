@@ -47,10 +47,26 @@ enum Destination: Hashable {
     case output
     case sound
     case processing
-    case lyrics(Track?)
+    case songLyrics(UInt64?)
     case visualizer
-    case analysis(Track?)
-    case inspector(Track)
+    case songAnalysis(UInt64?)
+    case songDetails(UInt64)
+
+    static func lyrics(_ track: Track?) -> Destination {
+        .songLyrics(track?.id)
+    }
+
+    static func analysis(_ track: Track?) -> Destination {
+        .songAnalysis(track?.id)
+    }
+
+    static func inspector(_ track: Track) -> Destination {
+        .songDetails(track.id)
+    }
+}
+
+enum PlayerTransition {
+    static let source = "player"
 }
 
 @MainActor
@@ -73,6 +89,12 @@ final class Navigation {
         tab = root
         paths[root, default: []].append(destination)
     }
+
+    func leave(_ destination: Destination) {
+        for (root, path) in paths where path.last == destination {
+            paths[root]?.removeLast()
+        }
+    }
 }
 
 extension Destination {
@@ -87,6 +109,7 @@ extension Destination {
 struct RootView: View {
     @Environment(Library.self) private var library
     @State private var navigation = Navigation()
+    @Namespace private var player
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -105,18 +128,15 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            if library.snapshot?.current != nil {
-                MiniPlayer()
-            }
-        }
+        .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
         .safeAreaInset(edge: .top) { StatusBanner() }
         .fullScreenCover(isPresented: $navigation.nowPlaying) {
             NowPlayingView()
+                .navigationTransition(.zoom(sourceID: PlayerTransition.source, in: player))
                 .environment(navigation)
         }
         .sheet(isPresented: $navigation.sleepTimer) {
-            SleepTimerSheet().presentationDetents([.medium])
+            SleepTimerSheet().presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $navigation.filters) {
             FilterSheet()
@@ -134,6 +154,23 @@ struct RootView: View {
         NavigationStack(path: navigation.path(root)) {
             content()
                 .navigationDestination(for: Destination.self) { DestinationView(destination: $0) }
+        }
+    }
+}
+
+struct PlayerAccessory: ViewModifier {
+    let loaded: Bool
+    let zoom: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            content.tabViewBottomAccessory(isEnabled: loaded) {
+                MiniPlayer(zoom: zoom)
+            }
+        } else {
+            content.tabViewBottomAccessory {
+                if loaded { MiniPlayer(zoom: zoom) }
+            }
         }
     }
 }
@@ -161,10 +198,32 @@ struct DestinationView: View {
         case .output: OutputView()
         case .sound: SoundSettingsView()
         case .processing: ProcessingView()
-        case .lyrics(let track): LyricsView(chosen: track)
+        case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
-        case .analysis(let track): AnalysisView(chosen: track)
-        case .inspector(let track): InspectorView(track: track)
+        case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }
+        case .songDetails(let id): LiveSong(id: id) { track in track.map { InspectorView(track: $0) } }
+        }
+    }
+}
+
+struct LiveSong<Content: View>: View {
+    @Environment(Library.self) private var library
+    let id: UInt64?
+    @ViewBuilder let content: (Track?) -> Content
+
+    var body: some View {
+        if let id {
+            if let track = library.track(id) {
+                content(track)
+            } else {
+                ContentUnavailableView(
+                    "This song is no longer here",
+                    systemImage: "music.note",
+                    description: Text("It may have been removed from your library.")
+                )
+            }
+        } else {
+            content(nil)
         }
     }
 }
@@ -173,25 +232,64 @@ struct StatusBanner: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             if library.scanning {
-                ProgressView().progressViewStyle(.linear)
+                ScanProgress()
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             if let message = library.status {
-                HStack {
-                    Text(message).font(.footnote).lineLimit(3)
-                    Spacer()
-                    Button("Dismiss") { library.status = nil }
-                        .font(.footnote.weight(.semibold))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                .padding(.horizontal, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                StatusCard(message: message)
+                    .id(message.serial)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.smooth, value: library.status)
+        .animation(.smooth, value: library.scanning)
+    }
+}
+
+struct ScanProgress: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+            Text("Reading music folder… \(counted(library.scanned, "song"))")
+                .font(.footnote)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Spacer(minLength: 0)
+            Button("Stop") { library.stopScanning() }
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct StatusCard: View {
+    @Environment(Library.self) private var library
+    let message: StatusMessage
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if message.kind == .failure {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+            }
+            Text(message.text).font(.footnote).lineLimit(3)
+            Spacer(minLength: 0)
+            Button("Dismiss") { library.dismissStatus() }
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 12)
     }
 }
 
@@ -200,19 +298,40 @@ struct LibraryToolbar: ToolbarContent {
     @Environment(Navigation.self) private var navigation
 
     var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            if library.snapshot?.current != nil {
-                Button("Sleep timer", systemImage: library.snapshot?.sleep == nil ? "moon" : "moon.fill") {
-                    navigation.sleepTimer = true
+        if library.loaded {
+            ToolbarItem(placement: .topBarTrailing) {
+                SleepTimerButton()
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu("More", systemImage: "ellipsis") {
+                Button("Add music folder", systemImage: "folder.badge.plus") {
+                    navigation.choosingFolder = true
+                }
+                .disabled(library.scanning)
+                if library.scanning {
+                    Button("Stop reading", systemImage: "stop.circle") { library.stopScanning() }
+                } else {
+                    Button("Rescan library", systemImage: "arrow.clockwise") { library.rescan() }
+                }
+                Button("Library tools", systemImage: "wrench.and.screwdriver") {
+                    navigation.open(.tools)
                 }
             }
-            Button("Add music folder", systemImage: "folder.badge.plus") {
-                navigation.choosingFolder = true
-            }
-            .disabled(library.scanning)
-            Button("Library tools", systemImage: "ellipsis") {
-                navigation.open(.tools)
-            }
         }
+    }
+}
+
+struct SleepTimerButton: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        let running = library.snapshot?.sleep != nil
+        Button("Sleep timer", systemImage: running ? "moon.zzz.fill" : "moon.zzz") {
+            navigation.sleepTimer = true
+        }
+        .accessibilityValue(running ? "On" : "Off")
     }
 }

@@ -254,17 +254,21 @@ enum Backdrop {
 struct FavouriteButton: View {
     @Environment(Library.self) private var library
     let track: Track
+    @State private var tapped = 0
 
     var body: some View {
+        let favourite = library.isFavourite(track)
         Button {
-            library.setFavourite(track, !track.favourite)
+            tapped += 1
+            library.setFavourite(track, !favourite)
         } label: {
-            Image(systemName: track.favourite ? "heart.fill" : "heart")
-                .foregroundStyle(track.favourite ? Color.pink : Color.secondary)
+            Image(systemName: favourite ? "heart.fill" : "heart")
+                .foregroundStyle(favourite ? Color.pink : Color.secondary)
                 .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: tapped)
         }
         .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: track.favourite)
-        .accessibilityLabel(track.favourite ? "Remove from favourites" : "Add to favourites")
+        .sensoryFeedback(.selection, trigger: tapped)
+        .accessibilityLabel(favourite ? "Remove from favourites" : "Add to favourites")
     }
 }
