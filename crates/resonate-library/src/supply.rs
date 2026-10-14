@@ -534,7 +534,7 @@ impl<R: Read> Read for Counted<'_, R> {
 
 fn opened_and_pumped(opening: Opening, into: &SyncSender<Pumping>) {
     match opening.open() {
-        Ok(Opened::Reading(mut reader)) => pump(&mut *reader, into),
+        Ok(Opened::Reading { mut reader, .. }) => pump(&mut *reader, into),
         Ok(Opened::Gone) => {
             let _ = into.send(Pumping::Unopened(Unopened::Gone));
         }

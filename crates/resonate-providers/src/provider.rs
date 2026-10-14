@@ -537,7 +537,10 @@ mod tests {
                 extension: Extension::new("flac")?,
                 opening: Opening::new(move || {
                     opened.store(true, std::sync::atomic::Ordering::SeqCst);
-                    Ok(Opened::Reading(Box::new(io::empty())))
+                    Ok(Opened::Reading {
+                        reader: Box::new(io::empty()),
+                        length: Some(0),
+                    })
                 }),
             }))
         }

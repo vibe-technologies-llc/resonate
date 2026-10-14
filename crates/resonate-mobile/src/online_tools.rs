@@ -10,7 +10,11 @@ use resonate_library::{
 };
 use rusqlite::{OptionalExtension, params};
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read};
+use crate::{
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::read,
+    features::{Listing, SearchSong},
+};
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct AutoEqDevice {
@@ -158,7 +162,7 @@ impl MobilePlayer {
             })
     }
 
-    pub fn release_songs(&self, id: String) -> Result<Vec<crate::features::SearchSong>> {
+    pub fn release_songs(&self, id: String) -> Result<Vec<SearchSong>> {
         self.require_online()?;
         let Some(release) = self
             .services
@@ -169,24 +173,48 @@ impl MobilePlayer {
             return Ok(Vec::new());
         };
         let artist = release.credited_as();
-        Ok(release
+        let artist_id = release
+            .credit
+            .first()
+            .and_then(|credit| credit.mbid.as_ref())
+            .map_or_else(String::new, ToString::to_string);
+        let songs = release
             .media
             .iter()
-            .flat_map(|medium| medium.tracks.iter())
-            .map(|track| crate::features::SearchSong {
+            .flat_map(|medium| {
+                medium
+                    .tracks
+                    .iter()
+                    .map(move |track| (medium.position, track))
+            })
+            .map(|(disc, track)| SearchSong {
                 recording: track
                     .recording
                     .as_ref()
                     .map_or_else(String::new, ToString::to_string),
                 title: track.title.clone(),
                 artist: track.artist.clone().unwrap_or_else(|| artist.clone()),
+                artist_id: if track.artist.is_none() {
+                    artist_id.clone()
+                } else {
+                    String::new()
+                },
                 album: release.title.clone(),
+                release: release.id.to_string(),
+                release_group: release
+                    .group
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string),
+                disc: Some(disc),
+                position: Some(track.position),
                 duration_ms: track
                     .length
                     .map(|length| length.as_millis().min(u128::from(u64::MAX)) as u64),
                 isrcs: track.isrcs.clone(),
+                held: false,
             })
-            .collect())
+            .collect();
+        self.offered(songs, Listing::Listed)
     }
 
     pub fn search_auto_eq(&self, text: String) -> Result<Vec<AutoEqDevice>> {

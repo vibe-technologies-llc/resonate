@@ -441,7 +441,7 @@ impl MobilePlayer {
         self.stop_enriching_to_close();
         self.configure_online(false);
         self.cancel_analysis();
-        self.cancel_download();
+        self.downloads.cancel_every_job();
         self.finish_listening()?;
         self.save()?;
         if let Some(player) = self.player.lock().take() {

@@ -73,7 +73,7 @@ fn starts_at(range: &str) -> Option<u64> {
         .ok()
 }
 
-fn asked(agent: &Agent, url: &str, from: u64) -> Result<BodyReader<'static>, Unfetched> {
+fn asked(agent: &Agent, url: &str, from: u64) -> Result<Answered, Unfetched> {
     let mut request = agent.get(url);
     if from > 0 {
         request = request.header(RANGE, format!("bytes={from}-"));
@@ -99,6 +99,7 @@ fn asked(agent: &Agent, url: &str, from: u64) -> Result<BodyReader<'static>, Unf
         status => return Err(Unfetched::Refused(status)),
     };
 
+    let length = response.body().content_length();
     let mut reader = response.into_body().into_reader();
     if skipped > 0 {
         let passed =
@@ -107,13 +108,19 @@ fn asked(agent: &Agent, url: &str, from: u64) -> Result<BodyReader<'static>, Unf
             return Err(Unfetched::Io(io::Error::from(ErrorKind::UnexpectedEof)));
         }
     }
-    Ok(reader)
+    Ok(Answered { reader, length })
+}
+
+struct Answered {
+    reader: BodyReader<'static>,
+    length: Option<u64>,
 }
 
 pub struct Ranged {
     agent: Agent,
     url: String,
     reader: BodyReader<'static>,
+    length: Option<u64>,
     read: u64,
     broken: u32,
     resumed_after: Duration,
@@ -129,6 +136,7 @@ impl Ranged {
         Self {
             agent,
             url,
+            length: response.body().content_length(),
             reader: response.into_body().into_reader(),
             read: 0,
             broken: 0,
@@ -138,9 +146,9 @@ impl Ranged {
 
     pub fn opened(agent: Agent, url: String, resumed_after: Duration) -> Result<Self, Unfetched> {
         let mut tried = 0;
-        let reader = loop {
+        let answered = loop {
             match asked(&agent, &url, 0) {
-                Ok(reader) => break reader,
+                Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
                     let wait = asked_for
@@ -158,7 +166,8 @@ impl Ranged {
         Ok(Self {
             agent,
             url,
-            reader,
+            reader: answered.reader,
+            length: answered.length,
             read: 0,
             broken: 0,
             resumed_after,
@@ -167,6 +176,10 @@ impl Ranged {
 
     pub fn read_so_far(&self) -> u64 {
         self.read
+    }
+
+    pub fn length(&self) -> Option<u64> {
+        self.length
     }
 
     fn resumed_after(&mut self, broken_off: io::Error) -> io::Result<()> {
@@ -181,8 +194,8 @@ impl Ranged {
             tracing::debug!(error = %last, read = self.read, ?wait, "a download broke off and is asked for again from where it stopped");
             thread::sleep(wait);
             match asked(&self.agent, &self.url, self.read) {
-                Ok(reader) => {
-                    self.reader = reader;
+                Ok(answered) => {
+                    self.reader = answered.reader;
                     return Ok(());
                 }
                 Err(refused @ Unfetched::Refused(_)) => return Err(refused.into_io()),

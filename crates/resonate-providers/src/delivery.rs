@@ -33,7 +33,10 @@ impl fmt::Display for Extension {
 }
 
 pub enum Opened {
-    Reading(Box<dyn Read + Send>),
+    Reading {
+        reader: Box<dyn Read + Send>,
+        length: Option<u64>,
+    },
     Gone,
 }
 
@@ -47,7 +50,12 @@ impl Opening {
     }
 
     pub fn ready(reader: impl Read + Send + 'static) -> Self {
-        Self::new(move || Ok(Opened::Reading(Box::new(reader))))
+        Self::new(move || {
+            Ok(Opened::Reading {
+                reader: Box::new(reader),
+                length: None,
+            })
+        })
     }
 
     pub fn open(self) -> Result<Opened> {

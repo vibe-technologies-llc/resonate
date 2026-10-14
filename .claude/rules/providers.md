@@ -57,9 +57,13 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
 
 - **`Delivery::File(PathBuf)`**: audio on disk, copied by the vault, left in place.
 - **`Delivery::Stream { key, extension, opening }`**: recorded as taken from `<provider>:<key>`;
-  `Extension` is the decoder's probe hint. `Opening::open` answers `Opened::Reading(reader)`,
-  `Opened::Gone` (track went between search and download: 404/410) or the provider's `Err`;
-  `Opening::ready` wraps an open reader.
+  `Extension` is the decoder's probe hint. `Opening::open` answers `Opened::Reading { reader,
+  length }`, `Opened::Gone` (track went between search and download: 404/410) or the provider's
+  `Err`; `Opening::ready` wraps an open reader of no known length. **`length` is what the server
+  said the whole is**: `Ranged::length` reads the first answer's `Content-Length` (`None` where it
+  sent none or ureq decompresses), so Subsonic and Monochrome carry it, TIDAL only for a one-URL
+  FLAC (segments and a remux say none); the phones show it as the download's total
+  (`an_opened_download_says_how_long_the_server_said_it_is`).
 
 ## What the infrastructure owns
 

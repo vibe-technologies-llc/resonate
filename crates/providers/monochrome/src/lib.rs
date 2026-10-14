@@ -290,12 +290,16 @@ impl Monochrome {
         if is_a_document(response.body().mime_type()) {
             return Err(self.unreadable(op));
         }
-        Ok(Opened::Reading(Box::new(Ranged::continuing(
+        let ranged = Ranged::continuing(
             self.downloading.clone(),
             url,
             response,
             self.patience.resumed_after,
-        ))))
+        );
+        Ok(Opened::Reading {
+            length: ranged.length(),
+            reader: Box::new(ranged),
+        })
     }
 }
 

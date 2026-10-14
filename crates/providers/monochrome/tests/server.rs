@@ -273,7 +273,7 @@ fn track(id: &str, from: Option<usize>) -> Asked {
 
 fn opened(opening: Opening) -> Box<dyn Read + Send> {
     match opening.open().expect("the offer opens") {
-        Opened::Reading(reader) => reader,
+        Opened::Reading { reader, .. } => reader,
         Opened::Gone => panic!("the offer was gone when opened"),
     }
 }
@@ -318,6 +318,25 @@ fn the_listing_holding_the_wants_isrc_is_delivered_whole_as_flac() {
         fake.heard(),
         vec![searched("Echoes Pink Floyd"), track(ECHOES, None)]
     );
+}
+
+#[test]
+fn an_opened_download_says_how_long_the_server_said_it_is() {
+    let fake = Fake::serving(|asked, _| match asked {
+        Asked::Search(_) => echoes_found(),
+        _ => Canned::audio(),
+    });
+
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.monochrome().find(&echoes()).expect("an answer")
+    else {
+        panic!("the song was not offered");
+    };
+    let Opened::Reading { length, .. } = opening.open().expect("the offer opens") else {
+        panic!("the offer was gone when opened");
+    };
+
+    assert_eq!(length, Some(AUDIO.len() as u64));
 }
 
 #[test]

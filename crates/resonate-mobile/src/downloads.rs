@@ -1,39 +1,60 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
+    fmt,
     fs::File,
-    io::{Read, Write},
+    io::{self, Read, Write},
     os::fd::FromRawFd,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{self, RecvTimeoutError},
     },
+    thread,
     time::Duration,
 };
 
 use parking_lot::Mutex;
-use resonate_core::Mbid;
+use resonate_core::{Isrc, Mbid, SourceId};
+use resonate_library::ANSWERS_WITHIN;
 use resonate_providers::{
-    Authorizing, Client, Delivery, Identity, Obtained, Opened, Provider, SignsIn,
+    Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, Opened, Provider,
+    Providers, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
 
 use crate::{Error, MobilePlayer, Result, error::DownloadOp, features::SearchSong};
 
+const JOBS_SETTLED_KEPT: usize = 16;
+const CHUNK_BYTES: usize = 64 * 1024;
+const LARGEST_DOWNLOAD: u64 = 8 * 1024 * 1024 * 1024;
+const HEEDED_EVERY: Duration = Duration::from_millis(50);
+const EXTENSION_UNNAMED: &str = "flac";
+
 #[derive(Default)]
 pub(crate) struct Downloads {
-    offers: Mutex<BTreeMap<u64, Delivery>>,
+    jobs: Mutex<BTreeMap<u64, Arc<Job>>>,
     next: AtomicU64,
-    bytes: AtomicU64,
-    cancelled: AtomicBool,
+    refused: Mutex<BTreeSet<String>>,
     authorizing: Mutex<Option<(Client, Authorizing)>>,
     refreshed: Arc<Mutex<Option<String>>>,
 }
 
-#[derive(Clone, Copy, Debug, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum MusicProvider {
     Monochrome,
     Subsonic,
     Tidal,
     HifiApi,
+}
+
+impl fmt::Display for MusicProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Monochrome => "Monochrome",
+            Self::Subsonic => "The Subsonic server",
+            Self::Tidal => "TIDAL",
+            Self::HifiApi => "The hifi-api server",
+        })
+    }
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -49,9 +70,35 @@ pub struct DownloadAccount {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct DownloadOffer {
-    pub id: u64,
+    pub job: u64,
     pub extension: String,
     pub name: String,
+    pub provider: MusicProvider,
+    pub total: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum DownloadPhase {
+    Finding,
+    Downloading,
+    Validating,
+    Done,
+    Failed,
+    Cancelled,
+}
+
+impl DownloadPhase {
+    const fn is_settled(self) -> bool {
+        matches!(self, Self::Done | Self::Failed | Self::Cancelled)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadProgress {
+    pub phase: DownloadPhase,
+    pub received: u64,
+    pub total: Option<u64>,
+    pub provider: Option<MusicProvider>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -60,15 +107,262 @@ pub struct TidalAuthorization {
     pub verify_at: String,
 }
 
-#[uniffi::export]
-impl MobilePlayer {
-    pub fn find_download(
-        &self,
-        song: SearchSong,
-        account: DownloadAccount,
-    ) -> Result<Option<DownloadOffer>> {
-        self.downloads.cancelled.store(false, Ordering::Relaxed);
-        self.downloads.bytes.store(0, Ordering::Relaxed);
+pub(crate) struct Job {
+    id: u64,
+    pub(crate) song: SearchSong,
+    cancelled: AtomicBool,
+    received: AtomicU64,
+    standing: Mutex<Standing>,
+}
+
+struct Standing {
+    phase: DownloadPhase,
+    total: Option<u64>,
+    provider: Option<MusicProvider>,
+    taken_from: Option<String>,
+    opened: Option<Box<dyn Read + Send>>,
+}
+
+impl Job {
+    fn new(id: u64, song: SearchSong) -> Self {
+        Self {
+            id,
+            song,
+            cancelled: AtomicBool::new(false),
+            received: AtomicU64::new(0),
+            standing: Mutex::new(Standing {
+                phase: DownloadPhase::Finding,
+                total: None,
+                provider: None,
+                taken_from: None,
+                opened: None,
+            }),
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    fn progress(&self) -> DownloadProgress {
+        let standing = self.standing.lock();
+        DownloadProgress {
+            phase: standing.phase,
+            received: self.received.load(Ordering::Acquire),
+            total: standing.total,
+            provider: standing.provider,
+        }
+    }
+
+    pub(crate) fn moved_to(&self, phase: DownloadPhase) -> Result<()> {
+        let mut standing = self.standing.lock();
+        if self.is_cancelled() || standing.phase == DownloadPhase::Cancelled {
+            standing.phase = DownloadPhase::Cancelled;
+            return Err(Error::DownloadCancelled);
+        }
+        standing.phase = phase;
+        Ok(())
+    }
+
+    pub(crate) fn settled<T>(&self, result: Result<T>) -> Result<T> {
+        let mut standing = self.standing.lock();
+        standing.phase = match &result {
+            Ok(_) => standing.phase,
+            Err(Error::DownloadCancelled) => DownloadPhase::Cancelled,
+            Err(_) if self.is_cancelled() => DownloadPhase::Cancelled,
+            Err(_) => DownloadPhase::Failed,
+        };
+        if result.is_err() {
+            standing.opened = None;
+        }
+        result
+    }
+
+    pub(crate) fn done(&self) {
+        self.standing.lock().phase = DownloadPhase::Done;
+    }
+
+    pub(crate) fn taken_from(&self) -> Option<String> {
+        self.standing.lock().taken_from.clone()
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        let mut standing = self.standing.lock();
+        standing.opened = None;
+        if !standing.phase.is_settled() {
+            standing.phase = DownloadPhase::Cancelled;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tried {
+    Offered,
+    Missed,
+    Unheard,
+}
+
+pub(crate) struct Searched {
+    pub(crate) offer: Result<DownloadOffer>,
+    pub(crate) tried: Tried,
+}
+
+struct Heard {
+    provider: MusicProvider,
+    failure: Option<Error>,
+}
+
+struct Told {
+    asked: Box<dyn Provider>,
+    provider: MusicProvider,
+    heard: Arc<Mutex<Vec<Heard>>>,
+}
+
+impl Provider for Told {
+    fn source(&self) -> &SourceId {
+        self.asked.source()
+    }
+
+    fn find(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
+        let found = self.asked.find(identity);
+        let failure = found.as_ref().err().map(|error| {
+            tracing::warn!(%error, provider = %self.provider, "a download provider refused");
+            failure_of(self.provider, error)
+        });
+        self.heard.lock().push(Heard {
+            provider: self.provider,
+            failure,
+        });
+        found
+    }
+}
+
+pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Error) -> Error {
+    use resonate_providers::Error as Refusal;
+
+    match error {
+        Refusal::Io { source, .. } if source.kind() == io::ErrorKind::TimedOut => {
+            Error::ProviderAway { provider }
+        }
+        Refusal::Io { .. } => Error::Unreachable { provider },
+        Refusal::Refused { status, .. } => Error::ProviderRefused {
+            provider,
+            status: *status,
+        },
+        Refusal::Unwelcome { code, .. } => Error::AccountRefused {
+            provider,
+            code: *code,
+        },
+        Refusal::TurnedAway { .. } => Error::NotFound,
+        Refusal::Untrusted { .. } => Error::ProviderUntrusted { provider },
+        Refusal::Unaddressable { .. } | Refusal::NotTheService { .. } => {
+            Error::ProviderMisaddressed { provider }
+        }
+        Refusal::StillQueued { .. } | Refusal::StillArriving { .. } => {
+            Error::ProviderAway { provider }
+        }
+        Refusal::Unreadable { .. } | Refusal::OffItsHosts { .. } | Refusal::NotAnExtension => {
+            Error::ProviderUnreadable { provider }
+        }
+        Refusal::AuthorizationLapsed { .. } => Error::SignInLapsed { provider },
+        Refusal::AuthorizationDenied { .. } => Error::SignInDenied { provider },
+    }
+}
+
+pub(crate) fn identity_of(song: &SearchSong) -> Identity {
+    Identity {
+        recording: Mbid::new(&song.recording).ok(),
+        release: Mbid::new(&song.release).ok(),
+        isrcs: song
+            .isrcs
+            .iter()
+            .filter_map(|isrc| Isrc::new(isrc).ok())
+            .collect(),
+        title: song.title.clone(),
+        artist: (!song.artist.is_empty()).then(|| song.artist.clone()),
+        album: (!song.album.is_empty()).then(|| song.album.clone()),
+        length: song.duration_ms.map(Duration::from_millis),
+        disc: song.disc,
+        position: song.position,
+        ..Identity::default()
+    }
+}
+
+fn file_stem_of(song: &SearchSong) -> String {
+    format!("{} - {}", song.artist, song.title)
+        .chars()
+        .map(|letter| {
+            if letter.is_control() || matches!(letter, '/' | '\\') {
+                '_'
+            } else {
+                letter
+            }
+        })
+        .collect()
+}
+
+struct Taken {
+    reader: Box<dyn Read + Send>,
+    length: Option<u64>,
+    extension: String,
+    provider: MusicProvider,
+    taken_from: String,
+}
+
+enum Unopened {
+    Gone,
+    Failed(Error),
+}
+
+impl Downloads {
+    pub(crate) fn begin(&self, song: SearchSong) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let mut jobs = self.jobs.lock();
+        let settled: Vec<u64> = jobs
+            .iter()
+            .filter(|(_, job)| job.standing.lock().phase.is_settled())
+            .map(|(id, _)| *id)
+            .collect();
+        for gone in settled
+            .iter()
+            .take(settled.len().saturating_sub(JOBS_SETTLED_KEPT))
+        {
+            jobs.remove(gone);
+        }
+        jobs.insert(id, Arc::new(Job::new(id, song)));
+        id
+    }
+
+    pub(crate) fn job(&self, job: u64) -> Result<Arc<Job>> {
+        self.jobs
+            .lock()
+            .get(&job)
+            .cloned()
+            .ok_or(Error::UnknownDownload)
+    }
+
+    pub(crate) fn progress(&self, job: u64) -> Option<DownloadProgress> {
+        self.jobs.lock().get(&job).map(|job| job.progress())
+    }
+
+    pub(crate) fn cancel(&self, job: u64) {
+        if let Some(job) = self.jobs.lock().get(&job) {
+            job.cancel();
+        }
+    }
+
+    pub(crate) fn cancel_every_job(&self) {
+        for job in self.jobs.lock().values() {
+            job.cancel();
+        }
+    }
+
+    pub(crate) fn refuse(&self, taken_from: String) {
+        self.refused.lock().insert(taken_from);
+    }
+
+    fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
         let DownloadAccount {
             provider,
             server,
@@ -78,36 +372,12 @@ impl MobilePlayer {
             client_secret,
             refresh_token,
         } = account;
-        let stem = format!("{} - {}", song.artist, song.title)
-            .chars()
-            .map(|letter| {
-                if letter.is_control() || matches!(letter, '/' | '\\') {
-                    '_'
-                } else {
-                    letter
-                }
-            })
-            .collect::<String>();
-        self.require_online()?;
-        let identity = Identity {
-            recording: Mbid::new(&song.recording).ok(),
-            title: song.title,
-            artist: Some(song.artist),
-            album: (!song.album.is_empty()).then_some(song.album),
-            length: song.duration_ms.map(Duration::from_millis),
-            isrcs: song
-                .isrcs
-                .iter()
-                .filter_map(|isrc| resonate_core::Isrc::new(isrc).ok())
-                .collect(),
-            ..Identity::default()
-        };
-        let provider: Box<dyn Provider> = match provider {
-            MusicProvider::Monochrome => Box::new(if server.trim().is_empty() {
-                resonate_monochrome::Monochrome::hosted()
-            } else {
-                resonate_monochrome::Monochrome::at(&server)
-            }),
+        let custom = !server.trim().is_empty();
+        match provider {
+            MusicProvider::Monochrome if custom => {
+                Box::new(resonate_monochrome::Monochrome::at(&server))
+            }
+            MusicProvider::Monochrome => Box::new(resonate_monochrome::Monochrome::hosted()),
             MusicProvider::Subsonic => {
                 Box::new(resonate_subsonic::Subsonic::at(resonate_subsonic::Server {
                     url: server,
@@ -116,7 +386,7 @@ impl MobilePlayer {
                 }))
             }
             MusicProvider::Tidal => {
-                let refreshed = Arc::clone(&self.downloads.refreshed);
+                let refreshed = Arc::clone(&self.refreshed);
                 Box::new(
                     resonate_tidal::Tidal::signed_in(resonate_tidal::Account {
                         client_id,
@@ -128,111 +398,330 @@ impl MobilePlayer {
                     }),
                 )
             }
+            MusicProvider::HifiApi if custom => Box::new(resonate_tidal::HifiApi::at(&server)),
             MusicProvider::HifiApi => Box::new(resonate_tidal::HifiApi::hosted()),
-        };
-        let obtained = provider.find(&identity).map_err(|source| Error::Provider {
-            op: DownloadOp::Find,
-            source: Box::new(source),
-        })?;
-        if self.downloads.cancelled.load(Ordering::Relaxed) {
-            return Err(Error::DownloadCancelled);
         }
-        self.require_online()?;
-        let Obtained::Found(delivery) = obtained else {
-            return Ok(None);
-        };
-        let extension = match &delivery {
-            Delivery::File(path) => path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .unwrap_or("flac")
-                .to_owned(),
-            Delivery::Stream { extension, .. } => extension.as_str().to_owned(),
-        };
-        let id = self.downloads.next.fetch_add(1, Ordering::Relaxed);
-        let mut offers = self.downloads.offers.lock();
-        if offers.len() >= 4 {
-            offers.pop_first();
+    }
+
+    pub(crate) fn find(
+        &self,
+        job: &Job,
+        accounts: Vec<DownloadAccount>,
+        reaching: &(dyn Fn() -> bool + Sync),
+    ) -> Searched {
+        if accounts.is_empty() {
+            return Searched {
+                offer: job.settled(Err(Error::NoProvider)),
+                tried: Tried::Unheard,
+            };
         }
-        offers.insert(id, delivery);
+        if let Err(cancelled) = job.moved_to(DownloadPhase::Finding) {
+            return Searched {
+                offer: Err(cancelled),
+                tried: Tried::Unheard,
+            };
+        }
+        job.received.store(0, Ordering::Release);
+
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let mut asked = Vec::new();
+        let mut providers = Providers::none();
+        for account in accounts {
+            let provider = account.provider;
+            let told = Told {
+                asked: self.provider_of(account),
+                provider,
+                heard: Arc::clone(&heard),
+            };
+            asked.push((told.source().clone(), provider));
+            providers = providers.and(Arc::new(told));
+        }
+        let refused = self.refused.lock().clone();
+        let cancelled = || job.is_cancelled() || !reaching();
+        let declined = |delivered: &Delivered| refused.contains(&delivered.taken_from().to_uri());
+        let answer = providers.first(
+            &identity_of(&job.song),
+            &Asking {
+                within: ANSWERS_WITHIN,
+                cancelled: &cancelled,
+                turning_to: &|_| {},
+                declined: &declined,
+                passing: &[],
+                apart: TURNED_TO_APART,
+                grace: WAITED_ON_AFTER_AN_OFFER,
+            },
+            &mut Away::default(),
+        );
+
+        let tried = if answer.delivered.is_some() {
+            Tried::Offered
+        } else if answer.heard_from_every_provider() {
+            Tried::Missed
+        } else {
+            Tried::Unheard
+        };
+        let kind_of = |source: &SourceId| {
+            asked
+                .iter()
+                .find(|(asked, _)| asked == source)
+                .map(|(_, provider)| *provider)
+        };
+        let offers: Vec<Delivered> = answer
+            .delivered
+            .into_iter()
+            .chain(answer.held_back)
+            .collect();
+        let heard = std::mem::take(&mut *heard.lock());
+        let offer = if offers.is_empty() {
+            Err(nothing_found(job, reaching, heard, &asked))
+        } else {
+            self.first_opened(job, offers, &kind_of, reaching)
+        };
+        Searched {
+            offer: job.settled(offer),
+            tried,
+        }
+    }
+
+    fn first_opened(
+        &self,
+        job: &Job,
+        offers: Vec<Delivered>,
+        kind_of: &dyn Fn(&SourceId) -> Option<MusicProvider>,
+        reaching: &(dyn Fn() -> bool + Sync),
+    ) -> Result<DownloadOffer> {
+        let mut failure = None;
+        for offered in offers {
+            let Some(provider) = kind_of(&offered.provider) else {
+                continue;
+            };
+            match opened(job, offered, provider, reaching)? {
+                Ok(taken) => return Ok(self.held_for_a_destination(job, taken)),
+                Err(Unopened::Gone) => {}
+                Err(Unopened::Failed(error)) => {
+                    failure.get_or_insert(error);
+                }
+            }
+        }
+        Err(failure.unwrap_or(Error::NotFound))
+    }
+
+    fn held_for_a_destination(&self, job: &Job, taken: Taken) -> DownloadOffer {
         let name = resonate_core::naming::named_within(
             "",
-            std::ffi::OsStr::new(&stem),
-            format!(".{extension}"),
+            std::ffi::OsStr::new(&file_stem_of(&job.song)),
+            format!(".{}", taken.extension),
         )
         .to_string_lossy()
         .into_owned();
-        Ok(Some(DownloadOffer {
-            id,
-            extension,
+        let mut standing = job.standing.lock();
+        standing.total = taken.length;
+        standing.provider = Some(taken.provider);
+        standing.taken_from = Some(taken.taken_from);
+        standing.opened = Some(taken.reader);
+        DownloadOffer {
+            job: job.id,
+            extension: taken.extension,
             name,
-        }))
+            provider: taken.provider,
+            total: taken.length,
+        }
     }
 
-    pub fn download_offer(&self, id: u64, descriptor: i32) -> Result<u64> {
-        let mut output = fresh_destination(descriptor)?;
-        self.require_online()?;
-        if self.downloads.cancelled.load(Ordering::Relaxed) {
-            return Err(Error::DownloadCancelled);
-        }
-        self.downloads.bytes.store(0, Ordering::Relaxed);
-        let delivery = self
-            .downloads
-            .offers
+    pub(crate) fn download(
+        &self,
+        job: &Job,
+        mut output: File,
+        reaching: &dyn Fn() -> bool,
+    ) -> Result<u64> {
+        let mut reader = job
+            .standing
             .lock()
-            .remove(&id)
+            .opened
+            .take()
             .ok_or(Error::DownloadExpired)?;
-        let mut reader: Box<dyn Read + Send> = match delivery {
-            Delivery::File(path) => {
-                Box::new(File::open(path).map_err(|source| Error::DownloadIo {
-                    op: DownloadOp::Open,
-                    source,
-                })?)
-            }
-            Delivery::Stream { opening, .. } => {
-                match opening.open().map_err(|source| Error::Provider {
-                    op: DownloadOp::Open,
-                    source: Box::new(source),
-                })? {
-                    Opened::Reading(reader) => reader,
-                    Opened::Gone => return Err(Error::DownloadExpired),
-                }
-            }
-        };
+        job.moved_to(DownloadPhase::Downloading)?;
+        job.received.store(0, Ordering::Release);
         let mut bytes = 0_u64;
-        let mut buffer = vec![0_u8; 64 * 1024];
-        loop {
-            if self.downloads.cancelled.load(Ordering::Relaxed)
-                || !self.services.online.client().is_reaching()
-            {
-                return Err(Error::DownloadCancelled);
+        let mut buffer = vec![0_u8; CHUNK_BYTES];
+        let copied = loop {
+            if job.is_cancelled() {
+                break Err(Error::DownloadCancelled);
             }
-            let count = reader
-                .read(&mut buffer)
-                .map_err(|source| Error::DownloadIo {
-                    op: DownloadOp::Read,
-                    source,
-                })?;
-            if count == 0 {
-                break;
+            if !reaching() {
+                break Err(Error::OnlineOff);
             }
+            let count = match reader.read(&mut buffer) {
+                Ok(0) => break Ok(bytes),
+                Ok(count) => count,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(source) => {
+                    break Err(Error::DownloadIo {
+                        op: DownloadOp::Read,
+                        source,
+                    });
+                }
+            };
             bytes = bytes.saturating_add(count as u64);
-            if bytes > 8 * 1024 * 1024 * 1024 {
-                return Err(Error::DownloadTooLarge);
+            if bytes > LARGEST_DOWNLOAD {
+                break Err(Error::DownloadTooLarge);
             }
-            output
-                .write_all(&buffer[..count])
-                .map_err(|source| Error::DownloadIo {
+            if let Err(source) = output.write_all(&buffer[..count]) {
+                break Err(Error::DownloadIo {
                     op: DownloadOp::Write,
                     source,
-                })?;
-            self.downloads.bytes.store(bytes, Ordering::Relaxed);
+                });
+            }
+            job.received.store(bytes, Ordering::Release);
+        };
+        let finished = copied.and_then(|bytes| {
+            output
+                .flush()
+                .and_then(|()| output.sync_all())
+                .map(|()| bytes)
+                .map_err(|source| Error::DownloadIo {
+                    op: DownloadOp::Finish,
+                    source,
+                })
+        });
+        job.settled(finished)
+    }
+}
+
+fn nothing_found(
+    job: &Job,
+    reaching: &(dyn Fn() -> bool + Sync),
+    heard: Vec<Heard>,
+    asked: &[(SourceId, MusicProvider)],
+) -> Error {
+    if job.is_cancelled() {
+        return Error::DownloadCancelled;
+    }
+    if !reaching() {
+        return Error::OnlineOff;
+    }
+    let late = asked
+        .iter()
+        .map(|(_, provider)| *provider)
+        .find(|provider| heard.iter().all(|heard| heard.provider != *provider));
+    if let Some(failure) = heard.into_iter().find_map(|heard| heard.failure) {
+        return failure;
+    }
+    late.map_or(Error::NotFound, |provider| Error::ProviderAway { provider })
+}
+
+fn opened(
+    job: &Job,
+    offered: Delivered,
+    provider: MusicProvider,
+    reaching: &(dyn Fn() -> bool + Sync),
+) -> Result<std::result::Result<Taken, Unopened>> {
+    let taken_from = offered.taken_from().to_uri();
+    match offered.delivery {
+        Delivery::File(path) => {
+            let extension = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or(EXTENSION_UNNAMED)
+                .to_owned();
+            let file = File::open(&path).map_err(|source| Error::DownloadIo {
+                op: DownloadOp::Open,
+                source,
+            })?;
+            let length = file.metadata().ok().map(|metadata| metadata.len());
+            Ok(Ok(Taken {
+                reader: Box::new(file),
+                length,
+                extension,
+                provider,
+                taken_from,
+            }))
         }
-        output.flush().map_err(|source| Error::DownloadIo {
-            op: DownloadOp::Finish,
+        Delivery::Stream {
+            extension, opening, ..
+        } => Ok(match heeding(job, reaching, move || opening.open())? {
+            Ok(Opened::Reading { reader, length }) => Ok(Taken {
+                reader,
+                length,
+                extension: extension.as_str().to_owned(),
+                provider,
+                taken_from,
+            }),
+            Ok(Opened::Gone) => Err(Unopened::Gone),
+            Err(error) => {
+                tracing::warn!(%error, %provider, "an offered download could not be opened");
+                Err(Unopened::Failed(failure_of(provider, &error)))
+            }
+        }),
+    }
+}
+
+fn heeding<T: Send + 'static>(
+    job: &Job,
+    reaching: &(dyn Fn() -> bool + Sync),
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T> {
+    let (told, answer) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("resonate-download-opening".to_owned())
+        .spawn(move || {
+            let _ = told.send(work());
+        })
+        .map_err(|source| Error::DownloadIo {
+            op: DownloadOp::Open,
             source,
         })?;
-        Ok(bytes)
+    loop {
+        match answer.recv_timeout(HEEDED_EVERY) {
+            Ok(value) => return Ok(value),
+            Err(RecvTimeoutError::Timeout) if job.is_cancelled() => {
+                return Err(Error::DownloadCancelled);
+            }
+            Err(RecvTimeoutError::Timeout) if !reaching() => return Err(Error::OnlineOff),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(Error::DownloadIo {
+                    op: DownloadOp::Open,
+                    source: io::Error::from(io::ErrorKind::BrokenPipe),
+                });
+            }
+        }
+    }
+}
+
+#[uniffi::export]
+impl MobilePlayer {
+    pub fn begin_download(&self, song: SearchSong) -> u64 {
+        self.downloads.begin(song)
+    }
+
+    pub fn find_download(&self, job: u64, accounts: Vec<DownloadAccount>) -> Result<DownloadOffer> {
+        let job = self.downloads.job(job)?;
+        job.settled(self.require_online())?;
+        let client = Arc::clone(self.services.online.client());
+        let reaching = move || client.is_reaching();
+        let searched = self.downloads.find(&job, accounts, &reaching);
+        if let Err(error) = self.catalog.note_wanted_tried(&job.song, searched.tried) {
+            tracing::warn!(%error, "a wanted song's try could not be noted");
+        }
+        searched.offer
+    }
+
+    pub fn download_offer(&self, job: u64, descriptor: i32) -> Result<u64> {
+        let output = fresh_destination(descriptor)?;
+        let job = self.downloads.job(job)?;
+        job.settled(self.require_online())?;
+        let client = Arc::clone(self.services.online.client());
+        self.downloads
+            .download(&job, output, &move || client.is_reaching())
+    }
+
+    pub fn download_progress(&self, job: u64) -> Option<DownloadProgress> {
+        self.downloads.progress(job)
+    }
+
+    pub fn cancel_download(&self, job: u64) {
+        self.downloads.cancel(job);
     }
 
     pub fn authorize_tidal(&self, client_id: String, secret: String) -> Result<TidalAuthorization> {
@@ -243,10 +732,7 @@ impl MobilePlayer {
         };
         let authorizing = resonate_tidal::TidalSignIn::at(resonate_tidal::Endpoints::tidal())
             .authorizing(&client)
-            .map_err(|source| Error::Provider {
-                op: DownloadOp::Find,
-                source: Box::new(source),
-            })?;
+            .map_err(|source| failure_of(MusicProvider::Tidal, &source))?;
         let request = TidalAuthorization {
             user_code: authorizing.user_code.clone(),
             verify_at: authorizing.verify_at.clone(),
@@ -268,21 +754,11 @@ impl MobilePlayer {
                 !self.services.online.client().is_reaching()
             })
             .map(|token| token.map(|token| token.into_string()))
-            .map_err(|source| Error::Provider {
-                op: DownloadOp::Find,
-                source: Box::new(source),
-            })
+            .map_err(|source| failure_of(MusicProvider::Tidal, &source))
     }
 
     pub fn refreshed_tidal_token(&self) -> Option<String> {
         self.downloads.refreshed.lock().take()
-    }
-
-    pub fn download_bytes(&self) -> u64 {
-        self.downloads.bytes.load(Ordering::Relaxed)
-    }
-    pub fn cancel_download(&self) {
-        self.downloads.cancelled.store(true, Ordering::Relaxed);
     }
 
     pub fn validate_download(&self, uri: String, duration_ms: Option<u64>) -> Result<()> {
@@ -292,9 +768,9 @@ impl MobilePlayer {
             && frames
                 .to_duration(info.spec.rate)
                 .abs_diff(Duration::from_millis(expected))
-                > Duration::from_secs(5)
+                > resonate_providers::LENGTHS_AGREE_WITHIN
         {
-            return Err(Error::WrongDeliveryLength);
+            return Err(Error::WrongSong);
         }
         Ok(())
     }
@@ -305,4 +781,405 @@ pub(crate) fn fresh_destination(descriptor: i32) -> Result<File> {
         return Err(Error::InvalidDescriptor);
     }
     Ok(unsafe { File::from_raw_fd(descriptor) })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{BufRead, BufReader},
+        net::{TcpListener, TcpStream},
+        path::PathBuf,
+        time::{Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    const ECHOES_ISRC: &str = "GBN9Y1100065";
+    const ECHOES_TRACK: &str = "154140652551016448";
+    const SEARCH_HELD_FOR: Duration = Duration::from_secs(20);
+    const CANCEL_HEARD_WITHIN: Duration = Duration::from_secs(2);
+
+    struct Canned {
+        status: u16,
+        body: Vec<u8>,
+        held_for: Duration,
+    }
+
+    fn served(answering: impl Fn(&str) -> Canned + Send + Sync + 'static) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+        let answering = Arc::new(answering);
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else {
+                    return;
+                };
+                let answering = Arc::clone(&answering);
+                thread::spawn(move || answer(stream, answering.as_ref()));
+            }
+        });
+        url
+    }
+
+    fn answer(stream: TcpStream, answering: &dyn Fn(&str) -> Canned) {
+        let mut reader = BufReader::new(stream);
+        let mut request = String::new();
+        if reader.read_line(&mut request).is_err() {
+            return;
+        }
+        loop {
+            let mut header = String::new();
+            match reader.read_line(&mut header) {
+                Ok(0) | Err(_) => return,
+                Ok(_) if header == "\r\n" => break,
+                Ok(_) => {}
+            }
+        }
+        let target = request.split(' ').nth(1).unwrap_or_default();
+        let canned = answering(target);
+        thread::sleep(canned.held_for);
+
+        let head = format!(
+            "HTTP/1.1 {} Canned\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            canned.status,
+            canned.body.len()
+        );
+        let mut stream = reader.into_inner();
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.write_all(&canned.body);
+    }
+
+    fn listing() -> Vec<u8> {
+        format!(
+            r#"{{"tracks":[{{"id":"{ECHOES_TRACK}","trackId":"{ECHOES_TRACK}","title":"Echoes","artistNames":["Pink Floyd"],"duration":1412451,"isrc":"{ECHOES_ISRC}","playable":true}}]}}"#
+        )
+        .into_bytes()
+    }
+
+    fn monochrome_serving(audio: &'static [u8], search_held_for: Duration) -> String {
+        served(move |target| {
+            if target.starts_with("/search/tracks") {
+                Canned {
+                    status: 200,
+                    body: listing(),
+                    held_for: search_held_for,
+                }
+            } else {
+                Canned {
+                    status: 200,
+                    body: audio.to_vec(),
+                    held_for: Duration::ZERO,
+                }
+            }
+        })
+    }
+
+    fn refusing(status: u16) -> String {
+        served(move |_| Canned {
+            status,
+            body: Vec::new(),
+            held_for: Duration::ZERO,
+        })
+    }
+
+    fn account(provider: MusicProvider, server: &str) -> DownloadAccount {
+        DownloadAccount {
+            provider,
+            server: server.to_owned(),
+            user: "listener".to_owned(),
+            password: "secret".to_owned(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            refresh_token: String::new(),
+        }
+    }
+
+    fn unreached_address() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+        drop(listener);
+        url
+    }
+
+    fn echoes() -> SearchSong {
+        SearchSong {
+            recording: "8f2eb3e7-4ff2-4b14-8c0e-8b7c1e7c2b7d".to_owned(),
+            title: "Echoes".to_owned(),
+            artist: "Pink Floyd".to_owned(),
+            duration_ms: Some(1_412_451),
+            isrcs: vec![ECHOES_ISRC.to_owned()],
+            ..SearchSong::default()
+        }
+    }
+
+    fn reaching() -> bool {
+        true
+    }
+
+    fn destination(name: &str) -> (PathBuf, File) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("resonate-download-{name}-{unique}"));
+        let file = File::options()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("a fresh destination");
+        (path, file)
+    }
+
+    fn found(downloads: &Downloads, job: u64, accounts: Vec<DownloadAccount>) -> Searched {
+        downloads.find(&downloads.job(job).expect("the job"), accounts, &reaching)
+    }
+
+    #[test]
+    fn the_second_provider_answers_when_the_first_is_away_and_says_how_long_the_song_is() {
+        const AUDIO: &[u8] = b"fLaC and the rest of a lossless song";
+        let downloads = Downloads::default();
+        let job = downloads.begin(echoes());
+
+        let searched = found(
+            &downloads,
+            job,
+            vec![
+                account(MusicProvider::Subsonic, &unreached_address()),
+                account(
+                    MusicProvider::Monochrome,
+                    &monochrome_serving(AUDIO, Duration::ZERO),
+                ),
+            ],
+        );
+        let offer = searched.offer.expect("an offer");
+
+        assert_eq!(offer.job, job);
+        assert_eq!(offer.provider, MusicProvider::Monochrome);
+        assert_eq!(offer.total, Some(AUDIO.len() as u64));
+        assert_eq!(offer.extension, "flac");
+        assert_eq!(searched.tried, Tried::Offered);
+        assert_eq!(
+            downloads.progress(job),
+            Some(DownloadProgress {
+                phase: DownloadPhase::Finding,
+                received: 0,
+                total: Some(AUDIO.len() as u64),
+                provider: Some(MusicProvider::Monochrome),
+            })
+        );
+    }
+
+    #[test]
+    fn a_cancel_during_a_find_is_heard_at_once() {
+        let downloads = Arc::new(Downloads::default());
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(b"fLaC", SEARCH_HELD_FOR);
+
+        let finding = {
+            let downloads = Arc::clone(&downloads);
+            thread::spawn(move || {
+                let began = Instant::now();
+                let searched = found(
+                    &downloads,
+                    job,
+                    vec![account(MusicProvider::Monochrome, &server)],
+                );
+                (searched, began.elapsed())
+            })
+        };
+        thread::sleep(Duration::from_millis(300));
+        downloads.cancel(job);
+        let (searched, took) = finding.join().expect("the find ends");
+
+        assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
+        assert_eq!(searched.tried, Tried::Unheard);
+        assert!(took < CANCEL_HEARD_WITHIN, "the cancel took {took:?}");
+        assert_eq!(
+            downloads.progress(job).map(|progress| progress.phase),
+            Some(DownloadPhase::Cancelled)
+        );
+    }
+
+    #[test]
+    fn a_cancel_before_the_find_is_kept() {
+        let downloads = Downloads::default();
+        let job = downloads.begin(echoes());
+
+        downloads.cancel(job);
+        let searched = found(
+            &downloads,
+            job,
+            vec![account(MusicProvider::Monochrome, &unreached_address())],
+        );
+
+        assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_listener_as_the_provider_and_its_status() {
+        let downloads = Downloads::default();
+        let refused = downloads.begin(echoes());
+        let unreached = downloads.begin(echoes());
+        let unprovided = downloads.begin(echoes());
+
+        let refusal = found(
+            &downloads,
+            refused,
+            vec![account(MusicProvider::Monochrome, &refusing(401))],
+        )
+        .offer
+        .expect_err("a refusal");
+        let away = found(
+            &downloads,
+            unreached,
+            vec![account(MusicProvider::Monochrome, &unreached_address())],
+        )
+        .offer
+        .expect_err("nobody there");
+        let nobody = found(&downloads, unprovided, Vec::new())
+            .offer
+            .expect_err("no provider");
+
+        assert!(matches!(
+            refusal,
+            Error::ProviderRefused {
+                provider: MusicProvider::Monochrome,
+                status: 401
+            }
+        ));
+        assert_eq!(refusal.to_string(), "Monochrome refused the request (401)");
+        assert!(matches!(
+            away,
+            Error::Unreachable {
+                provider: MusicProvider::Monochrome
+            }
+        ));
+        assert!(matches!(nobody, Error::NoProvider));
+        assert_eq!(
+            downloads.progress(refused).map(|progress| progress.phase),
+            Some(DownloadPhase::Failed)
+        );
+    }
+
+    #[test]
+    fn every_provider_failure_is_a_sentence_naming_its_cause() {
+        let tidal = SourceId::new("tidal").expect("a source");
+        let op = resonate_providers::ProviderOp::Search;
+        let cases = [
+            (
+                resonate_providers::Error::Refused {
+                    provider: tidal.clone(),
+                    op,
+                    status: 401,
+                },
+                "TIDAL refused the request (401)",
+            ),
+            (
+                resonate_providers::Error::Io {
+                    provider: tidal.clone(),
+                    op,
+                    source: io::Error::from(io::ErrorKind::ConnectionRefused),
+                },
+                "TIDAL could not be reached",
+            ),
+            (
+                resonate_providers::Error::Io {
+                    provider: tidal.clone(),
+                    op,
+                    source: io::Error::from(io::ErrorKind::TimedOut),
+                },
+                "TIDAL did not answer in time",
+            ),
+            (
+                resonate_providers::Error::Unwelcome {
+                    provider: tidal.clone(),
+                    op,
+                    code: 11003,
+                },
+                "TIDAL did not accept the account (error 11003)",
+            ),
+            (
+                resonate_providers::Error::TurnedAway {
+                    provider: tidal.clone(),
+                    op,
+                    code: 70,
+                },
+                "No provider had this song",
+            ),
+            (
+                resonate_providers::Error::Unreadable {
+                    provider: tidal,
+                    op,
+                },
+                "TIDAL answered with something that could not be read",
+            ),
+        ];
+
+        for (refusal, told) in cases {
+            assert_eq!(failure_of(MusicProvider::Tidal, &refusal).to_string(), told);
+        }
+    }
+
+    #[test]
+    fn two_jobs_move_on_their_own() {
+        const SHORT: &[u8] = b"fLaC short";
+        const LONG: &[u8] = b"fLaC a much longer song than the other one";
+        let downloads = Downloads::default();
+        let short = downloads.begin(echoes());
+        let long = downloads.begin(echoes());
+
+        for (job, audio) in [(short, SHORT), (long, LONG)] {
+            let server = monochrome_serving(audio, Duration::ZERO);
+            found(
+                &downloads,
+                job,
+                vec![account(MusicProvider::Monochrome, &server)],
+            )
+            .offer
+            .expect("an offer");
+        }
+        let (path, file) = destination("short");
+        let copied = downloads
+            .download(&downloads.job(short).expect("the job"), file, &reaching)
+            .expect("the short song downloads");
+
+        assert_eq!(copied, SHORT.len() as u64);
+        assert_eq!(std::fs::read(&path).expect("the written song"), SHORT);
+        assert_eq!(
+            downloads.progress(short),
+            Some(DownloadProgress {
+                phase: DownloadPhase::Downloading,
+                received: SHORT.len() as u64,
+                total: Some(SHORT.len() as u64),
+                provider: Some(MusicProvider::Monochrome),
+            })
+        );
+        assert_eq!(
+            downloads.progress(long),
+            Some(DownloadProgress {
+                phase: DownloadPhase::Finding,
+                received: 0,
+                total: Some(LONG.len() as u64),
+                provider: Some(MusicProvider::Monochrome),
+            })
+        );
+
+        downloads.cancel(long);
+        let (cancelled_path, cancelled) = destination("long");
+        let refused =
+            downloads.download(&downloads.job(long).expect("the job"), cancelled, &reaching);
+
+        assert!(matches!(refused, Err(Error::DownloadExpired)));
+        assert_eq!(
+            downloads.progress(short).map(|progress| progress.phase),
+            Some(DownloadPhase::Downloading)
+        );
+        assert_eq!(
+            downloads.progress(long).map(|progress| progress.phase),
+            Some(DownloadPhase::Cancelled)
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(cancelled_path);
+    }
 }

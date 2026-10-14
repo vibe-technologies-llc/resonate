@@ -1,6 +1,8 @@
-use std::{io, path::PathBuf, result};
+use std::{fmt, io, path::PathBuf, result};
 
 use thiserror::Error;
+
+use crate::downloads::MusicProvider;
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum StoreOp {
@@ -13,11 +15,21 @@ pub enum StoreOp {
 
 #[derive(Clone, Copy, Debug)]
 pub enum DownloadOp {
-    Find,
     Open,
     Read,
     Write,
     Finish,
+}
+
+impl fmt::Display for DownloadOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Open => "opened",
+            Self::Read => "read",
+            Self::Write => "written",
+            Self::Finish => "finished",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -51,30 +63,51 @@ pub enum Error {
         #[source]
         source: Box<rusqlite::Error>,
     },
-    #[error("music provider operation {op:?} failed")]
-    Provider {
-        op: DownloadOp,
-        #[source]
-        source: Box<resonate_providers::Error>,
+    #[error("No download provider is set up")]
+    NoProvider,
+    #[error("No provider had this song")]
+    NotFound,
+    #[error("{provider} could not be reached")]
+    Unreachable { provider: MusicProvider },
+    #[error("{provider} did not answer in time")]
+    ProviderAway { provider: MusicProvider },
+    #[error("{provider} refused the request ({status})")]
+    ProviderRefused {
+        provider: MusicProvider,
+        status: u16,
     },
-    #[error("download I/O operation {op:?} failed")]
+    #[error("{provider} did not accept the account (error {code})")]
+    AccountRefused { provider: MusicProvider, code: u16 },
+    #[error("{provider} has a certificate this phone does not trust")]
+    ProviderUntrusted { provider: MusicProvider },
+    #[error("{provider} is not at that address")]
+    ProviderMisaddressed { provider: MusicProvider },
+    #[error("{provider} answered with something that could not be read")]
+    ProviderUnreadable { provider: MusicProvider },
+    #[error("The {provider} sign-in expired before it was approved")]
+    SignInLapsed { provider: MusicProvider },
+    #[error("The {provider} sign-in was turned down")]
+    SignInDenied { provider: MusicProvider },
+    #[error("The download could not be {op}")]
     DownloadIo {
         op: DownloadOp,
         #[source]
         source: io::Error,
     },
-    #[error("the download was cancelled")]
+    #[error("The download was cancelled")]
     DownloadCancelled,
-    #[error("the download offer expired; search again")]
+    #[error("The download offer expired; search again")]
     DownloadExpired,
-    #[error("the downloaded file exceeds the eight GiB limit")]
+    #[error("No download is under that number")]
+    UnknownDownload,
+    #[error("The downloaded file exceeds the eight GiB limit")]
     DownloadTooLarge,
     #[error("this audio output is unavailable")]
     OutputUnavailable,
     #[error("the destination descriptor is invalid")]
     InvalidDescriptor,
-    #[error("the downloaded track length does not match the selected song")]
-    WrongDeliveryLength,
+    #[error("The downloaded file is not the song asked for: its length differs")]
+    WrongSong,
     #[error("the online library operation {op:?} failed")]
     Reference {
         op: resonate_library::LookupOp,

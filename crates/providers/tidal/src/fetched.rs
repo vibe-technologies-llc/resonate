@@ -38,6 +38,13 @@ pub(crate) struct Fetched {
 }
 
 impl Fetched {
+    pub(crate) fn length(&self) -> Option<u64> {
+        let whole_in_one_piece = self.left.as_slice().is_empty() && self.ahead.is_empty();
+        whole_in_one_piece
+            .then(|| self.piece.as_ref().and_then(Ranged::length))
+            .flatten()
+    }
+
     pub(crate) fn opened(agent: Agent, urls: Vec<String>) -> Result<Self, Unfetched> {
         let mut left = urls.into_iter();
         let piece = left

@@ -306,13 +306,44 @@ Monochrome, hifi-api, Subsonic and the listener's TIDAL account use the existing
 and delivery code. Credentials and recognition keys are encrypted with AES-GCM under Android
 Keystore. TIDAL device sign-in displays the code and authorization page, and renewed refresh
 tokens are saved. The user chooses a write-granted music folder per download. A data-sync
-foreground service retains the engine and offers cancellation. Only a fresh SAF document is
-opened for writing; its URI is journalled before streaming, bytes are bounded at 8 GiB, and codec
-probe/duration validation precedes catalog insertion. Failed or interrupted deliveries delete
-only that newly created document, including journal recovery on the next start. Validated
-deliveries retain the selected recording identity and fill missing catalog names without writing
-tags, so an untagged file is still recognised as a held want. A rescan preserves those names
-when the document supplies none.
+foreground service retains the engine and offers cancellation.
+
+**A download is a job** (`downloads.rs`), several at once: `begin_download(song)` answers its
+number, `find_download(job, accounts)` races every account through `Providers::first` (registration
+order, `TURNED_TO_APART`, the grace, `ANSWERS_WITHIN`) and opens the offer taken, falling to the
+held-back offers in rank order where one is `Gone` or refused, so the `DownloadOffer` names the
+extension, the answering `MusicProvider` and the `Opened::Reading` length before the front end
+makes a document. `download_offer(job, descriptor)` copies into it; `index_download(job, uri,
+name)` validates and indexes. `download_progress(job)` answers `DownloadProgress` (`DownloadPhase`
+Finding, Downloading, Validating, Done, Failed, Cancelled; bytes received; the total where the
+provider said one; the provider); `cancel_download(job)` is heard between provider answers, while an
+offer opens (on its own thread, looked at every 50 ms) and between 64 KiB chunks, and a cancel
+pressed before the find stays (nothing resets it). Shutdown cancels every job; at most 16 settled
+jobs are kept. A failure is a typed error whose message is the sentence the app shows, naming the
+provider and cause (`NoProvider`, `NotFound`, `Unreachable`, `ProviderAway` (also a provider left
+behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the code,
+`ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,
+`DownloadCancelled`); with nothing found, the first provider failure is told before `NotFound`. A
+delivery `index_download` refuses as `WrongSong` is declined by every later find this run.
+
+Only a fresh SAF document is opened for writing; its URI is journalled before streaming, bytes are
+bounded at 8 GiB, and codec probe/duration validation (within `LENGTHS_AGREE_WITHIN`) precedes
+catalog insertion. Failed or interrupted deliveries delete only that newly created document,
+including journal recovery on the next start. Validated deliveries fill the song's recording,
+release, artist id, disc and position where the document names none, and missing catalog names,
+without writing tags, so an untagged file is still recognised as a held want; the wanted row it
+answered is stamped `offered_at`. A rescan preserves those names when the document supplies none.
+
+**Found songs carry their place and whether they are held.** `SearchSong` holds release, release
+group, artist id, disc and position beside the recording; `search_song` places a found recording on
+the release whose title holds the typed words the title and credit do not, else the first
+`in_the_order_worth_offering`. Every online song listing marks `held` through the wanted rows'
+`local_match`; a text or song-link search keeps one of the takes sharing a folded title and artist
+within `A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY`, the one naming most identity, in first place; release
+and playlist listings keep their repeats. A find for a wanted song notes the try on its row as the
+desktop does (V7 `tried`, `misses`): an offer zeroes the misses, nothing heard from every provider
+counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
+desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`).
 
 ## Device sync
 

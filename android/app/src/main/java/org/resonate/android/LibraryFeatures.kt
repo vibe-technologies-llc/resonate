@@ -130,6 +130,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
     private var downloadReady = CompletableDeferred<Unit>()
+    @Volatile private var downloadJob: ULong? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
@@ -737,7 +738,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
         }
         actualOutput.value = native.outputDevice()
-        if (downloading.value) downloadedBytes.value = native.downloadBytes()
+        if (downloading.value)
+            downloadJob
+                ?.let(native::downloadProgress)
+                ?.let { progress -> downloadedBytes.value = progress.received }
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
     }
 
@@ -947,13 +951,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
             var created: Uri? = null
             try {
                 downloadReady.await()
-                val offer =
-                    native.findDownload(song, account)
-                        ?: run {
-                            downloadStatus.value =
-                                "This provider could not find a matching recording"
-                            return@work
-                        }
+                val job = native.beginDownload(song)
+                downloadJob = job
+                val offer = native.findDownload(job, listOf(account))
                 native.refreshedTidalToken()?.let { token ->
                     val renewed = account.copy(refreshToken = token)
                     accounts.write(renewed)
@@ -981,8 +981,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 downloadStatus.value = "Downloading ${song.title}…"
                 val descriptor =
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
-                val count = native.downloadOffer(offer.id, descriptor)
-                native.indexDownload(uri.toString(), offer.name, song)
+                val count = native.downloadOffer(job, descriptor)
+                native.indexDownload(job, uri.toString(), offer.name)
                 refreshWanted(native)
                 created = null
                 settings.edit().remove("unfinished-download").commit()
@@ -1006,7 +1006,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun cancelDownload() = work { it.cancelDownload() }
+    fun cancelDownload() = work { native -> downloadJob?.let(native::cancelDownload) }
 
     fun clearCollection() {
         onlineCollection.value = null

@@ -7,13 +7,14 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::Watch;
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::Mbid;
+use resonate_core::{Mbid, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
-    Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, Reference, SongLink, Sounded,
-    Wording,
+    Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+    SongLink, Sounded, Wording, in_the_order_worth_offering,
 };
 use resonate_online::{Identity, Online};
+use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
 use crate::{
@@ -113,7 +114,7 @@ pub struct Inspector {
     pub isrc: String,
 }
 
-#[derive(Clone, Debug, uniffi::Record)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, uniffi::Record)]
 pub struct SearchSong {
     pub recording: String,
     pub title: String,
@@ -121,6 +122,18 @@ pub struct SearchSong {
     pub album: String,
     pub duration_ms: Option<u64>,
     pub isrcs: Vec<String>,
+    #[uniffi(default)]
+    pub release: String,
+    #[uniffi(default)]
+    pub release_group: String,
+    #[uniffi(default)]
+    pub artist_id: String,
+    #[uniffi(default)]
+    pub disc: Option<u32>,
+    #[uniffi(default)]
+    pub position: Option<u32>,
+    #[uniffi(default)]
+    pub held: bool,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -304,10 +317,10 @@ impl MobilePlayer {
                     .map_err(|source| Error::reference(LookupOp::Recording, source))
                     .map(|song| {
                         song.into_iter()
-                            .map(RecordingMatch::from)
-                            .map(search_song)
+                            .map(|song| search_song(song.into(), &[]))
                             .collect()
-                    });
+                    })
+                    .and_then(|songs| self.offered(songs, Listing::Searched));
             }
             let Some(named) = self
                 .services
@@ -324,11 +337,11 @@ impl MobilePlayer {
                     .recordings_of_isrc(isrc)
                     .map_err(|source| Error::reference(LookupOp::Isrc, source))?;
                 if !recordings.is_empty() {
-                    return Ok(recordings
+                    let songs = recordings
                         .into_iter()
-                        .map(RecordingMatch::from)
-                        .map(search_song)
-                        .collect());
+                        .map(|song| search_song(song.into(), &[]))
+                        .collect();
+                    return self.offered(songs, Listing::Searched);
                 }
             }
             let Some(title) = named.title else {
@@ -346,16 +359,34 @@ impl MobilePlayer {
                     wording: Wording::Phrase,
                 })
                 .map_err(|source| Error::reference(LookupOp::FindRecording, source))
-                .map(|songs| songs.into_iter().take(50).map(search_song).collect());
+                .map(|songs| {
+                    songs
+                        .into_iter()
+                        .take(50)
+                        .map(|song| search_song(song, &[]))
+                        .collect()
+                })
+                .and_then(|songs| self.offered(songs, Listing::Searched));
         }
         let Some(asked) = resonate_library::songs_asked(&text) else {
             return Ok(Vec::new());
         };
+        let typed = words_of_a_name(&asked.words);
         self.services
             .online
             .find_songs(&asked)
             .map_err(|source| Error::reference(LookupOp::FindRecording, source))
-            .map(|songs| songs.into_iter().take(50).map(search_song).collect())
+            .map(|songs| {
+                songs
+                    .into_iter()
+                    .take(50)
+                    .map(|song| {
+                        let album = album_words_asked(&typed, &song);
+                        search_song(song, &album)
+                    })
+                    .collect()
+            })
+            .and_then(|songs| self.offered(songs, Listing::Searched))
     }
 
     pub fn recognise_track(
@@ -402,7 +433,7 @@ impl MobilePlayer {
                 .take(20)
                 .map(|song| RecognitionCandidate {
                     score: u32::from(song.score),
-                    song: search_song(song),
+                    song: search_song(song, &[]),
                 })
                 .collect(),
         })
@@ -529,16 +560,168 @@ pub(crate) fn milliseconds(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
-pub(crate) fn search_song(song: RecordingMatch) -> SearchSong {
+pub(crate) fn search_song(song: RecordingMatch, album_asked: &[String]) -> SearchSong {
+    let release = release_meant(&song.releases, album_asked).cloned();
     SearchSong {
         artist: song.credited_as(),
+        artist_id: song
+            .credit
+            .first()
+            .and_then(|credit| credit.mbid.as_ref())
+            .map_or_else(String::new, ToString::to_string),
         recording: song.recording.to_string(),
         title: song.title,
-        album: song
-            .releases
-            .first()
+        album: release
+            .as_ref()
             .map_or_else(String::new, |release| release.title.clone()),
+        release: release
+            .as_ref()
+            .map_or_else(String::new, |release| release.id.to_string()),
+        release_group: String::new(),
+        disc: release.as_ref().and_then(|release| release.disc),
+        position: release.as_ref().and_then(|release| release.position),
         duration_ms: song.length.map(milliseconds),
         isrcs: song.isrcs.iter().map(ToString::to_string).collect(),
+        held: false,
+    }
+}
+
+fn release_meant<'a>(
+    releases: &'a [RecordingRelease],
+    album_asked: &[String],
+) -> Option<&'a RecordingRelease> {
+    let offered = in_the_order_worth_offering(releases);
+    let asked_for = |release: &&&RecordingRelease| {
+        let named = words_of_a_name(&release.title);
+        !album_asked.is_empty() && album_asked.iter().all(|word| named.contains(word))
+    };
+    offered
+        .iter()
+        .find(asked_for)
+        .or_else(|| offered.first())
+        .copied()
+}
+
+fn album_words_asked(typed: &[String], song: &RecordingMatch) -> Vec<String> {
+    let named: Vec<String> = words_of_a_name(&song.title)
+        .into_iter()
+        .chain(words_of_a_name(&song.credited_as()))
+        .collect();
+    typed
+        .iter()
+        .filter(|word| !named.contains(word))
+        .cloned()
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Listing {
+    Searched,
+    Listed,
+}
+
+pub(crate) fn distinct_takes(songs: Vec<SearchSong>) -> Vec<SearchSong> {
+    let mut kept: Vec<SearchSong> = Vec::with_capacity(songs.len());
+    for song in songs {
+        match kept.iter_mut().find(|held| same_take(held, &song)) {
+            Some(held) if identity_held(&song) > identity_held(held) => *held = song,
+            Some(_) => {}
+            None => kept.push(song),
+        }
+    }
+    kept
+}
+
+fn same_take(one: &SearchSong, other: &SearchSong) -> bool {
+    let alike_within = milliseconds(A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY);
+    let lengths_agree = match (one.duration_ms, other.duration_ms) {
+        (Some(one), Some(other)) => one.abs_diff(other) <= alike_within,
+        (None, None) => true,
+        _ => false,
+    };
+    lengths_agree
+        && folded_letters(&one.title) == folded_letters(&other.title)
+        && folded_letters(&one.artist) == folded_letters(&other.artist)
+}
+
+fn identity_held(song: &SearchSong) -> (usize, usize) {
+    let known = [
+        !song.recording.is_empty(),
+        !song.isrcs.is_empty(),
+        !song.release.is_empty(),
+        !song.release_group.is_empty(),
+        !song.artist_id.is_empty(),
+        song.disc.is_some(),
+        song.position.is_some(),
+    ];
+    (
+        known.iter().filter(|known| **known).count(),
+        song.isrcs.len(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_library::{Credit, Issued};
+
+    use super::*;
+
+    fn pressed(id: &str, title: &str, kind: &str, position: u32) -> RecordingRelease {
+        RecordingRelease {
+            id: Mbid::new(id).expect("an mbid"),
+            title: title.to_owned(),
+            date: None,
+            disc: Some(1),
+            position: Some(position),
+            issued: Issued {
+                kind: Some(kind.to_owned()),
+                secondary: Vec::new(),
+                status: Some("Official".to_owned()),
+            },
+        }
+    }
+
+    fn joga() -> RecordingMatch {
+        RecordingMatch {
+            recording: Mbid::new("1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11").expect("an mbid"),
+            score: 100,
+            title: "Jóga".to_owned(),
+            credit: vec![Credit {
+                name: "Björk".to_owned(),
+                joined_by: String::new(),
+                mbid: Some(Mbid::new("87c5dedd-371d-4a53-9f7f-80522fb7f3cb").expect("an mbid")),
+            }],
+            length: Some(Duration::from_secs(305)),
+            isrcs: Vec::new(),
+            releases: vec![
+                pressed("2a1c4e6b-1111-4c8f-9d2e-3b4a5c6d7e8f", "Jóga", "Single", 1),
+                pressed(
+                    "3b2d5f7c-2222-4d9a-8e3f-4c5b6d7e8f9a",
+                    "Greatest Hits",
+                    "Album",
+                    7,
+                ),
+                pressed(
+                    "4c3e6a8d-3333-4eab-9f4a-5d6c7e8f9a0b",
+                    "Homogenic",
+                    "Album",
+                    2,
+                ),
+            ],
+        }
+    }
+
+    #[test]
+    fn a_found_song_is_placed_on_the_album_asked_for_else_on_the_one_worth_offering() {
+        let typed = words_of_a_name("joga bjork homogenic");
+
+        let asked = search_song(joga(), &album_words_asked(&typed, &joga()));
+        let unasked = search_song(joga(), &[]);
+
+        assert_eq!(asked.album, "Homogenic");
+        assert_eq!(asked.release, "4c3e6a8d-3333-4eab-9f4a-5d6c7e8f9a0b");
+        assert_eq!((asked.disc, asked.position), (Some(1), Some(2)));
+        assert_eq!(asked.artist_id, "87c5dedd-371d-4a53-9f7f-80522fb7f3cb");
+        assert_ne!(unasked.album, "Jóga");
     }
 }

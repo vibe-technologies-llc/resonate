@@ -289,7 +289,7 @@ impl MobilePlayer {
                     duration_ms: row
                         .get::<_, Option<i64>>(6)?
                         .map(|duration| duration.max(0) as u64),
-                    isrcs: Vec::new(),
+                    ..SearchSong::default()
                 };
                 Ok(ReceivedSong {
                     id: row.get::<_, i64>(0)? as u64,
@@ -313,7 +313,7 @@ impl MobilePlayer {
         let path = self.waiting_path(id)?.ok_or(Error::UnknownReceivedSong)?;
         let landed = copied(&path, &mut output).and_then(|_| {
             drop(output);
-            self.index_download(uri, received.name, received.song)
+            self.indexed_download(uri, received.name, &received.song)
         });
         if let Err(error) = self.forget_received(id, &path) {
             tracing::warn!(%error, "a landed song from another device is still listed as waiting");

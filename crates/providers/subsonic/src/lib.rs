@@ -454,12 +454,16 @@ impl Subsonic {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
         }
-        Ok(Opened::Reading(Box::new(Ranged::continuing(
+        let ranged = Ranged::continuing(
             self.downloading.clone(),
             url.to_owned(),
             response,
             self.patience.resumed_after,
-        ))))
+        );
+        Ok(Opened::Reading {
+            length: ranged.length(),
+            reader: Box::new(ranged),
+        })
     }
 }
 
