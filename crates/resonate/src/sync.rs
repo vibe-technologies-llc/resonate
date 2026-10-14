@@ -16,9 +16,9 @@ use resonate_library::Library;
 use resonate_library::{Error as LibraryError, PlaylistName, SyncedPlaylist};
 #[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Opened,
-    Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice, SyncKey,
-    TransferState,
+    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
+    Opened, Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice,
+    SyncKey, TransferState,
 };
 
 use crate::config::Config;
@@ -147,6 +147,7 @@ fn started(
         ledger: folder.join(LEDGER),
         staging: folder.join(STAGING),
         transfers_allowed: true,
+        nearby: Some(Nearby::on_the_network()),
     };
     let catalog = Arc::new(Catalogued {
         library: Arc::clone(library),
@@ -449,7 +450,11 @@ pub(crate) fn asked(
                 said!(
                     "{}\t{}{}",
                     device.name,
-                    if device.online { "online" } else { "away" },
+                    match (device.nearby, device.online) {
+                        (true, _) => "on this network",
+                        (false, true) => "online",
+                        (false, false) => "away",
+                    },
                     if device.this { ", this device" } else { "" }
                 );
             }
@@ -462,10 +467,11 @@ pub(crate) fn asked(
                 .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(playlist)))?;
             let running = running(config, settings, &library)?;
             let sync = &running.sync;
-            if connected(sync) != Standing::Connected {
+            let standing = connected(sync);
+            let device = device_named(sync, from)?;
+            if standing != Standing::Connected && !device.nearby {
                 return Err(Error::SyncUnreachable);
             }
-            let device = device_named(sync, from)?;
             let created = library
                 .synced_playlists()?
                 .into_iter()
@@ -654,6 +660,7 @@ impl resonate_ui::Syncing for Running {
                 .map(|device| resonate_ui::SyncedDevice {
                     name: device.name,
                     online: device.online,
+                    nearby: device.nearby,
                     this: device.this,
                 })
                 .collect(),

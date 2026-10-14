@@ -112,6 +112,7 @@ fn device(
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
+        nearby: None,
     };
     Sync::start(settings, shelf).expect("started")
 }

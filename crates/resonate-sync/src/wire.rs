@@ -101,6 +101,8 @@ pub enum FromServer {
 pub enum ToPeer {
     Holdings,
     Fetch { recording: Recording, offset: u64 },
+    Meet { device: DeviceId, records: bool },
+    Changes { whole: bool, changes: Vec<Change> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +111,15 @@ pub enum FromPeer {
     HeldEnd,
     Sending { size: u64, extension: String },
     Missing,
+    Met { device: DeviceId },
+    Taken,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Beacon {
+    pub device: DeviceId,
+    pub port: u16,
+    pub answering: bool,
 }
 
 #[derive(Default)]
@@ -606,6 +617,16 @@ impl ToPeer {
                 writer.recording(recording);
                 writer.number(*offset);
             }
+            Self::Meet { device, records } => {
+                writer.byte(2);
+                writer.device(*device);
+                writer.flag(*records);
+            }
+            Self::Changes { whole, changes } => {
+                writer.byte(3);
+                writer.flag(*whole);
+                writer.bytes(&encoded_bundle(changes));
+            }
         }
         writer.finish()
     }
@@ -617,6 +638,14 @@ impl ToPeer {
             1 => Self::Fetch {
                 recording: reader.recording()?,
                 offset: reader.number()?,
+            },
+            2 => Self::Meet {
+                device: reader.device()?,
+                records: reader.flag()?,
+            },
+            3 => Self::Changes {
+                whole: reader.flag()?,
+                changes: decoded_bundle(reader.bytes(LARGEST_FRAME)?)?,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -645,6 +674,11 @@ impl FromPeer {
                 writer.text(extension);
             }
             Self::Missing => writer.byte(3),
+            Self::Met { device } => {
+                writer.byte(4);
+                writer.device(*device);
+            }
+            Self::Taken => writer.byte(5),
         }
         writer.finish()
     }
@@ -670,10 +704,36 @@ impl FromPeer {
                 extension: reader.text()?,
             },
             3 => Self::Missing,
+            4 => Self::Met {
+                device: reader.device()?,
+            },
+            5 => Self::Taken,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
         Ok(message)
+    }
+}
+
+impl Beacon {
+    pub fn encoded(&self) -> Vec<u8> {
+        let mut writer = Writer::new();
+        writer.device(self.device);
+        writer.number(u64::from(self.port));
+        writer.flag(self.answering);
+        writer.finish()
+    }
+
+    pub fn decoded(bytes: &[u8]) -> Result<Self> {
+        let mut reader = Reader::new(bytes);
+        let beacon = Self {
+            device: reader.device()?,
+            port: u16::try_from(reader.number()?)
+                .map_err(|_| Error::Malformed(Malformed::Number))?,
+            answering: reader.flag()?,
+        };
+        reader.done()?;
+        Ok(beacon)
     }
 }
 
@@ -989,7 +1049,33 @@ mod tests {
             }],
         };
 
+        let meet = ToPeer::Meet {
+            device: DeviceId([3; DEVICE_BYTES]),
+            records: true,
+        };
+        let changes = ToPeer::Changes {
+            whole: true,
+            changes: vec![Change::Favourite(FavouriteNote {
+                recording: song("Time"),
+                favoured: true,
+                stamp: stamp(),
+            })],
+        };
+        let met = FromPeer::Met {
+            device: DeviceId([4; DEVICE_BYTES]),
+        };
+
         assert_eq!(ToPeer::decoded(&fetch.encoded()).expect("decoded"), fetch);
+        assert_eq!(ToPeer::decoded(&meet.encoded()).expect("decoded"), meet);
+        assert_eq!(
+            ToPeer::decoded(&changes.encoded()).expect("decoded"),
+            changes
+        );
+        assert_eq!(FromPeer::decoded(&met.encoded()).expect("decoded"), met);
+        assert_eq!(
+            FromPeer::decoded(&FromPeer::Taken.encoded()).expect("decoded"),
+            FromPeer::Taken
+        );
         assert_eq!(FromPeer::decoded(&held.encoded()).expect("decoded"), held);
         assert_eq!(
             FromPeer::decoded(&FromPeer::Missing.encoded()).expect("decoded"),
@@ -1103,6 +1189,25 @@ mod tests {
         assert!(matches!(
             FromServer::decoded(&[0, 0x80]),
             Err(Error::Malformed(Malformed::Ended))
+        ));
+    }
+
+    #[test]
+    fn a_beacon_reads_back_and_a_port_past_sixteen_bits_is_refused() {
+        let beacon = Beacon {
+            device: DeviceId([9; DEVICE_BYTES]),
+            port: u16::MAX,
+            answering: false,
+        };
+        let mut writer = Writer::new();
+        writer.device(beacon.device);
+        writer.number(u64::from(u16::MAX) + 1);
+        writer.flag(false);
+
+        assert_eq!(Beacon::decoded(&beacon.encoded()).expect("decoded"), beacon);
+        assert!(matches!(
+            Beacon::decoded(&writer.finish()),
+            Err(Error::Malformed(Malformed::Number))
         ));
     }
 

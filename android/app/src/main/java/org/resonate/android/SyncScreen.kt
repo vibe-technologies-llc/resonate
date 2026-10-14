@@ -62,7 +62,12 @@ fun syncStandingText(status: SyncStatus?, config: SyncConfig?, online: Boolean):
                     if (others == 0) "Connected · no other device online"
                     else "Connected · $others ${if (others == 1) "device" else "devices"} online"
                 }
-                SyncStanding.UNREACHABLE -> "The sync server could not be reached"
+                SyncStanding.UNREACHABLE -> {
+                    val nearby = status?.devices.orEmpty().count { !it.thisDevice && it.nearby }
+                    if (nearby == 0) "The sync server could not be reached"
+                    else
+                        "Server unreachable · $nearby ${if (nearby == 1) "device" else "devices"} on this network"
+                }
                 SyncStanding.REFUSED -> "The sync server refused this device"
                 SyncStanding.CONNECTING -> "Connecting…"
                 else -> "Starting…"

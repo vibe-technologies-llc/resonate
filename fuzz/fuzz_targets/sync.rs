@@ -2,8 +2,8 @@
 
 use libfuzzer_sys::fuzz_target;
 use resonate_sync::wire::{
-    FromPeer, FromServer, ToPeer, ToServer, decoded_bundle, decoded_candidates, decoded_recordings,
-    encoded_bundle,
+    Beacon, FromPeer, FromServer, ToPeer, ToServer, decoded_bundle, decoded_candidates,
+    decoded_recordings, encoded_bundle,
 };
 
 fuzz_target!(|bytes: &[u8]| {
@@ -18,6 +18,9 @@ fuzz_target!(|bytes: &[u8]| {
     }
     if let Ok(frame) = FromPeer::decoded(bytes) {
         assert_eq!(FromPeer::decoded(&frame.encoded()).ok(), Some(frame));
+    }
+    if let Ok(beacon) = Beacon::decoded(bytes) {
+        assert_eq!(Beacon::decoded(&beacon.encoded()).ok(), Some(beacon));
     }
     if let Ok(changes) = decoded_bundle(bytes) {
         assert_eq!(

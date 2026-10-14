@@ -35,15 +35,25 @@ impl RootView {
             .as_ref()
             .map(|syncing| syncing.shown());
         let on = synchronised.enabled;
-        let under = match (on, shown.as_ref().map(|shown| shown.standing)) {
-            (false, _) => "Off, nothing leaves this device",
-            (true, None) => "On from the next start",
-            (true, Some(SyncStanding::Connecting)) => "Reaching the sync server",
-            (true, Some(SyncStanding::Connected)) => "In step with your other devices",
-            (true, Some(SyncStanding::Unreachable)) => {
+        let nearby = shown.as_ref().map_or(0, |shown| {
+            shown
+                .devices
+                .iter()
+                .filter(|device| device.nearby && !device.this)
+                .count()
+        });
+        let under = match (on, shown.as_ref().map(|shown| shown.standing), nearby) {
+            (false, _, _) => "Off, nothing leaves this device",
+            (true, None, _) => "On from the next start",
+            (true, Some(SyncStanding::Connecting), _) => "Reaching the sync server",
+            (true, Some(SyncStanding::Connected), _) => "In step with your other devices",
+            (true, Some(SyncStanding::Unreachable), 0) => {
                 "The sync server cannot be reached; changes wait here until it can"
             }
-            (true, Some(SyncStanding::Refused)) => "The sync server refused this device",
+            (true, Some(SyncStanding::Unreachable), _) => {
+                "The sync server cannot be reached; in step with the devices on this network"
+            }
+            (true, Some(SyncStanding::Refused), _) => "The sync server refused this device",
         };
 
         let mut body = kit::section_body().child(self.in_the_ring(
@@ -69,7 +79,11 @@ impl RootView {
                     format!(
                         "{} ({})",
                         device.name,
-                        if device.online { "online" } else { "away" }
+                        match (device.nearby, device.online) {
+                            (true, _) => "on this network",
+                            (false, true) => "online",
+                            (false, false) => "away",
+                        }
                     )
                 })
                 .collect::<Vec<_>>();

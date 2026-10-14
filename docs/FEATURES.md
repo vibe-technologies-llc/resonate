@@ -66,8 +66,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
 - [L] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
   them
-- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, devices meet
-  only through a self-hosted `resonate-server`
+- [M] An iPhone sends and hears no sync beacon (multicast and broadcast need Apple's
+  `com.apple.developer.networking.multicast` entitlement), so it meets devices on its network only
+  through a server
+- [M] Devices on one network meet over IPv4 beacons alone, and only on the interface the default
+  route leaves by
+- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, devices on
+  different networks meet only through a self-hosted `resonate-server`
 
 ## Command line and bus
 - [M] The command line cannot mark a favourite, want a track or dismiss a missing one; only the

@@ -19,9 +19,9 @@ use resonate_core::{
 };
 use resonate_engine::Command;
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Opened,
-    Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice, SyncKey,
-    TransferState,
+    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
+    Opened, Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice,
+    SyncKey, TransferState,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use unicode_normalization::UnicodeNormalization;
@@ -122,6 +122,7 @@ pub struct SyncedDevice {
     pub name: String,
     pub platform: DevicePlatform,
     pub online: bool,
+    pub nearby: bool,
     pub this_device: bool,
 }
 
@@ -218,6 +219,7 @@ impl MobilePlayer {
                     },
                     name: device.name,
                     online: device.online,
+                    nearby: device.nearby,
                     this_device: device.this,
                 })
                 .collect(),
@@ -425,6 +427,7 @@ impl MobilePlayer {
             staging: folder.join(STAGING),
             transfers_allowed: config.metered_allowed
                 || self.syncing.unmetered.load(Ordering::Acquire),
+            nearby: Some(Nearby::on_the_network()),
         };
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;

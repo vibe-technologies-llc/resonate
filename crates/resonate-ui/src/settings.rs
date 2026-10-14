@@ -856,6 +856,7 @@ pub enum SyncStanding {
 pub struct SyncedDevice {
     pub name: String,
     pub online: bool,
+    pub nearby: bool,
     pub this: bool,
 }
 

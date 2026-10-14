@@ -4,6 +4,7 @@ mod error;
 mod key;
 mod ledger;
 mod merge;
+mod nearby;
 mod peer;
 mod quic;
 mod seal;
@@ -22,6 +23,7 @@ pub use crate::{
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{Derived, DeviceId, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me},
+    nearby::{NEARBY_GROUP, NEARBY_PORT, Nearby},
     quic::{read_frame, send_frame, transport},
     seal::{opened, sealed},
     service::{

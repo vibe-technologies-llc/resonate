@@ -132,6 +132,9 @@ pub enum Error {
     #[error("the sync socket could not be bound")]
     Bind(#[source] io::Error),
 
+    #[error("the beacon socket could not be bound")]
+    BeaconBind(#[source] io::Error),
+
     #[error("the sync runtime could not start")]
     Runtime(#[source] io::Error),
 
@@ -176,6 +179,15 @@ pub enum Error {
 
     #[error("device {0:?} does not hold that song")]
     Missing(DeviceId),
+
+    #[error("a device on this network did not answer a meeting")]
+    Unmet,
+
+    #[error("a device took changes before it was met")]
+    Unintroduced,
+
+    #[error("device {0:?} did not take the changes it was sent")]
+    Untaken(DeviceId),
 
     #[error("the sync service has stopped")]
     Stopped,

@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.provider.DocumentsContract
 import android.util.LruCache
 import java.util.concurrent.atomic.AtomicLong
@@ -140,6 +141,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val syncAccess = Mutex()
     private var syncPolling: Job? = null
     private var network: ConnectivityManager.NetworkCallback? = null
+    private val beaconsHeard: WifiManager.MulticastLock? by lazy {
+        context.applicationContext
+            .getSystemService(WifiManager::class.java)
+            ?.createMulticastLock("resonate-sync")
+            ?.apply { setReferenceCounted(false) }
+    }
     @Volatile private var unmetered = false
     @Volatile private var foreground = true
     @Volatile private var landingRefusedUntil = 0L
@@ -326,11 +333,18 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 syncConfig.value = kept
             }
             native.syncNetwork(unmetered)
+            hearBeacons(status.standing != SyncStanding.OFF)
             syncStatus.value = status
         } catch (failure: Exception) {
             syncStatus.value = native.syncStatus()
             throw failure
         }
+    }
+
+    private fun hearBeacons(hear: Boolean) {
+        val lock = beaconsHeard ?: return
+        if (hear && !lock.isHeld) lock.acquire()
+        if (!hear && lock.isHeld) lock.release()
     }
 
     private fun watchNetwork() {

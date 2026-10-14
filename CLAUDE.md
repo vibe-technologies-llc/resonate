@@ -25,7 +25,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic, TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
-| `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers |
+| `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `packaging.md` | `packaging/**` | the Arch, Fedora and Flatpak payloads and their build baseline |
@@ -67,7 +67,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-mcp        catalog and player over MCP  [`mcp`]
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
-  ├── resonate-sync       devices kept in step: sealed records, QUIC peers  [`sync`]
+  ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons  [`sync`]
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither

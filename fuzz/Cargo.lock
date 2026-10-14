@@ -2085,6 +2085,7 @@ dependencies = [
 name = "resonate-sync"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "flate2",
  "parking_lot",
  "quinn",

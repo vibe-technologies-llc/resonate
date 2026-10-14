@@ -12,10 +12,11 @@ paths:
 # Device sync
 
 `resonate-sync` keeps a listener's devices in step: playlists, track favourites, listening history
-and what each device was playing travel through a server that cannot read them; songs travel from
-one device to another directly. It reaches `resonate-core` alone among workspace crates (the
-layering job refuses the library, engine, gpui, `ureq`, serde); the binary, the mobile boundary
-(Android and iOS) and `resonate-server` reach it.
+and what each device was playing travel through a server that cannot read them, or straight between
+devices on one network when the server is away; songs travel from one device to another directly.
+It reaches `resonate-core` alone among workspace crates (the layering job refuses the library,
+engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) and
+`resonate-server` reach it.
 
 ## The pairing key and what it derives
 
@@ -53,6 +54,10 @@ layering job refuses the library, engine, gpui, `ureq`, serde); the binary, the 
   own records come back as a seq with no blob, so its cursor moves without the bytes), `Appended`,
   `Arrived`/`Left`, `Punched`, `Compacted`, `Refused`. ALPN `resonate-sync/1` to the server,
   `resonate-peer/1` between devices.
+- **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
+  (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
+  with the other's device) and `Changes` (whether whole, a bundle; answered `Taken`). A `Beacon` is
+  a device, its QUIC port and whether it answers another.
 
 ## The ledger
 
@@ -101,16 +106,21 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 
 ## The service
 
-- **One thread, one current-thread tokio runtime, one UDP socket** (`service.rs`). The quinn
-  endpoint is client to the server and server to peers at once. The server connection keeps alive
-  every 25 s, so presence and the NAT mapping hold for a few dozen bytes; nothing is polled: the
-  server pushes what other devices append.
+- **One thread, one current-thread tokio runtime, two UDP sockets** (`service.rs`): the quinn
+  endpoint, client to the server and server to peers at once, and the beacon socket (`Nearby`).
+  `Syncing` is the one state for the whole run; the server is a `Link` in it that comes and goes,
+  so looks, peers and beacons carry on while the server is away. Connecting runs as a task handing
+  back a `Link`. The server connection keeps alive every 25 s, so presence and the NAT mapping hold
+  for a few dozen bytes; nothing is polled: the server pushes what other devices append.
 - **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter, logged at debug;
   a refusal waits the longest. `Shown` (standing, devices, transfers, owed) is a snapshot the
   window and Android read without asking the thread.
 - **A look runs a second after the catalog's revision moves, three seconds settled, and every five
-  minutes regardless**; it settles held entries first, then pushes what is owed, one `Append` in
-  flight. Catch-up comes before the first look, so a device joining adopts before it mints.
+  minutes regardless**; it settles held entries first, then tells neighbours and pushes what is
+  owed, one `Append` in flight. Catch-up comes before the first look, so a device joining adopts
+  before it mints: caught up with the server (this link, or an earlier one while none stands) or
+  with a whole snapshot from a neighbour. A device that has met nobody does not look; there is
+  nobody to tell. `Shown.settled` asks the same, and nothing in flight to the server.
 - **Server**: `HOSTED_SERVER` (`resonate.tecnio.dev`, port 443) unless `sync-server` names
   another; `sync-server-certificate` adds a PEM to the system and built-in roots (a private CA, the
   tests' self-signed server).
@@ -133,3 +143,35 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile.
+
+## Nearby
+
+The server is the way across networks; on one network devices find each other themselves
+(`nearby.rs`), so a listener with no server reachable, or none at all, still syncs at home.
+
+- **A beacon is sealed like a record.** `RSN1` then `seal::sealed` of a `Beacon` under the space's
+  key: only a device of the code opens it, and a fresh nonce each time leaves an onlooker nothing to
+  follow. Sent at start and every `BEACON_EVERY` (15 s, jittered) to `NEARBY_GROUP`
+  (239.255.41.73, one hop) and the broadcast address, port `NEARBY_PORT` (41734). Where the port is
+  taken the socket binds anywhere: it still sends, and hears answers.
+- **An unmet device answers by unicast**, so one that cannot hear multicast (Android without its
+  multicast lock, a taken port) is still found. **The lower `DeviceId` dials** the beacon's source
+  address at the port it names, at most every `DIAL_A_NEIGHBOUR_EVERY` (30 s); a want for a device
+  heard within `HEARD_FOR` (60 s) dials it too. Nothing is sent, heard or dialled while transfers
+  are not allowed.
+- **A dial is mutual TLS like any peer, then `Meet`**: the certificate is the space's, so it says
+  nothing of which device is there. Both sides then serve the connection (fetch either way), call it
+  nearby (`SyncDevice::nearby`, also `online`), and each sends its whole `Ledger::snapshot` as one
+  `Changes { whole }`; the other applies it through `arrived`, as a server snapshot. A punched
+  connection does not meet and carries no records.
+- **After every look, what is owed goes to each neighbour**, less what it was told on this
+  connection (`told`: SHA-256 of each encoded change). `owed` is cleared only by the server's
+  `Appended`, so the server still gets all of it once back. Nothing is relayed: what came from the
+  server or from one neighbour is not passed to another, since each device on the network meets each
+  other one.
+- **Android holds a `WifiManager.MulticastLock` while sync runs** (`CHANGE_WIFI_MULTICAST_STATE`).
+  iOS sends and hears no beacon: multicast and broadcast need Apple's
+  `com.apple.developer.networking.multicast` entitlement (`docs/FEATURES.md`).
+- `Settings::nearby` = `Nearby::on_the_network()` on every front end; `None` beacons nowhere (the
+  server's tests). `crates/resonate-sync/tests/nearby.rs` pairs two devices over loopback with no
+  server: records both ways, a song fetched, a rename back; a device of another code meets nobody.

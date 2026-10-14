@@ -85,10 +85,11 @@ fun PlaylistScreen(
     if (playlist == null) return
     val syncing = syncStatus?.standing.let { it != null && it != SyncStanding.OFF }
     val synced = playlistSync?.takeIf { it.playlist == id }
+    val connected = syncStatus?.standing == SyncStanding.CONNECTED
     val lenders =
-        if (syncStatus?.standing == SyncStanding.CONNECTED)
-            syncStatus?.devices.orEmpty().filter { it.online && !it.thisDevice }
-        else emptyList()
+        syncStatus?.devices.orEmpty().filter {
+            !it.thisDevice && (it.nearby || connected && it.online)
+        }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") {
             CollectionHeader(

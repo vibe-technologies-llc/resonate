@@ -43,7 +43,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   A 250 ms poll reads the snapshot and queue and saves every 20th tick, as Android does.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the same download and sync-landing journal
-  (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start).
+  (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start). An iPhone finds no
+  device on its network by itself: sync's beacons are multicast and broadcast, which need the
+  `com.apple.developer.networking.multicast` entitlement a free signing cannot carry.
 - **`Folders`** is the `Documents` callback. A chosen folder is a security-scoped bookmark kept in
   Application Support (`folders.plist`); the app's own Documents folder (`UIFileSharingEnabled`,
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits

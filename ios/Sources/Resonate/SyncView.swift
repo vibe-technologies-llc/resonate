@@ -159,7 +159,9 @@ struct SyncView: View {
         case .connected:
             let others = status?.devices.filter { $0.online && !$0.thisDevice }.count ?? 0
             return others == 0 ? "Connected · no other device online" : "Connected · \(counted(others, "device")) online"
-        case .unreachable: return "The sync server could not be reached"
+        case .unreachable:
+            let nearby = status?.devices.filter { $0.nearby && !$0.thisDevice }.count ?? 0
+            return nearby == 0 ? "The sync server could not be reached" : "Server unreachable · \(counted(nearby, "device")) on this network"
         case .refused: return "The sync server refused this device"
         case .connecting: return "Connecting…"
         default: return "Starting…"

@@ -6,12 +6,19 @@ use std::{
     time::Duration,
 };
 
+use parking_lot::Mutex;
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
 use resonate_core::Recording;
-use tokio::{fs, io::AsyncWriteExt, sync::mpsc, task::JoinSet, time::timeout};
+use tokio::{
+    fs,
+    io::AsyncWriteExt,
+    sync::mpsc::{self, UnboundedSender},
+    task::JoinSet,
+    time::timeout,
+};
 
 use crate::{
-    Catalog, DeviceId, Error, FileOp, Held, Result, StreamOp,
+    Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, StreamOp,
     quic::{PEER_NAME, read_frame, send_frame},
     wire::{FromPeer, ToPeer},
 };
@@ -50,7 +57,32 @@ pub async fn dialled(
     Err(Error::Unreachable(device))
 }
 
-pub async fn serve(connection: Connection, catalog: Arc<dyn Catalog>) {
+pub struct Answering {
+    pub catalog: Arc<dyn Catalog>,
+    pub ledger: Arc<Mutex<Ledger>>,
+    pub device: DeviceId,
+    pub heard: UnboundedSender<Heard>,
+}
+
+pub enum Heard {
+    Met {
+        device: DeviceId,
+        connection: Connection,
+        records: bool,
+    },
+    Told {
+        whole: bool,
+    },
+}
+
+struct Asked {
+    connection: Connection,
+    answering: Arc<Answering>,
+    met: Arc<Mutex<Option<DeviceId>>>,
+}
+
+pub async fn serve(connection: Connection, answering: Arc<Answering>, met: Option<DeviceId>) {
+    let met = Arc::new(Mutex::new(met));
     loop {
         let (send, recv) = match connection.accept_bi().await {
             Ok(streams) => streams,
@@ -59,24 +91,52 @@ pub async fn serve(connection: Connection, catalog: Arc<dyn Catalog>) {
                 return;
             }
         };
-        let catalog = Arc::clone(&catalog);
+        let asked = Asked {
+            connection: connection.clone(),
+            answering: Arc::clone(&answering),
+            met: Arc::clone(&met),
+        };
         tokio::spawn(async move {
-            if let Err(error) = answer(send, recv, catalog).await {
+            if let Err(error) = answer(send, recv, asked).await {
                 tracing::debug!(%error, "a peer's request could not be answered");
             }
         });
     }
 }
 
-async fn answer(
-    mut send: SendStream,
-    mut recv: RecvStream,
-    catalog: Arc<dyn Catalog>,
-) -> Result<()> {
+async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Result<()> {
     let Some(request) = read_frame(&mut recv).await? else {
         return Ok(());
     };
+    let catalog = Arc::clone(&asked.answering.catalog);
     match ToPeer::decoded(&request)? {
+        ToPeer::Meet { device, records } => {
+            *asked.met.lock() = Some(device);
+            let met = FromPeer::Met {
+                device: asked.answering.device,
+            };
+            send_frame(&mut send, &met.encoded()).await?;
+            let _ = asked.answering.heard.send(Heard::Met {
+                device,
+                connection: asked.connection,
+                records,
+            });
+        }
+        ToPeer::Changes { whole, changes } => {
+            if asked.met.lock().is_none() {
+                return Err(Error::Unintroduced);
+            }
+            let ledger = Arc::clone(&asked.answering.ledger);
+            blocking(move || {
+                ledger
+                    .lock()
+                    .arrived(catalog.as_ref(), &changes)
+                    .map(|_| ())
+            })
+            .await?;
+            send_frame(&mut send, &FromPeer::Taken.encoded()).await?;
+            let _ = asked.answering.heard.send(Heard::Told { whole });
+        }
         ToPeer::Holdings => {
             let holdings = blocking(move || catalog.holdings().map_err(Error::Catalog)).await?;
             for items in holdings.chunks(HELD_PER_FRAME) {
@@ -156,10 +216,51 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
         match FromPeer::decoded(&frame)? {
             FromPeer::Held { items } => holdings.extend(items),
             FromPeer::HeldEnd => break,
-            FromPeer::Sending { .. } | FromPeer::Missing => {}
+            FromPeer::Sending { .. }
+            | FromPeer::Missing
+            | FromPeer::Met { .. }
+            | FromPeer::Taken => {}
         }
     }
     Ok(holdings)
+}
+
+pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> Result<DeviceId> {
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|source| Error::Connection(Box::new(source)))?;
+    send_frame(&mut send, &ToPeer::Meet { device, records }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+    let Some(answer) = read_frame(&mut recv).await? else {
+        return Err(Error::Unmet);
+    };
+    match FromPeer::decoded(&answer)? {
+        FromPeer::Met { device } => Ok(device),
+        FromPeer::Held { .. }
+        | FromPeer::HeldEnd
+        | FromPeer::Sending { .. }
+        | FromPeer::Missing
+        | FromPeer::Taken => Err(Error::Unmet),
+    }
+}
+
+pub async fn tell(
+    connection: &Connection,
+    device: DeviceId,
+    whole: bool,
+    changes: Vec<Change>,
+) -> Result<()> {
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|source| Error::Connection(Box::new(source)))?;
+    send_frame(&mut send, &ToPeer::Changes { whole, changes }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+    match read_frame(&mut recv).await? {
+        Some(answer) if FromPeer::decoded(&answer)? == FromPeer::Taken => Ok(()),
+        Some(_) | None => Err(Error::Untaken(device)),
+    }
 }
 
 pub struct Fetched {
@@ -194,7 +295,11 @@ pub async fn fetch(
     };
     let (size, extension) = match FromPeer::decoded(&header)? {
         FromPeer::Sending { size, extension } => (size, extension),
-        FromPeer::Missing | FromPeer::Held { .. } | FromPeer::HeldEnd => {
+        FromPeer::Missing
+        | FromPeer::Held { .. }
+        | FromPeer::HeldEnd
+        | FromPeer::Met { .. }
+        | FromPeer::Taken => {
             return Err(Error::Missing(device));
         }
     };
