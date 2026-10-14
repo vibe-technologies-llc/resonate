@@ -321,37 +321,60 @@ struct CompactTitles: View {
 struct PlayerScrubber: View {
     private static let nearEnoughMs: Double = 1500
     private static let holdAtMost: Duration = .seconds(1)
+    private static let restingHeight: CGFloat = 7
+    private static let grabbedHeight: CGFloat = 14
+    private static let touchHeight: CGFloat = 28
+    private static let stepMs: Double = 10_000
+    private static let slightestMove: CGFloat = 2
 
     @Environment(Library.self) private var library
     @State private var dragging: Double?
+    @State private var grabbedAt: Double?
     @State private var held: Double?
+    @State private var grabs = 0
 
     var body: some View {
         let timing = library.clock
         let duration = Double(max(timing.durationMs, 1))
-        let live = Double(min(timing.positionMs, max(timing.durationMs, timing.positionMs)))
+        let live = Double(timing.positionMs)
         let shown = min(dragging ?? held ?? live, duration)
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(get: { shown }, set: { dragging = $0 }),
-                in: 0...duration
-            ) { editing in
-                guard !editing, let target = dragging else { return }
-                held = target
-                dragging = nil
-                library.seek(to: UInt64(target))
+        let grabbed = dragging != nil
+
+        VStack(spacing: 6) {
+            GeometryReader { space in
+                let width = max(space.size.width, 1)
+                Capsule()
+                    .fill(.primary.opacity(0.16))
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
+                            .frame(width: width * shown / duration)
+                    }
+                    .clipShape(Capsule())
+                    .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(drag(across: width, of: duration, from: shown))
             }
-            .disabled(!library.loaded)
-            .accessibilityLabel("Song position")
-            .accessibilityValue("\(clock(UInt64(shown))) of \(clock(timing.durationMs))")
+            .frame(height: Self.touchHeight)
+            .animation(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             HStack {
                 Text(clock(UInt64(shown)))
                 Spacer()
                 Text("-" + clock(UInt64(max(duration - shown, 0))))
             }
             .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
+            .foregroundStyle(grabbed ? .primary : .secondary)
+            .animation(.smooth, value: grabbed)
+        }
+        .allowsHitTesting(library.loaded)
+        .sensoryFeedback(.impact(weight: .light), trigger: grabs)
+        .accessibilityElement()
+        .accessibilityLabel("Song position")
+        .accessibilityValue("\(clock(UInt64(shown))) of \(clock(timing.durationMs))")
+        .accessibilityAdjustableAction { direction in
+            let step = direction == .increment ? Self.stepMs : -Self.stepMs
+            commit(min(max(shown + step, 0), duration))
         }
         .onChange(of: timing.positionMs) { _, now in
             if let target = held, abs(Double(now) - target) < Self.nearEnoughMs { held = nil }
@@ -361,6 +384,31 @@ struct PlayerScrubber: View {
             try? await Task.sleep(for: Self.holdAtMost)
             if !Task.isCancelled { held = nil }
         }
+    }
+
+    private func drag(across width: CGFloat, of duration: Double, from shown: Double) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { change in
+                let start = grabbedAt ?? shown
+                if grabbedAt == nil {
+                    grabbedAt = start
+                    grabs += 1
+                }
+                let moved = Double(change.translation.width / width) * duration
+                dragging = min(max(start + moved, 0), duration)
+            }
+            .onEnded { change in
+                grabbedAt = nil
+                let target = dragging
+                dragging = nil
+                guard let target, abs(change.translation.width) >= Self.slightestMove else { return }
+                commit(target)
+            }
+    }
+
+    private func commit(_ target: Double) {
+        held = target
+        library.seek(to: UInt64(target))
     }
 }
 
