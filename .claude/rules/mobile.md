@@ -11,7 +11,7 @@ paths:
 `resonate-mobile` is the one native boundary both phone front ends sit on: UniFFI proc-macros
 export `MobilePlayer` and its records, and `resonate-bindgen` writes Kotlin (`android.md`) and Swift
 (`ios.md`) from the same library metadata. Behaviour that is the boundary's (the document catalog,
-playlists, sync bridge, downloads, online orchestration) is described once in `android.md`'s
+playlists, sync bridge, downloads, online orchestration, the enrichment pass) is described once in `android.md`'s
 sections and holds for iOS unchanged; this file holds what is the crate's alone.
 
 ## Unsafe
@@ -60,9 +60,19 @@ included, is `InvalidUri`.
   fill; the stream clock is the reported latency. Drain waits that latency after the ring empties.
 - **Elsewhere** (host tests): PipeWire through `Player::with_sources`.
 
+## Reading document rows
+
+`catalog::read` takes a document row by position, the V1 and V2 columns in order; a migration only
+appends columns, so `SELECT *`/`d.*` stays readable. A query adding its own columns after `d.*`
+reads them by name (`position`, `listen_id`), never by index, since the next migration moves them.
+
 ## Checks
 
-`cargo test -p resonate-mobile` runs on the host. Its documents tests cover both schemes and
+`cargo test -p resonate-mobile` runs on the host. The enrichment tests drive the pass over a fake
+`Reference` through `Asking` (the reference and the client whose switch it reads): one cover per
+album, a miss left alone until its wait is over, a prompt stop, the mark kept on closing, the album
+key and the artwork fallback; a V6 catalog migrates keeping ids, favourites and resumption. Its
+documents tests cover both schemes and
 `the_ios_document_types_admit_what_a_scan_admits` holds `ios/Resonate/Info.plist`'s declared
 extensions to `AUDIO_EXTENSIONS`. Target clippy runs through `android/check-native.py` and, for
 iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the environment

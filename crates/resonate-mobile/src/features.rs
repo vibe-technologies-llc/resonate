@@ -7,7 +7,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::Watch;
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::{Mbid, SourceId, folded_letters};
+use resonate_core::{Mbid, SourceId};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
     Fingerprints, LookupOp, LyricsAsked, Printed, RecordingAsked, RecordingMatch, Reference,
@@ -17,7 +17,7 @@ use resonate_lyrics::{Lyrics, read_lyrics, read_lyricsfile};
 use resonate_online::{Identity, Online};
 use rusqlite::params;
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, documents::location};
+use crate::{Error, MobilePlayer, Result, StoreOp, Track, documents::location, enrichment::Asking};
 
 pub(crate) struct Services {
     pub(crate) online: Online,
@@ -208,7 +208,7 @@ impl MobilePlayer {
     }
 
     pub fn artwork(&self, id: u64) -> Result<Option<Vec<u8>>> {
-        self.catalog.artwork(id)
+        self.catalog.pictured(id)
     }
 
     pub fn set_artwork(&self, id: u64, bytes: Vec<u8>) -> Result<()> {
@@ -568,107 +568,29 @@ impl MobilePlayer {
 
     pub fn enrich_track(&self, id: u64) -> Result<Track> {
         self.require_online()?;
-        let track = self.catalog.track(id)?;
-        let recording =
-            if let Some(id) = track.recording.as_deref().and_then(|id| Mbid::new(id).ok()) {
-                self.services
-                    .online
-                    .recording(&id)
-                    .map_err(|source| Error::reference(LookupOp::Recording, source))?
-            } else {
-                let matches = self
-                    .services
-                    .online
-                    .find_recording(&RecordingAsked {
-                        title: track.title.clone(),
-                        artist: (!track.artist.is_empty()).then(|| track.artist.clone()),
-                        artist_mbid: None,
-                        release: (!track.album.is_empty()).then(|| track.album.clone()),
-                        length: (track.duration_ms > 0)
-                            .then_some(Duration::from_millis(track.duration_ms)),
-                        wording: Wording::Phrase,
-                    })
-                    .map_err(|source| Error::reference(LookupOp::FindRecording, source))?;
-                let mut strict = matches.into_iter().filter(|found| {
-                    found.score >= 95
-                        && folded_letters(&found.title) == folded_letters(&track.title)
-                        && folded_letters(&found.credited_as()) == folded_letters(&track.artist)
-                        && found.length.is_none_or(|length| {
-                            track.duration_ms == 0
-                                || length.abs_diff(Duration::from_millis(track.duration_ms))
-                                    <= Duration::from_secs(5)
-                        })
-                });
-                let first = strict.next();
-                match (first, strict.next()) {
-                    (Some(found), None) => Some(found.into_recording()),
-                    _ => None,
-                }
-            };
-        let release = track
-            .release
-            .as_deref()
-            .and_then(|id| Mbid::new(id).ok())
-            .or_else(|| {
-                recording.as_ref().and_then(|recording| {
-                    recording
-                        .releases
-                        .iter()
-                        .find(|release| {
-                            folded_letters(&release.title) == folded_letters(&track.album)
-                        })
-                        .map(|release| release.id.clone())
-                })
-            });
-        let artist_id = recording
-            .as_ref()
-            .and_then(|recording| recording.credit.first())
-            .and_then(|credit| credit.mbid.as_ref())
-            .map(ToString::to_string);
-        let album_artist = if let Some(release) = release.as_ref() {
-            self.services
-                .online
-                .release(release)
-                .map_err(|source| Error::reference(LookupOp::Release, source))?
-                .map_or_else(String::new, |release| release.credited_as())
-        } else {
-            String::new()
-        };
-        let recording_id = recording.as_ref().map(|recording| recording.id.to_string());
-        let release_id = release.as_ref().map(ToString::to_string);
-        self.catalog.learned(
-            id,
-            recording_id.as_deref(),
-            release_id.as_deref(),
-            artist_id.as_deref(),
-            &album_artist,
-        )?;
-        if self.catalog.artwork(id)?.is_none()
-            && let Some(release) = release
-            && let Some(picture) = self
-                .services
-                .online
-                .cover(&release, None)
-                .map_err(|source| Error::reference(LookupOp::Cover, source))?
-        {
-            self.catalog
-                .keep_artwork(id, &picture.bytes, "coverartarchive", false)?;
-        }
-        self.lyrics(id, true)?;
+        self.enrich_one(&Asking::over(Arc::clone(self.services.online.client())), id)?;
         self.catalog.track(id)
     }
 
     pub fn artist_information(&self, id: u64) -> Result<Option<ArtistInformation>> {
-        self.require_online()?;
         let track = self.catalog.track(id)?;
-        let Some(id) = track
+        let Some(artist) = track
             .artist_mbid
             .as_deref()
             .and_then(|id| Mbid::new(id).ok())
         else {
             return Ok(None);
         };
-        self.online_artist(id.to_string())
+        if let Some(kept) = self.catalog.kept_artist(artist.as_str())? {
+            return Ok(Some(kept));
+        }
+        self.require_online()?;
+        let Some(found) = self.online_artist(artist.to_string())? else {
+            return Ok(None);
+        };
+        self.catalog
+            .keep_artist(artist.as_str(), &found, SystemTime::now())?;
+        Ok(Some(found))
     }
 
     pub fn online_artist(&self, id: String) -> Result<Option<ArtistInformation>> {

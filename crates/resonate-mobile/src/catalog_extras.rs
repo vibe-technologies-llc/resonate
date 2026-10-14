@@ -12,7 +12,7 @@ type StoredLyrics = (Option<String>, Option<String>, String);
 impl Catalog {
     pub(crate) fn tagged(&self, id: u64, info: &MediaInfo) -> Result<()> {
         let tags = &info.tags;
-        self.0.lock().execute("UPDATE documents SET album_artist = coalesce(nullif(?2, ''), album_artist), genre = coalesce(nullif(?3, ''), genre), date = coalesce(nullif(?4, ''), date), track_number = ?5, disc_number = ?6, bits = ?7, channels = ?8, recording = coalesce(?9, recording), release = coalesce(?10, release), artist_mbid = coalesce(?11, artist_mbid) WHERE id = ?1", params![id as i64, tags.album_artist, tags.genre, tags.date, tags.track_number, tags.disc_number, info.bits_per_coded_sample, info.spec.channels.count().get(), tags.musicbrainz_track_id, tags.musicbrainz_album_id, tags.musicbrainz_artist_id]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.0.lock().execute("UPDATE documents SET album_artist = coalesce(nullif(?2, ''), album_artist), genre = coalesce(nullif(?3, ''), genre), date = coalesce(nullif(?4, ''), date), track_number = ?5, disc_number = ?6, bits = ?7, channels = ?8, recording = coalesce(?9, recording), release = coalesce(?10, release), artist_mbid = coalesce(?11, artist_mbid), isrc = coalesce(?12, isrc) WHERE id = ?1", params![id as i64, tags.album_artist, tags.genre, tags.date, tags.track_number, tags.disc_number, info.bits_per_coded_sample, info.spec.channels.count().get(), tags.musicbrainz_track_id, tags.musicbrainz_album_id, tags.musicbrainz_artist_id, tags.isrc]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 
@@ -84,7 +84,7 @@ impl Catalog {
         artist: Option<&str>,
         album_artist: &str,
     ) -> Result<()> {
-        self.0.lock().execute("UPDATE documents SET recording = coalesce(recording, ?2), release = coalesce(release, ?3), artist_mbid = coalesce(artist_mbid, ?4), album_artist = CASE WHEN album_artist = '' THEN ?5 ELSE album_artist END WHERE id = ?1", params![id as i64, recording, release, artist, album_artist]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.0.lock().execute("UPDATE documents SET recording = coalesce(recording, ?2), release = coalesce(release, ?3), artist_mbid = coalesce(artist_mbid, ?4), album_artist = CASE WHEN album_artist = '' AND folded(?5) = folded(artist) THEN ?5 ELSE album_artist END WHERE id = ?1", params![id as i64, recording, release, artist, album_artist]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 

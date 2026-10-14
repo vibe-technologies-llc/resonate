@@ -52,7 +52,7 @@ impl MobilePlayer {
         query
             .query_map(params![id as i64, limit.min(500), offset], |row| {
                 let mut track = read(row)?;
-                track.queue_id = Some(row.get::<_, i64>(21)? as u64);
+                track.queue_id = Some(row.get::<_, i64>("position")? as u64);
                 Ok(track)
             })
             .map_err(read_error)?
@@ -361,6 +361,7 @@ mod tests {
             downloads: crate::downloads::Downloads::default(),
             syncing: crate::sync::Syncing::under(env::temp_dir()),
             routing: Arc::new(crate::output::Routing::new()),
+            enriching: crate::enrichment::Enriching::default(),
         }
     }
 

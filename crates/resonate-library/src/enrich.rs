@@ -82,7 +82,7 @@ const VARIOUS_ARTISTS: &str = "89ad4ac3-39f7-470e-963a-56509c546377";
 
 const VARIOUS_ARTISTS_NAMED: &str = "Various Artists";
 
-const REFUSALS_THAT_END_A_PASS: u32 = 10;
+pub const REFUSALS_THAT_END_A_PASS: u32 = 10;
 
 const RECOGNITIONS_REFUSED_BEFORE_GIVING_UP: u32 = 5;
 
@@ -766,14 +766,14 @@ enum ReleasesRead {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Identified {
+pub enum Identified {
     Found(Mbid),
     Group(Mbid),
     Nothing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Fit {
+pub enum Fit {
     Exact,
     Wider,
     Narrower,
@@ -1023,7 +1023,7 @@ fn top_of<T, W: Ord>(found: Vec<T>, weighed: impl Fn(&T) -> W) -> Option<T> {
     })
 }
 
-fn top_release(found: Vec<ReleaseMatch>, album: &AlbumToAsk) -> Identified {
+pub fn top_release(found: Vec<ReleaseMatch>, album: &AlbumToAsk) -> Identified {
     let Some(top) = top_of(found, |found| weighed_release(found, album)) else {
         return Identified::Nothing;
     };
@@ -1055,7 +1055,7 @@ fn top_release(found: Vec<ReleaseMatch>, album: &AlbumToAsk) -> Identified {
     Identified::Nothing
 }
 
-fn top_group(found: Vec<GroupMatch>, album: &AlbumToAsk) -> Option<Mbid> {
+pub fn top_group(found: Vec<GroupMatch>, album: &AlbumToAsk) -> Option<Mbid> {
     let top = top_of(found, |found| {
         (matches_as_a_group(found, album), found.score)
     })?;
@@ -1100,7 +1100,7 @@ fn widths(group: &ReleaseGroup) -> impl Iterator<Item = u32> + '_ {
         .filter_map(|release| release.track_count)
 }
 
-fn closest_release<'a>(
+pub fn closest_release<'a>(
     group: &'a ReleaseGroup,
     album: &AlbumToAsk,
 ) -> Option<(&'a GroupRelease, Fit)> {
@@ -1173,6 +1173,70 @@ fn asked_with(track: &TrackToAsk) -> Option<(&str, Option<&Mbid>)> {
                 .as_deref()
                 .map(|owner| (owner, track.owner_mbid.as_ref()))
         })
+}
+
+pub fn release_asked(album: &AlbumToAsk, wording: Wording) -> ReleaseAsked {
+    ReleaseAsked {
+        title: album.title.clone(),
+        artist: album.owner.clone(),
+        artist_mbid: album.owner_mbid.clone(),
+        barcode: album.barcode.clone(),
+        catalog_number: album.catalog_number.clone(),
+        wording,
+    }
+}
+
+pub fn group_asked(album: &AlbumToAsk, wording: Wording) -> GroupAsked {
+    GroupAsked {
+        title: album.title.clone(),
+        artist: album.owner.clone(),
+        artist_mbid: album.owner_mbid.clone(),
+        year: album.year,
+        wording,
+    }
+}
+
+pub fn recording_asked(track: &TrackToAsk, wording: Wording) -> Option<RecordingAsked> {
+    let asked_with = asked_with(track);
+    let titled = track.tagged_title.is_some() || named_enough_by_its_file(track);
+    if !titled || (asked_with.is_none() && track.album_title.is_none()) {
+        return None;
+    }
+
+    Some(RecordingAsked {
+        title: track.title.clone(),
+        artist: asked_with.map(|(artist, _)| artist.to_owned()),
+        artist_mbid: asked_with.and_then(|(_, mbid)| mbid.cloned()),
+        release: asked_with
+            .is_none()
+            .then(|| track.album_title.clone())
+            .flatten(),
+        length: track.length,
+        wording,
+    })
+}
+
+pub fn the_strict_recording(
+    found: Vec<RecordingMatch>,
+    track: &TrackToAsk,
+) -> Option<RecordingMatch> {
+    let top = top_of(found, |found| {
+        (matches_a_recording(found, track), found.score)
+    })?;
+    if matches_a_recording(&top, track).is_none() {
+        tracing::debug!(
+            track = %track.id,
+            title = %track.title,
+            matched = %top.title,
+            score = top.score,
+            artist = ?billed(&top.credit),
+            length = ?top.length,
+            "the nearest recording is not taken under the strict rule"
+        );
+        return None;
+    }
+
+    Some(top)
 }
 
 pub(crate) struct NamedAs<'a> {
@@ -1266,7 +1330,7 @@ fn the_only_take(only: &Recording, track: &TrackToAsk) -> Option<Certainty> {
     same_name(Some(&only.title), &track.title).map(|_| Certainty::Nearly)
 }
 
-fn best_recording(
+pub fn best_recording(
     recordings: Vec<Recording>,
     track: &TrackToAsk,
 ) -> Option<(Recording, Certainty)> {
@@ -1342,7 +1406,7 @@ fn recognised(found: Vec<RecordingMatch>) -> Option<RecordingMatch> {
     None
 }
 
-fn needs_its_releases_told(named: &Recording) -> bool {
+pub fn needs_its_releases_told(named: &Recording) -> bool {
     match named.releases.as_slice() {
         [] => true,
         [_] => false,
@@ -1350,7 +1414,7 @@ fn needs_its_releases_told(named: &Recording) -> bool {
     }
 }
 
-fn best_release<'a>(
+pub fn best_release<'a>(
     recording: &'a Recording,
     album: Option<&AlbumToAsk>,
 ) -> Option<&'a RecordingRelease> {
@@ -1711,16 +1775,7 @@ impl Pass<'_> {
     fn find_release(&self, album: &AlbumToAsk) -> Result<Heard<Identified>> {
         self.found_either_way(
             Looking::for_an_album(album),
-            |wording| {
-                self.reference.find_release(&ReleaseAsked {
-                    title: album.title.clone(),
-                    artist: album.owner.clone(),
-                    artist_mbid: album.owner_mbid.clone(),
-                    barcode: album.barcode.clone(),
-                    catalog_number: album.catalog_number.clone(),
-                    wording,
-                })
-            },
+            |wording| self.reference.find_release(&release_asked(album, wording)),
             |found| Ok(top_release(found, album)),
         )
     }
@@ -1729,13 +1784,8 @@ impl Pass<'_> {
         self.found_either_way(
             Looking::for_an_album(album),
             |wording| {
-                self.reference.find_release_group(&GroupAsked {
-                    title: album.title.clone(),
-                    artist: album.owner.clone(),
-                    artist_mbid: album.owner_mbid.clone(),
-                    year: album.year,
-                    wording,
-                })
+                self.reference
+                    .find_release_group(&group_asked(album, wording))
             },
             |found| Ok(top_group(found, album)),
         )
@@ -1975,25 +2025,14 @@ impl Pass<'_> {
     }
 
     fn by_search(&self, track: &TrackToAsk) -> Result<Option<(Recording, Certainty)>> {
-        let asked_with = asked_with(track);
-        let titled = track.tagged_title.is_some() || named_enough_by_its_file(track);
-        if !titled || (asked_with.is_none() && track.album_title.is_none()) {
+        if recording_asked(track, Wording::Phrase).is_none() {
             return Ok(None);
         }
         let found = self.found_either_way(
             Looking::for_a_track(track),
-            |wording| {
-                self.reference.find_recording(&RecordingAsked {
-                    title: track.title.clone(),
-                    artist: asked_with.map(|(artist, _)| artist.to_owned()),
-                    artist_mbid: asked_with.and_then(|(_, mbid)| mbid.cloned()),
-                    release: asked_with
-                        .is_none()
-                        .then(|| track.album_title.clone())
-                        .flatten(),
-                    length: track.length,
-                    wording,
-                })
+            |wording| match recording_asked(track, wording) {
+                Some(asked) => self.reference.find_recording(&asked),
+                None => Ok(Vec::new()),
             },
             |found| self.take_match(found, track),
         )?;
@@ -2090,25 +2129,10 @@ impl Pass<'_> {
         found: Vec<RecordingMatch>,
         track: &TrackToAsk,
     ) -> Result<Option<Recording>> {
-        let Some(top) = top_of(found, |found| {
-            (matches_a_recording(found, track), found.score)
-        }) else {
-            return Ok(None);
-        };
-        if matches_a_recording(&top, track).is_none() {
-            tracing::debug!(
-                track = %track.id,
-                title = %track.title,
-                matched = %top.title,
-                score = top.score,
-                artist = ?billed(&top.credit),
-                length = ?top.length,
-                "the nearest recording is not taken under the strict rule"
-            );
-            return Ok(None);
+        match the_strict_recording(found, track) {
+            Some(top) => self.told_where_it_sits(top.into_recording()).map(Some),
+            None => Ok(None),
         }
-
-        self.told_where_it_sits(top.into_recording()).map(Some)
     }
 
     fn recording(&self, mbid: &Mbid) -> Result<Option<Recording>> {
