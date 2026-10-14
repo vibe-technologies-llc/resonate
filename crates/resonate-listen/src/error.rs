@@ -12,6 +12,7 @@ pub enum CaptureOp {
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[cfg(not(target_os = "android"))]
     #[error("capturing sound failed at {op:?}")]
     Capture {
         op: CaptureOp,
@@ -22,6 +23,7 @@ pub enum Error {
     #[error("nothing reached the recording before it was given up on")]
     NothingHeard,
 
+    #[cfg(not(target_os = "android"))]
     #[error("the listening was stopped")]
     Stopped,
 
@@ -39,6 +41,7 @@ pub enum Error {
 }
 
 impl Error {
+    #[cfg(not(target_os = "android"))]
     pub fn capture(op: CaptureOp, source: resonate_pipewire::Error) -> Self {
         Self::Capture {
             op,

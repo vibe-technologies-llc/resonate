@@ -6,9 +6,11 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use resonate_analysis::{Analysis, KeptAnalyses, Watching};
+use resonate_audio::SinkInfo;
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation};
-use resonate_pipewire::{PipeWire, SinkInfo};
+#[cfg(not(target_os = "android"))]
+use resonate_pipewire::PipeWire;
 
 use crate::{
     Backend, Command, CoverArt, Engine, EngineConfig, Error, Event, Landing, MediaInfo, Outcome,
@@ -30,13 +32,15 @@ pub struct Player {
 }
 
 impl Player {
+    #[cfg(not(target_os = "android"))]
     pub fn new(config: EngineConfig) -> Result<Self> {
         Self::with_sources(config, Arc::new(Sources::local()))
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn with_sources(config: EngineConfig, sources: Arc<Sources>) -> Result<Self> {
         Self::spawn(config, sources, |config| {
-            let backend = PipeWire::start(&config.app_name)?;
+            let backend = PipeWire::start(&config.app_name).map_err(resonate_audio::Error::from)?;
             Ok(Box::new(backend))
         })
     }

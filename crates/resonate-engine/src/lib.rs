@@ -1,4 +1,3 @@
-mod backend;
 mod catalog;
 mod command;
 mod engine;
@@ -25,6 +24,12 @@ pub use resonate_analysis::{
     SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse,
     study,
 };
+pub use resonate_audio::{
+    AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
+    LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, SinkChange, SinkFormats,
+    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock, StreamCommand, StreamEvent,
+    StreamRequest, StreamState, Surveyor, Words,
+};
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,
     FormatHint, Hinting, ImageFormat, LISTED_APART_BY, LocalFiles, Media, MediaInfo, MediaProvider,
@@ -42,15 +47,8 @@ pub use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
     SincParams, TruePeakMeter, Tuning,
 };
-pub use resonate_pipewire::{
-    AudioSource, CardProfile, Error as SinkError, GraphTime, HardwareVolume, LatencyRequest,
-    MediaRole, NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats, SinkId, SinkInfo,
-    SinkPort, SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    Words,
-};
 
 pub use crate::{
-    backend::{Backend, Opener, SinkResult, Surveyor},
     catalog::{ArtRead, TagsRead},
     command::{
         Command, CommandKind, Landing, Outcome, PreviousRestarts, RepeatMode, SkipUnderRepeat,

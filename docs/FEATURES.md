@@ -3,6 +3,13 @@
 Gaps: what is not built, a limit by design, an unsupported format or a behaviour the listener cannot
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
+## Android parity
+- [L] Android still needs document tagging/organising with undo, vault workflows, convolution,
+  per-route equaliser bindings, automatic favourite feedback synchronization and microphone
+  recognition
+- [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
+  format enumeration and DoP need capability negotiation and physical-device validation
+
 ## Playback and output
 - [M] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so
   do the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's

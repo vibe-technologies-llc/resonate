@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-engine/**/*.rs"
+  - "crates/resonate-android/src/process.rs"
   - "crates/resonate-pipewire/**/*.rs"
   - "crates/resonate-dsp/**/*.rs"
   - "crates/resonate-listen/src/recording.rs"
@@ -28,10 +29,12 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Three RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Four RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
+- `resonate-android/src/process.rs`: preallocated ring bytes to Oboe stereo float frames;
+  short fills zero the rest and publish completion/failure through atomics.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
   state from atomics, each rendered level's start from a preallocated SPSC queue.
 - `resonate-pipewire/src/process.rs`: the callback: playback `Cycle`, capture `Hearing` (reads each

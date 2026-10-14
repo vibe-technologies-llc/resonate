@@ -7,9 +7,10 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
+| `android.md` | Android Gradle project, Android bridge and binding tool | Compose, native build, documents, service lifecycle and emulator checks |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
-| `realtime.md` | engine, pipewire, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
+| `realtime.md` | engine, pipewire, Android callback, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name, notifications, the idle inhibit, `Running` |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
@@ -34,6 +35,8 @@ playback is the guiding constraint.
   rates and **resamples itself at high quality**, so lossless sources stay bit-accurate where the
   hardware allows.
 - A **GPUI** front end, native on Wayland.
+- An **Android 16+ Kotlin/Jetpack Compose** front end, with the same Rust playback engine,
+  opened and run from the `android/` project in Android Studio.
 
 `docs/ROADMAP.md` is the roadmap, **open work only** (defects, gaps, what is not built): it points
 to `BUGS.md`, `FEATURES.md`, `PERFORMANCE.md` and `TESTING.md` beside it, each of `## Category`
@@ -49,7 +52,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Twenty-three crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Twenty-six crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -61,7 +64,8 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
-  │     └── resonate-pipewire sink enumeration, negotiation, stream
+  │     ├── resonate-audio    backend contracts, sink vocabulary and streams
+  │     └── resonate-pipewire Linux sink enumeration, negotiation, stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
   ├── resonate-library    scan, tags, persistence  (also on codec, vault, analysis, providers)
   ├── resonate-lyrics     lyric vocabulary and the provider seam
@@ -76,13 +80,16 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/subsonic  resonate-subsonic  [`online`]
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   └── resonate-core       domain vocabulary
+
+resonate-android     cdylib: Compose boundary and document catalog, over playback, analysis, lyrics, library seams, online and providers
+resonate-bindgen     bin: host tool generating Kotlin from native metadata
 ```
 
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
-`resonate-online`, `resonate-mcp` and `resonate-discord`; a provider crate reaches the seam, core and
-(over the network) `resonate-fetch` alone; `resonate-listen` reaches core and `resonate-pipewire`
-alone (its own PipeWire client per recording); `resonate-analysis` reaches `resonate-dsp`.
+`resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and Android; a provider crate reaches the seam, core and
+(over the network) `resonate-fetch` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
+alone (its own PipeWire client per recording on Linux; capture modules excluded on Android); `resonate-analysis` reaches `resonate-dsp`.
 
 Invariants the layering protects (the rules files have the rest):
 
@@ -95,7 +102,7 @@ Invariants the layering protects (the rules files have the rest):
   source; another source brings its own catalog, its queue rows read through `Player::media`.
 - **An artist is one artist however spelled**: `folded_letters` (core) folds `artists.key`,
   `tracks_fts` and a typed search word.
-- **The engine reaches the graph through `Backend`, never `PipeWire`**: `Player::with_backend` takes
+- **The engine reaches the graph through `resonate-audio::Backend`, never `PipeWire`**: `Player::with_backend` takes
   any other, so `crates/resonate-engine/tests/transport.rs` drives a transport with no daemon.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`**,
   so one service serves `resonate play` and the window (`mpris.md`).
@@ -104,7 +111,7 @@ Invariants the layering protects (the rules files have the rest):
   `MIME_TYPES`, the desktop entry and the metainfo agree, held by tests; `AUDIO_EXTENSIONS` (core)
   is what a scan admits.
 - **The network is behind `Reference`; the library owns the seam**: `Online` implements it, so
-  `--exclude resonate-ui --no-default-features` builds with no HTTP client. Same for `Scrobbler`,
+  `cargo tree -p resonate --no-default-features` builds with no HTTP client. Same for `Scrobbler`,
   `Fingerprints`, `Corrections`, `LyricProvider`.
 - **A request says what this build is and nothing else**: User-Agent `resonate/<version>`; a contact,
   AcoustID key, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
@@ -124,7 +131,12 @@ Invariants the layering protects (the rules files have the rest):
 
 ## Commands
 
-- `cargo build|test --workspace --exclude resonate-ui --no-default-features`: audio stack only, the
+- `android/gradlew -p android :app:assembleDebug :app:lintDebug`: Android APK and Kotlin/manifest
+  checks; `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks native alignment and
+  Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
+  resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
+
+- `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
   `cargo run` opens the window.
 - `cargo build|test --workspace`: everything. `cargo test -p <crate> <test> -- --exact --nocapture`:

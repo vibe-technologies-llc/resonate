@@ -1,0 +1,13 @@
+[package]
+name = "resonate-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+crossbeam-channel.workspace = true
+resonate-core.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

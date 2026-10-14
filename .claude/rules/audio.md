@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-engine/**/*.rs"
+  - "crates/resonate-audio/**/*.rs"
   - "crates/resonate-codec/**/*.rs"
   - "crates/resonate-dsp/**/*.rs"
   - "crates/resonate-pipewire/**/*.rs"
@@ -756,3 +757,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   with replacement. **It waits for a sounding track, not the status** (`Harness::sounding`): a row
   still opening is published `Buffering`, read `Playing` on the bus with no current track, and a
   `SetPosition`, `Next` or track id read then is rightly ignored.
+
+## Platform boundary
+
+Sink identities, formats, timing, stream control and backend traits live in `resonate-audio`;
+it reaches core, not a device API. PipeWire implements the traits in its own crate and reexports
+the moved vocabulary for existing callers. The engine has a PipeWire dependency only outside
+Android; Android constructs it with `Player::with_sources_and_backend`.
+
+A source registry may supply a writable spool folder with `Sources::spooling_under`. Only that
+folder is tried when supplied; the Linux default remains `TMPDIR`, else `/var/tmp` then the
+system temporary folder. This lets a sandboxed document stream spill without changing process
+environment variables or treating a document URI as a path.

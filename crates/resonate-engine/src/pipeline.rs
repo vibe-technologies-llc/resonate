@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
+use resonate_audio::{NodeName, SinkInfo};
 use resonate_codec::{Codec, Delivery, DsdRate, MediaInfo, Packing, ReplayGain};
 use resonate_core::{
     AppliedGain, BitDepth, ChannelLayout, Decibels, Gain, SampleFormat, SampleRate, Silence,
@@ -11,7 +12,6 @@ use resonate_dsp::{
     GainStage, Impulse, NoiseShaping, Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig,
     Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
 };
-use resonate_pipewire::{NodeName, SinkInfo};
 
 use crate::{PreviousRestarts, SkipUnderRepeat, seed};
 
@@ -589,11 +589,11 @@ fn gain_of(config: &EngineConfig, attenuator: Attenuator, replay_gain: AppliedGa
 
 #[cfg(test)]
 mod tests {
+    use resonate_audio::{HardwareVolume, Plugged, SinkFormats, SinkId, SinkPort, Words};
     use resonate_core::{
         ChannelLayout, Decibels, SampleFormat,
         eq::{Band, BandGain, BandKind, Frequency, Preamp, Q, Target, TargetPoint},
     };
-    use resonate_pipewire::{HardwareVolume, Plugged, SinkFormats, SinkId, SinkPort, Words};
 
     use super::*;
 

@@ -23,6 +23,6 @@ pub use crate::{
     error::{Error, LyricOp, Result},
     lyricsfile::{LARGEST_LYRICSFILE, Lyricsfile, Unread, read_lyricsfile},
     model::{Credits, Detail, LyricLine, Lyrics, Singing, SungWord, Sweep, Timing, Voice, Waiting},
-    provider::{LyricProvider, Lyricists, Unsourced, Wanted, read_lyrics},
+    provider::{LyricProvider, Lyricists, Unsourced, Wanted, read_lyrics, read_sidecar},
     sidecar::Sidecar,
 };

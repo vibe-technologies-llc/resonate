@@ -82,6 +82,77 @@ flatpak run org.resonate.Resonate
 The Arch PKGBUILD keeps it for the machine building the package. The Fedora RPM and the Flatpak
 select the architecture's baseline CPU so a build runs on other machines.
 
+## Android and Android Studio
+
+The Android app uses Kotlin and Jetpack Compose with Resonate's Rust playback engine. Android
+16 or newer (API 36+) is required. The app supports granted music folders, song/album/artist
+browsing, search, favourites, queue, background media controls, saved resumption, equalisation,
+ReplayGain, DSP controls and sleep timers. Colors follow the system accent and light/dark
+appearance. It plays files in place; no all-files permission is needed.
+
+**Library** pins Favourites above your playlists and albums, with search and album/artist filters.
+Collection pages have artwork, Play/Shuffle controls and track lists; playlist pages offer song
+selection, renaming, reordering and undo. The expanded player opens its album or artist on tap. Artwork-derived ambient colors, cover
+fades, spring controls and collection transitions follow Android's animation settings.
+**Settings** groups sound, music folders and connected services, with search and a persisted
+online switch enabled by default. **Library tools** opens filters, suggestions, statistics,
+document playlists,
+metadata/artwork enrichment, animated timed lyrics, analysis, a live visualizer and the inspector.
+**Online search** has song/album/artist search, release browsing and song-link
+lookup, including shared album/artist/playlist links. Save recordings for later, see which are
+missing locally, or import a shared playlist's matching local songs. Download providers support
+Monochrome, hifi-api, Subsonic and your TIDAL
+account, saving into a chosen write-granted folder. AutoEq, parametric profile import,
+ListenBrainz/Last.fm scrobbling live in Settings; recording identification is in Analysis.
+The floating player shows artwork, progress, a favourite heart and previous/play/next controls. Playback continues
+when you go Home and pauses when the app is dismissed from Recents. The media notification shows
+cover art and opens the app when tapped.
+Account credentials are encrypted with Android Keystore. The remaining feature-parity work is
+listed in [FEATURES.md](docs/FEATURES.md#android-parity).
+
+Install Android Studio, Python 3, Rust stable, and the Android SDK components below in
+**Tools → SDK Manager**:
+
+- Android SDK Platform 36 and Build-Tools 36.0.0.
+- NDK (Side by side) 28.2.13676358; enable **Show Package Details** to select the version.
+- Android Emulator and an Android 16+ system image. Use x86_64 on an Intel/AMD host or ARM64
+  on an ARM host.
+
+Install both Rust targets:
+
+```sh
+rustup target add aarch64-linux-android x86_64-linux-android
+```
+
+Open this repository's **`android/` directory** in Android Studio and allow Gradle to sync.
+Create or select a device in **Tools → Device Manager**, select the **app** configuration and
+click **Run**. Gradle builds the Rust libraries and generates the Kotlin bindings automatically.
+The first build takes longer; subsequent runs rebuild changed sources. Rust and Python must be
+on Android Studio's process PATH. The existing `Pixel_10_Pro` AVD works on this checkout's host.
+
+To add test music, drag a copied audio file onto the emulator, then move it into a Music subfolder
+with the Files app. In Resonate, select **Choose music folder** and grant that folder. Playback
+controls also appear in Android's notification area while music plays. Open **Settings → Equaliser
+and sound** for sound processing; the sleep timer is available in **Settings** and **Now playing**.
+Output currently uses Android's shared 48 kHz stereo path; physical DAC fidelity needs hardware validation.
+
+From the repository root, without Android Studio:
+
+```sh
+android/gradlew -p android :app:assembleDebug :app:lintDebug
+android/gradlew -p android :app:installDebug
+adb shell am start -n org.resonate.android/.MainActivity
+android/gradlew -p android :app:connectedDebugAndroidTest
+python3 android/check-native.py --sdk "$ANDROID_HOME"
+```
+
+For terminal builds, use JDK 21+ (`JAVA_HOME` or `java` on PATH). Set `ANDROID_HOME` to your SDK
+folder, or let Android Studio write `android/local.properties`.
+On Windows, use `android\gradlew.bat` and `python`. The debug APK is
+`android/app/build/outputs/apk/debug/app-debug.apk`; it contains ARM64 and x86_64 native libraries
+and supports devices and emulators with 16 KB memory pages. Test commands need a running device
+or emulator; Bluetooth and USB audio still require physical devices.
+
 ## Playing
 
 ```

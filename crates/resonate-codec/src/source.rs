@@ -2,6 +2,7 @@ use std::{
     cmp::min,
     fs::File,
     io::{self, Read, Seek, SeekFrom},
+    path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
     time::Duration,
@@ -198,6 +199,7 @@ pub struct Sources {
     hinting: Option<Arc<dyn Hinting>>,
     opened_within: Duration,
     read_within: Duration,
+    spool_folder: Option<PathBuf>,
 }
 
 impl Sources {
@@ -211,7 +213,18 @@ impl Sources {
             hinting: None,
             opened_within: Self::OPENED_WITHIN,
             read_within: Self::READ_WITHIN,
+            spool_folder: None,
         }
+    }
+
+    #[must_use]
+    pub fn spooling_under(mut self, folder: PathBuf) -> Self {
+        self.spool_folder = Some(folder);
+        self
+    }
+
+    pub(crate) fn spool_folder(&self) -> Option<&Path> {
+        self.spool_folder.as_deref()
     }
 
     #[must_use]

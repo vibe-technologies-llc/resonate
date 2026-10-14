@@ -3,6 +3,9 @@ resolver = "3"
 members = [
     "crates/resonate",
     "crates/resonate-analysis",
+    "crates/resonate-audio",
+    "crates/resonate-android",
+    "crates/resonate-bindgen",
     "crates/resonate-core",
     "crates/resonate-codec",
     "crates/resonate-discord",
@@ -39,6 +42,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 result_large_err = "deny"
 
 [workspace.dependencies]
+uniffi = { version = "0.32.2", default-features = false }
+oboe = { version = "0.6.1", default-features = false, features = ["shared-stdcxx"] }
+
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }
 parking_lot = { version = "0.12.5", default-features = false }
@@ -171,6 +177,7 @@ clap = {
 }
 
 resonate-analysis = { version = "0.1.0", path = "crates/resonate-analysis" }
+resonate-audio = { version = "0.1.0", path = "crates/resonate-audio" }
 resonate-core = { version = "0.1.0", path = "crates/resonate-core" }
 resonate-codec = { version = "0.1.0", path = "crates/resonate-codec" }
 resonate-discord = { version = "0.1.0", path = "crates/resonate-discord" }

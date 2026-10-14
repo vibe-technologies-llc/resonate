@@ -12,11 +12,14 @@ resonate-analysis.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-dsp.workspace = true
-resonate-pipewire.workspace = true
+resonate-audio.workspace = true
 rtrb.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+resonate-pipewire.workspace = true
 
 [lints]
 workspace = true

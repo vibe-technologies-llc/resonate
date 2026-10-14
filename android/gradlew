@@ -1,0 +1,8 @@
+#!/bin/sh
+app_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "$JAVA_HOME" ]; then
+    resonate_java_command="$JAVA_HOME/bin/java"
+else
+    resonate_java_command=java
+fi
+exec "$resonate_java_command" -classpath "$app_dir/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"

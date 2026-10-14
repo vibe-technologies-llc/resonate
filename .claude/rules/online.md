@@ -7,9 +7,10 @@ paths:
 # The online crate
 
 `resonate-online`: the one `Reference` for enrich, the one network `LyricProvider`, the one
-`Corrections` for AutoEq, plus the printers, recognisers and `Scrobbler` behind their seams. Only
-the binary depends on it, behind the `online` feature (`--exclude resonate-ui
---no-default-features`: no HTTP client; `cargo tree -p resonate-library`: no `ureq`/`serde`).
+`Corrections` for AutoEq, plus the printers, recognisers and `Scrobbler` behind their seams. The binary composes it behind the `online` feature, and the Android application composes it
+behind its persisted runtime switch, enabled by default when unset. `cargo tree -p resonate --no-default-features` has no HTTP
+client; `cargo tree -p resonate-library` has no `ureq`/`serde`. Android capture modules in
+`resonate-listen` are excluded while its recognizer vocabulary remains available.
 
 **Nothing about the listener leaves without their say.** `Config::online_enabled` (`online`, default
 true) gates every request: `online::reference` is `None` when off, so `resonate enrich` says
@@ -362,6 +363,14 @@ before a source joined is asked again by `look_again_for_portraits`.
 `include_str!`, so document-to-model runs on every `cargo test` with no network. Captured whole, not
 cut down; the AudD ones were written from the service's documentation. `tests/live.rs` is gated on
 `RESONATE_ONLINE_TESTS` and shares one client so pacing holds across its tests.
+
+## Android composition
+
+Android composes the same `Online`, LRCLIB, AutoEq, ListenBrainz, Last.fm and network-provider
+implementations through `resonate-android`, over its document catalog. It shares one paced client
+for metadata services and follows that client's online gate. It never invents local paths for SAF
+URIs or imports the PipeWire capture implementation. Android orchestration, account storage and
+cache rules are in `android.md`.
 
 ## The binary's half
 

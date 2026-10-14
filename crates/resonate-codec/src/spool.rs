@@ -43,6 +43,7 @@ pub(crate) struct Spool {
 }
 
 impl Spool {
+    #[cfg(test)]
     pub(crate) fn beginning_with(
         head: &[u8],
         rest: Box<dyn MediaStream>,
@@ -51,13 +52,27 @@ impl Spool {
         Self::beginning_with_at_most(head, rest, hint, SPOOLED_ON_DISC_AT_MOST)
     }
 
+    #[cfg(test)]
     pub(crate) fn beginning_with_at_most(
         head: &[u8],
         rest: Box<dyn MediaStream>,
         hint: Option<FormatHint>,
         at_most: u64,
     ) -> Result<Arc<Self>, (io::Error, Box<dyn MediaStream>)> {
-        let file = match unnamed_file().and_then(|file| file.write_all_at(head, 0).map(|()| file)) {
+        Self::beginning_in(head, rest, hint, at_most, None)
+    }
+
+    pub(crate) fn beginning_in(
+        head: &[u8],
+        rest: Box<dyn MediaStream>,
+        hint: Option<FormatHint>,
+        at_most: u64,
+        folder: Option<&Path>,
+    ) -> Result<Arc<Self>, (io::Error, Box<dyn MediaStream>)> {
+        let file = match folder
+            .map_or_else(unnamed_file, unnamed_file_in)
+            .and_then(|file| file.write_all_at(head, 0).map(|()| file))
+        {
             Ok(file) => file,
             Err(source) => return Err((source, rest)),
         };
@@ -329,6 +344,42 @@ mod tests {
         );
         assert!(refused.is_err(), "a folder that is not there took a file");
         assert_eq!(left, 0, "the spool left its name behind");
+    }
+
+    #[test]
+    fn an_explicit_spool_folder_never_falls_back_to_another_folder() {
+        let missing =
+            env::temp_dir().join(format!("resonate-explicit-spool-missing-{}", process::id()));
+        let refused = Spool::beginning_in(
+            &[],
+            Box::new(Piped(Cursor::new(Vec::new()))),
+            None,
+            1024,
+            Some(&missing),
+        );
+        assert!(refused.is_err());
+        let taking = env::temp_dir().join(format!("resonate-explicit-spool-{}", process::id()));
+        fs::create_dir_all(&taking).expect("a writable spool folder");
+        let spool = Spool::beginning_in(
+            &[1, 2],
+            Box::new(Piped(Cursor::new(vec![3]))),
+            None,
+            1024,
+            Some(&taking),
+        )
+        .map_err(|(source, _)| source)
+        .expect("a spool in the selected folder");
+        let mut whole = spool.ended_whole().expect("the whole source").stream;
+        let mut bytes = Vec::new();
+        whole
+            .read_to_end(&mut bytes)
+            .expect("readable spooled bytes");
+        assert_eq!(bytes, [1, 2, 3]);
+        assert_eq!(
+            fs::read_dir(&taking).expect("the selected folder").count(),
+            0
+        );
+        fs::remove_dir(&taking).expect("an unnamed spool leaves an empty folder");
     }
 
     #[test]

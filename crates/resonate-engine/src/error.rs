@@ -24,7 +24,7 @@ pub enum Error {
     },
 
     #[error(transparent)]
-    Sink(#[from] resonate_pipewire::Error),
+    Sink(#[from] resonate_audio::Error),
 
     #[error("the queue has no row {rows}; it holds {len}")]
     NoSuchRow { rows: Span, len: usize },
@@ -186,16 +186,18 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
     }
 }
 
-const fn cause_at_the_sink(sink: &resonate_pipewire::Error) -> Cause {
-    use resonate_pipewire::Error as Sink;
+const fn cause_at_the_sink(sink: &resonate_audio::Error) -> Cause {
+    use resonate_audio::Error as Sink;
 
     match sink {
         Sink::NoSink => Cause::NoDevice,
         Sink::SinkGone { .. } => Cause::DeviceGone,
-        Sink::StreamFailed { .. } | Sink::PodBuild { .. } | Sink::PodUnread { .. } => {
-            Cause::DeviceRefused
-        }
-        Sink::Daemon { .. } | Sink::LoopStopped | Sink::Disconnected => Cause::SoundServer,
+        Sink::StreamFailed { .. } | Sink::FormatRefused => Cause::DeviceRefused,
+        Sink::Backend {
+            op: resonate_audio::Operation::Format,
+            ..
+        } => Cause::DeviceRefused,
+        Sink::Backend { .. } | Sink::LoopStopped | Sink::Disconnected => Cause::SoundServer,
     }
 }
 

@@ -16,24 +16,33 @@ paths:
   `result_large_err = "deny"` do not apply. `forbid` is never downgraded locally; a binding needing
   `unsafe` is raised (it ruled out `pipewire::thread_loop`, whose constructors are `unsafe fn`).
 
+The listener approved one exception: `resonate-android` admits UniFFI scaffolding and the
+owned-descriptor bridge at the native boundary (`android.md`). Its explicit crate lints keep
+`result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
+
 ## The layering
 
 A `cargo tree`-visible boundary is a `refuse` or `only` line in the CI layering job; add a boundary
 here, add it there.
 
+- `resonate-audio`: core, crossbeam-channel and thiserror alone; no PipeWire, codec, DSP or UI.
+  The engine reexports these contracts; the Linux adapter implements them. Android composes engine, codec, audio, library, analysis, lyrics, online and network providers,
+  never PipeWire, GPUI, MPRIS or Discord IPC. The listener/recogniser vocabulary builds on Android;
+  PipeWire capture is compiled only for other targets.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
   Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`) and `tz-rs` (`Calendar`).
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.
 - `resonate-lyrics`, `-eq`, `-listen`, `-analysis`: none of gpui, engine, library, `ureq`. `-listen`
-  is core + `-pipewire` alone (recognisers that reach HTTP are `resonate-online`'s, handed in by the
+  is core + `-audio` + `-pipewire` alone (recognisers that reach HTTP are `resonate-online`'s, handed in by the
   binary). `resonate-mpris`: no gpui, no library.
 - `resonate-ui`: no `resonate-codec`, no image decoding of its own; `resonate-codec::Drawing`
   decodes and scales cover art to a `Raster`.
-- `resonate-online`, `-mcp`, `-discord`: binary-only, each optional behind its feature, so
-  `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `--exclude resonate-ui
-  --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
+- `resonate-online`: composed only by the CLI/desktop binary and the Android application boundary.
+  Android needs the paced metadata/lyric/scrobbling services but never a Linux audio dependency.
+  `-mcp` and `-discord` remain binary-only. These are optional behind CLI features, so
+  `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
   engine vocabulary, serde; no gpui, library, HTTP client.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
 - `resonate-codec` is a *dev*-dependency of `resonate-mpris` alone (`tests/bus.rs` implements a
@@ -107,6 +116,9 @@ here, add it there.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
 - **`toml_edit`**, not `toml` (`display`, `parse`): the settings pane rewrites the listener's
   `config.toml`, and a value model loses comments, key order and spacing.
+
+- **`uniffi`** 0.32.2: Android native scaffolding, with `cli` only in `resonate-bindgen`.
+  **`oboe`** 0.6.1 (`shared-stdcxx`): Android-target-only; NDK libc++ ships in the APK.
 
 ## Pins held against `cargo update`
 

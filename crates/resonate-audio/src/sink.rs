@@ -2,8 +2,6 @@ use std::fmt;
 
 use resonate_core::{ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 
-use crate::format::WireWord;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SinkId(u32);
 
@@ -71,15 +69,7 @@ pub enum Words {
 }
 
 impl Words {
-    pub(crate) const fn of(format: SampleFormat, word: WireWord) -> Self {
-        match (format, word) {
-            (SampleFormat::S24, WireWord::Packed) => Self::Packed,
-            (SampleFormat::S24, WireWord::Padded) => Self::Padded,
-            (SampleFormat::S16 | SampleFormat::S32 | SampleFormat::F32, _) => Self::Whole,
-        }
-    }
-
-    pub(crate) const fn and(self, other: Self) -> Self {
+    pub const fn and(self, other: Self) -> Self {
         match (self, other) {
             (held, Self::Whole) | (Self::Whole, held) => held,
             (Self::Packed, Self::Packed) => Self::Packed,

@@ -1,0 +1,4 @@
+[crates.resonate_android.bindings.kotlin]
+package_name = "org.resonate.android.nativecore"
+cdylib_name = "resonate_android"
+android = true

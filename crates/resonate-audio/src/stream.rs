@@ -87,18 +87,6 @@ pub enum StreamState {
     Failed,
 }
 
-impl From<&pipewire::stream::StreamState> for StreamState {
-    fn from(state: &pipewire::stream::StreamState) -> Self {
-        match state {
-            pipewire::stream::StreamState::Error(_) => Self::Failed,
-            pipewire::stream::StreamState::Unconnected => Self::Unconnected,
-            pipewire::stream::StreamState::Connecting => Self::Connecting,
-            pipewire::stream::StreamState::Paused => Self::Paused,
-            pipewire::stream::StreamState::Streaming => Self::Streaming,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LatencyRequest {
     Auto,

@@ -7,6 +7,10 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
+use resonate_audio::{
+    LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
+    StreamRequest, StreamState,
+};
 use resonate_codec::{
     BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources, probe_boxes,
 };
@@ -15,18 +19,13 @@ use resonate_core::{
     StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_dsp::{Chain, Easing};
-use resonate_pipewire::{
-    LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
-    StreamRequest, StreamState,
-};
 use smallvec::SmallVec;
 
 use crate::{
-    Backend, Command, CommandKind, EngineConfig, Error, Event, OutputMode, OutputPlan,
+    Backend, Command, CommandKind, EngineConfig, Error, Event, Opener, OutputMode, OutputPlan,
     OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, RepeatMode,
     ReplayGainMode, Reply, Request, Result, Seeks, SinkResult, SkipUnderRepeat, Sleeping,
-    StreamDigest, Tapped, Tapping, TrackState, TransportState,
-    backend::{Opener, Surveyor},
+    StreamDigest, Surveyor, Tapped, Tapping, TrackState, TransportState,
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
@@ -2419,7 +2418,7 @@ impl Engine {
 
         chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
             .cloned()
-            .ok_or(Error::Sink(resonate_pipewire::Error::NoSink))
+            .ok_or(Error::Sink(resonate_audio::Error::NoSink))
     }
 
     fn the_survey_answers_for_the_list(&self) -> bool {
@@ -2715,7 +2714,7 @@ impl Engine {
         }
         let again = self.graph_lost_again();
         if again {
-            self.fail(Error::Sink(resonate_pipewire::Error::LoopStopped));
+            self.fail(Error::Sink(resonate_audio::Error::LoopStopped));
             return;
         }
 
@@ -2761,7 +2760,7 @@ impl Engine {
             let away = self
                 .graph_still_away
                 .take()
-                .unwrap_or(Error::Sink(resonate_pipewire::Error::Disconnected));
+                .unwrap_or(Error::Sink(resonate_audio::Error::Disconnected));
             self.fail(away);
             return;
         }
@@ -2901,7 +2900,7 @@ impl Engine {
         }
 
         if let Some(previous) = failed {
-            self.fail(Error::Sink(resonate_pipewire::Error::StreamFailed {
+            self.fail(Error::Sink(resonate_audio::Error::StreamFailed {
                 node,
                 previous,
             }));
@@ -2998,7 +2997,7 @@ impl Engine {
     }
 
     fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
-        use resonate_pipewire::Error as Sink;
+        use resonate_audio::Error as Sink;
 
         if matches!(error, Error::Sink(Sink::Disconnected))
             && self.graph_lost.is_none()
@@ -3011,7 +3010,14 @@ impl Engine {
         let the_graph_is_away = self.graph_lost.is_some()
             && matches!(
                 error,
-                Error::Sink(Sink::Disconnected | Sink::LoopStopped | Sink::Daemon { .. })
+                Error::Sink(
+                    Sink::Disconnected
+                        | Sink::LoopStopped
+                        | Sink::Backend {
+                            op: resonate_audio::Operation::Connect,
+                            ..
+                        }
+                )
             );
         if the_graph_is_away && self.track.is_some() {
             tracing::warn!(%error, "the graph is away; the row waits for it to come back");
@@ -3092,7 +3098,7 @@ impl Engine {
                 self.unbound = None;
                 self.waiting_for_a_device = false;
             }
-            Err(Error::Sink(resonate_pipewire::Error::NoSink)) => {
+            Err(Error::Sink(resonate_audio::Error::NoSink)) => {
                 tracing::debug!("still no device to play through");
                 self.transport = TransportState::Loading;
             }

@@ -1,11 +1,11 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
+use resonate_audio::NodeName;
 use resonate_core::{Frames, MediaLocation, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
 };
-use resonate_pipewire::NodeName;
 
 use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
 

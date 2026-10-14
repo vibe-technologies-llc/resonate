@@ -23,6 +23,13 @@ paths:
 - **`rpm-release.yml`** builds the Fedora RPMs (`fedora:44`) on a published release or manual run,
   kept as a workflow artifact and attached to a release.
 
+## Android
+
+The Android job builds the Compose APK and runs Android lint, then instruments an API 36
+x86_64 emulator. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
+settings, NDK 28.2 and 16 KB ELF alignment. It runs the host binding tool against Android ELF
+metadata, so no Linux sound server or GUI libraries are needed for the Android build.
+
 ## Profiles and target
 
 - **A debug build is optimised**, since an unoptimised resampler cannot keep up with the music:

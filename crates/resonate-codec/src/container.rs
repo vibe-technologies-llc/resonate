@@ -1,5 +1,6 @@
 use std::{
     io::{self, Cursor, Read, Seek, SeekFrom},
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -201,7 +202,16 @@ impl MediaSource for Probed {
 }
 
 pub(crate) fn open_media(sources: &Sources, location: &MediaLocation) -> Result<Opened> {
-    open(sources.open(location)?, location)
+    open_spooling_within(
+        sources.open(location)?,
+        location,
+        Spooling {
+            folder: sources.spool_folder().map(PathBuf::from),
+            in_memory: SPOOLED_AT_MOST,
+            on_disc: SPOOLED_ON_DISC_AT_MOST,
+            within: SPOOLED_WITHIN,
+        },
+    )
 }
 
 pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
@@ -217,6 +227,7 @@ pub(crate) fn open_spooling(
         media,
         location,
         Spooling {
+            folder: None,
             in_memory: spooled_at_most,
             on_disc: SPOOLED_ON_DISC_AT_MOST,
             within: SPOOLED_WITHIN,
@@ -224,8 +235,9 @@ pub(crate) fn open_spooling(
     )
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Spooling {
+    folder: Option<PathBuf>,
     in_memory: u64,
     on_disc: u64,
     within: Duration,
@@ -252,17 +264,29 @@ fn open_spooling_within(
                 Prescan::buffered(bytes.as_mut())
             }
             Spooled::Head(head) if let Some(container) = read_by_seeking(&head) => {
-                bytes = spooled_whole_on_disc(&head, bytes, named.clone(), at_most.on_disc)
-                    .ok_or_else(|| Error::ReadBySeeking {
-                        location: location.clone(),
-                        container,
-                    })?;
+                bytes = spooled_whole_on_disc(
+                    &head,
+                    bytes,
+                    named.clone(),
+                    at_most.on_disc,
+                    at_most.folder.as_deref(),
+                )
+                .ok_or_else(|| Error::ReadBySeeking {
+                    location: location.clone(),
+                    container,
+                })?;
                 seekable = true;
                 Prescan::buffered(bytes.as_mut())
             }
             Spooled::Head(head) => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
-                bytes = match Spool::beginning_with(&head, bytes, named.clone()) {
+                bytes = match Spool::beginning_in(
+                    &head,
+                    bytes,
+                    named.clone(),
+                    at_most.on_disc,
+                    at_most.folder.as_deref(),
+                ) {
                     Ok(held) => {
                         let streamed = Box::new(held.streamed());
                         spool = Some(held);
@@ -341,8 +365,9 @@ fn spooled_whole_on_disc(
     rest: Box<dyn MediaStream>,
     hint: Option<FormatHint>,
     at_most: u64,
+    folder: Option<&std::path::Path>,
 ) -> Option<Box<dyn MediaStream>> {
-    let spool = Spool::beginning_with_at_most(head, rest, hint, at_most)
+    let spool = Spool::beginning_in(head, rest, hint, at_most, folder)
         .inspect_err(|(source, _)| {
             tracing::debug!(%source, "a source read by seeking could not be spooled on disc");
         })
@@ -973,6 +998,7 @@ mod tests {
 
     fn spooled_at_most(on_disc: u64) -> Spooling {
         Spooling {
+            folder: None,
             in_memory: 1_024,
             on_disc,
             within: SPOOLED_WITHIN,
@@ -1063,6 +1089,7 @@ mod tests {
             trickling,
             &location,
             Spooling {
+                folder: None,
                 in_memory: SPOOLED_AT_MOST,
                 on_disc: SPOOLED_ON_DISC_AT_MOST,
                 within: WAITED_AT_MOST,

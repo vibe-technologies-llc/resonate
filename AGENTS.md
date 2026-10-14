@@ -73,6 +73,9 @@ cargo test  --workspace                                               # everythi
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
 rust-formatter --check                                                # local only; not in CI
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
+android/gradlew -p android :app:assembleDebug :app:lintDebug
+python3 android/check-native.py --sdk "$ANDROID_HOME"
+android/gradlew -p android :app:connectedDebugAndroidTest
 ```
 
 Tests needing a PipeWire daemon, a session bus, ffmpeg or the network skip where it is missing

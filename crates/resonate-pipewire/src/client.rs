@@ -469,7 +469,7 @@ impl Survey {
                         StreamCommand::Drain => Request::Drain,
                         StreamCommand::Close => Request::Close,
                     })
-                    .map_err(|_| Error::LoopStopped)
+                    .map_err(|_| resonate_audio::Error::LoopStopped)
             }),
         ))
     }
@@ -1469,8 +1469,8 @@ fn build_stream(
         .state_changed({
             let events = events.clone();
             move |_stream, _source, from, to| {
-                let from = StreamState::from(&from);
-                let to = StreamState::from(&to);
+                let from = stream_state(&from);
+                let to = stream_state(&to);
                 let _ = events.try_send(StreamEvent::StateChanged { from, to });
             }
         })
@@ -1556,8 +1556,8 @@ fn build_capture_stream(
         .state_changed({
             let events = events.clone();
             move |_stream, _sink, from, to| {
-                let from = StreamState::from(&from);
-                let to = StreamState::from(&to);
+                let from = stream_state(&from);
+                let to = stream_state(&to);
                 let _ = events.try_send(StreamEvent::StateChanged { from, to });
             }
         })
@@ -1589,6 +1589,16 @@ fn build_capture_stream(
         .map_err(|source| Error::daemon(PwOp::StreamConnect, source))?;
 
     Ok(Opened::new(stream, listener))
+}
+
+fn stream_state(state: &pipewire::stream::StreamState) -> StreamState {
+    match state {
+        pipewire::stream::StreamState::Error(_) => StreamState::Failed,
+        pipewire::stream::StreamState::Unconnected => StreamState::Unconnected,
+        pipewire::stream::StreamState::Connecting => StreamState::Connecting,
+        pipewire::stream::StreamState::Paused => StreamState::Paused,
+        pipewire::stream::StreamState::Streaming => StreamState::Streaming,
+    }
 }
 
 #[cfg(test)]

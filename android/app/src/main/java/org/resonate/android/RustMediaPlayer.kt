@@ -1,0 +1,267 @@
+package org.resonate.android
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.util.UnstableApi
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.launch
+import org.resonate.android.nativecore.Snapshot
+import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.Transport
+
+@UnstableApi
+class RustMediaPlayer(private val context: Context, private val library: LibraryRepository) :
+    SimpleBasePlayer(Looper.getMainLooper()) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private var snapshot: Snapshot? = null
+    private var tracks = emptyList<Track>()
+    private var artwork: ByteArray? = null
+    private var artworkId: ULong? = null
+    private var resumeAfterFocus = false
+    private val focus =
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { change ->
+                when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS -> {
+                        resumeAfterFocus = false
+                        library.request { it.pause() }
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        resumeAfterFocus = snapshot?.transport == Transport.PLAYING
+                        library.request { it.pause() }
+                    }
+                    AudioManager.AUDIOFOCUS_GAIN ->
+                        if (resumeAfterFocus) {
+                            resumeAfterFocus = false
+                            library.request { it.play() }
+                        }
+                }
+            }
+            .build()
+    private val noisy =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                    resumeAfterFocus = false
+                    library.request { it.pause() }
+                }
+            }
+        }
+
+    init {
+        ContextCompat.registerReceiver(
+            context,
+            noisy,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        scope.launch {
+            library.snapshot.collect {
+                snapshot = it
+                invalidateState()
+            }
+        }
+        scope.launch {
+            library.queue.collect {
+                tracks = it
+                invalidateState()
+            }
+        }
+        scope.launch {
+            combine(library.snapshot, library.features.artworkGeneration) { value, generation ->
+                    value?.current to generation
+                }
+                .distinctUntilChangedBy { (track, generation) ->
+                    Triple(track?.id, track?.artRevision, generation)
+                }
+                .collectLatest { (track, _) ->
+                    artwork = null
+                    artworkId = null
+                    invalidateState()
+                    if (track != null) {
+                        artwork = library.features.mediaArtwork(track)
+                        artworkId = track.id
+                        invalidateState()
+                    }
+                }
+        }
+    }
+
+    override fun getState(): State {
+        val value = snapshot
+        val playlist = tracks.mapIndexed { index, track ->
+            val cover = artwork.takeIf {
+                index == value?.queueIndex?.toInt() &&
+                    track.id == value.current?.id &&
+                    track.id == artworkId
+            }
+            MediaItemData.Builder((track.queueId ?: track.id).toString())
+                .setMediaItem(track.mediaItem(cover))
+                .setDurationUs(track.durationMs.toLong() * 1000)
+                .setIsSeekable(true)
+                .build()
+        }
+        return State.Builder()
+            .setAvailableCommands(
+                Player.Commands.Builder()
+                    .addAll(
+                        Player.COMMAND_PLAY_PAUSE,
+                        Player.COMMAND_PREPARE,
+                        Player.COMMAND_STOP,
+                        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_NEXT,
+                        Player.COMMAND_SEEK_TO_PREVIOUS,
+                        Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                        Player.COMMAND_GET_TIMELINE,
+                        Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+                        Player.COMMAND_GET_METADATA,
+                        Player.COMMAND_SET_MEDIA_ITEM,
+                        Player.COMMAND_CHANGE_MEDIA_ITEMS,
+                        Player.COMMAND_SET_REPEAT_MODE,
+                        Player.COMMAND_SET_SHUFFLE_MODE,
+                        Player.COMMAND_SET_VOLUME,
+                    )
+                    .build()
+            )
+            .setPlaylist(playlist)
+            .setCurrentMediaItemIndex(
+                if (playlist.isEmpty()) C.INDEX_UNSET
+                else (value?.queueIndex?.toInt() ?: 0).coerceIn(playlist.indices)
+            )
+            .setContentPositionMs { value?.positionMs?.toLong() ?: 0L }
+            .setPlayWhenReady(
+                value?.transport == Transport.PLAYING || value?.transport == Transport.LOADING,
+                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST,
+            )
+            .setPlaybackState(
+                when {
+                    playlist.isEmpty() -> Player.STATE_IDLE
+                    value?.transport == Transport.LOADING -> Player.STATE_BUFFERING
+                    value?.transport == Transport.STOPPED -> Player.STATE_ENDED
+                    else -> Player.STATE_READY
+                }
+            )
+            .setRepeatMode(value?.repeat?.toInt() ?: Player.REPEAT_MODE_OFF)
+            .setShuffleModeEnabled(value?.shuffle ?: false)
+            .setVolume(value?.volume ?: 1f)
+            .build()
+    }
+
+    override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (playWhenReady) {
+            if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                library.request { it.play() }
+        } else {
+            resumeAfterFocus = false
+            library.request { it.pause() }
+            audio.abandonAudioFocusRequest(focus)
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSetMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): ListenableFuture<*> {
+        library.request {
+            it.load(
+                mediaItems.map { item -> item.mediaId.toULong() },
+                startIndex.coerceAtLeast(0).toUInt(),
+                false,
+            )
+            if (startPositionMs > 0) it.seek(startPositionMs.toULong())
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSeek(
+        mediaItemIndex: Int,
+        positionMs: Long,
+        seekCommand: Int,
+    ): ListenableFuture<*> {
+        library.request {
+            if (mediaItemIndex != snapshot?.queueIndex?.toInt())
+                it.jumpTo(mediaItemIndex.coerceAtLeast(0).toUInt())
+            it.seek(positionMs.coerceAtLeast(0).toULong())
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSetVolume(volume: Float, flags: Int): ListenableFuture<*> {
+        library.request { it.setVolume(volume) }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSetShuffleModeEnabled(shuffleModeEnabled: Boolean): ListenableFuture<*> {
+        library.request { it.setShuffle(shuffleModeEnabled) }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
+        library.request { it.setRepeat(repeatMode.toUInt()) }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
+
+    override fun handleStop(): ListenableFuture<*> {
+        library.request { it.stop() }
+        audio.abandonAudioFocusRequest(focus)
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleRelease(): ListenableFuture<*> {
+        scope.cancel()
+        context.unregisterReceiver(noisy)
+        audio.abandonAudioFocusRequest(focus)
+        library.release()
+        return Futures.immediateVoidFuture()
+    }
+}
+
+fun Track.mediaItem(artwork: ByteArray? = null): MediaItem =
+    MediaItem.Builder()
+        .setMediaId(id.toString())
+        .setUri(uri)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(artist)
+                .setAlbumTitle(album)
+                .setAlbumArtist(albumArtist)
+                .setArtworkData(artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                .setIsPlayable(true)
+                .setIsBrowsable(false)
+                .build()
+        )
+        .build()

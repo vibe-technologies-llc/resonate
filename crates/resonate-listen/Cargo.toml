@@ -6,9 +6,11 @@ license.workspace = true
 
 [dependencies]
 resonate-core.workspace = true
-resonate-pipewire.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+resonate-pipewire.workspace = true
 
 [lints]
 workspace = true

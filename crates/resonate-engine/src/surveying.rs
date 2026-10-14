@@ -5,9 +5,9 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
-use resonate_pipewire::SinkInfo;
+use resonate_audio::SinkInfo;
 
-use crate::{SinkResult, backend::Surveyor};
+use crate::{SinkResult, Surveyor};
 
 pub(crate) type Surveyed = SinkResult<Vec<SinkInfo>>;
 

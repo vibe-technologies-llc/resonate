@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.Resonate" parent="android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@android:color/system_accent1_500</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

@@ -4,12 +4,12 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use resonate_audio::{NodeName, SinkId, SinkInfo, Words};
 use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
 use resonate_core::{
     AppliedGain, FrameSpan, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
     Volume,
 };
-use resonate_pipewire::{NodeName, SinkId, SinkInfo, Words};
 
 use crate::{
     Asleep, BluetoothWake, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase,
@@ -233,9 +233,9 @@ pub enum Event {
 
 #[cfg(test)]
 mod tests {
+    use resonate_audio::NodeName;
     use resonate_core::eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q};
     use resonate_dsp::Quality;
-    use resonate_pipewire::NodeName;
 
     use super::*;
 

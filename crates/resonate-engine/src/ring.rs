@@ -15,8 +15,8 @@ use std::{
     time::Duration,
 };
 
+use resonate_audio::AudioSource;
 use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, Silence, StreamSpec};
-use resonate_pipewire::AudioSource;
 
 const FAULT_SLOTS: usize = 64;
 const RENDERED_SLOTS: usize = 1024;

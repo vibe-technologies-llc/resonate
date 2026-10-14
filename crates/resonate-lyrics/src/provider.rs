@@ -5,7 +5,7 @@ use std::{
 
 use resonate_core::{FrameSpan, MediaLocation, SampleRate, SourceId};
 
-use crate::{Detail, Embedded, Lyrics, Result, Sidecar, lrc};
+use crate::{Detail, Embedded, Error, Lyrics, Result, Sidecar, lrc};
 
 const UNSOURCED: &str = "none";
 
@@ -49,6 +49,21 @@ impl Wanted {
 
 pub fn read_lyrics(source: SourceId, text: &str) -> Result<Option<Lyrics>> {
     Ok(lrc::read(source, text)?.lyrics)
+}
+
+pub fn read_sidecar(source: SourceId, bytes: &[u8], wanted: &Wanted) -> Result<Option<Lyrics>> {
+    if bytes.len() > lrc::LARGEST_SHEET {
+        return Err(Error::Unreadable {
+            provider: source,
+            op: crate::LyricOp::Parse,
+        });
+    }
+    let (text, _) = resonate_core::text::decoded(bytes);
+    let sheet = lrc::read(source, &text)?;
+    if sheet.declared.names_another_track(wanted) {
+        return Ok(None);
+    }
+    Ok(sheet.lyrics)
 }
 
 pub trait LyricProvider: Send + Sync {

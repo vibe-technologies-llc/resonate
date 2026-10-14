@@ -65,7 +65,7 @@ fn one_of_each(raw: impl Iterator<Item = u32>) -> Vec<(SampleFormat, Words)> {
         let Some(format) = sample_format(raw) else {
             continue;
         };
-        let named = Words::of(format, WireWord::of(AudioFormat(raw)));
+        let named = words_of(format, WireWord::of(AudioFormat(raw)));
         match kept.iter_mut().find(|(held, _)| *held == format) {
             Some((_, words)) => *words = words.and(named),
             None => kept.push((format, named)),
@@ -278,7 +278,7 @@ impl Negotiated {
     pub(crate) const fn changed(self) -> StreamEvent {
         StreamEvent::FormatChanged {
             spec: self.spec,
-            words: Words::of(self.spec.format, self.word),
+            words: words_of(self.spec.format, self.word),
         }
     }
 }
@@ -630,6 +630,14 @@ pub(crate) fn parse_default_sink(json: &str) -> Option<String> {
     let rest = rest.strip_prefix('"')?;
     let (name, _) = rest.split_once('"')?;
     Some(name.to_owned())
+}
+
+const fn words_of(format: SampleFormat, word: WireWord) -> Words {
+    match (format, word) {
+        (SampleFormat::S24, WireWord::Packed) => Words::Packed,
+        (SampleFormat::S24, WireWord::Padded) => Words::Padded,
+        _ => Words::Whole,
+    }
 }
 
 #[cfg(test)]

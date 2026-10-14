@@ -1,0 +1,452 @@
+use std::{
+    fs::{self, File},
+    io,
+    path::Path,
+    time::Duration,
+};
+
+use parking_lot::Mutex;
+use resonate_core::{naming::named_within, writer::Held};
+use rusqlite::{
+    Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags, params,
+};
+
+use crate::{Error, Result, StoreOp, Track};
+
+const V1: &str = "CREATE TABLE documents (
+    id INTEGER PRIMARY KEY,
+    uri TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    album TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    rate INTEGER NOT NULL,
+    codec TEXT NOT NULL,
+    favourite INTEGER NOT NULL DEFAULT 0
+) STRICT;
+CREATE TABLE resume (id INTEGER PRIMARY KEY CHECK (id = 1), row_at INTEGER NOT NULL, position_ms INTEGER NOT NULL) STRICT;
+CREATE TABLE queue (position INTEGER PRIMARY KEY, track INTEGER NOT NULL REFERENCES documents(id)) STRICT;";
+
+const V2: &str = "ALTER TABLE documents ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN genre TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN date TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN track_number INTEGER;
+ALTER TABLE documents ADD COLUMN disc_number INTEGER;
+ALTER TABLE documents ADD COLUMN bits INTEGER;
+ALTER TABLE documents ADD COLUMN channels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN recording TEXT;
+ALTER TABLE documents ADD COLUMN release TEXT;
+ALTER TABLE documents ADD COLUMN artist_mbid TEXT;
+ALTER TABLE documents ADD COLUMN art_revision INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE artwork (track INTEGER PRIMARY KEY REFERENCES documents(id), bytes BLOB NOT NULL, origin TEXT NOT NULL) STRICT;
+CREATE TABLE lyrics (track INTEGER PRIMARY KEY REFERENCES documents(id), text TEXT, document TEXT, origin TEXT NOT NULL, asked INTEGER NOT NULL DEFAULT (unixepoch())) STRICT;
+CREATE TABLE listens (id INTEGER PRIMARY KEY, track INTEGER REFERENCES documents(id), began INTEGER NOT NULL, heard_ms INTEGER NOT NULL, counted INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE INDEX listens_track ON listens(track, began);
+CREATE TABLE studies (track INTEGER PRIMARY KEY REFERENCES documents(id), verdict TEXT NOT NULL, peak REAL NOT NULL, rms REAL NOT NULL, true_peak REAL NOT NULL, loudness REAL, dynamic_range INTEGER, clipped INTEGER NOT NULL, bits INTEGER) STRICT;";
+
+const V3: &str = "CREATE TABLE playlists (id INTEGER PRIMARY KEY, name TEXT NOT NULL, folded TEXT NOT NULL UNIQUE, revision INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE TABLE playlist_rows (playlist INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, position INTEGER NOT NULL, track INTEGER NOT NULL REFERENCES documents(id), PRIMARY KEY(playlist, position)) STRICT;";
+
+const V4: &str =
+    "CREATE TABLE submissions (service TEXT PRIMARY KEY, through INTEGER NOT NULL) STRICT;";
+
+const V5: &str = "CREATE TABLE wanted (id INTEGER PRIMARY KEY, identity TEXT NOT NULL UNIQUE, recording TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, duration_ms INTEGER, isrcs TEXT NOT NULL, added INTEGER NOT NULL DEFAULT (unixepoch())) STRICT;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
+
+pub(crate) struct Catalog(pub(crate) Mutex<Connection>);
+
+impl Catalog {
+    pub(crate) fn open(path: &Path) -> Result<Self> {
+        let mut connection =
+            Connection::open(path).map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        let version: u32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if version as usize > MIGRATIONS.len() {
+            return Err(Error::CatalogVersion { found: version });
+        }
+        if version > 0 && (version as usize) < MIGRATIONS.len() {
+            keep_before_migrating(&connection, version)?;
+        }
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+        let version: u32 = transaction
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if version as usize > MIGRATIONS.len() {
+            return Err(Error::CatalogVersion { found: version });
+        }
+        for migration in MIGRATIONS.iter().skip(version as usize) {
+            transaction
+                .execute_batch(migration)
+                .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+        }
+        transaction
+            .pragma_update(None, "user_version", MIGRATIONS.len() as u32)
+            .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        Ok(Self(Mutex::new(connection)))
+    }
+
+    pub(crate) fn upsert(&self, track: Track) -> Result<Track> {
+        let connection = self.0.lock();
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            ON CONFLICT(uri) DO UPDATE SET name = excluded.name, title = CASE WHEN excluded.title = excluded.name AND documents.title != documents.name THEN documents.title ELSE excluded.title END,
+            artist = coalesce(nullif(excluded.artist, ''), documents.artist), album = coalesce(nullif(excluded.album, ''), documents.album), duration_ms = excluded.duration_ms,
+            rate = excluded.rate, codec = excluded.codec",
+                params![
+                    track.uri,
+                    track.name,
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.duration_ms.min(i64::MAX as u64) as i64,
+                    track.rate,
+                    track.codec
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection
+            .query_row("SELECT * FROM documents WHERE uri = ?1", [track.uri], read)
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    pub(crate) fn tracks(&self, text: &str, offset: u32, limit: u32) -> Result<Vec<Track>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare(
+                "SELECT * FROM documents WHERE
+            instr(folded(title || ' ' || artist || ' ' || album || ' ' || album_artist), folded(?1)) > 0
+            ORDER BY title COLLATE NOCASE, id LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let found = query
+            .query_map(params![text, limit.min(500), offset], read)
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        found
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    pub(crate) fn track(&self, id: u64) -> Result<Track> {
+        self.0
+            .lock()
+            .query_row("SELECT * FROM documents WHERE id = ?1", [id as i64], read)
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .ok_or(Error::UnknownTrack)
+    }
+
+    pub(crate) fn track_uri(&self, uri: &str) -> Result<Track> {
+        self.0
+            .lock()
+            .query_row("SELECT * FROM documents WHERE uri = ?1", [uri], read)
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .ok_or(Error::UnknownTrack)
+    }
+
+    pub(crate) fn favourite(&self, id: u64, favourite: bool) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "UPDATE documents SET favourite = ?2 WHERE id = ?1",
+                params![id as i64, favourite],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    pub(crate) fn save_queue(&self, ids: &[u64], at: u32, position_ms: u64) -> Result<()> {
+        let mut connection = self.0.lock();
+        let transaction = connection
+            .transaction()
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .execute("DELETE FROM queue", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        for (position, id) in ids.iter().enumerate() {
+            transaction
+                .execute(
+                    "INSERT INTO queue VALUES (?1, ?2)",
+                    params![position as i64, *id as i64],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        transaction.execute("INSERT INTO resume VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms", params![at, position_ms.min(i64::MAX as u64) as i64])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    pub(crate) fn save_place(&self, row: u32, position_ms: u64) -> Result<()> {
+        self.0.lock().execute("INSERT INTO resume VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
+            params![row, position_ms.min(i64::MAX as u64) as i64]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    pub(crate) fn resume(&self) -> Result<(Vec<u64>, u32, u64)> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare("SELECT track FROM queue ORDER BY position")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let ids = query
+            .query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .collect::<rusqlite::Result<Vec<u64>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (at, position) = connection
+            .query_row(
+                "SELECT row_at, position_ms FROM resume WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get::<_, i64>(1)? as u64)),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .unwrap_or((0, 0));
+        Ok((ids, at, position))
+    }
+}
+
+fn keep_before_migrating(connection: &Connection, version: u32) -> Result<()> {
+    let Some(path) = connection
+        .path()
+        .filter(|path| !path.is_empty())
+        .map(Path::new)
+    else {
+        return Ok(());
+    };
+    let check: String = connection
+        .query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .map_err(|source| Error::store(StoreOp::Read, source))?;
+    if check != "ok" {
+        return Err(Error::CatalogDamaged);
+    }
+    let kept = path.with_file_name(named_within(
+        "",
+        path.file_name().unwrap_or_default(),
+        format!(".before-v{version}"),
+    ));
+    if kept.exists() {
+        return Ok(());
+    }
+    let staged = kept.with_file_name(named_within(
+        "",
+        kept.file_name().unwrap_or_default(),
+        ".part",
+    ));
+    let held = match Held::taken_over(&staged) {
+        Ok(held) => held,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+        Err(source) => {
+            return Err(Error::CatalogFile {
+                path: staged,
+                source,
+            });
+        }
+    };
+    let target = staged.to_str().ok_or(Error::InvalidCatalogPath)?;
+    connection
+        .execute("VACUUM INTO ?1", [target])
+        .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+    held.file()
+        .sync_all()
+        .and_then(|()| fs::rename(&staged, &kept))
+        .and_then(|()| {
+            kept.parent().map_or(Ok(()), |folder| {
+                File::open(folder).and_then(|folder| folder.sync_all())
+            })
+        })
+        .map_err(|source| Error::CatalogFile { path: kept, source })?;
+    Ok(())
+}
+
+pub(crate) fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
+    Ok(Track {
+        id: row.get::<_, i64>(0)? as u64,
+        uri: row.get(1)?,
+        name: row.get(2)?,
+        title: row.get(3)?,
+        artist: row.get(4)?,
+        album: row.get(5)?,
+        duration_ms: row.get::<_, i64>(6)? as u64,
+        rate: row.get(7)?,
+        codec: row.get(8)?,
+        favourite: row.get(9)?,
+        album_artist: row.get(10)?,
+        genre: row.get(11)?,
+        date: row.get(12)?,
+        track_number: row.get(13)?,
+        disc_number: row.get(14)?,
+        bits: row.get(15)?,
+        channels: row.get(16)?,
+        recording: row.get(17)?,
+        release: row.get(18)?,
+        artist_mbid: row.get(19)?,
+        art_revision: row.get::<_, i64>(20)? as u64,
+        queue_id: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    #[test]
+    fn rescanning_and_reopening_keep_identity_favourites_and_the_saved_place() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-android-{unique}.sqlite"));
+        let catalog = Catalog::open(&path).expect("a catalog");
+        let first = catalog
+            .upsert(Track {
+                id: 0,
+                uri: "content://music/a.flac".into(),
+                name: "a.flac".into(),
+                title: "A".into(),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                duration_ms: 3000,
+                rate: 44100,
+                codec: "FLAC".into(),
+                favourite: false,
+                ..Track::default()
+            })
+            .expect("an indexed document");
+        catalog.favourite(first.id, true).expect("a favourite");
+        let rescanned = catalog
+            .upsert(Track {
+                title: "Renamed".into(),
+                ..first.clone()
+            })
+            .expect("a rescan");
+        assert_eq!(first.id, rescanned.id);
+        assert!(rescanned.favourite);
+        catalog
+            .save_queue(&[first.id], 0, 1500)
+            .expect("a saved queue");
+        catalog
+            .save_place(0, 2000)
+            .expect("a moved place keeps the queue");
+        drop(catalog);
+        let reopened = Catalog::open(&path).expect("an existing catalog");
+        assert_eq!(
+            reopened.resume().expect("a saved place"),
+            (vec![first.id], 0, 2000)
+        );
+        assert_eq!(
+            reopened.tracks("Renamed", 0, 100).expect("a search").len(),
+            1
+        );
+        assert_eq!(
+            reopened
+                .tracks("missing", 0, 100)
+                .expect("an empty search")
+                .len(),
+            0
+        );
+        drop(reopened);
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    #[test]
+    fn the_first_android_catalog_is_backed_up_and_migrated_without_losing_listener_state() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-migration-{unique}.sqlite"));
+        let old = Connection::open(&path).expect("an old catalog");
+        old.execute_batch(V1).expect("the shipped schema");
+        old.execute_batch("PRAGMA user_version = 1; INSERT INTO documents VALUES (27, 'content://test/song.flac', 'song.flac', 'Song', 'Artist', 'Album', 30000, 44100, 'FLAC', 1); INSERT INTO queue VALUES (0, 27); INSERT INTO resume VALUES (1, 0, 17250);").expect("a favourite and saved queue");
+        drop(old);
+        let catalog = Catalog::open(&path).expect("a migrated catalog");
+        assert_eq!(
+            catalog.resume().expect("the saved place"),
+            (vec![27], 0, 17250)
+        );
+        assert!(catalog.track(27).expect("the original id").favourite);
+        catalog
+            .keep_artwork(27, &[1, 2, 3], "test", false)
+            .expect("new artwork storage");
+        catalog
+            .keep_lyrics(27, Some("[00:01.00]Words"), None, "embedded")
+            .expect("new lyric storage");
+        let kept = path.with_file_name(named_within(
+            "",
+            path.file_name().expect("a filename"),
+            ".before-v1",
+        ));
+        let backup = Connection::open(&kept).expect("the previous catalog");
+        let version: u32 = backup
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("a backup version");
+        assert_eq!(version, 1);
+        assert_eq!(
+            backup
+                .query_row("SELECT position_ms FROM resume", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("the original place"),
+            17250
+        );
+        drop(backup);
+        drop(catalog);
+        let reopened = Catalog::open(&path).expect("an idempotent reopen");
+        assert_eq!(
+            reopened.artwork(27).expect("kept artwork"),
+            Some(vec![1, 2, 3])
+        );
+        assert_eq!(
+            reopened
+                .lyric_text(27)
+                .expect("kept lyrics")
+                .expect("a lyric row")
+                .0
+                .as_deref(),
+            Some("[00:01.00]Words")
+        );
+        drop(reopened);
+        fs::remove_file(path).expect("remove the test catalog");
+        fs::remove_file(kept).expect("remove the test backup");
+    }
+}

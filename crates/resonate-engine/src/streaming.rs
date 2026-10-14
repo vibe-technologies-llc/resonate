@@ -1,9 +1,9 @@
 use std::{sync::Arc, thread};
 
 use crossbeam_channel::{Receiver, SendError, Sender, TryRecvError, bounded};
-use resonate_pipewire::{AudioSource, SinkStream, StreamRequest};
+use resonate_audio::{AudioSource, SinkStream, StreamRequest};
 
-use crate::{SinkResult, backend::Opener};
+use crate::{Opener, SinkResult};
 
 pub(crate) type Streamed = (u64, SinkResult<SinkStream>);
 

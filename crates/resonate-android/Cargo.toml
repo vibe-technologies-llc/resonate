@@ -1,0 +1,39 @@
+[package]
+name = "resonate-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+resonate-analysis.workspace = true
+resonate-library.workspace = true
+resonate-lyrics.workspace = true
+resonate-online.workspace = true
+resonate-providers.workspace = true
+resonate-subsonic.workspace = true
+resonate-tidal.workspace = true
+resonate-monochrome.workspace = true
+resonate-audio.workspace = true
+resonate-codec.workspace = true
+resonate-core.workspace = true
+resonate-engine.workspace = true
+resonate-eq.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uniffi.workspace = true
+unicode-normalization.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+oboe.workspace = true
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+result_large_err = "deny"

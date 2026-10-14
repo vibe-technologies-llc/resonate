@@ -63,6 +63,30 @@ impl Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
+impl From<Error> for resonate_audio::Error {
+    fn from(error: Error) -> Self {
+        use std::io;
+
+        use resonate_audio::Operation;
+        match error {
+            Error::LoopStopped => Self::LoopStopped,
+            Error::Disconnected => Self::Disconnected,
+            Error::NoSink => Self::NoSink,
+            Error::SinkGone { node } => Self::SinkGone { node },
+            Error::StreamFailed { node, previous } => Self::StreamFailed { node, previous },
+            backend @ Error::PodBuild { .. } => Self::Backend {
+                op: Operation::Format,
+                source: io::Error::other(backend),
+            },
+            Error::PodUnread { .. } => Self::FormatRefused,
+            backend @ Error::Daemon { .. } => Self::Backend {
+                op: Operation::Connect,
+                source: io::Error::other(backend),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -36,3 +36,9 @@ fuzz/coverage/
 
 .flatpak-builder/
 /flatpak-build/
+
+/android/.gradle/
+/android/.kotlin/
+/android/.cargo-target/
+/android/local.properties
+/android/**/build/
