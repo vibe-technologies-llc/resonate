@@ -1,15 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
-use resonate_core::eq::{Band, BandGain, Frequency, Preamp, Profile, Q};
 use resonate_engine::{
     Command, Equalisation, FilterPhase, Quality, ReplayGainMode, Restoration, Until,
 };
 
-use crate::{Error, Result};
-
-pub const EQUALISER_CENTRES: [f64; 10] = [
-    31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
-];
+use crate::{Error, Result, equaliser::EqualiserCurve};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum GainMode {
@@ -47,8 +42,7 @@ pub enum LossyRestoration {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PlaybackPreferences {
     pub equaliser_enabled: bool,
-    pub preamp_db: f32,
-    pub gains_db: Vec<f32>,
+    pub equaliser: EqualiserCurve,
     pub replay_gain: GainMode,
     pub quality: ResamplingQuality,
     pub phase: ResamplingPhase,
@@ -56,16 +50,13 @@ pub struct PlaybackPreferences {
     pub restoration: LossyRestoration,
     pub buffer_ms: u32,
     pub dsd_like_pcm: bool,
-    pub profile_name: String,
-    pub profile_text: String,
 }
 
 impl Default for PlaybackPreferences {
     fn default() -> Self {
         Self {
             equaliser_enabled: false,
-            preamp_db: 0.0,
-            gains_db: vec![0.0; EQUALISER_CENTRES.len()],
+            equaliser: EqualiserCurve::default(),
             replay_gain: GainMode::default(),
             quality: ResamplingQuality::default(),
             phase: ResamplingPhase::default(),
@@ -73,39 +64,13 @@ impl Default for PlaybackPreferences {
             restoration: LossyRestoration::default(),
             buffer_ms: 500,
             dsd_like_pcm: false,
-            profile_name: String::new(),
-            profile_text: String::new(),
         }
     }
 }
 
 impl PlaybackPreferences {
-    pub(crate) fn profile(&self) -> Result<Profile> {
-        if self.gains_db.len() != EQUALISER_CENTRES.len() {
-            return Err(Error::EqualiserBandCount {
-                found: self.gains_db.len() as u64,
-            });
-        }
-        let bands = EQUALISER_CENTRES
-            .iter()
-            .zip(&self.gains_db)
-            .map(|(&frequency, &gain)| {
-                Ok(Band::peaking(
-                    Frequency::from_hertz(frequency)?,
-                    BandGain::from_decibels(f64::from(gain))?,
-                    Q::from_units(2.0_f64.sqrt())?,
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let profile = Profile::new(Preamp::from_decibels(f64::from(self.preamp_db))?, bands)?;
-        if !self.profile_text.is_empty() {
-            return Ok(resonate_eq::read_profile(&self.profile_text)?);
-        }
-        Ok(profile)
-    }
-
     pub(crate) fn commands(&self, previous: &Self) -> Result<Vec<Command>> {
-        let profile = self.profile()?;
+        let profile = self.equaliser.profile()?;
         if !(50..=2000).contains(&self.buffer_ms) {
             return Err(Error::BufferRange {
                 milliseconds: self.buffer_ms,
@@ -113,9 +78,7 @@ impl PlaybackPreferences {
         }
         let mut commands = Vec::new();
         if self.equaliser_enabled != previous.equaliser_enabled
-            || self.preamp_db != previous.preamp_db
-            || self.gains_db != previous.gains_db
-            || self.profile_text != previous.profile_text
+            || self.equaliser.sounds_unlike(&previous.equaliser)
         {
             commands.push(Command::SetEqualisation(Arc::new(Equalisation {
                 enabled: self.equaliser_enabled,
@@ -201,27 +164,24 @@ pub fn default_playback_preferences() -> PlaybackPreferences {
     PlaybackPreferences::default()
 }
 
-#[uniffi::export]
-pub fn equaliser_frequencies() -> Vec<f64> {
-    EQUALISER_CENTRES.to_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use resonate_core::SampleRate;
 
     use super::*;
+    use crate::equaliser::{EqualiserBand, EqualiserFilter, ten_band_curve};
 
     #[test]
-    fn an_octave_band_shapes_the_shared_profile_and_only_sends_what_changed() {
+    fn a_shaped_curve_reaches_the_engine_and_only_what_changed_is_sent() {
         let previous = PlaybackPreferences::default();
         let mut preferences = previous.clone();
         preferences.equaliser_enabled = true;
-        preferences.gains_db[5] = 6.0;
-        preferences.preamp_db = -6.0;
-        let profile = preferences.profile().expect("a valid ten-band curve");
+        preferences.equaliser = ten_band_curve(-6.0, vec![0.0, 0.0, 0.0, 0.0, 0.0, 6.0]);
+
+        let profile = preferences.equaliser.profile().expect("a valid curve");
         assert!((profile.magnitude_db(1000.0, SampleRate::HZ_48000)).abs() < 0.01);
         assert!(profile.magnitude_db(100.0, SampleRate::HZ_48000) < -5.0);
+
         let commands = preferences.commands(&previous).expect("a curve edit");
         assert!(matches!(commands.as_slice(), [Command::SetEqualisation(_)]));
         assert!(
@@ -230,31 +190,65 @@ mod tests {
                 .expect("an unchanged curve")
                 .is_empty()
         );
+
+        let mut renamed = preferences.clone();
+        renamed.equaliser.name = "Renamed".into();
+        assert!(
+            renamed
+                .commands(&preferences)
+                .expect("a renamed curve")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_curve_of_any_shape_up_to_the_bound_is_sent_whole() {
+        let previous = PlaybackPreferences::default();
+        let mut preferences = previous.clone();
+        preferences.equaliser.bands = (0..20)
+            .map(|at| EqualiserBand {
+                filter: EqualiserFilter::Peaking,
+                frequency_hz: 40.0 * (at + 1) as f32,
+                gain_db: 1.0,
+                q: 2.0,
+            })
+            .collect();
+
+        let commands = preferences.commands(&previous).expect("twenty bands");
+        let [Command::SetEqualisation(equalisation)] = commands.as_slice() else {
+            panic!("one equalisation command");
+        };
+        assert_eq!(
+            equalisation
+                .fallback
+                .as_ref()
+                .expect("one curve for every route")
+                .bands()
+                .len(),
+            20
+        );
     }
 
     #[test]
     fn a_malformed_curve_is_refused_before_any_commands_are_sent() {
-        let mut preferences = PlaybackPreferences {
-            gains_db: vec![0.0; 9],
-            ..PlaybackPreferences::default()
-        };
+        let mut preferences = PlaybackPreferences::default();
+        preferences.equaliser.bands.push(EqualiserBand {
+            filter: EqualiserFilter::Peaking,
+            frequency_hz: f32::NAN,
+            gain_db: 0.0,
+            q: 1.0,
+        });
+        preferences.buffer_ms = 100;
         assert!(matches!(
             preferences.commands(&PlaybackPreferences::default()),
-            Err(Error::EqualiserBandCount { found: 9 })
+            Err(Error::BandFrequency { band: 0, .. })
         ));
-        preferences.gains_db = vec![0.0; 10];
-        preferences.gains_db[0] = f32::NAN;
-        assert!(
-            preferences
-                .commands(&PlaybackPreferences::default())
-                .is_err()
-        );
-        preferences.gains_db[0] = 0.0;
-        preferences.preamp_db = f32::INFINITY;
-        assert!(
-            preferences
-                .commands(&PlaybackPreferences::default())
-                .is_err()
-        );
+
+        preferences.equaliser.bands.clear();
+        preferences.equaliser.preamp_db = f32::INFINITY;
+        assert!(matches!(
+            preferences.commands(&PlaybackPreferences::default()),
+            Err(Error::PreampRange { .. })
+        ));
     }
 }

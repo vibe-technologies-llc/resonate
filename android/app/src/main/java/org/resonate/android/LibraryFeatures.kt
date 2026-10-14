@@ -52,6 +52,7 @@ import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.syncNewCode
 
 data class AudioOutput(
@@ -835,15 +836,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         correctionBusy.value = true
         work { native ->
             try {
-                val profile = native.autoEqProfile(device.id) ?: return@work
+                val found = native.autoEqProfile(device.id) ?: return@work
                 library.updatePreferences {
-                    it.copy(
-                        equaliserEnabled = true,
-                        profileName = profile.name,
-                        profileText = profile.text,
-                    )
+                    it.copy(equaliserEnabled = true, equaliser = found.curve)
                 }
-                library.notice("Applied ${profile.name}")
+                library.notice("Applied ${found.curve.name}")
             } finally {
                 correctionBusy.value = false
             }
@@ -1112,11 +1109,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun applyProfileText(name: String, text: String) = work { native ->
-        val profile = native.parseEqProfile(text.toByteArray(Charsets.UTF_8), name)
-        library.updatePreferences {
-            it.copy(equaliserEnabled = true, profileName = profile.name, profileText = profile.text)
-        }
+    fun applyProfileText(name: String, text: String) = work { _ ->
+        val found = parseEqProfile(text.toByteArray(Charsets.UTF_8), name)
+        library.updatePreferences { it.copy(equaliserEnabled = true, equaliser = found.curve) }
     }
 
     fun searchOnline(text: String) {

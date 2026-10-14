@@ -169,20 +169,24 @@ animation loops, decode their own full-size images or alter the audio callback. 
 player keeps a square, shadowed cover, compact album/artist links and a larger central transport
 control; pause settles the cover to a smaller scale.
 
-The ten-band equaliser uses octave-spaced peaking bands from 31.25 Hz to 16 kHz with Q sqrt(2),
-through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all Android
-routes; no UI implies a per-device binding. Preamp and gains remain independent of the enable
-switch; reset flattens the curve without changing that switch. The native boundary validates the
-whole curve before sending any commands, and sends only fields that changed. ReplayGain, true-peak
-clip prevention, resampling quality/phase and experimental lossy restoration use existing engine
+The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
+to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
+Android routes; no UI implies a per-device binding. Android edits it through ten octave sliders
+(31.25 Hz to 16 kHz, Q sqrt(2), via `ten_band_curve`/`ten_band_gains`) and the preamp: a curve of
+any other layout (AutoEq, an import) plays and is kept, its sliders read flat, and moving one
+replaces it with ten bands. Preamp and gains remain independent of the enable switch; reset
+removes every band without changing that switch. The native boundary validates the whole curve
+before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
+prevention, resampling quality/phase and experimental lossy restoration use existing engine
 commands, never a platform equaliser running beside the Rust chain.
 
-Sound settings live in app-private `playback` SharedPreferences with named enum values and fixed
-band slots, separate from the unchanged document schema. Unknown enum values fall back to the
-native defaults; nonfinite levels use the default and out-of-slider levels are bounded. The ordered
-repository worker restores these preferences before allowing playback actions, sends edits and
-commits each completed gesture off the main thread. Sliders keep an in-progress value locally and
-commit on release, avoiding a file write or stream rebuild for each motion event.
+Sound settings live in app-private `playback` SharedPreferences with named enum values, separate
+from the unchanged document schema; the curve is EqualizerAPO text under `equaliser-curve`, the
+older fixed band slots read once to migrate. Unknown enum values fall back to the native defaults;
+an unreadable curve reads flat. The ordered repository worker restores these preferences before
+allowing playback actions, sends edits and commits each completed gesture off the main thread.
+Sliders keep an in-progress value locally and commit on release, avoiding a file write or stream
+rebuild for each motion event.
 
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
 and the existing fade into a pause. Snapshot polling carries the remaining time; Compose keeps no
@@ -298,9 +302,8 @@ and distinguish held from missing against the current catalog; downloads refresh
 is explicitly asked from Analysis: a supplied AcoustID key sends the stored whole-track print,
 otherwise `ByEar` sends a Shazam signature. Candidates are shown, never written as a guess.
 
-AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser. A chosen parametric
-profile is retained intact as canonical text; manual gain/preamp edits switch to the ten-band
-curve. One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,
+AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load as the curve's
+bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
 asked; Last.fm password sign-in saves the returned session, never that password. A separate

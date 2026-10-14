@@ -4,6 +4,7 @@ mod collections;
 mod documents;
 mod downloads;
 mod enrichment;
+mod equaliser;
 mod error;
 mod features;
 mod lyrics;
@@ -33,10 +34,15 @@ use crate::{
 };
 pub use crate::{
     documents::{Documents, audio_extensions},
+    equaliser::{
+        EqualiserBand, EqualiserCurve, EqualiserFilter, EqualiserImport, EqualiserLimits,
+        equaliser_frequencies, equaliser_limits, equaliser_text, parse_eq_profile, response_curve,
+        ten_band_curve, ten_band_gains,
+    },
     error::{Error, Result, StoreOp},
     playback::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
-        SleepTimer, default_playback_preferences, equaliser_frequencies,
+        SleepTimer, default_playback_preferences,
     },
 };
 

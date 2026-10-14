@@ -296,6 +296,40 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   waiting ones until the scene is active again, so each cancelled job still deletes its document
   and its journal entry, or the next start does.
 
+## The equaliser
+
+- **The curve is drawn and shaped on a graph** (`EqualiserGraph.swift`, in `SoundSettingsView`):
+  log frequency 20 Hz to 20 kHz across, decibels up, gridlines every 5 dB with 0 dB marked and the
+  edges labelled, 100, 1k and 10k labelled among fainter decade lines. The span is ±15 dB widened in
+  5 dB steps to hold the response and the handles, at most ±30 (a pass filter's floor is clipped),
+  and frozen while a handle is held, as on the desktop. The response is `response_curve` at 256
+  points and the stream's rate, asked by `EqualiserResponse` on `Work.aside`: the latest curve asked
+  wins and asks are at least 30 ms apart while one is pending, so a drag is followed without
+  queueing. It is washed to the zero line.
+- **A handle per band**, numbered, lifted by the preamp (a gainless kind sits at the preamp). A
+  one-finger drag beginning within 32 pt of a handle moves it, frequency across and gain up (tidied
+  to 0.1, 1 or 10 Hz by decade and to 0.1 dB); a pinch turns the Q of the held band, else the
+  selected one; a tap on empty space adds a peaking band there (Q 1) and switches the equaliser on.
+  Grab and release are felt (`sensoryFeedback`). What a gesture moves is a draft drawn at once; the
+  engine and the store hear the release, once, as the sliders did, and the draft gives way when the
+  committed curve arrives, or a second after the release where none did, so a refused commit
+  cannot linger.
+- **The selected band's inspector** is a section below: type (all eight kinds), frequency, gain
+  (gain kinds only) and Q, each typed (committed on return) or stepped (a semitone, 0.5 dB, a sixth
+  of an octave of Q), and Delete. Then the preamp slider, *Add a band* (1 kHz) and *Reset*, which
+  confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each
+  handle as an adjustable element, labelled with its number, kind and frequency, valued with its
+  gain and Q: swiping steps the gain 0.5 dB (Q, for a gainless kind), activating selects it.
+- **Headphone correction** (`AutoEqView`) searches AutoEq as the listener types (350 ms settle,
+  `Features.correctionRequest` refusing a stale answer), shows the current preset, and loads a tapped
+  headphone's correction as bands, confirming first where the curve has bands; EqualizerAPO or
+  GraphicEQ text comes from the clipboard or a file (`fileImporter`, read on `Work.aside`, at most
+  64 KiB and one byte, so the boundary's `TooLarge` speaks for a larger one). The notice after a
+  load counts the bands and says what was fitted, passed over or held to the limits.
+- **Stored as text**: `PlaybackPreferencesStore` keeps the curve as `equaliser_text` output under
+  `equaliser-curve` (`eq.md`'s *The phones*), migrating the older keys once and writing the result
+  back at once.
+
 ## Checks
 
 `python3 ios/build-native.py` then `cd ios && xtool dev build --ipa` must produce

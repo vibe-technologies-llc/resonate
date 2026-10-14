@@ -12,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.resonate.android.nativecore.Documents
+import org.resonate.android.nativecore.EqualiserBand
+import org.resonate.android.nativecore.EqualiserFilter
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.MobilePlayer
@@ -20,6 +22,7 @@ import org.resonate.android.nativecore.ResamplingQuality
 import org.resonate.android.nativecore.SleepTimer
 import org.resonate.android.nativecore.Transport
 import org.resonate.android.nativecore.defaultPlaybackPreferences
+import org.resonate.android.nativecore.tenBandCurve
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackPreferencesTest {
@@ -46,8 +49,7 @@ class PlaybackPreferencesTest {
                 defaultPlaybackPreferences()
                     .copy(
                         equaliserEnabled = true,
-                        preampDb = -6f,
-                        gainsDb = List(10) { if (it == 5) 6f else 0f },
+                        equaliser = tenBandCurve(-6f, List(10) { if (it == 5) 6f else 0f }),
                         replayGain = GainMode.ALBUM,
                         quality = ResamplingQuality.BALANCED,
                         phase = ResamplingPhase.INTERMEDIATE,
@@ -60,7 +62,14 @@ class PlaybackPreferencesTest {
             assertEquals(Transport.PLAYING, player.snapshot().transport)
             assertNull(player.snapshot().failure)
             assertThrows(Exception::class.java) {
-                player.configurePlayback(settings.copy(gainsDb = listOf(0f)))
+                player.configurePlayback(
+                    settings.copy(
+                        equaliser =
+                            settings.equaliser.copy(
+                                bands = listOf(EqualiserBand(EqualiserFilter.PEAKING, 10f, 0f, 1f))
+                            )
+                    )
+                )
             }
             assertEquals(settings, player.playbackPreferences())
             player.pause()
@@ -81,10 +90,15 @@ class PlaybackPreferencesTest {
             storage
                 .edit()
                 .putString("quality", "unknown-future-quality")
+                .remove("equaliser-curve")
                 .putFloat("equaliser-preamp", Float.NaN)
+                .putFloat("equaliser-gain-5", 6f)
                 .commit()
             assertEquals(ResamplingQuality.HIGH, store.read().quality)
-            assertEquals(0f, store.read().preampDb)
+            assertEquals(
+                tenBandCurve(0f, List(10) { if (it == 5) 6f else 0f }),
+                store.read().equaliser,
+            )
             assertTrue(store.read().equaliserEnabled)
         } finally {
             player.shutdown()
