@@ -18,8 +18,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.Documents
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.Transport
 import org.resonate.android.nativecore.defaultTrackFilter
@@ -34,10 +34,10 @@ class LibraryFeaturesTest {
         val wave = File(folder, "song.wav").apply { writeBytes(taggedTone()) }
         val documents =
             object : Documents {
-                override fun open(uri: String): Int =
+                override fun openDocument(uri: String): Int =
                     ParcelFileDescriptor.open(wave, ParcelFileDescriptor.MODE_READ_ONLY).detachFd()
             }
-        var player = AndroidPlayer(folder.absolutePath, documents)
+        var player = MobilePlayer(folder.absolutePath, documents)
         try {
             val track = player.indexDocument("content://test/song.wav", "song.wav")
             assertEquals("Fixture song", track.title)
@@ -148,7 +148,7 @@ class LibraryFeaturesTest {
             player.save()
             player.shutdown()
             player.close()
-            player = AndroidPlayer(folder.absolutePath, documents)
+            player = MobilePlayer(folder.absolutePath, documents)
             assertArrayEquals(png, player.artwork(track.id))
             assertEquals(3, player.lyrics(track.id, false).lines.size)
             assertEquals(3, player.playlistTracks(playlist, 0u, 100u).size)

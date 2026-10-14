@@ -12,9 +12,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.SearchSong
 
@@ -57,10 +57,10 @@ class DownloadTest {
             }
         }
         val player =
-            AndroidPlayer(
+            MobilePlayer(
                 folder.absolutePath,
                 object : Documents {
-                    override fun open(uri: String) =
+                    override fun openDocument(uri: String) =
                         ParcelFileDescriptor.open(destination, ParcelFileDescriptor.MODE_READ_ONLY)
                             .detachFd()
                 },

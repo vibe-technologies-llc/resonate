@@ -76,6 +76,7 @@ cd fuzz && cargo +nightly fuzz build                                  # the pars
 android/gradlew -p android :app:assembleDebug :app:lintDebug
 python3 android/check-native.py --sdk "$ANDROID_HOME"
 android/gradlew -p android :app:connectedDebugAndroidTest
+python3 ios/build-native.py && (cd ios && xtool dev build --ipa)  # local only; needs the Darwin SDK
 ```
 
 Tests needing a PipeWire daemon, a session bus, ffmpeg or the network skip where it is missing

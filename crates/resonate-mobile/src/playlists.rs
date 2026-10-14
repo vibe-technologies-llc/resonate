@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::{AndroidPlayer, Error, Result, StoreOp, Track, catalog::read};
+use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read};
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct MusicPlaylist {
@@ -28,7 +28,7 @@ pub(crate) struct PlaylistUndo {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn playlists(&self) -> Result<Vec<MusicPlaylist>> {
         let connection = self.catalog.0.lock();
         let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows WHERE playlist = p.id), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
@@ -175,7 +175,7 @@ impl AndroidPlayer {
     }
 }
 
-impl AndroidPlayer {
+impl MobilePlayer {
     pub(crate) fn make_playlist(&self, name: String, tracks: Vec<u64>) -> Result<u64> {
         let name = valid_name(&name)?;
         let mut history = self.playlist_undo.lock();
@@ -348,8 +348,8 @@ mod tests {
     use super::*;
     use crate::{PlaybackPreferences, catalog::Catalog, features::Services};
 
-    fn player() -> AndroidPlayer {
-        AndroidPlayer {
+    fn player() -> MobilePlayer {
+        MobilePlayer {
             player: Mutex::new(None),
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources: Arc::new(Sources::local()),
@@ -360,6 +360,7 @@ mod tests {
             playlist_undo: Mutex::new(Vec::new()),
             downloads: crate::downloads::Downloads::default(),
             syncing: crate::sync::Syncing::under(env::temp_dir()),
+            routing: Arc::new(crate::output::Routing::new()),
         }
     }
 

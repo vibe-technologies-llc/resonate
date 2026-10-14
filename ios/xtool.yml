@@ -1,0 +1,6 @@
+version: 1
+bundleID: org.resonate.ios
+product: Resonate
+infoPath: Resonate/Info.plist
+iconPath: Resonate/Icon.png
+entitlementsPath: Resonate/Resonate.entitlements

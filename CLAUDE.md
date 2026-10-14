@@ -7,10 +7,12 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
-| `android.md` | Android Gradle project, Android bridge and binding tool | Compose, native build, documents, service lifecycle and emulator checks |
+| `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
+| `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target |
+| `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, hardening, the shape of the SwiftUI app |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
-| `realtime.md` | engine, pipewire, Android callback, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
+| `realtime.md` | engine, pipewire, the Oboe and RemoteIO callbacks, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name, notifications, the idle inhibit, `Running` |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
@@ -39,6 +41,8 @@ playback is the guiding constraint.
 - A **GPUI** front end, native on Wayland.
 - An **Android 16+ Kotlin/Jetpack Compose** front end, with the same Rust playback engine,
   opened and run from the `android/` project in Android Studio.
+- An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from
+  Linux with xtool from the `ios/` package.
 
 `docs/ROADMAP.md` is the roadmap, **open work only** (defects, gaps, what is not built): it points
 to `BUGS.md`, `FEATURES.md`, `PERFORMANCE.md` and `TESTING.md` beside it, each of `## Category`
@@ -84,17 +88,17 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   └── resonate-core       domain vocabulary
 
-resonate-android     cdylib: Compose boundary and document catalog, over playback, analysis, lyrics, library seams, online, providers and sync
-resonate-bindgen     bin: host tool generating Kotlin from native metadata
+resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, analysis, lyrics, library seams, online, providers and sync
+resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```
 
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
-`resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and Android; a provider crate reaches the seam, core and
+`resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
-alone (its own PipeWire client per recording on Linux; capture modules excluded on Android); `resonate-analysis` reaches `resonate-dsp`;
-`resonate-sync` reaches core alone and is reached by the binary, Android and the server.
+alone (its own PipeWire client per recording; capture modules only on Linux); `resonate-analysis` reaches `resonate-dsp`;
+`resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server.
 
 Invariants the layering protects (the rules files have the rest):
 
@@ -144,6 +148,10 @@ Invariants the layering protects (the rules files have the rest):
   Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
 
+- `python3 ios/build-native.py`, then `cd ios && xtool dev build --ipa`: the iOS staticlib, Swift
+  bindings and app package; `xtool dev run` installs on an attached iPhone (`run-ios` skill). Not in
+  CI: the Darwin SDK comes from the listener's Xcode download.
+
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
   `cargo run` opens the window.
@@ -168,7 +176,7 @@ Invariants the layering protects (the rules files have the rest):
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
 
-CI runs exactly this list; the debug profile is optimised and `target-cpu=native` is set
+CI runs exactly this list, iOS aside; the debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

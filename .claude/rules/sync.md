@@ -5,7 +5,7 @@ paths:
   - "crates/resonate-library/src/synced.rs"
   - "crates/resonate-library/tests/synced.rs"
   - "crates/resonate-ui/src/views/settings/sync.rs"
-  - "crates/resonate-android/src/sync.rs"
+  - "crates/resonate-mobile/src/sync.rs"
   - "fuzz/fuzz_targets/sync.rs"
 ---
 
@@ -14,8 +14,8 @@ paths:
 `resonate-sync` keeps a listener's devices in step: playlists, track favourites, listening history
 and what each device was playing travel through a server that cannot read them; songs travel from
 one device to another directly. It reaches `resonate-core` alone among workspace crates (the
-layering job refuses the library, engine, gpui, `ureq`, serde); the binary, Android and
-`resonate-server` reach it.
+layering job refuses the library, engine, gpui, `ureq`, serde); the binary, the mobile boundary
+(Android and iOS) and `resonate-server` reach it.
 
 ## The pairing key and what it derives
 
@@ -42,6 +42,9 @@ layering job refuses the library, engine, gpui, `ureq`, serde); the binary, Andr
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
   `fuzz/fuzz_targets/sync.rs` decodes every frame and bundle and requires a decoded one to read back
   as itself.
+- **A device names its platform in one byte**: Linux 0, Android 1, iOS 2, other 255; a tag a later
+  build adds reads as `Other` (`every_platform_reads_back_and_a_later_one_reads_as_other`), and the
+  ledger keeps the same codes.
 - **A bundle's changes are each length-prefixed**, so a change of a later build's tag is skipped,
   not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`).
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
@@ -124,9 +127,9 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   the TLS 1.3 signature with the space's public key, both ways (mutual TLS). A device without the
   code cannot complete a handshake.
 - **Songs move only when asked or as chosen**: `fetch` (a playlist's missing songs from one device,
-  from the CLI, the playlist menu or Android), or `sync-songs` (`favourites`, `playlists` the
+  from the CLI, the playlist menu or a phone), or `sync-songs` (`favourites`, `playlists` the
   listener marked *Keep its songs here*, `everything`) when a device arrives, at most every 30
   minutes per device. Only whole-file, unvaulted songs are offered. A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
-- **Android sends and fetches songs only on an unmetered network** unless mobile data is allowed
+- **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile.

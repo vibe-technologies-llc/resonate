@@ -11,10 +11,10 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.ResamplingPhase
 import org.resonate.android.nativecore.ResamplingQuality
 import org.resonate.android.nativecore.SleepTimer
@@ -33,10 +33,10 @@ class PlaybackPreferencesTest {
         val store = PlaybackPreferencesStore(storage)
         val documents =
             object : Documents {
-                override fun open(uri: String): Int =
+                override fun openDocument(uri: String): Int =
                     ParcelFileDescriptor.open(wave, ParcelFileDescriptor.MODE_READ_ONLY).detachFd()
             }
-        var player = AndroidPlayer(folder.absolutePath, documents)
+        var player = MobilePlayer(folder.absolutePath, documents)
         try {
             assertEquals(defaultPlaybackPreferences(), store.read())
             val track = player.indexDocument("content://test/tone.wav", "tone.wav")
@@ -73,7 +73,7 @@ class PlaybackPreferencesTest {
             eventually { player.snapshot().sleep == null }
             player.shutdown()
             player.close()
-            player = AndroidPlayer(folder.absolutePath, documents)
+            player = MobilePlayer(folder.absolutePath, documents)
             player.configurePlayback(store.read())
             assertEquals(settings, player.playbackPreferences())
             eventually { player.snapshot().current != null }

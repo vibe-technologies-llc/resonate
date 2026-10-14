@@ -27,7 +27,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
-    AndroidPlayer, Error, Result, StoreOp, Track, catalog,
+    Error, MobilePlayer, Result, StoreOp, Track, catalog,
     documents::location,
     downloads::fresh_destination,
     error::{ReceivedOp, SyncOp},
@@ -38,7 +38,14 @@ use crate::{
 const LEDGER: &str = "sync.sqlite";
 const STAGING: &str = "sync-staging";
 const RECEIVED: &str = "sync-received";
+#[cfg(not(target_os = "ios"))]
 const DEVICE_NAME: &str = "Android";
+#[cfg(target_os = "ios")]
+const DEVICE_NAME: &str = "iPhone";
+#[cfg(not(target_os = "ios"))]
+const THIS_PLATFORM: Platform = Platform::Android;
+#[cfg(target_os = "ios")]
+const THIS_PLATFORM: Platform = Platform::Ios;
 const HANDED_OFF_AT_MOST: usize = 500;
 const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
 const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
@@ -106,6 +113,7 @@ pub enum SyncStanding {
 pub enum DevicePlatform {
     Linux,
     Android,
+    Ios,
     Other,
 }
 
@@ -155,7 +163,7 @@ pub fn sync_reads_as_a_code(code: String) -> bool {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn sync_start(&self, config: SyncConfig) -> Result<SyncStatus> {
         let mut running = self.syncing.running.lock();
         if let Some(previous) = running.take() {
@@ -205,6 +213,7 @@ impl AndroidPlayer {
                     platform: match device.platform {
                         Platform::Linux => DevicePlatform::Linux,
                         Platform::Android => DevicePlatform::Android,
+                        Platform::Ios => DevicePlatform::Ios,
                         Platform::Other => DevicePlatform::Other,
                     },
                     name: device.name,
@@ -380,7 +389,7 @@ impl AndroidPlayer {
     }
 }
 
-impl AndroidPlayer {
+impl MobilePlayer {
     fn started(&self, config: SyncConfig) -> Result<Running> {
         let key = if config.key.trim().is_empty() {
             SyncKey::minted()
@@ -405,7 +414,7 @@ impl AndroidPlayer {
                 name: Some(config.device.trim().to_owned())
                     .filter(|name| !name.is_empty())
                     .unwrap_or_else(|| DEVICE_NAME.to_owned()),
-                platform: Platform::Android,
+                platform: THIS_PLATFORM,
             },
             follow: Follow {
                 favourites: config.favourites,
@@ -1146,8 +1155,8 @@ mod tests {
 
     const RECORDING: &str = "b1a9c0e9-d987-4042-ae91-78d6a3267d69";
 
-    fn player(folder: &Path) -> AndroidPlayer {
-        AndroidPlayer {
+    fn player(folder: &Path) -> MobilePlayer {
+        MobilePlayer {
             player: Mutex::new(None),
             catalog: Arc::new(catalog::Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources: Arc::new(Sources::local()),
@@ -1158,12 +1167,11 @@ mod tests {
             playlist_undo: Mutex::new(Vec::new()),
             downloads: crate::downloads::Downloads::default(),
             syncing: Syncing::under(folder.to_path_buf()),
-            #[cfg(target_os = "android")]
-            routing: Arc::new(crate::backend::Routing::default()),
+            routing: Arc::new(crate::output::Routing::new()),
         }
     }
 
-    fn documents_of(player: &AndroidPlayer, folder: &Path) -> DocumentCatalog {
+    fn documents_of(player: &MobilePlayer, folder: &Path) -> DocumentCatalog {
         DocumentCatalog {
             catalog: Arc::clone(&player.catalog),
             sources: Arc::clone(&player.sources),
@@ -1176,14 +1184,14 @@ mod tests {
 
     fn folder(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!(
-            "resonate-android-sync-{name}-{}",
+            "resonate-mobile-sync-{name}-{}",
             playlists::created_now()
         ));
         fs::create_dir_all(&folder).expect("a test folder");
         folder
     }
 
-    fn song(player: &AndroidPlayer, uri: &str, title: &str, recording: Option<&str>) -> Track {
+    fn song(player: &MobilePlayer, uri: &str, title: &str, recording: Option<&str>) -> Track {
         let track = player
             .catalog
             .upsert(Track {

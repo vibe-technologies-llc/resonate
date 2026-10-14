@@ -4,7 +4,7 @@ members = [
     "crates/resonate",
     "crates/resonate-analysis",
     "crates/resonate-audio",
-    "crates/resonate-android",
+    "crates/resonate-mobile",
     "crates/resonate-bindgen",
     "crates/resonate-core",
     "crates/resonate-codec",
@@ -46,6 +46,26 @@ result_large_err = "deny"
 [workspace.dependencies]
 uniffi = { version = "0.32.2", default-features = false }
 oboe = { version = "0.6.1", default-features = false, features = ["shared-stdcxx"] }
+objc2-audio-toolbox = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "AUComponent",
+        "AudioComponent",
+        "AudioOutputUnit",
+        "AudioUnitProperties",
+        "objc2-core-audio-types"
+    ]
+}
+objc2-core-audio-types = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "CoreAudioBaseTypes"
+    ]
+}
 
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }

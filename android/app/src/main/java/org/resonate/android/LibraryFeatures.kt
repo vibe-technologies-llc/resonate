@@ -28,7 +28,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.AnalysisReport
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
 import org.resonate.android.nativecore.DownloadAccount
@@ -37,6 +36,7 @@ import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricSheet
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.ReceivedSong
 import org.resonate.android.nativecore.ScrobbleAccount
@@ -153,7 +153,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
         }
 
-    fun initialize(native: AndroidPlayer) {
+    fun initialize(native: MobilePlayer) {
         providerAccount.value =
             try {
                 accounts.read()
@@ -307,11 +307,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (handoff.playing) withContext(Dispatchers.Main) { play() }
     }
 
-    private suspend fun applySync(native: AndroidPlayer) {
+    private suspend fun applySync(native: MobilePlayer) {
         syncAccess.withLock { syncWith(native) }
     }
 
-    private fun syncWith(native: AndroidPlayer) {
+    private fun syncWith(native: MobilePlayer) {
         val config = syncConfig.value ?: return
         try {
             val status =
@@ -411,7 +411,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    private suspend fun landReceived(native: AndroidPlayer, waiting: List<ReceivedSong>) {
+    private suspend fun landReceived(native: MobilePlayer, waiting: List<ReceivedSong>) {
         if (System.currentTimeMillis() < landingRefusedUntil) return
         val destinations = folders.value.filter { it.readable && it.writable }
         val folder =
@@ -654,7 +654,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (openPlaylist.value == id) reloadPlaylist(native, id)
     }
 
-    fun editPlaylist(action: (AndroidPlayer) -> Unit) = work { native ->
+    fun editPlaylist(action: (MobilePlayer) -> Unit) = work { native ->
         action(native)
         playlists.value = native.playlists()
         openPlaylist.value?.let { id ->
@@ -663,7 +663,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    private fun reloadPlaylist(native: AndroidPlayer, id: ULong) {
+    private fun reloadPlaylist(native: MobilePlayer, id: ULong) {
         val rows = ArrayList<Track>()
         do {
             val page = native.playlistTracks(id, rows.size.toUInt(), 500u)
@@ -717,7 +717,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun tick(native: AndroidPlayer, snapshot: Snapshot) {
+    fun tick(native: MobilePlayer, snapshot: Snapshot) {
         lyrics.value?.let { sheet ->
             if (snapshot.current?.id == sheet.trackId)
                 lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
@@ -1031,7 +1031,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         refreshWanted(native)
     }
 
-    private fun refreshWanted(native: AndroidPlayer) {
+    private fun refreshWanted(native: MobilePlayer) {
         val rows = ArrayList<org.resonate.android.nativecore.WantedSong>()
         do {
             val page = native.wantedSongs(rows.size.toUInt(), 500u)
@@ -1085,7 +1085,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun releaseSongs(id: String) = onlineWork({ it.releaseSongs(id) }, { onlineSongs.value = it })
 
-    private fun <T> onlineWork(action: (AndroidPlayer) -> T, publish: (T) -> Unit) {
+    private fun <T> onlineWork(action: (MobilePlayer) -> T, publish: (T) -> Unit) {
         val request = searchRequest.incrementAndGet()
         searching.value = true
         work { native ->
@@ -1172,7 +1172,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         correctionBusy.value = false
     }
 
-    private fun work(action: suspend (AndroidPlayer) -> Unit) {
+    private fun work(action: suspend (MobilePlayer) -> Unit) {
         scope.launch {
             try {
                 action(library.native())

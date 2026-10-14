@@ -24,8 +24,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.Documents
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
@@ -38,8 +38,8 @@ class ResonateApplication : Application() {
 
 class LibraryRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var engine = CompletableDeferred<AndroidPlayer>()
-    private val actions = Channel<(AndroidPlayer) -> Unit>(Channel.UNLIMITED)
+    private var engine = CompletableDeferred<MobilePlayer>()
+    private val actions = Channel<(MobilePlayer) -> Unit>(Channel.UNLIMITED)
     private val access = Mutex()
     private val scanAccess = Mutex()
     private val mutableAllTracks = MutableStateFlow<List<Track>>(emptyList())
@@ -123,17 +123,17 @@ class LibraryRepository(private val context: Context) {
         started = true
         documentScope = CoroutineScope(SupervisorJob(scope.coroutineContext[Job]) + Dispatchers.IO)
         val previous = playbackJob
-        val ready = CompletableDeferred<AndroidPlayer>()
+        val ready = CompletableDeferred<MobilePlayer>()
         engine = ready
         playbackJob = scope.launch {
             previous?.join()
-            var opened: AndroidPlayer? = null
+            var opened: MobilePlayer? = null
             try {
                 val native =
-                    AndroidPlayer(
+                    MobilePlayer(
                         context.filesDir.absolutePath,
                         object : Documents {
-                            override fun open(uri: String): Int =
+                            override fun openDocument(uri: String): Int =
                                 try {
                                     context.contentResolver
                                         .openFileDescriptor(Uri.parse(uri), "r")
@@ -193,7 +193,7 @@ class LibraryRepository(private val context: Context) {
         }
     }
 
-    fun request(action: (AndroidPlayer) -> Unit) {
+    fun request(action: (MobilePlayer) -> Unit) {
         actions.trySend(action)
     }
 

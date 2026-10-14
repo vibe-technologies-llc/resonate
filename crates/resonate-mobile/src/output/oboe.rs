@@ -20,7 +20,7 @@ use resonate_audio::{
 };
 use resonate_core::{ChannelLayout, Frames, Gain, SampleFormat, SampleRate, StreamSpec};
 
-use crate::process::{RENDER_BYTES, Rendering};
+use super::oboe_render::{RENDER_BYTES, Rendering};
 
 const OUTPUT: SinkId = SinkId::new(1);
 const RATE: SampleRate = SampleRate::HZ_48000;
@@ -46,6 +46,25 @@ impl AndroidAudio {
 pub(crate) struct Routing {
     pub(crate) requested: AtomicI32,
     pub(crate) actual: AtomicI32,
+}
+
+impl Routing {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn select(&self, device: i32) -> bool {
+        self.requested.store(device, Ordering::Relaxed);
+        true
+    }
+
+    pub(crate) fn actual(&self) -> i32 {
+        self.actual.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn route_changed(&self, _: u32, _: f64) -> bool {
+        false
+    }
 }
 
 struct Device(Arc<Routing>);
@@ -94,7 +113,7 @@ impl Opener for Device {
         let routing = Arc::clone(&self.0);
         let requested_device = routing.requested.load(Ordering::Relaxed);
         thread::Builder::new()
-            .name("resonate-android-output".into())
+            .name("resonate-mobile-output".into())
             .spawn(move || {
                 let callback = Rendering {
                     source,

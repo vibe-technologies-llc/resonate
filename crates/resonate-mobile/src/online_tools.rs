@@ -10,7 +10,7 @@ use resonate_library::{
 };
 use rusqlite::{OptionalExtension, params};
 
-use crate::{AndroidPlayer, Error, Result, StoreOp, Track, catalog::read};
+use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read};
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct AutoEqDevice {
@@ -75,7 +75,7 @@ impl ScrobbleService {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn search_albums_online(&self, text: String) -> Result<Vec<SearchAlbum>> {
         self.require_online()?;
         self.services
@@ -320,7 +320,7 @@ impl AndroidPlayer {
     }
 }
 
-impl AndroidPlayer {
+impl MobilePlayer {
     fn scrobblers(&self, account: ScrobbleAccount) -> Vec<Box<dyn Scrobbler>> {
         let mut clients: Vec<Box<dyn Scrobbler>> = Vec::new();
         if !account.listenbrainz_token.is_empty() {

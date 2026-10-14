@@ -4326,6 +4326,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-audio-toolbox"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6948501a91121d6399b79abaa33a8aa4ea7857fe019f341b8c23ad6e81b79b08"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2",
+ "objc2-core-audio-types",
+ "objc2-foundation",
+]
+
+[[package]]
+name = "objc2-core-audio-types"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5400,34 +5422,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "resonate-android"
-version = "0.1.0"
-dependencies = [
- "crossbeam-channel",
- "oboe",
- "parking_lot",
- "resonate-analysis",
- "resonate-audio",
- "resonate-codec",
- "resonate-core",
- "resonate-engine",
- "resonate-eq",
- "resonate-library",
- "resonate-lyrics",
- "resonate-monochrome",
- "resonate-online",
- "resonate-providers",
- "resonate-subsonic",
- "resonate-sync",
- "resonate-tidal",
- "rusqlite",
- "thiserror 2.0.21",
- "tracing",
- "unicode-normalization",
- "uniffi",
-]
-
-[[package]]
 name = "resonate-audio"
 version = "0.1.0"
 dependencies = [
@@ -5608,6 +5602,36 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "resonate-mobile"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "objc2-audio-toolbox",
+ "objc2-core-audio-types",
+ "oboe",
+ "parking_lot",
+ "resonate-analysis",
+ "resonate-audio",
+ "resonate-codec",
+ "resonate-core",
+ "resonate-engine",
+ "resonate-eq",
+ "resonate-library",
+ "resonate-lyrics",
+ "resonate-monochrome",
+ "resonate-online",
+ "resonate-providers",
+ "resonate-subsonic",
+ "resonate-sync",
+ "resonate-tidal",
+ "rusqlite",
+ "thiserror 2.0.21",
+ "tracing",
+ "unicode-normalization",
+ "uniffi",
 ]
 
 [[package]]

@@ -16,7 +16,7 @@ use resonate_providers::{
     Authorizing, Client, Delivery, Identity, Obtained, Opened, Provider, SignsIn,
 };
 
-use crate::{AndroidPlayer, Error, Result, error::DownloadOp, features::SearchSong};
+use crate::{Error, MobilePlayer, Result, error::DownloadOp, features::SearchSong};
 
 #[derive(Default)]
 pub(crate) struct Downloads {
@@ -61,7 +61,7 @@ pub struct TidalAuthorization {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn find_download(
         &self,
         song: SearchSong,

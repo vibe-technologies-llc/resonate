@@ -1530,6 +1530,7 @@ const fn platform_tag(platform: Platform) -> i64 {
     match platform {
         Platform::Linux => 0,
         Platform::Android => 1,
+        Platform::Ios => 2,
         Platform::Other => 255,
     }
 }
@@ -1538,6 +1539,7 @@ const fn platform_of(tag: i64) -> Platform {
     match tag {
         0 => Platform::Linux,
         1 => Platform::Android,
+        2 => Platform::Ios,
         _ => Platform::Other,
     }
 }

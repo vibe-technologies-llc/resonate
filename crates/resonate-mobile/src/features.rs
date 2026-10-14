@@ -17,7 +17,7 @@ use resonate_lyrics::{Lyrics, read_lyrics, read_lyricsfile};
 use resonate_online::{Identity, Online};
 use rusqlite::params;
 
-use crate::{AndroidPlayer, Error, Result, StoreOp, Track, documents::location};
+use crate::{Error, MobilePlayer, Result, StoreOp, Track, documents::location};
 
 pub(crate) struct Services {
     pub(crate) online: Online,
@@ -171,35 +171,23 @@ pub fn default_track_filter() -> TrackFilter {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn select_output(&self, device: i32) -> Result<()> {
-        if device < 0 {
+        if device < 0 || !self.routing.select(device) {
             return Err(Error::OutputUnavailable);
         }
-        #[cfg(target_os = "android")]
-        {
-            self.routing
-                .requested
-                .store(device, std::sync::atomic::Ordering::Relaxed);
-            self.command(resonate_engine::Command::SetSink(None))
-        }
-        #[cfg(not(target_os = "android"))]
-        {
-            Err(Error::OutputUnavailable)
-        }
+        self.command(resonate_engine::Command::SetSink(None))
     }
 
     pub fn output_device(&self) -> i32 {
-        #[cfg(target_os = "android")]
-        {
-            self.routing
-                .actual
-                .load(std::sync::atomic::Ordering::Relaxed)
+        self.routing.actual()
+    }
+
+    pub fn output_route_changed(&self, rate: u32, latency_ms: f64, rebind: bool) -> Result<()> {
+        if self.routing.route_changed(rate, latency_ms) || rebind {
+            self.command(resonate_engine::Command::SetSink(None))?;
         }
-        #[cfg(not(target_os = "android"))]
-        {
-            0
-        }
+        Ok(())
     }
 
     pub fn configure_online(&self, enabled: bool) {
@@ -717,7 +705,7 @@ impl AndroidPlayer {
     }
 }
 
-impl AndroidPlayer {
+impl MobilePlayer {
     pub(crate) fn require_online(&self) -> Result<()> {
         if self.services.online.client().is_reaching() {
             Ok(())

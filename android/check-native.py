@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix="resonate-native-") as temporary:
 subprocess.run([str(args.sdk / f"build-tools/36.0.0/zipalign{executable}"), "-c", "-P", "16", "4", str(apk)], check=True)
 for abi in ("arm64-v8a", "x86_64"):
     folder = repository / "android/app/build/generated/jniLibs" / abi
-    for name in ("libresonate_android.so", "libc++_shared.so"):
+    for name in ("libresonate_mobile.so", "libc++_shared.so"):
         library = folder / name
         headers = subprocess.check_output([str(readelf), "-lW", str(library)], text=True)
         loads = [line.split() for line in headers.splitlines() if line.strip().startswith("LOAD ")]
@@ -50,4 +50,4 @@ for abi in ("arm64-v8a", "x86_64"):
         "RUSTFLAGS": "-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,--no-undefined",
         "CARGO_PROFILE_DEV_DEBUG": "0",
     })
-    subprocess.run(["cargo", "clippy", "--locked", "-p", "resonate-android", "--lib", "--target", triple, "--", "-D", "warnings"], cwd=repository, env=environment, check=True)
+    subprocess.run(["cargo", "clippy", "--locked", "-p", "resonate-mobile", "--lib", "--target", triple, "--", "-D", "warnings"], cwd=repository, env=environment, check=True)

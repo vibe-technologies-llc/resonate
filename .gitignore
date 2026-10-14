@@ -49,3 +49,11 @@ fuzz/coverage/
 /android/**/key.properties
 /android/**/keystore.properties
 /android/**/signing.properties
+
+/ios/.cargo-target/
+/ios/Generated/
+/ios/.build/
+/ios/.swiftpm/
+/ios/xtool/
+/ios/.bsp/
+/ios/*.ipa

@@ -16,8 +16,8 @@ paths:
   `result_large_err = "deny"` do not apply. `forbid` is never downgraded locally; a binding needing
   `unsafe` is raised (it ruled out `pipewire::thread_loop`, whose constructors are `unsafe fn`).
 
-The listener approved one exception: `resonate-android` admits UniFFI scaffolding and the
-owned-descriptor bridge at the native boundary (`android.md`). Its explicit crate lints keep
+The listener approved one exception: `resonate-mobile` admits UniFFI scaffolding, the
+owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`). Its explicit crate lints keep
 `result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
 
 ## The layering
@@ -26,9 +26,9 @@ A `cargo tree`-visible boundary is a `refuse` or `only` line in the CI layering 
 here, add it there.
 
 - `resonate-audio`: core, crossbeam-channel and thiserror alone; no PipeWire, codec, DSP or UI.
-  The engine reexports these contracts; the Linux adapter implements them. Android composes engine, codec, audio, library, analysis, lyrics, online and network providers,
-  never PipeWire, GPUI, MPRIS or Discord IPC. The listener/recogniser vocabulary builds on Android;
-  PipeWire capture is compiled only for other targets.
+  The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online and network providers,
+  never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
+  PipeWire capture is compiled only for Linux.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
   Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`) and `tz-rs` (`Calendar`).
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
@@ -39,14 +39,14 @@ here, add it there.
   binary). `resonate-mpris`: no gpui, no library.
 - `resonate-ui`: no `resonate-codec`, no image decoding of its own; `resonate-codec::Drawing`
   decodes and scales cover art to a `Raster`.
-- `resonate-online`: composed only by the CLI/desktop binary and the Android application boundary.
-  Android needs the paced metadata/lyric/scrobbling services but never a Linux audio dependency.
+- `resonate-online`: composed only by the CLI/desktop binary and the mobile boundary.
+  The phones need the paced metadata/lyric/scrobbling services but never a Linux audio dependency.
   `-mcp` and `-discord` remain binary-only. These are optional behind CLI features, so
   `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
   engine vocabulary, serde; no gpui, library, HTTP client.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
-  Reached by the binary (behind `sync`), Android and `resonate-server` alone; `resonate-server`
+  Reached by the binary (behind `sync`), `resonate-mobile` and `resonate-server` alone; `resonate-server`
   reaches core and `resonate-sync` alone. `resonate-library` takes neither `quinn` nor `tokio`, and
   `cargo tree -p resonate --no-default-features` links neither.
 - `resonate-codec` is a *dev*-dependency of `resonate-mpris` alone (`tests/bus.rs` implements a
@@ -131,8 +131,11 @@ here, add it there.
 - **`toml_edit`**, not `toml` (`display`, `parse`): the settings pane rewrites the listener's
   `config.toml`, and a value model loses comments, key order and spacing.
 
-- **`uniffi`** 0.32.2: Android native scaffolding, with `cli` only in `resonate-bindgen`.
+- **`uniffi`** 0.32.2: the mobile boundary's scaffolding (Kotlin and Swift), with `cli` only in
+  `resonate-bindgen`.
   **`oboe`** 0.6.1 (`shared-stdcxx`): Android-target-only; NDK libc++ ships in the APK.
+  **`objc2-audio-toolbox`** / **`objc2-core-audio-types`** 0.3.2: iOS-target-only, pure-Rust
+  framework bindings for the RemoteIO output, only the features it calls.
 
 ## Pins held against `cargo update`
 

@@ -354,7 +354,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("a clock")
             .as_nanos();
-        let path = env::temp_dir().join(format!("resonate-android-{unique}.sqlite"));
+        let path = env::temp_dir().join(format!("resonate-mobile-{unique}.sqlite"));
         let catalog = Catalog::open(&path).expect("a catalog");
         let first = catalog
             .upsert(Track {

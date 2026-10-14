@@ -1,5 +1,3 @@
-#[cfg(target_os = "android")]
-mod backend;
 mod catalog;
 mod catalog_extras;
 mod collections;
@@ -8,10 +6,9 @@ mod downloads;
 mod error;
 mod features;
 mod online_tools;
+mod output;
 mod playback;
 mod playlists;
-#[cfg(target_os = "android")]
-mod process;
 mod sync;
 
 use std::{
@@ -28,10 +25,10 @@ use resonate_engine::{Command, EngineConfig, Event, PlaybackState, Player, Queue
 
 use crate::{
     catalog::Catalog,
-    documents::{GrantedFiles, document_uri, location},
+    documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
 };
 pub use crate::{
-    documents::Documents,
+    documents::{Documents, audio_extensions},
     error::{Error, Result, StoreOp},
     playback::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
@@ -100,7 +97,7 @@ struct SavedPlace {
 }
 
 #[derive(uniffi::Object)]
-pub struct AndroidPlayer {
+pub struct MobilePlayer {
     player: Mutex<Option<Player>>,
     catalog: Arc<Catalog>,
     sources: Arc<Sources>,
@@ -111,12 +108,11 @@ pub struct AndroidPlayer {
     playlist_undo: Mutex<Vec<playlists::PlaylistUndo>>,
     downloads: downloads::Downloads,
     syncing: sync::Syncing,
-    #[cfg(target_os = "android")]
-    routing: Arc<backend::Routing>,
+    routing: Arc<output::Routing>,
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     #[uniffi::constructor]
     pub fn new(folder: String, documents: Box<dyn Documents>) -> Result<Arc<Self>> {
         fs::create_dir_all(&folder).map_err(|source| Error::Folder {
@@ -124,24 +120,18 @@ impl AndroidPlayer {
             source,
         })?;
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
-        let granted = GrantedFiles::new(Arc::from(documents))?;
-        let sources = Arc::new(
-            Sources::local()
-                .spooling_under(Path::new(&folder).to_path_buf())
-                .and(Arc::new(granted)),
-        );
+        let documents: Arc<dyn Documents> = Arc::from(documents);
+        let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
+            Sources::local().spooling_under(Path::new(&folder).to_path_buf()),
+            |sources, scheme| {
+                Ok::<_, Error>(
+                    sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
+                )
+            },
+        )?);
         let config = EngineConfig::default();
-        #[cfg(target_os = "android")]
-        let routing = Arc::new(backend::Routing::default());
-        #[cfg(target_os = "android")]
-        let player = {
-            let backend_routing = Arc::clone(&routing);
-            Player::with_sources_and_backend(config, Arc::clone(&sources), move |_| {
-                Ok(Box::new(backend::AndroidAudio::new(backend_routing)))
-            })?
-        };
-        #[cfg(not(target_os = "android"))]
-        let player = Player::with_sources(config, Arc::clone(&sources))?;
+        let routing = Arc::new(output::Routing::new());
+        let player = output::player(config, Arc::clone(&sources), &routing)?;
         let this = Arc::new(Self {
             player: Mutex::new(Some(player)),
             catalog,
@@ -153,7 +143,6 @@ impl AndroidPlayer {
             playlist_undo: Mutex::new(Vec::new()),
             downloads: downloads::Downloads::default(),
             syncing: sync::Syncing::under(PathBuf::from(&folder)),
-            #[cfg(target_os = "android")]
             routing,
         });
         let (ids, at, position) = this.catalog.resume()?;
@@ -455,7 +444,7 @@ impl AndroidPlayer {
     }
 }
 
-impl AndroidPlayer {
+impl MobilePlayer {
     fn command(&self, command: Command) -> Result<()> {
         self.player
             .lock()

@@ -256,6 +256,7 @@ fun SyncScreen(library: LibraryRepository) {
                                         when (synced.platform) {
                                             DevicePlatform.LINUX -> "Linux"
                                             DevicePlatform.ANDROID -> "Android"
+                                            DevicePlatform.IOS -> "iOS"
                                             DevicePlatform.OTHER -> null
                                         },
                                         if (synced.online) "online" else "away",

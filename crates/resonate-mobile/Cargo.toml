@@ -1,5 +1,5 @@
 [package]
-name = "resonate-android"
+name = "resonate-mobile"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -32,6 +32,10 @@ unicode-normalization.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 oboe.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-audio-toolbox.workspace = true
+objc2-core-audio-types.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

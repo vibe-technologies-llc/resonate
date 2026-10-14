@@ -171,7 +171,7 @@ jobs:
           refuse resonate-mcp gpui resonate-ui resonate-online
           for by in $(held_by --workspace -i resonate-online | grep '^resonate' | grep -vx resonate-online || true); do
             case "$by" in
-              resonate|resonate-android) ;;
+              resonate|resonate-mobile) ;;
               *) echo "::error::resonate-online is reached by $by"; failed=1 ;;
             esac
           done
@@ -181,13 +181,15 @@ jobs:
           only resonate-server resonate-core resonate-sync
           for by in $(held_by --workspace -i resonate-sync | grep '^resonate' | grep -vx resonate-sync || true); do
             case "$by" in
-              resonate|resonate-android|resonate-server) ;;
+              resonate|resonate-mobile|resonate-server) ;;
               *) echo "::error::resonate-sync is reached by $by"; failed=1 ;;
             esac
           done
           reached_by_the_binary_alone resonate-mcp
           reached_by_the_binary_alone resonate-discord
           refuse_headless resonate serde_json gpui ureq quinn tokio
+          check "resonate-mobile on iOS" "$(held_by -p resonate-mobile --target aarch64-apple-ios)" \
+            resonate-pipewire pipewire libspa gpui resonate-mpris resonate-discord oboe
           exit "$failed"
 
   fuzz:
@@ -234,7 +236,7 @@ jobs:
         run: android/gradlew -p android :app:assembleDebug :app:lintDebug
       - name: Enforce Android dependencies and Rust checks
         run: |
-          tree=$(cargo tree -p resonate-android --target x86_64-linux-android --prefix none)
+          tree=$(cargo tree -p resonate-mobile --target x86_64-linux-android --prefix none)
           if printf '%s\n' "$tree" | grep -E '^(resonate-pipewire|pipewire|libspa|gpui|resonate-mpris|resonate-discord) '; then
             exit 1
           fi

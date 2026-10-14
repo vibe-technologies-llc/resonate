@@ -1,7 +1,7 @@
 ---
 paths:
   - "android/**"
-  - "crates/resonate-android/**"
+  - "crates/resonate-mobile/**"
   - "crates/resonate-bindgen/**"
 ---
 
@@ -21,15 +21,10 @@ the debug variant's native libraries. Native symbols remain until binding genera
 Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
 key or password stored in the repository.
 
-`resonate-android` is the sole exception to the workspace's unsafe prohibition, explicitly
-approved for the native boundary. UniFFI generates the FFI scaffolding; the handwritten unsafe
-operation takes ownership of the file descriptor detached by Kotlin's `ParcelFileDescriptor`.
-A descriptor is transferred once and closed by Rust's `File`; a negative descriptor is refused.
-The same transfer (`downloads::fresh_destination`) owns a newly created download or received-song
-destination, never an existing music document.
-Domain, codec, DSP, engine and all other workspace crates remain under `forbid`. Kotlin bindings
-are generated under `app/build/`, never checked in or edited. New errors are typed and bounded as
-in `errors.md`; only the foreign presentation flattens their display text for Kotlin.
+The native boundary is `resonate-mobile`, shared with iOS (`mobile.md`). On Android the owned
+descriptor arrives detached from Kotlin's `ParcelFileDescriptor`. Kotlin bindings are generated
+under `app/build/`, never checked in or edited; only the foreign presentation flattens error
+display text for Kotlin.
 
 Handwritten Kotlin, Android tests and Gradle Kotlin scripts use ktfmt's Kotlin language style:
 four-space indentation, wrapped calls, trailing commas and one statement per line. Generated
@@ -61,7 +56,7 @@ rebinding; system default is id zero. The pane distinguishes a requested route f
 opened device. Android owns the physical route, and this is no promise of a DAC's rate or
 bit-perfect delivery. Buffer length is validated from 50 to 2000 ms at the native boundary.
 DoP, exclusive output and per-device format enumeration are not offered by this backend yet.
-The native callback is `process.rs`, under the realtime lint set: preallocated bytes only,
+The native callback is `output/oboe_render.rs`, under the realtime lint set: preallocated bytes only,
 no allocations, locks, filesystem, JNI or Kotlin calls. A short fill is padded with PCM silence.
 Drain waits for the output latency after the ring ends before reporting completion. Device errors
 are published from a worker through the existing stream events.
@@ -230,7 +225,7 @@ when the document supplies none.
 ## Device sync
 
 `sync.rs` is the bridge to `resonate-sync`: `DocumentCatalog` implements its `Catalog` over the
-document catalog, and `AndroidPlayer` holds at most one running `Sync`, started and stopped as a
+document catalog, and `MobilePlayer` holds at most one running `Sync`, started and stopped as a
 whole (`sync_start` leaves the previous one first; `shutdown` stops it before anything else). Its
 ledger is `sync.sqlite` and its staging folder `sync-staging`, both beside `documents.sqlite`.
 A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encrypted beside the

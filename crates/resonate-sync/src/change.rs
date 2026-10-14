@@ -19,6 +19,7 @@ pub struct PlaylistKey(pub [u8; PLAYLIST_KEY_BYTES]);
 pub enum Platform {
     Linux,
     Android,
+    Ios,
     Other,
 }
 

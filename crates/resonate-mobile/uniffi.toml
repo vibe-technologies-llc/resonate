@@ -1,4 +1,10 @@
-[crates.resonate_android.bindings.kotlin]
+[crates.resonate_mobile.bindings.kotlin]
 package_name = "org.resonate.android.nativecore"
-cdylib_name = "resonate_android"
+cdylib_name = "resonate_mobile"
 android = true
+
+[crates.resonate_mobile.bindings.swift]
+module_name = "ResonateNative"
+ffi_module_name = "ResonateNativeFFI"
+ffi_module_filename = "ResonateNativeFFI"
+generate_module_map = true

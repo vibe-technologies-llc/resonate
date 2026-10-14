@@ -699,6 +699,7 @@ pub fn decoded_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
 
 const PLATFORM_LINUX: u8 = 0;
 const PLATFORM_ANDROID: u8 = 1;
+const PLATFORM_IOS: u8 = 2;
 const PLATFORM_OTHER: u8 = 255;
 
 pub fn encoded_bundle(changes: &[Change]) -> Vec<u8> {
@@ -720,6 +721,7 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.byte(match note.platform {
                 Platform::Linux => PLATFORM_LINUX,
                 Platform::Android => PLATFORM_ANDROID,
+                Platform::Ios => PLATFORM_IOS,
                 Platform::Other => PLATFORM_OTHER,
             });
             writer.stamp(note.stamp);
@@ -793,6 +795,7 @@ fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
             platform: match reader.byte()? {
                 PLATFORM_LINUX => Platform::Linux,
                 PLATFORM_ANDROID => Platform::Android,
+                PLATFORM_IOS => Platform::Ios,
                 _ => Platform::Other,
             },
             stamp: reader.stamp()?,
@@ -1044,6 +1047,43 @@ mod tests {
         bundle[0] += 1;
         bundle.extend_from_slice(&[1, 200]);
         assert_eq!(decoded_bundle(&bundle).expect("decoded"), changes);
+    }
+
+    #[test]
+    fn every_platform_reads_back_and_a_later_one_reads_as_other() {
+        let noted = |platform| {
+            vec![Change::Device(DeviceNote {
+                device: DeviceId([1; DEVICE_BYTES]),
+                name: "Pocket".into(),
+                platform,
+                stamp: stamp(),
+            })]
+        };
+
+        for platform in [
+            Platform::Linux,
+            Platform::Android,
+            Platform::Ios,
+            Platform::Other,
+        ] {
+            assert_eq!(
+                decoded_bundle(&encoded_bundle(&noted(platform))).expect("decoded"),
+                noted(platform)
+            );
+        }
+
+        let mut later = encoded_bundle(&noted(Platform::Ios));
+        let linux = encoded_bundle(&noted(Platform::Linux));
+        let tag = later
+            .iter()
+            .zip(&linux)
+            .position(|(ios, linux)| ios != linux)
+            .expect("the platform tag");
+        later[tag] = 9;
+        assert_eq!(
+            decoded_bundle(&later).expect("decoded"),
+            noted(Platform::Other)
+        );
     }
 
     #[test]

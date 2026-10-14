@@ -8,8 +8,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.Documents
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Transport
 
 @RunWith(AndroidJUnit4::class)
@@ -21,13 +21,13 @@ class PlaybackTest {
         val wave = File(folder, "tone.wav").apply { writeBytes(pcmTone()) }
         val documents =
             object : Documents {
-                override fun open(uri: String): Int {
+                override fun openDocument(uri: String): Int {
                     assertEquals("content://test/tree/music%3A/document/tone.wav", uri)
                     return ParcelFileDescriptor.open(wave, ParcelFileDescriptor.MODE_READ_ONLY)
                         .detachFd()
                 }
             }
-        var player = AndroidPlayer(folder.absolutePath, documents)
+        var player = MobilePlayer(folder.absolutePath, documents)
         try {
             val track =
                 player.indexDocument("content://test/tree/music%3A/document/tone.wav", "tone.wav")
@@ -46,7 +46,7 @@ class PlaybackTest {
             player.save()
             player.shutdown()
             player.close()
-            player = AndroidPlayer(folder.absolutePath, documents)
+            player = MobilePlayer(folder.absolutePath, documents)
             eventually { player.snapshot().current != null }
             assertEquals(Transport.PAUSED, player.snapshot().transport)
             assertTrue(player.snapshot().positionMs >= 2900uL)

@@ -41,17 +41,17 @@ for triple, abi in [("aarch64-linux-android", "arm64-v8a"), ("x86_64-linux-andro
         "ANDROID_NDK_ROOT": str(ndk),
         "RUSTFLAGS": "-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,--no-undefined",
     })
-    command = [cargo, "build", "--locked", "-p", "resonate-android", "--lib", "--target", triple]
+    command = [cargo, "build", "--locked", "-p", "resonate-mobile", "--lib", "--target", triple]
     if args.profile == "release":
         native["CARGO_PROFILE_RELEASE_STRIP"] = "debuginfo"
         command.append("--release")
     run(command, native)
     destination = output / "jniLibs" / abi
     destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(target / triple / args.profile / "libresonate_android.so", destination)
+    shutil.copy2(target / triple / args.profile / "libresonate_mobile.so", destination)
     shutil.copy2(toolchain.parent / "sysroot/usr/lib" / triple / "libc++_shared.so", destination)
 
 run([cargo, "build", "--locked", "-p", "resonate-bindgen"], environment)
 shutil.rmtree(output / "uniffi", ignore_errors=True)
 (output / "uniffi").mkdir(parents=True, exist_ok=True)
-run([str(target / f"debug/resonate-bindgen{executable_suffix}"), "generate", "--library", str(target / "x86_64-linux-android" / args.profile / "libresonate_android.so"), "--language", "kotlin", "--no-format", "--config", "crates/resonate-android/uniffi.toml", "--out-dir", str(output / "uniffi")], environment)
+run([str(target / f"debug/resonate-bindgen{executable_suffix}"), "generate", "--library", str(target / "x86_64-linux-android" / args.profile / "libresonate_mobile.so"), "--language", "kotlin", "--no-format", "--config", "crates/resonate-mobile/uniffi.toml", "--out-dir", str(output / "uniffi")], environment)

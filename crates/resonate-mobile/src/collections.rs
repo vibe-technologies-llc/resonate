@@ -3,7 +3,7 @@ use resonate_library::{AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp
 use rusqlite::{Connection, params};
 
 use crate::{
-    AndroidPlayer, Error, Result, StoreOp,
+    Error, MobilePlayer, Result, StoreOp,
     catalog::Catalog,
     features::SearchSong,
     online_tools::{SearchArtist, SearchRelease},
@@ -32,7 +32,7 @@ pub struct WantedSong {
 }
 
 #[uniffi::export]
-impl AndroidPlayer {
+impl MobilePlayer {
     pub fn open_online_link(&self, text: String) -> Result<OnlineCollection> {
         self.require_online()?;
         let mut collection = OnlineCollection {
