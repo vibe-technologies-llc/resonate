@@ -54,7 +54,6 @@ final class Features {
     var statistics: LibraryStatistics?
     var statisticsLoading = false
     var lyrics: LyricSheet?
-    var lyricFrame: LyricFrame?
     var lyricsLoading = false
     var recognitionKey = ""
     var recognition: [RecognitionCandidate] = []
@@ -179,22 +178,14 @@ final class Features {
     }
 
     func tick(_ native: MobilePlayer, _ snapshot: Snapshot) async {
-        let sheet = lyrics
         let watchingDownload = downloading
         let watchingAnalysis = analysisBusy
-        guard let (frame, bytes, progress) = try? await Work.aside({
-            let frame = sheet.flatMap { sheet in
-                snapshot.current?.id == sheet.trackId
-                    ? native.lyricFrame(id: sheet.trackId, positionMs: snapshot.positionMs)
-                    : nil
-            }
-            return (
-                frame,
+        guard let (bytes, progress) = try? await Work.aside({
+            (
                 watchingDownload ? native.downloadBytes() : nil,
                 watchingAnalysis ? native.analysisProgress() : nil
             )
         }) else { return }
-        if let frame { lyricFrame = frame }
         if let bytes { downloadedBytes = bytes }
         if watchingAnalysis { analysisProgress = progress }
     }
@@ -563,8 +554,7 @@ final class Features {
     func loadLyrics(_ id: UInt64, refresh: Bool = false) {
         lyricRequest += 1
         let request = lyricRequest
-        lyrics = nil
-        lyricFrame = nil
+        if lyrics?.trackId != id { lyrics = nil }
         lyricsLoading = true
         work { [weak self] native in
             defer { if request == self?.lyricRequest { self?.lyricsLoading = false } }

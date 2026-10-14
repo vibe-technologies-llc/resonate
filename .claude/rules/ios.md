@@ -131,6 +131,26 @@ visualizer and the album and playlist pages.
   `org.resonate.ios`, category `backdrop` (a successful compile logs its time at `.notice`), and the
   view draws two radial gradients from the palette's first two colours.
 
+## Lyrics
+
+`LyricsPane(track:compact:)` (`LyricsPane.swift`) is the desktop pane ported (`ui.md`'s lyrics
+entries, `mobile.md`'s *Lyrics*): the same `TURN`, `Glide`/`Leg`, falloffs, cascade, arrival,
+breath dots, word sweep and *END OF LYRICS* mark, with the same constants, arithmetic drawn from
+`lyric_frame`. `LyricStage` holds the motion outside observation (only `beat` is observed, bumped
+where a paused timeline must wake) and turns each `TimelineView(.animation)` tick into a
+`LyricScene`; the timeline runs while the pane is visible and a synced sheet plays or anything
+still turns. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
+moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
+the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.
+`LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
+track change, pause or drift past 250 ms takes the position as is). Frames are asked on their own
+serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, and
+land on the main actor through a closure built `nonisolated`; `Features.tick` no longer polls
+them. Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
+cascade but keeps the brightening. `compact` is the pane embedded in Now Playing: smaller words,
+tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refresh and the
+`LyricAttribution` badge.
+
 ## Checks
 
 `python3 ios/build-native.py` then `cd ios && xtool dev build --ipa` must produce

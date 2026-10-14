@@ -3,96 +3,26 @@ import SwiftUI
 
 struct LyricsView: View {
     @Environment(Library.self) private var library
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let chosen: Track?
-    private static let nearby = 3
 
     var body: some View {
         let features = library.features
         let track = chosen ?? library.snapshot?.current
         let sheet = features.lyrics?.trackId == track?.id ? features.lyrics : nil
-        let lines = sheet?.lines ?? []
-        let active = features.lyricFrame?.line.map(Int.init)
-        let lit = Set((features.lyricFrame?.active ?? []).map(Int.init))
-        let position = library.snapshot?.positionMs ?? 0
-        ScrollViewReader { scroller in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
-                    if features.lyricsLoading {
-                        ProgressView().frame(maxWidth: .infinity)
-                    }
-                    if lines.isEmpty, !features.lyricsLoading {
-                        Text(features.online
-                            ? "No lyrics found for this song"
-                            : "No saved lyrics. Enable online features to look them up, or add an LRC beside the song.")
-                            .foregroundStyle(.secondary)
-                            .padding(32)
-                    }
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        let timed = line.atMs != nil
-                        let shining = !timed || lit.contains(index)
-                        let distance = active.map { abs(index - $0) } ?? 0
-                        LyricLine(line: line, shining: shining, timed: timed, position: position)
-                            .scaleEffect(shining || reduceMotion ? 1 : 0.92, anchor: .leading)
-                            .opacity(shining ? 1 : (active == nil || distance < Self.nearby ? 0.55 : 0.3))
-                            .blur(radius: timed && active != nil && distance > Self.nearby && !reduceMotion ? 1 : 0)
-                            .animation(.spring, value: shining)
-                            .id(index)
-                            .onTapGesture {
-                                guard let at = line.atMs else { return }
-                                library.request { try $0.seek(positionMs: at) }
-                            }
-                    }
-                    Spacer(minLength: 160)
+        LyricsPane(track: track, compact: false)
+            .safeAreaInset(edge: .bottom) {
+                if let sheet, !sheet.lines.isEmpty {
+                    LyricAttribution(sheet: sheet)
                 }
-                .padding(.horizontal, 24)
             }
-            .onChange(of: active) { _, now in
-                guard let now else { return }
-                withAnimation(.smooth) { scroller.scrollTo(max(now - 2, 0), anchor: .top) }
+            .background(BackdropView(track: track))
+            .navigationTitle(track?.shownTitle ?? "Lyrics")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if features.online, let track {
+                    Button("Refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
+                }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if let origin = sheet?.origin, !origin.isEmpty {
-                Text("Lyrics: \(origin)").font(.caption2).foregroundStyle(.secondary).padding(8)
-            }
-        }
-        .background(BackdropView(track: track))
-        .navigationTitle(track?.shownTitle ?? "Lyrics")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if features.online, let track {
-                Button("Refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
-            }
-        }
-        .task(id: track?.id) {
-            if let track { features.loadLyrics(track.id) }
-        }
-    }
-}
-
-struct LyricLine: View {
-    let line: LyricRow
-    let shining: Bool
-    let timed: Bool
-    let position: UInt64
-
-    var body: some View {
-        let color = shining && timed ? Color.accentColor : Color.primary
-        Group {
-            if line.words.isEmpty || !shining {
-                Text(line.text)
-            } else {
-                Text(line.words.reduce(into: AttributedString()) { sung, word in
-                    var part = AttributedString(word.text)
-                    part.foregroundColor = position >= word.atMs ? color : color.opacity(0.4)
-                    sung += part
-                })
-            }
-        }
-        .font(.title.weight(shining ? .bold : .medium))
-        .foregroundStyle(color)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
