@@ -20,6 +20,22 @@ pub enum DownloadOp {
     Finish,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SyncOp {
+    Start,
+    Mint,
+    Missing,
+    Keep,
+    Handoffs,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ReceivedOp {
+    Open,
+    Copy,
+    Finish,
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
 pub enum Error {
@@ -111,6 +127,26 @@ pub enum Error {
     BufferRange { milliseconds: u32 },
     #[error("the player has been closed")]
     Closed,
+    #[error("device sync operation {op:?} failed")]
+    Sync {
+        op: SyncOp,
+        #[source]
+        source: Box<resonate_sync::Error>,
+    },
+    #[error("device sync is switched off")]
+    SyncOff,
+    #[error("no device in sync is called that")]
+    UnknownSyncDevice,
+    #[error("that device is playing nothing held here")]
+    NothingHandedOff,
+    #[error("that song from another device is no longer waiting")]
+    UnknownReceivedSong,
+    #[error("received song operation {op:?} failed")]
+    Received {
+        op: ReceivedOp,
+        #[source]
+        source: io::Error,
+    },
     #[error("the application folder could not be created")]
     Folder {
         op: StoreOp,
@@ -125,6 +161,13 @@ impl Error {
         source: resonate_library::Error,
     ) -> Self {
         Self::Reference {
+            op,
+            source: Box::new(source),
+        }
+    }
+
+    pub(crate) fn sync(op: SyncOp, source: resonate_sync::Error) -> Self {
+        Self::Sync {
             op,
             source: Box::new(source),
         }

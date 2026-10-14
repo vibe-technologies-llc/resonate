@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.FolderOpen
@@ -95,6 +96,9 @@ fun SettingsScreen(
     val scanning by library.scanning.collectAsState()
     val provider by library.features.providerAccount.collectAsState()
     val accounts by library.features.scrobbleAccount.collectAsState()
+    val syncConfig by library.features.syncConfig.collectAsState()
+    val syncStatus by library.features.syncStatus.collectAsState()
+    val onlineEnabled by library.features.online.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -229,6 +233,14 @@ fun SettingsScreen(
                 "accounts listening history favourites",
             ) {
                 navigate("Scrobbling")
+            },
+            SettingsEntry(
+                "Device sync",
+                syncStandingText(syncStatus, syncConfig, onlineEnabled),
+                Icons.Default.Devices,
+                "pairing code phone computer playlists favourites listening history handoff",
+            ) {
+                navigate("Device sync")
             },
         )
     val terms = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }

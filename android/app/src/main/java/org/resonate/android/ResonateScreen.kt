@@ -370,6 +370,7 @@ fun ResonateScreen(
                             "Saved for later" -> WantedScreen(library)
                             "Download providers" -> ProviderScreen(library)
                             "Scrobbling" -> ScrobblingScreen(library)
+                            "Device sync" -> SyncScreen(library)
                             "AutoEq" -> AutoEqScreen(library)
                             "Output" -> OutputScreen(library, snapshot)
                             "Lyrics" -> LyricsScreen(library, featureTrack, snapshot, controller)
@@ -377,25 +378,32 @@ fun ResonateScreen(
                             "Analysis" -> AnalysisScreen(library, featureTrack)
                             "Inspector" -> InspectorScreen(library, featureTrack)
                             "Queue" ->
-                                SongList(
-                                    library,
-                                    {
-                                        selectedTrack = it
-                                        navigate("Inspector")
-                                    },
-                                    queue,
-                                    snapshot?.current?.id,
-                                    emptyText = "Your queue is empty",
-                                    play = { selected ->
-                                        controller?.seekToDefaultPosition(
-                                            queue.indexOfFirst { it.queueId == selected.queueId }
+                                Column(Modifier.fillMaxSize()) {
+                                    HandedOffRow(library) { controller?.play() }
+                                    Box(Modifier.weight(1f)) {
+                                        SongList(
+                                            library,
+                                            {
+                                                selectedTrack = it
+                                                navigate("Inspector")
+                                            },
+                                            queue,
+                                            snapshot?.current?.id,
+                                            emptyText = "Your queue is empty",
+                                            play = { selected ->
+                                                controller?.seekToDefaultPosition(
+                                                    queue.indexOfFirst {
+                                                        it.queueId == selected.queueId
+                                                    }
+                                                )
+                                                controller?.play()
+                                            },
+                                            favourite = { track ->
+                                                library.setFavourite(track.id, !track.favourite)
+                                            },
                                         )
-                                        controller?.play()
-                                    },
-                                    favourite = { track ->
-                                        library.setFavourite(track.id, !track.favourite)
-                                    },
-                                )
+                                    }
+                                }
                             else -> {
                                 OutlinedTextField(
                                     value = search,

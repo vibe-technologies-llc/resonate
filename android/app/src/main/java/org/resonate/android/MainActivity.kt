@@ -76,6 +76,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        library.features.foreground(true)
+    }
+
+    override fun onStop() {
+        library.features.foreground(false)
+        super.onStop()
+    }
+
     override fun onDestroy() {
         controller?.release()
         controller = null

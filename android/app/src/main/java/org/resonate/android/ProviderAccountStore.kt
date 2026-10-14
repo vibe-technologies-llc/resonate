@@ -12,6 +12,7 @@ import javax.crypto.spec.GCMParameterSpec
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.ScrobbleAccount
+import org.resonate.android.nativecore.SyncConfig
 
 class ProviderAccountStore(context: Context) {
     private val storage = context.getSharedPreferences("provider-accounts", Context.MODE_PRIVATE)
@@ -78,6 +79,35 @@ class ProviderAccountStore(context: Context) {
         check(storage.edit().putString("acoustid-key", encrypt(value)).commit()) {
             "Recognition key could not be saved"
         }
+    }
+
+    @Synchronized
+    fun readSync() =
+        SyncConfig(
+            enabled = storage.getBoolean("sync-enabled", true),
+            server = storage.getString("sync-server", "").orEmpty(),
+            key = decrypt("sync-key"),
+            device = storage.getString("sync-device", "").orEmpty(),
+            favourites = storage.getBoolean("sync-favourites", false),
+            playlists = storage.getBoolean("sync-playlists", false),
+            everything = storage.getBoolean("sync-everything", false),
+            meteredAllowed = storage.getBoolean("sync-metered-allowed", false),
+        )
+
+    @Synchronized
+    fun writeSync(config: SyncConfig) {
+        val edit =
+            storage
+                .edit()
+                .putBoolean("sync-enabled", config.enabled)
+                .putString("sync-server", config.server)
+                .putString("sync-key", encrypt(config.key))
+                .putString("sync-device", config.device)
+                .putBoolean("sync-favourites", config.favourites)
+                .putBoolean("sync-playlists", config.playlists)
+                .putBoolean("sync-everything", config.everything)
+                .putBoolean("sync-metered-allowed", config.meteredAllowed)
+        check(edit.commit()) { "Device sync settings could not be saved" }
     }
 
     private fun key(): SecretKey {

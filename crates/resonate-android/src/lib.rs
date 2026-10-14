@@ -12,8 +12,14 @@ mod playback;
 mod playlists;
 #[cfg(target_os = "android")]
 mod process;
+mod sync;
 
-use std::{fs, path::Path, sync::Arc, time::Duration};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
@@ -96,7 +102,7 @@ struct SavedPlace {
 #[derive(uniffi::Object)]
 pub struct AndroidPlayer {
     player: Mutex<Option<Player>>,
-    catalog: Catalog,
+    catalog: Arc<Catalog>,
     sources: Arc<Sources>,
     failure: Mutex<Option<String>>,
     saved: Mutex<Option<SavedPlace>>,
@@ -104,6 +110,7 @@ pub struct AndroidPlayer {
     services: features::Services,
     playlist_undo: Mutex<Vec<playlists::PlaylistUndo>>,
     downloads: downloads::Downloads,
+    syncing: sync::Syncing,
     #[cfg(target_os = "android")]
     routing: Arc<backend::Routing>,
 }
@@ -116,7 +123,7 @@ impl AndroidPlayer {
             op: StoreOp::CreateFolder,
             source,
         })?;
-        let catalog = Catalog::open(&Path::new(&folder).join("documents.sqlite"))?;
+        let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let granted = GrantedFiles::new(Arc::from(documents))?;
         let sources = Arc::new(
             Sources::local()
@@ -145,6 +152,7 @@ impl AndroidPlayer {
             services: features::Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
             downloads: downloads::Downloads::default(),
+            syncing: sync::Syncing::under(PathBuf::from(&folder)),
             #[cfg(target_os = "android")]
             routing,
         });
@@ -434,6 +442,7 @@ impl AndroidPlayer {
     }
 
     pub fn shutdown(&self) -> Result<()> {
+        self.sync_stop();
         self.configure_online(false);
         self.cancel_analysis();
         self.cancel_download();

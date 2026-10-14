@@ -16,6 +16,7 @@ resonate-lyrics.workspace = true
 resonate-online.workspace = true
 resonate-providers.workspace = true
 resonate-subsonic.workspace = true
+resonate-sync.workspace = true
 resonate-tidal.workspace = true
 resonate-monochrome.workspace = true
 resonate-audio.workspace = true

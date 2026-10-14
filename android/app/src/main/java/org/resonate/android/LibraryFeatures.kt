@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.LruCache
@@ -21,17 +24,21 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.AndroidPlayer
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.MusicPlaylist
+import org.resonate.android.nativecore.ReceivedSong
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.ScrobbleService
 import org.resonate.android.nativecore.SearchAlbum
@@ -39,8 +46,12 @@ import org.resonate.android.nativecore.SearchArtist
 import org.resonate.android.nativecore.SearchRelease
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Snapshot
+import org.resonate.android.nativecore.SyncConfig
+import org.resonate.android.nativecore.SyncStanding
+import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.syncNewCode
 
 data class AudioOutput(
     val id: Int,
@@ -51,6 +62,18 @@ data class AudioOutput(
 )
 
 data class MusicFolder(val uri: Uri, val name: String, val readable: Boolean, val writable: Boolean)
+
+data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolean)
+
+private fun mimeOf(extension: String) =
+    when (extension) {
+        "flac" -> "audio/flac"
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "ogg",
+        "opus" -> "audio/ogg"
+        else -> "application/octet-stream"
+    }
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -106,6 +129,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
     private var downloadReady = CompletableDeferred<Unit>()
+    val syncConfig = MutableStateFlow<SyncConfig?>(null)
+    val syncStatus = MutableStateFlow<SyncStatus?>(null)
+    val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
+    val syncFolder = MutableStateFlow(settings.getString("sync-folder", null))
+    val syncNotice = MutableStateFlow<String?>(null)
+    val playlistSync = MutableStateFlow<PlaylistSync?>(null)
+    val transferring = MutableStateFlow(false)
+    val transferServiceRunning = MutableStateFlow(false)
+    private val syncAccess = Mutex()
+    private var syncPolling: Job? = null
+    private var network: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var unmetered = false
+    @Volatile private var foreground = true
+    @Volatile private var landingRefusedUntil = 0L
 
     fun downloadServiceReady() {
         downloadReady.complete(Unit)
@@ -184,7 +221,26 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     library.report(failure)
                 }
             }
+        settings.getString("unfinished-sync-landing", null)?.let { value ->
+            try {
+                DocumentsContract.deleteDocument(context.contentResolver, Uri.parse(value))
+                settings.edit().remove("unfinished-sync-landing").commit()
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
+        }
         refreshFolders()
+        syncConfig.value =
+            try {
+                accounts.readSync()
+            } catch (failure: Exception) {
+                library.report(failure)
+                SyncConfig(true, "", "", "", false, false, false, false)
+            }
+        watchNetwork()
+        syncPolling?.cancel()
+        syncPolling = scope.launch { pollSync() }
+        work { applySync(it) }
     }
 
     fun setOnline(enabled: Boolean) {
@@ -192,6 +248,234 @@ class LibraryFeatures(private val context: Context, private val library: Library
             native.configureOnline(enabled)
             online.value = enabled
             settings.edit().putBoolean("online", enabled).commit()
+            applySync(native)
+        }
+    }
+
+    fun saveSync(config: SyncConfig) = work { native ->
+        accounts.writeSync(config)
+        syncConfig.value = config
+        applySync(native)
+    }
+
+    fun joinSync(code: String) {
+        val config = syncConfig.value ?: return
+        saveSync(config.copy(key = code.trim()))
+    }
+
+    fun newSyncGroup() = work { native ->
+        val config = syncConfig.value ?: return@work
+        val fresh = config.copy(key = syncNewCode())
+        accounts.writeSync(fresh)
+        syncConfig.value = fresh
+        applySync(native)
+    }
+
+    fun chooseSyncFolder(folder: MusicFolder) {
+        syncFolder.value = folder.uri.toString()
+        scope.launch { settings.edit().putString("sync-folder", folder.uri.toString()).commit() }
+    }
+
+    fun foreground(visible: Boolean) {
+        foreground = visible
+    }
+
+    fun loadPlaylistSync(id: ULong) = work { native ->
+        playlistSync.value =
+            PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
+    }
+
+    fun fetchMissing(id: ULong, device: String) = work { native ->
+        val asked = native.syncFetchMissing(id, device)
+        library.notice(
+            if (asked > 0u) "Asking $device for $asked ${if (asked == 1u) "song" else "songs"}"
+            else "$device has nothing this playlist lacks"
+        )
+    }
+
+    fun keepSongs(id: ULong, keep: Boolean) = work { native ->
+        native.syncKeepSongs(id, keep)
+        playlistSync.value =
+            PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
+    }
+
+    fun continueFrom(handoff: HandedOff, play: () -> Unit) = work { native ->
+        val loaded = native.syncContinueFrom(handoff.device)
+        library.notice(
+            "Continuing ${if (loaded == 1u) "1 song" else "$loaded songs"} from ${handoff.device}"
+        )
+        if (handoff.playing) withContext(Dispatchers.Main) { play() }
+    }
+
+    private suspend fun applySync(native: AndroidPlayer) {
+        syncAccess.withLock { syncWith(native) }
+    }
+
+    private fun syncWith(native: AndroidPlayer) {
+        val config = syncConfig.value ?: return
+        try {
+            val status =
+                if (config.enabled && online.value) native.syncStart(config)
+                else {
+                    native.syncStop()
+                    native.syncStatus()
+                }
+            if (status.code.isNotEmpty() && status.code != config.key) {
+                val kept = config.copy(key = status.code)
+                accounts.writeSync(kept)
+                syncConfig.value = kept
+            }
+            native.syncNetwork(unmetered)
+            syncStatus.value = status
+        } catch (failure: Exception) {
+            syncStatus.value = native.syncStatus()
+            throw failure
+        }
+    }
+
+    private fun watchNetwork() {
+        if (network != null) return
+        val callback =
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: NetworkCapabilities,
+                ) {
+                    networkChanged(
+                        networkCapabilities.hasCapability(
+                            NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+                        )
+                    )
+                }
+
+                override fun onLost(network: Network) {
+                    networkChanged(false)
+                }
+            }
+        try {
+            context
+                .getSystemService(ConnectivityManager::class.java)
+                .registerDefaultNetworkCallback(callback)
+            network = callback
+        } catch (failure: Exception) {
+            library.report(failure)
+        }
+    }
+
+    private fun networkChanged(free: Boolean) {
+        if (free == unmetered) return
+        unmetered = free
+        work { it.syncNetwork(free) }
+    }
+
+    private suspend fun pollSync() {
+        var arrivals = 0uL
+        while (currentCoroutineContext().isActive) {
+            delay(if (foreground || transferring.value) 2000L else 30000L)
+            try {
+                val native = library.native()
+                val status = native.syncStatus()
+                syncStatus.value = status
+                val waiting = native.syncReceived()
+                transferring.value = status.moving > 0u || waiting.isNotEmpty()
+                if (transferring.value) holdTransfers()
+                if (waiting.isNotEmpty()) landReceived(native, waiting)
+                syncHandoffs.value =
+                    if (status.standing == SyncStanding.OFF) emptyList() else native.syncHandoffs()
+                if (arrivals != status.arrivals) {
+                    arrivals = status.arrivals
+                    library.refresh()
+                    playlists.value = native.playlists()
+                    openPlaylist.value?.let { id ->
+                        if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
+        }
+    }
+
+    private fun holdTransfers() {
+        if (transferServiceRunning.value || downloading.value) return
+        try {
+            context.startForegroundService(Intent(context, DownloadService::class.java))
+        } catch (failure: Exception) {
+            android.util.Log.w(
+                "Resonate",
+                "Device sync continues without a foreground service",
+                failure,
+            )
+        }
+    }
+
+    private suspend fun landReceived(native: AndroidPlayer, waiting: List<ReceivedSong>) {
+        if (System.currentTimeMillis() < landingRefusedUntil) return
+        val destinations = folders.value.filter { it.readable && it.writable }
+        val folder =
+            destinations.find { it.uri.toString() == syncFolder.value }
+                ?: destinations.firstOrNull()
+        if (folder == null) {
+            syncNotice.value = "Add a music folder with write access to keep songs from your devices"
+            return
+        }
+        var landed = 0
+        for (received in waiting) {
+            currentCoroutineContext().ensureActive()
+            var created: Uri? = null
+            try {
+                val parent =
+                    DocumentsContract.buildDocumentUriUsingTree(
+                        folder.uri,
+                        DocumentsContract.getTreeDocumentId(folder.uri),
+                    )
+                val uri =
+                    requireNotNull(
+                        DocumentsContract.createDocument(
+                            context.contentResolver,
+                            parent,
+                            mimeOf(received.extension),
+                            received.name,
+                        )
+                    )
+                created = uri
+                check(
+                    settings.edit().putString("unfinished-sync-landing", uri.toString()).commit()
+                ) {
+                    "The song from another device could not be recorded"
+                }
+                val descriptor =
+                    requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
+                native.syncReceive(received.id, descriptor, uri.toString())
+                created = null
+                settings.edit().remove("unfinished-sync-landing").commit()
+                landed++
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                landingRefusedUntil = System.currentTimeMillis() + 60000L
+                syncNotice.value = failure.message ?: "A song from another device could not be kept"
+                library.report(failure)
+                break
+            } finally {
+                created?.let { uri ->
+                    try {
+                        DocumentsContract.deleteDocument(context.contentResolver, uri)
+                        settings.edit().remove("unfinished-sync-landing").commit()
+                    } catch (failure: Exception) {
+                        library.report(failure)
+                    }
+                }
+            }
+        }
+        if (landed > 0) {
+            syncNotice.value = null
+            library.refresh()
+            refreshWanted(native)
+            refreshArtwork()
+            library.notice("Kept $landed ${if (landed == 1) "song" else "songs"} from your devices")
         }
     }
 
@@ -666,15 +950,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         folder.uri,
                         DocumentsContract.getTreeDocumentId(folder.uri),
                     )
-                val mime =
-                    when (offer.extension) {
-                        "flac" -> "audio/flac"
-                        "mp3" -> "audio/mpeg"
-                        "m4a" -> "audio/mp4"
-                        "ogg",
-                        "opus" -> "audio/ogg"
-                        else -> "application/octet-stream"
-                    }
+                val mime = mimeOf(offer.extension)
                 val uri =
                     requireNotNull(
                         DocumentsContract.createDocument(
@@ -868,6 +1144,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scope.coroutineContext.cancelChildren()
         submitting = null
         visualization = null
+        syncPolling = null
+        network?.let { callback ->
+            try {
+                context
+                    .getSystemService(ConnectivityManager::class.java)
+                    .unregisterNetworkCallback(callback)
+            } catch (failure: Exception) {
+                android.util.Log.w("Resonate", "Network watch could not be removed", failure)
+            }
+        }
+        network = null
+        unmetered = false
+        transferring.value = false
+        syncHandoffs.value = emptyList()
         analysisRequest.incrementAndGet()
         recognitionRequest.incrementAndGet()
         recognitionBusy.value = false

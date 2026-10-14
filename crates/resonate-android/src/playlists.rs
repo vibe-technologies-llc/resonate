@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rusqlite::{Connection, OptionalExtension, params};
 use unicode_normalization::UnicodeNormalization;
 
@@ -15,6 +17,7 @@ pub struct MusicPlaylist {
 struct SavedPlaylist {
     name: String,
     revision: u64,
+    created: i64,
     rows: Vec<u64>,
 }
 
@@ -157,7 +160,7 @@ impl AndroidPlayer {
         match step.before.as_ref() {
             Some(before) => {
                 refuse_duplicate(&transaction, &before.name, step.id)?;
-                transaction.execute("INSERT INTO playlists(id, name, folded, revision) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET name = excluded.name, folded = excluded.folded, revision = excluded.revision", params![step.id as i64, before.name, folded(&before.name), before.revision as i64]).map_err(write_error)?;
+                transaction.execute("INSERT INTO playlists(id, name, folded, revision, created) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, folded = excluded.folded, revision = excluded.revision, created = excluded.created", params![step.id as i64, before.name, folded(&before.name), before.revision as i64, before.created]).map_err(write_error)?;
                 replace_rows(&transaction, step.id, &before.rows)?;
             }
             None => {
@@ -181,8 +184,8 @@ impl AndroidPlayer {
         refuse_duplicate(&transaction, &name, 0)?;
         transaction
             .execute(
-                "INSERT INTO playlists(name, folded) VALUES (?1, ?2)",
-                params![name, folded(&name)],
+                "INSERT INTO playlists(name, folded, created) VALUES (?1, ?2, ?3)",
+                params![name, folded(&name), created_now()],
             )
             .map_err(write_error)?;
         let id = transaction.last_insert_rowid() as u64;
@@ -255,7 +258,15 @@ fn valid_name(name: &str) -> Result<String> {
     Ok(name.nfc().collect())
 }
 
-fn folded(name: &str) -> String {
+pub(crate) fn created_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or_default()
+}
+
+pub(crate) fn folded(name: &str) -> String {
     name.to_lowercase().nfc().collect()
 }
 
@@ -275,18 +286,19 @@ fn refuse_duplicate(connection: &Connection, name: &str, except: u64) -> Result<
 }
 
 fn saved_playlist(connection: &Connection, id: u64) -> Result<Option<SavedPlaylist>> {
-    let row: Option<(String, i64)> = connection
+    let row: Option<(String, i64, i64)> = connection
         .query_row(
-            "SELECT name, revision FROM playlists WHERE id = ?1",
+            "SELECT name, revision, created FROM playlists WHERE id = ?1",
             [id as i64],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(read_error)?;
-    row.map(|(name, revision)| {
+    row.map(|(name, revision, created)| {
         Ok(SavedPlaylist {
             name,
             revision: revision as u64,
+            created,
             rows: playlist_rows(connection, id)?,
         })
     })
@@ -304,7 +316,7 @@ fn playlist_rows(connection: &Connection, id: u64) -> Result<Vec<u64>> {
         .map_err(read_error)
 }
 
-fn replace_rows(connection: &Connection, id: u64, rows: &[u64]) -> Result<()> {
+pub(crate) fn replace_rows(connection: &Connection, id: u64, rows: &[u64]) -> Result<()> {
     connection
         .execute("DELETE FROM playlist_rows WHERE playlist = ?1", [id as i64])
         .map_err(write_error)?;
@@ -328,7 +340,7 @@ fn write_error(source: rusqlite::Error) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Arc};
+    use std::{env, path::Path, sync::Arc};
 
     use parking_lot::Mutex;
     use resonate_codec::Sources;
@@ -339,7 +351,7 @@ mod tests {
     fn player() -> AndroidPlayer {
         AndroidPlayer {
             player: Mutex::new(None),
-            catalog: Catalog::open(Path::new(":memory:")).expect("a catalog"),
+            catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources: Arc::new(Sources::local()),
             failure: Mutex::new(None),
             saved: Mutex::new(None),
@@ -347,6 +359,7 @@ mod tests {
             services: Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
             downloads: crate::downloads::Downloads::default(),
+            syncing: crate::sync::Syncing::under(env::temp_dir()),
         }
     }
 

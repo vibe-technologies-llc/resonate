@@ -27,12 +27,16 @@ class DownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         library.retain()
+        library.features.transferServiceRunning.value = true
         notifications.createNotificationChannel(
             NotificationChannel("downloads", "Music downloads", NotificationManager.IMPORTANCE_LOW)
         )
         startForeground(2, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         scope.launch {
-            while (isActive && library.features.downloading.value) {
+            while (
+                isActive &&
+                    (library.features.downloading.value || library.features.transferring.value)
+            ) {
                 notifications.notify(2, notification())
                 delay(1000)
             }
@@ -54,6 +58,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        library.features.transferServiceRunning.value = false
         scope.cancel()
         library.release()
         super.onDestroy()
@@ -74,15 +79,28 @@ class DownloadService : Service() {
                 Intent(this, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-        return Notification.Builder(this, "downloads")
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+        val builder =
+            Notification.Builder(this, "downloads")
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setProgress(0, 0, true)
+        if (!library.features.downloading.value) {
+            val moving = library.features.syncStatus.value?.moving ?: 0u
+            return builder
+                .setContentTitle("Resonate · device sync")
+                .setContentText(
+                    if (moving > 0u)
+                        "Moving $moving ${if (moving == 1u) "song" else "songs"} between your devices"
+                    else "Keeping songs from your devices"
+                )
+                .build()
+        }
+        return builder
             .setContentTitle("Resonate · music download")
             .setContentText(
                 "${library.features.downloadStatus.value.orEmpty()} · ${library.features.downloadedBytes.value / 1024uL} KiB"
             )
-            .setContentIntent(open)
-            .setOngoing(true)
-            .setProgress(0, 0, true)
             .addAction(Notification.Action.Builder(null, "Cancel", cancel).build())
             .build()
     }

@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.resonate.android.nativecore.MusicPlaylist
+import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.Track
 
 @Composable
@@ -63,6 +64,8 @@ fun PlaylistScreen(
     val selected by library.features.openPlaylist.collectAsState()
     val tracks by library.features.playlistRows.collectAsState()
     val snapshot by library.snapshot.collectAsState()
+    val syncStatus by library.features.syncStatus.collectAsState()
+    val playlistSync by library.features.playlistSync.collectAsState()
     val playlist = playlists.find { it.id == id }
     val rows = if (selected == id) tracks else emptyList()
     var menu by remember { mutableStateOf(false) }
@@ -78,7 +81,14 @@ fun PlaylistScreen(
     LaunchedEffect(playlist, selected) {
         if (playlist != null) available = true else if (available && selected == null) back()
     }
+    LaunchedEffect(menu) { if (menu) library.features.loadPlaylistSync(id) }
     if (playlist == null) return
+    val syncing = syncStatus?.standing.let { it != null && it != SyncStanding.OFF }
+    val synced = playlistSync?.takeIf { it.playlist == id }
+    val lenders =
+        if (syncStatus?.standing == SyncStanding.CONNECTED)
+            syncStatus?.devices.orEmpty().filter { it.online && !it.thisDevice }
+        else emptyList()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") {
             CollectionHeader(
@@ -126,6 +136,31 @@ fun PlaylistScreen(
                                 deleting = true
                             },
                         )
+                        if (synced != null && synced.missing > 0u)
+                            lenders.forEach { device ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Fetch ${synced.missing} missing ${if (synced.missing == 1u) "song" else "songs"} from ${device.name}"
+                                        )
+                                    },
+                                    onClick = {
+                                        menu = false
+                                        library.features.fetchMissing(id, device.name)
+                                    },
+                                )
+                            }
+                        if (syncing)
+                            DropdownMenuItem(
+                                text = { Text("Keep its songs here") },
+                                trailingIcon = {
+                                    Checkbox(checked = synced?.kept == true, onCheckedChange = null)
+                                },
+                                onClick = {
+                                    menu = false
+                                    library.features.keepSongs(id, synced?.kept != true)
+                                },
+                            )
                     }
                 }
             }

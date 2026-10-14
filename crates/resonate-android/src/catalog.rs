@@ -2,13 +2,18 @@ use std::{
     fs::{self, File},
     io,
     path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use parking_lot::Mutex;
 use resonate_core::{naming::named_within, writer::Held};
 use rusqlite::{
-    Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags, params,
+    Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags, hooks::Action,
+    params,
 };
 
 use crate::{Error, Result, StoreOp, Track};
@@ -53,9 +58,15 @@ const V4: &str =
 
 const V5: &str = "CREATE TABLE wanted (id INTEGER PRIMARY KEY, identity TEXT NOT NULL UNIQUE, recording TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, duration_ms INTEGER, isrcs TEXT NOT NULL, added INTEGER NOT NULL DEFAULT (unixepoch())) STRICT;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
+const V6: &str = "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playlists ADD COLUMN created INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE received (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, extension TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, recording TEXT, duration_ms INTEGER) STRICT;";
 
-pub(crate) struct Catalog(pub(crate) Mutex<Connection>);
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+
+const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
+
+pub(crate) struct Catalog(pub(crate) Mutex<Connection>, Arc<AtomicU64>);
 
 impl Catalog {
     pub(crate) fn open(path: &Path) -> Result<Self> {
@@ -104,7 +115,24 @@ impl Catalog {
         connection
             .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
             .map_err(|source| Error::store(StoreOp::Open, source))?;
-        Ok(Self(Mutex::new(connection)))
+        let revision = Arc::new(AtomicU64::new(0));
+        let written = Arc::clone(&revision);
+        connection
+            .update_hook(Some(
+                move |action: Action, _database: &str, table: &str, _row: i64| {
+                    if TABLES_SYNC_READS.contains(&table)
+                        || (table == "listens" && action != Action::SQLITE_UPDATE)
+                    {
+                        written.fetch_add(1, Ordering::AcqRel);
+                    }
+                },
+            ))
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        Ok(Self(Mutex::new(connection), revision))
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.1.load(Ordering::Acquire)
     }
 
     pub(crate) fn upsert(&self, track: Track) -> Result<Track> {
@@ -446,6 +474,66 @@ mod migration_tests {
             Some("[00:01.00]Words")
         );
         drop(reopened);
+        fs::remove_file(path).expect("remove the test catalog");
+        fs::remove_file(kept).expect("remove the test backup");
+    }
+
+    #[test]
+    fn a_fifth_android_catalog_is_backed_up_and_its_listens_and_playlists_carried_into_sync() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-migration-v5-{unique}.sqlite"));
+        let old = Connection::open(&path).expect("a fifth catalog");
+        for migration in [V1, V2, V3, V4, V5] {
+            old.execute_batch(migration).expect("a shipped schema step");
+        }
+        old.execute_batch("PRAGMA user_version = 5; INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite) VALUES (4, 'content://test/song.flac', 'song.flac', 'Song', 'Artist', 'Album', 30000, 44100, 'FLAC', 1); INSERT INTO listens (id, track, began, heard_ms, counted) VALUES (9, 4, 1700000000, 30000, 1); INSERT INTO playlists (id, name, folded, revision) VALUES (2, 'Evening', 'evening', 3); INSERT INTO playlist_rows VALUES (2, 0, 4); INSERT INTO submissions VALUES ('listenbrainz', 9);").expect("a listen, a playlist and a scrobbling mark");
+        drop(old);
+
+        let catalog = Catalog::open(&path).expect("a migrated catalog");
+        let connection = catalog.0.lock();
+
+        let listen: (i64, i64) = connection
+            .query_row(
+                "SELECT counted, elsewhere FROM listens WHERE id = 9",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("the kept listen");
+        let playlist: (String, i64, i64) = connection
+            .query_row(
+                "SELECT name, revision, created FROM playlists WHERE id = 2",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the kept playlist");
+        let waiting: i64 = connection
+            .query_row("SELECT count(*) FROM received", [], |row| row.get(0))
+            .expect("the received songs table");
+        let mark: i64 = connection
+            .query_row("SELECT through FROM submissions", [], |row| row.get(0))
+            .expect("the kept scrobbling mark");
+
+        assert_eq!(listen, (1, 0));
+        assert_eq!(playlist, ("Evening".to_owned(), 3, 0));
+        assert_eq!(waiting, 0);
+        assert_eq!(mark, 9);
+
+        drop(connection);
+        drop(catalog);
+        let kept = path.with_file_name(named_within(
+            "",
+            path.file_name().expect("a filename"),
+            ".before-v5",
+        ));
+        let backup = Connection::open(&kept).expect("the previous catalog");
+        let version: u32 = backup
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("a backup version");
+        assert_eq!(version, 5);
+        drop(backup);
         fs::remove_file(path).expect("remove the test catalog");
         fs::remove_file(kept).expect("remove the test backup");
     }

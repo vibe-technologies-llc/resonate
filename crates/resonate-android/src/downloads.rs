@@ -170,10 +170,7 @@ impl AndroidPlayer {
     }
 
     pub fn download_offer(&self, id: u64, descriptor: i32) -> Result<u64> {
-        if descriptor < 0 {
-            return Err(Error::InvalidDescriptor);
-        }
-        let mut output = unsafe { File::from_raw_fd(descriptor) };
+        let mut output = fresh_destination(descriptor)?;
         self.require_online()?;
         if self.downloads.cancelled.load(Ordering::Relaxed) {
             return Err(Error::DownloadCancelled);
@@ -301,4 +298,11 @@ impl AndroidPlayer {
         }
         Ok(())
     }
+}
+
+pub(crate) fn fresh_destination(descriptor: i32) -> Result<File> {
+    if descriptor < 0 {
+        return Err(Error::InvalidDescriptor);
+    }
+    Ok(unsafe { File::from_raw_fd(descriptor) })
 }

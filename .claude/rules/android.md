@@ -25,7 +25,8 @@ key or password stored in the repository.
 approved for the native boundary. UniFFI generates the FFI scaffolding; the handwritten unsafe
 operation takes ownership of the file descriptor detached by Kotlin's `ParcelFileDescriptor`.
 A descriptor is transferred once and closed by Rust's `File`; a negative descriptor is refused.
-The same transfer owns a newly created download destination, never an existing music document.
+The same transfer (`downloads::fresh_destination`) owns a newly created download or received-song
+destination, never an existing music document.
 Domain, codec, DSP, engine and all other workspace crates remain under `forbid`. Kotlin bindings
 are generated under `app/build/`, never checked in or edited. New errors are typed and bounded as
 in `errors.md`; only the foreign presentation flattens their display text for Kotlin.
@@ -86,7 +87,9 @@ An upgrade checks the existing catalog and keeps a synced `VACUUM INTO` backup u
 file before one immediate transaction applies the remaining steps. V2 adds metadata, cached
 artwork/lyrics, listening history and study summaries; V3 adds document playlists; V4 stores
 independent successful-submission positions for ListenBrainz and Last.fm. V5 adds saved wanted
-recordings, separate from playable documents.
+recordings, separate from playable documents. V6 adds `listens.elsewhere` (another device's listen),
+`playlists.created` (0 for playlists made before it, a nanosecond stamp after; undo restores it) and
+`received`, the songs another device sent that wait for a document.
 Rescanning upserts by the full URI; it never deletes rows on an unavailable or revoked grant.
 Queries page at most 500 rows at a time. Folder traversal stops at depth 32 and admits the same
 extensions as core. The queue resumes paused through the engine's `Resumption` command, so the
@@ -223,6 +226,43 @@ only that newly created document, including journal recovery on the next start. 
 deliveries retain the selected recording identity and fill missing catalog names without writing
 tags, so an untagged file is still recognised as a held want. A rescan preserves those names
 when the document supplies none.
+
+## Device sync
+
+`sync.rs` is the bridge to `resonate-sync`: `DocumentCatalog` implements its `Catalog` over the
+document catalog, and `AndroidPlayer` holds at most one running `Sync`, started and stopped as a
+whole (`sync_start` leaves the previous one first; `shutdown` stops it before anything else). Its
+ledger is `sync.sqlite` and its staging folder `sync-staging`, both beside `documents.sqlite`.
+A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encrypted beside the
+provider accounts, with the other choices (enabled, server, device name, the three follow switches,
+mobile data) in plain preferences. Sync is on unless switched off and runs only while online is.
+A setting change restarts it.
+
+A song is found by recording id, else by folded artist, title words, album when named and a length
+within 2 s, the desktop rule; the lookup reads an in-memory index rebuilt whenever the catalog
+revision moves. That revision is an update hook over `documents`, `playlists`, `playlist_rows`,
+`received` and inserted or deleted `listens`. A synced playlist write replaces its rows, takes a free
+name and steps `playlists.revision`, so an undo step from before it is refused as changed. Only this
+device's counted listens are offered, the newest one only once 15 minutes old; another device's
+listen is kept with `elsewhere = 1`, counts in history and statistics and is never scrobbled.
+A holding's size is reported as 0, since a document row carries none; a song is served through the
+`content` media provider's own descriptor.
+
+A song from another device cannot be written through SAF from Rust: `land` moves the staged file into
+app-private `sync-received`, notes it in `received` and answers that it landed, and `holds` counts a
+waiting song as held so it is not asked for twice. Kotlin polls `sync_received`, creates a document in
+the chosen writable music folder (the first one unless chosen), journals its URI as
+`unfinished-sync-landing`, and hands the fresh descriptor to `sync_receive`, which copies the bytes,
+validates and indexes the document as a download is, and forgets the waiting song whether or not that
+succeeded; a failed landing deletes only the new document and pauses landing for a minute.
+
+`ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
+move only on an unmetered network unless mobile data is allowed. Kotlin polls the status every two
+seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
+`SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait.
+Playlist menus offer fetching their missing songs from each online device and keeping their songs
+here; the queue offers continuing what another device was playing, starting it through the Media3
+controller when that device was playing.
 
 Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 
