@@ -95,6 +95,20 @@ uids and shuffle/jump/save resolve the document through its raw URI. A save comp
 queue revision and place: an unchanged save writes nothing, a moved place updates the singleton
 row alone, and only a changed queue rewrites its entries.
 
+The queue is edited in place by `queue_edit.rs`, every edit an engine queue command, so the playing
+row keeps playing at its position and the revision moves for the next save. `play_next` inserts
+catalog documents as `Placement::Next` (right after the playing row); `add_to_queue` appends them
+(`Placement::At` the queue's length, after the rest of the loaded order, unlike the desktop's
+`Queued`); both build rows as `load` does, and into an empty queue they arrive paused on its first
+row through `Resumption`. `remove_from_queue` names the row by the queue snapshot's `queue_id`;
+removing the playing row moves on as the engine's removal does. `move_in_queue(from, to)` takes
+SwiftUI's `onMove` convention, `to` being the row it lands before counted before the move (the
+queue's length for the end), turned into the engine's landing row. `clear_queue` keeps the playing
+row alone (Apple Music's Clear empties Up Next), everything where nothing is current. Each edit
+reads the queue's revision and is refused `QueueChanged` if it moved before the command lands; an
+unknown queue id is `UnknownQueueRow`, a row or gap outside the queue `QueueRowOutOfRange`, a
+closed player `Closed`. An edit waits for the engine's answer, so the next `queue()` shows it.
+
 ## Appearance and playback tools
 
 Compose uses Material 3 dynamic color schemes from the Android system, selected with the system's
