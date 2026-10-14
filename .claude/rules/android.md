@@ -15,6 +15,12 @@ compilation. Python 3, Cargo and both Rust Android targets must be installed on 
 `resonate-bindgen` runs on the host and reads metadata from the Android library without loading
 it; building the Android app needs no host PipeWire installation.
 
+Each APK variant owns its native build task. Release uses Cargo's release profile, including
+optimization and thin LTO, in a separate generated directory; it never packages
+the debug variant's native libraries. Native symbols remain until binding generation finishes;
+Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
+key or password stored in the repository.
+
 `resonate-android` is the sole exception to the workspace's unsafe prohibition, explicitly
 approved for the native boundary. UniFFI generates the FFI scaffolding; the handwritten unsafe
 operation takes ownership of the file descriptor detached by Kotlin's `ParcelFileDescriptor`.

@@ -42,3 +42,10 @@ fuzz/coverage/
 /android/.cargo-target/
 /android/local.properties
 /android/**/build/
+*.keystore
+*.jks
+*.p12
+*.pfx
+/android/**/key.properties
+/android/**/keystore.properties
+/android/**/signing.properties

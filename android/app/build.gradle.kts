@@ -29,6 +29,7 @@ abstract class RustBuild : DefaultTask() {
     @get:OutputDirectory abstract val nativeDirectory: DirectoryProperty
     @get:Internal abstract val sdkDirectory: DirectoryProperty
     @get:Internal abstract val repository: DirectoryProperty
+    @get:Input abstract val profile: Property<String>
     @get:Inject abstract val execution: ExecOperations
 
     @TaskAction
@@ -40,30 +41,36 @@ abstract class RustBuild : DefaultTask() {
                 repository.file("android/build-native.py").get().asFile,
                 "--sdk",
                 sdkDirectory.get().asFile.absolutePath,
+                "--profile",
+                profile.get(),
+                "--output",
+                kotlinDirectory.get().asFile.parentFile.absolutePath,
             )
         }
     }
 }
 
-val buildRust by
-    tasks.registering(RustBuild::class) {
-        repository.set(rootProject.layout.projectDirectory.dir(".."))
-        sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
-        inputs.files(
-            fileTree(repository.dir("crates")) {
-                include("**/*.rs", "**/Cargo.toml", "**/uniffi.toml")
-            }
-        )
-        inputs.files(
-            repository.file("Cargo.toml"),
-            repository.file("Cargo.lock"),
-            repository.file("android/build-native.py"),
-        )
-        kotlinDirectory.set(layout.buildDirectory.dir("generated/uniffi"))
-        nativeDirectory.set(layout.buildDirectory.dir("generated/jniLibs"))
-    }
-
 androidComponents.onVariants { variant ->
+    val release = variant.buildType == "release"
+    val generated = layout.buildDirectory.dir(if (release) "generated/release" else "generated")
+    val buildRust =
+        tasks.register<RustBuild>("buildRust${variant.name.replaceFirstChar { it.uppercase() }}") {
+            repository.set(rootProject.layout.projectDirectory.dir(".."))
+            sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
+            profile.set(if (release) "release" else "debug")
+            inputs.files(
+                fileTree(repository.dir("crates")) {
+                    include("**/*.rs", "**/Cargo.toml", "**/uniffi.toml")
+                }
+            )
+            inputs.files(
+                repository.file("Cargo.toml"),
+                repository.file("Cargo.lock"),
+                repository.file("android/build-native.py"),
+            )
+            kotlinDirectory.set(generated.map { it.dir("uniffi") })
+            nativeDirectory.set(generated.map { it.dir("jniLibs") })
+        }
     variant.sources.java?.addGeneratedSourceDirectory(buildRust) { it.kotlinDirectory }
     variant.sources.jniLibs?.addGeneratedSourceDirectory(buildRust) { it.nativeDirectory }
 }
