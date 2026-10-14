@@ -24,6 +24,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
 
 ## Testing
+- [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
+  mobile network and a Linux desktop, have not been driven against a live server
 - [M] The MPRIS bus tests skip without a session bus and CI's `cargo test` gives them none, so all
   but the `dbus-run-session` ones pass having run nothing
 - [S] `downgrade`, `MAX_RENEGOTIATIONS` and `Error::Renegotiation` are untested (the only
@@ -51,6 +53,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
 
 ## Later: Packaging
+- [S] No package builds `resonate-server`; `packaging/server/` holds only its systemd unit
 - [M · blocked: gpui] Gpui 0.2.2 pulls `stacksafe` 0.1 and with it `proc-macro-error2`, whose
   `E0365` future-incompatibility warning becomes a hard error in a future rustc; `stacksafe` 1.x
   dropped it and Zed's `main` uses that, so only a git gpui or a vendored `[patch]` of

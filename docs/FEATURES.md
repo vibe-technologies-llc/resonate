@@ -47,6 +47,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   so a song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome
   only
 
+## Device sync
+- [M] A changed sync setting, or a code joined in the pane, takes effect only at the next start
+- [M] Saved-query playlists stay on the device they were saved on; only lists travel
+- [S] A handoff continues from the song the other device was on, not from its place in that song
+- [S] A song from another device is refused where no music folder is set; an open vault does not
+  keep it
+- [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
+- [L] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
+  them
+- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, devices meet
+  only through a self-hosted `resonate-server`
+
 ## Command line and bus
 - [M] The command line cannot mark a favourite, want a track or dismiss a missing one; only the
   window and MCP can
