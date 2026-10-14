@@ -16,7 +16,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name, notifications, the idle inhibit, `Running` |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
-| `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs` | the vocabulary, the provider seam, the LRC reader |
+| `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `autoeq.rs`, the equaliser panes | the vocabulary, the biquads, the per-sink binding, the formats, AutoEq |
 | `ui.md` | resonate-ui | chrome, input, drawing, the palettes, panes |
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |

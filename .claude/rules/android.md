@@ -193,8 +193,9 @@ the last week/month/year. Document playlists preserve repeated songs, use revisi
 position edits, and have bounded in-session undo; they never invent Linux paths.
 
 Lyrics prefer saved embedded/sidecar text, fetch LRCLIB only when online, and retain a richer saved
-sheet over a poorer answer or failed refresh. Native `line_at` and `voices_in_play` drive Compose
-line/word highlights, scrolling, scale, opacity and blur; tapping a timed line seeks the player.
+sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;
+Compose reads its `line` and `active` today) drives line/word highlights, scrolling, scale, opacity
+and blur; tapping a timed line seeks the player.
 Analysis uses the shared whole-track pass for waveform, spectrum, lossless assessment, LUFS, DR,
 true peak, clipping and bit use. Eight full results are cached in memory, invalidated on rescan;
 summary studies are persisted. A `Watch` cancels decoding. The live visualizer subscribes to the

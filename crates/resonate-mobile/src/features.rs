@@ -7,22 +7,21 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::Watch;
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::{Mbid, SourceId, folded_letters};
+use resonate_core::{Mbid, folded_letters};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
-    Fingerprints, LookupOp, LyricsAsked, Printed, RecordingAsked, RecordingMatch, Reference,
-    SongLink, Sounded, Wording,
+    Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, Reference, SongLink, Sounded,
+    Wording,
 };
-use resonate_lyrics::{Lyrics, read_lyrics, read_lyricsfile};
 use resonate_online::{Identity, Online};
 use rusqlite::params;
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, documents::location};
+use crate::{Error, MobilePlayer, Result, StoreOp, Track, documents::location, lyrics::KeptSheets};
 
 pub(crate) struct Services {
     pub(crate) online: Online,
     pub(crate) auto_eq: resonate_online::AutoEq,
-    lyrics: Mutex<BTreeMap<u64, Arc<Lyrics>>>,
+    pub(crate) lyrics: KeptSheets,
     analysis: Mutex<Option<Arc<Watch>>>,
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
     listening: Mutex<(Listening, Option<i64>)>,
@@ -36,7 +35,7 @@ impl Default for Services {
         Self {
             online,
             auto_eq,
-            lyrics: Mutex::new(BTreeMap::new()),
+            lyrics: KeptSheets::default(),
             analysis: Mutex::new(None),
             analyses: Mutex::new(BTreeMap::new()),
             listening: Mutex::new((Listening::default(), None)),
@@ -78,35 +77,6 @@ pub struct LibraryStatistics {
     pub plays: u64,
     pub listened_ms: u64,
     pub top_tracks: Vec<Track>,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct LyricWord {
-    pub text: String,
-    pub at_ms: u64,
-    pub until_ms: Option<u64>,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct LyricRow {
-    pub text: String,
-    pub at_ms: Option<u64>,
-    pub until_ms: Option<u64>,
-    pub voice: u32,
-    pub words: Vec<LyricWord>,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct LyricSheet {
-    pub track_id: u64,
-    pub origin: String,
-    pub lines: Vec<LyricRow>,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct LyricFrame {
-    pub line: Option<u32>,
-    pub active: Vec<u32>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -231,141 +201,6 @@ impl MobilePlayer {
             comment: info.tags.comment.unwrap_or_default(),
             isrc: info.tags.isrc.unwrap_or_default(),
         })
-    }
-
-    pub fn keep_lyric_text(&self, id: u64, text: String) -> Result<()> {
-        let parsed = read_lyrics(SourceId::new("embedded")?, &text)?;
-        if let Some(parsed) = parsed {
-            let previous = self.cached_lyrics(id)?;
-            if previous
-                .as_ref()
-                .is_none_or(|held| parsed.detail() > held.detail())
-            {
-                self.catalog
-                    .keep_lyrics(id, Some(&text), None, "embedded")?;
-                self.remember_lyrics(id, parsed);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn keep_sidecar_lyrics(&self, id: u64, bytes: Vec<u8>) -> Result<()> {
-        let track = self.catalog.track(id)?;
-        let mut wanted = resonate_lyrics::Wanted::for_media(location(&track.uri)?);
-        wanted.title = Some(track.title);
-        wanted.artist = Some(track.artist);
-        wanted.duration =
-            (track.duration_ms > 0).then_some(Duration::from_millis(track.duration_ms));
-        if let Some(lyrics) =
-            resonate_lyrics::read_sidecar(SourceId::new("sidecar")?, &bytes, &wanted)?
-        {
-            let previous = self.cached_lyrics(id)?;
-            if previous
-                .as_ref()
-                .is_none_or(|held| lyrics.detail() >= held.detail())
-            {
-                self.catalog.keep_lyrics(
-                    id,
-                    Some(&resonate_core::text::decoded(&bytes).0),
-                    None,
-                    "sidecar",
-                )?;
-                self.remember_lyrics(id, lyrics);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn lyrics(&self, id: u64, refresh: bool) -> Result<LyricSheet> {
-        let track = self.catalog.track(id)?;
-        let cached = self.cached_lyrics(id)?;
-        if self.services.online.client().is_reaching()
-            && (refresh || self.catalog.lyric_text(id)?.is_none())
-        {
-            let answer = self
-                .services
-                .online
-                .lyrics(&LyricsAsked {
-                    title: track.title,
-                    artist: track.artist,
-                    album: (!track.album.is_empty()).then_some(track.album),
-                    length: (track.duration_ms > 0)
-                        .then_some(Duration::from_millis(track.duration_ms)),
-                })
-                .map_err(|source| Error::reference(LookupOp::Lyrics, source));
-            match answer {
-                Ok(Some(answer)) => {
-                    let parsed =
-                        parse_lyrics(&answer.text, answer.lyricsfile.as_deref(), "lrclib")?;
-                    if let Some(parsed) = parsed
-                        && cached
-                            .as_ref()
-                            .is_none_or(|held| parsed.detail() >= held.detail())
-                    {
-                        self.catalog.keep_lyrics(
-                            id,
-                            Some(&answer.text),
-                            answer.lyricsfile.as_deref(),
-                            "lrclib",
-                        )?;
-                        self.remember_lyrics(id, parsed);
-                    }
-                }
-                Ok(None) if cached.is_none() => {
-                    self.catalog.keep_lyrics(id, None, None, "lrclib")?
-                }
-                Ok(None) => {}
-                Err(error) if cached.is_none() => return Err(error),
-                Err(error) => tracing::debug!(%error, "cached lyrics cover a refused lookup"),
-            }
-        }
-        let lyrics = self.cached_lyrics(id)?;
-        Ok(LyricSheet {
-            track_id: id,
-            origin: lyrics
-                .as_ref()
-                .map_or_else(String::new, |lyrics| lyrics.source().to_string()),
-            lines: lyrics.map_or_else(Vec::new, |lyrics| {
-                lyrics
-                    .lines()
-                    .iter()
-                    .map(|line| LyricRow {
-                        text: line.text.clone(),
-                        at_ms: line.at.map(milliseconds),
-                        until_ms: line.until.map(milliseconds),
-                        voice: line.voice.index() as u32,
-                        words: line
-                            .words
-                            .iter()
-                            .map(|word| LyricWord {
-                                text: word.text.clone(),
-                                at_ms: milliseconds(word.at),
-                                until_ms: word.until.map(milliseconds),
-                            })
-                            .collect(),
-                    })
-                    .collect()
-            }),
-        })
-    }
-
-    pub fn lyric_frame(&self, id: u64, position_ms: u64) -> LyricFrame {
-        let held = self.services.lyrics.lock();
-        let lyrics = held.get(&id);
-        let position = Duration::from_millis(position_ms);
-        LyricFrame {
-            line: lyrics
-                .and_then(|lyrics| lyrics.line_at(position))
-                .map(|line| line as u32),
-            active: lyrics.map_or_else(Vec::new, |lyrics| {
-                lyrics
-                    .voices_in_play(position)
-                    .into_iter()
-                    .flatten()
-                    .map(|line| line as u32)
-                    .collect()
-            }),
-        }
     }
 
     pub fn analyse_track(&self, id: u64) -> Result<AnalysisReport> {
@@ -714,26 +549,6 @@ impl MobilePlayer {
         }
     }
 
-    fn cached_lyrics(&self, id: u64) -> Result<Option<Arc<Lyrics>>> {
-        if let Some(lyrics) = self.services.lyrics.lock().get(&id).cloned() {
-            return Ok(Some(lyrics));
-        }
-        if let Some((Some(text), document, origin)) = self.catalog.lyric_text(id)?
-            && let Some(lyrics) = parse_lyrics(&text, document.as_deref(), &origin)?
-        {
-            self.remember_lyrics(id, lyrics);
-        }
-        Ok(self.services.lyrics.lock().get(&id).cloned())
-    }
-
-    fn remember_lyrics(&self, id: u64, lyrics: Lyrics) {
-        let mut held = self.services.lyrics.lock();
-        if held.len() >= 16 {
-            held.pop_first();
-        }
-        held.insert(id, Arc::new(lyrics));
-    }
-
     pub(crate) fn count_listening(
         &self,
         state: &resonate_engine::PlayerState,
@@ -781,18 +596,7 @@ impl MobilePlayer {
     }
 }
 
-fn parse_lyrics(text: &str, document: Option<&str>, origin: &str) -> Result<Option<Lyrics>> {
-    let source = SourceId::new(origin)?;
-    if let Some(document) = document
-        && let Ok(read) = read_lyricsfile(source.clone(), document)
-        && read.lyrics.is_some()
-    {
-        return Ok(read.lyrics);
-    }
-    Ok(read_lyrics(source, text)?)
-}
-
-fn milliseconds(duration: Duration) -> u64 {
+pub(crate) fn milliseconds(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
