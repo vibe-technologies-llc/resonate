@@ -11,6 +11,7 @@ mod output;
 mod playback;
 mod playlists;
 mod queue_edit;
+mod search;
 mod sync;
 
 use std::{

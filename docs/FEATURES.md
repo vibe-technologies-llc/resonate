@@ -86,6 +86,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] AutoEq's suggestion takes the first measurer `INDEX.md` lists for a device, none ranked
 
 ## Search
+- [S] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor
+  for `is:fake`, `is:suspect` and `is:misnamed` (studies stay outside the index and its revision)
 - [M] A pasted TIDAL playlist link is taken as words; a Spotify playlist is read off its embed page
   and a YouTube one off its public page, each listing at most its first hundred songs, and an Apple
   Music one off its public page, none naming an ISRC
