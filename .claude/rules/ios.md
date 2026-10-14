@@ -42,8 +42,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   long native calls (analysis, search, downloads, sync) run on `Work.aside`, never the main actor.
   A 250 ms poll reads the snapshot and queue and saves every 20th tick, as Android does.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
-  same 30 s scrobbling loop, 2 s / 30 s sync polling, the same download and sync-landing journal
-  (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start). Every busy flag
+  same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
+  (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`
+  (below), each `@MainActor @Observable` and created lazily. Every busy flag
   is cleared in `work`'s `finally`, which runs on every path, a failed `library.player()` included;
   it clears only while its own generation is current. The Inspector's artist lookup
   (`inspectorArtist`, an `ArtistLookup`) is its own state, apart from the online search page's
@@ -83,8 +84,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
   queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in
   `_dispatch_assert_queue_fail`. Such a closure is built in a `nonisolated` function or marked
-  `@Sendable` (`NowPlaying.artwork`, `Features.watchNetwork`); `MainActor.assumeIsolated` only where
-  the framework delivers on the main thread (remote commands, notifications on `.main`).
+  `@Sendable` (`NowPlaying.artwork`, `Features.watchNetwork`, `BackgroundHold.expiry`);
+  `MainActor.assumeIsolated` only where the framework delivers on the main thread (remote commands,
+  notifications on `.main`, an expiration handler that finds itself on the main thread).
 - Secrets (provider credentials, scrobbling, AcoustID key, sync key) live in the keychain,
   `AfterFirstUnlockThisDeviceOnly`; plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
@@ -130,6 +132,71 @@ visualizer and the album and playlist pages.
   uniform size the shader does not expect is logged in full at `.error` under subsystem
   `org.resonate.ios`, category `backdrop` (a successful compile logs its time at `.notice`), and the
   view draws two radial gradients from the palette's first two colours.
+
+## Artwork and details
+
+- **The background lookup starts itself** (`Enrichment.swift`): `Enrichment.begin` asks
+  `start_enrichment` once the player opens (`Features.initialize`), after a scan
+  (`Features.scanned`), after songs land from another device or a download, when online features
+  turn on and when the network becomes unmetered. It is refused while "Fetch artwork and details
+  automatically" is off (`enrich-automatically`, on by default) or, with "Only on Wi-Fi"
+  (`enrich-unmetered`, off by default), while the path `NWPathMonitor` reports is expensive or
+  constrained; a metered network then stops the pass. Both keys live in the `library-features`
+  suite. Each start also seeks the playing song, and `Features.tick` hands every song change to
+  `Enrichment.playing`, which calls `seek_enrichment` while a pass runs.
+- **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
+  cancels the poll (the pass goes on in Rust), coming back reads the status once and resumes it.
+  The line reads "Finding artwork and details · N of M", "Artwork and details up to date" or the
+  `EnrichmentStop` in words; a finished pass refreshes the library once. Settings' *Artwork and
+  details* group (shown while online) holds both toggles, "Look again for missing covers"
+  (`ask_again_for_covers`, then a start), the line and Stop. Library tools' "Refresh artwork and
+  details" confirms with the song count, stops any pass and starts one with `refresh`, and offers
+  Stop while it runs. The Inspector's button is the one-song `enrich_track`; no lookup posts a
+  banner per song.
+- **Pictures refresh by the changed-art revision**: every status poll, scan, landing and
+  single-song lookup asks `art_changed_since` from the last revision (the first answer only sets
+  the baseline); the named songs alone are evicted from the cache and their entry in
+  `Features.artGenerations` bumped, which `ArtworkView` and the backdrop key their `.task` on. A
+  rise in `portraits` bumps `portraitGeneration` and forgets the kept portraits.
+- **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself
+  (`onGeometryChange`), multiplies by the display scale and rounds up to a bucket of 96, 192, 384,
+  768 or 1024 px; an entry is keyed by song (or portrait), art revision, generation and bucket.
+  `CGImageSourceCreateThumbnailAtIndex` decodes on `Work.aside` with the bucket as its largest
+  edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
+  that disappears leaves its wait, and the last to leave cancels a decode still waiting for a
+  slot. Pictures cost their bitmap bytes against 32 MiB (a 96 px row about 36 KiB); a song
+  without a picture is remembered as missing until its art changes. A circular `ArtworkView`
+  (`portraitOf:`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
+  first and falls back to the album's picture.
+
+## Downloads
+
+- **`DownloadQueue` runs jobs by the boundary's job number** (`DownloadQueue.swift`): `enqueue`
+  begins one job per song not already queued (`begin_download`), two run at once and the rest
+  wait. A job asks `find_download` with every ready account (the keychain keeps one today; a
+  Subsonic account needs a server and user, TIDAL a client ID and refresh token), keeps a renewed
+  TIDAL token, creates the destination with `Folders.fresh` on `Work.aside`, journals its URI,
+  copies (`download_offer`), indexes (`index_download`), drops the journal entry, seeks the new
+  song in the lookup and refreshes the library, the wants and the changed art. With no ready
+  account nothing is begun and the downloads row offers "Set up a download provider".
+- **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
+  provider gave a length, else the bytes received. Cancel calls `cancel_download` for that job
+  alone; a failed or cancelled job deletes only the document it created and shows the boundary's
+  sentence (`explained`) on its row, never in the banner, with "Try again"; a finished one offers
+  Play and Go to album.
+- **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
+  held, each row has Download and Remove, a held row reads "In your library", and pulling to
+  refresh reads the matches again. Online search's song rows enqueue one song.
+- **The journal is a list**: `unfinished-download` holds the URIs of every job's document still
+  being written, removed one by one as each lands or is deleted; on the next start each is deleted,
+  and a single string left by an older build is read as a list of one.
+- **The destination is remembered**: `download-folder` in `library-features`; the folder sheet
+  appears only when none is kept or it is no longer readable and writable, with "Remember this
+  folder" on by default; Downloads offers "Ask for a folder each time".
+- **One background task is held while a job runs** (`BackgroundHold`, also the sync transfers'
+  hold): its expiration handler, built `nonisolated`, cancels every running job and pauses the
+  waiting ones until the scene is active again, so each cancelled job still deletes its document
+  and its journal entry, or the next start does.
 
 ## Checks
 

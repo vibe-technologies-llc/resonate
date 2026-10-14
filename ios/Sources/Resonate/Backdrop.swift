@@ -46,7 +46,7 @@ struct BackdropView: View {
         .animation(.easeInOut(duration: 0.4), value: palette == nil)
         .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
         .task { await prepareRendering() }
-        .task(id: "\(track.map(Self.key(of:)) ?? ""):\(library.features.artworkGeneration)") { await loadPalette() }
+        .task(id: "\(track.map(Self.key(of:)) ?? ""):\(library.features.artGeneration(of: track?.id ?? 0))") { await loadPalette() }
         .onAppear { visible = true }
         .onDisappear {
             visible = false

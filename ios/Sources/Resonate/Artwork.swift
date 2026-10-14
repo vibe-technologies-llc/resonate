@@ -3,12 +3,23 @@ import simd
 import SwiftUI
 import UIKit
 
+struct ArtworkLoad: Equatable {
+    let track: UInt64?
+    let revision: UInt64
+    let generation: Int
+    let portrait: String?
+    let portraitGeneration: Int
+    let bucket: ArtworkBucket?
+}
+
 struct ArtworkView: View {
     @Environment(Library.self) private var library
+    @Environment(\.displayScale) private var displayScale
     let track: Track?
     var corner: CGFloat = 12
     var circle = false
     @State private var image: UIImage?
+    @State private var bucket: ArtworkBucket?
 
     var body: some View {
         ZStack {
@@ -25,14 +36,46 @@ struct ArtworkView: View {
         }
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous)))
         .animation(.easeInOut(duration: 0.36), value: image)
-        .task(id: "\(track?.id ?? 0):\(track?.artRevision ?? 0):\(library.features.artworkGeneration)") {
-            guard let track else {
-                image = nil
-                return
-            }
-            image = await library.features.artwork(track)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            max(proxy.size.width, proxy.size.height)
+        } action: { edge in
+            bucket = ArtworkBucket.fitting(points: edge, scale: displayScale)
         }
+        .task(id: load) { await show(load) }
         .accessibilityHidden(true)
+    }
+
+    private var portraitMbid: String? {
+        guard circle, let mbid = track?.artistMbid, !mbid.isEmpty else { return nil }
+        return mbid
+    }
+
+    private var load: ArtworkLoad {
+        let features = library.features
+        return ArtworkLoad(
+            track: track?.id,
+            revision: track?.artRevision ?? 0,
+            generation: track.map { features.artGeneration(of: $0.id) } ?? 0,
+            portrait: portraitMbid,
+            portraitGeneration: portraitMbid == nil ? 0 : features.portraitGeneration,
+            bucket: bucket
+        )
+    }
+
+    private func show(_ load: ArtworkLoad) async {
+        guard let bucket = load.bucket else { return }
+        guard let track else {
+            image = nil
+            return
+        }
+        let features = library.features
+        var shown: UIImage?
+
+        if let mbid = load.portrait { shown = await features.portrait(mbid, bucket: bucket) }
+        if shown == nil { shown = await features.artwork(track, bucket: bucket) }
+
+        guard !Task.isCancelled else { return }
+        image = shown
     }
 }
 

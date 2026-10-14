@@ -318,7 +318,7 @@ struct InspectorView: View {
                 Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(shown)) }
                 if features.online {
                     Button(features.enriching ? "Enriching…" : "Enrich metadata, artwork and lyrics", systemImage: "sparkles") {
-                        features.enrich([shown])
+                        features.enrich(shown)
                     }
                     .disabled(features.enriching)
                     Button("Artist details", systemImage: "music.mic") { features.loadArtist(shown.id) }

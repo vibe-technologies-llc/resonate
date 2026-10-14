@@ -23,7 +23,6 @@ struct LibraryToolsView: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        let features = library.features
         let current = library.snapshot?.current
         List {
             Section("Your library") {
@@ -47,16 +46,7 @@ struct LibraryToolsView: View {
                 NavigationLink(value: Destination.wanted) {
                     ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
                 }
-                Button { features.enrich(library.tracks) } label: {
-                    ToolRow(
-                        title: "Enrich visible music",
-                        detail: features.enriching
-                            ? "Updating artwork and metadata…"
-                            : !features.online ? "Enable online features in Settings" : "Look up covers, metadata and lyrics for \(counted(library.tracks.count, "song"))",
-                        symbol: "wand.and.stars"
-                    )
-                }
-                .disabled(features.enriching || !features.online)
+                RefreshArtworkRow()
             }
             Section {
                 NavigationLink(value: current.map { _ in Destination.lyrics(nil) }) {

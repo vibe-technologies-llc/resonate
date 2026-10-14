@@ -313,7 +313,7 @@ final class Library {
                 report(error)
             }
             await refresh()
-            features.refreshArtwork()
+            features.scanned()
             folderList = folders.folders()
             status = tally.summary
         }

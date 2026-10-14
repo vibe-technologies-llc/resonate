@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var search = ""
     private static let unlistedWords = [
         "Online features internet network artwork covers lyrics enrichment music search",
+        "Artwork and details automatically portraits Wi-Fi missing covers",
         "Download providers TIDAL Subsonic Monochrome",
         "Scrobbling ListenBrainz Last.fm",
     ]
@@ -64,6 +65,9 @@ struct SettingsView: View {
                 if matches(syncEntry.searched) {
                     entryRow(syncEntry)
                 }
+            }
+            if features.online, shown("Artwork and details automatically portraits Wi-Fi missing covers") {
+                EnrichmentSection()
             }
         }
         .buttonStyle(.plain)

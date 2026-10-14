@@ -25,18 +25,15 @@ final class Features {
     private static let syncBackground: Duration = .seconds(30)
     private static let landingPause: TimeInterval = 60
     private static let visualizerFrame: Duration = .milliseconds(33)
-    private static let artworkBytes = 32 * 1024 * 1024
-    nonisolated private static let largestEdge: CGFloat = 1024
     nonisolated private static let wantedChunk = 500
 
     @ObservationIgnored private unowned let library: Library
     @ObservationIgnored private let accounts = AccountStore()
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
-    @ObservationIgnored private let pictures: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = artworkBytes
-        return cache
-    }()
+    @ObservationIgnored private let artworks = ArtworkCache()
+    @ObservationIgnored lazy var enrichment = Enrichment(library: library)
+    @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
+    @ObservationIgnored private let transfers = BackgroundHold(name: "Resonate transfers")
 
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
@@ -47,9 +44,6 @@ final class Features {
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
     var providerAccount: DownloadAccount?
-    var downloading = false
-    var downloadedBytes: UInt64 = 0
-    var downloadStatus: String?
     var online: Bool
     var statistics: LibraryStatistics?
     var statisticsLoading = false
@@ -79,7 +73,8 @@ final class Features {
     var searching = false
     var enriching = false
     var samples: [Float] = []
-    var artworkGeneration = 0
+    var artGenerations: [UInt64: Int] = [:]
+    var portraitGeneration = 0
     var syncConfig: SyncConfig?
     var syncStatus: SyncStatus?
     var syncHandoffs: [HandedOff] = []
@@ -102,10 +97,15 @@ final class Features {
     @ObservationIgnored private var syncPolling: Task<Void, Never>?
     @ObservationIgnored private var nearby: NearbyDevices?
     @ObservationIgnored private var network: NWPathMonitor?
-    @ObservationIgnored private var unmetered = false
-    @ObservationIgnored var foreground = true
+    @ObservationIgnored private(set) var unmetered = false
+    @ObservationIgnored private var artRevision: UInt64?
+    @ObservationIgnored var foreground = true {
+        didSet {
+            enrichment.foregroundChanged(foreground)
+            downloads.foregroundChanged(foreground)
+        }
+    }
     @ObservationIgnored private var landingRefusedUntil = Date.distantPast
-    @ObservationIgnored private var backgroundWork: UIBackgroundTaskIdentifier = .invalid
 
     init(library: Library) {
         self.library = library
@@ -144,11 +144,10 @@ final class Features {
         recognitionKey = accounts.readRecognitionKey()
         syncConfig = accounts.readSync()
         native.configureOnline(enabled: online)
-        for key in ["unfinished-download", "unfinished-sync-landing"] {
-            if let left = settings.string(forKey: key) {
-                library.folders.delete(left)
-                settings.removeObject(forKey: key)
-            }
+        downloads.recover()
+        if let left = settings.string(forKey: "unfinished-sync-landing") {
+            library.folders.delete(left)
+            settings.removeObject(forKey: "unfinished-sync-landing")
         }
         submitting?.cancel()
         submitting = Task { [weak self] in await self?.submitScrobbles(native) }
@@ -156,6 +155,10 @@ final class Features {
         syncPolling?.cancel()
         syncPolling = Task { [weak self] in await self?.pollSync(native) }
         work { [weak self] native in try await self?.applySync(native) }
+        Task { [weak self] in
+            await self?.refreshChangedArt(native)
+            self?.enrichment.begin()
+        }
     }
 
     private func submitScrobbles(_ native: MobilePlayer) async {
@@ -179,23 +182,18 @@ final class Features {
     }
 
     func tick(_ native: MobilePlayer, _ snapshot: Snapshot) async {
+        enrichment.playing(snapshot.current?.id)
         let sheet = lyrics
-        let watchingDownload = downloading
         let watchingAnalysis = analysisBusy
-        guard let (frame, bytes, progress) = try? await Work.aside({
+        guard let (frame, progress) = try? await Work.aside({
             let frame = sheet.flatMap { sheet in
                 snapshot.current?.id == sheet.trackId
                     ? native.lyricFrame(id: sheet.trackId, positionMs: snapshot.positionMs)
                     : nil
             }
-            return (
-                frame,
-                watchingDownload ? native.downloadBytes() : nil,
-                watchingAnalysis ? native.analysisProgress() : nil
-            )
+            return (frame, watchingAnalysis ? native.analysisProgress() : nil)
         }) else { return }
         if let frame { lyricFrame = frame }
-        if let bytes { downloadedBytes = bytes }
         if watchingAnalysis { analysisProgress = progress }
     }
 
@@ -205,6 +203,7 @@ final class Features {
             await MainActor.run {
                 self?.online = enabled
                 self?.settings.set(enabled, forKey: "online")
+                if enabled { self?.enrichment.begin() } else { self?.enrichment.read() }
             }
             try await self?.applySync(native)
         }
@@ -329,6 +328,7 @@ final class Features {
         guard free != unmetered else { return }
         unmetered = free
         work { native in native.syncNetwork(unmetered: free) }
+        enrichment.networkChanged(free: free)
     }
 
     private func pollSync(_ native: MobilePlayer) async {
@@ -346,7 +346,7 @@ final class Features {
                 nearby?.follow(record: record)
                 syncStatus = status
                 transferring = status.moving > 0 || !waiting.isEmpty
-                holdTransfers(transferring || downloading)
+                transfers.hold(transferring)
                 if !waiting.isEmpty { await landReceived(native, waiting) }
                 syncHandoffs = handoffs
                 if arrivals != status.arrivals {
@@ -360,17 +360,6 @@ final class Features {
             } catch {
                 library.report(error)
             }
-        }
-    }
-
-    private func holdTransfers(_ busy: Bool) {
-        if busy, backgroundWork == .invalid {
-            backgroundWork = UIApplication.shared.beginBackgroundTask(withName: "Resonate transfers") { [weak self] in
-                MainActor.assumeIsolated { self?.holdTransfers(false) }
-            }
-        } else if !busy, backgroundWork != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundWork)
-            backgroundWork = .invalid
         }
     }
 
@@ -414,35 +403,55 @@ final class Features {
             syncNotice = nil
             await library.refresh()
             await refreshWanted(native)
-            refreshArtwork()
+            await refreshChangedArt(native)
+            enrichment.begin()
             library.notice("Kept \(counted(landed, "song")) from your devices")
         }
     }
 
-    func refreshArtwork() {
-        pictures.removeAllObjects()
-        artworkGeneration += 1
+    func artGeneration(of id: UInt64) -> Int {
+        artGenerations[id] ?? 0
     }
 
-    func artwork(_ track: Track) async -> UIImage? {
-        let key = "\(track.id):\(track.artRevision):\(artworkGeneration)" as NSString
-        if let kept = pictures.object(forKey: key) { return kept }
-        guard let native = try? await library.player() else { return nil }
+    func artwork(_ track: Track, bucket: ArtworkBucket = .full) async -> UIImage? {
         let id = track.id
-        let decoded = try? await Work.aside { () -> UIImage? in
-            guard let bytes = try native.artwork(id: id), let image = UIImage(data: bytes) else { return nil }
-            let longest = max(image.size.width, image.size.height)
-            guard longest > Features.largestEdge else { return image.preparingForDisplay() ?? image }
-            let target = CGSize(
-                width: image.size.width * Features.largestEdge / longest,
-                height: image.size.height * Features.largestEdge / longest
-            )
-            return image.preparingThumbnail(of: target) ?? image
-        }
-        guard let image = decoded ?? nil else { return nil }
-        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
-        pictures.setObject(image, forKey: key, cost: cost)
-        return image
+        let request = ArtworkRequest(subject: .track(id), revision: track.artRevision, generation: artGeneration(of: id), bucket: bucket)
+        guard let native = try? await library.player() else { return nil }
+        return await artworks.image(request) { try native.artwork(id: id) }
+    }
+
+    func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
+        let request = ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration, bucket: bucket)
+        guard let native = try? await library.player() else { return nil }
+        return await artworks.image(request) { try native.artistPortrait(mbid: mbid) }
+    }
+
+    func portraitsChanged() {
+        portraitGeneration += 1
+        Task { await artworks.forgetPortraits() }
+    }
+
+    func scanned() {
+        Task { await refreshChangedArt() }
+        enrichment.begin()
+    }
+
+    func refreshChangedArt() async {
+        guard let native = try? await library.player() else { return }
+        await refreshChangedArt(native)
+    }
+
+    func refreshChangedArt(_ native: MobilePlayer) async {
+        let since = artRevision ?? 0
+        guard let changed = try? await Work.aside({ try native.artChangedSince(revision: since) }) else { return }
+        let known = artRevision != nil
+        artRevision = max(artRevision ?? 0, changed.revision)
+        guard known, !changed.tracks.isEmpty else { return }
+
+        await artworks.forget(changed.tracks.map(ArtworkSubject.track))
+        var generations = artGenerations
+        for id in changed.tracks { generations[id, default: 0] += 1 }
+        artGenerations = generations
     }
 
     func loadPlaylists() {
@@ -637,29 +646,17 @@ final class Features {
         }
     }
 
-    func enrich(_ tracks: [Track]) {
+    func enrich(_ track: Track) {
         guard !enriching else { return }
         enriching = true
-        work { [weak self] native in
-            guard let self else { return }
-            var failures = 0
-            for (index, track) in tracks.enumerated() {
-                try Task.checkCancellation()
-                library.notice("Enriching \(index + 1)/\(tracks.count): \(track.title)")
-                do {
-                    _ = try await Work.aside { try native.enrichTrack(id: track.id) }
-                } catch {
-                    failures += 1
-                    library.report(error)
-                }
-            }
-            await library.refresh()
-            await MainActor.run {
-                refreshArtwork()
-                enriching = false
-                library.notice("Enrichment finished" + (failures > 0 ? "; \(failures) lookups could not complete" : ""))
-            }
-        }
+        let id = track.id
+        work({ [weak self] native in
+            _ = try await Work.aside { try native.enrichTrack(id: id) }
+            await self?.library.refresh()
+            await self?.refreshChangedArt(native)
+        }, finally: { [weak self] in
+            self?.enriching = false
+        })
     }
 
     func searchCorrections(_ text: String) {
@@ -812,65 +809,19 @@ final class Features {
         }
     }
 
-    func download(_ song: SearchSong, into folder: MusicFolder) {
-        guard !downloading, let account = providerAccount else { return }
-        downloading = true
-        downloadedBytes = 0
-        downloadStatus = "Finding \(song.title)…"
-        holdTransfers(true)
-        let folders = library.folders
-        work { [weak self] native in
-            guard let self else { return }
-            var created: String?
-            defer {
-                if let created {
-                    folders.delete(created)
-                    self.settings.removeObject(forKey: "unfinished-download")
-                }
-                self.downloading = false
-                self.holdTransfers(self.transferring)
-            }
-            do {
-                guard let offer = try await Work.aside({ try native.findDownload(song: song, account: account) }) else {
-                    await MainActor.run { downloadStatus = "This provider could not find a matching recording" }
-                    return
-                }
-                if let token = native.refreshedTidalToken() {
-                    var renewed = account
-                    renewed.refreshToken = token
-                    try await MainActor.run {
-                        try accounts.write(renewed)
-                        providerAccount = renewed
-                    }
-                }
-                let (uri, descriptor) = try folders.fresh(in: folder.id, named: offer.name)
-                created = uri
-                await MainActor.run {
-                    settings.set(uri, forKey: "unfinished-download")
-                    downloadStatus = "Downloading \(song.title)…"
-                }
-                let count = try await Work.aside {
-                    let count = try native.downloadOffer(id: offer.id, descriptor: descriptor)
-                    _ = try native.indexDownload(uri: uri, name: offer.name, song: song)
-                    return count
-                }
-                created = nil
-                await refreshWanted(native)
-                await MainActor.run {
-                    settings.removeObject(forKey: "unfinished-download")
-                    downloadStatus = "Downloaded \(offer.name) · \(count / 1024) KiB"
-                }
-                await library.refresh()
-                await MainActor.run { refreshArtwork() }
-            } catch {
-                await MainActor.run { downloadStatus = explained(error) }
-                throw error
-            }
-        }
+    var downloadAccounts: [DownloadAccount] {
+        providerAccount.map { [$0] }?.filter(\.isReady) ?? []
     }
 
-    func cancelDownload() {
-        work { native in native.cancelDownload() }
+    func keepRenewedTidalToken(_ token: String) {
+        guard var renewed = providerAccount, renewed.provider == .tidal else { return }
+        renewed.refreshToken = token
+        do {
+            try accounts.write(renewed)
+            providerAccount = renewed
+        } catch {
+            library.report(error)
+        }
     }
 
     func clearCollection() {
@@ -904,6 +855,11 @@ final class Features {
 
     func loadWanted() {
         work { [weak self] native in await self?.refreshWanted(native) }
+    }
+
+    func rereadWanted() async {
+        guard let native = try? await library.player() else { return }
+        await refreshWanted(native)
     }
 
     func removeWanted(_ id: UInt64) {
