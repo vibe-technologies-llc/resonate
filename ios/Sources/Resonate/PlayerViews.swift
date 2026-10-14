@@ -232,9 +232,22 @@ struct PlayerTitles: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(track?.shownTitle ?? "Nothing playing")
-                    .font(.title2.weight(.bold))
-                    .lineLimit(2)
+                if let track {
+                    Menu {
+                        SongDestinations(track: track)
+                    } label: {
+                        Text(track.shownTitle)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .accessibilityHint("Shows the album, artist and song details")
+                } else {
+                    Text("Nothing playing")
+                        .font(.title2.weight(.bold))
+                        .lineLimit(2)
+                }
                 if let track {
                     Button(track.shownArtist) { navigation.open(.artist(track.artist)) }
                         .font(.title3)
@@ -258,6 +271,25 @@ struct PlayerTitles: View {
     }
 }
 
+struct SongDestinations: View {
+    @Environment(Navigation.self) private var navigation
+    let track: Track
+
+    var body: some View {
+        if !track.album.isEmpty {
+            Button("Go to Album", systemImage: "square.stack") {
+                navigation.open(.album(title: track.album, artist: track.groupingArtist))
+            }
+        }
+        Button("Go to Artist", systemImage: "music.mic") {
+            navigation.open(.artist(track.artist))
+        }
+        Button("Song Details", systemImage: "info.circle") {
+            navigation.open(.inspector(track))
+        }
+    }
+}
+
 struct CompactTitles: View {
     @ScaledMetric(relativeTo: .headline) private var artworkEdge: CGFloat = 56
     let track: Track?
@@ -270,11 +302,16 @@ struct CompactTitles: View {
                 .frame(width: artworkEdge, height: artworkEdge)
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 .matchedGeometryEffect(id: cover, in: shared)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track?.shownTitle ?? "Nothing playing").font(.headline).lineLimit(1)
-                Text(track?.shownArtist ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            Menu {
+                if let track { SongDestinations(track: track) }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track?.shownTitle ?? "Nothing playing").font(.headline).foregroundStyle(.primary).lineLimit(1)
+                    Text(track?.shownArtist ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityElement(children: .combine)
+            .disabled(track == nil)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
