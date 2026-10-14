@@ -9,7 +9,7 @@ use resonate_analysis::{Analysis, KeptAnalyses, Watching};
 use resonate_audio::SinkInfo;
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation};
-#[cfg(not(target_os = "android"))]
+#[cfg(target_os = "linux")]
 use resonate_pipewire::PipeWire;
 
 use crate::{
@@ -32,12 +32,12 @@ pub struct Player {
 }
 
 impl Player {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "linux")]
     pub fn new(config: EngineConfig) -> Result<Self> {
         Self::with_sources(config, Arc::new(Sources::local()))
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "linux")]
     pub fn with_sources(config: EngineConfig, sources: Arc<Sources>) -> Result<Self> {
         Self::spawn(config, sources, |config| {
             let backend = PipeWire::start(&config.app_name).map_err(resonate_audio::Error::from)?;

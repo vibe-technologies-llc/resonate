@@ -18,7 +18,7 @@ smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 resonate-pipewire.workspace = true
 
 [lints]

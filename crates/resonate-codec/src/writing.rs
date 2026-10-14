@@ -1001,6 +1001,7 @@ fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<
     })
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
     let file = File::open(path)?;
     let staged = Staged::beside(path)?;
@@ -1010,6 +1011,11 @@ fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
         return Ok(None);
     }
     Ok(Some(staged))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn cloned_beside(_: &Path) -> io::Result<Option<Staged>> {
+    Ok(None)
 }
 
 fn copied_beside(path: &Path, folder: &Path) -> io::Result<Staged> {
