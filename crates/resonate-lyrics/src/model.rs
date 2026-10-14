@@ -47,6 +47,58 @@ pub struct Singing {
     pub through: f32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Wiped {
+    pub sung_to: usize,
+    pub blending: Option<Blending>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Blending {
+    pub letter: Range<usize>,
+    pub share: f32,
+}
+
+impl Sweep {
+    pub fn wiped(&self, text: &str) -> Wiped {
+        let Some(singing) = self
+            .singing
+            .as_ref()
+            .filter(|singing| !singing.word.is_empty())
+        else {
+            return Wiped {
+                sung_to: self.sung,
+                blending: None,
+            };
+        };
+        let start = singing.word.start;
+        let letters: Vec<(usize, char)> = text
+            .get(singing.word.clone())
+            .unwrap_or_default()
+            .trim_end()
+            .char_indices()
+            .collect();
+        let across = singing.through.clamp(0.0, 1.0) * letters.len() as f32;
+        let whole = across.floor() as usize;
+        let share = across - whole as f32;
+        let Some(&(at, letter)) = letters.get(whole) else {
+            let end = letters
+                .last()
+                .map_or(start, |&(at, letter)| start + at + letter.len_utf8());
+            return Wiped {
+                sung_to: end,
+                blending: None,
+            };
+        };
+        let letter = start + at..start + at + letter.len_utf8();
+
+        Wiped {
+            sung_to: letter.start,
+            blending: (share > 0.0).then_some(Blending { letter, share }),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SungWord {
     pub at: Duration,
@@ -723,6 +775,108 @@ mod tests {
                 word: 4..8,
                 through: 0.5
             })
+        );
+    }
+
+    fn singing(sung: usize, word: Range<usize>, through: f32) -> Sweep {
+        Sweep {
+            sung,
+            singing: Some(Singing { word, through }),
+        }
+    }
+
+    #[test]
+    fn a_word_being_sung_is_wiped_across_letter_by_letter() {
+        let text = "Stay until the morning";
+
+        assert_eq!(
+            singing(5, 5..11, 0.0).wiped(text),
+            Wiped {
+                sung_to: 5,
+                blending: None
+            }
+        );
+        assert_eq!(
+            singing(5, 5..11, 0.5).wiped(text),
+            Wiped {
+                sung_to: 7,
+                blending: Some(Blending {
+                    letter: 7..8,
+                    share: 0.5
+                })
+            }
+        );
+        assert_eq!(
+            singing(5, 5..11, 1.0).wiped(text),
+            Wiped {
+                sung_to: 10,
+                blending: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_letter_written_in_several_bytes_is_wiped_whole() {
+        let text = "żółw";
+        let wiped = singing(0, 0..text.len(), 0.3).wiped(text);
+        let blending = wiped.blending.expect("a letter half sung");
+
+        assert_eq!(wiped.sung_to, 2);
+        assert_eq!(&text[blending.letter], "ó");
+        assert!((blending.share - 0.2).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_line_with_no_word_being_sung_is_wiped_to_what_was_sung() {
+        let line = stay_until_the_morning();
+
+        let before = line.sweep_at(millis(4_000)).expect("a worded line");
+        let between = Sweep {
+            sung: 11,
+            singing: None,
+        };
+        let after = line.sweep_at(millis(9_000)).expect("a worded line");
+
+        assert_eq!(
+            before.wiped(&line.text),
+            Wiped {
+                sung_to: 0,
+                blending: None
+            }
+        );
+        assert_eq!(between.wiped(&line.text).sung_to, 11);
+        assert_eq!(
+            after.wiped(&line.text),
+            Wiped {
+                sung_to: line.text.len(),
+                blending: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_word_wiped_through_leaves_its_trailing_space_unlit() {
+        let line = stay_until_the_morning();
+
+        let wiped = singing(0, 0..5, 0.99).wiped(&line.text);
+        let whole = singing(0, 0..5, 1.0).wiped(&line.text);
+
+        assert_eq!(wiped.sung_to, 3);
+        assert_eq!(wiped.blending.map(|blending| blending.letter), Some(3..4));
+        assert_eq!(whole.sung_to, 4, "the space after the word was lit");
+        assert_eq!(whole.blending, None);
+    }
+
+    #[test]
+    fn a_sweep_naming_bytes_the_text_lacks_wipes_nothing_it_cannot_reach() {
+        let wiped = singing(2, 40..48, 0.5).wiped("short");
+
+        assert_eq!(
+            wiped,
+            Wiped {
+                sung_to: 40,
+                blending: None
+            }
         );
     }
 

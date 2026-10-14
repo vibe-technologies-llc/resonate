@@ -47,6 +47,26 @@ security-scoped bookmark the app keeps, or `local` for its own Documents folder)
 after `scheme:` with its escaping kept exactly. Anything else, a bare path or a `file:` URI
 included, is `InvalidUri`.
 
+## Lyrics
+
+`lyrics.rs` hands a phone what the desktop pane reads, so neither phone keeps lyric arithmetic of
+its own. `LyricSheet` is the sheet once: `detail`, `two_voices`, `end` (the *END OF LYRICS* row,
+`lines.len()`), `written_end`, and per row `blank`, `written` (written lines before it, the
+falloff's ordinal) and `breathes` (`Lyrics::breathes_before`: room for the dots). `lyric_frame` is
+asked at display rate, so it is a lock, a lookup among at most `SHEETS_KEPT` (16) and the
+arithmetic: `line` (`line_at`) and `active` stay for Android; `voice_one`/`voice_two`
+(`voices_in_play`); `read_at` (`waiting.next`, else `end` once `has_ended`, else `line_at`); `reads`
+chosen exactly as `LyricsModel::follow_the_track` chooses (`Evenly` unsynced; `At` the latest lit
+line, else the end, else, with no wait, `read_at`; else `Spent`); `waiting`; `ended`; and a
+`LyricWipe` per lit line with words, `Sweep::wiped` turned from UTF-8 bytes into UTF-16 code units,
+how Swift and Kotlin index a string (`a_wipe_counts_both_halves_of_a_surrogate_pair`).
+
+The kept sheets are least recently *read* first out (`KeptSheets`; a frame reads, so the playing
+sheet is never the one dropped: `a_sheet_read_lately_outlasts_the_sheets_remembered_after_it`). A
+frame for a sheet not kept reads it from the catalog again rather than answering nothing; a song
+the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once, while
+`cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`.
+
 ## Output
 
 `output/mod.rs` picks one backend per target behind `output::player` and one `Routing`:

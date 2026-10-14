@@ -5,6 +5,7 @@ mod documents;
 mod downloads;
 mod error;
 mod features;
+mod lyrics;
 mod online_tools;
 mod output;
 mod playback;

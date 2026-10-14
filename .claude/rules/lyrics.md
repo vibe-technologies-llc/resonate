@@ -6,6 +6,7 @@ paths:
   - "crates/resonate-codec/src/sylt.rs"
   - "crates/resonate-online/src/lrclib.rs"
   - "crates/resonate-library/src/sung.rs"
+  - "crates/resonate-mobile/src/lyrics.rs"
 ---
 
 # Lyrics
@@ -29,6 +30,11 @@ dependency (tested without a window).
   disagree). `Lyrics::detail` (`Unsynced`, `Lines`, `Words`) drives `Lyricists::find`'s ranking and
   the pane's badge. `LyricLine::sweep_at` gives `Sweep` (bytes sung) and the `Singing` word.
   `Lyrics::within` shifts a line onto a cue row's clock.
+- **`Sweep::wiped` is the one wipe**, the desktop's highlight and the phones' `LyricWipe` alike:
+  the singing word's letters (trailing space left out) are wiped `through × letters` across, whole
+  letters sung, the next `Blending` at the fraction left; with no word singing the line is sung to
+  `Sweep::sung`. `Wiped` names byte offsets; whoever indexes otherwise converts them
+  (`a_word_being_sung_is_wiped_across_letter_by_letter`).
 - **The pane sweeps a word-timed line** (only one `voices_in_play` names): unsung words sit at
   `UNSUNG_SHARE` of the way to the lit colour, the sung word is wiped letter by letter; the
   highlight runs over one `StyledText` so the line wraps as unswept. **A mark never wraps alone**:
