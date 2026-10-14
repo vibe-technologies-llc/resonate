@@ -97,10 +97,19 @@ final class DownloadQueue {
     private static let pollEvery: Duration = .milliseconds(250)
     private static let journalKey = "unfinished-download"
     private static let folderKey = "download-folder"
+    private static let wantsAutomaticallyKey = "download-wants-automatically"
+    private static let wantsAskedAtLeast: Duration = .seconds(30)
+    private static let wantsAskedEvery: Duration = .seconds(30 * 60)
 
     var jobs: [DownloadJob] = []
     var awaitingFolder: [SearchSong] = []
     var missedProvider = false
+    var asksForWants: Bool {
+        didSet {
+            settings.set(asksForWants, forKey: Self.wantsAutomaticallyKey)
+            wantsChanged()
+        }
+    }
     private var folderId: String?
 
     @ObservationIgnored private unowned let library: Library
@@ -108,6 +117,8 @@ final class DownloadQueue {
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var created: [UInt64: String] = [:]
     @ObservationIgnored private var paused = false
+    @ObservationIgnored private var wantsPoll: Task<Void, Never>?
+    @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private lazy var background = BackgroundHold(name: "Resonate downloads") { [weak self] in
         self?.expire()
     }
@@ -115,6 +126,7 @@ final class DownloadQueue {
     init(library: Library) {
         self.library = library
         folderId = settings.string(forKey: Self.folderKey)
+        asksForWants = settings.object(forKey: Self.wantsAutomaticallyKey) == nil || settings.bool(forKey: Self.wantsAutomaticallyKey)
     }
 
     var active: [DownloadJob] { jobs.filter { !$0.state.settled } }
@@ -162,6 +174,7 @@ final class DownloadQueue {
         if remember {
             settings.set(folder.id, forKey: Self.folderKey)
             folderId = folder.id
+            wantsChanged()
         }
         begin(songs, into: folder)
     }
@@ -190,13 +203,59 @@ final class DownloadQueue {
         jobs.removeAll { $0.state.settled }
     }
 
+    func wantsChanged() {
+        wantsPoll?.cancel()
+        wantsPoll = nil
+        askForWants()
+    }
+
     func foregroundChanged(_ active: Bool) {
+        if active {
+            askForWants()
+        } else {
+            wantsPoll?.cancel()
+            wantsPoll = nil
+        }
         guard active, paused else { return }
         paused = false
         Task {
             guard let native = try? await library.player() else { return }
             advance(native)
         }
+    }
+
+    private func askForWants() {
+        guard wantsPoll == nil, asksForWants, library.features.foreground else { return }
+        wantsPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let native = try? await self?.library.player(),
+                    let next = (try? await Work.aside({ try native.nextWantedDue() })) ?? nil
+                else {
+                    self?.wantsPoll = nil
+                    return
+                }
+                try? await Task.sleep(for: DownloadQueue.waitForWants(dueAt: next))
+                guard !Task.isCancelled, let self else { return }
+                await askDueWants(native)
+            }
+        }
+    }
+
+    private static func waitForWants(dueAt: UInt64) -> Duration {
+        let seconds = Double(dueAt) - Date().timeIntervalSince1970
+        let wait = Duration.milliseconds(Int64(max(seconds, 0) * 1000))
+        return min(max(wait, wantsAskedAtLeast), wantsAskedEvery)
+    }
+
+    private func askDueWants(_ native: MobilePlayer) async {
+        guard asksForWants, library.features.online, !library.features.downloadAccounts.isEmpty, let folder = rememberedFolder,
+            let due = try? await Work.aside({ try native.pollWantedDue() })
+        else { return }
+        let now = ContinuousClock.now
+        askedOnItsOwn = askedOnItsOwn.filter { now - $0.value < Self.wantsAskedEvery }
+        let songs = due.map(\.song).filter { askedOnItsOwn[$0.id] == nil && !holds($0) }
+        for song in songs { askedOnItsOwn[song.id] = now }
+        begin(songs, into: folder)
     }
 
     private func begin(_ songs: [SearchSong], into folder: MusicFolder) {

@@ -225,6 +225,7 @@ struct WantedView: View {
             Section {
                 Text("Keep recordings you want and download them when one of your providers has a match.").foregroundStyle(.secondary)
                 Toggle("Missing from library only", isOn: $missingOnly)
+                Toggle("Download saved songs automatically", isOn: Bindable(features.downloads).asksForWants)
                 if !features.online {
                     Text("Enable online features in Settings to download music.")
                 } else if !missing.isEmpty {

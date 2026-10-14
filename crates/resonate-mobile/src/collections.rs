@@ -201,6 +201,13 @@ impl MobilePlayer {
         self.catalog.wanted_due(SystemTime::now())
     }
 
+    pub fn next_wanted_due(&self) -> Result<Option<u64>> {
+        Ok(self.catalog.next_wanted_due()?.map(|due| {
+            due.duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs())
+        }))
+    }
+
     pub fn save_wanted(&self, songs: Vec<SearchSong>) -> Result<u64> {
         self.catalog.save_wanted(&songs)
     }
@@ -305,6 +312,15 @@ fn wanted_song(connection: &Connection, row: WantedRow) -> Result<WantedSong> {
     })
 }
 
+fn still_asked(connection: &Connection) -> Result<Vec<WantedRow>> {
+    let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
+    query
+        .query_map([TRIES_BEFORE_GIVING_UP], wanted_row)
+        .map_err(read_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(read_error)
+}
+
 fn due_at(tried: Option<i64>, misses: u32) -> Option<SystemTime> {
     let Some(tried) = tried else {
         return Some(UNIX_EPOCH);
@@ -332,14 +348,8 @@ impl Catalog {
 
     fn wanted_due(&self, now: SystemTime) -> Result<Vec<WantedSong>> {
         let connection = self.0.lock();
-        let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
-        let rows = query
-            .query_map([TRIES_BEFORE_GIVING_UP], wanted_row)
-            .map_err(read_error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(read_error)?;
         let mut due = Vec::new();
-        for row in rows {
+        for row in still_asked(&connection)? {
             if due.len() >= WANTED_READ_AT_MOST {
                 break;
             }
@@ -352,6 +362,23 @@ impl Catalog {
             }
         }
         Ok(due)
+    }
+
+    fn next_wanted_due(&self) -> Result<Option<SystemTime>> {
+        let connection = self.0.lock();
+        let mut next: Option<SystemTime> = None;
+        for row in still_asked(&connection)? {
+            let Some(due) = due_at(row.tried, row.misses) else {
+                continue;
+            };
+            if next.is_some_and(|next| next <= due) {
+                continue;
+            }
+            if local_match(&connection, &row.song)?.is_none() {
+                next = Some(due);
+            }
+        }
+        Ok(next)
     }
 
     pub(crate) fn note_wanted_tried(&self, song: &SearchSong, tried: Tried) -> Result<()> {
@@ -547,8 +574,10 @@ mod tests {
             .expect("a want");
         let now = SystemTime::now();
         let due_now = |catalog: &Catalog| catalog.wanted_due(now).expect("the due wants").len();
+        let next_due = |catalog: &Catalog| catalog.next_wanted_due().expect("the next due want");
 
         assert_eq!(due_now(&catalog), 1);
+        assert_eq!(next_due(&catalog), Some(UNIX_EPOCH));
 
         catalog
             .note_wanted_tried(&song, Tried::Unheard)
@@ -559,6 +588,11 @@ mod tests {
             .note_wanted_tried(&song, Tried::Missed)
             .expect("a miss");
         assert_eq!(due_now(&catalog), 0);
+        assert!(
+            next_due(&catalog).is_some_and(
+                |due| due > now && due <= now + RETRY_WAITS[0] + Duration::from_secs(5)
+            )
+        );
         assert_eq!(
             catalog
                 .wanted_due(now + RETRY_WAITS[0] + Duration::from_secs(5))
@@ -579,6 +613,7 @@ mod tests {
                 .len(),
             0
         );
+        assert_eq!(next_due(&catalog), None);
 
         catalog
             .note_wanted_tried(&song, Tried::Offered)

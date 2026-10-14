@@ -14,8 +14,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account and runs one download at a time; the boundary races
   every account and runs jobs side by side, but Settings stores one and the screens show one job
-- [M] Neither phone asks for its wants on its own: `poll_wanted_due` says which are due, and
-  nothing calls it on a timer
+- [M] Android does not ask for its wants on its own: `poll_wanted_due` and `next_wanted_due` say
+  which are due and when, and only iOS calls them on a timer
 - [S] A wanted row keeps no release, disc or position, so a want downloaded from the Wanted list is
   asked with less than the search result it was saved from
 - [S] A delivery refused as the wrong song is declined for the run alone on the phones; the

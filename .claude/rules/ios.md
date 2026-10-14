@@ -327,6 +327,15 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
   held, each row has Download and Remove, a held row reads "In your library", and pulling to
   refresh reads the matches again. Online search's song rows enqueue one song.
+- **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
+  reads `next_wanted_due`, sleeps until then held to 30 s at least and 30 min at most (the
+  desktop's `RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`), then enqueues `poll_wanted_due`'s songs into
+  the remembered folder, only while online, with a ready account and a remembered writable folder:
+  it never raises the folder sheet or the provider notice. A song it asked is not asked again on its
+  own for 30 min, so a provider that stays away cannot pile failed rows up. It stops with nothing
+  due, going inactive or the switch off, and restarts on any change of wants, accounts, providers,
+  folder or online. "Download saved songs automatically" on Saved for later
+  (`download-wants-automatically` in `library-features`, on by default) is the switch.
 - **The journal is a list**: `unfinished-download` holds the URIs of every job's document still
   being written, removed one by one as each lands or is deleted; on the next start each is deleted,
   and a single string left by an older build is read as a list of one.

@@ -352,7 +352,8 @@ within `A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY`, the one naming most identity, in f
 and playlist listings keep their repeats. A find for a wanted song notes the try on its row as the
 desktop does (V7 `tried`, `misses`): an offer zeroes the misses, nothing heard from every provider
 counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
-desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`).
+desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
+and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.
 
 ## Device sync
 
