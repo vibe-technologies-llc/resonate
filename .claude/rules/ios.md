@@ -118,8 +118,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
 the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
-so no empty capsule shows with nothing loaded), with a progress bar, previous/play/next, and a
-horizontal swipe to skip; the output page holds `AVRoutePickerView`, since iOS owns the route.
+so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
+skip; its progress is a bar along the expanded accessory and a ring around the play button once the
+tab bar minimises it inline (a bar there ran through the title); the output page holds `AVRoutePickerView`, since iOS owns the route.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on

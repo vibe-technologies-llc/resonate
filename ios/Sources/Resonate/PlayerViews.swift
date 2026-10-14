@@ -38,15 +38,20 @@ struct MiniPlayer: View {
                     .labelStyle(.iconOnly)
             }
             PlayButton(transport: library.transport)
+                .background {
+                    if !expanded { MiniProgressRing() }
+                }
             Button("Next", systemImage: "forward.fill") { skip(forward: true) }
                 .labelStyle(.iconOnly)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
         .overlay(alignment: .bottom) {
-            MiniProgress()
-                .padding(.horizontal, 18)
-                .padding(.bottom, 2)
+            if expanded {
+                MiniProgress()
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 2)
+            }
         }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
@@ -68,12 +73,38 @@ struct MiniPlayer: View {
     }
 }
 
+extension PlayClock {
+    var playedFraction: Double {
+        durationMs > 0 ? min(Double(positionMs) / Double(durationMs), 1) : 0
+    }
+}
+
+struct MiniProgressRing: View {
+    private static let lineWidth: CGFloat = 2
+
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let fraction = library.clock.playedFraction
+        ZStack {
+            Circle()
+                .stroke(.quaternary, lineWidth: Self.lineWidth)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(.tint, style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 0.25), value: fraction)
+        }
+        .padding(Self.lineWidth / 2)
+        .accessibilityHidden(true)
+    }
+}
+
 struct MiniProgress: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        let timing = library.clock
-        let fraction = timing.durationMs > 0 ? min(Double(timing.positionMs) / Double(timing.durationMs), 1) : 0
+        let fraction = library.clock.playedFraction
         Capsule()
             .fill(.quaternary)
             .frame(height: 2)
