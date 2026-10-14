@@ -250,7 +250,7 @@ fn echoes() -> Identity {
 
 fn opened(opening: Opening) -> Box<dyn Read + Send> {
     match opening.open().expect("the offer opens") {
-        Opened::Reading(reader) => reader,
+        Opened::Reading { reader, .. } => reader,
         Opened::Gone => panic!("the offer was gone when opened"),
     }
 }

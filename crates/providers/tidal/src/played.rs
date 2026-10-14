@@ -183,9 +183,15 @@ fn downloaded(provider: &SourceId, agent: Agent, media: Media) -> Result<Opened>
             },
         })?;
     match media.container {
-        Container::Flac => Ok(Opened::Reading(Box::new(fetched))),
+        Container::Flac => Ok(Opened::Reading {
+            length: fetched.length(),
+            reader: Box::new(fetched),
+        }),
         Container::Mp4 => match Remuxed::opened(fetched, media.timeline) {
-            Ok(remuxed) => Ok(Opened::Reading(Box::new(remuxed))),
+            Ok(remuxed) => Ok(Opened::Reading {
+                reader: Box::new(remuxed),
+                length: None,
+            }),
             Err(Unremuxable::Io(source)) => Err(Error::Io {
                 provider: provider.clone(),
                 op,

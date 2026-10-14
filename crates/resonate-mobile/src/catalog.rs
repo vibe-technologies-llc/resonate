@@ -62,7 +62,11 @@ const V6: &str = "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFA
 ALTER TABLE playlists ADD COLUMN created INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE received (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, extension TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, recording TEXT, duration_ms INTEGER) STRICT;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+const V7: &str = "ALTER TABLE wanted ADD COLUMN tried INTEGER;
+ALTER TABLE wanted ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE wanted ADD COLUMN offered_at INTEGER;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 

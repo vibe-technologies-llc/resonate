@@ -14,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.DownloadPhase
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.SearchSong
@@ -30,30 +31,32 @@ class DownloadTest {
         val server = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
         val worker = Executors.newSingleThreadExecutor()
         val serving = worker.submit {
-            try {
-                while (!server.isClosed) server.accept().use { socket ->
-                    socket.soTimeout = 5000
-                    val reader = socket.getInputStream().bufferedReader(Charsets.US_ASCII)
-                    val request = reader.readLine().orEmpty()
-                    while (!reader.readLine().isNullOrEmpty()) {}
-                    val search = request.contains("/search3?")
-                    val body =
-                        if (search)
-                            """{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"fixture","title":"Fixture song","artist":"Fixture artist","suffix":"wav","duration":8,"musicBrainzId":"$recording"}]}}}"""
-                                .toByteArray()
-                        else audio
-                    val type = if (search) "application/json" else "audio/wav"
-                    socket.getOutputStream().apply {
-                        write(
-                            "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
-                                .toByteArray(Charsets.US_ASCII)
-                        )
-                        write(body)
-                        flush()
+            while (!server.isClosed) {
+                try {
+                    server.accept().use { socket ->
+                        socket.soTimeout = 5000
+                        val reader = socket.getInputStream().bufferedReader(Charsets.US_ASCII)
+                        val request = reader.readLine().orEmpty()
+                        while (!reader.readLine().isNullOrEmpty()) {}
+                        val search = request.contains("/search3?")
+                        val body =
+                            if (search)
+                                """{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"fixture","title":"Fixture song","artist":"Fixture artist","suffix":"wav","duration":8,"musicBrainzId":"$recording"}]}}}"""
+                                    .toByteArray()
+                            else audio
+                        val type = if (search) "application/json" else "audio/wav"
+                        socket.getOutputStream().apply {
+                            write(
+                                "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                                    .toByteArray(Charsets.US_ASCII)
+                            )
+                            write(body)
+                            flush()
+                        }
                     }
+                } catch (dropped: java.net.SocketException) {
+                    if (server.isClosed) break
                 }
-            } catch (closed: java.net.SocketException) {
-                if (!server.isClosed) throw closed
             }
         }
         val player =
@@ -79,16 +82,21 @@ class DownloadTest {
                 )
             val song =
                 SearchSong(recording, "Fixture song", "Fixture artist", "", 8000uL, emptyList())
-            val offer = requireNotNull(player.findDownload(song, account))
+            val job = player.beginDownload(song)
+            val offer = player.findDownload(job, listOf(account))
+            assertEquals(MusicProvider.SUBSONIC, offer.provider)
             val descriptor =
                 ParcelFileDescriptor.open(destination, ParcelFileDescriptor.MODE_WRITE_ONLY)
                     .detachFd()
-            assertEquals(audio.size.toULong(), player.downloadOffer(offer.id, descriptor))
-            assertEquals(audio.size.toULong(), player.downloadBytes())
+            assertEquals(audio.size.toULong(), player.downloadOffer(job, descriptor))
+            val progress = requireNotNull(player.downloadProgress(job))
+            assertEquals(audio.size.toULong(), progress.received)
+            assertEquals(audio.size.toULong(), progress.total)
             assertArrayEquals(audio, destination.readBytes())
             player.validateDownload("content://test/delivered.wav", 8000uL)
             player.saveWanted(listOf(song))
-            val track = player.indexDownload("content://test/delivered.wav", "delivered.wav", song)
+            val track = player.indexDownload(job, "content://test/delivered.wav", "delivered.wav")
+            assertEquals(DownloadPhase.DONE, player.downloadProgress(job)?.phase)
             assertEquals(song.title, track.title)
             assertEquals(song.artist, track.artist)
             assertEquals(recording, track.recording)
@@ -100,13 +108,15 @@ class DownloadTest {
             assertThrows(Exception::class.java) {
                 player.validateDownload("content://test/delivered.wav", 60000uL)
             }
-            val cancelled = requireNotNull(player.findDownload(song, account))
-            player.cancelDownload()
+            val cancelled = player.beginDownload(song)
+            player.findDownload(cancelled, listOf(account))
+            player.cancelDownload(cancelled)
+            assertEquals(DownloadPhase.CANCELLED, player.downloadProgress(cancelled)?.phase)
             val empty = File(folder, "cancelled.wav").apply { createNewFile() }
             val cancelledDescriptor =
                 ParcelFileDescriptor.open(empty, ParcelFileDescriptor.MODE_WRITE_ONLY).detachFd()
             assertThrows(Exception::class.java) {
-                player.downloadOffer(cancelled.id, cancelledDescriptor)
+                player.downloadOffer(cancelled, cancelledDescriptor)
             }
             assertEquals(0L, empty.length())
         } finally {

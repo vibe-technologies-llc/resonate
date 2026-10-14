@@ -27,6 +27,14 @@ unit**: `output/remote_io.rs` creates, configures and disposes a RemoteIO unit t
 render callback. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
+## An error is the sentence the app shows
+
+`Error` is `flat_error`, so a front end sees its `Display` alone: a variant a listener can meet is
+written as a capitalised sentence composed from its typed fields (`MusicProvider`'s `Display` names
+the service, `DownloadOp`'s says what the download could not be), never a debug print of an op.
+`downloads::failure_of` is the one reading of a provider's error into those variants, for a find, an
+opening and the TIDAL sign-in alike.
+
 ## The surface is the same on every target
 
 Every export exists on every target, so bindings generated from the host library match the device

@@ -21188,9 +21188,10 @@ impl Provider for WatchesTheWants {
                     .filter(|want| want.held.is_some())
                     .count();
                 held_when_opened.lock().push(held);
-                Ok(Opened::Reading(Box::new(io::Cursor::new(
-                    Wav::new().frames(8_820).build(),
-                ))))
+                Ok(Opened::Reading {
+                    reader: Box::new(io::Cursor::new(Wav::new().frames(8_820).build())),
+                    length: None,
+                })
             }),
         }))
     }
