@@ -180,7 +180,6 @@ struct NowPlayingView: View {
                 .matchedGeometryEffect(id: Self.cover, in: shared)
             PlayerTitles(track: track)
             PlayerScrubber()
-            QualityLine(track: track)
             TransportRow()
             SleepCountdown()
             VolumeRow()
@@ -226,48 +225,58 @@ struct LargeArtwork: View {
 }
 
 struct PlayerTitles: View {
-    @Environment(Navigation.self) private var navigation
     let track: Track?
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 if let track {
-                    Menu {
-                        SongDestinations(track: track)
-                    } label: {
+                    SongMenu(track: track) {
                         Text(track.shownTitle)
                             .font(.title2.weight(.bold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(Color.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
-                    .accessibilityHint("Shows the album, artist and song details")
+                    SongMenu(track: track) {
+                        Text(track.shownArtist)
+                            .font(.title3)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    if !track.album.isEmpty {
+                        SongMenu(track: track) {
+                            Text(track.album)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.secondary.opacity(0.8))
+                        }
+                    }
                 } else {
                     Text("Nothing playing")
                         .font(.title2.weight(.bold))
                         .lineLimit(2)
                 }
-                if let track {
-                    Button(track.shownArtist) { navigation.open(.artist(track.artist)) }
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Open artist \(track.shownArtist)")
-                    if !track.album.isEmpty {
-                        Button(track.album) {
-                            navigation.open(.album(title: track.album, artist: track.groupingArtist))
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityLabel("Open album \(track.album)")
-                    }
-                }
             }
-            .buttonStyle(.plain)
             .lineLimit(1)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
+    }
+}
+
+struct SongMenu<Label: View>: View {
+    let track: Track
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Menu {
+            SongDestinations(track: track)
+        } label: {
+            label()
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .tint(Color.primary)
+        .accessibilityHint("Shows the album, artist and song details")
     }
 }
 
@@ -302,16 +311,17 @@ struct CompactTitles: View {
                 .frame(width: artworkEdge, height: artworkEdge)
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 .matchedGeometryEffect(id: cover, in: shared)
-            Menu {
-                if let track { SongDestinations(track: track) }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track?.shownTitle ?? "Nothing playing").font(.headline).foregroundStyle(.primary).lineLimit(1)
-                    Text(track?.shownArtist ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            if let track {
+                SongMenu(track: track) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).lineLimit(1)
+                        Text(track.shownArtist).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
+            } else {
+                Text("Nothing playing").font(.headline).lineLimit(1)
             }
-            .disabled(track == nil)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
@@ -360,6 +370,8 @@ struct PlayerScrubber: View {
             .animation(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             HStack {
                 Text(clock(UInt64(shown)))
+                Spacer()
+                QualityLine(track: library.snapshot?.current)
                 Spacer()
                 Text("-" + clock(UInt64(max(duration - shown, 0))))
             }
@@ -418,11 +430,17 @@ struct QualityLine: View {
 
     var body: some View {
         let output = library.clock.outputRate
-        Text(Self.line(track, output: output))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
+        let line = Self.line(track, output: output)
+        if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            Text(line)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: .capsule)
+        }
     }
 
     private static func line(_ track: Track?, output: UInt32) -> String {

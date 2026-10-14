@@ -21,6 +21,13 @@ struct ArtworkView: View {
     @State private var image: UIImage?
     @State private var bucket: ArtworkBucket?
 
+    init(track: Track?, corner: CGFloat = 12, circle: Bool = false) {
+        self.track = track
+        self.corner = corner
+        self.circle = circle
+        _image = State(initialValue: circle ? nil : ShownArtwork.latest(for: track))
+    }
+
     var body: some View {
         ZStack {
             Rectangle().fill(.quaternary)
@@ -72,10 +79,52 @@ struct ArtworkView: View {
         var shown: UIImage?
 
         if let mbid = load.portrait { shown = await features.portrait(mbid, bucket: bucket) }
+        let portrayed = shown != nil
         if shown == nil { shown = await features.artwork(track, bucket: bucket) }
 
         guard !Task.isCancelled else { return }
         image = shown
+        if let shown, !portrayed { ShownArtwork.keep(shown, for: track) }
+    }
+}
+
+@MainActor
+enum ShownArtwork {
+    private static let budget = 24 * 1024 * 1024
+
+    private final class Shown {
+        let revision: UInt64
+        let image: UIImage
+
+        init(revision: UInt64, image: UIImage) {
+            self.revision = revision
+            self.image = image
+        }
+    }
+
+    private static let kept: NSCache<NSNumber, Shown> = {
+        let cache = NSCache<NSNumber, Shown>()
+        cache.totalCostLimit = budget
+        return cache
+    }()
+
+    static func latest(for track: Track?) -> UIImage? {
+        guard let track, let shown = kept.object(forKey: NSNumber(value: track.id)), shown.revision == track.artRevision else {
+            return nil
+        }
+        return shown.image
+    }
+
+    static func keep(_ image: UIImage, for track: Track) {
+        let key = NSNumber(value: track.id)
+        if let held = kept.object(forKey: key), held.revision == track.artRevision, edge(of: held.image) >= edge(of: image) {
+            return
+        }
+        kept.setObject(Shown(revision: track.artRevision, image: image), forKey: key, cost: ArtworkDecoder.cost(of: image))
+    }
+
+    private static func edge(of image: UIImage) -> CGFloat {
+        max(image.size.width, image.size.height) * image.scale
     }
 }
 
