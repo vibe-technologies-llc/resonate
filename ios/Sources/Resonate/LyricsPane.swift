@@ -76,7 +76,7 @@ struct LyricsPane: View {
     }
 
     private func following(_ sheet: LyricSheet) -> some View {
-        let playback = LyricPlayback.of(library.snapshot, showing: track)
+        let playback = LyricPlayback.of(library.snapshot, at: library.clock.positionMs, showing: track)
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
         let inks = LyricInks(scheme: scheme, accent: Color.accentColor.resolve(in: environment))
         let awake = visible && phase == .active
@@ -613,9 +613,9 @@ struct LyricPlayback: Equatable {
     let positionMs: UInt64
     let playing: Bool
 
-    static func of(_ snapshot: Snapshot?, showing track: Track?) -> LyricPlayback? {
+    static func of(_ snapshot: Snapshot?, at positionMs: UInt64, showing track: Track?) -> LyricPlayback? {
         guard let snapshot, let current = snapshot.current, let track, current.id == track.id else { return nil }
-        return LyricPlayback(track: current.id, positionMs: snapshot.positionMs, playing: snapshot.transport == .playing)
+        return LyricPlayback(track: current.id, positionMs: positionMs, playing: snapshot.transport == .playing)
     }
 }
 

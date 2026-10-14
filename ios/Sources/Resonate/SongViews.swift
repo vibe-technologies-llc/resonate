@@ -288,30 +288,6 @@ enum FilterChip: Identifiable {
     }
 }
 
-struct Collected: Identifiable {
-    let key: String
-    let title: String
-    let artist: String
-    let tracks: [Track]
-
-    var id: String { key }
-}
-
-func albums(of tracks: [Track]) -> [Collected] {
-    var order: [String] = []
-    var grouped: [String: Collected] = [:]
-    for track in tracks {
-        let key = "\(track.album.count):\(track.album)\(track.groupingArtist)"
-        if let group = grouped[key] {
-            grouped[key] = Collected(key: key, title: group.title, artist: group.artist, tracks: group.tracks + [track])
-        } else {
-            order.append(key)
-            grouped[key] = Collected(key: key, title: track.album, artist: track.groupingArtist, tracks: [track])
-        }
-    }
-    return order.compactMap { grouped[$0] }
-}
-
 struct EmptyLibrary: View {
     @Environment(Navigation.self) private var navigation
 

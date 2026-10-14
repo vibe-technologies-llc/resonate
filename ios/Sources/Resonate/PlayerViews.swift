@@ -193,7 +193,7 @@ struct NowPlayingView: View {
                 .padding(.top, 8)
             Group {
                 switch mode {
-                case .lyrics: NowPlayingLyrics(track: track)
+                case .lyrics: LyricsPane(track: track, compact: true)
                 case .queue, .artwork: UpNextList()
                 }
             }
@@ -276,14 +276,6 @@ struct CompactTitles: View {
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
-    }
-}
-
-struct NowPlayingLyrics: View {
-    let track: Track?
-
-    var body: some View {
-        ContentUnavailableView("Lyrics", systemImage: "quote.bubble")
     }
 }
 
