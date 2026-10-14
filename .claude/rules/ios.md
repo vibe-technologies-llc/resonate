@@ -90,9 +90,46 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `SharedPreferences` files, with the same keys.
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
-the mini player in the tab bar's bottom accessory; Now Playing as a full-screen cover over a backdrop
-of two tones sampled from 16 by 16 cover pixels; the output page holds `AVRoutePickerView`, since
-iOS owns the route.
+the mini player in the tab bar's bottom accessory; Now Playing as a full-screen cover over the
+backdrop; the output page holds `AVRoutePickerView`, since iOS owns the route.
+
+## The backdrop
+
+`BackdropView(track:)` (`Backdrop.swift`) is the flowing field behind Now Playing, the lyrics, the
+visualizer and the album and playlist pages.
+
+- **The palette** (`Palette`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
+  linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded by
+  lightness quantiles, six rounds. Near-black, near-white and grey pixels are dropped where at least
+  a third of the cover is vivid; a cover less than a sixteenth vivid is colourless and takes the
+  palette built around the accent colour, as does a song without a cover. Each colour is held to
+  Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
+  Palettes are remembered per song and art revision, so a page opens on its field at once.
+- **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
+  per process with `makeLibrary(source:)` on a utility task (`BackdropPipeline`): the offline
+  `metal` compiler in the SDK is an arm64 Mach-O that cannot run on the Linux host, so the package
+  carries no `.metal` file and no `.metallib`, and SwiftUI's `ShaderLibrary` is unusable. One
+  fullscreen triangle; the uniforms (`FieldUniforms`, 192 bytes, mirrored by the shader's `Field`,
+  checked before the pipeline is built) are passed with `setFragmentBytes`. Five Gaussian blobs
+  drift on Lissajous paths, the domain warped by two octaves of value noise; colours mix in Oklab
+  with their chroma partly kept, so complementary blobs do not meet in grey; then a lightness
+  curve, a vignette and triangular dither on the sRGB-encoded output (`bgra8Unorm`). Every period divides 360 s, the
+  length after which the clock wraps without a seam. The view draws at scale 1; the compositor
+  scales the blurred field up.
+- **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
+  a change mid-fade starts from the blend then on screen.
+- **Energy** is the RMS of the visualizer tap (`Features.samples`), with a 120 ms attack and a 600 ms
+  release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
+  the drift slows to 18 %. `Features.visualize` is reference-counted, so a backdrop and the
+  visualizer page each hold the tap without switching off the other's; a backdrop holds it only
+  while visible, active and moving.
+- **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
+  the palette changes; **Low Power Mode** caps at 30 fps; an inactive or backgrounded scene, or a
+  view out of its window, draws nothing.
+- **Failure falls back to the gradient**: no Metal device, a failed compile or pipeline, or a
+  uniform size the shader does not expect is logged in full at `.error` under subsystem
+  `org.resonate.ios`, category `backdrop` (a successful compile logs its time at `.notice`), and the
+  view draws two radial gradients from the palette's first two colours.
 
 ## Checks
 

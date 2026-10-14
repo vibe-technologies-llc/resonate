@@ -992,10 +992,16 @@ final class Features {
         }
     }
 
+    @ObservationIgnored private var visualizers = 0
+
     func visualize(_ enabled: Bool) {
-        visualization?.cancel()
-        visualization = nil
-        guard enabled else { return }
+        visualizers = max(visualizers + (enabled ? 1 : -1), 0)
+        guard visualizers > 0 else {
+            visualization?.cancel()
+            visualization = nil
+            return
+        }
+        guard visualization == nil else { return }
         visualization = Task { [weak self] in
             guard let native = try? await self?.library.player() else { return }
             while !Task.isCancelled {
