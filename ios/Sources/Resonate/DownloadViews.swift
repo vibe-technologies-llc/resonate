@@ -119,8 +119,8 @@ struct DownloadJobRow: View {
         case .done(let track):
             HStack {
                 Button("Play") { library.play([track], at: 0) }
-                if !track.album.isEmpty {
-                    Button("Go to album") { navigation.open(.album(title: track.album, artist: track.groupingArtist)) }
+                if let albumPage = track.albumPage {
+                    Button("Go to album") { navigation.open(albumPage) }
                 }
             }
             .buttonStyle(.glass)

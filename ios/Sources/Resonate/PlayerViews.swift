@@ -285,10 +285,8 @@ struct SongDestinations: View {
     let track: Track
 
     var body: some View {
-        if !track.album.isEmpty {
-            Button("Go to Album", systemImage: "square.stack") {
-                navigation.open(.album(title: track.album, artist: track.groupingArtist))
-            }
+        if let albumPage = track.albumPage {
+            Button("Go to Album", systemImage: "square.stack") { navigation.open(albumPage) }
         }
         Button("Go to Artist", systemImage: "music.mic") {
             navigation.open(.artist(track.artist))

@@ -253,8 +253,10 @@ full `track_count`, the albums and artists holding them with those named by the 
 matched); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
 Kotlin index. `albums(order)`/`artists(order)` (`CollectionOrder`: alphabetical, artist, year newest
 first, recently added, plays) group in Rust: an album by folded title plus folded album artist,
-else artist (an empty album title is no album), its `key` what `album_tracks` takes back, in disc
-and track order with unnumbered rows last; an artist by folded name, holding every song whose
+else artist (an empty album title is no album), its `key` what `album_tracks` and `album(key)` take back, in disc
+and track order with unnumbered rows last, and the free `album_key(album, artist, album_artist)`
+the same key for one song (`None` without an album), so a song's page needs no lookup;
+`albums_by(name)` lists an artist's albums, newest first; an artist by folded name, holding every song whose
 artist or album artist folds to it. `artist_tracks("")` is the songs naming no artist alone, the
 *Unknown artist* group, never every song lacking an album artist. `filtered_tracks` reads the same
 index: its text is the grammar, its album, artist and genre compare folded, and a page costs a sort

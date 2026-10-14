@@ -4,7 +4,7 @@ import SwiftUI
 extension AlbumHit {
     var shownTitle: String { title.isEmpty ? "Unknown album" : title }
     var shownArtist: String { artist.isEmpty ? "Unknown artist" : artist }
-    var destination: Destination { .album(title: title, artist: artist) }
+    var destination: Destination { .album(key) }
 
     var detail: String {
         [shownArtist, year.map(String.init) ?? "", counted(Int(songs), "song")]

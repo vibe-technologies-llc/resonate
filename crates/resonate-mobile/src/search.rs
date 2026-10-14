@@ -117,6 +117,22 @@ pub fn highlights(query: String, text: String, column: SearchColumn) -> Vec<Text
 }
 
 #[uniffi::export]
+pub fn album_key(album: String, artist: String, album_artist: String) -> Option<String> {
+    let filed_album = folded_letters(album.trim());
+    if filed_album.is_empty() {
+        return None;
+    }
+    let filed_album_artist = folded_letters(album_artist.trim());
+    let grouping = if filed_album_artist.is_empty() {
+        folded_letters(artist.trim())
+    } else {
+        filed_album_artist
+    };
+
+    Some(keyed(&filed_album, &grouping))
+}
+
+#[uniffi::export]
 impl MobilePlayer {
     pub fn search_library(&self, text: String, limit: u32) -> Result<LibrarySearch> {
         self.services.searching.search(&self.catalog, &text, limit)
@@ -130,8 +146,16 @@ impl MobilePlayer {
         self.services.searching.artists(&self.catalog, order)
     }
 
+    pub fn album(&self, key: String) -> Result<Option<AlbumHit>> {
+        self.services.searching.album(&self.catalog, &key)
+    }
+
     pub fn album_tracks(&self, key: String) -> Result<Vec<Track>> {
         self.services.searching.album_tracks(&self.catalog, &key)
+    }
+
+    pub fn albums_by(&self, name: String) -> Result<Vec<AlbumHit>> {
+        self.services.searching.albums_by(&self.catalog, &name)
     }
 
     pub fn artist_tracks(&self, name: String) -> Result<Vec<Track>> {
@@ -267,6 +291,34 @@ impl Searching {
         artists.sort_by(|one, other| artist_order(order, one, other));
 
         Ok(artists.into_iter().map(ArtistGroup::hit).collect())
+    }
+
+    pub(crate) fn album(&self, catalog: &Catalog, key: &str) -> Result<Option<AlbumHit>> {
+        let index = self.index(catalog)?;
+
+        Ok(index
+            .album_at
+            .get(key)
+            .map(|group| index.albums[*group].hit()))
+    }
+
+    pub(crate) fn albums_by(&self, catalog: &Catalog, name: &str) -> Result<Vec<AlbumHit>> {
+        let index = self.index(catalog)?;
+        let Some(artist) = index.artist_at.get(&folded_letters(name.trim())) else {
+            return Ok(Vec::new());
+        };
+
+        let mut held: Vec<usize> = index.artists[*artist]
+            .rows
+            .iter()
+            .filter_map(|at| index.rows[*at].album_group)
+            .collect();
+        held.sort_unstable();
+        held.dedup();
+        let mut albums: Vec<&AlbumGroup> = held.into_iter().map(|at| &index.albums[at]).collect();
+        albums.sort_by(|one, other| album_order(CollectionOrder::Year, one, other));
+
+        Ok(albums.into_iter().map(AlbumGroup::hit).collect())
     }
 
     pub(crate) fn album_tracks(&self, catalog: &Catalog, key: &str) -> Result<Vec<Track>> {
@@ -1022,11 +1074,7 @@ impl Index {
             if row.filed_album.is_empty() {
                 continue;
             }
-            let key = format!(
-                "{}{BETWEEN_KEY_PARTS}{}",
-                row.filed_album,
-                row.grouping_artist().1
-            );
+            let key = keyed(&row.filed_album, row.grouping_artist().1);
             let group = *album_at.entry(key.clone()).or_insert_with(|| {
                 albums.push(AlbumGroup::first(key, row));
                 albums.len() - 1
@@ -1320,6 +1368,10 @@ fn named_first(groups: Vec<usize>, most: usize, fit: impl Fn(usize) -> Option<Fi
         .take(most)
         .map(|(_, group)| group)
         .collect()
+}
+
+fn keyed(filed_album: &str, filed_artist: &str) -> String {
+    format!("{filed_album}{BETWEEN_KEY_PARTS}{filed_artist}")
 }
 
 fn pictured_among<'a>(mut rows: impl Iterator<Item = &'a Row> + Clone) -> u64 {
@@ -1752,6 +1804,72 @@ mod tests {
                 .map(|artist| (artist.name.as_str(), artist.songs, artist.albums))
                 .collect::<Vec<_>>(),
             vec![("Pink Floyd", 5, 1), ("Roger Waters", 1, 1)]
+        );
+    }
+
+    #[test]
+    fn an_album_spelled_two_ways_is_one_page_under_the_key_a_song_names() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let first = song(
+            &catalog,
+            Tagged {
+                title: "Hyperballad",
+                artist: "Björk",
+                album: "Post",
+                number: Some(4),
+                date: "1995",
+                ..UNTAGGED
+            },
+        );
+        song(
+            &catalog,
+            Tagged {
+                title: "Army of Me",
+                artist: "Bjork",
+                album: "POST ",
+                number: Some(1),
+                ..UNTAGGED
+            },
+        );
+        song(
+            &catalog,
+            Tagged {
+                title: "Joga",
+                artist: "Björk",
+                album: "Homogenic",
+                date: "1997",
+                ..UNTAGGED
+            },
+        );
+
+        let key = album_key(
+            first.album.clone(),
+            first.artist.clone(),
+            first.album_artist.clone(),
+        )
+        .expect("an album key");
+        let album = searching.album(&catalog, &key).expect("the album");
+        let tracks = searching
+            .album_tracks(&catalog, &key)
+            .expect("the album's tracks");
+        let albums = searching
+            .albums_by(&catalog, "bjork")
+            .expect("the artist's albums");
+
+        assert_eq!(album.map(|album| album.songs), Some(2));
+        assert_eq!(titles(&tracks), vec!["Army of Me", "Hyperballad"]);
+        assert_eq!(
+            albums
+                .iter()
+                .map(|album| album.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Homogenic", "Post"]
+        );
+        assert_eq!(album_key(" ".into(), "Björk".into(), String::new()), None);
+        assert_eq!(
+            album_key("Post".into(), "Bjork".into(), String::new()),
+            Some(key)
         );
     }
 

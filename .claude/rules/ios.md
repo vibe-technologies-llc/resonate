@@ -135,9 +135,14 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
   remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
   song row's leading swipe and context-menu actions and a collection header's buttons.
-- **Collections** are titled by their entity and drawn over a still backdrop. Albums order
-  untagged tracks after tagged ones; an artist matches case-insensitively, an empty name only songs
-  with no artist. A playlist's rows are keyed by song and occurrence, move and remove at once, and
+- **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
+  never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
+  `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
+  the index's own arithmetic, `nil` without an album, which hides *Go to album*). `AlbumView` reads
+  `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions)
+  and `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page), each on `Work.aside` in a
+  `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
+  reload, keeping the last answer meanwhile. A playlist's rows are keyed by song and occurrence, move and remove at once, and
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.

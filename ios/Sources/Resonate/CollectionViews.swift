@@ -300,7 +300,7 @@ struct PlaylistArtwork: View {
             let id = playlist.id
             let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
             var seen = Set<String>()
-            covers = Array(rows.filter { seen.insert("\($0.album)\u{1F}\($0.groupingArtist)").inserted }.prefix(4))
+            covers = Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(4))
         }
     }
 }
@@ -309,46 +309,6 @@ func collectionSummary(_ tracks: [Track]) -> String {
     let minutes = tracks.reduce(UInt64(0)) { $0 + $1.durationMs } / 60_000
     let length = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
     return "\(counted(tracks.count, "song")) · \(length)"
-}
-
-func albumSongs(in tracks: [Track], title: String, artist: String) -> [Track] {
-    tracks
-        .filter { $0.album == title && $0.groupingArtist == artist }
-        .sorted { first, second in
-            (first.discNumber ?? 1, first.trackNumber ?? .max, first.shownTitle)
-                < (second.discNumber ?? 1, second.trackNumber ?? .max, second.shownTitle)
-        }
-}
-
-func artistSongs(in tracks: [Track], named name: String) -> [Track] {
-    guard !name.isEmpty else { return tracks.filter { $0.artist.isEmpty } }
-    return tracks.filter { track in
-        track.artist.caseInsensitiveCompare(name) == .orderedSame
-            || track.albumArtist.caseInsensitiveCompare(name) == .orderedSame
-    }
-}
-
-struct ShelvedAlbum: Identifiable {
-    let title: String
-    let artist: String
-    let tracks: [Track]
-
-    var id: String { "\(title.count):\(title)\(artist)" }
-
-    static func of(_ tracks: [Track]) -> [ShelvedAlbum] {
-        var order: [String] = []
-        var grouped: [String: ShelvedAlbum] = [:]
-        for track in tracks {
-            let album = ShelvedAlbum(title: track.album, artist: track.groupingArtist, tracks: [track])
-            if let kept = grouped[album.id] {
-                grouped[album.id] = ShelvedAlbum(title: kept.title, artist: kept.artist, tracks: kept.tracks + [track])
-            } else {
-                order.append(album.id)
-                grouped[album.id] = album
-            }
-        }
-        return order.compactMap { grouped[$0] }
-    }
 }
 
 struct CollectionCover: View {
@@ -436,21 +396,22 @@ extension CollectionHeader where Artwork == CollectionCover {
 struct AlbumView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let title: String
-    let artist: String
+    let key: String
+    @State private var album: AlbumHit?
+    @State private var tracks: [Track] = []
+    @State private var read = false
 
     var body: some View {
-        let tracks = albumSongs(in: library.allTracks, title: title, artist: artist)
-        let shownTitle = title.isEmpty ? "Unknown album" : title
-        let year = tracks.lazy.map { String($0.date.prefix(4)) }.first { $0.count == 4 && Int($0) != nil }
+        let shownTitle = album?.shownTitle ?? ""
+        let artist = album?.artist ?? ""
         List {
             CollectionHeader(
                 title: shownTitle,
-                subtitle: artist.isEmpty ? "Unknown artist" : artist,
+                subtitle: album?.shownArtist ?? "",
                 tracks: tracks,
-                summary: ([year].compactMap { $0 } + [collectionSummary(tracks)]).joined(separator: " · ")
+                summary: ([album?.year.map(String.init)].compactMap { $0 } + [collectionSummary(tracks)]).joined(separator: " · ")
             )
-            if tracks.isEmpty {
+            if read, tracks.isEmpty {
                 Text("No songs from this album are in your library yet.").foregroundStyle(.secondary)
             }
             ForEach(tracks, id: \.id) { track in
@@ -470,6 +431,18 @@ struct AlbumView: View {
                 Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
             }
         }
+        .task(id: "\(key):\(library.collectionGeneration)") { await load() }
+    }
+
+    private func load() async {
+        guard let native = try? await library.player() else { return }
+        let key = key
+        guard let (found, rows) = try? await Work.aside({ (try native.album(key: key), try native.albumTracks(key: key)) }) else {
+            return
+        }
+        album = found
+        tracks = rows
+        read = true
     }
 }
 
@@ -477,34 +450,38 @@ struct ArtistView: View {
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .subheadline) private var albumEdge: CGFloat = 140
     let name: String
+    @State private var albums: [AlbumHit] = []
+    @State private var tracks: [Track] = []
+    @State private var read = false
 
     var body: some View {
-        let tracks = artistSongs(in: library.allTracks, named: name)
-        let records = ShelvedAlbum.of(tracks)
         let shownName = name.isEmpty ? "Unknown artist" : name
         List {
             CollectionHeader(
                 title: shownName,
                 subtitle: "Artist",
                 tracks: tracks,
-                summary: "\(counted(records.count, "album")) · \(counted(tracks.count, "song"))",
+                summary: "\(counted(albums.count, "album")) · \(counted(tracks.count, "song"))",
                 circle: true
             )
-            if tracks.isEmpty {
+            if read, tracks.isEmpty {
                 Text("No music by this artist is in your library yet.").foregroundStyle(.secondary)
             }
-            if !records.isEmpty {
+            if !albums.isEmpty {
                 Section("Albums") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
-                            ForEach(records) { record in
-                                NavigationLink(value: Destination.album(title: record.title, artist: record.artist)) {
+                            ForEach(albums, id: \.key) { album in
+                                NavigationLink(value: album.destination) {
                                     VStack(alignment: .leading) {
-                                        ArtworkView(track: record.tracks.first).frame(width: albumEdge, height: albumEdge)
-                                        Text(record.title.isEmpty ? "Unknown album" : record.title)
+                                        ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
+                                            .frame(width: albumEdge, height: albumEdge)
+                                        Text(album.shownTitle)
                                             .font(.subheadline.weight(.medium))
                                             .lineLimit(1)
-                                        Text(counted(record.tracks.count, "song")).font(.caption).foregroundStyle(.secondary)
+                                        Text(album.year.map(String.init) ?? counted(Int(album.songs), "song"))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
                                     }
                                     .frame(width: albumEdge)
                                     .accessibilityElement(children: .combine)
@@ -533,6 +510,18 @@ struct ArtistView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(shownName)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: "\(name):\(library.collectionGeneration)") { await load() }
+    }
+
+    private func load() async {
+        guard let native = try? await library.player() else { return }
+        let name = name
+        guard let (found, rows) = try? await Work.aside({ (try native.albumsBy(name: name), try native.artistTracks(name: name)) }) else {
+            return
+        }
+        albums = found
+        tracks = rows
+        read = true
     }
 }
 

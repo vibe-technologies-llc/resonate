@@ -29,7 +29,7 @@ enum Root: Hashable {
 }
 
 enum Destination: Hashable {
-    case album(title: String, artist: String)
+    case album(String)
     case artist(String)
     case playlist(UInt64)
     case playlists
@@ -196,7 +196,7 @@ struct DestinationView: View {
 
     var body: some View {
         switch destination {
-        case .album(let title, let artist): AlbumView(title: title, artist: artist)
+        case .album(let key): AlbumView(key: key)
         case .artist(let name): ArtistView(name: name)
         case .playlist(let id): PlaylistView(id: id)
         case .playlists: LibraryView(playlistsOnly: true)

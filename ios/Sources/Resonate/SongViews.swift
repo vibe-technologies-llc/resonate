@@ -5,6 +5,7 @@ extension Track {
     var shownTitle: String { title.isEmpty ? name : title }
     var shownArtist: String { artist.isEmpty ? "Unknown artist" : artist }
     var groupingArtist: String { albumArtist.isEmpty ? artist : albumArtist }
+    var albumPage: Destination? { albumKey(album: album, artist: artist, albumArtist: albumArtist).map(Destination.album) }
 
     var quality: String {
         var parts = [codec]
@@ -505,10 +506,8 @@ struct TrackMenu: View {
             Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
             Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
             Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
-            if !track.album.isEmpty {
-                Button("Go to album", systemImage: "square.stack") {
-                    navigation.open(.album(title: track.album, artist: track.groupingArtist))
-                }
+            if let albumPage = track.albumPage {
+                Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
             }
             if !track.artist.isEmpty {
                 Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
