@@ -162,6 +162,17 @@ struct Held {
     rows: Option<Vec<playlist::Row>>,
 }
 
+pub(crate) fn overtaken(inner: &Inner, playlists: &[PlaylistId], names: &[String]) {
+    let overtakes = |step: &Step| {
+        playlists.contains(&step.playlist)
+            || names
+                .iter()
+                .any(|name| *name == playlist::folded(step.named()))
+    };
+    inner.steps().lock().retain(|step| !overtakes(step));
+    inner.walked().lock().retain(|step| !overtakes(step));
+}
+
 pub(crate) enum Change<T> {
     Made(T),
     Nothing(T),

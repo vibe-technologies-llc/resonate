@@ -13,15 +13,16 @@ use crossbeam_channel::Sender;
 use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, Spectral,
-    SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, PlaylistId, Presence, ScrollbarMode, Shown,
+    Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize,
+    Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
     Restoration, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
-use resonate_library::{HistoryKept, MinimumLength, MusicExtensions};
+use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 
@@ -230,10 +231,15 @@ pub enum SettingKey {
     DiscordIcon,
     DiscordProgress,
     DiscordPaused,
+    Sync,
+    SyncServer,
+    SyncKey,
+    SyncDevice,
+    SyncSongs,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 88] = [
+    pub const ALL: [Self; 93] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -322,6 +328,11 @@ impl SettingKey {
         Self::DiscordIcon,
         Self::DiscordProgress,
         Self::DiscordPaused,
+        Self::Sync,
+        Self::SyncServer,
+        Self::SyncKey,
+        Self::SyncDevice,
+        Self::SyncSongs,
     ];
 }
 
@@ -418,6 +429,11 @@ pub enum Setting {
     DiscordIcon(Option<Icon>),
     DiscordProgress(bool),
     DiscordPaused(bool),
+    Sync(bool),
+    SyncServer(String),
+    SyncKey(String),
+    SyncDevice(String),
+    SyncSongs(SyncedSongs),
 }
 
 impl Setting {
@@ -511,6 +527,11 @@ impl Setting {
             Self::DiscordIcon(_) => SettingKey::DiscordIcon,
             Self::DiscordProgress(_) => SettingKey::DiscordProgress,
             Self::DiscordPaused(_) => SettingKey::DiscordPaused,
+            Self::Sync(_) => SettingKey::Sync,
+            Self::SyncServer(_) => SettingKey::SyncServer,
+            Self::SyncKey(_) => SettingKey::SyncKey,
+            Self::SyncDevice(_) => SettingKey::SyncDevice,
+            Self::SyncSongs(_) => SettingKey::SyncSongs,
         }
     }
 }
@@ -759,6 +780,8 @@ pub struct Stored {
     pub last_settings_category: SettingsCategory,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
+    pub synchronised: Synchronised,
+    pub syncing: Option<Arc<dyn Syncing>>,
     pub launcher: Arc<dyn Launcher>,
 }
 
@@ -799,6 +822,73 @@ fn millis(duration: Duration) -> u64 {
 
 pub trait Present: Send + Sync {
     fn follow(&self, presence: &Presence);
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Synchronised {
+    pub enabled: bool,
+    pub server: String,
+    pub device: String,
+    pub songs: SyncedSongs,
+}
+
+impl Default for Synchronised {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            server: String::new(),
+            device: String::new(),
+            songs: SyncedSongs::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SyncStanding {
+    #[default]
+    Connecting,
+    Connected,
+    Unreachable,
+    Refused,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncedDevice {
+    pub name: String,
+    pub online: bool,
+    pub this: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SyncShown {
+    pub standing: SyncStanding,
+    pub code: String,
+    pub devices: Vec<SyncedDevice>,
+    pub moving: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HandedOff {
+    pub device: String,
+    pub songs: usize,
+}
+
+pub trait Syncing: Send + Sync {
+    fn shown(&self) -> SyncShown;
+
+    fn reads_as_a_code(&self, code: &str) -> bool;
+
+    fn missing_from(&self, playlist: PlaylistId) -> usize;
+
+    fn fetch_missing(&self, playlist: PlaylistId, from: &str);
+
+    fn keeps_songs_of(&self, playlist: PlaylistId) -> bool;
+
+    fn keep_songs_of(&self, playlist: PlaylistId, keep: bool);
+
+    fn handed_off(&self) -> Vec<HandedOff>;
+
+    fn continue_from(&self, device: &str) -> Vec<Cut>;
 }
 
 #[derive(Clone, Debug, PartialEq)]

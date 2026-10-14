@@ -122,6 +122,20 @@ pub(crate) fn filed(
     Ok(Filed { path, root })
 }
 
+pub(crate) fn landed_beside(
+    library: &Library,
+    whole: &Path,
+    reader: &mut dyn Read,
+) -> std::result::Result<PathBuf, Unfiled> {
+    let parent = whole.parent().ok_or(Unfiled::Unnamed)?;
+    fs::create_dir_all(parent)?;
+    let staged = staged_beside(whole);
+    library.staging(&staged).map_err(Unfiled::Catalog)?;
+    let landed = staged_from(reader, &staged).and_then(|_held| placed(&staged, whole));
+    staged_away(library, &staged);
+    landed
+}
+
 fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {
     let location = MediaLocation::local(path);
     if want.length.is_none() {

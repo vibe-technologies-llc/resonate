@@ -185,6 +185,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
   reaches it.
+- **`sync` (on) and the five `sync-*` keys** (`sync.md`): `sync-server` blank = the hosted
+  `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted beside the roots; `sync-key` the
+  pairing code, minted and written back on the first start that syncs, withheld by `Debug`, joined
+  by `resonate sync --join` or the pane, cleared by `--leave`; `sync-device` the name other devices
+  see (default `Linux`); `sync-songs` an array of `favourites`, `playlists`, `everything` (empty =
+  only on request). Off whenever `online` is (`Config::syncs`). The pane writes them for the next
+  start. **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window
+  holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the latter).
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers; blank/absent uses the
   hosted service (`tracks.monochrome.st`) while `online` is on (`providers.md`).
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);

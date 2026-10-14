@@ -34,6 +34,7 @@ mod stats;
 mod studies;
 mod submitting;
 mod suggest;
+mod sync;
 mod table;
 mod vault;
 mod vocabulary;
@@ -87,7 +88,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-    cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, Sub, TransportArgs},
+    cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, Sub, SyncArgs, TransportArgs},
     config::Config,
     error::{ArtistName, ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
@@ -233,6 +234,7 @@ fn run() -> Result<()> {
             },
         ),
         Some(Sub::Wants) => wants(&open_library(&cli, &config)?),
+        Some(Sub::Sync(args)) => synced(&cli, &config, args),
         Some(Sub::Missing {
             artist,
             read_the_rest,
@@ -2102,6 +2104,36 @@ fn players() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "sync")]
+fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> {
+    let settings = settings_path(cli)?;
+    let asked = match (&args.join, &args.fetch, &args.from, &args.handoff) {
+        (Some(code), ..) => sync::Asked::Join(code),
+        _ if args.leave => sync::Asked::Leave,
+        (_, Some(playlist), Some(from), _) => sync::Asked::Fetch { playlist, from },
+        (.., Some(from)) => sync::Asked::Handoff { from },
+        _ => sync::Asked::Standing,
+    };
+    let library = match asked {
+        sync::Asked::Join(_) | sync::Asked::Leave => None,
+        _ => Some(Arc::new(open_library(cli, config)?)),
+    };
+    let Some(items) = sync::asked(config, &settings, library.clone(), asked)? else {
+        return Ok(());
+    };
+    let transport = TransportArgs {
+        shuffle: false,
+        repeat: None,
+        volume: None,
+    };
+    play_queue(cli, config, items, library, None, None, &transport)
+}
+
+#[cfg(not(feature = "sync"))]
+fn synced(_cli: &Cli, _config: &Config, _args: &SyncArgs) -> Result<()> {
+    Err(Error::SyncOff)
+}
+
 fn play_queue(
     cli: &Cli,
     config: &Config,
@@ -2149,6 +2181,9 @@ fn play_queue(
     let submitting = library
         .as_ref()
         .map(|library| submitting::start(config, library, &player));
+    let syncing = library
+        .as_ref()
+        .map(|library| sync::start(config, settings_path(cli).ok().as_deref(), library));
 
     let behind = input::played_in_the_background();
     let keyed = (!behind)
@@ -2231,6 +2266,9 @@ fn play_queue(
         record_a_play(library, listening.leaves(), &mut counted);
     }
     presenter.leave();
+    if let Some(syncing) = syncing {
+        syncing.leave();
+    }
     if let Some(submitting) = submitting {
         submitting.leave();
     }
@@ -2557,6 +2595,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let listens = listen::in_the_window(&config, mpris.as_ref().map(resonate_mpris::Mpris::teller));
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     let submitting = submitting::start(&config, &library, &player);
+    let syncing = sync::start(&config, Some(&places.config), &library);
     let outcome = resonate_ui::run(
         Arc::clone(&player),
         Arc::clone(&library),
@@ -2641,6 +2680,13 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             last_settings_category: config.remembered_settings_category(),
             presence: config.presence(),
             present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
+            synchronised: resonate_ui::Synchronised {
+                enabled: config.sync.unwrap_or(true),
+                server: config.sync_server.clone().unwrap_or_default(),
+                device: config.sync_device.clone().unwrap_or_default(),
+                songs: config.sync_songs.unwrap_or_default(),
+            },
+            syncing: syncing.for_the_window(),
             launcher: Arc::new(launcher::Icons::start()),
         },
         config.appearance(),
@@ -2651,6 +2697,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         },
     );
     drop(presenter);
+    syncing.leave();
     submitting.leave();
     drop(mpris);
     outcome?;

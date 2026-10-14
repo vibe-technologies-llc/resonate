@@ -111,6 +111,8 @@ pub(crate) enum Group {
     Submitting,
     Lastfm,
     LookUpNow,
+    Syncing,
+    SyncedSongs,
     Notifications,
     Discord,
     DiscordShows,
@@ -129,7 +131,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 59] = [
+    pub(crate) const ALL: [Self; 61] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -174,6 +176,8 @@ impl Group {
         Self::Submitting,
         Self::Lastfm,
         Self::LookUpNow,
+        Self::Syncing,
+        Self::SyncedSongs,
         Self::Notifications,
         Self::Discord,
         Self::DiscordShows,
@@ -235,7 +239,9 @@ impl Group {
             | Self::Listening
             | Self::Submitting
             | Self::Lastfm
-            | Self::LookUpNow => Category::Online,
+            | Self::LookUpNow
+            | Self::Syncing
+            | Self::SyncedSongs => Category::Online,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
             | Self::Layout
@@ -301,6 +307,8 @@ impl Group {
             Self::Lastfm => "Last.fm",
             Self::LookUpNow => "Look up now",
             Self::Notifications => "Notifications",
+            Self::Syncing => "Device sync",
+            Self::SyncedSongs => "Songs between devices",
             Self::Discord => "Discord",
             Self::DiscordShows => "What Discord shows",
             Self::Colour => "Colour",
@@ -369,6 +377,8 @@ impl Group {
             Self::Lastfm => LASTFM_HINT,
             Self::LookUpNow => LOOKUP_HINT,
             Self::Notifications => NOTIFICATIONS_HINT,
+            Self::Syncing => SYNCING_HINT,
+            Self::SyncedSongs => SYNCED_SONGS_HINT,
             Self::Discord => DISCORD_HINT,
             Self::DiscordShows => DISCORD_SHOWS_HINT,
             Self::Colour => COLOUR_HINT,
@@ -509,6 +519,14 @@ impl Group {
             Self::Discord => {
                 "rich presence status activity listening profile application id client"
             }
+            Self::Syncing => {
+                "sync synchronise synchronize devices phone android pair pairing code server \
+                 account cloud playlists favourites history handoff"
+            }
+            Self::SyncedSongs => {
+                "sync copy transfer download songs files phone android peer playlists favourites \
+                 everything automatic"
+            }
             Self::DiscordShows => {
                 "rich presence status activity cover art album icon asset progress bar elapsed \
                  paused details"
@@ -604,6 +622,12 @@ impl Group {
                 SettingKey::LastfmSession,
             ],
             Self::Notifications => &[SettingKey::Notify],
+            Self::Syncing => &[
+                SettingKey::Sync,
+                SettingKey::SyncServer,
+                SettingKey::SyncDevice,
+            ],
+            Self::SyncedSongs => &[SettingKey::SyncSongs],
             Self::Discord => &[SettingKey::Discord, SettingKey::DiscordApp],
             Self::DiscordShows => &[
                 SettingKey::DiscordShows,
@@ -1057,6 +1081,16 @@ pub(crate) const DISCORD_SHOWS_HINT: &str = "How much Discord is told: just that
                                              listening, the track, or the track and its album, \
                                              with the album's cover, your application's icon or \
                                              no picture, and a bar that follows the track.";
+
+pub(crate) const SYNCING_HINT: &str = "Keeps your playlists, favourites, listening history and \
+                                       what each device was playing the same on every device that \
+                                       shares this pairing code. What travels is sealed on this \
+                                       device first; the server holds only what it cannot read.";
+
+pub(crate) const SYNCED_SONGS_HINT: &str = "Songs never pass through the server: while two of \
+                                            your devices are online they are sent from one to the \
+                                            other directly. Nothing is sent unless you ask, or \
+                                            you choose here what is fetched by itself.";
 
 pub(crate) const COLOUR_HINT: &str = "The palette the whole window is painted in and the one colour it leads with — the play mark, \
      a selected row, a chosen chip, the position rail and every primary control. Every palette is \

@@ -63,6 +63,7 @@ use crate::{
     scan, schema, scrobble, search, share, sheet, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
+    synced::{self, HeldSong, SyncedListen, SyncedPlaylist},
     undo::{self, Step},
     vaulted::{self, Vaulted},
 };
@@ -659,6 +660,7 @@ pub(crate) struct Inner {
     walk_ended: Condvar,
     vault: Option<Arc<Vault>>,
     playlists: AtomicU64,
+    arrivals: AtomicU64,
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
     planned: Arc<AtomicU64>,
@@ -892,6 +894,14 @@ impl Inner {
 
     pub(crate) fn playlists_changed(&self) {
         self.playlists.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn arrived(&self) {
+        self.arrivals.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn arrivals(&self) -> u64 {
+        self.arrivals.load(Ordering::Acquire)
     }
 
     pub(crate) const fn steps(&self) -> &Mutex<Vec<Step>> {
@@ -1440,6 +1450,7 @@ impl Library {
                 walk_ended: Condvar::new(),
                 vault,
                 playlists: AtomicU64::new(0),
+                arrivals: AtomicU64::new(0),
                 named,
                 written,
                 planned,
@@ -2322,6 +2333,92 @@ impl Library {
 
     pub fn redoable(&self) -> Option<Undoable> {
         undo::redoable(&self.inner)
+    }
+
+    pub fn synced_playlists(&self) -> Result<Vec<SyncedPlaylist>> {
+        synced::playlists(&self.inner)
+    }
+
+    pub fn write_synced_playlist(
+        &self,
+        at: Option<(PlaylistId, i64)>,
+        name: &str,
+        entries: &[resonate_core::Recording],
+    ) -> Result<SyncedPlaylist> {
+        synced::write_playlist(&self.inner, at, name, entries)
+    }
+
+    pub fn remove_synced_playlist(&self, id: PlaylistId, created: i64) -> Result<bool> {
+        synced::remove_playlist(&self.inner, id, created)
+    }
+
+    pub fn favoured_recordings(&self) -> Result<Vec<resonate_core::Recording>> {
+        synced::favourites(&self.inner)
+    }
+
+    pub fn favour_recording(
+        &self,
+        recording: &resonate_core::Recording,
+        favoured: bool,
+    ) -> Result<bool> {
+        synced::favour(&self.inner, recording, favoured)
+    }
+
+    pub fn listens_to_sync(&self, after: u64, most: usize) -> Result<Vec<SyncedListen>> {
+        synced::listens_after(&self.inner, after, most)
+    }
+
+    pub fn credit_listen_elsewhere(
+        &self,
+        recording: &resonate_core::Recording,
+        at: i64,
+        heard: Duration,
+    ) -> Result<bool> {
+        synced::credit(&self.inner, recording, at, heard)
+    }
+
+    pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {
+        synced::resolve(&self.inner, recording)
+    }
+
+    pub fn recording_at(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+    ) -> Result<Option<resonate_core::Recording>> {
+        synced::recording_of(&self.inner, location, span)
+    }
+
+    pub fn held_songs(&self) -> Result<Vec<HeldSong>> {
+        synced::holdings(&self.inner)
+    }
+
+    pub fn file_song_from_elsewhere(
+        &self,
+        recording: &resonate_core::Recording,
+        extension: &str,
+        reader: &mut dyn std::io::Read,
+    ) -> Result<Option<PathBuf>> {
+        synced::file_song(self, recording, extension, reader)
+    }
+
+    pub fn synced_revision(&self) -> u64 {
+        self.inner.arrivals()
+    }
+
+    pub fn catalog_revision(&self) -> u64 {
+        let inner = &self.inner;
+        inner
+            .playlists_revision()
+            .wrapping_add(inner.arrivals())
+            .wrapping_add(inner.written.load(Ordering::Acquire))
+            .wrapping_add(inner.named.load(Ordering::Acquire))
+            .wrapping_add(
+                inner
+                    .written_elsewhere()
+                    .unwrap_or_default()
+                    .cast_unsigned(),
+            )
     }
 
     pub fn playlists_revision(&self) -> u64 {

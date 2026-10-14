@@ -77,7 +77,7 @@ const THE_LISTENS_AFTER: &str = concat!(
        JOIN tracks t ON t.id = l.track_id
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = t.artist_id
-      WHERE l.id > ?1 AND l.id <= ?3
+      WHERE l.id > ?1 AND l.id <= ?3 AND l.elsewhere = 0
       ORDER BY l.id
       LIMIT ?2"
 );

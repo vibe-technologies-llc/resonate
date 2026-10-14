@@ -16,7 +16,7 @@ use clap::ValueEnum as _;
 use resonate_core::Appearance;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpectrumBands,
-    SpectrumFalls, SpectrumFloor, SpectrumTilt, TextSize, Theme, Trim, Volume,
+    SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode, Restoration,
@@ -188,6 +188,12 @@ pub struct Config {
     pub discord_icon: Option<Icon>,
     pub discord_progress: Option<bool>,
     pub discord_paused: Option<bool>,
+    pub sync: Option<bool>,
+    pub sync_server: Option<String>,
+    pub sync_server_certificate: Option<PathBuf>,
+    pub sync_key: Option<String>,
+    pub sync_device: Option<String>,
+    pub sync_songs: Option<SyncedSongs>,
 }
 
 struct Withheld;
@@ -294,6 +300,12 @@ impl fmt::Debug for Config {
             discord_icon,
             discord_progress,
             discord_paused,
+            sync,
+            sync_server,
+            sync_server_certificate,
+            sync_key,
+            sync_device,
+            sync_songs,
         } = self;
 
         f.debug_struct("Config")
@@ -392,6 +404,12 @@ impl fmt::Debug for Config {
             .field("discord_icon", discord_icon)
             .field("discord_progress", discord_progress)
             .field("discord_paused", discord_paused)
+            .field("sync", sync)
+            .field("sync_server", sync_server)
+            .field("sync_server_certificate", sync_server_certificate)
+            .field("sync_key", &withheld(sync_key.as_ref()))
+            .field("sync_device", sync_device)
+            .field("sync_songs", sync_songs)
             .finish()
     }
 }
@@ -444,6 +462,11 @@ impl Config {
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn online_enabled(&self) -> bool {
         self.online.unwrap_or(true)
+    }
+
+    #[cfg(any(feature = "sync", test))]
+    pub fn syncs(&self) -> bool {
+        self.online.unwrap_or(true) && self.sync.unwrap_or(true)
     }
 
     #[cfg(feature = "online")]
@@ -955,6 +978,23 @@ impl Config {
             ConfigKey::DiscordIcon => config.discord_icon = at.unless_blank(value, Icon::parse)?,
             ConfigKey::DiscordProgress => config.discord_progress = Some(at.boolean(value)?),
             ConfigKey::DiscordPaused => config.discord_paused = Some(at.boolean(value)?),
+            ConfigKey::Sync => config.sync = Some(at.boolean(value)?),
+            ConfigKey::SyncServer => config.sync_server = given(at.string(value)?),
+            ConfigKey::SyncServerCertificate => {
+                config.sync_server_certificate = a_path(at.string(value)?);
+            }
+            ConfigKey::SyncKey => config.sync_key = given(at.string(value)?),
+            ConfigKey::SyncDevice => config.sync_device = given(at.string(value)?),
+            ConfigKey::SyncSongs => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| at.mistyped(ValueKind::Array))?;
+                let named = array
+                    .iter()
+                    .map(|name| name.as_str().ok_or_else(|| at.mistyped(ValueKind::Text)))
+                    .collect::<Result<Vec<_>>>()?;
+                config.sync_songs = Some(SyncedSongs::parse(&named).ok_or_else(|| at.rejected())?);
+            }
             ConfigKey::BufferMs => {
                 let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.buffer = Some(Duration::from_millis(millis));
@@ -1427,7 +1467,8 @@ mod tests {
              subsonic-password = \"subsonic-sesame\"\ntidal-client-id = \"client\"\n\
              tidal-client-secret = \"tidal-hush\"\ntidal-refresh-token = \"tidal-sesame\"\n\
              audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
-             acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n",
+             acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n\
+             sync-key = \"sync-sesame\"\n",
         )
         .expect("a well formed document");
 
@@ -1445,9 +1486,34 @@ mod tests {
             "listenbrainz-sesame",
             "acoustid-sesame",
             "someone at an address",
+            "sync-sesame",
         ] {
             assert!(!printed.contains(secret), "{secret} was printed");
         }
+    }
+
+    #[test]
+    fn sync_reads_its_keys_and_is_off_wherever_online_is() {
+        let config = read(
+            "sync-server = \" sync.home.arpa:7443 \"\nsync-device = \"Desk\"\n\
+             sync-server-certificate = \"/etc/resonate/sync.pem\"\n\
+             sync-songs = [\"favourites\", \"playlists\"]\n",
+        )
+        .expect("a well formed document");
+
+        assert!(config.syncs());
+        assert_eq!(config.sync_server.as_deref(), Some("sync.home.arpa:7443"));
+        assert_eq!(config.sync_device.as_deref(), Some("Desk"));
+        assert_eq!(
+            config.sync_server_certificate.as_deref(),
+            Some(Path::new("/etc/resonate/sync.pem"))
+        );
+        let songs = config.sync_songs.expect("songs followed");
+        assert!(songs.favourites && songs.playlists && !songs.everything);
+
+        assert!(!read("online = false\n").expect("read").syncs());
+        assert!(!read("sync = false\n").expect("read").syncs());
+        assert!(read("sync-songs = [\"all\"]\n").is_err());
     }
 
     #[test]

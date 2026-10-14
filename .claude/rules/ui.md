@@ -1304,6 +1304,14 @@ is never named.
   (`library.md`'s *Taking files in*). The handle lives in `ResonateApp::copying`; at event-loop end
   `run` winds it down (`wound_down`: cancel, wait up to `WIND_DOWN_WITHIN` 10 s) before the library's
   own pass. A file being copied is `.<name>.<pid>.resonate-part` until renamed into place whole.
+- **Device sync = two Online groups and three gestures** (`views/settings/sync.rs`, `sync.md`).
+  *Device sync*: switch, the pairing code and who shares it, *Join with a code* (read by
+  `Syncing::reads_as_a_code`; blank does nothing), device name, server; *Songs between devices*: the
+  three `sync-songs` switches. Each writes `ResonateApp::synchronised` and the file for the next
+  start; a reset never forgets the code. The `Syncing` seam on `Stored` (absent without the `sync`
+  feature) answers the rest: a playlist's menu offers *Fetch N missing songs from* each online
+  device and *Keep its songs here*; the queue heading offers *Continue from* up to two devices whose
+  last queue holds songs.
 - **Discord = two Desktop groups; they write a global before a file.** *Discord* (switch, application
   id) and *What Discord shows* (text, picture, icon, bar, pause). Each control changes
   `ResonateApp::presence`, stores its `Setting`, hands the whole `Presence` to `Present::follow`. Id and

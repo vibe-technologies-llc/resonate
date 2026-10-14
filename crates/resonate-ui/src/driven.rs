@@ -336,6 +336,8 @@ impl Driven {
                 last_settings_category: SettingsCategory::default(),
                 presence: resonate_core::Presence::default(),
                 present: unseen.clone(),
+                synchronised: crate::Synchronised::default(),
+                syncing: None,
                 launcher: unseen,
                 sourcing: Sourcing {
                     inbox: None,

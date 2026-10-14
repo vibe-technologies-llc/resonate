@@ -483,6 +483,7 @@ const MIGRATIONS: &[&str] = &[
      ) STRICT, WITHOUT ROWID;
      INSERT INTO release_track_isrcs (release_track_id, isrc)
      SELECT id, isrc FROM release_tracks WHERE isrc IS NOT NULL;",
+    "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

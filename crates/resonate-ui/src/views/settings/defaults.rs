@@ -11,7 +11,7 @@ use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, S
 use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
-use crate::{Tabs, WindowButtons, views::settings::find::Group};
+use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
@@ -72,6 +72,7 @@ pub(crate) struct Standing {
     pub(crate) remember_window_size: bool,
     pub(crate) remember_settings_category: bool,
     pub(crate) presence: Presence,
+    pub(crate) synchronised: Synchronised,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
     pub(crate) music_folder_given: bool,
@@ -115,6 +116,7 @@ impl Standing {
             remember_window_size: REMEMBER_WINDOW_SIZE,
             remember_settings_category: REMEMBER_SETTINGS_CATEGORY,
             presence: Presence::OFF,
+            synchronised: Synchronised::default(),
             template_given: false,
             inbox_given: false,
             music_folder_given: false,
@@ -176,6 +178,13 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || worn.progress != off.progress
                 || worn.while_paused != off.while_paused
         }
+        Group::Syncing => {
+            let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
+            worn.enabled != built.enabled
+                || worn.server != built.server
+                || worn.device != built.device
+        }
+        Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
         Group::Contact => standing.contact_given,
         Group::Recognition => standing.key_given || standing.token_given,
         Group::Submitting => standing.submitting_given,
@@ -291,6 +300,8 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Notifications
         | Group::Discord
         | Group::DiscordShows
+        | Group::Syncing
+        | Group::SyncedSongs
         | Group::LookUpNow
         | Group::Build
         | Group::Places

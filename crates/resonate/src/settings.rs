@@ -226,6 +226,14 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         ),
         Setting::DiscordProgress(shown) => (ConfigKey::DiscordProgress, Some((*shown).into())),
         Setting::DiscordPaused(stays) => (ConfigKey::DiscordPaused, Some((*stays).into())),
+        Setting::Sync(on) => (ConfigKey::Sync, Some((*on).into())),
+        Setting::SyncServer(given) => given_or_cleared(ConfigKey::SyncServer, given),
+        Setting::SyncKey(given) => given_or_cleared(ConfigKey::SyncKey, given),
+        Setting::SyncDevice(given) => given_or_cleared(ConfigKey::SyncDevice, given),
+        Setting::SyncSongs(songs) => (
+            ConfigKey::SyncSongs,
+            Some(Value::Array(songs.named().into_iter().collect::<Array>())),
+        ),
         Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
         Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
         Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
@@ -440,6 +448,11 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::DiscordIcon => ConfigKey::DiscordIcon,
         SettingKey::DiscordProgress => ConfigKey::DiscordProgress,
         SettingKey::DiscordPaused => ConfigKey::DiscordPaused,
+        SettingKey::Sync => ConfigKey::Sync,
+        SettingKey::SyncServer => ConfigKey::SyncServer,
+        SettingKey::SyncKey => ConfigKey::SyncKey,
+        SettingKey::SyncDevice => ConfigKey::SyncDevice,
+        SettingKey::SyncSongs => ConfigKey::SyncSongs,
     }
 }
 

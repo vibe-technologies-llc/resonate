@@ -170,6 +170,48 @@ pub struct TransportArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct SyncArgs {
+    #[arg(
+        long,
+        value_name = "CODE",
+        conflicts_with_all = ["leave", "fetch", "handoff"],
+        help = "Join the devices whose pairing code this is, leaving the ones this device synced \
+                with"
+    )]
+    pub join: Option<String>,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["fetch", "handoff"],
+        help = "Leave the devices this one synchronises with; it starts afresh with a new code"
+    )]
+    pub leave: bool,
+
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        requires = "from",
+        conflicts_with = "handoff",
+        help = "Fetch the songs of this playlist this device lacks from the device --from names"
+    )]
+    pub fetch: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "DEVICE",
+        help = "The device --fetch takes songs from"
+    )]
+    pub from: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "DEVICE",
+        help = "Play the queue this device was last playing, from the song it was on"
+    )]
+    pub handoff: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct ScanArgs {
     #[arg(value_name = "ROOT")]
     pub roots: Vec<PathBuf>,
@@ -705,6 +747,13 @@ pub enum Sub {
 
     #[command(about = "List the release tracks marked wanted, with what a provider has delivered")]
     Wants,
+
+    #[command(
+        about = "Show this device's pairing code and the devices it synchronises with; join \
+                 another's devices by their code, fetch a playlist's songs from one or play what \
+                 one was playing"
+    )]
+    Sync(SyncArgs),
 
     #[command(
         about = "List the release tracks the catalog holds no file for, and the releases of held \

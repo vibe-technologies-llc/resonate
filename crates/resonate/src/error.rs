@@ -99,6 +99,12 @@ pub enum ConfigKey {
     DiscordIcon,
     DiscordProgress,
     DiscordPaused,
+    Sync,
+    SyncServer,
+    SyncServerCertificate,
+    SyncKey,
+    SyncDevice,
+    SyncSongs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -117,7 +123,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 89] = [
+    pub const ALL: [Self; 95] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -207,6 +213,12 @@ impl ConfigKey {
         Self::DiscordIcon,
         Self::DiscordProgress,
         Self::DiscordPaused,
+        Self::Sync,
+        Self::SyncServer,
+        Self::SyncServerCertificate,
+        Self::SyncKey,
+        Self::SyncDevice,
+        Self::SyncSongs,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -300,6 +312,12 @@ impl ConfigKey {
             Self::DiscordIcon => "discord-icon",
             Self::DiscordProgress => "discord-progress",
             Self::DiscordPaused => "discord-paused",
+            Self::Sync => "sync",
+            Self::SyncServer => "sync-server",
+            Self::SyncServerCertificate => "sync-server-certificate",
+            Self::SyncKey => "sync-key",
+            Self::SyncDevice => "sync-device",
+            Self::SyncSongs => "sync-songs",
         }
     }
 
@@ -579,6 +597,37 @@ pub enum Error {
 
     #[error("no recognition service is on, so there is nothing to ask what was heard")]
     NoRecogniser,
+
+    #[cfg(feature = "sync")]
+    #[error(transparent)]
+    Sync(resonate_sync::Error),
+
+    #[error("device sync is off: online and sync must both be on")]
+    SyncOff,
+
+    #[cfg(feature = "sync")]
+    #[error("another Resonate is synchronising this catalog; ask it there")]
+    SyncBusy,
+
+    #[cfg(feature = "sync")]
+    #[error("the sync server could not be reached")]
+    SyncUnreachable,
+
+    #[cfg(feature = "sync")]
+    #[error("{} could not be locked for syncing", path.display())]
+    SyncLock {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "sync")]
+    #[error("no synced device is named {0}")]
+    NoSuchDevice(Box<str>),
+
+    #[cfg(feature = "sync")]
+    #[error("{0} handed off nothing this catalog holds")]
+    NothingHandedOff(Box<str>),
 
     #[cfg(feature = "ui")]
     #[error(transparent)]

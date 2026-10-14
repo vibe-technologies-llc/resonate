@@ -10,7 +10,7 @@ clap_complete.workspace = true
 clap_mangen.workspace = true
 
 [features]
-default = ["ui", "online", "mcp", "discord"]
+default = ["ui", "online", "mcp", "discord", "sync"]
 discord = ["dep:resonate-discord"]
 mcp = ["dep:resonate-mcp"]
 online = [
@@ -19,6 +19,7 @@ online = [
     "dep:resonate-subsonic",
     "dep:resonate-tidal"
 ]
+sync = ["dep:resonate-sync"]
 ui = ["dep:resonate-ui"]
 
 [dependencies]
@@ -39,6 +40,7 @@ resonate-monochrome = { workspace = true, optional = true }
 resonate-mpris.workspace = true
 resonate-online = { workspace = true, optional = true }
 resonate-subsonic = { workspace = true, optional = true }
+resonate-sync = { workspace = true, optional = true }
 resonate-tidal = { workspace = true, optional = true }
 resonate-pipewire.workspace = true
 resonate-providers.workspace = true

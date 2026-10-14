@@ -999,7 +999,7 @@ fn kept_as(transaction: &Transaction<'_>, id: PlaylistId, kept: Option<Kept>) ->
     Ok(())
 }
 
-fn in_order(transaction: &Transaction<'_>, id: PlaylistId, kept: Kept) -> Result<usize> {
+pub(crate) fn in_order(transaction: &Transaction<'_>, id: PlaylistId, kept: Kept) -> Result<usize> {
     let sql = format!(
         "SELECT {ROW_COLUMNS} FROM playlist_entries e
          LEFT JOIN tracks ON {ON_THE_SAME_CUT}
@@ -1816,6 +1816,10 @@ impl Row {
             start: row.get(first + 1)?,
             frames: row.get(first + 2)?,
         })
+    }
+
+    pub(crate) const fn start(&self) -> i64 {
+        self.start
     }
 
     pub(crate) fn into_cut(self) -> Cut {

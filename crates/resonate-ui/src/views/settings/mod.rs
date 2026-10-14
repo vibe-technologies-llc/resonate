@@ -12,6 +12,7 @@ mod online;
 mod output;
 mod processing;
 mod subsonic;
+mod sync;
 mod tidal;
 
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
@@ -30,6 +31,7 @@ pub(crate) use crate::views::settings::{
     find::{Category, Group},
     lastfm::{LastfmAccount, LastfmSigning},
     subsonic::Account,
+    sync::{SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER},
     tidal::{SigningIn, TidalAccount},
 };
 use crate::{
@@ -435,6 +437,8 @@ impl RootView {
             Group::Submitting => self.submitting_group(cx),
             Group::Lastfm => self.lastfm_group(cx),
             Group::LookUpNow => self.look_up_group(cx),
+            Group::Syncing => self.syncing_group(cx),
+            Group::SyncedSongs => self.synced_songs_group(cx),
             Group::Notifications => self.notifications_group(cx),
             Group::Discord => self.discord_group(cx),
             Group::DiscordShows => self.discord_shows_group(cx),
@@ -553,6 +557,8 @@ impl RootView {
             Group::MinimumLength => self.set_minimum_length(Default::default(), cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Discord => self.put_discord_back(cx),
+            Group::Syncing => self.put_syncing_back(cx),
+            Group::SyncedSongs => self.follow_songs(resonate_core::SyncedSongs::default(), cx),
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),
             Group::Recognition => {
@@ -622,6 +628,7 @@ impl RootView {
         let remember_window_size = cx.global::<ResonateApp>().remember_window_size;
         let remember_settings_category = cx.global::<ResonateApp>().remember_settings_category;
         let presence = cx.global::<ResonateApp>().presence.clone();
+        let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let contact_given = !self.contact.read(cx).text().trim().is_empty();
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
         let token_given = !self.audd.read(cx).text().trim().is_empty();
@@ -685,6 +692,7 @@ impl RootView {
             remember_window_size,
             remember_settings_category,
             presence,
+            synchronised,
             template_given,
             inbox_given,
             music_folder_given,

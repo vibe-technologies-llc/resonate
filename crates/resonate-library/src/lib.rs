@@ -46,6 +46,7 @@ mod studies;
 mod suggest;
 mod sung;
 mod supply;
+mod synced;
 mod take_in;
 mod undo;
 mod unreplacing;
@@ -158,6 +159,7 @@ pub use crate::{
         ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary,
         RETRY_WAITS, TRIES_BEFORE_GIVING_UP,
     },
+    synced::{HeldSong, SyncedListen, SyncedPlaylist},
     take_in::{
         Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,
         TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,

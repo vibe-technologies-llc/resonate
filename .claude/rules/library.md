@@ -471,6 +471,16 @@ rows read via `Player::media` like any unscanned row.
   narrow on the two columns; `SortOrder::Plays`, `Played` order on them, so *Top 25 most played* is
   a saved query.
 
+- **What another device sent is written without an undo step and never told onward.**
+  `synced.rs` serves the sync seam (`sync.md`): list playlists read as recordings (an unscanned row
+  reads as none), written whole with `modified` moved past any undo step and the steps dropped
+  (`undo::overtaken`, also for steps whose name the arrival now holds), a taken name given the first
+  free `NAME (N)`; favourites and recordings resolved by MBID, else folded artist key, `title_words`
+  and folded album with lengths within 2 s, the first best copy; a remote listen is a `listens` row
+  with `elsewhere = 1` (counted in plays and statistics, passed over by `THE_LISTENS_AFTER` and by
+  `listens_to_sync`, which also stops at a listen not yet settled). `Library::synced_revision`
+  counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
+
 ## Enrichment
 
 - **A reference's answer lands beside what the scan read, in columns the scan never rewrites.**

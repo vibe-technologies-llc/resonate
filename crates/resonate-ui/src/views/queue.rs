@@ -14,7 +14,7 @@ use resonate_library::{
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
-    Notice, Selection, format,
+    Notice, ResonateApp, Selection, format,
     icons::Icon,
     theme,
     views::{
@@ -223,6 +223,8 @@ fn queued_cut(item: &QueueItem) -> Cut {
         span: item.span,
     }
 }
+
+const HANDOFFS_OFFERED: usize = 2;
 
 const REMOVE_HINT: &str = "Take this row out of the queue";
 
@@ -952,6 +954,34 @@ impl RootView {
         let taken_out = self.took_out.offered(queue);
         let put_back = self.took_out.offered_again(queue);
         let queued = !queue.is_empty();
+        let handed_off = cx
+            .global::<ResonateApp>()
+            .syncing
+            .as_ref()
+            .map(|syncing| syncing.handed_off())
+            .unwrap_or_default();
+        let continuing = handed_off
+            .into_iter()
+            .take(HANDOFFS_OFFERED)
+            .enumerate()
+            .map(|(at, handed)| {
+                let device = handed.device.clone();
+                self.in_the_pane_ring(
+                    kit::button(
+                        ("continue-from", at),
+                        Some(Icon::Play),
+                        format!("Continue from {}", handed.device),
+                        format!(
+                            "Play the {} songs {} was playing, from the one it was on",
+                            handed.songs, handed.device
+                        ),
+                        Tone::Ghost,
+                    ),
+                    move |this, _, cx| this.continue_from(&device, cx),
+                    cx,
+                )
+            })
+            .collect::<Vec<_>>();
 
         kit::heading()
             .child(
@@ -969,6 +999,7 @@ impl RootView {
                     )
                     .child(
                         kit::actions()
+                            .children(continuing)
                             .child(hint::explains("queue-moving", MOVING_HINT))
                             .when(queued, |bar| {
                                 bar.child(self.orders_a_listing("order-queue", cx))

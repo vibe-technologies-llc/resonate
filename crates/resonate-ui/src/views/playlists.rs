@@ -11,7 +11,7 @@ use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoab
 use smallvec::smallvec;
 
 use crate::{
-    Drawn, Notice, Selection, format,
+    Drawn, Notice, ResonateApp, Selection, format,
     icons::{self, Icon},
     models::Picture,
     motion, theme,
@@ -1013,7 +1013,7 @@ impl RootView {
                 .child(self.in_the_pane_ring_at(
                     kit::icon_button("more-of-the-playlist", Icon::More, MORE_HINT),
                     move |this, at, cx| {
-                        this.open_a_menu(playlist_menu(at, opened, pinned), cx);
+                        this.open_a_menu(playlist_menu(at, opened, pinned, cx), cx);
                     },
                     cx,
                 ))
@@ -1779,7 +1779,7 @@ impl RootView {
             menu::opens_a_reachable_menu(
                 listed,
                 reach,
-                move |_, at, _| playlist_menu(at, id, pinned),
+                move |_, at, cx| playlist_menu(at, id, pinned, cx),
                 cx,
             ),
             reached,
@@ -1916,7 +1916,7 @@ impl RootView {
         menu::opens_a_reachable_menu(
             cell,
             reach,
-            move |_, at, _| playlist_menu(at, id, pinned),
+            move |_, at, cx| playlist_menu(at, id, pinned, cx),
             cx,
         )
     }
@@ -2040,8 +2040,8 @@ fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
     }
 }
 
-fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool) -> Menu {
-    Menu::at(at)
+fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
+    let menu = Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, _, cx| {
             let entries = this.library.read(cx).entries_of(id);
             this.play_playlist(id, &entries, 0, true, cx);
@@ -2072,7 +2072,49 @@ fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool) -> Menu {
         .does(Icon::Discard, menu::DISCARD, move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.drop_playlist(id, cx));
-        })
+        });
+    synced_entries(menu, id, cx)
+}
+
+fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {
+    let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
+        return menu;
+    };
+    let missing = syncing.missing_from(id);
+    let kept = syncing.keeps_songs_of(id);
+    let mut menu = menu.apart();
+    if missing > 0 {
+        for device in syncing
+            .shown()
+            .devices
+            .into_iter()
+            .filter(|device| device.online && !device.this)
+        {
+            let fetching = Arc::clone(&syncing);
+            let label = format!("Fetch {missing} missing songs from {}", device.name);
+            menu = menu.does(Icon::Download, label, move |this, _, cx| {
+                fetching.fetch_missing(id, &device.name);
+                this.report(
+                    Notice::Noted(format!("Songs are on their way from {}", device.name)),
+                    cx,
+                );
+            });
+        }
+    }
+    let label = if kept {
+        "Stop keeping its songs here"
+    } else {
+        "Keep its songs here"
+    };
+    menu.does(Icon::Download, label, move |this, _, cx| {
+        syncing.keep_songs_of(id, !kept);
+        let said = if kept {
+            "Its songs are no longer fetched by themselves"
+        } else {
+            "Its songs are fetched from your other devices while they are online"
+        };
+        this.report(Notice::Done(said.to_owned()), cx);
+    })
 }
 
 const fn pin_icon(pinned: bool) -> Icon {

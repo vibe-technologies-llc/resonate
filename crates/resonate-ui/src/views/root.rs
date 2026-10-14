@@ -22,7 +22,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
-    RepeatMode, stamp_of,
+    RepeatMode, Unclaimed, stamp_of,
 };
 use resonate_library::{
     ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
@@ -71,7 +71,8 @@ use crate::{
         search::{self, SearchShows, TopEntry, TopRun},
         settings::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, LastfmAccount, LastfmSigning, Plotted,
-            SigningIn, TidalAccount,
+            SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, SigningIn,
+            TidalAccount,
         },
         slider::{Grab, Rail},
         transport::{Handovers, Resolved, ShownCover},
@@ -562,6 +563,9 @@ pub struct RootView {
     pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
+    pub(crate) sync_server: Entity<Field>,
+    pub(crate) sync_device: Entity<Field>,
+    pub(crate) sync_code: Entity<Field>,
     pub(crate) organising: Entity<Field>,
     pub(crate) minimum_length: Entity<Field>,
     pub(crate) typed_root: Entity<Field>,
@@ -920,6 +924,39 @@ impl RootView {
         )
         .detach();
 
+        let synchronised = cx.global::<ResonateApp>().synchronised.clone();
+        let sync_server = cx.new(|cx| {
+            let mut field = Field::new(SYNC_SERVER_PLACEHOLDER, window, cx);
+            field.hold(synchronised.server.clone(), cx);
+            field
+        });
+        cx.subscribe_in(
+            &sync_server,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.sync_server_given(window, cx);
+            },
+        )
+        .detach();
+        let sync_device = cx.new(|cx| {
+            let mut field = Field::new(SYNC_DEVICE_PLACEHOLDER, window, cx);
+            field.hold(synchronised.device.clone(), cx);
+            field
+        });
+        cx.subscribe_in(
+            &sync_device,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.sync_device_given(window, cx);
+            },
+        )
+        .detach();
+        let sync_code = cx.new(|cx| Field::new(SYNC_CODE_PLACEHOLDER, window, cx));
+        cx.subscribe_in(&sync_code, window, |this, _, _: &Submitted, window, cx| {
+            this.sync_code_given(window, cx);
+        })
+        .detach();
+
         let minimum_length = cx.new(|cx| {
             let mut field = Field::new("Seconds, from 0 to 600", window, cx);
             field.hold(
@@ -1055,6 +1092,9 @@ impl RootView {
             lastfm,
             discord_app,
             discord_icon,
+            sync_server,
+            sync_device,
+            sync_code,
             organising,
             minimum_length,
             typed_root,
@@ -1331,6 +1371,40 @@ impl RootView {
             Command::Load {
                 items,
                 start_at,
+                autoplay: true,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(crate) fn continue_from(&mut self, device: &str, cx: &mut Context<Self>) {
+        let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
+            return;
+        };
+        let cuts = syncing.continue_from(device);
+        if cuts.is_empty() {
+            self.report(
+                Notice::Trouble(format!("Nothing {device} was playing is in this library")),
+                cx,
+            );
+            return;
+        }
+        let mut minting = Unclaimed::beside(&[]);
+        let items = cuts
+            .into_iter()
+            .map(|cut| QueueItem {
+                id: minting.mint(),
+                location: cut.location,
+                span: cut.span,
+            })
+            .collect();
+        self.library
+            .update(cx, |library, _| library.set_playing_playlist(None));
+        self.send(
+            Command::Load {
+                items,
+                start_at: 0,
                 autoplay: true,
             },
             cx,
@@ -3403,6 +3477,9 @@ impl RootView {
             &self.listenbrainz,
             &self.discord_app,
             &self.discord_icon,
+            &self.sync_server,
+            &self.sync_device,
+            &self.sync_code,
             &self.organising,
             &self.minimum_length,
             &self.typed_root,
@@ -3516,6 +3593,13 @@ impl RootView {
         }
         if self.discord_icon.read(cx).is_focused(window) {
             self.leave_discord_icon(window, cx);
+            return;
+        }
+        if [&self.sync_server, &self.sync_device, &self.sync_code]
+            .iter()
+            .any(|field| field.read(cx).is_focused(window))
+        {
+            self.leave_sync_field(window, cx);
             return;
         }
         if self.minimum_length.read(cx).is_focused(window) {

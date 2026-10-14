@@ -23,6 +23,8 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic, TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
+| `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers |
+| `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `packaging.md` | `packaging/**` | the Arch, Fedora and Flatpak payloads and their build baseline |
 
@@ -52,7 +54,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Twenty-six crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Twenty-eight crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -61,6 +63,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-mcp        catalog and player over MCP  [`mcp`]
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
+  ├── resonate-sync       devices kept in step: sealed records, QUIC peers  [`sync`]
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
@@ -81,15 +84,17 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   └── resonate-core       domain vocabulary
 
-resonate-android     cdylib: Compose boundary and document catalog, over playback, analysis, lyrics, library seams, online and providers
+resonate-android     cdylib: Compose boundary and document catalog, over playback, analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin from native metadata
+resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```
 
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and Android; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
-alone (its own PipeWire client per recording on Linux; capture modules excluded on Android); `resonate-analysis` reaches `resonate-dsp`.
+alone (its own PipeWire client per recording on Linux; capture modules excluded on Android); `resonate-analysis` reaches `resonate-dsp`;
+`resonate-sync` reaches core alone and is reached by the binary, Android and the server.
 
 Invariants the layering protects (the rules files have the rest):
 
@@ -126,6 +131,9 @@ Invariants the layering protects (the rules files have the rest):
   of where a dropped span lands. `resonate-ui`'s `edit::Span` is a different type (text edits).
 - **Core carries what two mutually blind crates share**: `Resumption`, `Reordered`, `Appearance`,
   `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles`, `words_of_a_name`.
+- **The sync server never reads what it keeps**: every record is sealed under keys the pairing
+  code derives, songs travel device to device, and a device names itself only inside the sealed
+  records (`sync.md`).
 - **Everything else is a crate behind its own seam**: tag writing through `TagSink`, the vault,
   lyrics, providers, studies, the equaliser's I/O, Discord.
 
@@ -154,6 +162,9 @@ Invariants the layering protects (the rules files have the rest):
   (ffmpeg); `resonate-online --test live` (`RESONATE_ONLINE_TESTS`); `resonate --test terminal`
   (`setsid`, a pseudo-terminal). `resonate-subsonic`, `-tidal` and `-monochrome` serve fake servers
   on loopback.
+- `cargo run -p resonate-server -- --help`: the sync server. `cargo test -p resonate-server` runs
+  it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's
+  key); `cargo test -p resonate-sync` holds the ledger, wire and sealing.
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
 
@@ -168,6 +179,7 @@ stack's test harness:
 - **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
+- **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`).
 - `cargo run -- <files>` opens the window with those queued; a bare `cargo run` opens it on the
   last queue unless `resume` is off.
 
