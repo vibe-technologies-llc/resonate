@@ -38,21 +38,12 @@ struct MiniPlayer: View {
                     .labelStyle(.iconOnly)
             }
             PlayButton(transport: library.transport)
-                .background {
-                    if !expanded { MiniProgressRing() }
-                }
+                .background { MiniProgressRing() }
             Button("Next", systemImage: "forward.fill") { skip(forward: true) }
                 .labelStyle(.iconOnly)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
-        .overlay(alignment: .bottom) {
-            if expanded {
-                MiniProgress()
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 2)
-            }
-        }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
         .simultaneousGesture(
@@ -97,26 +88,6 @@ struct MiniProgressRing: View {
         }
         .padding(Self.lineWidth / 2)
         .accessibilityHidden(true)
-    }
-}
-
-struct MiniProgress: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let fraction = library.clock.playedFraction
-        Capsule()
-            .fill(.quaternary)
-            .frame(height: 2)
-            .overlay(alignment: .leading) {
-                GeometryReader { space in
-                    Capsule()
-                        .fill(.tint)
-                        .frame(width: space.size.width * fraction)
-                        .animation(.linear(duration: 0.25), value: fraction)
-                }
-            }
-            .accessibilityHidden(true)
     }
 }
 

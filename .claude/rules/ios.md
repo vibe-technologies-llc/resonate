@@ -44,7 +44,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate and underruns. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
-  redrawn four times a second; only the views that show the position (mini player bar, Now Playing
+  redrawn four times a second; only the views that show the position (mini player ring, Now Playing
   slider and times, sleep countdowns, the output page) read the clock, each in a view of its own.
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
@@ -119,8 +119,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
 the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
-skip; its progress is a bar along the expanded accessory and a ring around the play button once the
-tab bar minimises it inline (a bar there ran through the title); the output page holds `AVRoutePickerView`, since iOS owns the route.
+skip; its progress is a ring around the play button in either placement (a bar along the accessory's
+bottom ran through the title and artist, since the system fixes the accessory's height); the output page holds `AVRoutePickerView`, since iOS owns the route.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
