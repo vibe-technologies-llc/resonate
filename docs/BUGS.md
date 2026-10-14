@@ -34,6 +34,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   slider snaps and the mute clears
 - [M] The playback stream's own volume and mute are never read: one restored by the session manager
   scales a stream still called bit-perfect
+- [S] The phones' queue Clear (`clear_queue`) removes the rows around the playing one by index in
+  two engine commands; a song ending in the instant between reading the place and a command landing
+  loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## Formats
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
