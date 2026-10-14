@@ -43,7 +43,7 @@ final class Features {
     var applyingCorrection = false
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
-    var providerAccount: DownloadAccount?
+    var providers = ProviderAccounts()
     var online: Bool
     var statistics: LibraryStatistics?
     var statisticsLoading = false
@@ -139,7 +139,7 @@ final class Features {
     }
 
     func initialize(_ native: MobilePlayer) {
-        providerAccount = accounts.read()
+        providers = accounts.readProviders()
         scrobbleAccount = accounts.readScrobbling()
         recognitionKey = accounts.readRecognitionKey()
         syncConfig = accounts.readSync()
@@ -784,8 +784,7 @@ final class Features {
             updated.refreshToken = token
 
             guard let self else { return }
-            try accounts.write(updated)
-            providerAccount = updated
+            try keepProviderAccount(updated)
             library.notice("Signed in to TIDAL")
         }, finally: { [weak self] in
             self?.tidalBusy = false
@@ -795,27 +794,36 @@ final class Features {
 
     func saveProviderAccount(_ account: DownloadAccount) {
         do {
-            try accounts.write(account)
-            providerAccount = account
-            library.notice("Download provider saved")
+            try keepProviderAccount(account)
+            library.notice("\(account.provider.title) saved")
         } catch {
             library.report(error)
         }
     }
 
-    var downloadAccounts: [DownloadAccount] {
-        providerAccount.map { [$0] }?.filter(\.isReady) ?? []
+    func turnProvider(_ provider: MusicProvider, on: Bool) {
+        providers.turn(provider, on: on)
+        accounts.writeSwitchedOff(providers.switchedOff)
     }
+
+    var downloadAccounts: [DownloadAccount] { providers.asked }
 
     func keepRenewedTidalToken(_ token: String) {
-        guard var renewed = providerAccount, renewed.provider == .tidal else { return }
+        var renewed = providers.account(.tidal)
+        guard renewed.refreshToken != token else { return }
         renewed.refreshToken = token
         do {
-            try accounts.write(renewed)
-            providerAccount = renewed
+            try keepProviderAccount(renewed)
         } catch {
             library.report(error)
         }
+    }
+
+    private func keepProviderAccount(_ account: DownloadAccount) throws {
+        var kept = providers
+        kept.keep(account)
+        try accounts.writeProviderAccounts(kept.accounts)
+        providers = kept
     }
 
     func saveWanted(_ songs: [SearchSong]) {
