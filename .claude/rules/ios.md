@@ -46,8 +46,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start). Every busy flag
   is cleared in `work`'s `finally`, which runs on every path, a failed `library.player()` included;
   it clears only while its own generation is current. The Inspector's artist lookup
-  (`inspectorArtist`, an `ArtistLookup`) is its own state, apart from the online search page's
-  `artist`, and survives the Inspector reappearing for the same song. Scrobbling accounts reach the
+  (`inspectorArtist`, an `ArtistLookup`) is its own state, apart from the online artist page's,
+  and survives the Inspector reappearing for the same song. Scrobbling accounts reach the
   keychain before scrobbling starts, so a refused start keeps what was typed.
 - **Analysis runs while its page is open**: `.task(id: track.id)` starts it unless a report for
   that song is already held, leaving the page cancels it (`cancelAnalysis`), and progress is
@@ -92,6 +92,37 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
 the mini player in the tab bar's bottom accessory; Now Playing as a full-screen cover over the
 backdrop; the output page holds `AVRoutePickerView`, since iOS owns the route.
+
+## Search
+
+- **The library is searched in Rust, never filtered in Swift.** `SearchModel` (`SearchModel.swift`;
+  `Library.songSearch` for Songs, `Library.shelfSearch` for the Library tab) asks `search_library`
+  on `Work.aside` 150 ms after the last keystroke (the desktop's `SEARCH_SETTLE`), cancels the
+  settle before, refuses a stale answer by generation and keeps the last answer on screen until the
+  next lands; blank text asks nothing. Rows light matched text through `highlights`, its UTF-16
+  ranges turned into `String` indices by `NSRange` and widened to whole characters (`lit`). A
+  catalog change (`Library.refresh`) or a favourite asks again without the settle.
+- **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
+  Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
+  `.searchSuggestions` offers completions while typing and, on an empty field, the last ten searches
+  (`UserDefaults` suite `library-features`, key `recent-searches`), kept when a search is submitted
+  or one of its results opened. Searching spans the catalog: filters shape browsing only, and setting
+  one clears the search.
+- **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
+  page published at once where nothing is shown yet and the rest after; albums and artists through
+  `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. A list of 40
+  rows or more ordered by name gets a section per letter run and the section index. `EmptyLibrary`
+  shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
+  The Library tab's search uses the same model for albums and artists and folds playlist names
+  (`searchFolded`: case- and diacritic-insensitive), as the Favourites and Add-songs searches fold
+  a song's title, artist and album.
+- **Online** search asks as the listener types: 450 ms settle, three letters at least, one request
+  generation (`Features.searchRequest`) and an in-memory answer per spelling, the last 64 per mode
+  (`OnlineAnswers`). Text starting `http://`, `https://` or `spotify:` is opened as a link in any
+  mode. The query and the last answer live on `Features`, so they outlive the page. An artist, an
+  album and a release are pages of their own (`OnlineArtistPage` with *More releases*,
+  `OnlineAlbumPage`, `OnlineReleasePage`), each holding its own state; song rows are keyed by
+  position, since a shared playlist repeats songs.
 
 ## The backdrop
 

@@ -309,15 +309,14 @@ struct FilterSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var filter = defaultTrackFilter()
-    private static let orders: [(TrackOrder, String)] = [
-        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"),
-    ]
+    @State private var genres: [String] = []
+    @State private var artists: [String] = []
 
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Genre", text: $filter.genre)
-                TextField("Artist", text: $filter.artist)
+                CataloguePicker(title: "Genre", choice: $filter.genre, names: genres)
+                CataloguePicker(title: "Artist", choice: $filter.artist, names: artists)
                 TextField("Album", text: $filter.album)
                 Toggle("Favourites only", isOn: $filter.favourites)
                 Toggle("Unplayed only", isOn: $filter.unplayed)
@@ -327,7 +326,7 @@ struct FilterSheet: View {
                 ))
                 Stepper(filter.minimumBits == 0 ? "Any bit depth" : "At least \(filter.minimumBits)-bit", value: $filter.minimumBits, in: 0...32, step: 8)
                 Picker("Sort by", selection: $filter.order) {
-                    ForEach(Self.orders, id: \.1) { Text($0.1).tag($0.0) }
+                    ForEach(FilterChip.orderNames, id: \.1) { Text($0.1).tag($0.0) }
                 }
                 Toggle("Descending", isOn: $filter.descending)
             }
@@ -348,6 +347,41 @@ struct FilterSheet: View {
                 }
             }
             .onAppear { filter = library.filter }
+            .task { await readNames() }
         }
+    }
+
+    private func readNames() async {
+        let tracks = library.allTracks
+        let named = library.artists.map(\.name)
+        let (genres, artists) = await Task.detached(priority: .userInitiated) {
+            (FilterSheet.distinct(tracks.map(\.genre)), FilterSheet.distinct(named))
+        }.value
+        self.genres = genres
+        self.artists = artists
+    }
+
+    nonisolated private static func distinct(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names
+            .filter { !$0.isEmpty && seen.insert($0.searchFolded).inserted }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+}
+
+struct CataloguePicker: View {
+    let title: String
+    @Binding var choice: String
+    let names: [String]
+
+    var body: some View {
+        Picker(title, selection: $choice) {
+            Text("Any").tag("")
+            if !choice.isEmpty, !names.contains(choice) {
+                Text(choice).tag(choice)
+            }
+            ForEach(names, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.navigationLink)
     }
 }
