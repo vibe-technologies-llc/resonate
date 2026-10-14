@@ -366,6 +366,7 @@ struct TrackRow: View {
     let track: Track
     var current: Bool?
     var numbered: UInt32?
+    var albumArtist: String?
     var ownsMenus = true
     let play: () -> Void
     @State private var choosingPlaylist = false
@@ -382,12 +383,19 @@ struct TrackRow: View {
                             .font(.body.weight(playingHere ? .semibold : .regular))
                             .foregroundStyle(playingHere ? Color.accentColor : Color.primary)
                             .lineLimit(1)
-                        Text("\(track.shownArtist) · \(clock(track.durationMs))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        if let detail {
+                            Text(detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 0)
+                    if albumArtist != nil {
+                        Text(clock(track.durationMs))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .contentShape(.rect)
             }
@@ -411,6 +419,13 @@ struct TrackRow: View {
         .sensoryFeedback(.success, trigger: queued)
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
         .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
+    }
+
+    private var detail: String? {
+        guard let albumArtist else { return "\(track.shownArtist) · \(clock(track.durationMs))" }
+        let credited = track.artist.trimmingCharacters(in: .whitespaces)
+        guard !credited.isEmpty, credited.searchFolded != albumArtist.trimmingCharacters(in: .whitespaces).searchFolded else { return nil }
+        return credited
     }
 
     @ViewBuilder

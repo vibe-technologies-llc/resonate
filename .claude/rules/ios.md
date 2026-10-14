@@ -134,7 +134,15 @@ bottom ran through the title and artist, since the system fixes the accessory's 
 - **The queue** splits History, Now playing and Up next around the playing row and scrolls to it.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
   remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
-  song row's leading swipe and context-menu actions and a collection header's buttons.
+  song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
+  `CollectionMenu` (`CollectionQueueActions`: Play next, Add to queue, Add to playlist; inside the
+  playlist's own options menu on a playlist).
+- **A collection header** (`CollectionHeader`) is the artwork, the title, the subtitle (an album's
+  artist a tinted link to the artist page), the summary, an optional quality capsule (an album whose
+  every track shares one `Track.quality`), then Play and Shuffle as two equal-width large glass
+  buttons no wider than 440 pt; nothing else sits in that row. An album lists its tracks by disc,
+  a *Disc N* header only where there is more than one, each row numbered with its length at the
+  trailing edge and a second line only for a track artist other than the album's.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
   never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
