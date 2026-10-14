@@ -1,9 +1,12 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::BTreeSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use resonate_core::{Mbid, folded_letters};
 use resonate_library::{
-    AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp, POLL_AGAIN_AFTER, RETRY_WAITS,
-    Reference, TRIES_BEFORE_GIVING_UP,
+    AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp, POLL_AGAIN_AFTER,
+    REFUSALS_REMEMBERED_FOR, RETRY_WAITS, Reference, TRIES_BEFORE_GIVING_UP,
 };
 use rusqlite::{Connection, params};
 
@@ -185,8 +188,9 @@ impl MobilePlayer {
         let indexed = self.indexed_download(uri, name, &job.song);
         if matches!(indexed, Err(Error::WrongSong))
             && let Some(taken_from) = job.taken_from()
+            && let Err(error) = self.catalog.note_refused_offer(&job.song, &taken_from)
         {
-            self.downloads.refuse(taken_from);
+            tracing::warn!(%error, "a refused delivery could not be remembered");
         }
         let track = job.settled(indexed)?;
         job.done();
@@ -312,6 +316,12 @@ fn wanted_song(connection: &Connection, row: WantedRow) -> Result<WantedSong> {
     })
 }
 
+fn forgotten_before(now: SystemTime) -> i64 {
+    now.checked_sub(REFUSALS_REMEMBERED_FOR)
+        .and_then(|before| before.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_secs() as i64)
+}
+
 fn still_asked(connection: &Connection) -> Result<Vec<WantedRow>> {
     let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
     query
@@ -379,6 +389,41 @@ impl Catalog {
             }
         }
         Ok(next)
+    }
+
+    pub(crate) fn note_refused_offer(&self, song: &SearchSong, taken_from: &str) -> Result<()> {
+        let connection = self.0.lock();
+        connection
+            .execute(
+                "DELETE FROM refused_offers WHERE refused < ?1",
+                [forgotten_before(SystemTime::now())],
+            )
+            .map_err(write_error)?;
+        connection
+            .execute(
+                "INSERT INTO refused_offers (identity, taken_from, refused) VALUES (?1, ?2, unixepoch()) ON CONFLICT(identity, taken_from) DO UPDATE SET refused = excluded.refused",
+                params![wanted_key(song), taken_from],
+            )
+            .map_err(write_error)?;
+        Ok(())
+    }
+
+    pub(crate) fn refused_offers(
+        &self,
+        song: &SearchSong,
+        now: SystemTime,
+    ) -> Result<BTreeSet<String>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare("SELECT taken_from FROM refused_offers WHERE identity = ?1 AND refused >= ?2")
+            .map_err(read_error)?;
+        query
+            .query_map(params![wanted_key(song), forgotten_before(now)], |row| {
+                row.get(0)
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(read_error)
     }
 
     pub(crate) fn note_wanted_tried(&self, song: &SearchSong, tried: Tried) -> Result<()> {
@@ -563,6 +608,48 @@ mod tests {
         assert_eq!(searched[0].recording, joga);
         assert_eq!(listed.len(), 5);
         assert!(listed[1].held && listed[4].held);
+    }
+
+    #[test]
+    fn a_refused_delivery_is_declined_for_thirty_days_after_the_catalog_reopens() {
+        let path = std::env::temp_dir().join(format!(
+            "resonate-refusals-{}.sqlite",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("a clock")
+                .as_nanos()
+        ));
+        let song = take("Jóga", 305_000, "");
+        let other = take("Hunter", 255_000, "");
+        let taken_from = "monochrome:track/1";
+        let catalog = Catalog::open(&path).expect("a catalog");
+        catalog
+            .note_refused_offer(&song, taken_from)
+            .expect("a refusal");
+        drop(catalog);
+
+        let reopened = Catalog::open(&path).expect("the reopened catalog");
+        let now = SystemTime::now();
+        let declined = |at: SystemTime, song: &SearchSong| {
+            reopened
+                .refused_offers(song, at)
+                .expect("the refused offers")
+        };
+
+        assert_eq!(
+            declined(now, &song),
+            BTreeSet::from([taken_from.to_owned()])
+        );
+        assert!(declined(now, &other).is_empty());
+        assert!(
+            declined(
+                now + REFUSALS_REMEMBERED_FOR + Duration::from_secs(5),
+                &song
+            )
+            .is_empty()
+        );
+        drop(reopened);
+        std::fs::remove_file(path).expect("remove the test catalog");
     }
 
     #[test]

@@ -18,8 +18,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   which are due and when, and only iOS calls them on a timer
 - [S] A wanted row keeps no release, disc or position, so a want downloaded from the Wanted list is
   asked with less than the search result it was saved from
-- [S] A delivery refused as the wrong song is declined for the run alone on the phones; the
-  desktop remembers it 30 days in `refused_offers`
 - [M] Android shapes the equaliser through ten octave sliders and a preamp: an AutoEq or imported
   curve plays and is kept, but its bands are edited only on iOS's graph, and moving a slider
   replaces it with ten bands

@@ -94,7 +94,7 @@ recordings, separate from playable documents. V6 adds `listens.elsewhere` (anoth
 from tags on index), `album_key` and `art_changed`; `album_art` (one release, group and cover per
 album key, with its own clocks and `cover_asked`), `artists` (a kept profile and portrait per
 artist id, with its clocks and `portrait_asked`), the one-row `enrichment` mark, and `wanted.tried`,
-`misses`, `offered_at`. The album key is `folded(album) || char(31) || folded(album artist, else
+`misses`, `offered_at`. V8 adds `refused_offers` (identity, `taken_from`, `refused` stamp). The album key is `folded(album) || char(31) || folded(album artist, else
 artist)`, empty for a song without an album: the apps' grouping, folded. Triggers keep it on every
 insert and on any write of `album`, `artist` or `album_artist`, and stamp `art_changed` with the
 next catalog-wide number whenever `art_revision` moves; both call the connection's `folded`, which
@@ -333,7 +333,10 @@ provider and cause (`NoProvider`, `NotFound`, `Unreachable`, `ProviderAway` (als
 behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the code,
 `ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,
 `DownloadCancelled`); with nothing found, the first provider failure is told before `NotFound`. A
-delivery `index_download` refuses as `WrongSong` is declined by every later find this run.
+delivery `index_download` refuses as `WrongSong` is declined by every later find of that song for
+`REFUSALS_REMEMBERED_FOR` (30 days, the desktop's), across restarts: V8's `refused_offers` keeps it
+by the song's wanted identity and the place it was taken from, and each refusal written sweeps the
+rows past that age.
 
 Only a fresh SAF document is opened for writing; its URI is journalled before streaming, bytes are
 bounded at 8 GiB, and codec probe/duration validation (within `LENGTHS_AGREE_WITHIN`) precedes

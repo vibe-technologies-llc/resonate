@@ -10,7 +10,7 @@ use std::{
         mpsc::{self, RecvTimeoutError},
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use parking_lot::Mutex;
@@ -33,7 +33,6 @@ const EXTENSION_UNNAMED: &str = "flac";
 pub(crate) struct Downloads {
     jobs: Mutex<BTreeMap<u64, Arc<Job>>>,
     next: AtomicU64,
-    refused: Mutex<BTreeSet<String>>,
     authorizing: Mutex<Option<(Client, Authorizing)>>,
     refreshed: Arc<Mutex<Option<String>>>,
 }
@@ -358,10 +357,6 @@ impl Downloads {
         }
     }
 
-    pub(crate) fn refuse(&self, taken_from: String) {
-        self.refused.lock().insert(taken_from);
-    }
-
     fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
         let DownloadAccount {
             provider,
@@ -407,6 +402,7 @@ impl Downloads {
         &self,
         job: &Job,
         accounts: Vec<DownloadAccount>,
+        refused: &BTreeSet<String>,
         reaching: &(dyn Fn() -> bool + Sync),
     ) -> Searched {
         if accounts.is_empty() {
@@ -436,7 +432,6 @@ impl Downloads {
             asked.push((told.source().clone(), provider));
             providers = providers.and(Arc::new(told));
         }
-        let refused = self.refused.lock().clone();
         let cancelled = || job.is_cancelled() || !reaching();
         let declined = |delivered: &Delivered| refused.contains(&delivered.taken_from().to_uri());
         let answer = providers.first(
@@ -700,7 +695,8 @@ impl MobilePlayer {
         job.settled(self.require_online())?;
         let client = Arc::clone(self.services.online.client());
         let reaching = move || client.is_reaching();
-        let searched = self.downloads.find(&job, accounts, &reaching);
+        let refused = self.catalog.refused_offers(&job.song, SystemTime::now())?;
+        let searched = self.downloads.find(&job, accounts, &refused, &reaching);
         if let Err(error) = self.catalog.note_wanted_tried(&job.song, searched.tried) {
             tracing::warn!(%error, "a wanted song's try could not be noted");
         }
@@ -931,7 +927,12 @@ mod tests {
     }
 
     fn found(downloads: &Downloads, job: u64, accounts: Vec<DownloadAccount>) -> Searched {
-        downloads.find(&downloads.job(job).expect("the job"), accounts, &reaching)
+        downloads.find(
+            &downloads.job(job).expect("the job"),
+            accounts,
+            &BTreeSet::new(),
+            &reaching,
+        )
     }
 
     #[test]

@@ -83,7 +83,9 @@ ALTER TABLE wanted ADD COLUMN tried INTEGER;
 ALTER TABLE wanted ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE wanted ADD COLUMN offered_at INTEGER;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
+const V8: &str = "CREATE TABLE refused_offers (identity TEXT NOT NULL, taken_from TEXT NOT NULL, refused INTEGER NOT NULL, PRIMARY KEY(identity, taken_from)) STRICT;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 
@@ -623,8 +625,13 @@ mod migration_tests {
                 None
             ]
         );
+        let refusals: i64 = connection
+            .query_row("SELECT count(*) FROM refused_offers", [], |row| row.get(0))
+            .expect("the refusals table");
+
         assert_eq!(want, (0, None, None));
         assert_eq!(unasked, 2);
+        assert_eq!(refusals, 0);
 
         drop(connection);
         assert_eq!(
