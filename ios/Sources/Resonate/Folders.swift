@@ -152,6 +152,10 @@ final class Folders: Documents, @unchecked Sendable {
         try persist()
     }
 
+    func stopScanning(_ id: String) {
+        lock.withLock { scans[id]?.stop() }
+    }
+
     func uri(root: String, relative: String) -> String {
         let escaped = relative.split(separator: "/").map {
             String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/", "%", "?", "#"])) ?? String($0)

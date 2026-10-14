@@ -445,9 +445,15 @@ final class Features {
     }
 
     func selectPlaylist(_ id: UInt64?) {
+        if openPlaylist != id { playlistRows = [] }
         openPlaylist = id
-        playlistRows = []
         if let id { work { [weak self] native in await self?.reloadPlaylist(native, id) } }
+    }
+
+    func leavePlaylist(_ id: UInt64) {
+        guard openPlaylist == id else { return }
+        openPlaylist = nil
+        playlistRows = []
     }
 
     func createPlaylist(_ name: String, with tracks: [Track] = []) {
@@ -469,17 +475,26 @@ final class Features {
                 try action(native)
                 return try native.playlists()
             }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                playlists = found
-                if let open = openPlaylist {
-                    if found.contains(where: { $0.id == open }) {
-                        Task { await self.reloadPlaylist(native, open) }
-                    } else {
-                        selectPlaylist(nil)
-                    }
-                }
-            }
+            self?.adoptPlaylists(found, native)
+        }
+    }
+
+    func undoPlaylistEdit() {
+        work { [weak self] native in
+            let (undone, found) = try await Work.inOrder { (try native.undoPlaylist(), try native.playlists()) }
+            guard let self else { return }
+            adoptPlaylists(found, native)
+            library.notice(undone ? "Undid the last playlist edit" : "There is no playlist edit to undo")
+        }
+    }
+
+    private func adoptPlaylists(_ found: [MusicPlaylist], _ native: MobilePlayer) {
+        playlists = found
+        guard let open = openPlaylist else { return }
+        if found.contains(where: { $0.id == open }) {
+            Task { await reloadPlaylist(native, open) }
+        } else {
+            selectPlaylist(nil)
         }
     }
 

@@ -334,6 +334,7 @@ struct EmptyLibrary: View {
 }
 
 struct CollectionRow: View {
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
     let track: Track?
     let title: String
     let detail: String
@@ -342,37 +343,39 @@ struct CollectionRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ArtworkView(track: track, corner: 10, circle: circle)
-                .frame(width: 56, height: 56)
+                .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.medium)).lineLimit(1)
                 Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
 struct TrackRow: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 48
+    @ScaledMetric(relativeTo: .callout) private var numberWidth: CGFloat = 28
     let track: Track
-    var current = false
+    var current: Bool?
     var numbered: UInt32?
+    var ownsMenus = true
     let play: () -> Void
     @State private var choosingPlaylist = false
+    @State private var queued = 0
 
     var body: some View {
+        let playingHere = current ?? (library.currentId == track.id)
         HStack(spacing: 12) {
             Button(action: play) {
                 HStack(spacing: 12) {
-                    if let numbered {
-                        Text("\(numbered)").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 28)
-                    } else {
-                        ArtworkView(track: track, corner: 8).frame(width: 48, height: 48)
-                    }
+                    leading(playingHere)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.shownTitle)
-                            .font(.body.weight(current ? .semibold : .regular))
-                            .foregroundStyle(current ? Color.accentColor : Color.primary)
+                            .font(.body.weight(playingHere ? .semibold : .regular))
+                            .foregroundStyle(playingHere ? Color.accentColor : Color.primary)
                             .lineLimit(1)
                         Text("\(track.shownArtist) · \(clock(track.durationMs))")
                             .font(.subheadline)
@@ -384,11 +387,88 @@ struct TrackRow: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .accessibilityValue(playingHere ? "Now playing" : "")
             FavouriteButton(track: track)
         }
-        .contextMenu { TrackMenu(track: track, choosingPlaylist: $choosingPlaylist) }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                queued += 1
+                library.playNext([track])
+            }
+            .tint(.indigo)
+            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                queued += 1
+                library.addToQueue([track])
+            }
+            .tint(.orange)
+        }
+        .modifier(StandardTrackMenus(track: track, enabled: ownsMenus, choosingPlaylist: $choosingPlaylist, queued: $queued))
+        .sensoryFeedback(.success, trigger: queued)
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
         .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
+    }
+
+    @ViewBuilder
+    private func leading(_ playingHere: Bool) -> some View {
+        if let numbered {
+            ZStack {
+                if playingHere {
+                    NowPlayingIndicator()
+                } else {
+                    Text("\(numbered)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: numberWidth)
+        } else {
+            ArtworkView(track: track, corner: 8)
+                .frame(width: artworkEdge, height: artworkEdge)
+                .overlay {
+                    if playingHere {
+                        NowPlayingIndicator()
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.black.opacity(0.35), in: .rect(cornerRadius: 8))
+                    }
+                }
+        }
+    }
+}
+
+struct StandardTrackMenus: ViewModifier {
+    @Environment(Library.self) private var library
+    let track: Track
+    let enabled: Bool
+    @Binding var choosingPlaylist: Bool
+    @Binding var queued: Int
+
+    func body(content: Content) -> some View {
+        if enabled {
+            let favourite = library.isFavourite(track)
+            content
+                .swipeActions(edge: .trailing) {
+                    Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                        library.setFavourite(track, !favourite)
+                    }
+                    .tint(.pink)
+                    Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                        .tint(.blue)
+                }
+                .contextMenu { TrackMenu(track: track, choosingPlaylist: $choosingPlaylist, queued: $queued) }
+        } else {
+            content
+        }
+    }
+}
+
+struct NowPlayingIndicator: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        Image(systemName: "waveform")
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.tint)
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: library.transport == .playing)
+            .accessibilityHidden(true)
     }
 }
 
@@ -397,22 +477,38 @@ struct TrackMenu: View {
     @Environment(Navigation.self) private var navigation
     let track: Track
     @Binding var choosingPlaylist: Bool
+    var queued: Binding<Int>?
 
     var body: some View {
-        Button(track.favourite ? "Remove from favourites" : "Add to favourites", systemImage: track.favourite ? "heart.slash" : "heart") {
-            library.setFavourite(track, !track.favourite)
-        }
-        Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
-        Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
-        Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
-        Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
-        if !track.album.isEmpty {
-            Button("Go to album", systemImage: "square.stack") {
-                navigation.open(.album(title: track.album, artist: track.groupingArtist))
+        let favourite = library.isFavourite(track)
+        Section {
+            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                queued?.wrappedValue += 1
+                library.playNext([track])
+            }
+            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                queued?.wrappedValue += 1
+                library.addToQueue([track])
             }
         }
-        if !track.artist.isEmpty {
-            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
+        Section {
+            Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                library.setFavourite(track, !favourite)
+            }
+            Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+        }
+        Section {
+            Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+            Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
+            Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+            if !track.album.isEmpty {
+                Button("Go to album", systemImage: "square.stack") {
+                    navigation.open(.album(title: track.album, artist: track.groupingArtist))
+                }
+            }
+            if !track.artist.isEmpty {
+                Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
+            }
         }
     }
 }

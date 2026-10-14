@@ -41,6 +41,25 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   preference actions enter one ordered queue (`Work.inOrder`, an `AsyncStream` consumed in order);
   long native calls (analysis, search, downloads, sync) run on `Work.aside`, never the main actor.
   A 250 ms poll reads the snapshot and queue and saves every 20th tick, as Android does.
+- **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
+  left, output rate and underruns. `snapshot` is assigned only when something else changed, and
+  `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
+  redrawn four times a second; only the views that show the position (mini player bar, Now Playing
+  slider and times, sleep countdowns, the output page) read the clock, each in a view of its own.
+  `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
+- **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
+  and queue edits change `queue` at once; a poll that began before such a command was answered
+  keeps the steered values and leaves `queue` alone (`Settling` counts asked against answered).
+  A favourite flips everywhere at once (catalog, browser, queue, snapshot, open playlist, top
+  tracks, Inspector) and flips back with a notice if the write fails; hearts read
+  `isFavourite(_:)`, the catalog's live answer by id, so a stale `Track` value never shows a stale
+  heart. `Destination` carries song ids, never `Track` values, and `LiveSong` looks the song up
+  when the page draws (`.lyrics(nil)` still means the playing song).
+- **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
+  6 s; a failure stays until dismissed. The engine's `failure` is shown once per distinct text per
+  song, and a poll failure once until polling recovers, so a dismissal holds. A scan shows its own
+  live line ("Reading music folder… N songs") with Stop (`stopScanning`, `Folders.stopScanning`);
+  its error is reported, never replaced by the tally, and removing a folder drops its queued scan.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the same download and sync-landing journal
   (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start). Every busy flag
@@ -78,7 +97,13 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), reports the route to Rust,
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
-  the main actor).
+  the main actor). The category is set at start but the session is activated only on play
+  (`activate()`), so opening Resonate never stops another app's audio. Now-playing info is written
+  only when the song, transport, artwork, favourite, queue place or count, shuffle or repeat change,
+  or the position drifts more than 1.5 s from what the written rate predicts (a seek); between
+  writes the system extrapolates elapsed time from the rate. Every command answers
+  `.noSuchContent` with nothing loaded; next is enabled only before the last row or while the
+  queue repeats; shuffle, repeat (`.one` is the engine's 1, `.all` its 2) and stop are offered.
 - **A closure a framework may call off the main thread is never formed on the main actor.** Swift 6
   makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
   queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in
@@ -90,8 +115,28 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `SharedPreferences` files, with the same keys.
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
-the mini player in the tab bar's bottom accessory; Now Playing as a full-screen cover over the
-backdrop; the output page holds `AVRoutePickerView`, since iOS owns the route.
+the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
+so no empty capsule shows with nothing loaded), with a progress bar, previous/play/next, and a
+horizontal swipe to skip; the output page holds `AVRoutePickerView`, since iOS owns the route.
+
+- **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
+  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
+  release and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
+  Repeat cycles off, all, one. Volume is the system's (`MPVolumeView`, its route button hidden).
+  The glass row toggles two modes inside the cover: Lyrics (`NowPlayingLyrics`, the compact
+  `LyricsPane`) and Up next, each shrinking the artwork into a 56 pt header row through
+  `matchedGeometryEffect`; sleep, equaliser, visualizer and output sit in the More menu. At
+  accessibility text sizes the artwork layout scrolls.
+- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it.
+  Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
+  remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
+  song row's leading swipe and context-menu actions and a collection header's buttons.
+- **Collections** are titled by their entity and drawn over a still backdrop. Albums order
+  untagged tracks after tagged ones; an artist matches case-insensitively, an empty name only songs
+  with no artist. A playlist's rows are keyed by song and occurrence, move and remove at once, and
+  every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
+  page pushed over it and are dropped when it is left; the page pops itself when the playlist
+  disappears.
 
 ## Search
 
@@ -126,8 +171,9 @@ backdrop; the output page holds `AVRoutePickerView`, since iOS owns the route.
 
 ## The backdrop
 
-`BackdropView(track:)` (`Backdrop.swift`) is the flowing field behind Now Playing, the lyrics, the
-visualizer and the album and playlist pages.
+`BackdropView(track:moving:)` (`Backdrop.swift`) is the flowing field behind Now Playing, the
+lyrics, the visualizer and the album, artist and playlist pages. The collection pages pass
+`moving: false`: one still frame, as under Reduce Motion, and no hold on the visualizer tap.
 
 - **The palette** (`Palette`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
   linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded by

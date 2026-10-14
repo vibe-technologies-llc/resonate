@@ -115,7 +115,7 @@ struct SettingsView: View {
             ),
             SettingsEntry(
                 title: "Sleep timer",
-                detail: Self.sleepSummary(library.snapshot),
+                detail: Self.sleepSummary(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs),
                 symbol: "moon",
                 keywords: "sound playback pause minutes end song queue",
                 opening: .sleepTimer,
@@ -207,9 +207,9 @@ struct SettingsView: View {
         }
     }
 
-    private static func sleepSummary(_ snapshot: Snapshot?) -> String {
-        switch snapshot?.sleep {
-        case .after: "Pauses in \(clock((snapshot?.sleepRemainingMs ?? 0) + 999))"
+    private static func sleepSummary(_ timer: SleepTimer?, remaining: UInt64?) -> String {
+        switch timer {
+        case .after: "Pauses in \(clock((remaining ?? 0) + 999))"
         case .endOfTrack: "Pauses at the end of this song"
         case .endOfQueue: "Pauses at the end of the queue"
         case nil: "No timer set"
@@ -470,10 +470,10 @@ struct OutputView: View {
                 }
             }
             Section {
-                LabeledContent("Stream", value: "Stereo float · \(library.snapshot?.outputRate ?? UInt32(session.sampleRate)) Hz")
+                LabeledContent("Stream", value: "Stereo float · \(library.clock.outputRate > 0 ? library.clock.outputRate : UInt32(session.sampleRate)) Hz")
                 LabeledContent("Hardware rate", value: "\(Int(session.sampleRate)) Hz")
                 LabeledContent("Output latency", value: String(format: "%.1f ms", (session.outputLatency + session.ioBufferDuration) * 1000))
-                LabeledContent("Underruns", value: "\(library.snapshot?.underruns ?? 0)")
+                LabeledContent("Underruns", value: "\(library.clock.underruns)")
             } header: {
                 Text("Current stream")
             } footer: {
