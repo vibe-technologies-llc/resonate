@@ -434,13 +434,43 @@ struct VolumeRow: View {
 }
 
 struct SystemVolume: UIViewRepresentable {
-    func makeUIView(context: Context) -> MPVolumeView {
-        let volume = MPVolumeView(frame: .zero)
-        volume.setValue(false, forKey: "showsRouteButton")
-        return volume
+    func makeUIView(context: Context) -> CentredVolume {
+        CentredVolume()
     }
 
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+    func updateUIView(_ uiView: CentredVolume, context: Context) {}
+}
+
+final class CentredVolume: UIView {
+    private let volume = MPVolumeView(frame: .zero)
+
+    init() {
+        super.init(frame: .zero)
+        volume.setValue(false, forKey: "showsRouteButton")
+        addSubview(volume)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        volume.frame = bounds
+        volume.layoutIfNeeded()
+        guard let slider = Self.slider(in: volume) else { return }
+        let track = slider.convert(slider.bounds, to: self)
+
+        volume.frame = bounds.offsetBy(dx: 0, dy: bounds.midY - track.midY)
+    }
+
+    private static func slider(in view: UIView) -> UISlider? {
+        for child in view.subviews {
+            if let slider = child as? UISlider { return slider }
+            if let nested = slider(in: child) { return nested }
+        }
+        return nil
+    }
 }
 
 struct PlayerModes: View {
