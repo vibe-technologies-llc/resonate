@@ -127,6 +127,10 @@ pub enum Error {
     BufferRange { milliseconds: u32 },
     #[error("the player has been closed")]
     Closed,
+    #[error("no queue row has the id {queue_id}")]
+    UnknownQueueRow { queue_id: u64 },
+    #[error("queue row {row} is outside a queue of {rows}")]
+    QueueRowOutOfRange { row: u32, rows: u64 },
     #[error("device sync operation {op:?} failed")]
     Sync {
         op: SyncOp,

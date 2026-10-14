@@ -62,7 +62,9 @@ included, is `InvalidUri`.
 
 ## Checks
 
-`cargo test -p resonate-mobile` runs on the host. Its documents tests cover both schemes and
+`cargo test -p resonate-mobile` runs on the host. The queue edit tests drive a real engine over
+a backend with no device (a paused queue never binds a stream) and WAVE documents through the
+`content` provider. Its documents tests cover both schemes and
 `the_ios_document_types_admit_what_a_scan_admits` holds `ios/Resonate/Info.plist`'s declared
 extensions to `AUDIO_EXTENSIONS`. Target clippy runs through `android/check-native.py` and, for
 iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the environment
