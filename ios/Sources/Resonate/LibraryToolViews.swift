@@ -40,7 +40,7 @@ struct LibraryToolsView: View {
                 }
             }
             Section("Discover") {
-                NavigationLink(value: Destination.online) {
+                Button { navigation.searchOnline() } label: {
                     ToolRow(title: "Online search", detail: "Find songs, artists, albums and shared music", symbol: "globe")
                 }
                 NavigationLink(value: Destination.wanted) {

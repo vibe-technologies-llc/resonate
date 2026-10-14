@@ -116,8 +116,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `AfterFirstUnlockThisDeviceOnly`; plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
 
-The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings;
-the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
+The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings
+and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
+field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
 skip; its progress is a ring around the play button in either placement (a bar along the accessory's
 bottom ran through the title and artist, since the system fixes the accessory's height); the output page holds `AVRoutePickerView`, since iOS owns the route.
@@ -144,7 +145,8 @@ bottom ran through the title and artist, since the system fixes the accessory's 
 ## Search
 
 - **The library is searched in Rust, never filtered in Swift.** `SearchModel` (`SearchModel.swift`;
-  `Library.songSearch` for Songs, `Library.shelfSearch` for the Library tab) asks `search_library`
+  `Library.songSearch` for Songs, `Library.shelfSearch` for the Library tab, `Library.tabSearch` for
+  the Search tab, so each tab's text is its own) asks `search_library`
   on `Work.aside` 150 ms after the last keystroke (the desktop's `SEARCH_SETTLE`), cancels the
   settle before, refuses a stale answer by generation and keeps the last answer on screen until the
   next lands; blank text asks nothing. Rows light matched text through `highlights`, its UTF-16
@@ -153,9 +155,23 @@ bottom ran through the title and artist, since the system fixes the accessory's 
 - **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
   Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
   `.searchSuggestions` offers completions while typing and, on an empty field, the last ten searches
-  (`UserDefaults` suite `library-features`, key `recent-searches`), kept when a search is submitted
-  or one of its results opened. Searching spans the catalog: filters shape browsing only, and setting
-  one clears the search.
+  (`UserDefaults` suite `library-features`, key `recent-searches`, shared with the Search tab: a
+  search kept merges into what is stored, and each tab re-reads it on appearing), kept when a search
+  is submitted or one of its results opened. Searching spans the catalog: filters shape browsing
+  only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
+  are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
+  `FilterSheet`), and each part of the filter set shows under the picker as a small capsule token
+  that clears it. Playlists and Suggestions are reached from the Library tab (Suggestions is a row
+  beside Favourites and All songs), online search from the Search tab.
+- **The Search tab** (`SearchTab.swift`) has scopes Your library (the default) and Online
+  (`Navigation.searchPlace`), one field for both: typing sets `tabSearch.text` always and
+  `Features.onlineQuery` only in Online, and choosing Online hands it the text, so a library search
+  never reaches the network. Your library shows the Songs results (Top, *See all* pushing the full
+  list, *Did you mean*, reads, completions) and, under five songs, "Search online for “…”", which
+  switches scope. With no text the page lists the recent searches and a hint; Online with online
+  features off shows why, with Open Settings. `Navigation.open(.online)` and Library tools' Online
+  search switch to this tab in Online (`searchOnline`); `Destination.online` still draws a page of
+  its own (`OnlineView`) over the same state.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
   page published at once where nothing is shown yet and the rest after; albums and artists through
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. A list of 40
@@ -166,8 +182,15 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   a song's title, artist and album.
 - **Online** search asks as the listener types: 450 ms settle, three letters at least, one request
   generation (`Features.searchRequest`) and an in-memory answer per spelling, the last 64 per mode
-  (`OnlineAnswers`). Text starting `http://`, `https://` or `spotify:` is opened as a link in any
-  mode. The query and the last answer live on `Features`, so they outlive the page. An artist, an
+  (`OnlineAnswers`). MusicBrainz is paced at about a request a second, so one spelling is a chain
+  (`OnlineAsked.chain`): songs, then albums, then artists, one after another on `Work.aside`, each
+  landing in `Features.onlineFound` as it arrives, a cached answer without asking; new text cancels
+  the chain and its generation refuses whatever was still in flight. The Top view shows the best
+  five songs (download, save, *In your library*), six albums and six artists, each with *See all*,
+  and a progress row naming the section still awaited; the previous spelling's sections stay until
+  the new one's first lands. Text starting `http://`, `https://` or `spotify:` is one request,
+  opened as a link. Nothing is asked while online features are off; turning them on asks again.
+  The query and the last answer live on `Features`, so they outlive the page. An artist, an
   album and a release are pages of their own (`OnlineArtistPage` with *More releases*,
   `OnlineAlbumPage`, `OnlineReleasePage`), each holding its own state; song rows are keyed by
   position, since a shared playlist repeats songs.

@@ -55,6 +55,9 @@ struct LibraryView: View {
                     AllSongsRow(count: tracks.count)
                 }
                 .buttonStyle(.plain)
+                NavigationLink(value: Destination.suggestions) {
+                    SuggestionsRow()
+                }
             }
             if playlistsOnly || shelf == .all || shelf == .playlists {
                 Section("Playlists") {
@@ -205,6 +208,26 @@ struct AllSongsRow: View {
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+struct SuggestionsRow: View {
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: artworkEdge, height: artworkEdge)
+                .background(.quaternary, in: .rect(cornerRadius: 10))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Suggestions").font(.body.weight(.medium))
+                Text("Mixes from your library").font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

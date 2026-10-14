@@ -218,10 +218,11 @@ struct SearchSuggestions: View {
     private static let completionsShown = 5
 
     let search: SearchModel
+    var offersRecents = true
 
     var body: some View {
         if search.query.isEmpty {
-            if !search.recents.isEmpty {
+            if offersRecents, !search.recents.isEmpty {
                 Section("Recent searches") {
                     ForEach(search.recents, id: \.self) { recent in
                         Label(recent, systemImage: "clock.arrow.circlepath").searchCompletion(recent)

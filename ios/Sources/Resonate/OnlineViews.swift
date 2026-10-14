@@ -1,33 +1,26 @@
 import ResonateNative
 import SwiftUI
 
-enum OnlineMode: String, CaseIterable, Identifiable {
-    case songs = "Songs"
-    case albums = "Albums"
-    case artists = "Artists"
-
-    var id: String { rawValue }
+enum OnlineMode: String, CaseIterable {
+    case songs
+    case albums
+    case artists
 }
 
 struct OnlineAsked: Hashable {
     static let settle: Duration = .milliseconds(450)
     static let shortest = 3
+    static let prompt = "Song, album, artist or shared link"
     private static let linkPrefixes = ["http://", "https://", "spotify:"]
 
     let text: String
     let mode: OnlineMode?
 
-    init(_ typed: String, in mode: OnlineMode) {
-        text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.mode = Self.isLink(text) ? nil : mode
+    static func chain(_ text: String) -> [OnlineAsked] {
+        if isLink(text) { return [OnlineAsked(text: text, mode: nil)] }
+        guard text.count >= shortest else { return [] }
+        return OnlineMode.allCases.map { OnlineAsked(text: text, mode: $0) }
     }
-
-    init(text: String, mode: OnlineMode?) {
-        self.text = text
-        self.mode = mode
-    }
-
-    var isLink: Bool { mode == nil }
 
     static func isLink(_ text: String) -> Bool {
         let lowered = text.lowercased()
@@ -49,20 +42,50 @@ enum OnlineAnswer {
         case .artists: .artists(try native.searchArtistsOnline(text: asked.text))
         }
     }
-
-    var isEmpty: Bool {
-        switch self {
-        case .songs(let songs): songs.isEmpty
-        case .albums(let albums): albums.isEmpty
-        case .artists(let artists): artists.isEmpty
-        case .link(let collection): collection.songs.isEmpty && collection.releases.isEmpty && collection.artists.isEmpty
-        }
-    }
 }
 
-struct OnlineResults {
-    let asked: OnlineAsked
-    let answer: OnlineAnswer
+struct OnlineFound {
+    private(set) var text = ""
+    private(set) var songs: [SearchSong]?
+    private(set) var albums: [SearchAlbum]?
+    private(set) var artists: [SearchArtist]?
+    private(set) var link: OnlineCollection?
+
+    init() {}
+
+    init(text: String, answers: [OnlineAnswer]) {
+        self.text = text
+        for answer in answers { take(answer) }
+    }
+
+    func landing(_ answer: OnlineAnswer, for text: String) -> OnlineFound {
+        var found = self.text == text ? self : OnlineFound(text: text, answers: [])
+        found.take(answer)
+        return found
+    }
+
+    var isWhole: Bool { link != nil || (songs != nil && albums != nil && artists != nil) }
+
+    var isEmpty: Bool {
+        if let link { return link.songs.isEmpty && link.releases.isEmpty && link.artists.isEmpty }
+        return (songs ?? []).isEmpty && (albums ?? []).isEmpty && (artists ?? []).isEmpty
+    }
+
+    func awaited(for asked: String) -> OnlineMode? {
+        guard text == asked else { return .songs }
+        if songs == nil { return .songs }
+        if albums == nil { return .albums }
+        return artists == nil ? .artists : nil
+    }
+
+    private mutating func take(_ answer: OnlineAnswer) {
+        switch answer {
+        case .songs(let found): songs = found
+        case .albums(let found): albums = found
+        case .artists(let found): artists = found
+        case .link(let found): link = found
+        }
+    }
 }
 
 struct OnlineAnswers {
@@ -89,115 +112,233 @@ struct OnlineAnswers {
 
 struct OnlineView: View {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-    @State private var presented = false
     @State private var actions = OnlineSongActions()
 
     var body: some View {
         @Bindable var features = library.features
         List {
-            if !features.online {
-                Section {
-                    Text("Online features are disabled. Turn them on in Settings to search and download music.")
-                    Button("Open Settings") { navigation.tab = .settings }
-                }
-            } else {
-                DownloadProgress()
-                OnlineFindings(actions: $actions)
-            }
+            OnlineSearchContent(actions: $actions)
         }
+        .listStyle(.plain)
         .navigationTitle("Online music search")
-        .searchable(
-            text: $features.onlineQuery,
-            isPresented: $presented,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Song, album, artist or shared link"
-        )
-        .searchScopes($features.onlineMode, activation: .onSearchPresentation) {
-            ForEach(OnlineMode.allCases) { Text($0.rawValue).tag($0) }
-        }
+        .searchable(text: $features.onlineQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: OnlineAsked.prompt)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
-        .toolbar {
-            if features.searching {
-                ToolbarItem(placement: .topBarTrailing) { ProgressView() }
-            }
-        }
         .onlineSongActions($actions)
-        .onAppear { if features.online, features.onlineQuery.isEmpty { presented = true } }
     }
 }
 
-struct OnlineFindings: View {
+struct OnlineOff: View {
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Online features are off", systemImage: "globe")
+        } description: {
+            Text("Turn them on in Settings to search for music online and download it.")
+        } actions: {
+            Button("Open Settings") { navigation.tab = .settings }
+                .buttonStyle(.glass)
+        }
+        .listRowSeparator(.hidden)
+    }
+}
+
+struct OnlineSearchContent: View {
     @Environment(Library.self) private var library
     @Binding var actions: OnlineSongActions
 
     var body: some View {
         let features = library.features
-        let asked = OnlineAsked(features.onlineQuery, in: features.onlineMode)
-        if asked.text.isEmpty {
+        let text = features.onlineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let found = features.onlineFound
+        let current = found.text == text
+
+        if !features.online {
+            OnlineOff()
+        } else if text.isEmpty {
             ContentUnavailableView(
                 "Search online",
                 systemImage: "globe",
                 description: Text("Find songs, artists, albums and shared music. Paste a shared link to open it.")
             )
             .listRowSeparator(.hidden)
-        } else if !asked.isLink, asked.text.count < OnlineAsked.shortest {
-            Text("Type at least 3 letters").foregroundStyle(.secondary)
-        } else if let results = features.onlineResults {
-            if !results.answer.isEmpty {
-                OnlineAnswerSections(answer: results.answer, actions: $actions)
-            } else if results.asked == asked, !features.searching {
-                ContentUnavailableView(
-                    asked.isLink ? "No music could be read from this link" : "No results for “\(asked.text)”",
-                    systemImage: asked.isLink ? "link" : "magnifyingglass",
-                    description: Text(asked.isLink ? "Check the link, or search by name instead." : "Check the spelling, or try fewer words.")
-                )
+        } else if OnlineAsked.chain(text).isEmpty {
+            Text("Type at least 3 letters")
+                .foregroundStyle(.secondary)
                 .listRowSeparator(.hidden)
+        } else if current, found.isWhole, found.isEmpty, !features.searching {
+            OnlineNothingFound(text: text)
+        } else {
+            DownloadProgress()
+            if features.searching, !current {
+                OnlinePending(text: text, awaited: nil)
+            }
+            OnlineTopSections(found: found, actions: $actions)
+            if features.searching, current {
+                OnlinePending(text: text, awaited: found.awaited(for: text))
             }
         }
     }
 }
 
-struct OnlineAnswerSections: View {
-    let answer: OnlineAnswer
+struct OnlineNothingFound: View {
+    let text: String
+
+    var body: some View {
+        let link = OnlineAsked.isLink(text)
+        ContentUnavailableView(
+            link ? "No music could be read from this link" : "No results for “\(text)”",
+            systemImage: link ? "link" : "magnifyingglass",
+            description: Text(link ? "Check the link, or search by name instead." : "Check the spelling, or try fewer words.")
+        )
+        .listRowSeparator(.hidden)
+    }
+}
+
+struct OnlinePending: View {
+    let text: String
+    let awaited: OnlineMode?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text(label).foregroundStyle(.secondary)
+        }
+        .font(.subheadline)
+        .listRowSeparator(.hidden)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var label: String {
+        if OnlineAsked.isLink(text) { return "Opening the link…" }
+        guard let awaited else { return "Searching…" }
+        return "Searching \(awaited.rawValue)…"
+    }
+}
+
+struct OnlineTopSections: View {
+    private static let topSongs = 5
+    private static let topCollections = 6
+
+    @Environment(Library.self) private var library
+    let found: OnlineFound
     @Binding var actions: OnlineSongActions
 
     var body: some View {
-        switch answer {
-        case .songs(let songs):
-            OnlineSongsSection(songs: songs, actions: $actions)
-        case .albums(let albums):
+        if let link = found.link {
+            OnlineLinkSections(collection: link, actions: $actions)
+        }
+        if let songs = found.songs, !songs.isEmpty {
+            let shown = Array(songs.prefix(Self.topSongs))
             Section {
-                ForEach(albums, id: \.id) { album in
+                ForEach(shown.indices, id: \.self) { index in
+                    OnlineSongRow(song: shown[index]) { library.features.downloads.enqueue([shown[index]]) }
+                }
+            } header: {
+                SeeAllLink(title: "Songs", more: songs.count > Self.topSongs) { OnlineSongsPage(songs: songs) }
+            }
+        }
+        if let albums = found.albums, !albums.isEmpty {
+            Section {
+                ForEach(albums.prefix(Self.topCollections), id: \.id) { album in
                     NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
                 }
+            } header: {
+                SeeAllLink(title: "Albums", more: albums.count > Self.topCollections) { OnlineAlbumsPage(albums: albums) }
             }
-        case .artists(let artists):
+        }
+        if let artists = found.artists, !artists.isEmpty {
             Section {
-                ForEach(artists, id: \.id) { artist in
+                ForEach(artists.prefix(Self.topCollections), id: \.id) { artist in
+                    NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
+                }
+            } header: {
+                SeeAllLink(title: "Artists", more: artists.count > Self.topCollections) { OnlineArtistsPage(artists: artists) }
+            }
+        }
+    }
+}
+
+struct SeeAllLink<Page: View>: View {
+    let title: String
+    let more: Bool
+    @ViewBuilder let page: () -> Page
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if more {
+                NavigationLink("See all", destination: page)
+                    .font(.subheadline)
+                    .textCase(nil)
+            }
+        }
+    }
+}
+
+struct OnlineSongsPage: View {
+    @State private var actions = OnlineSongActions()
+    let songs: [SearchSong]
+
+    var body: some View {
+        List {
+            DownloadProgress()
+            OnlineSongsSection(songs: songs, actions: $actions)
+        }
+        .listStyle(.plain)
+        .navigationTitle("Songs")
+        .onlineSongActions($actions)
+    }
+}
+
+struct OnlineAlbumsPage: View {
+    let albums: [SearchAlbum]
+
+    var body: some View {
+        List(albums, id: \.id) { album in
+            NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Albums")
+    }
+}
+
+struct OnlineArtistsPage: View {
+    let artists: [SearchArtist]
+
+    var body: some View {
+        List(artists, id: \.id) { artist in
+            NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Artists")
+    }
+}
+
+struct OnlineLinkSections: View {
+    let collection: OnlineCollection
+    @Binding var actions: OnlineSongActions
+
+    var body: some View {
+        let heading = collection.name.isEmpty ? "Shared music" : collection.name
+        if !collection.artists.isEmpty {
+            Section(heading) {
+                ForEach(collection.artists, id: \.id) { artist in
                     NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
                 }
             }
-        case .link(let collection):
-            let heading = collection.name.isEmpty ? "Shared music" : collection.name
-            if !collection.artists.isEmpty {
-                Section(heading) {
-                    ForEach(collection.artists, id: \.id) { artist in
-                        NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
-                    }
+        }
+        if !collection.releases.isEmpty {
+            Section(heading) {
+                ForEach(collection.releases, id: \.id) { release in
+                    NavigationLink { OnlineReleasePage(release: release) } label: { OnlineReleaseRow(release: release) }
                 }
             }
-            if !collection.releases.isEmpty {
-                Section(heading) {
-                    ForEach(collection.releases, id: \.id) { release in
-                        NavigationLink { OnlineReleasePage(release: release) } label: { OnlineReleaseRow(release: release) }
-                    }
-                }
-            }
-            if !collection.songs.isEmpty {
-                OnlineSongsSection(songs: collection.songs, heading: heading, collected: true, actions: $actions)
-            }
+        }
+        if !collection.songs.isEmpty {
+            OnlineSongsSection(songs: collection.songs, heading: heading, collected: true, actions: $actions)
         }
     }
 }

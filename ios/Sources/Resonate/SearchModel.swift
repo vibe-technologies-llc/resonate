@@ -70,8 +70,14 @@ final class SearchModel {
         let kept = query
         guard !kept.isEmpty else { return }
 
-        recents = Array(([kept] + recents.filter { $0.caseInsensitiveCompare(kept) != .orderedSame }).prefix(Self.recentsKept))
+        let stored = remembered.stringArray(forKey: Self.recentsKey) ?? []
+        recents = Array(([kept] + stored.filter { $0.caseInsensitiveCompare(kept) != .orderedSame }).prefix(Self.recentsKept))
         remembered.set(recents, forKey: Self.recentsKey)
+    }
+
+    func recallRecents() {
+        let stored = remembered?.stringArray(forKey: Self.recentsKey) ?? []
+        if stored != recents { recents = stored }
     }
 
     func forgetRecents() {
