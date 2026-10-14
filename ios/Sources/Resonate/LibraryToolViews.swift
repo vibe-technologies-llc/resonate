@@ -58,22 +58,25 @@ struct LibraryToolsView: View {
                 }
                 .disabled(features.enriching || !features.online)
             }
-            if let current {
-                Section("Current song") {
-                    NavigationLink(value: Destination.lyrics(nil)) {
-                        ToolRow(title: "Lyrics", detail: "Follow the words as they play", symbol: "quote.bubble")
-                    }
-                    NavigationLink(value: Destination.visualizer) {
-                        ToolRow(title: "Visualizer", detail: "Watch the live waveform", symbol: "waveform")
-                    }
-                    NavigationLink(value: Destination.analysis(nil)) {
-                        ToolRow(title: "Analysis", detail: "Loudness, spectrum and audio quality", symbol: "waveform.path.ecg")
-                    }
-                    NavigationLink(value: Destination.inspector(current)) {
-                        ToolRow(title: "Inspector", detail: "Artwork, tags and source details", symbol: "info.circle")
-                    }
+            Section {
+                NavigationLink(value: current.map { _ in Destination.lyrics(nil) }) {
+                    ToolRow(title: "Lyrics", detail: "Follow the words as they play", symbol: "quote.bubble")
                 }
+                NavigationLink(value: current.map { _ in Destination.visualizer }) {
+                    ToolRow(title: "Visualizer", detail: "Watch the live waveform", symbol: "waveform")
+                }
+                NavigationLink(value: current.map { _ in Destination.analysis(nil) }) {
+                    ToolRow(title: "Analysis", detail: "Loudness, spectrum and audio quality", symbol: "waveform.path.ecg")
+                }
+                NavigationLink(value: current.map(Destination.inspector)) {
+                    ToolRow(title: "Inspector", detail: "Artwork, tags and source details", symbol: "info.circle")
+                }
+            } header: {
+                Text("Current song")
+            } footer: {
+                if current == nil { Text("Play a song to use these tools.") }
             }
+            .disabled(current == nil)
             Section("Preferences") {
                 Button { navigation.tab = .settings } label: {
                     ToolRow(title: "Settings", detail: "Sound, music folders and connected services", symbol: "gearshape")
@@ -97,40 +100,81 @@ struct FoldersView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(library.folderList) { folder in
-                HStack {
-                    Image(systemName: folder.id == Folders.local ? "iphone" : "folder")
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading) {
-                        Text(folder.name)
-                        Text(folder.readable ? "Access available" : "Unavailable · choose this folder again to restore access")
-                            .font(.caption)
-                            .foregroundStyle(folder.readable ? Color.secondary : Color.red)
-                    }
-                    Spacer()
-                    Button("Rescan", systemImage: "arrow.clockwise") { library.scan(folder.id) }
-                        .labelStyle(.iconOnly)
-                        .disabled(!folder.readable || library.scanning)
-                }
-                .swipeActions {
-                    if folder.id != Folders.local {
-                        Button("Remove access", role: .destructive) { removing = folder }
+            Section {
+                ForEach(library.folderList) { folder in
+                    FolderRow(
+                        folder: folder,
+                        scanning: library.scanning,
+                        rescan: { library.scan(folder.id) },
+                        remove: { removing = folder }
+                    )
+                    .swipeActions {
+                        if folder.id != Folders.local {
+                            Button("Remove access", role: .destructive) { removing = folder }
+                        }
                     }
                 }
             }
-            Button("Add music folder", systemImage: "folder.badge.plus") { navigation.choosingFolder = true }
+            Section {
+                Button("Add music folder", systemImage: "folder.badge.plus") { navigation.choosingFolder = true }
+            }
         }
         .navigationTitle("Music folders")
-        .onAppear { library.folderList = library.folders.folders() }
+        .task { library.folderList = await library.folders.refreshed() }
         .confirmationDialog(
-            "Remove access to \(removing?.name ?? "")? Your music is left untouched.",
+            "Remove \(removing?.name ?? "this folder")?",
             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Remove access", role: .destructive) {
-                if let removing { library.removeFolder(removing) }
-            }
+            titleVisibility: .visible,
+            presenting: removing
+        ) { folder in
+            Button("Remove access", role: .destructive) { library.removeFolder(folder) }
+        } message: { _ in
+            Text("Your music files stay where they are. Cached library entries remain, but playback from this folder will need access again.")
         }
+    }
+}
+
+struct FolderRow: View {
+    let folder: MusicFolder
+    let scanning: Bool
+    let rescan: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: folder.id == Folders.local ? "iphone" : "folder")
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(folder.name)
+                    Text(standing)
+                        .font(.caption)
+                        .foregroundStyle(folder.readable ? Color.secondary : Color.red)
+                    if !folder.path.isEmpty {
+                        Text(folder.path)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            HStack {
+                Button("Rescan", systemImage: "arrow.clockwise", action: rescan)
+                    .disabled(!folder.readable || scanning)
+                if folder.id != Folders.local {
+                    Button("Remove access", systemImage: "xmark.circle", role: .destructive, action: remove)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    private var standing: String {
+        if !folder.readable { return "Unavailable · choose this folder again to restore access" }
+        return folder.writable ? "Access available" : "Read-only access · songs from your devices cannot be kept here"
     }
 }
 
@@ -140,24 +184,31 @@ struct StatisticsView: View {
     private static let spans: [(UInt32, String)] = [(7, "Week"), (30, "Month"), (365, "Year"), (0, "All time")]
 
     var body: some View {
-        let statistics = library.features.statistics
+        let features = library.features
+        let statistics = features.statistics
         List {
             Picker("Period", selection: $days) {
                 ForEach(Self.spans, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.segmented)
             if let statistics {
-                Section {
+                Section("Listening") {
+                    LabeledContent("Plays", value: "\(statistics.plays)")
+                    LabeledContent("Listened", value: Self.spoken(statistics.listenedMs))
+                }
+                Section("Your library") {
                     LabeledContent("Songs", value: "\(statistics.songs)")
                     LabeledContent("Albums", value: "\(statistics.albums)")
                     LabeledContent("Artists", value: "\(statistics.artists)")
-                    LabeledContent("Library length", value: clock(statistics.durationMs))
-                    LabeledContent("Plays", value: "\(statistics.plays)")
-                    LabeledContent("Listened", value: clock(statistics.listenedMs))
+                    LabeledContent("Library length", value: Self.spoken(statistics.durationMs))
                 }
                 Section("Most listened") {
                     if statistics.topTracks.isEmpty {
-                        Text("Play a song for half its length, or four minutes, to count a play.").foregroundStyle(.secondary)
+                        ContentUnavailableView(
+                            "No plays yet",
+                            systemImage: "chart.bar",
+                            description: Text("Play a song for half its length, or four minutes, to count a play.")
+                        )
                     }
                     ForEach(statistics.topTracks, id: \.id) { track in
                         TrackRow(track: track) { library.play(statistics.topTracks, selected: track) }
@@ -165,8 +216,27 @@ struct StatisticsView: View {
                 }
             }
         }
-        .navigationTitle("Listening statistics")
-        .task(id: days) { library.features.loadStatistics(days: days) }
+        .overlay {
+            if statistics == nil, features.statisticsLoading {
+                ProgressView("Reading your listening history…")
+            }
+        }
+        .toolbar {
+            if statistics != nil, features.statisticsLoading {
+                ProgressView()
+            }
+        }
+        .navigationTitle("Statistics")
+        .task(id: days) { features.loadStatistics(days: days) }
+    }
+
+    private static func spoken(_ milliseconds: UInt64) -> String {
+        let minutes = Int(milliseconds / 60_000)
+        let hours = minutes / 60
+        let rest = minutes % 60
+        if hours == 0 { return counted(rest, "minute") }
+        if rest == 0 { return counted(hours, "hour") }
+        return "\(counted(hours, "hour")) \(counted(rest, "minute"))"
     }
 }
 

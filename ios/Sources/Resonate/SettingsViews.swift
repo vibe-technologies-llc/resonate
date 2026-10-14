@@ -2,70 +2,47 @@ import AVFoundation
 import ResonateNative
 import SwiftUI
 
+enum SettingsOpening {
+    case page(Destination)
+    case sleepTimer
+    case rescan
+}
+
+struct SettingsEntry: Identifiable {
+    let title: String
+    let detail: String
+    let symbol: String
+    let keywords: String
+    let opening: SettingsOpening
+    var available = true
+
+    var id: String { title }
+    var searched: String { "\(title) \(detail) \(keywords)" }
+}
+
 struct SettingsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
+    private static let unlistedWords = [
+        "Online features internet network artwork covers lyrics enrichment music search",
+        "Download providers TIDAL Subsonic Monochrome",
+        "Scrobbling ListenBrainz Last.fm",
+    ]
 
     var body: some View {
         let features = library.features
-        let preferences = library.preferences
-        let processing: String =
-            switch preferences?.replayGain {
-            case .track: "Track ReplayGain"
-            case .album: "Album ReplayGain"
-            default: "ReplayGain, resampling and clip prevention"
-            }
+        let sound = soundEntries.filter { matches($0.searched) }
+        let sources = sourceEntries.filter { matches($0.searched) }
         List {
-            Section("Sound and playback") {
-                if shown("Equaliser", "curve", "preamp") {
-                    NavigationLink(value: Destination.sound) {
-                        ToolRow(
-                            title: "Equaliser",
-                            detail: preferences?.equaliserEnabled == true
-                                ? (preferences?.profileName.isEmpty == false ? preferences?.profileName ?? "" : "Custom ten-band curve")
-                                : "Ten-band curve and preamp",
-                            symbol: "slider.vertical.3"
-                        )
-                    }
-                }
-                if shown("Sound processing", "ReplayGain", "resampling") {
-                    NavigationLink(value: Destination.processing) {
-                        ToolRow(
-                            title: "Sound processing",
-                            detail: processing,
-                            symbol: "dial.medium"
-                        )
-                    }
-                }
-                if shown("Audio output", "buffer", "route") {
-                    NavigationLink(value: Destination.output) {
-                        ToolRow(title: "Audio output", detail: "Choose a device and adjust buffering", symbol: "hifispeaker")
-                    }
-                }
-                if shown("Headphone correction", "AutoEq") {
-                    NavigationLink(value: Destination.autoEq) {
-                        ToolRow(title: "Headphone correction", detail: "Find and apply an AutoEq profile", symbol: "headphones")
-                    }
-                }
-                if shown("Sleep timer") {
-                    Button { navigation.sleepTimer = true } label: {
-                        ToolRow(title: "Sleep timer", detail: library.snapshot?.sleep == nil ? "Pause playback later" : "A timer is running", symbol: "moon")
-                    }
-                    .disabled(library.snapshot?.current == nil)
+            if !sound.isEmpty {
+                Section("Sound and playback") {
+                    ForEach(sound) { entryRow($0) }
                 }
             }
-            Section("Library sources") {
-                if shown("Music folders") {
-                    NavigationLink(value: Destination.folders) {
-                        ToolRow(title: "Music folders", detail: "Add and manage your music folders", symbol: "folder")
-                    }
-                }
-                if shown("Rescan library") {
-                    Button { library.rescan() } label: {
-                        ToolRow(title: "Rescan library", detail: library.scanning ? "Reading your music…" : "Find new and changed music in your folders", symbol: "arrow.clockwise")
-                    }
-                    .disabled(library.scanning)
+            if !sources.isEmpty {
+                Section("Library sources") {
+                    ForEach(sources) { entryRow($0) }
                 }
             }
             Section("Connected services") {
@@ -84,21 +61,159 @@ struct SettingsView: View {
                         ToolRow(title: "Scrobbling", detail: scrobblingDetail(features.scrobbleAccount), symbol: "dot.radiowaves.left.and.right")
                     }
                 }
-                if shown("Device sync", "devices") {
-                    NavigationLink(value: Destination.sync) {
-                        ToolRow(title: "Device sync", detail: features.syncStatus.map(\.standing.title) ?? "Keep your devices in step", symbol: "arrow.triangle.2.circlepath")
-                    }
+                if matches(syncEntry.searched) {
+                    entryRow(syncEntry)
                 }
             }
         }
         .buttonStyle(.plain)
         .searchable(text: $search, prompt: "Search settings")
+        .overlay {
+            if nothingMatches {
+                ContentUnavailableView(
+                    "No settings match “\(search.trimmingCharacters(in: .whitespaces))”",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another word, such as equaliser, folders or sync.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            }
+        }
         .navigationTitle("Settings")
     }
 
+    private var soundEntries: [SettingsEntry] {
+        let preferences = library.preferences
+        return [
+            SettingsEntry(
+                title: "Equaliser",
+                detail: Self.equaliserSummary(preferences),
+                symbol: "slider.vertical.3",
+                keywords: "sound playback curve preamp bands profile",
+                opening: .page(.sound)
+            ),
+            SettingsEntry(
+                title: "Sound processing",
+                detail: Self.processingSummary(preferences),
+                symbol: "dial.medium",
+                keywords: "sound playback ReplayGain resampling clip true peak restoration volume",
+                opening: .page(.processing)
+            ),
+            SettingsEntry(
+                title: "Audio output",
+                detail: "Choose a device and adjust buffering",
+                symbol: "hifispeaker",
+                keywords: "sound playback route bluetooth AirPlay buffer DSD",
+                opening: .page(.output)
+            ),
+            SettingsEntry(
+                title: "Headphone correction",
+                detail: "Find and apply an AutoEq profile",
+                symbol: "headphones",
+                keywords: "sound playback AutoEq equaliser correction",
+                opening: .page(.autoEq)
+            ),
+            SettingsEntry(
+                title: "Sleep timer",
+                detail: Self.sleepSummary(library.snapshot),
+                symbol: "moon",
+                keywords: "sound playback pause minutes end song queue",
+                opening: .sleepTimer,
+                available: library.snapshot?.current != nil
+            ),
+        ]
+    }
+
+    private var sourceEntries: [SettingsEntry] {
+        let folders = library.folderList
+        let readable = folders.filter(\.readable).count
+        let rescanDetail =
+            library.scanning ? "Reading your music…"
+            : readable == 0 ? "Add a music folder first"
+            : "Find new and changed music in your folders"
+        return [
+            SettingsEntry(
+                title: "Music folders",
+                detail: folders.isEmpty ? "Add and manage your music folders" : "\(counted(folders.count, "folder")) · \(readable) available",
+                symbol: "folder",
+                keywords: "library sources storage add remove rescan Files",
+                opening: .page(.folders)
+            ),
+            SettingsEntry(
+                title: "Rescan library",
+                detail: rescanDetail,
+                symbol: "arrow.clockwise",
+                keywords: "library sources refresh scan files",
+                opening: .rescan,
+                available: !library.scanning && readable > 0
+            ),
+        ]
+    }
+
+    private var syncEntry: SettingsEntry {
+        let features = library.features
+        return SettingsEntry(
+            title: "Device sync",
+            detail: syncStanding(features.syncStatus, config: features.syncConfig, online: features.online),
+            symbol: "arrow.triangle.2.circlepath",
+            keywords: "connected services devices pairing code phone computer playlists favourites listening history handoff",
+            opening: .page(.sync)
+        )
+    }
+
+    @ViewBuilder
+    private func entryRow(_ entry: SettingsEntry) -> some View {
+        let row = ToolRow(title: entry.title, detail: entry.detail, symbol: entry.symbol)
+        switch entry.opening {
+        case .page(let destination):
+            NavigationLink(value: destination) { row }
+                .disabled(!entry.available)
+        case .sleepTimer:
+            Button { navigation.sleepTimer = true } label: { row }
+                .disabled(!entry.available)
+        case .rescan:
+            Button { library.rescan() } label: { row }
+                .disabled(!entry.available)
+        }
+    }
+
+    private var terms: [String] {
+        search.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    private var nothingMatches: Bool {
+        let listed = (soundEntries + sourceEntries + [syncEntry]).map(\.searched)
+        return !terms.isEmpty && !(listed + Self.unlistedWords).contains(where: matches)
+    }
+
+    private func matches(_ searched: String) -> Bool {
+        terms.allSatisfy { searched.localizedCaseInsensitiveContains($0) }
+    }
+
     private func shown(_ words: String...) -> Bool {
-        let folded = search.lowercased()
-        return folded.isEmpty || words.contains { $0.lowercased().contains(folded) }
+        matches(words.joined(separator: " "))
+    }
+
+    private static func equaliserSummary(_ preferences: PlaybackPreferences?) -> String {
+        guard let preferences, preferences.equaliserEnabled else { return "Ten-band curve and preamp" }
+        return preferences.profileName.isEmpty ? "Custom ten-band curve" : preferences.profileName
+    }
+
+    private static func processingSummary(_ preferences: PlaybackPreferences?) -> String {
+        switch preferences?.replayGain {
+        case .track: "Track ReplayGain"
+        case .album: "Album ReplayGain"
+        default: "ReplayGain, resampling and clip prevention"
+        }
+    }
+
+    private static func sleepSummary(_ snapshot: Snapshot?) -> String {
+        switch snapshot?.sleep {
+        case .after: "Pauses in \(clock((snapshot?.sleepRemainingMs ?? 0) + 999))"
+        case .endOfTrack: "Pauses at the end of this song"
+        case .endOfQueue: "Pauses at the end of the queue"
+        case nil: "No timer set"
+        }
     }
 
     private func scrobblingDetail(_ account: ScrobbleAccount?) -> String {
@@ -121,15 +236,45 @@ extension MusicProvider {
     }
 }
 
-extension SyncStanding {
-    var title: String {
-        switch self {
-        case .off: "Off"
-        case .connecting: "Connecting…"
-        case .connected: "Connected"
-        case .unreachable: "Server unreachable"
-        case .refused: "Refused by the server"
+struct CommittingSlider<Value: BinaryFloatingPoint & Sendable>: View where Value.Stride: BinaryFloatingPoint {
+    let title: String
+    let value: Value
+    let range: ClosedRange<Value>
+    let step: Value.Stride
+    @Binding var editing: Value?
+    let commit: (Value) -> Void
+    @State private var dragging = false
+    @State private var settling: Task<Void, Never>?
+
+    private static var settle: Duration { .milliseconds(400) }
+
+    var body: some View {
+        Slider(
+            value: Binding(get: { editing ?? value }, set: moved),
+            in: range,
+            step: step
+        ) { active in
+            dragging = active
+            settling?.cancel()
+            if !active, let editing { finish(editing) }
         }
+        .accessibilityLabel(title)
+    }
+
+    private func moved(_ chosen: Value) {
+        editing = chosen
+        settling?.cancel()
+        guard !dragging else { return }
+        settling = Task {
+            try? await Task.sleep(for: Self.settle)
+            guard !Task.isCancelled, !dragging else { return }
+            finish(chosen)
+        }
+    }
+
+    private func finish(_ chosen: Value) {
+        commit(chosen)
+        editing = nil
     }
 }
 
@@ -147,17 +292,7 @@ struct LevelSlider: View {
                 Spacer()
                 Text(String(format: "%+.1f dB", editing ?? value)).monospacedDigit().foregroundStyle(.secondary)
             }
-            Slider(
-                value: Binding(get: { editing ?? value }, set: { editing = $0 }),
-                in: range,
-                step: 0.5
-            ) { active in
-                if !active, let editing {
-                    commit(editing)
-                    self.editing = nil
-                }
-            }
-            .accessibilityLabel(title)
+            CommittingSlider(title: title, value: value, range: range, step: 0.5, editing: $editing, commit: commit)
         }
     }
 }
@@ -167,6 +302,7 @@ struct SoundSettingsView: View {
     @State private var importing = false
     @State private var profileName = ""
     @State private var profileText = ""
+    @State private var confirmingReset = false
     private static let frequencies = equaliserFrequencies()
 
     var body: some View {
@@ -198,19 +334,16 @@ struct SoundSettingsView: View {
                             }
                         }
                     }
-                    Button("Reset curve") {
-                        library.updatePreferences { current in
-                            var next = current
-                            next.preampDb = 0
-                            next.gainsDb = current.gainsDb.map { _ in 0 }
-                            next.profileText = ""
-                            next.profileName = ""
-                            return next
-                        }
-                    }
+                    Button("Reset curve", role: .destructive) { confirmingReset = true }
                 }
                 Section {
-                    Button(importing ? "Close profile import" : "Import an equaliser profile") { importing.toggle() }
+                    Button(importing ? "Close profile import" : "Import an equaliser profile") {
+                        if !importing, profileText.isEmpty {
+                            profileName = settings.profileName
+                            profileText = settings.profileText
+                        }
+                        importing.toggle()
+                    }
                     if importing {
                         TextField("Profile name", text: $profileName)
                         TextField("EqualizerAPO / GraphicEQ profile", text: $profileText, axis: .vertical)
@@ -225,6 +358,22 @@ struct SoundSettingsView: View {
             }
         }
         .navigationTitle("Equaliser")
+        .confirmationDialog("Reset the curve?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Reset curve", role: .destructive, action: resetCurve)
+        } message: {
+            Text("The preamp and every band return to 0 dB, and the active profile is cleared.")
+        }
+    }
+
+    private func resetCurve() {
+        library.updatePreferences { current in
+            var next = current
+            next.preampDb = 0
+            next.gainsDb = current.gainsDb.map { _ in 0 }
+            next.profileText = ""
+            next.profileName = ""
+            return next
+        }
     }
 
     private static func label(_ frequency: Double) -> String {
@@ -278,7 +427,7 @@ struct ProcessingView: View {
                         Text("Extend").tag(LossyRestoration.extend)
                     }
                 } footer: {
-                    Text("Experimental: repairs or extends what a lossy encoder removed.")
+                    Text("Experimental processing for MP3, AAC and Vorbis. Lossless music passes through unchanged by restoration.")
                 }
             }
         }
@@ -332,17 +481,15 @@ struct OutputView: View {
             }
             if let settings = library.preferences {
                 Section {
-                    let shown = buffer ?? Double(settings.bufferMs)
-                    Text("Playback buffer: \(Int(shown)) ms")
-                    Slider(
-                        value: Binding(get: { shown }, set: { buffer = $0 }),
-                        in: 50...2000,
-                        step: 50
-                    ) { active in
-                        if !active, let chosen = buffer {
-                            library.updatePreferences { var next = $0; next.bufferMs = UInt32(chosen); return next }
-                            buffer = nil
-                        }
+                    Text("Playback buffer: \(Int(buffer ?? Double(settings.bufferMs))) ms")
+                    CommittingSlider(
+                        title: "Playback buffer",
+                        value: Double(settings.bufferMs),
+                        range: 50...2000,
+                        step: 50,
+                        editing: $buffer
+                    ) { chosen in
+                        library.updatePreferences { var next = $0; next.bufferMs = UInt32(chosen); return next }
                     }
                     Toggle("Match DSD loudness to PCM", isOn: Binding(
                         get: { settings.dsdLikePcm },
@@ -373,20 +520,34 @@ struct AutoEqView: View {
             } footer: {
                 Text("A selected profile applies to every route. Switch it off or edit the ten-band curve in Equaliser settings.")
             }
-            if features.correctionBusy { ProgressView() }
-            ForEach(features.corrections, id: \.id) { device in
-                Button {
-                    features.applyCorrection(device)
-                } label: {
-                    HStack {
-                        Text(device.name)
-                        Spacer()
-                        Text("Apply correction").foregroundStyle(.tint)
+            if features.searchingCorrections {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Searching the AutoEq catalogue…").foregroundStyle(.secondary)
+                }
+            } else if let searched = features.correctionsFor, features.corrections.isEmpty {
+                ContentUnavailableView(
+                    "No headphones match “\(searched)”",
+                    systemImage: "headphones",
+                    description: Text("Try the model name as printed on the headphones.")
+                )
+            }
+            Section {
+                ForEach(features.corrections, id: \.id) { device in
+                    Button {
+                        features.applyCorrection(device)
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            Spacer()
+                            Text("Apply correction").foregroundStyle(.tint)
+                        }
                     }
+                    .disabled(features.correctionBusy)
                 }
             }
         }
-        .navigationTitle("AutoEq headphone correction")
+        .navigationTitle("AutoEq")
     }
 }
 

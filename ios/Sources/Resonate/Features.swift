@@ -10,6 +10,13 @@ struct PlaylistSync: Equatable {
     let kept: Bool
 }
 
+enum ArtistLookup {
+    case idle
+    case looking
+    case found(ArtistInformation)
+    case missing
+}
+
 @MainActor
 @Observable
 final class Features {
@@ -34,7 +41,9 @@ final class Features {
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
     var corrections: [AutoEqDevice] = []
-    var correctionBusy = false
+    var correctionsFor: String?
+    var searchingCorrections = false
+    var applyingCorrection = false
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
     var providerAccount: DownloadAccount?
@@ -43,6 +52,7 @@ final class Features {
     var downloadStatus: String?
     var online: Bool
     var statistics: LibraryStatistics?
+    var statisticsLoading = false
     var lyrics: LyricSheet?
     var lyricFrame: LyricFrame?
     var lyricsLoading = false
@@ -54,6 +64,8 @@ final class Features {
     var analysisBusy = false
     var analysisProgress: Float?
     var inspector: Inspector?
+    var inspectorTrack: UInt64?
+    var inspectorArtist: ArtistLookup = .idle
     var artist: ArtistInformation?
     var playlists: [MusicPlaylist] = []
     var playlistRows: [Track] = []
@@ -77,6 +89,10 @@ final class Features {
     var transferring = false
 
     @ObservationIgnored private var artistRequest = 0
+    @ObservationIgnored private var inspectorRequest = 0
+    @ObservationIgnored private var inspectorArtistRequest = 0
+    @ObservationIgnored private var statisticsRequest = 0
+    @ObservationIgnored private var correctionRequest = 0
     @ObservationIgnored private var analysisRequest = 0
     @ObservationIgnored private var recognitionRequest = 0
     @ObservationIgnored private var lyricRequest = 0
@@ -97,8 +113,14 @@ final class Features {
         syncFolder = settings.string(forKey: "sync-folder")
     }
 
-    private func work(_ action: @escaping @MainActor (MobilePlayer) async throws -> Void) {
+    var correctionBusy: Bool { searchingCorrections || applyingCorrection }
+
+    private func work(
+        _ action: @escaping @MainActor (MobilePlayer) async throws -> Void,
+        finally: @escaping @MainActor () -> Void = {}
+    ) {
         Task {
+            defer { finally() }
             do {
                 let native = try await library.player()
                 try await action(native)
@@ -488,30 +510,44 @@ final class Features {
     }
 
     func loadStatistics(days: UInt32 = 0) {
-        work { [weak self] native in
+        statisticsRequest += 1
+        let request = statisticsRequest
+        statisticsLoading = true
+        work({ [weak self] native in
             let found = try await Work.aside { try native.statistics(days: days) }
-            await MainActor.run { self?.statistics = found }
-        }
+            if request == self?.statisticsRequest { self?.statistics = found }
+        }, finally: { [weak self] in
+            if request == self?.statisticsRequest { self?.statisticsLoading = false }
+        })
     }
 
     func loadInspector(_ id: UInt64) {
-        inspector = nil
-        artistRequest += 1
-        artist = nil
+        inspectorRequest += 1
+        let request = inspectorRequest
+        if inspectorTrack != id {
+            inspectorTrack = id
+            inspector = nil
+            inspectorArtistRequest += 1
+            inspectorArtist = .idle
+        }
         work { [weak self] native in
             let found = try await Work.aside { try native.inspector(id: id) }
-            await MainActor.run { self?.inspector = found }
+            if request == self?.inspectorRequest { self?.inspector = found }
         }
     }
 
     func loadArtist(_ id: UInt64) {
-        artistRequest += 1
-        let request = artistRequest
-        artist = nil
-        work { [weak self] native in
+        inspectorArtistRequest += 1
+        let request = inspectorArtistRequest
+        inspectorArtist = .looking
+        work({ [weak self] native in
             let found = try await Work.aside { try native.artistInformation(id: id) }
-            await MainActor.run { if request == self?.artistRequest { self?.artist = found } }
-        }
+            guard let self, request == inspectorArtistRequest else { return }
+            inspectorArtist = found.map(ArtistLookup.found) ?? .missing
+        }, finally: { [weak self] in
+            guard let self, request == inspectorArtistRequest, case .looking = inspectorArtist else { return }
+            inspectorArtist = .idle
+        })
     }
 
     func onlineArtist(_ id: String) {
@@ -520,7 +556,7 @@ final class Features {
         artist = nil
         work { [weak self] native in
             let found = try await Work.aside { try native.onlineArtist(id: id) }
-            await MainActor.run { if request == self?.artistRequest { self?.artist = found } }
+            if request == self?.artistRequest { self?.artist = found }
         }
     }
 
@@ -559,15 +595,14 @@ final class Features {
         recognition = []
         recognitionBusy = true
         let key = recognitionKey
-        work { [weak self] native in
-            defer { if request == self?.recognitionRequest { self?.recognitionBusy = false } }
+        work({ [weak self] native in
             let found = try await Work.aside { try native.recogniseTrack(id: id, acoustidKey: key) }
-            await MainActor.run { [weak self] in
-                guard let self, request == recognitionRequest else { return }
-                recognition = found
-                if found.isEmpty { library.notice("No recording could be identified from this audio") }
-            }
-        }
+            guard let self, request == recognitionRequest else { return }
+            recognition = found
+            if found.isEmpty { library.notice("No recording could be identified from this audio") }
+        }, finally: { [weak self] in
+            if request == self?.recognitionRequest { self?.recognitionBusy = false }
+        })
     }
 
     func analyse(_ id: UInt64) {
@@ -577,26 +612,28 @@ final class Features {
         analysisRequest += 1
         let request = analysisRequest
         analysis = nil
+        analysisProgress = nil
         analysisBusy = true
-        work { [weak self] native in
-            defer { if request == self?.analysisRequest { self?.analysisBusy = false } }
+        work({ [weak self] native in
             do {
                 let report = try await Work.aside { try native.analyseTrack(id: id) }
-                await MainActor.run { if request == self?.analysisRequest { self?.analysis = report } }
+                if request == self?.analysisRequest { self?.analysis = report }
             } catch {
-                let current = await MainActor.run { request == self?.analysisRequest }
-                if current { throw error }
+                if request == self?.analysisRequest { throw error }
             }
-        }
+        }, finally: { [weak self] in
+            if request == self?.analysisRequest { self?.analysisBusy = false }
+        })
     }
 
     func cancelAnalysis() {
+        guard analysisBusy else { return }
         analysisRequest += 1
         let request = analysisRequest
         analysisBusy = false
+        analysisProgress = nil
         work { [weak self] native in
-            let current = await MainActor.run { request == self?.analysisRequest }
-            if current { native.cancelAnalysis() }
+            if request == self?.analysisRequest { native.cancelAnalysis() }
         }
     }
 
@@ -626,30 +663,40 @@ final class Features {
     }
 
     func searchCorrections(_ text: String) {
-        correctionBusy = true
-        work { [weak self] native in
-            defer { self?.correctionBusy = false }
+        correctionRequest += 1
+        let request = correctionRequest
+        searchingCorrections = true
+        work({ [weak self] native in
             let found = try await Work.aside { try native.searchAutoEq(text: text) }
-            await MainActor.run { self?.corrections = found }
-        }
+            guard let self, request == correctionRequest else { return }
+            corrections = found
+            correctionsFor = text
+        }, finally: { [weak self] in
+            if request == self?.correctionRequest { self?.searchingCorrections = false }
+        })
     }
 
     func applyCorrection(_ device: AutoEqDevice) {
-        correctionBusy = true
-        work { [weak self] native in
-            defer { self?.correctionBusy = false }
-            guard let profile = try await Work.aside({ try native.autoEqProfile(id: device.id) }) else { return }
-            await MainActor.run {
-                self?.library.updatePreferences { current in
-                    var next = current
-                    next.equaliserEnabled = true
-                    next.profileName = profile.name
-                    next.profileText = profile.text
-                    return next
-                }
-                self?.library.notice("Applied \(profile.name)")
+        guard !applyingCorrection else { return }
+        applyingCorrection = true
+        work({ [weak self] native in
+            let found = try await Work.aside { try native.autoEqProfile(id: device.id) }
+            guard let self else { return }
+            guard let profile = found else {
+                library.notice("No correction could be read for \(device.name)")
+                return
             }
-        }
+            library.updatePreferences { current in
+                var next = current
+                next.equaliserEnabled = true
+                next.profileName = profile.name
+                next.profileText = profile.text
+                return next
+            }
+            library.notice("Applied \(profile.name)")
+        }, finally: { [weak self] in
+            self?.applyingCorrection = false
+        })
     }
 
     func applyProfileText(name: String, text: String) {
@@ -669,33 +716,42 @@ final class Features {
 
     func saveScrobbling(_ account: ScrobbleAccount, includeHistory: Bool) {
         let previous = scrobbleAccount
+        do {
+            try accounts.writeScrobbling(account)
+        } catch {
+            library.report(error)
+            return
+        }
+        scrobbleAccount = account
+        scrobbleStatus = "Scrobbling accounts saved"
+
+        let listenbrainzStarts = !account.listenbrainzToken.isEmpty
+            && (previous?.listenbrainzToken != account.listenbrainzToken || includeHistory)
+        let lastfmStarts = !account.lastfmSession.isEmpty
+            && (previous?.lastfmSession != account.lastfmSession || includeHistory)
+        guard listenbrainzStarts || lastfmStarts else { return }
+
         work { [weak self] native in
-            try await Work.aside {
-                if !account.listenbrainzToken.isEmpty,
-                    previous?.listenbrainzToken != account.listenbrainzToken || includeHistory
-                {
-                    try native.startScrobbling(service: .listenBrainz, includeHistory: includeHistory)
+            do {
+                try await Work.aside {
+                    if listenbrainzStarts { try native.startScrobbling(service: .listenBrainz, includeHistory: includeHistory) }
+                    if lastfmStarts { try native.startScrobbling(service: .lastFm, includeHistory: includeHistory) }
                 }
-                if !account.lastfmSession.isEmpty,
-                    previous?.lastfmSession != account.lastfmSession || includeHistory
-                {
-                    try native.startScrobbling(service: .lastFm, includeHistory: includeHistory)
-                }
-            }
-            try await MainActor.run { [weak self] in
-                guard let self else { return }
-                try accounts.writeScrobbling(account)
-                scrobbleAccount = account
-                scrobbleStatus = "Scrobbling accounts saved"
+            } catch {
+                self?.scrobbleStatus = "Accounts saved, but scrobbling could not start: \(explained(error))"
+                throw error
             }
         }
     }
 
     func sendFavourites() {
-        guard let account = scrobbleAccount else { return }
+        guard let account = scrobbleAccount, !account.listenbrainzToken.isEmpty || !account.lastfmSession.isEmpty else {
+            scrobbleStatus = "Save a ListenBrainz token or sign in to Last.fm first"
+            return
+        }
         work { [weak self] native in
             let count = try await Work.aside { try native.sendFavourites(account: account) }
-            await MainActor.run { self?.scrobbleStatus = "Sent \(count) favourite updates" }
+            self?.scrobbleStatus = "Sent \(count) favourite updates"
         }
     }
 
@@ -724,24 +780,26 @@ final class Features {
     }
 
     func authorizeTidal(_ account: DownloadAccount) {
+        guard !tidalBusy else { return }
         tidalBusy = true
-        work { [weak self] native in
-            defer { self?.tidalBusy = false }
+        work({ [weak self] native in
             let authorization = try await Work.aside {
                 try native.authorizeTidal(clientId: account.clientId, secret: account.clientSecret)
             }
-            await MainActor.run { self?.tidalAuthorization = authorization }
+            self?.tidalAuthorization = authorization
             guard let token = try await Work.aside({ try native.finishTidalAuthorization() }) else { return }
+
             var updated = account
             updated.refreshToken = token
-            try await MainActor.run { [weak self] in
-                guard let self else { return }
-                try accounts.write(updated)
-                providerAccount = updated
-                tidalAuthorization = nil
-                library.notice("Signed in to TIDAL")
-            }
-        }
+
+            guard let self else { return }
+            try accounts.write(updated)
+            providerAccount = updated
+            library.notice("Signed in to TIDAL")
+        }, finally: { [weak self] in
+            self?.tidalBusy = false
+            self?.tidalAuthorization = nil
+        })
     }
 
     func saveProviderAccount(_ account: DownloadAccount) {

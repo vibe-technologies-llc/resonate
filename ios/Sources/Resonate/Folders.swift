@@ -1,12 +1,42 @@
 import Darwin
 import Foundation
 import ResonateNative
+import Synchronization
 
 struct MusicFolder: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
+    let path: String
     let readable: Bool
     let writable: Bool
+}
+
+struct FolderAccess: Sendable {
+    static let unreachable = FolderAccess(path: "", readable: false, writable: false)
+
+    let path: String
+    let readable: Bool
+    let writable: Bool
+
+    static func of(_ url: URL) -> FolderAccess {
+        let files = FileManager.default
+        let values = try? url.resourceValues(forKeys: [.isReadableKey, .isWritableKey])
+        return FolderAccess(
+            path: url.resolvingSymlinksInPath().standardizedFileURL.path,
+            readable: files.isReadableFile(atPath: url.path) && values?.isReadable != false,
+            writable: files.isWritableFile(atPath: url.path) && values?.isWritable != false
+        )
+    }
+}
+
+final class ScanStop: Sendable {
+    private let stopped = Atomic<Bool>(false)
+
+    var isStopped: Bool { stopped.load(ordering: .relaxed) }
+
+    func stop() {
+        stopped.store(true, ordering: .relaxed)
+    }
 }
 
 struct FoundDocument: Sendable {
@@ -20,12 +50,14 @@ enum FolderFailure: Swift.Error, LocalizedError {
     case unknownFolder(String)
     case notAFolderUri(String)
     case refused(String)
+    case alreadyAdded(String)
 
     var errorDescription: String? {
         switch self {
         case .unknownFolder: "That music folder is no longer available"
         case .notAFolderUri: "That song is not inside a chosen music folder"
         case .refused(let name): "\(name) could not be created"
+        case .alreadyAdded: "This folder is already in your library"
         }
     }
 }
@@ -42,6 +74,8 @@ final class Folders: Documents, @unchecked Sendable {
     private let bookmarks: URL
     private var roots: [String: Data] = [:]
     private var names: [String: String] = [:]
+    private var access: [String: FolderAccess] = [:]
+    private var scans: [String: ScanStop] = [:]
     private let extensions: Set<String>
 
     init(support: URL) {
@@ -68,30 +102,41 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func folders() -> [MusicFolder] {
-        let known = lock.withLock { names }
-        var found = [MusicFolder(id: Self.local, name: "On this iPhone", readable: true, writable: true)]
-        for (id, name) in known {
-            let root = try? root(id)
-            let readable = root.map { url, scoped in
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                return FileManager.default.isReadableFile(atPath: url.path)
-            } ?? false
-            found.append(MusicFolder(id: id, name: name, readable: readable, writable: readable))
+        let (known, cached) = lock.withLock { (names, access) }
+        let local = FolderAccess.of(Self.documentsFolder)
+        let chosen = known.map { id, name in
+            folder(id, name, cached[id] ?? recordAccess(id))
         }
-        return found.sorted { first, second in
+        return ([folder(Self.local, "On this iPhone", local)] + chosen).sorted { first, second in
             if (first.id == Self.local) != (second.id == Self.local) { return first.id == Self.local }
             return first.name.lowercased() < second.name.lowercased()
         }
     }
 
+    func refreshed() async -> [MusicFolder] {
+        let known = lock.withLock { Array(names.keys) }
+        try? await Work.aside { [self] in
+            for id in known { recordAccess(id) }
+        }
+        return folders()
+    }
+
     func add(_ url: URL) throws -> String {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        let chosen = FolderAccess.of(url)
+        let known = lock.withLock { Array(names.keys) }
+        let granted = known.map { id in lock.withLock { access[id] } ?? recordAccess(id) }.map(\.path)
+        let documents = FolderAccess.of(Self.documentsFolder).path
+        guard !(granted + [documents]).contains(chosen.path) else { throw FolderFailure.alreadyAdded(url.lastPathComponent) }
+
         let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         lock.withLock {
             roots[id] = bookmark
             names[id] = url.lastPathComponent
+            access[id] = chosen
         }
         try persist()
         return id
@@ -99,8 +144,10 @@ final class Folders: Documents, @unchecked Sendable {
 
     func remove(_ id: String) throws {
         lock.withLock {
+            scans[id]?.stop()
             roots[id] = nil
             names[id] = nil
+            access[id] = nil
         }
         try persist()
     }
@@ -113,11 +160,15 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func scan(_ id: String, found: (FoundDocument) throws -> Void) throws {
-        let (root, scoped) = try root(id)
+        let stop = ScanStop()
+        lock.withLock { scans[id] = stop }
+        defer { lock.withLock { if scans[id] === stop { scans[id] = nil } } }
+
+        let (root, scoped) = try reachedRoot(id)
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+
         var pending: [(URL, String, Int)] = [(root, "", 0)]
-        while let (folder, relative, depth) = pending.popLast() {
-            try Task.checkCancellation()
+        while !stop.isStopped, let (folder, relative, depth) = pending.popLast() {
             let children = (try? FileManager.default.contentsOfDirectory(
                 at: folder,
                 includingPropertiesForKeys: [.isDirectoryKey],
@@ -141,7 +192,7 @@ final class Folders: Documents, @unchecked Sendable {
                 }
             }
             let cover = Self.coverNames.lazy.compactMap { covers[$0] }.first
-            for (file, path) in audio.sorted(by: { $0.1 < $1.1 }) {
+            for (file, path) in audio.sorted(by: { $0.1 < $1.1 }) where !stop.isStopped {
                 let name = file.lastPathComponent
                 let stem = (name as NSString).deletingPathExtension.lowercased()
                 try found(FoundDocument(uri: uri(root: id, relative: path), name: name, cover: cover, lyrics: sidecars[stem]))
@@ -181,6 +232,40 @@ final class Folders: Documents, @unchecked Sendable {
         guard let (url, scoped) = try? resolved(uri) else { return }
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    private func folder(_ id: String, _ name: String, _ found: FolderAccess) -> MusicFolder {
+        MusicFolder(id: id, name: name, path: found.path, readable: found.readable, writable: found.readable && found.writable)
+    }
+
+    @discardableResult
+    private func recordAccess(_ id: String) -> FolderAccess {
+        guard let (url, scoped) = try? root(id) else {
+            remember(.unreachable, for: id)
+            return .unreachable
+        }
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let found = FolderAccess.of(url)
+
+        remember(found, for: id)
+        return found
+    }
+
+    private func reachedRoot(_ id: String) throws -> (URL, Bool) {
+        do {
+            let (url, scoped) = try root(id)
+            remember(FolderAccess.of(url), for: id)
+            return (url, scoped)
+        } catch {
+            remember(.unreachable, for: id)
+            throw error
+        }
+    }
+
+    private func remember(_ found: FolderAccess, for id: String) {
+        lock.withLock {
+            if names[id] != nil { access[id] = found }
+        }
     }
 
     private func root(_ id: String) throws -> (URL, Bool) {

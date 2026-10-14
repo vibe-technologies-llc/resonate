@@ -43,7 +43,16 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   A 250 ms poll reads the snapshot and queue and saves every 20th tick, as Android does.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the same download and sync-landing journal
-  (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start).
+  (`unfinished-download`, `unfinished-sync-landing`, deleted on the next start). Every busy flag
+  is cleared in `work`'s `finally`, which runs on every path, a failed `library.player()` included;
+  it clears only while its own generation is current. The Inspector's artist lookup
+  (`inspectorArtist`, an `ArtistLookup`) is its own state, apart from the online search page's
+  `artist`, and survives the Inspector reappearing for the same song. Scrobbling accounts reach the
+  keychain before scrobbling starts, so a refused start keeps what was typed.
+- **Analysis runs while its page is open**: `.task(id: track.id)` starts it unless a report for
+  that song is already held, leaving the page cancels it (`cancelAnalysis`), and progress is
+  indeterminate until the engine reports a fraction. A silent level reads "Silent", never
+  `-inf`; the spectrum arrives in dB and is drawn from a 120 dB floor, as Android does.
 - **`NearbyDevices`** (`Nearby.swift`) is how an iPhone meets devices on its network without a
   server: sync's own beacons are multicast and broadcast, which need the
   `com.apple.developer.networking.multicast` entitlement a free signing cannot carry, so it
@@ -57,7 +66,15 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits
   `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB and a
   same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL`. A file opened
-  in Resonate from elsewhere is copied into `local` and played.
+  in Resonate from elsewhere is copied into `local` and played. A folder's access is measured, not
+  assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
+  `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
+  as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves
+  only a bookmark it has not measured, `refreshed()` re-measures every one on `Work.aside` (the
+  folder and sync pages call it), and a scan re-measures its own root. A folder whose resolved,
+  symlink-free path is already granted, or is the app's Documents, is refused
+  (`FolderFailure.alreadyAdded`). A scan runs on a GCD queue where `Task` cancellation cannot reach,
+  so it walks under a `ScanStop` flag; removing a folder stops its walk.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), reports the route to Rust,
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
