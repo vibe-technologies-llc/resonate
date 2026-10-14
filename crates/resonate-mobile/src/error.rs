@@ -1,8 +1,12 @@
 use std::{fmt, io, path::PathBuf, result};
 
+use resonate_core::eq::MAX_BANDS;
 use thiserror::Error;
 
-use crate::downloads::MusicProvider;
+use crate::{
+    downloads::MusicProvider,
+    equaliser::{GAIN_AT_MOST_DB, HIGHEST_HZ, LOWEST_HZ, PREAMP_AT_MOST_DB, Q_AT_LEAST, Q_AT_MOST},
+};
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum StoreOp {
@@ -154,8 +158,16 @@ pub enum Error {
     CatalogVersion { found: u32 },
     #[error("the requested track is not in the library")]
     UnknownTrack,
-    #[error("the equaliser needs ten bands, received {found}")]
-    EqualiserBandCount { found: u64 },
+    #[error("An equaliser holds at most {most} bands, not {found}", most = MAX_BANDS)]
+    TooManyBands { found: u32 },
+    #[error("Band {} must sit between {LOWEST_HZ} Hz and {} kHz, not {hertz} Hz", band + 1, HIGHEST_HZ / 1000.0)]
+    BandFrequency { band: u32, hertz: f32 },
+    #[error("Band {} may boost or cut at most {GAIN_AT_MOST_DB} dB, not {decibels} dB", band + 1)]
+    BandGain { band: u32, decibels: f32 },
+    #[error("Band {}'s Q must lie between {Q_AT_LEAST} and {Q_AT_MOST}, not {q}", band + 1)]
+    BandQ { band: u32, q: f32 },
+    #[error("The preamp may lift or lower at most {PREAMP_AT_MOST_DB} dB, not {decibels} dB")]
+    PreampRange { decibels: f32 },
     #[error("buffer length {milliseconds} ms is outside 50 to 2000 ms")]
     BufferRange { milliseconds: u32 },
     #[error("the player has been closed")]

@@ -10,6 +10,8 @@ paths:
   - "crates/resonate-ui/src/views/settings/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/curve.rs"
   - "crates/resonate/src/equaliser.rs"
+  - "crates/resonate-mobile/src/equaliser.rs"
+  - "ios/Sources/Resonate/EqualiserGraph.swift"
 ---
 
 # The equaliser
@@ -269,3 +271,42 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `_exported`, `_catalogued`, `_fetched`; `is_looking` answers either of the last two), so an import
   beside a catalogue read cannot drop it
   (`a_catalogue_read_is_not_dropped_by_an_import_started_beside_it`).
+
+## The phones
+
+- **One parametric curve, edited as bands** (`resonate-mobile/src/equaliser.rs`):
+  `PlaybackPreferences::equaliser` is an `EqualiserCurve` (name, preamp, bands of
+  `EqualiserFilter`, one per `BandKind`, frequency, gain and Q as `f32`). `EqualiserCurve::profile`
+  is the one way to a `Profile`, so stage, graph and validation share core's quantisation; the
+  engine gets it as the `Equalisation` fallback, every route alike. A change of name alone sends
+  nothing (`sounds_unlike`).
+- **Bounds are the phone's, refused typed before any command**: at most `MAX_BANDS` (32); 20 Hz to
+  20 kHz (`LOWEST_HZ`, `HIGHEST_HZ`); gain and preamp within 24 dB (`GAIN_AT_MOST_DB`,
+  `PREAMP_AT_MOST_DB`); Q 0.1 to 40, core's own. `TooManyBands`, `BandFrequency`, `BandGain`,
+  `BandQ`, `PreampRange` name the band (counted from one) and the value; NaN fails its range.
+  `equaliser_limits` hands the bounds to Swift and Kotlin, which keep none of their own
+  (`a_curve_past_its_bounds_is_refused_naming_what_is_wrong`).
+- **The drawn curve is the stage's arithmetic**: `response_curve(curve, points, rate)` is
+  `Profile::response` with the preamp, at the stream rate (48 kHz where none is given) over core's
+  `sweep` (log-spaced 20 Hz to 20 kHz, points held to 2..=2048), so point *i* sits at
+  `20 · 1000^(i/(n-1))` Hz (`the_drawn_response_of_one_band_is_the_biquad_the_stage_runs`).
+- **An import becomes editable bands, and says what it gave up**: `parse_eq_profile` (pasted or
+  file text) and `auto_eq_profile` answer `EqualiserImport`: every `on`, every-channel filter is a
+  band (an `OFF` filter is dropped, it never sounded); a channel-limited filter is passed over and
+  counted, since a phone applies one curve to every channel; a value past the phone's bounds is held
+  to it and counted in `clamped`, beside the reader's own `passed_over`/`approximated`/`clamped`.
+  A GraphicEQ line arrives as its 48 kHz fit and sets `converted`; editing it lets the target go, as
+  `band_mut` does on the desktop, so the per-rate refit is not kept.
+- **Kept as EqualizerAPO text**: `equaliser_text` writes a valid curve and `parse_eq_profile` reads
+  it back as it was (`a_curve_kept_as_text_reads_back_as_the_same_curve`). Both phones store that
+  text under `equaliser-curve` and the name under `equaliser-curve-name`, in the `playback` suite or
+  `SharedPreferences`.
+- **Ten octave bands are a migration and a layout, not the model**: `ten_band_curve(preamp, gains)`
+  is ten peaking bands at `EQUALISER_CENTRES` (31.25 Hz to 16 kHz) with Q √2, a non-finite level
+  flat, the rest held to the bounds; `ten_band_gains` answers the gains only for a curve of exactly
+  that layout. Older builds kept `equaliser-preamp`, `equaliser-gain-0` to `-9` and, for an active
+  profile, its text and name in `equaliser-profile-text`/`-name`. With no `equaliser-curve` the
+  store reads those (the profile text first, since it was what played; else the ten slots where any
+  is stored; else the flat default) and the next write removes them
+  (`ten_stored_gains_become_ten_octave_peaking_bands_that_sound_as_they_did`). The default curve
+  holds no bands, transparent.

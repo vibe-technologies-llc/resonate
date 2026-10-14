@@ -20,6 +20,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   asked with less than the search result it was saved from
 - [S] A delivery refused as the wrong song is declined for the run alone on the phones; the
   desktop remembers it 30 days in `refused_offers`
+- [M] Android shapes the equaliser through ten octave sliders and a preamp: an AutoEq or imported
+  curve plays and is kept, but its bands are edited only on iOS's graph, and moving a slider
+  replaces it with ten bands
+- [S] The phones apply one curve to every channel: a filter an imported profile limits to some
+  channels is passed over (and counted), where the desktop keeps it on those channels
 
 ## iOS parity
 - [L] iOS lacks what Android lacks (tagging/organising, vault, convolution, per-route equaliser,

@@ -75,6 +75,11 @@ frame for a sheet not kept reads it from the catalog again rather than answering
 the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once, while
 `cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`.
 
+## The equaliser
+
+The phones' curve, its bounds, the drawn response, imports and stored form are `eq.md`'s *The
+phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preferences.
+
 ## Output
 
 `output/mod.rs` picks one backend per target behind `output::player` and one `Routing`:

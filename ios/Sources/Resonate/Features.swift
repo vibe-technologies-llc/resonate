@@ -669,42 +669,60 @@ final class Features {
         })
     }
 
+    func clearCorrections() {
+        correctionRequest += 1
+        corrections = []
+        correctionsFor = nil
+        searchingCorrections = false
+    }
+
     func applyCorrection(_ device: AutoEqDevice) {
         guard !applyingCorrection else { return }
         applyingCorrection = true
+        let id = device.id
         work({ [weak self] native in
-            let found = try await Work.aside { try native.autoEqProfile(id: device.id) }
+            let found = try await Work.aside { try native.autoEqProfile(id: id) }
             guard let self else { return }
-            guard let profile = found else {
+            guard let found else {
                 library.notice("No correction could be read for \(device.name)")
                 return
             }
-            library.updatePreferences { current in
-                var next = current
-                next.equaliserEnabled = true
-                next.profileName = profile.name
-                next.profileText = profile.text
-                return next
-            }
-            library.notice("Applied \(profile.name)")
+            load(found)
         }, finally: { [weak self] in
             self?.applyingCorrection = false
         })
     }
 
-    func applyProfileText(name: String, text: String) {
-        work { [weak self] native in
-            let profile = try await Work.aside { try native.parseEqProfile(bytes: Data(text.utf8), name: name) }
-            await MainActor.run {
-                self?.library.updatePreferences { current in
-                    var next = current
-                    next.equaliserEnabled = true
-                    next.profileName = profile.name
-                    next.profileText = profile.text
-                    return next
-                }
-            }
+    func applyProfile(name: String, bytes: Data) {
+        guard !applyingCorrection else { return }
+        applyingCorrection = true
+        work({ [weak self] _ in
+            let found = try await Work.aside { try parseEqProfile(bytes: bytes, name: name) }
+            self?.load(found)
+        }, finally: { [weak self] in
+            self?.applyingCorrection = false
+        })
+    }
+
+    private func load(_ found: EqualiserImport) {
+        let curve = found.curve
+        library.updatePreferences { current in
+            var next = current
+            next.equaliserEnabled = true
+            next.equaliser = curve
+            return next
         }
+        library.notice(Self.loaded(found))
+    }
+
+    private static func loaded(_ found: EqualiserImport) -> String {
+        let name = found.curve.name.isEmpty ? "Profile" : found.curve.name
+        var said = ["Loaded \(name): \(counted(found.curve.bands.count, "band"))"]
+        if found.converted { said.append("fitted from a graphic curve") }
+        if found.passedOver > 0 { said.append("\(counted(Int(found.passedOver), "line")) passed over") }
+        if found.approximated > 0 { said.append("\(counted(Int(found.approximated), "filter")) approximated") }
+        if found.clamped > 0 { said.append("\(counted(Int(found.clamped), "value")) held to the limits") }
+        return said.joined(separator: " · ")
     }
 
     func saveScrobbling(_ account: ScrobbleAccount, includeHistory: Bool) {

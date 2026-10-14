@@ -121,8 +121,8 @@ fun SettingsScreen(
             SettingsEntry(
                 "Equaliser",
                 if (preferences?.equaliserEnabled == true)
-                    preferences?.profileName?.ifBlank { "Custom ten-band curve" }.orEmpty()
-                else "Ten-band curve and preamp",
+                    preferences?.equaliser?.name?.ifBlank { "Custom curve" }.orEmpty()
+                else "Equaliser curve and preamp",
                 Icons.Default.Equalizer,
                 "sound gains bass treble profile",
             ) {

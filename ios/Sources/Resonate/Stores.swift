@@ -5,8 +5,13 @@ import Security
 struct PlaybackPreferencesStore: Sendable {
     private static let suite = "playback"
     private static let bufferRange: ClosedRange<Int> = 50...2000
-    private static let preampRange: ClosedRange<Float> = -24...12
-    private static let gainRange: ClosedRange<Float> = -12...12
+    private static let curveKey = "equaliser-curve"
+    private static let curveNameKey = "equaliser-curve-name"
+    private static let tenBandPreampKey = "equaliser-preamp"
+    private static let tenBandProfileNameKey = "equaliser-profile-name"
+    private static let tenBandProfileTextKey = "equaliser-profile-text"
+    private static let tenBands = 10
+    private static let tenBandGainKeys = (0..<tenBands).map { "equaliser-gain-\($0)" }
 
     private var storage: UserDefaults { UserDefaults(suiteName: Self.suite) ?? .standard }
 
@@ -16,17 +21,11 @@ struct PlaybackPreferencesStore: Sendable {
         if storage.object(forKey: "equaliser-enabled") != nil {
             preferences.equaliserEnabled = storage.bool(forKey: "equaliser-enabled")
         }
-        preferences.preampDb = level("equaliser-preamp", preferences.preampDb, Self.preampRange)
-        preferences.gainsDb = preferences.gainsDb.enumerated().map { index, gain in
-            level("equaliser-gain-\(index)", gain, Self.gainRange)
-        }
         preferences.replayGain = GainMode.named(storage.string(forKey: "replay-gain")) ?? preferences.replayGain
         preferences.quality = ResamplingQuality.named(storage.string(forKey: "quality")) ?? preferences.quality
         preferences.phase = ResamplingPhase.named(storage.string(forKey: "phase")) ?? preferences.phase
         preferences.restoration =
             LossyRestoration.named(storage.string(forKey: "restoration")) ?? preferences.restoration
-        preferences.profileName = storage.string(forKey: "equaliser-profile-name") ?? ""
-        preferences.profileText = storage.string(forKey: "equaliser-profile-text") ?? ""
         if storage.object(forKey: "buffer-ms") != nil {
             let buffer = storage.integer(forKey: "buffer-ms")
             preferences.bufferMs = UInt32(min(max(buffer, Self.bufferRange.lowerBound), Self.bufferRange.upperBound))
@@ -37,32 +36,58 @@ struct PlaybackPreferencesStore: Sendable {
         if storage.object(forKey: "true-peak") != nil {
             preferences.truePeak = storage.bool(forKey: "true-peak")
         }
+
+        if let kept = storage.string(forKey: Self.curveKey) {
+            let name = storage.string(forKey: Self.curveNameKey) ?? ""
+            preferences.equaliser = (try? parseEqProfile(bytes: Data(kept.utf8), name: name).curve)
+                ?? preferences.equaliser
+        } else if let migrated = tenBandCurve(storage) {
+            preferences.equaliser = migrated
+            keepCurve(migrated, in: storage)
+        }
         return preferences
     }
 
     func write(_ preferences: PlaybackPreferences) {
         let storage = storage
         storage.set(preferences.equaliserEnabled, forKey: "equaliser-enabled")
-        storage.set(preferences.preampDb, forKey: "equaliser-preamp")
         storage.set(preferences.replayGain.name, forKey: "replay-gain")
         storage.set(preferences.quality.name, forKey: "quality")
         storage.set(preferences.phase.name, forKey: "phase")
-        storage.set(preferences.profileName, forKey: "equaliser-profile-name")
-        storage.set(preferences.profileText, forKey: "equaliser-profile-text")
         storage.set(Int(preferences.bufferMs), forKey: "buffer-ms")
         storage.set(preferences.dsdLikePcm, forKey: "dsd-like-pcm")
         storage.set(preferences.truePeak, forKey: "true-peak")
         storage.set(preferences.restoration.name, forKey: "restoration")
-        for (index, gain) in preferences.gainsDb.enumerated() {
-            storage.set(gain, forKey: "equaliser-gain-\(index)")
+        keepCurve(preferences.equaliser, in: storage)
+    }
+
+    private func keepCurve(_ curve: EqualiserCurve, in storage: UserDefaults) {
+        guard let text = try? equaliserText(curve: curve) else { return }
+        storage.set(text, forKey: Self.curveKey)
+        storage.set(curve.name, forKey: Self.curveNameKey)
+        for key in [Self.tenBandPreampKey, Self.tenBandProfileNameKey, Self.tenBandProfileTextKey] + Self.tenBandGainKeys {
+            storage.removeObject(forKey: key)
         }
     }
 
-    private func level(_ key: String, _ fallback: Float, _ range: ClosedRange<Float>) -> Float {
-        guard storage.object(forKey: key) != nil else { return fallback }
-        let stored = storage.float(forKey: key)
-        guard stored.isFinite else { return fallback }
-        return min(max(stored, range.lowerBound), range.upperBound)
+    private func tenBandCurve(_ storage: UserDefaults) -> EqualiserCurve? {
+        let profileName = storage.string(forKey: Self.tenBandProfileNameKey) ?? ""
+        if let profile = storage.string(forKey: Self.tenBandProfileTextKey), !profile.isEmpty,
+            let imported = try? parseEqProfile(bytes: Data(profile.utf8), name: profileName)
+        {
+            return imported.curve
+        }
+        let stored = ([Self.tenBandPreampKey] + Self.tenBandGainKeys).contains { storage.object(forKey: $0) != nil }
+        guard stored else { return nil }
+        return ResonateNative.tenBandCurve(
+            preampDb: level(Self.tenBandPreampKey, in: storage),
+            gainsDb: Self.tenBandGainKeys.map { level($0, in: storage) }
+        )
+    }
+
+    private func level(_ key: String, in storage: UserDefaults) -> Float {
+        guard storage.object(forKey: key) != nil else { return 0 }
+        return storage.float(forKey: key)
     }
 }
 

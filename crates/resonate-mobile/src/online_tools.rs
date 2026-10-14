@@ -13,6 +13,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::read,
+    equaliser::{EqualiserImport, imported},
     features::{Listing, SearchSong},
 };
 
@@ -20,12 +21,6 @@ use crate::{
 pub struct AutoEqDevice {
     pub id: String,
     pub name: String,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EqPreset {
-    pub name: String,
-    pub text: String,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -231,25 +226,18 @@ impl MobilePlayer {
             .collect())
     }
 
-    pub fn auto_eq_profile(&self, id: String) -> Result<Option<EqPreset>> {
+    pub fn auto_eq_profile(&self, id: String) -> Result<Option<EqualiserImport>> {
         self.require_online()?;
         let id = resonate_eq::DeviceId::new(&id)?;
         let catalogue = self.services.auto_eq.catalogue()?;
         let name = catalogue
             .get(&id)
             .map_or_else(|| id.as_str().to_owned(), |device| device.label.clone());
-        Ok(self.services.auto_eq.profile(&id)?.map(|profile| EqPreset {
-            name,
-            text: resonate_eq::write_profile(&profile),
-        }))
-    }
-
-    pub fn parse_eq_profile(&self, bytes: Vec<u8>, name: String) -> Result<EqPreset> {
-        let profile = resonate_eq::read_profile(&resonate_core::text::decoded(&bytes).0)?;
-        Ok(EqPreset {
-            name,
-            text: resonate_eq::write_profile(&profile),
-        })
+        Ok(self
+            .services
+            .auto_eq
+            .profile(&id)?
+            .map(|profile| imported(&profile, name)))
     }
 
     pub fn start_scrobbling(&self, service: ScrobbleService, include_history: bool) -> Result<()> {

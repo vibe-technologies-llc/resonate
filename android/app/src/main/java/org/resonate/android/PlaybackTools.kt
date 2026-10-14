@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.util.Locale
+import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.ResamplingPhase
@@ -38,13 +39,18 @@ import org.resonate.android.nativecore.ResamplingQuality
 import org.resonate.android.nativecore.SleepTimer
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.equaliserFrequencies
+import org.resonate.android.nativecore.equaliserLimits
+import org.resonate.android.nativecore.tenBandCurve
+import org.resonate.android.nativecore.tenBandGains
 
 @Composable
 fun SoundSettings(library: LibraryRepository) {
     val preferences by library.preferences.collectAsState()
     val settings = preferences ?: return
-    var profileName by remember(settings.profileName) { mutableStateOf(settings.profileName) }
-    var profileText by remember(settings.profileText) { mutableStateOf(settings.profileText) }
+    var profileName by rememberSaveable { mutableStateOf("") }
+    var profileText by rememberSaveable { mutableStateOf("") }
+    val limits = remember { equaliserLimits() }
+    val gains = remember(settings.equaliser) { tenBandGains(settings.equaliser) }
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -58,30 +64,41 @@ fun SoundSettings(library: LibraryRepository) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (settings.profileText.isNotEmpty())
+        if (settings.equaliser.name.isNotEmpty())
             Text(
-                "Active profile: ${settings.profileName}",
+                "Active profile: ${settings.equaliser.name}",
                 color = MaterialTheme.colorScheme.primary,
             )
-        LevelSetting("Preamp", settings.preampDb, -24f..12f) { gain ->
-            library.updatePreferences {
-                it.copy(preampDb = gain, profileText = "", profileName = "")
-            }
+        if (gains == null && settings.equaliser.bands.isNotEmpty())
+            Text(
+                "This curve has ${settings.equaliser.bands.size} parametric bands; " +
+                    "moving a band slider replaces it with ten octave bands.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        LevelSetting(
+            "Preamp",
+            settings.equaliser.preampDb,
+            -limits.preampAtMostDb..limits.preampAtMostDb,
+        ) { gain ->
+            library.updatePreferences { it.copy(equaliser = it.equaliser.copy(preampDb = gain)) }
         }
         val frequencies = remember { equaliserFrequencies() }
         frequencies.forEachIndexed { index, frequency ->
             val label =
                 if (frequency < 1000) "${frequency.toString().removeSuffix(".0")} Hz"
                 else "${frequency.toInt() / 1000} kHz"
-            LevelSetting(label, settings.gainsDb[index], -12f..12f) { gain ->
+            LevelSetting(label, gains?.getOrNull(index) ?: 0f, -12f..12f) { gain ->
                 library.updatePreferences { current ->
+                    val now = tenBandGains(current.equaliser) ?: frequencies.map { 0f }
                     current.copy(
-                        profileText = "",
-                        profileName = "",
-                        gainsDb =
-                            current.gainsDb.mapIndexed { band, value ->
-                                if (band == index) gain else value
-                            },
+                        equaliser =
+                            tenBandCurve(
+                                current.equaliser.preampDb,
+                                now.mapIndexed { band, value ->
+                                    if (band == index) gain else value
+                                },
+                            )
                     )
                 }
             }
@@ -89,12 +106,7 @@ fun SoundSettings(library: LibraryRepository) {
         TextButton(
             onClick = {
                 library.updatePreferences {
-                    it.copy(
-                        profileText = "",
-                        profileName = "",
-                        preampDb = 0f,
-                        gainsDb = it.gainsDb.map { 0f },
-                    )
+                    it.copy(equaliser = EqualiserCurve("", 0f, emptyList()))
                 }
             }
         ) {
