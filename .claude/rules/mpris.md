@@ -45,7 +45,11 @@ and play-order positions never reach a client; ids are found by id, not position
   its file stem and `Owed` remembers it; the poll watches `Player::media_revision` and emits
   `TrackMetadataChanged` once settled. `Player::tags_read` answers `TagsRead`: a read that answered
   nothing is announced with the stem and dropped. A cover, and a `TrackAdded` that missed
-  `ANNOUNCE_BUDGET` (100 ms), are owed likewise. A row leaving the queue is forgotten.
+  `ANNOUNCE_BUDGET` (100 ms), are owed likewise; a cover whose read failed (`ArtRead::Failed`, which
+  the window asks again) is no cover to the bus, announced at once, else a source refusing every
+  open kept its row owed for good
+  (`a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever`). A row leaving the
+  queue is forgotten.
 - **A method does what the spec says, including nothing.** `SetPosition` before start, past end or
   for another track: ignored. `Seek`/`SetPosition` where `CanSeek` is false: ignored. `Seek` past
   end = `Next`. Offsets via `unsigned_abs`. `SetRate(0.0)` pauses. `Next`/`Previous` do nothing

@@ -104,8 +104,8 @@ impl Shared {
         }
         match self.player.art_read(&item.location) {
             ArtRead::Answered(art) => RowArt::Settled(self.pictures.queued_uri(item.id, &art)),
-            ArtRead::Nothing => RowArt::Settled(None),
-            ArtRead::NotYet | ArtRead::Failed => RowArt::NotYet,
+            ArtRead::Nothing | ArtRead::Failed => RowArt::Settled(None),
+            ArtRead::NotYet => RowArt::NotYet,
         }
     }
 
