@@ -272,7 +272,7 @@ struct PlaylistArtwork: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityHidden(true)
-        .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0):\(library.features.artworkGeneration)") {
+        .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
             guard let playlist, let native = try? await library.player() else { return }
             let id = playlist.id
             let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []

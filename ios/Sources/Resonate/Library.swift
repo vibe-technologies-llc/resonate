@@ -727,7 +727,7 @@ final class Library {
             failure = error
         }
         await refresh()
-        features.refreshArtwork()
+        features.scanned()
         folderList = folders.folders()
         if let failure {
             report(failure)

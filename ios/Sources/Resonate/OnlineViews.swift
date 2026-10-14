@@ -203,7 +203,6 @@ struct OnlineAnswerSections: View {
 }
 
 struct OnlineSongActions {
-    var downloading: SearchSong?
     var importing = false
     var importName = ""
     var importedSongs: [SearchSong] = []
@@ -221,7 +220,7 @@ struct OnlineSongPresentations: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(item: $actions.downloading) { DownloadFolderSheet(song: $0) }
+            .downloadDestinationPrompt()
             .alert("Import matching local songs", isPresented: $actions.importing) {
                 TextField("Playlist name", text: $actions.importName)
                 Button("Cancel", role: .cancel) {}
@@ -254,7 +253,7 @@ struct OnlineSongsSection: View {
                 }
             }
             ForEach(songs.indices, id: \.self) { index in
-                OnlineSongRow(song: songs[index]) { actions.downloading = songs[index] }
+                OnlineSongRow(song: songs[index]) { features.downloads.enqueue([songs[index]]) }
             }
         } header: {
             if !heading.isEmpty { Text(heading) }
@@ -292,14 +291,21 @@ struct OnlineSongRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if let duration = song.durationMs {
-                    Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    if let duration = song.durationMs {
+                        Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    if song.held {
+                        Label("In your library", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                    }
                 }
             }
             Spacer(minLength: 0)
             Menu {
                 Button("Download", systemImage: "arrow.down.circle", action: download)
-                    .disabled(features.downloading)
+                    .disabled(features.downloads.holds(song))
                 Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
@@ -490,144 +496,4 @@ struct OnlineReleasePage: View {
 
 extension SearchSong: Identifiable {
     public var id: String { recording.isEmpty ? "\(title)\u{1F}\(artist)\u{1F}\(album)" : recording }
-}
-
-struct DownloadProgress: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let features = library.features
-        if features.downloading || features.downloadStatus != nil {
-            Section {
-                if let status = features.downloadStatus { Text(status).font(.footnote) }
-                if features.downloading {
-                    Text("\(features.downloadedBytes / 1024) KiB received").font(.caption.monospacedDigit())
-                    Button("Cancel download", role: .destructive) { features.cancelDownload() }
-                }
-            }
-        }
-    }
-}
-
-struct DownloadFolderSheet: View {
-    @Environment(Library.self) private var library
-    @Environment(\.dismiss) private var dismiss
-    let song: SearchSong
-
-    var body: some View {
-        let destinations = library.folderList.filter { $0.readable && $0.writable }
-        NavigationStack {
-            List {
-                if destinations.isEmpty {
-                    Text("Add a music folder with write access first.")
-                }
-                Section("Choose a music folder") {
-                    ForEach(destinations) { folder in
-                        Button(folder.name) {
-                            library.features.download(song, into: folder)
-                            dismiss()
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Download \(song.title)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        }
-        .presentationDetents([.medium])
-    }
-}
-
-struct WantedView: View {
-    @Environment(Library.self) private var library
-    @State private var missingOnly = true
-    @State private var downloading: SearchSong?
-
-    var body: some View {
-        let features = library.features
-        let shown = features.wanted.filter { !missingOnly || !$0.held }
-        List {
-            Section {
-                Text("Keep recordings you want and download them when your provider has a match.").foregroundStyle(.secondary)
-                Toggle("Missing from library only", isOn: $missingOnly)
-                Button("Refresh library matches") { features.loadWanted() }
-                if !features.online { Text("Enable online features in Settings to download music.") }
-            }
-            DownloadProgress()
-            if shown.isEmpty {
-                Text(features.wanted.isEmpty ? "Save a recording from Online search to find it here." : "All saved recordings are in your library.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(shown, id: \.id) { wanted in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(wanted.song.title).font(.body.weight(.medium))
-                    Text("\(wanted.song.artist) · \(wanted.song.album)").font(.subheadline).foregroundStyle(.secondary)
-                    if wanted.held {
-                        Text("Already in library").foregroundStyle(.tint)
-                    } else if features.online {
-                        Button("Download") { downloading = wanted.song }
-                            .buttonStyle(.glass)
-                            .disabled(features.downloading)
-                    }
-                }
-                .swipeActions {
-                    Button("Remove", role: .destructive) { features.removeWanted(wanted.id) }
-                }
-            }
-        }
-        .navigationTitle("Saved for later")
-        .onAppear { features.loadWanted() }
-        .sheet(item: $downloading) { DownloadFolderSheet(song: $0) }
-    }
-}
-
-struct ProviderView: View {
-    @Environment(Library.self) private var library
-    @Environment(\.openURL) private var openURL
-    @State private var account = DownloadAccount(provider: .monochrome, server: "", user: "", password: "", clientId: "", clientSecret: "", refreshToken: "")
-
-    var body: some View {
-        let features = library.features
-        Form {
-            Section {
-                Picker("Provider", selection: $account.provider) {
-                    ForEach(MusicProvider.every, id: \.self) { Text($0.title).tag($0) }
-                }
-            } footer: {
-                Text("Downloads are matched by recording codes, or by title, artist and duration. Choose the destination folder for each song.")
-            }
-            if account.provider == .subsonic || account.provider == .monochrome {
-                TextField(account.provider == .monochrome ? "Server URL (blank uses the hosted service)" : "Server URL", text: $account.server)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-            }
-            if account.provider == .subsonic {
-                TextField("Username", text: $account.user).textInputAutocapitalization(.never)
-                SecureField("Password", text: $account.password)
-            }
-            if account.provider == .tidal {
-                Section("TIDAL") {
-                    TextField("TIDAL client ID", text: $account.clientId).textInputAutocapitalization(.never)
-                    SecureField("Client secret (if required)", text: $account.clientSecret)
-                    SecureField("Refresh token", text: $account.refreshToken)
-                    Button(features.tidalBusy ? "Waiting for TIDAL…" : "Sign in with TIDAL") { features.authorizeTidal(account) }
-                        .disabled(account.clientId.isEmpty || features.tidalBusy)
-                    if let request = features.tidalAuthorization {
-                        Text("Enter code: \(request.userCode)").font(.title3.weight(.semibold)).textSelection(.enabled)
-                        Button("Open TIDAL authorization") {
-                            if let url = URL(string: request.verifyAt) { openURL(url) }
-                        }
-                    }
-                }
-            }
-            Section {
-                Button("Save provider") { features.saveProviderAccount(account) }
-            } footer: {
-                Text("Account credentials are kept in the iOS keychain on this device only.")
-            }
-        }
-        .navigationTitle("Download providers")
-        .onAppear { if let saved = features.providerAccount { account = saved } }
-        .onChange(of: features.providerAccount) { _, saved in if let saved { account = saved } }
-    }
 }

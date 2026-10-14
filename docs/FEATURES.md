@@ -7,8 +7,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L] Android still needs document tagging/organising with undo, vault workflows, convolution,
   per-route equaliser bindings, automatic favourite feedback synchronization and microphone
   recognition
-- [S] Neither phone starts the background lookup (`start_enrichment`), follows
-  `enrichment_status` or refreshes pictures through `art_changed_since`; a song is still looked up
+- [S] Android does not start the background lookup (`start_enrichment`), follow
+  `enrichment_status` or refresh pictures through `art_changed_since`; a song is still looked up
   only where the front end asks `enrich_track`
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
