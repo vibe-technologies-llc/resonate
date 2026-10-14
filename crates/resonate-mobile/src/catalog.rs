@@ -307,22 +307,32 @@ fn keep_before_migrating(connection: &Connection, version: u32) -> Result<()> {
         kept.file_name().unwrap_or_default(),
         ".part",
     ));
-    let held = match Held::taken_over(&staged) {
+    let lock = kept.with_file_name(named_within(
+        "",
+        kept.file_name().unwrap_or_default(),
+        ".lock",
+    ));
+    let held = match Held::taken_over(&lock) {
         Ok(held) => held,
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+        Err(source) => return Err(Error::CatalogFile { path: lock, source }),
+    };
+    match fs::remove_file(&staged) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(source) => {
             return Err(Error::CatalogFile {
                 path: staged,
                 source,
             });
         }
-    };
+    }
     let target = staged.to_str().ok_or(Error::InvalidCatalogPath)?;
     connection
         .execute("VACUUM INTO ?1", [target])
         .map_err(|source| Error::store(StoreOp::Migrate, source))?;
-    held.file()
-        .sync_all()
+    File::open(&staged)
+        .and_then(|copy| copy.sync_all())
         .and_then(|()| fs::rename(&staged, &kept))
         .and_then(|()| {
             kept.parent().map_or(Ok(()), |folder| {
@@ -330,6 +340,10 @@ fn keep_before_migrating(connection: &Connection, version: u32) -> Result<()> {
             })
         })
         .map_err(|source| Error::CatalogFile { path: kept, source })?;
+    if fs::remove_file(&lock).is_err() {
+        tracing::debug!(lock = %lock.display(), "the backup's lock stays behind");
+    }
+    drop(held);
     Ok(())
 }
 
@@ -631,6 +645,56 @@ mod migration_tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("a backup version");
         assert_eq!(version, 6);
+        drop(backup);
+        fs::remove_file(path).expect("remove the test catalog");
+        fs::remove_file(kept).expect("remove the test backup");
+    }
+
+    #[test]
+    fn a_copy_left_half_made_by_a_failed_migration_does_not_stop_the_next() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-migration-retried-{unique}.sqlite"));
+        let old = Connection::open(&path).expect("a sixth catalog");
+        for migration in [V1, V2, V3, V4, V5, V6] {
+            old.execute_batch(migration).expect("a shipped schema step");
+        }
+        old.execute_batch("PRAGMA user_version = 6; INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite) VALUES (7, 'resonate-folder://local/one.flac', 'one.flac', 'One', 'Artist', 'Album', 30000, 44100, 'FLAC', 1);").expect("a favourite");
+        drop(old);
+        let kept = path.with_file_name(named_within(
+            "",
+            path.file_name().expect("a filename"),
+            ".before-v6",
+        ));
+        let staged = kept.with_file_name(named_within(
+            "",
+            kept.file_name().expect("a filename"),
+            ".part",
+        ));
+        let lock = kept.with_file_name(named_within(
+            "",
+            kept.file_name().expect("a filename"),
+            ".lock",
+        ));
+
+        fs::write(&staged, b"half of an earlier copy").expect("a half-made copy");
+        fs::write(&lock, b"").expect("a lock left behind");
+        let catalog = Catalog::open(&path).expect("a migrated catalog");
+
+        assert!(catalog.track(7).expect("the original id").favourite);
+        assert!(!staged.exists());
+        assert!(!lock.exists());
+
+        drop(catalog);
+        let backup = Connection::open(&kept).expect("the previous catalog");
+        let version: u32 = backup
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("a backup version");
+
+        assert_eq!(version, 6);
+
         drop(backup);
         fs::remove_file(path).expect("remove the test catalog");
         fs::remove_file(kept).expect("remove the test backup");

@@ -57,7 +57,7 @@ pub enum Error {
     Decode(#[from] resonate_codec::Error),
     #[error("a domain value is out of range")]
     Domain(#[from] resonate_core::Error),
-    #[error("the document catalog operation {op:?} failed")]
+    #[error("the document catalog operation {op:?} failed: {source}")]
     Store {
         op: StoreOp,
         #[source]

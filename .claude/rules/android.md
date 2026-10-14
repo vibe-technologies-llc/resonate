@@ -79,8 +79,12 @@ the process environment.
 The document source has its own SQLite catalog, `documents.sqlite` in app-private storage;
 it does not put invented paths in the Linux catalog. Its first schema is `V1`, version 1.
 Further schema changes append migrations and preserve document ids, favourites and resumption.
-An upgrade checks the existing catalog and keeps a synced `VACUUM INTO` backup under a held staging
-file before one immediate transaction applies the remaining steps. V2 adds metadata, cached
+An upgrade checks the existing catalog and keeps a synced `VACUUM INTO` backup
+(`<catalog>.before-v<N>`, written as `.part` and renamed) before one immediate transaction applies
+the remaining steps. The writer holds a `.lock` beside the copy, never the copy itself: SQLite opens
+and locks the `VACUUM INTO` target, and on Darwin `flock` and SQLite's `fcntl` locks share one
+table, so a held target refused the copy and every iOS upgrade failed. A `.part` a failed attempt
+left is removed first (`a_copy_left_half_made_by_a_failed_migration_does_not_stop_the_next`). V2 adds metadata, cached
 artwork/lyrics, listening history and study summaries; V3 adds document playlists; V4 stores
 independent successful-submission positions for ListenBrainz and Last.fm. V5 adds saved wanted
 recordings, separate from playable documents. V6 adds `listens.elsewhere` (another device's listen),
