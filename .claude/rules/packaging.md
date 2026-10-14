@@ -45,5 +45,5 @@ Bus `DesktopEntry` and the notification `desktop-entry` hint follow: `mpris.rs` 
 unit and its environment file; no package builds it yet.
 
 **`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the PKGBUILD beside it**, committed because
-the AUR reads it. Regenerate in the same commit as any PKGBUILD change;
-`the_srcinfo_says_what_the_pkgbuild_says` fails on disagreement.
+the AUR reads it. Regenerate it when publishing to the AUR; no test holds it, since the VCS
+`pkgver` moves with every commit.

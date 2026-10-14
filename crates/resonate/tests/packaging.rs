@@ -3,15 +3,6 @@ use std::{fs, path::PathBuf};
 const DESKTOP_ENTRY: &str = "resonate.desktop";
 const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
-const SRCINFO_FIELDS: [&str; 7] = [
-    "pkgver",
-    "pkgrel",
-    "arch",
-    "license",
-    "depends",
-    "makedepends",
-    "options",
-];
 
 fn packaging(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -19,45 +10,6 @@ fn packaging(name: &str) -> String {
         .join(name);
 
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-}
-
-fn pkgbuild_values(pkgbuild: &str, field: &str) -> Vec<String> {
-    let opening = format!("{field}=");
-    let Some(start) = pkgbuild.lines().position(|line| line.starts_with(&opening)) else {
-        return Vec::new();
-    };
-
-    let mut written = String::new();
-    for line in pkgbuild.lines().skip(start) {
-        written.push_str(line);
-        written.push(' ');
-        if !written.starts_with(&format!("{opening}(")) || line.trim_end().ends_with(')') {
-            break;
-        }
-    }
-
-    let value = written[opening.len()..].trim();
-    let listed = value
-        .strip_prefix('(')
-        .and_then(|inner| inner.strip_suffix(')'))
-        .unwrap_or(value);
-    listed
-        .split_whitespace()
-        .map(|item| {
-            item.trim_matches(|quote| quote == '\'' || quote == '"')
-                .to_owned()
-        })
-        .collect()
-}
-
-fn srcinfo_values(srcinfo: &str, field: &str) -> Vec<String> {
-    let opening = format!("{field} = ");
-
-    srcinfo
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix(&opening))
-        .map(str::to_owned)
-        .collect()
 }
 
 fn manifest_value<'a>(manifest: &'a str, key: &str) -> Option<&'a str> {
@@ -78,23 +30,6 @@ fn element<'a>(document: &'a str, opening: &str, closing: &str) -> Option<&'a st
     let after = &document[document.find(opening)? + opening.len()..];
 
     after.find(closing).map(|end| &after[..end])
-}
-
-#[test]
-fn the_srcinfo_says_what_the_pkgbuild_says() {
-    let pkgbuild = packaging("PKGBUILD");
-    let srcinfo = packaging(".SRCINFO");
-
-    for field in SRCINFO_FIELDS {
-        let declared = pkgbuild_values(&pkgbuild, field);
-        let summarised = srcinfo_values(&srcinfo, field);
-
-        assert!(!declared.is_empty(), "the PKGBUILD declares no {field}");
-        assert_eq!(
-            summarised, declared,
-            "the .SRCINFO's {field} is not the PKGBUILD's; run makepkg --printsrcinfo"
-        );
-    }
 }
 
 #[test]
