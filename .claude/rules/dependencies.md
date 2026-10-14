@@ -45,6 +45,10 @@ here, add it there.
   `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
   engine vocabulary, serde; no gpui, library, HTTP client.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
+- `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
+  Reached by the binary (behind `sync`), Android and `resonate-server` alone; `resonate-server`
+  reaches core and `resonate-sync` alone. `resonate-library` takes neither `quinn` nor `tokio`, and
+  `cargo tree -p resonate --no-default-features` links neither.
 - `resonate-codec` is a *dev*-dependency of `resonate-mpris` alone (`tests/bus.rs` implements a
   `MediaProvider`).
 
@@ -114,6 +118,16 @@ here, add it there.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.
 - **`rustfft`**: `resonate-dsp`'s, `-analysis`', library dev; at symphonia's `opt-simd` version.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
+- **`quinn`** (`runtime-tokio`, `rustls-ring`) and **`tokio`**: the sync stack alone
+  (`resonate-sync`, `resonate-server`), not the HTTP client's way: hole punching needs UDP, so the
+  server connection and peer transfers are QUIC. The client confines tokio to one current-thread
+  runtime on its own thread (`rt`, `net`, `time`, `sync`, `macros`, `fs`, `io-util`); the server
+  takes `rt-multi-thread` and `signal`. quinn's `platform-verifier`, `log` and `bloom` stay off.
+- **`ring`** (direct): sealing (ChaCha20-Poly1305), HKDF, SHA-256, randomness and the peer
+  signature check in `resonate-sync`; the crate rustls already links. **`rcgen`** (`ring`): the
+  space's peer certificate, and the server tests' self-signed one. **`rustls-pki-types`** (`std`):
+  PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
+  for the provider QUIC needs. The wire is hand-encoded, so no serde.
 - **`toml_edit`**, not `toml` (`display`, `parse`): the settings pane rewrites the listener's
   `config.toml`, and a value model loses comments, key order and spacing.
 

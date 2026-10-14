@@ -16,6 +16,7 @@ resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
 resonate-mcp.path = "../crates/resonate-mcp"
+resonate-sync.path = "../crates/resonate-sync"
 
 [workspace]
 
@@ -95,6 +96,13 @@ bench = false
 [[bin]]
 name = "mcp"
 path = "fuzz_targets/mcp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sync"
+path = "fuzz_targets/sync.rs"
 test = false
 doc = false
 bench = false

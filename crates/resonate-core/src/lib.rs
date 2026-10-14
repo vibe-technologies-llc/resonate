@@ -16,10 +16,12 @@ pub mod naming;
 mod presence;
 mod print;
 mod quantise;
+mod recorded;
 mod resume;
 mod rt;
 mod span;
 mod stamp;
+mod synced;
 pub mod text;
 mod time;
 pub mod titles;
@@ -48,10 +50,12 @@ pub use crate::{
     },
     presence::{AppId, Icon, Pictured, Presence, Shown},
     print::Chromaprint,
+    recorded::{Recording, RecordingKey, title_words},
     resume::{Reordered, Resumable, Resumption, plays_in},
     rt::{RtFault, Silence},
     span::Span,
     stamp::QueueStamp,
+    synced::SyncedSongs,
     text::{LegacyEncoding, TextEncoding},
     time::{FrameSpan, Frames},
     volume::{AppliedGain, Decibels, Gain, Trim, Volume},

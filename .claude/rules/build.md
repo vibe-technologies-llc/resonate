@@ -43,8 +43,8 @@ metadata, so no Linux sound server or GUI libraries are needed for the Android b
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Eleven targets: `probe`, `boxes`,
-  `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`.
+  detaches it, so workspace lints do not reach libfuzzer's macros. Twelve targets: `probe`, `boxes`,
+  `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`.
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
   `cue`): the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length,

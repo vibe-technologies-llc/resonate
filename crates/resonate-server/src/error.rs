@@ -1,0 +1,83 @@
+use std::{io, path::PathBuf, result};
+
+use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StoreOp {
+    Open,
+    Migrate,
+    Read,
+    Write,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PemOp {
+    Certificate,
+    Key,
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("{op:?} failed on the server's store")]
+    Store {
+        op: StoreOp,
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
+
+    #[error("the store is stamped {found}, newer than this server reads")]
+    StoreVersion { found: u32 },
+
+    #[error("{} does not read as a PEM {op:?}", path.display())]
+    Pem {
+        op: PemOp,
+        path: PathBuf,
+        #[source]
+        source: rustls_pki_types::pem::Error,
+    },
+
+    #[error("{} holds no certificate", path.display())]
+    NoCertificate { path: PathBuf },
+
+    #[error("the TLS configuration was refused")]
+    Tls(#[source] Box<rustls::Error>),
+
+    #[error("the QUIC crypto setup refused its TLS configuration")]
+    QuicCrypto,
+
+    #[error("the server could not listen on its address")]
+    Listen(#[source] io::Error),
+
+    #[error("the server runtime could not start")]
+    Runtime(#[source] io::Error),
+
+    #[error("the server could not listen for the signal to stop")]
+    Signals(#[source] io::Error),
+
+    #[error("the store's worker went away")]
+    Worker,
+
+    #[error(transparent)]
+    Sync(#[from] resonate_sync::Error),
+}
+
+impl Error {
+    pub fn store(op: StoreOp, source: rusqlite::Error) -> Self {
+        Self::Store {
+            op,
+            source: Box::new(source),
+        }
+    }
+}
+
+pub type Result<T> = result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_stays_small_enough_for_result_large_err() {
+        assert!(size_of::<Error>() <= 128, "{}", size_of::<Error>());
+    }
+}

@@ -41,6 +41,9 @@ to match. `StartupWMClass=resonate` stays (window `APP_ID` matches). Held by
 Bus `DesktopEntry` and the notification `desktop-entry` hint follow: `mpris.rs` answers
 `FLATPAK_ID` where set, else `resonate`.
 
+**`packaging/server/` deploys the sync server, not the player** (`server.md`): a hardened systemd
+unit and its environment file; no package builds it yet.
+
 **`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the PKGBUILD beside it**, committed because
 the AUR reads it. Regenerate in the same commit as any PKGBUILD change;
 `the_srcinfo_says_what_the_pkgbuild_says` fails on disagreement.

@@ -140,7 +140,7 @@ jobs:
             done
           }
           refuse resonate-core symphonia pipewire gpui serde
-          refuse resonate-library ureq serde serde_json
+          refuse resonate-library ureq serde serde_json quinn tokio
           refuse resonate-eq gpui resonate-engine resonate-library ureq
           refuse resonate-vault gpui resonate-engine resonate-library ureq
           refuse resonate-codec resonate-dsp resonate-pipewire
@@ -175,9 +175,19 @@ jobs:
               *) echo "::error::resonate-online is reached by $by"; failed=1 ;;
             esac
           done
+          refuse resonate-sync gpui resonate-library resonate-engine ureq serde serde_json
+          only resonate-sync resonate-core
+          refuse resonate-server gpui resonate-library resonate-engine ureq serde serde_json
+          only resonate-server resonate-core resonate-sync
+          for by in $(held_by --workspace -i resonate-sync | grep '^resonate' | grep -vx resonate-sync || true); do
+            case "$by" in
+              resonate|resonate-android|resonate-server) ;;
+              *) echo "::error::resonate-sync is reached by $by"; failed=1 ;;
+            esac
+          done
           reached_by_the_binary_alone resonate-mcp
           reached_by_the_binary_alone resonate-discord
-          refuse_headless resonate serde_json gpui ureq
+          refuse_headless resonate serde_json gpui ureq quinn tokio
           exit "$failed"
 
   fuzz:

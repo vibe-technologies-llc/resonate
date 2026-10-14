@@ -1,0 +1,29 @@
+[package]
+name = "resonate-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+parking_lot.workspace = true
+quinn.workspace = true
+resonate-sync.workspace = true
+rusqlite.workspace = true
+rustls = { workspace = true, features = ["ring"] }
+rustls-pki-types = { workspace = true, features = ["std"] }
+thiserror.workspace = true
+tokio = {
+    workspace = true,
+    features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"]
+}
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+rcgen.workspace = true
+resonate-core.workspace = true
+
+[lints]
+workspace = true

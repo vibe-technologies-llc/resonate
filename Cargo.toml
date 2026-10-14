@@ -21,6 +21,8 @@ members = [
     "crates/resonate-mpris",
     "crates/resonate-online",
     "crates/resonate-providers",
+    "crates/resonate-server",
+    "crates/resonate-sync",
     "crates/providers/inbox",
     "crates/providers/monochrome",
     "crates/providers/subsonic",
@@ -133,6 +135,15 @@ rustls = { version = "0.23.45", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
 webpki-root-certs = { version = "1.0.9", default-features = false }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4"] }
+quinn = {
+    version = "0.11.12",
+    default-features = false,
+    features = ["runtime-tokio", "rustls-ring"]
+}
+tokio = { version = "1.53.3", default-features = false }
+rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
+ring = { version = "0.17.14", default-features = false }
+rustls-pki-types = { version = "1.15.1", default-features = false }
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
@@ -193,6 +204,7 @@ resonate-mcp = { version = "0.1.0", path = "crates/resonate-mcp" }
 resonate-mpris = { version = "0.1.0", path = "crates/resonate-mpris" }
 resonate-online = { version = "0.1.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.1.0", path = "crates/resonate-providers" }
+resonate-sync = { version = "0.1.0", path = "crates/resonate-sync" }
 resonate-inbox = { version = "0.1.0", path = "crates/providers/inbox" }
 resonate-monochrome = { version = "0.1.0", path = "crates/providers/monochrome" }
 resonate-subsonic = { version = "0.1.0", path = "crates/providers/subsonic" }
