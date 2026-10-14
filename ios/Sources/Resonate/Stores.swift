@@ -91,7 +91,7 @@ extension LossyRestoration {
 }
 
 extension MusicProvider {
-    static let every: [MusicProvider] = [.monochrome, .hifiApi, .subsonic, .tidal]
+    static let every: [MusicProvider] = [.subsonic, .tidal, .hifiApi, .monochrome]
     var name: String { "\(self)" }
     static func named(_ name: String?) -> MusicProvider? { every.first { $0.name == name } }
 }
@@ -140,30 +140,132 @@ struct Keychain: Sendable {
     }
 }
 
+struct ProviderAccounts: Equatable, Sendable {
+    private(set) var accounts: [DownloadAccount]
+    private(set) var switchedOff: Set<MusicProvider>
+
+    init(kept: [DownloadAccount] = [], switchedOff: Set<MusicProvider> = []) {
+        accounts = MusicProvider.every.map { provider in
+            kept.first { $0.provider == provider } ?? DownloadAccount.empty(for: provider)
+        }
+        self.switchedOff = switchedOff
+    }
+
+    var asked: [DownloadAccount] {
+        accounts.filter { isOn($0.provider) && $0.readiness == .ready }
+    }
+
+    func account(_ provider: MusicProvider) -> DownloadAccount {
+        accounts.first { $0.provider == provider } ?? DownloadAccount.empty(for: provider)
+    }
+
+    func isOn(_ provider: MusicProvider) -> Bool { !switchedOff.contains(provider) }
+
+    mutating func keep(_ account: DownloadAccount) {
+        guard let index = accounts.firstIndex(where: { $0.provider == account.provider }) else { return }
+        accounts[index] = account
+    }
+
+    mutating func turn(_ provider: MusicProvider, on: Bool) {
+        if on {
+            switchedOff.remove(provider)
+        } else {
+            switchedOff.insert(provider)
+        }
+    }
+}
+
+extension DownloadAccount {
+    static func empty(for provider: MusicProvider) -> DownloadAccount {
+        DownloadAccount(provider: provider, server: "", user: "", password: "", clientId: "", clientSecret: "", refreshToken: "")
+    }
+}
+
+private struct KeptProviderAccount: Codable {
+    let provider: String
+    let server: String
+    let user: String
+    let password: String
+    let clientId: String
+    let clientSecret: String
+    let refreshToken: String
+
+    init(_ account: DownloadAccount) {
+        provider = account.provider.name
+        server = account.server
+        user = account.user
+        password = account.password
+        clientId = account.clientId
+        clientSecret = account.clientSecret
+        refreshToken = account.refreshToken
+    }
+
+    var account: DownloadAccount? {
+        MusicProvider.named(provider).map {
+            DownloadAccount(
+                provider: $0,
+                server: server,
+                user: user,
+                password: password,
+                clientId: clientId,
+                clientSecret: clientSecret,
+                refreshToken: refreshToken
+            )
+        }
+    }
+}
+
 struct AccountStore: Sendable {
+    private static let providerAccountsKey = "download-accounts"
+    private static let switchedOffKey = "download-providers-off"
+    private static let singleAccountProviderKey = "provider"
+    private static let singleAccountServerKey = "server"
+    private static let singleAccountSecrets = ["user", "password", "client-id", "client-secret", "refresh-token"]
+
     private let secrets = Keychain()
     private var plain: UserDefaults { UserDefaults(suiteName: "provider-accounts") ?? .standard }
+    private var choices: UserDefaults { UserDefaults(suiteName: "library-features") ?? .standard }
 
-    func read() -> DownloadAccount {
-        DownloadAccount(
-            provider: MusicProvider.named(plain.string(forKey: "provider")) ?? .monochrome,
-            server: plain.string(forKey: "server") ?? "",
+    func readProviders() -> ProviderAccounts {
+        let kept = secrets.read(Self.providerAccountsKey)
+        let accounts = kept.isEmpty ? migratedSingleAccount().map { [$0] } ?? [] : decoded(kept)
+        let switchedOff = (choices.stringArray(forKey: Self.switchedOffKey) ?? []).compactMap(MusicProvider.named)
+        return ProviderAccounts(kept: accounts, switchedOff: Set(switchedOff))
+    }
+
+    func writeProviderAccounts(_ accounts: [DownloadAccount]) throws {
+        let encoded = try JSONEncoder().encode(accounts.map(KeptProviderAccount.init))
+        try secrets.write(Self.providerAccountsKey, String(decoding: encoded, as: UTF8.self))
+    }
+
+    func writeSwitchedOff(_ providers: Set<MusicProvider>) {
+        choices.set(MusicProvider.every.filter(providers.contains).map(\.name), forKey: Self.switchedOffKey)
+    }
+
+    private func decoded(_ kept: String) -> [DownloadAccount] {
+        let accounts = try? JSONDecoder().decode([KeptProviderAccount].self, from: Data(kept.utf8))
+        return accounts?.compactMap(\.account) ?? []
+    }
+
+    private func migratedSingleAccount() -> DownloadAccount? {
+        let plain = plain
+        guard let provider = MusicProvider.named(plain.string(forKey: Self.singleAccountProviderKey)) else { return nil }
+
+        let account = DownloadAccount(
+            provider: provider,
+            server: plain.string(forKey: Self.singleAccountServerKey) ?? "",
             user: secrets.read("user"),
             password: secrets.read("password"),
             clientId: secrets.read("client-id"),
             clientSecret: secrets.read("client-secret"),
             refreshToken: secrets.read("refresh-token")
         )
-    }
+        guard (try? writeProviderAccounts([account])) != nil else { return account }
 
-    func write(_ account: DownloadAccount) throws {
-        plain.set(account.provider.name, forKey: "provider")
-        plain.set(account.server, forKey: "server")
-        try secrets.write("user", account.user)
-        try secrets.write("password", account.password)
-        try secrets.write("client-id", account.clientId)
-        try secrets.write("client-secret", account.clientSecret)
-        try secrets.write("refresh-token", account.refreshToken)
+        for name in Self.singleAccountSecrets { try? secrets.write(name, "") }
+        plain.removeObject(forKey: Self.singleAccountProviderKey)
+        plain.removeObject(forKey: Self.singleAccountServerKey)
+        return account
     }
 
     func readScrobbling() -> ScrobbleAccount {

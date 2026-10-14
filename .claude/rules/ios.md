@@ -271,12 +271,26 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 
 - **`DownloadQueue` runs jobs by the boundary's job number** (`DownloadQueue.swift`): `enqueue`
   begins one job per song not already queued (`begin_download`), two run at once and the rest
-  wait. A job asks `find_download` with every ready account (the keychain keeps one today; a
-  Subsonic account needs a server and user, TIDAL a client ID and refresh token), keeps a renewed
-  TIDAL token, creates the destination with `Folders.fresh` on `Work.aside`, journals its URI,
-  copies (`download_offer`), indexes (`index_download`), drops the journal entry, seeks the new
-  song in the lookup and refreshes the library, the wants and the changed art. With no ready
-  account nothing is begun and the downloads row offers "Set up a download provider".
+  wait. A job asks `find_download` with every account that is on and ready
+  (`Features.downloadAccounts`, `ProviderAccounts.asked`), keeps a renewed TIDAL token on the TIDAL
+  account, creates the destination with `Folders.fresh` on `Work.aside`, journals its URI, copies
+  (`download_offer`), indexes (`index_download`), drops the journal entry, seeks the new song in the
+  lookup and refreshes the library, the wants and the changed art. With no ready account nothing is
+  begun and the downloads row offers "Set up a download provider" until one is ready; a job's row
+  names the provider that delivered.
+- **Every provider is configured at once, as on the desktop** (`ProviderView`): one section per
+  `MusicProvider.every`, each with its switch, its own credentials and Save, and a status
+  (`DownloadAccount.readiness`): Monochrome and hifi-api are always ready (a blank server is the
+  hosted service); Subsonic needs a server, user and password (the desktop's three); TIDAL a client
+  ID and refresh token. Every provider is on until switched off. **The boundary races them**, so
+  `every` is the desktop's registration order (Subsonic, TIDAL, hifi-api, Monochrome) and accounts
+  are passed in it: the desktop has no order of the listener's, so neither does the phone.
+- **Accounts are one keychain item**: `download-accounts`, a JSON list of every provider's account
+  (provider name, server, user, password, client ID, secret, refresh token); the switched-off
+  providers are `download-providers-off` in `library-features`. The single account older builds
+  kept (`provider` and `server` in the `provider-accounts` suite, `user`, `password`, `client-id`,
+  `client-secret`, `refresh-token` in the keychain) is read once by `AccountStore.readProviders`
+  while `download-accounts` is absent, written as the list, and only then deleted.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
   provider gave a length, else the bytes received. Cancel calls `cancel_download` for that job
   alone; a failed or cancelled job deletes only the document it created and shows the boundary's

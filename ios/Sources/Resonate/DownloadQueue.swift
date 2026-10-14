@@ -55,13 +55,31 @@ struct DownloadJob: Identifiable, Equatable {
     }
 }
 
+enum ProviderReadiness: Equatable {
+    case ready
+    case missingServer
+    case missingLogin
+    case missingClient
+    case needsSignIn
+}
+
 extension DownloadAccount {
-    var isReady: Bool {
+    var readiness: ProviderReadiness {
         switch provider {
-        case .monochrome, .hifiApi: true
-        case .subsonic: !server.isEmpty && !user.isEmpty
-        case .tidal: !clientId.isEmpty && !refreshToken.isEmpty
+        case .monochrome, .hifiApi: .ready
+        case .subsonic where Self.isBlank(server): .missingServer
+        case .subsonic where Self.isBlank(user) || password.isEmpty: .missingLogin
+        case .subsonic: .ready
+        case .tidal where Self.isBlank(clientId): .missingClient
+        case .tidal where Self.isBlank(refreshToken): .needsSignIn
+        case .tidal: .ready
         }
+    }
+
+    var usesItsOwnServer: Bool { !Self.isBlank(server) }
+
+    private static func isBlank(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -82,7 +100,7 @@ final class DownloadQueue {
 
     var jobs: [DownloadJob] = []
     var awaitingFolder: [SearchSong] = []
-    var needsProvider = false
+    var missedProvider = false
     private var folderId: String?
 
     @ObservationIgnored private unowned let library: Library
@@ -100,6 +118,8 @@ final class DownloadQueue {
     }
 
     var active: [DownloadJob] { jobs.filter { !$0.state.settled } }
+
+    var needsProvider: Bool { missedProvider && library.features.downloadAccounts.isEmpty }
 
     var choosingFolder: Bool {
         get { !awaitingFolder.isEmpty }
@@ -125,10 +145,10 @@ final class DownloadQueue {
         let wanted = songs.filter { !holds($0) }
         guard !wanted.isEmpty else { return }
         guard !library.features.downloadAccounts.isEmpty else {
-            needsProvider = true
+            missedProvider = true
             return
         }
-        needsProvider = false
+        missedProvider = false
         guard let folder = rememberedFolder else {
             awaitingFolder = wanted
             return

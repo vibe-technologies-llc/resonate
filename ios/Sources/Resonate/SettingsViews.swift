@@ -54,7 +54,7 @@ struct SettingsView: View {
                 }
                 if shown("Download providers", "TIDAL", "Subsonic", "Monochrome") {
                     NavigationLink(value: Destination.providers) {
-                        ToolRow(title: "Download providers", detail: features.providerAccount?.provider.title ?? "Monochrome", symbol: "arrow.down.circle")
+                        ToolRow(title: "Download providers", detail: providersDetail(features.downloadAccounts), symbol: "arrow.down.circle")
                     }
                 }
                 if shown("Scrobbling", "ListenBrainz", "Last.fm") {

@@ -9,9 +9,9 @@ struct DownloadProgress: View {
         let downloads = library.features.downloads
         if downloads.needsProvider {
             Section {
-                Text("Set up a download provider to download music.")
+                Text("No download provider is ready. Switch one on and fill in what it needs.")
                 Button("Set up a download provider") {
-                    downloads.needsProvider = false
+                    downloads.missedProvider = false
                     navigation.open(.providers)
                 }
             }
@@ -100,7 +100,7 @@ struct DownloadJobRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(job.song.title).font(.body.weight(.medium)).lineLimit(1)
-            Text([job.song.artist, job.provider?.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+            Text([job.song.artist, job.provider.map { "from \($0.title)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -223,7 +223,7 @@ struct WantedView: View {
         let missing = features.wanted.filter { !$0.held }.map(\.song)
         List {
             Section {
-                Text("Keep recordings you want and download them when your provider has a match.").foregroundStyle(.secondary)
+                Text("Keep recordings you want and download them when one of your providers has a match.").foregroundStyle(.secondary)
                 Toggle("Missing from library only", isOn: $missingOnly)
                 if !features.online {
                     Text("Enable online features in Settings to download music.")
@@ -278,53 +278,163 @@ struct WantedRow: View {
     }
 }
 
+func providersDetail(_ asked: [DownloadAccount]) -> String {
+    asked.isEmpty ? "Set up a download provider" : asked.map(\.provider.title).joined(separator: " · ")
+}
+
 struct ProviderView: View {
     @Environment(Library.self) private var library
-    @Environment(\.openURL) private var openURL
-    @State private var account = DownloadAccount(provider: .monochrome, server: "", user: "", password: "", clientId: "", clientSecret: "", refreshToken: "")
 
     var body: some View {
-        let features = library.features
+        let providers = library.features.providers
         Form {
             Section {
-                Picker("Provider", selection: $account.provider) {
-                    ForEach(MusicProvider.every, id: \.self) { Text($0.title).tag($0) }
-                }
+                LabeledContent("Asked for each song", value: providers.asked.isEmpty ? "None ready" : providersDetail(providers.asked))
             } footer: {
-                Text("Downloads are matched by recording codes, or by title, artist and duration. Choose the destination folder for each song.")
+                Text("Every provider that is on and ready is asked, in the order below: your own server, then your TIDAL subscription, then the hosted services. An earlier provider's match is taken over a later one's when it answers within a few seconds. Songs are matched by recording codes, or by title, artist and duration. Credentials are kept in the iOS keychain on this device only.")
             }
-            if account.provider == .subsonic || account.provider == .monochrome {
-                TextField(account.provider == .monochrome ? "Server URL (blank uses the hosted service)" : "Server URL", text: $account.server)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-            }
-            if account.provider == .subsonic {
-                TextField("Username", text: $account.user).textInputAutocapitalization(.never)
-                SecureField("Password", text: $account.password)
-            }
-            if account.provider == .tidal {
-                Section("TIDAL") {
-                    TextField("TIDAL client ID", text: $account.clientId).textInputAutocapitalization(.never)
-                    SecureField("Client secret (if required)", text: $account.clientSecret)
-                    SecureField("Refresh token", text: $account.refreshToken)
-                    Button(features.tidalBusy ? "Waiting for TIDAL…" : "Sign in with TIDAL") { features.authorizeTidal(account) }
-                        .disabled(account.clientId.isEmpty || features.tidalBusy)
-                    if let request = features.tidalAuthorization {
-                        Text("Enter code: \(request.userCode)").font(.title3.weight(.semibold)).textSelection(.enabled)
-                        Button("Open TIDAL authorization") {
-                            if let url = URL(string: request.verifyAt) { openURL(url) }
-                        }
-                    }
-                }
-            }
-            Section {
-                Button("Save provider") { features.saveProviderAccount(account) }
-            } footer: {
-                Text("Account credentials are kept in the iOS keychain on this device only.")
+            ForEach(MusicProvider.every, id: \.self) { provider in
+                ProviderSection(saved: providers.account(provider), on: providers.isOn(provider))
             }
         }
         .navigationTitle("Download providers")
-        .onAppear { if let saved = features.providerAccount { account = saved } }
-        .onChange(of: features.providerAccount) { _, saved in if let saved { account = saved } }
+    }
+}
+
+struct ProviderSection: View {
+    @Environment(Library.self) private var library
+    let saved: DownloadAccount
+    let on: Bool
+    @State private var account: DownloadAccount
+
+    init(saved: DownloadAccount, on: Bool) {
+        self.saved = saved
+        self.on = on
+        _account = State(initialValue: saved)
+    }
+
+    var body: some View {
+        let features = library.features
+        let provider = saved.provider
+        Section {
+            Toggle(isOn: Binding(get: { on }, set: { features.turnProvider(provider, on: $0) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(provider.title)
+                    ProviderStatus(account: saved, on: on)
+                }
+            }
+            if on {
+                ProviderFields(account: $account)
+                Button("Save \(provider.title)") { features.saveProviderAccount(account.trimmed) }
+                    .disabled(account.trimmed == saved)
+            }
+        } footer: {
+            Text(provider.purpose)
+        }
+        .onChange(of: saved) { previous, current in account = followed(previous, current) }
+    }
+
+    private func followed(_ previous: DownloadAccount, _ current: DownloadAccount) -> DownloadAccount {
+        let unedited = account == previous || account.trimmed == current
+        return unedited ? current : account.renewed(current.refreshToken)
+    }
+}
+
+struct ProviderStatus: View {
+    let account: DownloadAccount
+    let on: Bool
+
+    var body: some View {
+        Text(on ? account.readiness.title(for: account) : "Off")
+            .font(.footnote)
+            .foregroundStyle(tint)
+    }
+
+    private var tint: Color {
+        guard on else { return .secondary }
+        return account.readiness == .ready ? .green : .orange
+    }
+}
+
+struct ProviderFields: View {
+    @Environment(Library.self) private var library
+    @Environment(\.openURL) private var openURL
+    @Binding var account: DownloadAccount
+
+    var body: some View {
+        let features = library.features
+        switch account.provider {
+        case .monochrome, .hifiApi:
+            serverField("Server URL (blank uses the hosted service)")
+        case .subsonic:
+            serverField("Server URL")
+            TextField("Username", text: $account.user)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("Password", text: $account.password)
+        case .tidal:
+            TextField("TIDAL client ID", text: $account.clientId)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("Client secret (if required)", text: $account.clientSecret)
+            SecureField("Refresh token", text: $account.refreshToken)
+            Button(features.tidalBusy ? "Waiting for TIDAL…" : "Sign in with TIDAL") { features.authorizeTidal(account.trimmed) }
+                .disabled(account.clientId.trimmingCharacters(in: .whitespaces).isEmpty || features.tidalBusy)
+            if let request = features.tidalAuthorization {
+                Text("Enter code: \(request.userCode)").font(.title3.weight(.semibold)).textSelection(.enabled)
+                Button("Open TIDAL authorization") {
+                    if let url = URL(string: request.verifyAt) { openURL(url) }
+                }
+            }
+        }
+    }
+
+    private func serverField(_ title: String) -> some View {
+        TextField(title, text: $account.server)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+    }
+}
+
+extension ProviderReadiness {
+    func title(for account: DownloadAccount) -> String {
+        switch self {
+        case .ready where account.provider == .monochrome || account.provider == .hifiApi:
+            account.usesItsOwnServer ? "Ready · your server" : "Ready · hosted service"
+        case .ready: "Ready"
+        case .missingServer: "Missing server"
+        case .missingLogin: "Missing username or password"
+        case .missingClient: "Missing client ID"
+        case .needsSignIn: "Needs sign-in"
+        }
+    }
+}
+
+extension MusicProvider {
+    var purpose: String {
+        switch self {
+        case .subsonic: "Your own Subsonic, Navidrome or compatible server, sending its original files."
+        case .tidal: "Your TIDAL subscription, lossless only, signed in with your own client ID."
+        case .hifiApi: "TIDAL through a hifi-api server."
+        case .monochrome: "The track streamer behind Monochrome."
+        }
+    }
+}
+
+extension DownloadAccount {
+    var trimmed: DownloadAccount {
+        var trimmed = self
+        trimmed.server = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmed.user = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmed.clientId = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmed.refreshToken = refreshToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed
+    }
+
+    func renewed(_ refreshToken: String) -> DownloadAccount {
+        var renewed = self
+        renewed.refreshToken = refreshToken
+        return renewed
     }
 }
