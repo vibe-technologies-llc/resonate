@@ -405,6 +405,10 @@ enum BackdropPipeline {
     private static let frameFailureLogged = Atomic<Bool>(false)
     private static let compilation = Task.detached(priority: .utility) { settle(compiled()) }
 
+    static func prepare() {
+        _ = compilation
+    }
+
     static var finished: BackdropRendering? {
         settledRendering.withLock { $0 }
     }

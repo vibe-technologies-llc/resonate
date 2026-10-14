@@ -11,7 +11,10 @@ struct ResonateApp: App {
         WindowGroup {
             RootView()
                 .environment(library)
-                .onAppear { library.start() }
+                .onAppear {
+                    BackdropPipeline.prepare()
+                    library.start()
+                }
                 .onOpenURL { library.open($0) }
         }
         .onChange(of: phase) { _, now in
