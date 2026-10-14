@@ -290,6 +290,7 @@ mod tests {
                 downloads: Downloads::default(),
                 syncing: Syncing::under(folder.clone()),
                 routing: Arc::new(Routing::new()),
+                enriching: crate::enrichment::Enriching::default(),
             };
 
             let songs = SONGS

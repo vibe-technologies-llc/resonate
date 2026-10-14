@@ -19,9 +19,9 @@ const UNCOVERED: &str = "albums.cover_art IS NULL AND albums.cover_path IS NULL"
 
 const WAITS_DOUBLE_AT_MOST: u32 = 5;
 
-pub(crate) const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
-const PORTRAITS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub const PORTRAITS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 const HOLDS_RELEASE_ROWS: &str =
     "EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.album_id = a.id)";
@@ -48,7 +48,7 @@ pub(crate) fn doubled(wait: &str, count: &str) -> String {
     format!("{wait} * (1 << min(max({count} - 1, 0), {WAITS_DOUBLE_AT_MOST}))")
 }
 
-fn due_again(row: &str) -> String {
+pub fn due_again(row: &str) -> String {
     let waited = waited_its_turn(row);
     format!(
         "(?1 OR {row}.asked IS NULL
@@ -1486,7 +1486,7 @@ pub(crate) fn write_artist_mbid(tx: &Transaction<'_>, artist: ArtistId, mbid: &M
     Ok(())
 }
 
-fn due(waits: Waits, refresh: bool, now: SystemTime) -> [Value; 5] {
+pub fn due_parameters(waits: Waits, refresh: bool, now: SystemTime) -> [Value; 5] {
     let before =
         |ago: Duration| Value::Integer(store::to_nanos(now.checked_sub(ago).unwrap_or(UNIX_EPOCH)));
     let nanos = |wait: Duration| Value::Integer(i64::try_from(wait.as_nanos()).unwrap_or(i64::MAX));
@@ -1540,7 +1540,7 @@ pub(crate) fn albums_to_ask(
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let found = statement
-        .query_map(due(waits, refresh, now), RawAlbumToAsk::read)
+        .query_map(due_parameters(waits, refresh, now), RawAlbumToAsk::read)
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
@@ -1576,7 +1576,7 @@ pub(crate) fn album_if_due(
     let found = connection
         .query_row(
             &format!("{asking} WHERE a.id = ?6 AND {album_due}"),
-            params_from_iter(due_for(due(waits, refresh, now), id.get())),
+            params_from_iter(due_for(due_parameters(waits, refresh, now), id.get())),
             RawAlbumToAsk::read,
         )
         .optional()
@@ -1692,7 +1692,9 @@ pub(crate) fn tracks_to_ask(
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let found = statement
-        .query_map(due(waits, refresh, now), |row| row.get::<_, i64>(0))
+        .query_map(due_parameters(waits, refresh, now), |row| {
+            row.get::<_, i64>(0)
+        })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
@@ -1861,7 +1863,7 @@ pub(crate) fn artist_is_due(
                 "SELECT 1 FROM artists a WHERE a.id = ?6 AND {}",
                 due_again("a")
             ),
-            params_from_iter(due_for(due(waits, refresh, now), id.get())),
+            params_from_iter(due_for(due_parameters(waits, refresh, now), id.get())),
             |_| Ok(()),
         )
         .optional()
@@ -1883,7 +1885,9 @@ pub(crate) fn artists_to_ask(
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let found = statement
-        .query_map(due(waits, refresh, now), |row| row.get::<_, i64>(0))
+        .query_map(due_parameters(waits, refresh, now), |row| {
+            row.get::<_, i64>(0)
+        })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 

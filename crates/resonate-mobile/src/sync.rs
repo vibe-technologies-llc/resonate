@@ -1195,6 +1195,7 @@ mod tests {
             downloads: crate::downloads::Downloads::default(),
             syncing: Syncing::under(folder.to_path_buf()),
             routing: Arc::new(crate::output::Routing::new()),
+            enriching: crate::enrichment::Enriching::default(),
         }
     }
 

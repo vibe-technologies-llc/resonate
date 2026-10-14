@@ -1980,10 +1980,10 @@ fn fill_declared(tx: &Transaction<'_>, album: i64, declared: &Declaration<'_>) -
     .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
-pub(crate) const A_THUMBNAIL_BELOW: u32 = 300;
+pub const A_THUMBNAIL_BELOW: u32 = 300;
 const BETTERED_BY_AT_LEAST: u32 = 2;
 
-pub(crate) fn betters(candidate: &CoverArt, held: &CoverArt) -> bool {
+pub fn betters(candidate: &CoverArt, held: &CoverArt) -> bool {
     let (Some(held), Some(candidate)) = (held.shorter_side(), candidate.shorter_side()) else {
         return false;
     };

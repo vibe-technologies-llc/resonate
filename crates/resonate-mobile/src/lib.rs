@@ -3,6 +3,7 @@ mod catalog_extras;
 mod collections;
 mod documents;
 mod downloads;
+mod enrichment;
 mod error;
 mod features;
 mod lyrics;
@@ -112,6 +113,7 @@ pub struct MobilePlayer {
     downloads: downloads::Downloads,
     syncing: sync::Syncing,
     routing: Arc<output::Routing>,
+    enriching: enrichment::Enriching,
 }
 
 #[uniffi::export]
@@ -147,6 +149,7 @@ impl MobilePlayer {
             downloads: downloads::Downloads::default(),
             syncing: sync::Syncing::under(PathBuf::from(&folder)),
             routing,
+            enriching: enrichment::Enriching::default(),
         });
         let (ids, at, position) = this.catalog.resume()?;
         if !ids.is_empty() {
@@ -435,6 +438,7 @@ impl MobilePlayer {
 
     pub fn shutdown(&self) -> Result<()> {
         self.sync_stop();
+        self.stop_enriching_to_close();
         self.configure_online(false);
         self.cancel_analysis();
         self.cancel_download();

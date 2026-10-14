@@ -358,10 +358,14 @@ impl MobilePlayer {
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Read, source))?;
             let through = through.unwrap_or(i64::MAX);
-            let mut query = connection.prepare("SELECT d.*, l.id, l.began FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.elsewhere = 0 AND l.id > ?1 ORDER BY l.id LIMIT 100").map_err(|source| Error::store(StoreOp::Read, source))?;
+            let mut query = connection.prepare("SELECT d.*, l.id AS listen_id, l.began AS listen_began FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.elsewhere = 0 AND l.id > ?1 ORDER BY l.id LIMIT 100").map_err(|source| Error::store(StoreOp::Read, source))?;
             let found = query
                 .query_map([through], |row| {
-                    Ok((read(row)?, row.get::<_, i64>(21)?, row.get::<_, i64>(22)?))
+                    Ok((
+                        read(row)?,
+                        row.get::<_, i64>("listen_id")?,
+                        row.get::<_, i64>("listen_began")?,
+                    ))
                 })
                 .map_err(|source| Error::store(StoreOp::Read, source))?
                 .collect::<rusqlite::Result<Vec<_>>>()

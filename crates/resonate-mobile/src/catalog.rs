@@ -62,7 +62,28 @@ const V6: &str = "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFA
 ALTER TABLE playlists ADD COLUMN created INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE received (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, extension TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, recording TEXT, duration_ms INTEGER) STRICT;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+const V7: &str = "ALTER TABLE documents ADD COLUMN asked INTEGER;
+ALTER TABLE documents ADD COLUMN answered INTEGER;
+ALTER TABLE documents ADD COLUMN asks INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN refusals INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN release_group TEXT;
+ALTER TABLE documents ADD COLUMN album_key TEXT;
+ALTER TABLE documents ADD COLUMN isrc TEXT;
+ALTER TABLE documents ADD COLUMN art_changed INTEGER NOT NULL DEFAULT 0;
+UPDATE documents SET album_key = CASE WHEN trim(album) = '' THEN NULL ELSE folded(album) || char(31) || folded(CASE WHEN trim(album_artist) = '' THEN artist ELSE album_artist END) END;
+CREATE INDEX documents_album_key ON documents(album_key);
+CREATE INDEX documents_art_changed ON documents(art_changed);
+CREATE TRIGGER documents_keyed AFTER INSERT ON documents BEGIN UPDATE documents SET album_key = CASE WHEN trim(new.album) = '' THEN NULL ELSE folded(new.album) || char(31) || folded(CASE WHEN trim(new.album_artist) = '' THEN new.artist ELSE new.album_artist END) END WHERE id = new.id; END;
+CREATE TRIGGER documents_rekeyed AFTER UPDATE OF album, artist, album_artist ON documents BEGIN UPDATE documents SET album_key = CASE WHEN trim(new.album) = '' THEN NULL ELSE folded(new.album) || char(31) || folded(CASE WHEN trim(new.album_artist) = '' THEN new.artist ELSE new.album_artist END) END WHERE id = new.id; END;
+CREATE TRIGGER documents_art_changed AFTER UPDATE OF art_revision ON documents BEGIN UPDATE documents SET art_changed = (SELECT max(art_changed) FROM documents) + 1 WHERE id = new.id; END;
+CREATE TABLE album_art (album_key TEXT PRIMARY KEY, release TEXT, release_group TEXT, bytes BLOB, origin TEXT, cover_asked INTEGER, asked INTEGER, answered INTEGER, asks INTEGER NOT NULL DEFAULT 0, refusals INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE TABLE artists (mbid TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT, country TEXT, area TEXT, genres TEXT, links TEXT, portrait BLOB, portrait_asked INTEGER, asked INTEGER, answered INTEGER, asks INTEGER NOT NULL DEFAULT 0, refusals INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE TABLE enrichment (id INTEGER PRIMARY KEY CHECK (id = 1), started INTEGER NOT NULL, refresh INTEGER NOT NULL) STRICT;
+ALTER TABLE wanted ADD COLUMN tried INTEGER;
+ALTER TABLE wanted ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE wanted ADD COLUMN offered_at INTEGER;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 
@@ -74,6 +95,14 @@ impl Catalog {
             Connection::open(path).map_err(|source| Error::store(StoreOp::Open, source))?;
         connection
             .busy_timeout(Duration::from_secs(5))
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -104,14 +133,6 @@ impl Catalog {
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
-        connection
-            .create_scalar_function(
-                "folded",
-                1,
-                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
-            )
-            .map_err(|source| Error::store(StoreOp::Open, source))?;
         connection
             .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
             .map_err(|source| Error::store(StoreOp::Open, source))?;
@@ -533,6 +554,83 @@ mod migration_tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("a backup version");
         assert_eq!(version, 5);
+        drop(backup);
+        fs::remove_file(path).expect("remove the test catalog");
+        fs::remove_file(kept).expect("remove the test backup");
+    }
+
+    #[test]
+    fn a_sixth_android_catalog_keeps_its_listener_state_and_learns_its_album_keys() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-migration-v6-{unique}.sqlite"));
+        let old = Connection::open(&path).expect("a sixth catalog");
+        for migration in [V1, V2, V3, V4, V5, V6] {
+            old.execute_batch(migration).expect("a shipped schema step");
+        }
+        old.execute_batch("PRAGMA user_version = 6; INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite) VALUES (12, 'content://test/one.flac', 'one.flac', 'One', 'Artist', 'Début', 30000, 44100, 'FLAC', 1), (13, 'content://test/two.flac', 'two.flac', 'Two', 'Artist', '', 30000, 44100, 'FLAC', 0); INSERT INTO queue VALUES (0, 13), (1, 12); INSERT INTO resume VALUES (1, 1, 9000); INSERT INTO wanted (id, identity, recording, title, artist, album, isrcs) VALUES (3, 'one', 'b1a9c0e9-d987-4042-ae91-78d6a3267d69', 'One', 'Artist', 'Début', '');").expect("a favourite, a saved queue and a want");
+        drop(old);
+
+        let catalog = Catalog::open(&path).expect("a migrated catalog");
+        let connection = catalog.0.lock();
+
+        let keys: Vec<Option<String>> = connection
+            .prepare("SELECT album_key FROM documents ORDER BY id")
+            .expect("a key query")
+            .query_map([], |row| row.get(0))
+            .expect("the keys")
+            .collect::<rusqlite::Result<_>>()
+            .expect("every key");
+        let want: (i64, Option<i64>, Option<i64>) = connection
+            .query_row(
+                "SELECT misses, tried, offered_at FROM wanted WHERE id = 3",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the kept want");
+        let unasked: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM documents WHERE asked IS NULL AND asks = 0 AND refusals = 0",
+                [],
+                |row| row.get(0),
+            )
+            .expect("unasked documents");
+
+        assert_eq!(
+            keys,
+            vec![
+                Some(format!(
+                    "{}\u{1f}{}",
+                    resonate_core::folded_letters("Début"),
+                    resonate_core::folded_letters("Artist")
+                )),
+                None
+            ]
+        );
+        assert_eq!(want, (0, None, None));
+        assert_eq!(unasked, 2);
+
+        drop(connection);
+        assert_eq!(
+            catalog.resume().expect("the saved place"),
+            (vec![13, 12], 1, 9000)
+        );
+        assert!(catalog.track(12).expect("the original id").favourite);
+        assert!(!catalog.track(13).expect("the original id").favourite);
+        drop(catalog);
+
+        let kept = path.with_file_name(named_within(
+            "",
+            path.file_name().expect("a filename"),
+            ".before-v6",
+        ));
+        let backup = Connection::open(&kept).expect("the previous catalog");
+        let version: u32 = backup
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("a backup version");
+        assert_eq!(version, 6);
         drop(backup);
         fs::remove_file(path).expect("remove the test catalog");
         fs::remove_file(kept).expect("remove the test backup");

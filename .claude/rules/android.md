@@ -46,8 +46,9 @@ Controller actions enter one ordered worker, so load/prepare/play cannot race on
 Audio focus loss and noisy-output events pause playback. An Activity's recreation does not own
 or close the audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread. A later service
-waits for that cleanup before opening another. Native shutdown stops analysis, downloads and the
-shared online client before releasing playback. Long analysis, enrichment and HTTP work run on
+waits for that cleanup before opening another. Native shutdown stops sync, then the enrichment pass
+(leaving its mark to carry on), analysis, downloads and the shared online client before releasing
+playback. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
 
 Oboe opens a shared stereo float stream at 48 kHz; the existing Rust engine converts into it.
@@ -84,7 +85,16 @@ artwork/lyrics, listening history and study summaries; V3 adds document playlist
 independent successful-submission positions for ListenBrainz and Last.fm. V5 adds saved wanted
 recordings, separate from playable documents. V6 adds `listens.elsewhere` (another device's listen),
 `playlists.created` (0 for playlists made before it, a nanosecond stamp after; undo restores it) and
-`received`, the songs another device sent that wait for a document.
+`received`, the songs another device sent that wait for a document. V7 adds the lookup's columns:
+`documents.asked`/`answered` (nanosecond stamps), `asks`, `refusals`, `release_group`, `isrc` (kept
+from tags on index), `album_key` and `art_changed`; `album_art` (one release, group and cover per
+album key, with its own clocks and `cover_asked`), `artists` (a kept profile and portrait per
+artist id, with its clocks and `portrait_asked`), the one-row `enrichment` mark, and `wanted.tried`,
+`misses`, `offered_at`. The album key is `folded(album) || char(31) || folded(album artist, else
+artist)`, empty for a song without an album: the apps' grouping, folded. Triggers keep it on every
+insert and on any write of `album`, `artist` or `album_artist`, and stamp `art_changed` with the
+next catalog-wide number whenever `art_revision` moves; both call the connection's `folded`, which
+`Catalog::open` registers before migrating, so a write from a connection without it fails.
 Rescanning upserts by the full URI; it never deletes rows on an unavailable or revoked grant.
 Queries page at most 500 rows at a time. Folder traversal stops at depth 32 and admits the same
 extensions as core. The queue resumes paused through the engine's `Resumption` command, so the
@@ -246,8 +256,35 @@ of the matches rather than an `OFFSET` walk.
 
 Online starts enabled when no preference is stored; Settings persists an explicit offline choice across upgrades. A single paced `Online` client serves
 MusicBrainz search/enrichment, covers, portraits, LRCLIB, AutoEq, recognition and scrobbling.
-Enrichment admits only a unique strict title/artist/length match, or an existing recording id;
-it fills learned identities/album artist and cached pictures/lyrics without writing source tags.
+
+Enrichment is the desktop's pass on the document catalog (`enrichment.rs`), weighed by
+`resonate-library`'s own strict rules (`top_release`, `top_group`, `closest_release`,
+`the_strict_recording`, `best_recording`, `best_release`, `recording_asked`), never a copy of them.
+`start_enrichment(EnrichmentOptions { refresh, at_most })` runs it on a `resonate-enrich` thread
+over the shared client's yielding twin, so a listener's request never waits behind it; it answers
+false while offline or while a pass runs. Albums go first (one release lookup and at most one cover
+per album key, the group's cover where the release has none, asked only where the album shows no
+picture or one under `A_THUMBNAIL_BELOW`), then songs (ISRC, recording id, then a strict search;
+`learned` fills only empty identities and never moves the album key), then artists (profile and
+portrait into `artists`); `resonate-enrich-pictures` fetches pictures beside the pass and
+`resonate-enrich-lyrics` asks LRCLIB for songs with no sheet, a miss older than
+`MISSED_AGAIN_AFTER` or a fetched sheet without a Lyricsfile older than `BETTERED_AFTER`, keeping
+the richer through `KeptLyrics::richer_of`. Every row backs off by the library's own `due_again`
+clause and `WAITS`; refusals end the pass at `REFUSALS_THAT_END_A_PASS` in a row; it checks between
+requests for `stop_enrichment`, offline and the network. `enrichment_status` counts what was due,
+asked, matched, covers, portraits, lyrics and refusals and names how it stopped (`EnrichmentStop`).
+The `enrichment` mark is removed when the pass finishes or the listener stops it; a pass ended by
+the reference, the network or the app closing leaves it, and the next start carries its refresh,
+skipping rows asked since it began. `seek_enrichment(track)` lifts the song's album, the song and
+its artist to the front where still due. `enrich_track` is the same album, song and artist asks
+forced for one row over the listener's client; its lyric lookup failing fails nothing. `artwork`
+answers the song's own picture (embedded, folder, `set_artwork`) and falls back to its album key's
+cover, or takes that cover where it betters a thumbnail; no per-song archive copy is written.
+`art_changed_since(revision)` names the songs whose picture changed after a revision.
+`artist_information` answers the kept profile and fetches and keeps one only where none is;
+`artist_portrait(mbid)` reads the kept portrait; `ask_again_for_covers` clears `cover_asked` on
+albums still without one.
+
 Search covers songs, albums, artists, release editions and songs within a release; artist
 discography pages by identity. Shared song, album, artist and playlist links use the library's
 existing resolvers; remote playlist order and repeats are retained, within the service's own page

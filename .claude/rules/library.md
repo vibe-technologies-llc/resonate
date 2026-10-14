@@ -591,6 +591,14 @@ rows read via `Player::media` like any unscanned row.
   alone. Artist: `Pass::profile_of` asks a tagged `artists.mbid` directly, → `find_artist` where the
   reference holds nothing; a hit must `matches_exactly`: `EXACT_SCORE` (100) + same name. A
   shortfall logs a debug record; the album/artist is stamped `asked` alone.
+- **The strict rules are exported, so the phones weigh with them, not with a copy.** `Identified`,
+  `Fit`, `top_release`, `top_group`, `closest_release`, `the_strict_recording` (the strict pick
+  `Pass::take_match` makes), `best_recording`, `needs_its_releases_told`, `best_release`,
+  `recording_asked` (the titled-enough test and the ask `Pass::by_search` sends), `release_asked`,
+  `group_asked`, `REFUSALS_THAT_END_A_PASS`, `due_again` with `due_parameters` (the clause over
+  `?1`..`?5` and the values it binds), `COVERS_ASKED_AGAIN_AFTER`, `PORTRAITS_ASKED_AGAIN_AFTER`,
+  `A_THUMBNAIL_BELOW` and `betters` are public. `Pass` calls the same functions, so a rule changed
+  here changes `resonate-mobile`'s pass too (`android.md`).
 - **A rejected match is taken away, never landed again.** `Library::forget_the_match` records the
   album's release (group where landed as group alone) in `refused_releases`; clears the landing's
   writes (ids, release title, date, country, kind, disambiguation, `front_cover`, archive cover);
