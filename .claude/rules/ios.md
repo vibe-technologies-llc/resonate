@@ -68,7 +68,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   when the page draws (`.lyrics(nil)` still means the playing song).
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
   6 s; a failure stays until dismissed. The engine's `failure` is shown once per distinct text per
-  song, and a poll failure once until polling recovers, so a dismissal holds. A scan shows its own
+  song, and a poll failure once until that part of polling recovers, so a dismissal holds. The
+  snapshot, the queue read and the save are three parts of a tick, each failing and recovering on
+  its own: a queue or save that fails never discards the snapshot already taken (which holds the
+  engine's failure), a queue that cannot be read is not asked again until its revision moves, and
+  a failing save is told once however many good ticks lie between its tries. A scan shows its own
   live line ("Reading music folder… N songs") with Stop (`stopScanning`, `Folders.stopScanning`);
   its error is reported, never replaced by the tally, and removing a folder drops its queued scan.
   Sync reports once as well: songs landing from other devices are counted and told in one notice

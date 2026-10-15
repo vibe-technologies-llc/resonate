@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] The 250 ms poll joins `snapshot`, `queue` and `save` in one throwing `Work.inOrder`:
-  `snapshot` has already taken the engine's `failure`, so a `queue` or `save` error discards it;
-  one queue row with no catalog row fails every tick and freezes transport and position; a failing
-  `save` (disk full) clears `pollFailure` on the nineteen good ticks, so its banner returns every
-  5 s where `ios.md` says once
 - [S] A TIDAL token renewed during a failed `find_download` is lost: the tuple
   `(findDownload, refreshedTidalToken)` throws before the second is read, so the next job starts
   from the stale keychain token and meets `AccountRefused`

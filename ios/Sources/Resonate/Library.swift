@@ -34,6 +34,12 @@ final class PlayClock {
     }
 }
 
+enum PollPart: Hashable {
+    case snapshot
+    case queue
+    case save
+}
+
 struct QueueListed: Equatable {
     let queue: UInt64
     let catalog: UInt64
@@ -138,7 +144,7 @@ final class Library {
     @ObservationIgnored private let preferencesStore = PlaybackPreferencesStore()
     @ObservationIgnored private var catalogIds: Set<UInt64> = []
     @ObservationIgnored private var shownFailure: String?
-    @ObservationIgnored private var pollFailure: String?
+    @ObservationIgnored private var pollFailures: [PollPart: String] = [:]
     @ObservationIgnored private var statusSerial = 0
     @ObservationIgnored private var fading: Task<Void, Never>?
     @ObservationIgnored private var steering = Settling()
@@ -211,6 +217,7 @@ final class Library {
     private func poll(_ native: MobilePlayer) async {
         var ticks = 0
         var listed: QueueListed?
+        var unreadable: QueueListed?
         while !Task.isCancelled {
             ticks += 1
             let saving = ticks % Self.ticksBetweenSaves == 0
@@ -219,26 +226,47 @@ final class Library {
             let queueAsked = queueSettling.asked
             let queueSettled = queueSettling.settled
             let known = listed
+            let refused = unreadable
             do {
-                let (state, rows) = try await Work.inOrder {
+                let (state, rows, saved) = try await Work.inOrder {
                     let state = try native.snapshot()
-                    let rows = QueueListed(state) == known ? nil : try native.queue()
-                    if saving { try native.save() }
-                    return (state, rows)
+                    let wanted = QueueListed(state)
+                    let rows: Result<[Track], any Swift.Error>? =
+                        wanted == known || wanted == refused ? nil : Result { try native.queue() }
+                    let saved: Result<Void, any Swift.Error>? = saving ? Result { try native.save() } : nil
+                    return (state, rows, saved)
                 }
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
                 let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
-                pollFailure = nil
+                pollFailures[.snapshot] = nil
                 publish(steeringFresh ? state : steered.applied(to: state))
-                if queueFresh, let rows {
-                    if queue != rows { queue = rows }
-                    listed = QueueListed(state)
+                switch rows {
+                case .success(let read):
+                    pollFailures[.queue] = nil
+                    unreadable = nil
+                    if queueFresh {
+                        if queue != read { queue = read }
+                        listed = QueueListed(state)
+                    }
+                case .failure(let error):
+                    reportPolling(.queue, error)
+                    unreadable = QueueListed(state)
+                case nil:
+                    break
+                }
+                switch saved {
+                case .success:
+                    pollFailures[.save] = nil
+                case .failure(let error):
+                    reportPolling(.save, error)
+                case nil:
+                    break
                 }
                 nowPlaying.update(state)
                 await features.tick(native, state)
             } catch {
-                reportPolling(error)
+                reportPolling(.snapshot, error)
             }
             try? await Task.sleep(for: Self.tick)
         }
@@ -271,10 +299,10 @@ final class Library {
         return steady
     }
 
-    private func reportPolling(_ failure: any Swift.Error) {
+    private func reportPolling(_ part: PollPart, _ failure: any Swift.Error) {
         let text = explained(failure)
-        guard text != pollFailure else { return }
-        pollFailure = text
+        guard text != pollFailures[part] else { return }
+        pollFailures[part] = text
         show(text, as: .failure)
     }
 
