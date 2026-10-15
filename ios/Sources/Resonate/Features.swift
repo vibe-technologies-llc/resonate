@@ -72,6 +72,8 @@ final class Features {
     var analysisBusy = false
     var analysisProgress: Float?
     var inspector: Inspector?
+    var sharing: SharedLink?
+    @ObservationIgnored private var shareRequest = 0
     var inspectorTrack: UInt64?
     var inspectorArtist: ArtistLookup = .idle
     var playlists: [MusicPlaylist] = []
@@ -845,6 +847,22 @@ final class Features {
                 try folders.withPaths(uris) { try native.editTags(songs: $0, change: change) }
             }
             await self?.tagged(native, told, undoing: false)
+        }
+    }
+
+    func share(_ track: Track) {
+        shareRequest += 1
+        let request = shareRequest
+        let id = track.id
+        let title = track.shownTitle
+        work { [weak self] native in
+            let found = try await Work.aside { try native.shareLink(id: id) }
+            guard request == self?.shareRequest else { return }
+            guard let link = found.flatMap({ URL(string: $0) }) else {
+                self?.library.notice("There is no link to share for “\(title)”")
+                return
+            }
+            self?.sharing = SharedLink(title: title, url: link)
         }
     }
 

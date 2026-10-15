@@ -20,6 +20,7 @@ mod playlists;
 mod queue_edit;
 mod room;
 mod search;
+mod sharing;
 mod sync;
 mod tagging;
 mod vanished;

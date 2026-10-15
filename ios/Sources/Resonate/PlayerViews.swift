@@ -347,11 +347,12 @@ struct SongMenu<Label: View>: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .tint(Color.primary)
-        .accessibilityHint("Shows the album, artist and song details")
+        .accessibilityHint("Shows the album, artist, song details and a link to share")
     }
 }
 
 struct SongDestinations: View {
+    @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track
 
@@ -365,6 +366,7 @@ struct SongDestinations: View {
         Button("Song details", systemImage: "info.circle") {
             navigation.open(.inspector(track))
         }
+        Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
     }
 }
 

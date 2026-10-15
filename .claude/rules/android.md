@@ -431,6 +431,12 @@ at most `LOVES_TOLD_AT_ONCE` loves or take-backs per service and call; a love re
 other than 401, 403, 408 or 429 (`resonate_library::refused_for_good`) is noted told, any other
 failure stops that service until the next call; one service failing tells the other.
 
+`share_link(id)` (`sharing.rs`) is the desktop's share over a document row: `Shared` is built from the
+row's title, artist, album, year, recording id, ISRC and length (a stored code that does not parse is
+left out), the reference is asked where the song streams only while online is reaching, and the
+answer is `Shared::written`, `None` where neither a service nor a recording gives a link; only iOS
+calls it.
+
 Monochrome, hifi-api, Subsonic and the listener's TIDAL account use the existing provider matching
 and delivery code. Credentials and recognition keys are encrypted with AES-GCM under Android
 Keystore. TIDAL device sign-in displays the code and authorization page, and renewed refresh

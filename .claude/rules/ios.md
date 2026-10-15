@@ -319,6 +319,16 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   counted play the listening parts give way to *No plays yet* and the library shares remain.
 - **Recently played** is a Suggestions mix and a *Last played* sort (`TrackOrder.played`).
 
+## Sharing
+
+- **A song is shared as a link, never a file** (`Features.share`, `Sharing.swift`): *Share link* in a
+  song's menu (`TrackMenu`) and in Now Playing's song menu (`SongDestinations`) asks `share_link(id)` on
+  `Work.aside`, then `Features.sharing` presents the system activity sheet (`ActivitySheet`, medium and
+  large) from the root view with the URL alone. The latest ask wins (`shareRequest`); a song with no
+  link says so in a notice. The link is the library's (`library.md`'s *A share is the link alone*),
+  built from the row's recording id and ISRC; online asks the reference where the song streams only
+  while it is on, else the MusicBrainz recording link is the answer.
+
 ## Tags
 
 - **A song's or an album's tags are edited in a sheet** (`TagEditor.swift`, `Navigation.tagging`):

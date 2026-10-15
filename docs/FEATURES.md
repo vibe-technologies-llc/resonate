@@ -26,6 +26,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Android shapes the equaliser through ten octave sliders and a preamp: an AutoEq or imported
   curve plays and is kept, but its bands are edited only on iOS's graph, and moving a slider
   replaces it with ten bands
+- [S] Android cannot share a song link: `share_link` answers the link a song is shared as, and only
+  iOS calls it
 - [S] The phones apply one curve to every channel: a filter an imported profile limits to some
   channels is passed over (and counted), where the desktop keeps it on those channels
 

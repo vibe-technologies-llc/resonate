@@ -555,6 +555,7 @@ struct TrackMenu: View {
         }
         Section {
             Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+            Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
             if library.features.tagsWritable(track) {
                 Button("Edit tags", systemImage: "pencil") { navigation.tagging = TagEditing(tracks: [track]) }
             }

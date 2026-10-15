@@ -175,6 +175,13 @@ struct RootView: View {
         .sheet(item: $navigation.tagging) { editing in
             TagEditorSheet(tracks: editing.tracks)
         }
+        .sheet(item: Binding(
+            get: { library.features.sharing },
+            set: { library.features.sharing = $0 }
+        )) { shared in
+            ActivitySheet(link: shared.url, title: shared.title)
+                .presentationDetents([.medium, .large])
+        }
         .alert(
             "Join these devices?",
             isPresented: Binding(
