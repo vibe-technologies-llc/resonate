@@ -15,6 +15,7 @@ mod online_tools;
 mod organising;
 mod output;
 mod playback;
+mod playlist_files;
 mod playlists;
 mod queue_edit;
 mod room;

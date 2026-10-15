@@ -60,6 +60,7 @@ final class Features {
     var providers = ProviderAccounts()
     var online: Bool
     var statistics: LibraryStatistics?
+    var listeningDetail: ListeningDetail?
     var statisticsLoading = false
     var lyrics: LyricSheet?
     var lyricsLoading = false
@@ -75,6 +76,7 @@ final class Features {
     var playlists: [MusicPlaylist] = []
     var playlistRows: [Track] = []
     var openPlaylist: UInt64?
+    var playlistToShow: UInt64?
     var onlineQuery = "" {
         didSet { if onlineQuery != oldValue { askOnline() } }
     }
@@ -754,13 +756,22 @@ final class Features {
         }
     }
 
+    static let rankedShown: UInt32 = 10
+
     func loadStatistics(days: UInt32 = 0) {
         statisticsRequest += 1
         let request = statisticsRequest
         statisticsLoading = true
         work({ [weak self] native in
+            let offset = Int32(TimeZone.current.secondsFromGMT())
+            let shown = Features.rankedShown
             let found = try await Work.aside { try native.statistics(days: days) }
-            if request == self?.statisticsRequest { self?.statistics = found }
+            let detail = try await Work.aside {
+                try native.listeningDetail(days: days, limit: shown, utcOffsetSeconds: offset)
+            }
+            guard request == self?.statisticsRequest else { return }
+            self?.statistics = found
+            self?.listeningDetail = detail
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })

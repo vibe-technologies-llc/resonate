@@ -23,8 +23,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   every account and runs jobs side by side, but Settings stores one and the screens show one job
 - [M] Android does not ask for its wants on its own: `poll_wanted_due` and `next_wanted_due` say
   which are due and when, and only iOS calls them on a timer
-- [S] A wanted row keeps no release, disc or position, so a want downloaded from the Wanted list is
-  asked with less than the search result it was saved from
 - [M] Android shapes the equaliser through ten octave sliders and a preamp: an AutoEq or imported
   curve plays and is kept, but its bands are edited only on iOS's graph, and moving a slider
   replaces it with ten bands

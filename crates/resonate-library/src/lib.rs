@@ -152,6 +152,9 @@ pub use crate::{
         Term, Word,
     },
     share::Shared,
+    sheet::{
+        Described, Listed, Sheet, SheetRow, Timed, parse as read_sheet, text_of as written_sheet,
+    },
     songs::AlbumNotHeld,
     spelling::{Spellings, spelt_alike},
     statistics::{Day, Listened, MostListened, Statistics, Window},

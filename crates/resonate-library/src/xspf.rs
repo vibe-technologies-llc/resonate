@@ -6,8 +6,8 @@ use std::{
 use resonate_core::MediaLocation;
 
 use crate::{
-    PlaylistEntry, Result,
-    sheet::{self, Listed, Sheet, Timed},
+    Result,
+    sheet::{self, Listed, Sheet, SheetRow, Timed},
     store,
 };
 
@@ -207,7 +207,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     sheet
 }
 
-pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<String> {
+pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String> {
     let mut text = format!(
         "{DECLARATION}\n<{PLAYLIST} version=\"{XSPF_VERSION}\" xmlns=\"{NAMESPACE}\" \
          xmlns:vlc=\"{VLC_NAMESPACE}\">\n"
@@ -219,12 +219,9 @@ pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<Str
     ));
     text.push_str(&format!("  <{TRACK_LIST}>\n"));
 
-    for entry in entries {
-        let Some(file) = entry.location().as_path() else {
-            continue;
-        };
-        let named = sheet::beside_or_absolute(file, beside);
-        let described = sheet::describe(entry);
+    for row in rows {
+        let named = sheet::beside_or_absolute(row.file, beside);
+        let described = &row.described;
 
         text.push_str(&format!("    <{TRACK}>\n"));
         text.push_str(&element(UNDER_A_TRACK, LOCATION, &uri(&named)?));
@@ -239,7 +236,7 @@ pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<Str
                 &(seconds * MILLISECONDS).to_string(),
             ));
         }
-        if let Some(timed) = sheet::timed(entry) {
+        if let Some(timed) = row.timed {
             text.push_str(&options(timed));
         }
         text.push_str(&format!("    </{TRACK}>\n"));

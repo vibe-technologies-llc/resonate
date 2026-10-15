@@ -72,6 +72,7 @@ final class Folders: Documents, @unchecked Sendable {
     static let scheme = "resonate-folder"
     static let local = "local"
     private static let deepest = 32
+    private static let copiesChecked = 50
     private static let coverNames = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]
     private static let sidecarExtension = "lrc"
     private static let sidecarLimit = 1024 * 1024
@@ -220,6 +221,34 @@ final class Folders: Documents, @unchecked Sendable {
         else { return nil }
         try? handle.close()
         return data.count <= limit ? data : nil
+    }
+
+    func granted(_ url: URL) -> String? {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let known = lock.withLock { Array(names.keys) }
+        let chosen = known.map { id in (id, lock.withLock { access[id] } ?? recordAccess(id)) }
+        let roots = chosen + [(Self.local, FolderAccess.of(Self.documentsFolder))]
+        let holding = roots
+            .filter { $0.1.readable && !$0.1.path.isEmpty && path.hasPrefix($0.1.path + "/") }
+            .max { $0.1.path.count < $1.1.path.count }
+        guard let (id, access) = holding else { return nil }
+        return uri(root: id, relative: String(path.dropFirst(access.path.count + 1)))
+    }
+
+    func localCopy(identicalTo url: URL) -> (uri: String, name: String)? {
+        let files = FileManager.default
+        let name = url.lastPathComponent
+        let stem = (name as NSString).deletingPathExtension
+        let suffix = (name as NSString).pathExtension
+        for attempt in 0..<Self.copiesChecked {
+            let candidate = attempt == 0 ? name : "\(stem) (\(attempt)).\(suffix)"
+            let path = Self.documentsFolder.appendingPathComponent(candidate).path
+            guard files.fileExists(atPath: path) else { return nil }
+            if files.contentsEqual(atPath: path, andPath: url.path) {
+                return (uri(root: Self.local, relative: candidate), candidate)
+            }
+        }
+        return nil
     }
 
     func fresh(in id: String, named name: String) throws -> (uri: String, descriptor: Int32) {

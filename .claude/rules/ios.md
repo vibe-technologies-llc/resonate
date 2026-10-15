@@ -166,7 +166,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits
   `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB and a
   same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL`. A file opened
-  in Resonate from elsewhere is copied into `local` and played. A folder's access is measured, not
+  in Resonate from elsewhere is played where it already is when its resolved path lies in a granted
+  folder (`Folders.granted`, the most specific root), else played from an identical copy already in
+  `local` (`localCopy`: same name or `name (n)`, equal contents), else copied into `local` and
+  played; files arriving together (`onOpenURL` fires once each; 250 ms settles a batch) are indexed
+  in turn and queued in order, the first playing. A folder's access is measured, not
   assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
   as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves
@@ -290,6 +294,24 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.
+
+## Playlist files and listening
+
+- **A playlist file is read, never kept**: M3U, M3U8, PLS and XSPF
+  (`playlist_file_extensions()`, declared in `Info.plist` as `org.resonate.playlist`) opened in
+  Resonate or chosen from the playlists section's *Import playlist file* go to
+  `import_playlist_file` (`android.md`'s *playlist file*), a notice counts the songs found
+  in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
+  options menu exports M3U8, PLS or XSPF through `export_playlist` into a `fileExporter`
+  (`PlaylistFile`).
+- **The queue is saved as a playlist** from the Queue tab's toolbar (`createPlaylist` with every
+  queue row, repeats kept).
+- **Statistics lead with time and ranks** (`StatisticsView`): the period picker, totals, a bar chart of
+  listening over time (`ListeningChart`, drawn in SwiftUI; days for a week or month, weeks for a
+  year, months for all time, the day cut at the phone's offset), most listened songs, albums and
+  artists (ten each from `listening_detail`; albums open `Destination.album(key)`, artists
+  `Destination.artist(name)`).
+- **Recently played** is a Suggestions mix and a *Last played* sort (`TrackOrder.played`).
 
 ## Tags
 

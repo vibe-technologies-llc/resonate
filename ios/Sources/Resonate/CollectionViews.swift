@@ -19,6 +19,7 @@ struct LibraryView: View {
     @State private var shelf = Shelf.all
     @State private var playlistSearch = ""
     @State private var naming = false
+    @State private var importing = false
 
     var body: some View {
         @Bindable var shelfSearch = library.shelfSearch
@@ -71,6 +72,7 @@ struct LibraryView: View {
                         .collectionActions(.playlist(playlist.id))
                     }
                     Button("Create playlist", systemImage: "plus") { naming = true }
+                    Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
                     if playlists.isEmpty, folded.isEmpty {
                         Text("Make a playlist for a mood, a moment, or your next journey.").foregroundStyle(.secondary)
                     } else if playlists.isEmpty {
@@ -153,6 +155,12 @@ struct LibraryView: View {
             LibraryToolbar()
         }
         .onAppear { library.features.loadPlaylists() }
+        .fileImporter(isPresented: $importing, allowedContentTypes: playlistFileTypes()) { result in
+            switch result {
+            case .success(let url): library.importPlaylistFile(url)
+            case .failure(let failure): library.report(failure)
+            }
+        }
         .alert("Create playlist", isPresented: $naming) {
             PlaylistNameField(confirm: "Create") { library.features.createPlaylist($0) }
         }

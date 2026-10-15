@@ -183,14 +183,42 @@ pub fn parse(text: &str, beside: &Path) -> (Sheet, PlaylistFormat) {
     (sheet, format)
 }
 
+pub struct SheetRow<'a> {
+    pub file: &'a Path,
+    pub described: Described,
+    pub timed: Option<Timed>,
+}
+
+pub fn rows_of(entries: &[PlaylistEntry]) -> Vec<SheetRow<'_>> {
+    entries
+        .iter()
+        .filter_map(|entry| {
+            Some(SheetRow {
+                file: entry.location().as_path()?,
+                described: describe(entry),
+                timed: timed(entry),
+            })
+        })
+        .collect()
+}
+
+pub fn text_of(
+    format: PlaylistFormat,
+    name: &str,
+    rows: &[SheetRow<'_>],
+    beside: &Path,
+) -> Result<String> {
+    match format {
+        PlaylistFormat::M3u => m3u::write(name, rows, beside),
+        PlaylistFormat::Pls => pls::write(name, rows, beside),
+        PlaylistFormat::Xspf => xspf::write(name, rows, beside),
+    }
+}
+
 pub fn write(path: &Path, name: &str, entries: &[PlaylistEntry]) -> Result<PlaylistFormat> {
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
     let format = PlaylistFormat::of(path);
-    let text = match format {
-        PlaylistFormat::M3u => m3u::write(name, entries, beside)?,
-        PlaylistFormat::Pls => pls::write(name, entries, beside)?,
-        PlaylistFormat::Xspf => xspf::write(name, entries, beside)?,
-    };
+    let text = text_of(format, name, &rows_of(entries), beside)?;
 
     read_back_within(path, &text, LARGEST_PLAYLIST_FILE)?;
     staged_over(path, &text)?;

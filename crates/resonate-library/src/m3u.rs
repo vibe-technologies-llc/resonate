@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    PlaylistEntry, Result,
-    sheet::{self, Described, Listed, Sheet, Timed},
+    Result,
+    sheet::{self, Described, Listed, Sheet, SheetRow, Timed},
 };
 
 const HEADER: &str = "#EXTM3U";
@@ -51,18 +51,14 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     sheet
 }
 
-pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<String> {
+pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String> {
     let mut text = format!("{HEADER}\n{NAME_TAG}{}\n", sheet::one_line(name));
 
-    for entry in entries {
-        let Some(file) = entry.location().as_path() else {
-            continue;
-        };
-
+    for row in rows {
         text.push_str(ENTRY_TAG);
-        text.push_str(&sheet::one_line(&extinf(&sheet::describe(entry))));
+        text.push_str(&sheet::one_line(&extinf(&row.described)));
         text.push('\n');
-        if let Some(timed) = sheet::timed(entry) {
+        if let Some(timed) = row.timed {
             for (option, at) in [
                 (sheet::START_TIME, timed.from),
                 (sheet::STOP_TIME, timed.to),
@@ -75,7 +71,7 @@ pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<Str
                 }
             }
         }
-        text.push_str(&sheet::as_a_row(file, beside)?);
+        text.push_str(&sheet::as_a_row(row.file, beside)?);
         text.push('\n');
     }
 

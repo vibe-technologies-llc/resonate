@@ -58,6 +58,7 @@ pub enum TrackOrder {
     Duration,
     Added,
     Plays,
+    Played,
 }
 
 #[derive(Clone, Debug, Default, uniffi::Record)]
@@ -83,6 +84,29 @@ pub struct LibraryStatistics {
     pub plays: u64,
     pub listened_ms: u64,
     pub top_tracks: Vec<Track>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ListenedTo {
+    pub key: String,
+    pub name: String,
+    pub by: String,
+    pub plays: u64,
+    pub listened_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ListenedOnDay {
+    pub starts: u64,
+    pub plays: u64,
+    pub listened_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ListeningDetail {
+    pub albums: Vec<ListenedTo>,
+    pub artists: Vec<ListenedTo>,
+    pub days: Vec<ListenedOnDay>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -195,6 +219,16 @@ impl MobilePlayer {
 
     pub fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         self.catalog.statistics(days)
+    }
+
+    pub fn listening_detail(
+        &self,
+        days: u32,
+        limit: u32,
+        utc_offset_seconds: i32,
+    ) -> Result<ListeningDetail> {
+        self.catalog
+            .listening_detail(days, limit, utc_offset_seconds)
     }
 
     pub fn artwork(&self, id: u64) -> Result<Option<Vec<u8>>> {

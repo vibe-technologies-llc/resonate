@@ -123,6 +123,8 @@ final class Library {
     @ObservationIgnored private(set) var native: MobilePlayer?
     @ObservationIgnored private var waiting: [CheckedContinuation<MobilePlayer, Swift.Error>] = []
     @ObservationIgnored private var openingFailure: (any Swift.Error)?
+    @ObservationIgnored private var opening: [URL] = []
+    @ObservationIgnored private var openSettle: Task<Void, Never>?
     @ObservationIgnored private let actions: AsyncStream<NativeAction>
     @ObservationIgnored private let enqueue: AsyncStream<NativeAction>.Continuation
     @ObservationIgnored private var polling: Task<Void, Never>?
@@ -809,21 +811,66 @@ final class Library {
         if scanning, read > scanned { scanned = read }
     }
 
+    private static let openedTogether = Duration.milliseconds(250)
+
     func open(_ url: URL) {
         if url.scheme?.lowercased() == "resonate" {
             features.offerPairing(url.absoluteString)
             return
         }
+        if playlistFileExtensions().contains(url.pathExtension.lowercased()) {
+            importPlaylistFile(url)
+            return
+        }
+        opening.append(url)
+        openSettle?.cancel()
+        openSettle = Task { [weak self] in
+            try? await Task.sleep(for: Self.openedTogether)
+            guard !Task.isCancelled, let self else { return }
+            let batch = opening
+            opening = []
+            await playOpened(batch)
+        }
+    }
+
+    private func playOpened(_ urls: [URL]) async {
         let folders = folders
+        var tracks: [Track] = []
+        var failure: (any Swift.Error)?
+        do {
+            let native = try await player()
+            for url in urls {
+                do {
+                    let kept = try await Work.aside { try Library.kept(url, in: folders) }
+                    let indexed = try await Work.aside { try native.indexDocument(uri: kept.uri, name: kept.name) }
+                    tracks.append(indexed)
+                } catch {
+                    failure = error
+                }
+            }
+        } catch {
+            failure = error
+        }
+        await refresh()
+        if !tracks.isEmpty { play(tracks, at: 0) }
+        if let failure { report(failure) }
+    }
+
+    func importPlaylistFile(_ url: URL) {
         Task {
             do {
-                let kept = try await Work.aside { try Library.kept(url, in: folders) }
-                request({ native in try native.indexDocument(uri: kept.uri, name: kept.name) }) { [self] track in
-                    Task {
-                        await refresh()
-                        play([track], at: 0)
-                    }
+                let native = try await player()
+                let name = url.lastPathComponent
+                let imported = try await Work.aside {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    return try native.importPlaylistFile(bytes: try Data(contentsOf: url), fileName: name)
                 }
+                features.loadPlaylists()
+                features.playlistToShow = imported.id
+                notice(imported.missing == 0
+                    ? "Imported \(imported.name): \(counted(Int(imported.matched), "song"))"
+                    : "Imported \(imported.name): \(Int(imported.matched)) of \(Int(imported.matched + imported.missing)) songs found in your library")
             } catch {
                 report(error)
             }
@@ -833,10 +880,11 @@ final class Library {
     nonisolated private static func kept(_ url: URL, in folders: Folders) throws -> (uri: String, name: String) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let documents = Folders.documentsFolder.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        if path.hasPrefix(documents + "/") {
-            return (folders.uri(root: Folders.local, relative: String(path.dropFirst(documents.count + 1))), url.lastPathComponent)
+        if let uri = folders.granted(url) {
+            return (uri, url.lastPathComponent)
+        }
+        if let copy = folders.localCopy(identicalTo: url) {
+            return copy
         }
         let (uri, descriptor) = try folders.fresh(in: Folders.local, named: url.lastPathComponent)
         do {

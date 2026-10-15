@@ -270,7 +270,7 @@ enum FilterChip: Identifiable {
     case order(TrackOrder, descending: Bool)
 
     static let orderNames: [(TrackOrder, String)] = [
-        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"),
+        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"), (.played, "Last played"),
     ]
 
     static func of(_ filter: TrackFilter) -> [FilterChip] {

@@ -89,7 +89,13 @@ const V9: &str = "ALTER TABLE documents ADD COLUMN missing INTEGER NOT NULL DEFA
 
 const V10: &str = "CREATE TABLE loves_told (service TEXT NOT NULL, recording TEXT NOT NULL, PRIMARY KEY (service, recording)) STRICT, WITHOUT ROWID;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
+const V11: &str = "ALTER TABLE wanted ADD COLUMN release TEXT NOT NULL DEFAULT '';
+ALTER TABLE wanted ADD COLUMN release_group TEXT NOT NULL DEFAULT '';
+ALTER TABLE wanted ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE wanted ADD COLUMN disc INTEGER;
+ALTER TABLE wanted ADD COLUMN position INTEGER;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 

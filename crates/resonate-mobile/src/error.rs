@@ -129,6 +129,15 @@ pub enum Error {
     Lyrics(#[from] resonate_lyrics::Error),
     #[error("none of these recordings could be matched to the local library")]
     NoLocalMatches,
+    #[error("The playlist file is larger than eight MiB ({bytes} bytes)")]
+    PlaylistFileTooLarge { bytes: u64 },
+    #[error("The playlist file lists no songs")]
+    PlaylistFileEmpty,
+    #[error("The playlist could not be written to a file")]
+    PlaylistFileUnwritten {
+        #[source]
+        source: Box<resonate_library::Error>,
+    },
     #[error("a saved recording must have a title")]
     InvalidWantedSong,
     #[error("online features are switched off")]

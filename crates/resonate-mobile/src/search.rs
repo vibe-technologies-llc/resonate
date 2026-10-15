@@ -1348,6 +1348,7 @@ fn in_track_order(order: TrackOrder, one: &Row, other: &Row) -> Ordering {
         TrackOrder::Duration => one.track.duration_ms.cmp(&other.track.duration_ms),
         TrackOrder::Added => one.track.id.cmp(&other.track.id),
         TrackOrder::Plays => one.plays().cmp(&other.plays()),
+        TrackOrder::Played => one.played().cmp(&other.played()),
     }
 }
 
@@ -2414,6 +2415,55 @@ mod tests {
     }
 
     #[test]
+    fn recently_played_orders_by_the_latest_counted_listen_and_leaves_the_unheard_last() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let early = song(
+            &catalog,
+            Tagged {
+                title: "Early",
+                artist: "Air",
+                ..UNTAGGED
+            },
+        );
+        let late = song(
+            &catalog,
+            Tagged {
+                title: "Late",
+                artist: "Air",
+                ..UNTAGGED
+            },
+        );
+        song(
+            &catalog,
+            Tagged {
+                title: "Never",
+                artist: "Air",
+                ..UNTAGGED
+            },
+        );
+        catalog
+            .0
+            .lock()
+            .execute(
+                "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, 1700000000, 30000, 1), (?2, 1700009000, 30000, 1), (?1, 1700001000, 30000, 1)",
+                [early.id as i64, late.id as i64],
+            )
+            .expect("three plays");
+
+        let recent = TrackFilter {
+            order: TrackOrder::Played,
+            descending: true,
+            ..TrackFilter::default()
+        };
+        let found = searching
+            .filtered(&catalog, &recent, 0, 100)
+            .expect("the recently played");
+
+        assert_eq!(titles(&found), vec!["Late", "Early", "Never"]);
+    }
+
+    #[test]
     fn every_filter_order_and_direction_holds_and_the_album_filter_folds() {
         let catalog = library();
         let searching = Searching::default();
@@ -2425,6 +2475,7 @@ mod tests {
             TrackOrder::Duration,
             TrackOrder::Added,
             TrackOrder::Plays,
+            TrackOrder::Played,
         ] {
             for descending in [true, false] {
                 let filter = TrackFilter {

@@ -301,6 +301,11 @@ fn wanted_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WantedRow> {
                 .lines()
                 .map(str::to_owned)
                 .collect(),
+            release: row.get(9)?,
+            release_group: row.get(10)?,
+            artist_id: row.get(11)?,
+            disc: row.get(12)?,
+            position: row.get(13)?,
             ..SearchSong::default()
         },
         tried: row.get(7)?,
@@ -324,7 +329,7 @@ fn forgotten_before(now: SystemTime) -> i64 {
 }
 
 fn still_asked(connection: &Connection) -> Result<Vec<WantedRow>> {
-    let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
+    let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
     query
         .query_map([TRIES_BEFORE_GIVING_UP], wanted_row)
         .map_err(read_error)?
@@ -346,7 +351,7 @@ fn due_at(tried: Option<i64>, misses: u32) -> Option<SystemTime> {
 impl Catalog {
     fn wanted(&self, offset: u32, limit: u32) -> Result<Vec<WantedSong>> {
         let connection = self.0.lock();
-        let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses FROM wanted ORDER BY added DESC, id DESC LIMIT ?1 OFFSET ?2").map_err(read_error)?;
+        let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position FROM wanted ORDER BY added DESC, id DESC LIMIT ?1 OFFSET ?2").map_err(read_error)?;
         let rows = query
             .query_map(params![limit.min(500), offset], wanted_row)
             .map_err(read_error)?
@@ -460,7 +465,7 @@ impl Catalog {
                 .map(|code| code.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            saved += transaction.execute("INSERT INTO wanted(identity, recording, title, artist, album, duration_ms, isrcs) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(identity) DO NOTHING", params![identity, song.recording, song.title, song.artist, song.album, song.duration_ms.map(|value| value.min(i64::MAX as u64) as i64), isrcs]).map_err(write_error)? as u64;
+            saved += transaction.execute("INSERT INTO wanted(identity, recording, title, artist, album, duration_ms, isrcs, release, release_group, artist_id, disc, position) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(identity) DO NOTHING", params![identity, song.recording, song.title, song.artist, song.album, song.duration_ms.map(|value| value.min(i64::MAX as u64) as i64), isrcs, song.release, song.release_group, song.artist_id, song.disc, song.position]).map_err(write_error)? as u64;
         }
         transaction.commit().map_err(write_error)?;
         Ok(saved)
@@ -557,6 +562,33 @@ mod tests {
         let wants = catalog.wanted(0, 500).expect("the held want");
         assert!(wants[0].held);
         assert_eq!(wants[0].song.isrcs, song.isrcs);
+    }
+
+    #[test]
+    fn a_saved_want_keeps_the_release_disc_and_position_it_was_found_on() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = SearchSong {
+            title: "Joga".into(),
+            artist: "Björk".into(),
+            album: "Homogenic".into(),
+            release: "b1a9c0e9-d987-4042-ae91-78d6a3267d69".into(),
+            release_group: "0c3c3f0a-0000-4000-8000-000000000001".into(),
+            artist_id: "87c5dedd-371d-4a53-9f7f-80522fb7f3cb".into(),
+            disc: Some(1),
+            position: Some(3),
+            ..SearchSong::default()
+        };
+
+        catalog
+            .save_wanted(std::slice::from_ref(&song))
+            .expect("a wanted song");
+        let kept = &catalog.wanted(0, 500).expect("the wants")[0].song;
+
+        assert_eq!(kept.release, song.release);
+        assert_eq!(kept.release_group, song.release_group);
+        assert_eq!(kept.artist_id, song.artist_id);
+        assert_eq!(kept.disc, Some(1));
+        assert_eq!(kept.position, Some(3));
     }
 
     fn take(title: &str, duration_ms: u64, recording: &str) -> SearchSong {

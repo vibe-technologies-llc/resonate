@@ -1,5 +1,6 @@
 import ResonateNative
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PlaylistEntry: Identifiable {
     let id: String
@@ -16,6 +17,55 @@ struct PlaylistEntry: Identifiable {
     }
 }
 
+struct PlaylistFile: FileDocument {
+    static let readableContentTypes: [UTType] = [.plainText]
+
+    let text: String
+    let kind: UTType
+
+    init(text: String, kind: UTType) {
+        self.text = text
+        self.kind = kind
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+        kind = .plainText
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+extension PlaylistFileFormat {
+    static let offered: [PlaylistFileFormat] = [.m3u, .pls, .xspf]
+
+    var title: String {
+        switch self {
+        case .m3u: "M3U8"
+        case .pls: "PLS"
+        case .xspf: "XSPF"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .m3u: "m3u8"
+        case .pls: "pls"
+        case .xspf: "xspf"
+        }
+    }
+
+    var kind: UTType {
+        UTType(filenameExtension: fileExtension) ?? .plainText
+    }
+}
+
+func playlistFileTypes() -> [UTType] {
+    playlistFileExtensions().compactMap { UTType(filenameExtension: $0) }
+}
+
 struct PlaylistView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -28,6 +78,8 @@ struct PlaylistView: View {
     @State private var edited = 0
     @State private var choosingPlaylist = false
     @State private var queued = 0
+    @State private var exported: PlaylistFile?
+    @State private var exporting = false
 
     var body: some View {
         let features = library.features
@@ -79,7 +131,7 @@ struct PlaylistView: View {
                     if !rows.isEmpty {
                         CollectionQueueActions(tracks: rows, choosingPlaylist: $choosingPlaylist, queued: $queued)
                     }
-                    PlaylistOptions(id: id, renaming: $renaming, deleting: $deleting)
+                    PlaylistOptions(id: id, renaming: $renaming, deleting: $deleting, export: export)
                 }
                 .simultaneousGesture(TapGesture().onEnded { features.loadPlaylistSync(id) })
             }
@@ -113,8 +165,31 @@ struct PlaylistView: View {
             Text("The music files stay in your library. You can undo this action from a playlist's options.")
         }
         .sheet(isPresented: $adding) { AddSongsSheet(id: id) }
+        .fileExporter(
+            isPresented: $exporting,
+            document: exported,
+            contentType: exported?.kind ?? .plainText,
+            defaultFilename: name
+        ) { result in
+            if case .failure(let failure) = result { library.report(failure) }
+            exported = nil
+        }
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: rows) }
         .sensoryFeedback(.success, trigger: queued)
+    }
+
+    private func export(_ format: PlaylistFileFormat) {
+        let id = id
+        Task {
+            do {
+                let native = try await library.player()
+                let text = try await Work.aside { try native.exportPlaylist(id: id, format: format) }
+                exported = PlaylistFile(text: text, kind: format.kind)
+                exporting = true
+            } catch {
+                library.report(error)
+            }
+        }
     }
 
     private func edit(_ change: @escaping @Sendable (MobilePlayer, UInt64) throws -> Void) {
@@ -154,6 +229,7 @@ struct PlaylistOptions: View {
     let id: UInt64
     @Binding var renaming: Bool
     @Binding var deleting: Bool
+    let export: (PlaylistFileFormat) -> Void
 
     var body: some View {
         let features = library.features
@@ -164,6 +240,11 @@ struct PlaylistOptions: View {
         Section {
             Button("Rename playlist", systemImage: "pencil") { renaming = true }
             Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
+            Menu("Export playlist", systemImage: "square.and.arrow.up") {
+                ForEach(PlaylistFileFormat.offered, id: \.self) { format in
+                    Button(format.title) { export(format) }
+                }
+            }
             Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
         }
         if let sync, features.syncStatus?.standing != .off {

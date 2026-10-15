@@ -3,8 +3,8 @@ use std::path::Path;
 use resonate_core::MediaLocation;
 
 use crate::{
-    PlaylistEntry, Result,
-    sheet::{self, Described, Listed, Sheet},
+    Result,
+    sheet::{self, Described, Listed, Sheet, SheetRow},
 };
 
 pub const HEADER: &str = "[playlist]";
@@ -62,24 +62,21 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     sheet
 }
 
-pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<String> {
+pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String> {
     let mut text = format!("{HEADER}\n{NAME_KEY}={}\n", sheet::one_line(name));
     let mut written = 0;
 
-    for entry in entries {
-        let Some(file) = entry.location().as_path() else {
-            continue;
-        };
-        let described = sheet::describe(entry);
+    for row in rows {
+        let described = &row.described;
         written += 1;
 
         text.push_str(&format!(
             "{FILE_KEY}{written}={}\n",
-            sheet::as_a_row(file, beside)?
+            sheet::as_a_row(row.file, beside)?
         ));
         text.push_str(&format!(
             "{TITLE_KEY}{written}={}\n",
-            sheet::one_line(&titled(&described))
+            sheet::one_line(&titled(described))
         ));
         text.push_str(&format!(
             "{LENGTH_KEY}{written}={}\n",

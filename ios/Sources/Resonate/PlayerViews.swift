@@ -800,6 +800,7 @@ struct RoutePicker: UIViewRepresentable {
 struct QueueView: View {
     @Environment(Library.self) private var library
     @State private var clearing = false
+    @State private var saving = false
 
     var body: some View {
         QueueList(inPlayer: false)
@@ -808,11 +809,17 @@ struct QueueView: View {
             .toolbar {
                 if !library.queue.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
+                        Button("Save as playlist", systemImage: "text.badge.plus") { saving = true }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button("Clear", systemImage: "trash") { clearing = true }
                             .disabled(library.queue.count <= 1)
                     }
                     ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 }
+            }
+            .alert("Save queue as playlist", isPresented: $saving) {
+                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue) }
             }
             .confirmationDialog("Clear the queue?", isPresented: $clearing, titleVisibility: .visible) {
                 Button("Clear queue", role: .destructive) { library.clearQueue() }

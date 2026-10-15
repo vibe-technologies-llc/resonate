@@ -131,7 +131,7 @@ recordings, separate from playable documents. V6 adds `listens.elsewhere` (anoth
 from tags on index), `album_key` and `art_changed`; `album_art` (one release, group and cover per
 album key, with its own clocks and `cover_asked`), `artists` (a kept profile and portrait per
 artist id, with its clocks and `portrait_asked`), the one-row `enrichment` mark, and `wanted.tried`,
-`misses`, `offered_at`. V8 adds `refused_offers` (identity, `taken_from`, `refused` stamp); V10 adds `loves_told`, the loves told per listening service. The album key is `folded(album) || char(31) || folded(album artist, else
+`misses`, `offered_at`. V8 adds `refused_offers` (identity, `taken_from`, `refused` stamp); V10 adds `loves_told`, the loves told per listening service; V11 adds `wanted.release`, `release_group`, `artist_id`, `disc` and `position`, so a want downloaded from the Wanted list is asked with the release, disc and position of the result it was saved from. The album key is `folded(album) || char(31) || folded(album artist, else
 artist)`, empty for a song without an album: the apps' grouping, folded. Triggers keep it on every
 insert and on any write of `album`, `artist` or `album_artist`, and stamp `art_changed` with the
 next catalog-wide number whenever `art_revision` moves; both call the connection's `folded`, which
@@ -251,11 +251,32 @@ to the tagged artist. Folder names and grants are listed independently of the ca
 unavailable grants; removing access revokes a grant after confirmation, leaving music untouched.
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
-with six stable orders and direction, read off the search index below. Suggestions are explicit mixes of the actual library and its
+with seven stable orders (title, album, artist, duration, added, plays and last played, the latest
+counted listen, the unheard last) and direction, read off the search index below. Suggestions are explicit mixes of the actual library and its
 listening history. `Listening` counts heard time rather than sought position; its half-track or
 four-minute threshold feeds the local history and statistics. History filters cover all time and
 the last week/month/year. Document playlists preserve repeated songs, use revision checks for
 position edits, and have bounded in-session undo; they never invent Linux paths.
+
+**Statistics beyond the totals are `listening_detail(days, limit, utc_offset_seconds)`** (`catalog_extras.rs`):
+the albums (by the catalog's `album_key`) and artists (by folded name) heard most in the window,
+ranked by heard time then plays, at most `MOST_LISTENED_AT_MOST` (100), and the listening per day
+(counted listens, a day cut at the caller's UTC offset, the latest `DAYS_SHOWN_AT_MOST` days oldest
+first, `ListenedOnDay.starts` the unix second that day began). Hidden songs and uncounted listens
+are left out, as in `statistics(days)`.
+
+**A playlist file is read and written over the document catalog** (`playlist_files.rs`).
+`import_playlist_file(bytes, file_name)` decodes the text through core's `text::decoded` (UTF-16
+and code pages read), reads M3U, PLS or XSPF with the library's own `read_sheet`, and matches each
+entry to a visible document by file name; a name held twice goes to the document sharing most
+trailing folders with the entry and stays unmatched on a tie, and a URL or an unmatched path counts
+as missing. The playlist takes the sheet's declared name, else the file's stem, numbered
+(`Name (2)`) where the name is taken, in one transaction and one undo step; a file listing nothing
+is `PlaylistFileEmpty`, one over 8 MiB `PlaylistFileTooLarge`, one matching nothing `NoLocalMatches`.
+`export_playlist(id, format)` writes the visible rows with titles, artists and lengths through the
+library's `written_sheet`, each path relative to its folder (the root's id left out, since it names
+a bookmark, not a place). `playlist_file_extensions()` is what `ios/Resonate/Info.plist` declares
+as `org.resonate.playlist` (held by a test).
 
 Lyrics prefer saved embedded/sidecar text, fetch LRCLIB only when online, and retain a richer saved
 sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;

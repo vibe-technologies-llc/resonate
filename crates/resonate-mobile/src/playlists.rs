@@ -358,7 +358,7 @@ fn write_error(source: rusqlite::Error) -> Error {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{env, path::Path, sync::Arc};
 
     use parking_lot::Mutex;
@@ -367,7 +367,7 @@ mod tests {
     use super::*;
     use crate::{PlaybackPreferences, catalog::Catalog, features::Services};
 
-    fn player() -> MobilePlayer {
+    pub(crate) fn player() -> MobilePlayer {
         MobilePlayer {
             player: Mutex::new(None),
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),

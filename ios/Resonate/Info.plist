@@ -126,6 +126,18 @@
 				<string>org.resonate.audio</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Playlist</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.resonate.playlist</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
@@ -164,6 +176,26 @@
 					<string>wav</string>
 					<string>wave</string>
 					<string>wv</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.resonate.playlist</string>
+			<key>UTTypeDescription</key>
+			<string>Playlist</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m3u</string>
+					<string>m3u8</string>
+					<string>pls</string>
+					<string>xspf</string>
 				</array>
 			</dict>
 		</dict>

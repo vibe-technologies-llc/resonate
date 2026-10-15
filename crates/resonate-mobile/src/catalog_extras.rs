@@ -4,10 +4,26 @@ use rusqlite::{OptionalExtension, params};
 use crate::{
     Error, Result, StoreOp,
     catalog::{Catalog, read},
-    features::{AnalysisReport, LibraryStatistics},
+    features::{AnalysisReport, LibraryStatistics, ListenedOnDay, ListenedTo, ListeningDetail},
 };
 
 type StoredLyrics = (Option<String>, Option<String>, String);
+
+const MOST_LISTENED_AT_MOST: u32 = 100;
+
+const DAYS_SHOWN_AT_MOST: u32 = 366;
+
+const SECONDS_A_DAY: i64 = 86_400;
+
+const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min(coalesce(nullif(d.album_artist, ''), d.artist)), count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.album_key != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY d.album_key ORDER BY listened DESC, count(*) DESC, min(d.album) COLLATE NOCASE LIMIT ?2";
+
+const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
+
+const LISTENING_BY_DAY: &str = "SELECT (l.began + ?2) / 86400 AS day, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l WHERE l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY day ORDER BY day DESC LIMIT ?3";
+
+fn read_error(source: rusqlite::Error) -> Error {
+    Error::store(StoreOp::Read, source)
+}
 
 impl Catalog {
     pub(crate) fn tagged(&self, id: u64, info: &MediaInfo) -> Result<()> {
@@ -109,6 +125,56 @@ impl Catalog {
         })
     }
 
+    pub(crate) fn listening_detail(
+        &self,
+        days: u32,
+        limit: u32,
+        utc_offset_seconds: i32,
+    ) -> Result<ListeningDetail> {
+        let connection = self.0.lock();
+        let limit = limit.clamp(1, MOST_LISTENED_AT_MOST);
+        let ranked = |sql: &str| -> Result<Vec<ListenedTo>> {
+            let mut query = connection.prepare(sql).map_err(read_error)?;
+            query
+                .query_map(params![days, limit], |row| {
+                    Ok(ListenedTo {
+                        key: row.get(0)?,
+                        name: row.get(1)?,
+                        by: row.get(2)?,
+                        plays: row.get::<_, i64>(3)?.max(0) as u64,
+                        listened_ms: row.get::<_, i64>(4)?.max(0) as u64,
+                    })
+                })
+                .map_err(read_error)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(read_error)
+        };
+        let albums = ranked(THE_ALBUMS_MOST_LISTENED_TO)?;
+        let artists = ranked(THE_ARTISTS_MOST_LISTENED_TO)?;
+        let mut query = connection.prepare(LISTENING_BY_DAY).map_err(read_error)?;
+        let mut by_day = query
+            .query_map(
+                params![days, i64::from(utc_offset_seconds), DAYS_SHOWN_AT_MOST],
+                |row| {
+                    let day = row.get::<_, i64>(0)?;
+                    Ok(ListenedOnDay {
+                        starts: (day * SECONDS_A_DAY - i64::from(utc_offset_seconds)).max(0) as u64,
+                        plays: row.get::<_, i64>(1)?.max(0) as u64,
+                        listened_ms: row.get::<_, i64>(2)?.max(0) as u64,
+                    })
+                },
+            )
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)?;
+        by_day.reverse();
+        Ok(ListeningDetail {
+            albums,
+            artists,
+            days: by_day,
+        })
+    }
+
     pub(crate) fn keep_study(&self, id: u64, report: &AnalysisReport) -> Result<()> {
         self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, report.verdict, report.peak, report.rms, report.true_peak, report.loudness_lufs, report.dynamic_range, report.clipped.min(i64::MAX as u64) as i64, report.bits_in_use]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
@@ -121,6 +187,84 @@ mod tests {
 
     use super::*;
     use crate::Track;
+
+    #[test]
+    fn listening_detail_ranks_albums_and_artists_and_buckets_days_in_the_listeners_offset() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = |uri: &str, title: &str, artist: &str, album: &str| {
+            catalog
+                .upsert(Track {
+                    uri: format!("content://test/{uri}.flac"),
+                    name: format!("{uri}.flac"),
+                    title: title.into(),
+                    artist: artist.into(),
+                    album: album.into(),
+                    duration_ms: 200_000,
+                    ..Track::default()
+                })
+                .expect("a song")
+                .id as i64
+        };
+        let joga = song("joga", "Joga", "Björk", "Homogenic");
+        let bachelorette = song("bachelorette", "Bachelorette", "BJORK", "Homogenic");
+        let sometimes = song("sometimes", "Sometimes", "Air", "Moon Safari");
+        let hidden = song("hidden", "Hidden", "Air", "Moon Safari");
+        catalog
+            .0
+            .lock()
+            .execute("UPDATE documents SET missing = 1 WHERE id = ?1", [hidden])
+            .expect("a missing song");
+        let now: i64 = catalog
+            .0
+            .lock()
+            .query_row("SELECT unixepoch()", [], |row| row.get(0))
+            .expect("the time");
+        let day = 86_400;
+        for (track, began, heard, counted) in [
+            (joga, now - 60, 200_000, 1),
+            (bachelorette, now - 120, 100_000, 1),
+            (sometimes, now - 3 * day, 50_000, 1),
+            (sometimes, now - 3 * day - 60, 40_000, 0),
+            (hidden, now - 30, 900_000, 1),
+            (sometimes, now - 40 * day, 50_000, 1),
+        ] {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, ?3, ?4)",
+                    params![track, began, heard, counted],
+                )
+                .expect("a listen");
+        }
+
+        let week = catalog.listening_detail(7, 10, 0).expect("a week");
+        let everything = catalog.listening_detail(0, 10, 0).expect("all time");
+
+        assert_eq!(week.albums.len(), 2);
+        assert_eq!(week.albums[0].name, "Homogenic");
+        assert_eq!(week.albums[0].by.to_lowercase(), "bjork");
+        assert_eq!(week.albums[0].plays, 2);
+        assert_eq!(week.albums[0].listened_ms, 300_000);
+        assert_eq!(week.albums[1].name, "Moon Safari");
+        assert_eq!(week.artists[0].key, "bjork");
+        assert_eq!(week.artists[0].plays, 2);
+        assert_eq!(week.artists[1].name, "Air");
+        assert_eq!(week.artists[1].plays, 1);
+        assert_eq!(week.days.len(), 2);
+        assert!(week.days[0].starts < week.days[1].starts);
+        assert_eq!(week.days[1].plays, 3);
+        assert_eq!(everything.albums[1].plays, 2);
+        assert_eq!(everything.days.len(), 3);
+        assert_eq!(
+            catalog
+                .listening_detail(0, 1, 0)
+                .expect("one ranked")
+                .albums
+                .len(),
+            1
+        );
+    }
 
     #[test]
     fn rescanning_an_untagged_delivery_keeps_its_selected_names() {

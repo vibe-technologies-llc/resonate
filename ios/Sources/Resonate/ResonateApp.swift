@@ -196,6 +196,11 @@ struct RootView: View {
                 ? "This iPhone leaves the devices it syncs with now and syncs with the devices of the code you scanned."
                 : "This iPhone syncs its playlists, favourites and history with the devices of the code you scanned.")
         }
+        .onChange(of: library.features.playlistToShow) { _, shown in
+            guard let shown else { return }
+            library.features.playlistToShow = nil
+            navigation.open(.playlist(shown))
+        }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()
                 .presentationDetents([.medium, .large])

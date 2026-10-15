@@ -212,7 +212,13 @@ struct StatisticsView: View {
                     LabeledContent("Artists", value: "\(statistics.artists)")
                     LabeledContent("Library length", value: Self.spoken(statistics.durationMs))
                 }
-                Section("Most listened") {
+                if let detail = features.listeningDetail, !detail.days.isEmpty {
+                    Section("Listening over time") {
+                        ListeningChart(days: detail.days, span: days)
+                            .padding(.vertical, 8)
+                    }
+                }
+                Section("Most listened songs") {
                     if statistics.topTracks.isEmpty {
                         ContentUnavailableView(
                             "No plays yet",
@@ -222,6 +228,26 @@ struct StatisticsView: View {
                     }
                     ForEach(statistics.topTracks, id: \.id) { track in
                         TrackRow(track: track) { library.play(statistics.topTracks, selected: track) }
+                    }
+                }
+                if let detail = features.listeningDetail {
+                    if !detail.albums.isEmpty {
+                        Section("Most listened albums") {
+                            ForEach(detail.albums, id: \.key) { album in
+                                NavigationLink(value: Destination.album(album.key)) {
+                                    ListenedToRow(item: album)
+                                }
+                            }
+                        }
+                    }
+                    if !detail.artists.isEmpty {
+                        Section("Most listened artists") {
+                            ForEach(detail.artists, id: \.key) { artist in
+                                NavigationLink(value: Destination.artist(artist.name)) {
+                                    ListenedToRow(item: artist)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -240,13 +266,100 @@ struct StatisticsView: View {
         .task(id: days) { features.loadStatistics(days: days) }
     }
 
-    private static func spoken(_ milliseconds: UInt64) -> String {
+    fileprivate static func spoken(_ milliseconds: UInt64) -> String {
         let minutes = Int(milliseconds / 60_000)
         let hours = minutes / 60
         let rest = minutes % 60
         if hours == 0 { return counted(rest, "minute") }
         if rest == 0 { return counted(hours, "hour") }
         return "\(counted(hours, "hour")) \(counted(rest, "minute"))"
+    }
+}
+
+struct ListenedToRow: View {
+    let item: ListenedTo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(item.name)
+                .lineLimit(1)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var detail: String {
+        let heard = "\(counted(Int(item.plays), "play")) · \(StatisticsView.spoken(item.listenedMs))"
+        return item.by.isEmpty ? heard : "\(item.by) · \(heard)"
+    }
+}
+
+struct ListeningBar: Identifiable, Equatable {
+    let starts: Date
+    let listenedMs: UInt64
+    let plays: UInt64
+
+    var id: Date { starts }
+
+    static func grouped(_ days: [ListenedOnDay], span: UInt32, calendar: Calendar = .current) -> [ListeningBar] {
+        let unit: Calendar.Component = switch span {
+        case 0: .month
+        case 365: .weekOfYear
+        default: .day
+        }
+        var bars: [Date: ListeningBar] = [:]
+        for day in days {
+            let moment = Date(timeIntervalSince1970: TimeInterval(day.starts))
+            let key = calendar.dateInterval(of: unit, for: moment)?.start ?? moment
+            let held = bars[key]
+            bars[key] = ListeningBar(
+                starts: key,
+                listenedMs: (held?.listenedMs ?? 0) + day.listenedMs,
+                plays: (held?.plays ?? 0) + day.plays
+            )
+        }
+        return bars.values.sorted { $0.starts < $1.starts }
+    }
+}
+
+struct ListeningChart: View {
+    let days: [ListenedOnDay]
+    let span: UInt32
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 96
+
+    var body: some View {
+        let bars = ListeningBar.grouped(days, span: span)
+        let tallest = max(bars.map(\.listenedMs).max() ?? 1, 1)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .bottom, spacing: bars.count > 40 ? 1 : 3) {
+                ForEach(bars) { bar in
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color.worn)
+                        .frame(height: max(height * CGFloat(bar.listenedMs) / CGFloat(tallest), 2))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: height, alignment: .bottom)
+            HStack {
+                Text(bars.first?.starts ?? .now, format: .dateTime.day().month(.abbreviated))
+                Spacer()
+                Text(bars.last?.starts ?? .now, format: .dateTime.day().month(.abbreviated))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Listening over time")
+        .accessibilityValue(summary(bars))
+    }
+
+    private func summary(_ bars: [ListeningBar]) -> String {
+        guard let busiest = bars.max(by: { $0.listenedMs < $1.listenedMs }) else { return "Nothing heard" }
+        let day = busiest.starts.formatted(.dateTime.day().month(.wide))
+        return "\(bars.count) periods. The most was \(StatisticsView.spoken(busiest.listenedMs)), from \(day)"
     }
 }
 
@@ -268,6 +381,10 @@ struct SuggestedMix: Identifiable {
         var played = base
         played.order = .plays
         played.descending = true
+        var recent = base
+        recent.order = .played
+        recent.descending = true
+        recent.unplayed = false
         var added = base
         added.order = .added
         added.descending = true
@@ -277,6 +394,7 @@ struct SuggestedMix: Identifiable {
             SuggestedMix(title: "Never heard", detail: "Songs you have not played yet", filter: unplayed, accents: MixAccents(from: .teal, to: .blue), mark: "sparkles"),
             SuggestedMix(title: "Your favourites", detail: "Every song you hearted", filter: favourites, accents: MixAccents(from: .mauve, to: .red), mark: "heart.fill"),
             SuggestedMix(title: "Most played", detail: "What you come back to", filter: played, accents: MixAccents(from: .red, to: .peach), mark: "chart.bar.fill"),
+            SuggestedMix(title: "Recently played", detail: "What you listened to last", filter: recent, accents: MixAccents(from: .amber, to: .peach), mark: "clock.arrow.circlepath"),
             SuggestedMix(title: "Recently added", detail: "The newest in your library", filter: added, accents: MixAccents(from: .green, to: .teal), mark: "clock.fill"),
             SuggestedMix(title: "High-resolution music", detail: "88.2 kHz and above", filter: high, accents: MixAccents(from: .green, to: .blue), mark: "waveform"),
         ]
