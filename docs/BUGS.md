@@ -164,10 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `RoomCorrectionState.restore` reads `apply_room_correction(on: false)`, which answers `nil`,
-  so after a relaunch with correction off the row shows a blank channels, rate and length; turning
-  it on with the response file gone flips straight back with no message (`turn` ignores a `nil`
-  answer)
 - [S] `EqualiserResponse.follow` returns early when the asked curve equals `drawn` without clearing
   a pending `asked`: a drag stepping B, C, B within the 30 ms throttle (common after tidying to 10
   Hz and 0.1 dB) lets the queued C land, leaving the trace a step off the curve

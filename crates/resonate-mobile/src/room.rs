@@ -179,6 +179,13 @@ impl MobilePlayer {
         Ok(RoomCorrection::of(&impulse))
     }
 
+    pub fn kept_room_correction(&self) -> Result<Option<RoomCorrection>> {
+        let Some(path) = self.room.kept()? else {
+            return Ok(None);
+        };
+        Ok(Some(RoomCorrection::of(&read(&self.sources, &path)?)))
+    }
+
     pub fn apply_room_correction(&self, on: bool) -> Result<Option<RoomCorrection>> {
         let impulse = match (on, self.room.kept()?) {
             (true, Some(path)) => Some(Arc::new(read(&self.sources, &path)?)),

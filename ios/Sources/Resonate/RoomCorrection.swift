@@ -29,8 +29,11 @@ final class RoomCorrectionState {
         let on = on
         Task {
             do {
-                kept = try await Work.aside { try native.applyRoomCorrection(on: on) }
-                if kept == nil, on { remember(on: false) }
+                kept = try await Work.aside { try native.keptRoomCorrection() }
+                if on {
+                    let applied = try await Work.aside { try native.applyRoomCorrection(on: true) }
+                    if applied == nil { gone() }
+                }
             } catch {
                 remember(on: false)
                 library.report(error)
@@ -42,6 +45,7 @@ final class RoomCorrectionState {
         library.request({ native in try native.applyRoomCorrection(on: wanted) }) { [weak self] applied in
             self?.kept = applied ?? self?.kept
             self?.remember(on: wanted && applied != nil)
+            if wanted, applied == nil { self?.gone() }
         }
     }
 
@@ -75,6 +79,11 @@ final class RoomCorrectionState {
             self?.settings.removeObject(forKey: Self.nameKey)
             self?.remember(on: false)
         }
+    }
+
+    private func gone() {
+        remember(on: false)
+        library.notice("The room response is no longer kept, so room correction stays off")
     }
 
     private func remember(on: Bool) {

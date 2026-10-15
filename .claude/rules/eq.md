@@ -123,9 +123,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `room-correction-candidate.*` in the player's folder, reads them back through `read_impulse`
   over the local provider, and only a response that reads replaces any `room-correction.*`; one
   that holds no response (`NoImpulse`) is dropped and the kept response stands; `apply_room_correction(on)` sends `SetConvolution` with
-  the kept response or none, answering its channels, rate and length; `forget_room_correction`
+  the kept response or none, answering its channels, rate and length; `kept_room_correction` answers the same description without sending anything, so a page shows the response with correction off; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
-  `playback` suite and applies the response at start (`RoomCorrectionState`, the equaliser page's
+  `playback` suite and applies the response at start, a missing file turning correction off with a notice (`RoomCorrectionState`, the equaliser page's
   *Room correction* section, `fileImporter` of audio).
 
 ## The binding
