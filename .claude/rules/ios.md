@@ -102,7 +102,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   written into the folder (`syncLanding`), with a fraction where every size is known, else
   *syncing* from *Sync now* (`syncAskedAt`) until the status settles (a notice says with how many
   devices), the server is refused or unreachable with nobody nearby (the standing as a notice), or
-  45 s pass; the poll runs every second meanwhile. `SyncProgress` is a glass card in the status
+  45 s pass; the poll runs every second meanwhile. Songs arriving refresh the library and the
+  playlists in a task of their own (`adoptArrivals`), so a long refresh never holds the poll, the
+  progress or `answerSyncAsked`. `SyncProgress` is a glass card in the status
   banner that opens the sync page. `transferring` (the background hold, the 2 s poll) counts only
   received songs that can land now (`landable`: a writable folder and no back-off), so a song with
   nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
@@ -184,7 +186,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   folder (`Folders.granted`, the most specific root), else played from an identical copy already in
   `local` (`localCopy`: same name or `name (n)`, equal contents), else copied into `local` and
   played; files arriving together (`onOpenURL` fires once each; 250 ms settles a batch) are indexed
-  in turn and queued in order, the first playing. A folder's access is measured, not
+  in turn and queued in order, the first playing as soon as it is indexed (the catalog refreshes
+  after, never before). A folder's access is measured, not
   assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
   as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves

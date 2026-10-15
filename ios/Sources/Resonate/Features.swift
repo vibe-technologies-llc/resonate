@@ -122,6 +122,7 @@ final class Features {
     @ObservationIgnored private var nearby: NearbyDevices?
     @ObservationIgnored private var network: NWPathMonitor?
     @ObservationIgnored private var power: (any NSObjectProtocol)?
+    @ObservationIgnored private var arriving: Task<Void, Never>?
     @ObservationIgnored private(set) var unmetered = false
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
@@ -565,17 +566,27 @@ final class Features {
                 if syncHandoffs != handoffs { syncHandoffs = handoffs }
                 if arrivals != status.arrivals {
                     arrivals = status.arrivals
-                    await library.refresh()
-                    playlists = try await Work.aside { try native.playlists() }
-                    if let open = openPlaylist, playlists.contains(where: { $0.id == open }) {
-                        await reloadPlaylist(native, open)
-                    }
+                    arriving?.cancel()
+                    arriving = Task { [weak self] in await self?.adoptArrivals(native) }
                 }
                 failing = false
             } catch {
                 if !failing { library.report(error) }
                 failing = true
             }
+        }
+    }
+
+    private func adoptArrivals(_ native: MobilePlayer) async {
+        await library.refresh()
+        guard !Task.isCancelled else { return }
+        do {
+            playlists = try await Work.aside { try native.playlists() }
+            if let open = openPlaylist, playlists.contains(where: { $0.id == open }) {
+                await reloadPlaylist(native, open)
+            }
+        } catch {
+            library.report(error)
         }
     }
 

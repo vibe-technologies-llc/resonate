@@ -39,8 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] Opening a file awaits `refresh()` (the whole catalog) before `play(tracks, at: 0)`, and
-  `pollSync` awaits it inline, freezing sync progress and `answerSyncAsked` meanwhile
 - [M] Listening: closing the sheet in *asking* and reopening it waits for the uncancellable
   recognise call, and extra taps chain further 12 s recordings; *Keep listening* ignores `.failed`,
   `.stopped` and `.unreached`, so offline it records every 20 s under "Listening for the next

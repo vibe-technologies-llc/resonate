@@ -900,9 +900,9 @@ final class Library {
         } catch {
             failure = error
         }
-        await refresh()
         if !tracks.isEmpty { play(tracks, at: 0) }
         if let failure { report(failure) }
+        await refresh()
     }
 
     func importPlaylistFile(_ url: URL) {
