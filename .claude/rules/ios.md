@@ -306,11 +306,17 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   (`PlaylistFile`).
 - **The queue is saved as a playlist** from the Queue tab's toolbar (`createPlaylist` with every
   queue row, repeats kept).
-- **Statistics lead with time and ranks** (`StatisticsView`): the period picker, totals, a bar chart of
-  listening over time (`ListeningChart`, drawn in SwiftUI; days for a week or month, weeks for a
-  year, months for all time, the day cut at the phone's offset), most listened songs, albums and
-  artists (ten each from `listening_detail`; albums open `Destination.album(key)`, artists
-  `Destination.artist(name)`).
+- **Statistics is a page of its own** (`StatisticsView.swift`), a row beside Favourites, All songs and
+  Suggestions on the Library tab as well as in Library tools. Under the period picker: tiles
+  (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
+  since the first counted play, songs heard of the library, the busiest day, the library's size, albums
+  and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
+  weeks for a year, months for all time, the day cut at the phone's offset) that a tap or a drag
+  selects a bar of to read its time and plays; most listened songs, albums and artists, five each
+  and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
+  `Destination.artist(name)`); and the library in shares (`library_breakdown`: formats, sample
+  rates, genres, decades, as bars of the library's songs, independent of the period). With no
+  counted play the listening parts give way to *No plays yet* and the library shares remain.
 - **Recently played** is a Suggestions mix and a *Last played* sort (`TrackOrder.played`).
 
 ## Tags

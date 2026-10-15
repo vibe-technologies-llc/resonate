@@ -107,6 +107,23 @@ pub struct ListeningDetail {
     pub albums: Vec<ListenedTo>,
     pub artists: Vec<ListenedTo>,
     pub days: Vec<ListenedOnDay>,
+    pub songs_heard: u64,
+    pub first_heard: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LibraryShare {
+    pub name: String,
+    pub songs: u64,
+    pub duration_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LibraryBreakdown {
+    pub formats: Vec<LibraryShare>,
+    pub rates: Vec<LibraryShare>,
+    pub genres: Vec<LibraryShare>,
+    pub decades: Vec<LibraryShare>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -229,6 +246,10 @@ impl MobilePlayer {
     ) -> Result<ListeningDetail> {
         self.catalog
             .listening_detail(days, limit, utc_offset_seconds)
+    }
+
+    pub fn library_breakdown(&self) -> Result<LibraryBreakdown> {
+        self.catalog.library_breakdown()
     }
 
     pub fn artwork(&self, id: u64) -> Result<Option<Vec<u8>>> {

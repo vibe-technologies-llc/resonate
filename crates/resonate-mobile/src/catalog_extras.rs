@@ -4,7 +4,10 @@ use rusqlite::{OptionalExtension, params};
 use crate::{
     Error, Result, StoreOp,
     catalog::{Catalog, read},
-    features::{AnalysisReport, LibraryStatistics, ListenedOnDay, ListenedTo, ListeningDetail},
+    features::{
+        AnalysisReport, LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay,
+        ListenedTo, ListeningDetail,
+    },
 };
 
 type StoredLyrics = (Option<String>, Option<String>, String);
@@ -20,6 +23,27 @@ const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min
 const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
 
 const LISTENING_BY_DAY: &str = "SELECT (l.began + ?2) / 86400 AS day, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l WHERE l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY day ORDER BY day DESC LIMIT ?3";
+
+const SHARES_SHOWN_AT_MOST: u32 = 8;
+
+const THE_FORMATS_HELD: &str = "SELECT upper(codec), count(*), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0 AND codec != '' GROUP BY upper(codec) ORDER BY count(*) DESC, upper(codec) LIMIT ?1";
+
+const THE_RATES_HELD: &str = "SELECT rate, count(*), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0 AND rate > 0 GROUP BY rate ORDER BY count(*) DESC, rate LIMIT ?1";
+
+const THE_GENRES_HELD: &str = "SELECT min(genre), count(*), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0 AND genre != '' GROUP BY folded(genre) ORDER BY count(*) DESC, folded(genre) LIMIT ?1";
+
+const THE_DECADES_HELD: &str = "SELECT (cast(substr(date, 1, 4) AS INTEGER) / 10) * 10, count(*), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0 AND substr(date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]' AND cast(substr(date, 1, 4) AS INTEGER) >= 1000 GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT ?1";
+
+const THE_SONGS_HEARD: &str = "SELECT count(DISTINCT l.track), min(l.began) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)";
+
+fn kilohertz(hertz: i64) -> String {
+    let kilohertz = hertz as f64 / 1000.0;
+    if kilohertz.fract() == 0.0 {
+        format!("{kilohertz:.0} kHz")
+    } else {
+        format!("{kilohertz:.1} kHz")
+    }
+}
 
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
@@ -108,7 +132,7 @@ impl Catalog {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let (plays, listened_ms) = connection.query_row("SELECT coalesce(sum(counted), 0), coalesce(sum(heard_ms), 0) FROM listens WHERE ?1 = 0 OR began >= unixepoch() - ?1 * 86400", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
-        let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 20").map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
             .query_map([days], read)
             .map_err(|source| Error::store(StoreOp::Read, source))?
@@ -168,10 +192,47 @@ impl Catalog {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)?;
         by_day.reverse();
+        let (songs_heard, first_heard) = connection
+            .query_row(THE_SONGS_HEARD, [days], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?.max(0) as u64,
+                    row.get::<_, Option<i64>>(1)?
+                        .map(|began| began.max(0) as u64),
+                ))
+            })
+            .map_err(read_error)?;
         Ok(ListeningDetail {
             albums,
             artists,
             days: by_day,
+            songs_heard,
+            first_heard,
+        })
+    }
+
+    pub(crate) fn library_breakdown(&self) -> Result<LibraryBreakdown> {
+        let connection = self.0.lock();
+        let shares = |sql: &str, named: fn(&rusqlite::Row<'_>) -> rusqlite::Result<String>| {
+            let mut query = connection.prepare(sql).map_err(read_error)?;
+            query
+                .query_map([SHARES_SHOWN_AT_MOST], |row| {
+                    Ok(LibraryShare {
+                        name: named(row)?,
+                        songs: row.get::<_, i64>(1)?.max(0) as u64,
+                        duration_ms: row.get::<_, i64>(2)?.max(0) as u64,
+                    })
+                })
+                .map_err(read_error)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(read_error)
+        };
+        Ok(LibraryBreakdown {
+            formats: shares(THE_FORMATS_HELD, |row| row.get(0))?,
+            rates: shares(THE_RATES_HELD, |row| Ok(kilohertz(row.get(0)?)))?,
+            genres: shares(THE_GENRES_HELD, |row| row.get(0))?,
+            decades: shares(THE_DECADES_HELD, |row| {
+                Ok(format!("{}s", row.get::<_, i64>(0)?))
+            })?,
         })
     }
 
@@ -252,6 +313,9 @@ mod tests {
         assert_eq!(week.artists[1].name, "Air");
         assert_eq!(week.artists[1].plays, 1);
         assert_eq!(week.days.len(), 2);
+        assert_eq!(week.songs_heard, 3);
+        assert_eq!(everything.songs_heard, 3);
+        assert!(everything.first_heard < week.first_heard);
         assert!(week.days[0].starts < week.days[1].starts);
         assert_eq!(week.days[1].plays, 3);
         assert_eq!(everything.albums[1].plays, 2);
@@ -264,6 +328,72 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn the_breakdown_counts_formats_rates_genres_and_decades_of_the_songs_still_held() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = |uri: &str, codec: &str, rate: u32| {
+            catalog
+                .upsert(Track {
+                    uri: format!("content://test/{uri}.flac"),
+                    name: format!("{uri}.flac"),
+                    title: uri.into(),
+                    codec: codec.into(),
+                    rate,
+                    duration_ms: 100_000,
+                    ..Track::default()
+                })
+                .expect("a song")
+                .id as i64
+        };
+        let tagged = |id: i64, genre: &str, date: &str| {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET genre = ?2, date = ?3 WHERE id = ?1",
+                    params![id, genre, date],
+                )
+                .expect("tags");
+            id
+        };
+        tagged(song("a", "flac", 44_100), "Trip Hop", "1994-05-01");
+        tagged(song("b", "FLAC", 96_000), "trip hop", "1998");
+        tagged(song("c", "MP3", 44_100), "", "2003");
+        tagged(song("d", "", 0), "Jazz", "unknown");
+        let gone = tagged(song("e", "FLAC", 192_000), "Jazz", "1959");
+        catalog
+            .0
+            .lock()
+            .execute("UPDATE documents SET missing = 1 WHERE id = ?1", [gone])
+            .expect("a missing song");
+
+        let held = catalog.library_breakdown().expect("the breakdown");
+        let named = |shares: &[LibraryShare]| {
+            shares
+                .iter()
+                .map(|share| (share.name.clone(), share.songs))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            named(&held.formats),
+            vec![("FLAC".into(), 2), ("MP3".into(), 1)]
+        );
+        assert_eq!(
+            named(&held.rates),
+            vec![("44.1 kHz".into(), 2), ("96 kHz".into(), 1)]
+        );
+        assert_eq!(
+            named(&held.genres),
+            vec![("Trip Hop".into(), 2), ("Jazz".into(), 1)]
+        );
+        assert_eq!(
+            named(&held.decades),
+            vec![("1990s".into(), 2), ("2000s".into(), 1)]
+        );
+        assert_eq!(held.formats[0].duration_ms, 200_000);
     }
 
     #[test]

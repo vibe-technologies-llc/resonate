@@ -263,7 +263,11 @@ the albums (by the catalog's `album_key`) and artists (by folded name) heard mos
 ranked by heard time then plays, at most `MOST_LISTENED_AT_MOST` (100), and the listening per day
 (counted listens, a day cut at the caller's UTC offset, the latest `DAYS_SHOWN_AT_MOST` days oldest
 first, `ListenedOnDay.starts` the unix second that day began). Hidden songs and uncounted listens
-are left out, as in `statistics(days)`.
+are left out, as in `statistics(days)`; `songs_heard` counts the distinct songs and `first_heard`
+is the earliest counted listen in the window. `library_breakdown()` is what the library holds
+regardless of listening: the eight most common formats (codec), sample rates (`44.1 kHz`), genres
+(folded) and decades (from `date`'s first four digits), each with songs and length, hidden songs
+left out. `statistics(days)` ranks the top 25 songs.
 
 **A playlist file is read and written over the document catalog** (`playlist_files.rs`).
 `import_playlist_file(bytes, file_name)` decodes the text through core's `text::decoded` (UTF-16

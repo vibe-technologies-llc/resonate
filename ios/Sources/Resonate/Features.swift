@@ -61,6 +61,7 @@ final class Features {
     var online: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
+    var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
     var lyrics: LyricSheet?
     var lyricsLoading = false
@@ -756,7 +757,7 @@ final class Features {
         }
     }
 
-    static let rankedShown: UInt32 = 10
+    static let rankedShown: UInt32 = 25
 
     func loadStatistics(days: UInt32 = 0) {
         statisticsRequest += 1
@@ -769,9 +770,11 @@ final class Features {
             let detail = try await Work.aside {
                 try native.listeningDetail(days: days, limit: shown, utcOffsetSeconds: offset)
             }
+            let breakdown = try await Work.aside { try native.libraryBreakdown() }
             guard request == self?.statisticsRequest else { return }
             self?.statistics = found
             self?.listeningDetail = detail
+            self?.libraryBreakdown = breakdown
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })
