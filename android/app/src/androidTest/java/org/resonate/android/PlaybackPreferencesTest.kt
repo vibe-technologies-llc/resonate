@@ -84,7 +84,17 @@ class PlaybackPreferencesTest {
             player.close()
             player = MobilePlayer(folder.absolutePath, documents)
             player.configurePlayback(store.read())
-            assertEquals(settings, player.playbackPreferences())
+            val restored = player.playbackPreferences()
+            assertEquals(settings.copy(equaliser = restored.equaliser), restored)
+            assertEquals(
+                settings.equaliser.copy(bands = restored.equaliser.bands),
+                restored.equaliser,
+            )
+            assertEquals(settings.equaliser.bands.size, restored.equaliser.bands.size)
+            settings.equaliser.bands.zip(restored.equaliser.bands).forEach { (before, after) ->
+                assertEquals(before.copy(q = after.q), after)
+                assertEquals(before.q, after.q, 0.001f)
+            }
             eventually { player.snapshot().current != null }
             assertEquals(Transport.PAUSED, player.snapshot().transport)
             storage

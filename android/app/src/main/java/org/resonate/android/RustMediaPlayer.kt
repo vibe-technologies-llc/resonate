@@ -83,10 +83,14 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         scope.launch {
-            library.snapshot.collect {
-                snapshot = it
+            library.snapshot.collect { value ->
+                snapshot = value
+                ResonateWidgets.publish(
+                    context,
+                    value,
+                    artwork.takeIf { artworkId == value?.current?.id },
+                )
                 invalidateState()
-                ResonateWidgets.updateAll(context, library)
             }
         }
         scope.launch {
@@ -109,9 +113,9 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                     if (track != null) {
                         artwork = library.features.mediaArtwork(track)
                         artworkId = track.id
+                        ResonateWidgets.publish(context, snapshot, artwork)
                         invalidateState()
                     }
-                    ResonateWidgets.updateAll(context, library)
                 }
         }
     }
@@ -244,6 +248,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
     override fun handleRelease(): ListenableFuture<*> {
         scope.cancel()
+        ResonateWidgets.stopped(context)
         context.unregisterReceiver(noisy)
         audio.abandonAudioFocusRequest(focus)
         library.release()

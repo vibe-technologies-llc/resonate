@@ -84,11 +84,10 @@ select the architecture's baseline CPU so a build runs on other machines.
 
 ## Android and Android Studio
 
-The Android app uses Kotlin and Jetpack Compose with Resonate's Rust playback engine. Android
+The Android app uses Flutter with Resonate's Rust playback engine and Android's media session. Android
 16 or newer (API 36+) is required. The app supports granted music folders, song/album/artist
 browsing, search, favourites, queue, background media controls, saved resumption, equalisation,
-ReplayGain, DSP controls and sleep timers. Colors follow the system accent and light/dark
-appearance. It plays files in place; no all-files permission is needed.
+ReplayGain, DSP controls and sleep timers. The interface uses a violet accent, system light/dark appearance, glass navigation and artwork-led player colors. It plays files in place; no all-files permission is needed.
 
 **Library** pins Favourites above your playlists and albums, with search and album/artist filters.
 Collection pages have artwork, Play/Shuffle controls and track lists; playlist pages offer song
@@ -124,11 +123,22 @@ Install both Rust targets:
 rustup target add aarch64-linux-android x86_64-linux-android
 ```
 
-Open this repository's **`android/` directory** in Android Studio and allow Gradle to sync.
-Create or select a device in **Tools → Device Manager**, select the **app** configuration and
-click **Run**. Gradle builds the Rust libraries and generates the Kotlin bindings automatically.
-The first build takes longer; subsequent runs rebuild changed sources. Rust and Python must be
-on Android Studio's process PATH. The existing `Pixel_10_Pro` AVD works on this checkout's host.
+Install Flutter 3.47.7 and the Android Studio Flutter plugin. Set `FLUTTER_ROOT` to the Flutter SDK
+or add `flutter.sdk=/absolute/path/to/flutter` to `android/local.properties`, keeping its existing
+`sdk.dir` entry. Run `flutter pub get` in `android/flutter/`.
+
+In Android Studio, use **File → Open** and select this repository's **`android/` directory**.
+Allow Gradle to sync, then choose **Resonate Android** from the run configuration dropdown beside the Run button.
+The shared configuration lives in `android/.run/`; the generated **app** Android configuration
+also works. Create or select a device in **Tools → Device Manager** and click **Run**.
+Gradle builds Flutter, the Rust libraries and the Kotlin bindings automatically. The first build
+takes longer; subsequent runs rebuild changed sources. Rust and Python must be on Android
+Studio's process PATH. The existing `Pixel_10_Pro` AVD works on this checkout's host.
+
+Opening `android/flutter/` and running `main.dart` selects a standalone Flutter launch. That
+package contains the Dart UI; its Android host is the parent Gradle project, so that launch
+reports a missing `android/flutter/android/AndroidManifest.xml`. Use the Android configuration
+above rather than generating another host with `flutter create .`.
 
 To add test music, drag a copied audio file onto the emulator, then move it into a Music subfolder
 with the Files app. In Resonate, select **Choose music folder** and grant that folder. Playback
@@ -139,6 +149,7 @@ Output currently uses Android's shared 48 kHz stereo path; physical DAC fidelity
 From the repository root, without Android Studio:
 
 ```sh
+(cd android/flutter && flutter pub get && flutter analyze && flutter test)
 android/gradlew -p android :app:assembleDebug :app:lintDebug
 android/gradlew -p android :app:installDebug
 adb shell am start -n org.resonate.android/.MainActivity

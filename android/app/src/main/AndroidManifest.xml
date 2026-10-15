@@ -10,15 +10,32 @@
         android:name=".ResonateApplication"
         android:allowBackup="false"
         android:label="Resonate"
-        android:icon="@android:drawable/ic_media_play"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Resonate"
         android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <meta-data android:name="flutterEmbedding" android:value="2" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/Theme.Resonate" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver android:name=".ResonatePlayerWidgetProvider" android:exported="false" android:label="@string/widget_compact_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/resonate_player_widget_info" />
+        </receiver>
+        <receiver android:name=".ResonateArtworkWidgetProvider" android:exported="false" android:label="@string/widget_artwork_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/resonate_artwork_widget_info" />
+        </receiver>
         <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service
             android:name=".PlaybackService"
@@ -29,33 +46,5 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-        <receiver
-            android:name=".ResonatePlayerWidgetProvider"
-            android:label="@string/widget_player_name"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_PLAY_PAUSE" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_PREVIOUS" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_NEXT" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/resonate_player_widget_info" />
-        </receiver>
-        <receiver
-            android:name=".ResonateTurntableWidgetProvider"
-            android:label="@string/widget_turntable_name"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_PLAY_PAUSE" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_PREVIOUS" />
-                <action android:name="org.resonate.android.ACTION_WIDGET_NEXT" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/resonate_turntable_widget_info" />
-        </receiver>
     </application>
 </manifest>

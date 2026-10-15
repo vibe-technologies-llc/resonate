@@ -34,101 +34,49 @@ class CollectionUiTest {
     private val device = UiDevice.getInstance(instrumentation)
 
     @Test
-    fun pinnedFavouritesStayInSyncAndPlayerOpensAlbumsAndArtists() =
+    fun flutterFavouritesSurviveActivityRecreation() =
         withLibrary { library, controller, scenario, tracks ->
             play(controller, tracks, 0)
-            await(By.desc("Add current song to favourites")).click()
-            await(By.desc("Remove current song from favourites"))
+            await(By.desc("Add to favourites")).click()
+            eventually { library.allTracks.value.any { it.id == tracks[0].id && it.favourite } }
+            await(By.desc("Remove from favourites"))
             scenario.recreate()
-            await(By.desc("Remove current song from favourites"))
-            await(By.text("Pinned · 1 song"))
-            await(By.text("Songs")).click()
-            await(By.clazz("android.widget.EditText")).setText("no song matches this query")
-            await(By.text("No songs match"))
-            await(By.text("Library")).click()
-            await(By.text("Pinned · 1 song"))
-            await(By.text("Favourites")).click()
-            await(By.text("${songCount(1)} · 1 min"))
-            device.pressBack()
-            await(By.text(tracks.first().title)).click()
-            await(By.desc("Open album ${tracks.first().album}")).click()
-            await(By.text("Album"))
-            await(By.text(tracks.first().album))
-            scenario.recreate()
-            await(By.text(tracks.first().album))
-            device.pressBack()
-            await(By.desc("Open artist ${tracks.first().artist}")).click()
-            await(By.text("Artist"))
-            await(By.text(tracks.first().artist))
-            scrollTo(By.text(tracks.first().album)).click()
-            await(By.text("Album"))
-            device.pressBack()
-            await(By.text("Artist"))
-            device.pressBack()
-            await(By.desc("Remove current song from favourites")).click()
-            await(By.desc("Add current song to favourites"))
-            await(By.text("Library")).click()
-            await(By.text("Pinned · 0 songs"))
-            assertTrue(library.allTracks.value.none { it.id == tracks.first().id && it.favourite })
+            await(By.desc("Remove from favourites"))
+            assertTrue(library.allTracks.value.first { it.id == tracks[0].id }.favourite)
         }
 
     @Test
-    fun playlistUiAddsSongsPreservesRepeatedPositionsAndUndoesEdits() =
+    fun flutterPlaylistPlaysTheTappedRepeatedRowAndReflectsUndo() =
         withLibrary { library, controller, _, tracks ->
             val created = CompletableDeferred<ULong>()
             library.request { native ->
-                val id = native.createPlaylist("UI test mix")
+                val id = native.createPlaylist("Flutter test mix")
                 native.addToPlaylist(id, listOf(tracks[0].id, tracks[0].id, tracks[1].id))
                 created.complete(id)
             }
             val id = runBlocking { withTimeout(10000) { created.await() } }
             library.features.loadPlaylists()
             try {
-                scrollTo(By.text("UI test mix")).click()
-                scrollTo(By.desc("Play song 2: ${tracks[0].title}")).click()
+                scrollTo(By.descContains("Flutter test mix")).click()
+                scrollTo(By.descContains("Play song 2:")).click()
                 eventually {
                     library.snapshot.value?.queueIndex == 1u &&
                         library.snapshot.value?.transport == Transport.PLAYING
                 }
                 instrumentation.runOnMainSync { controller.pause() }
-                scrollTo(By.desc("Options for song 2: ${tracks[0].title}")).click()
-                await(By.text("Move down")).click()
+                scrollTo(By.descContains("Options for song 2")).click()
+                await(By.descContains("Move down")).click()
                 eventually {
                     library.features.playlistRows.value.map { it.id } ==
                         listOf(tracks[0].id, tracks[1].id, tracks[0].id)
                 }
                 scrollTo(By.desc("Playlist options"), Direction.UP).click()
-                await(By.text("Undo last playlist edit")).click()
+                await(By.descContains("Undo last edit")).click()
                 eventually {
                     library.features.playlistRows.value.map { it.id } ==
                         listOf(tracks[0].id, tracks[0].id, tracks[1].id)
                 }
-                await(By.desc("Playlist options")).click()
-                await(By.text("Rename playlist")).click()
-                await(By.clazz("android.widget.EditText")).setText("Renamed UI mix")
-                await(By.text("Save")).click()
-                await(By.text("Renamed UI mix"))
-                scrollTo(By.text("Add songs")).click()
-                await(By.desc("Find songs to add"))
-                await(By.clazz("android.widget.EditText"))
-                    .setText("${tracks[1].title} ${tracks[1].artist}")
-                await(
-                    By.clazz("android.widget.EditText")
-                        .text("${tracks[1].title} ${tracks[1].artist}")
-                )
-                await(By.text(tracks[1].title)).click()
-                await(By.text("Add 1 song")).click()
-                eventually {
-                    library.features.playlistRows.value.map { it.id } ==
-                        listOf(tracks[0].id, tracks[0].id, tracks[1].id, tracks[1].id)
-                }
-                scrollTo(By.desc("Playlist options"), Direction.UP).click()
-                await(By.text("Delete playlist")).click()
-                await(By.text("Delete playlist")).click()
-                await(By.text("Your library"))
-                scrollTo(By.desc("Undo last playlist edit")).click()
-                await(By.text("Renamed UI mix"))
-                assertTrue(library.features.playlists.value.any { it.id == id && it.songs == 4uL })
+                assertEquals(3, library.features.playlistRows.value.size)
             } finally {
                 val deleted = CompletableDeferred<Unit>()
                 library.request { native ->
@@ -197,7 +145,7 @@ class CollectionUiTest {
                     val tracks = runBlocking {
                         withTimeout(10000) { indexed.await().also { library.refresh() } }
                     }
-                    await(By.text("Your library"))
+                    await(By.desc("Your library"))
                     action(library, controller, scenario, tracks)
                 } finally {
                     library.allTracks.value

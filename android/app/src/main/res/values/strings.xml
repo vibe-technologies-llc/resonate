@@ -1,6 +1,12 @@
 <resources>
-    <string name="widget_player_name">Resonate Player</string>
-    <string name="widget_player_description">Compact now playing playback controls</string>
-    <string name="widget_turntable_name">Resonate Turntable</string>
-    <string name="widget_turntable_description">Hero album cover and playback controls</string>
+    <string name="widget_compact_name">Resonate · Compact</string>
+    <string name="widget_artwork_name">Resonate · Album</string>
+    <string name="widget_description">Album artwork and playback controls in a glass-inspired player.</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_title">Resonate</string>
+    <string name="widget_artist">Your music, everywhere</string>
+    <string name="widget_album">NOW PLAYING</string>
 </resources>

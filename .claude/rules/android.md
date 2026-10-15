@@ -7,19 +7,51 @@ paths:
 
 # Android
 
-The Android front end is Kotlin and Jetpack Compose, in the Gradle project under `android/`.
-Android 16 (API 36) is the minimum. ARM64 phones and x86_64 emulators share the same debug APK;
-SDK 36, build-tools 36 and NDK 28.2.13676358 are pinned. Android Studio opens that directory and
-runs `app`; Gradle builds the Rust library and Kotlin bindings as generated sources before
-compilation. Python 3, Cargo and both Rust Android targets must be installed on the build host.
-`resonate-bindgen` runs on the host and reads metadata from the Android library without loading
-it; building the Android app needs no host PipeWire installation.
+The Android front end is Flutter, with Dart under `android/flutter/` and its native host in the
+Gradle project under `android/`. Android Studio opens `android/` and runs the shared
+`Resonate Android` configuration in `.run/` (or the generated `app` Android configuration).
+The shared configuration targets `Resonate.app` and runs Gradle before deploying the default
+Activity, preserving app storage. The nested Dart package is built through that host, not a
+standalone Flutter Android runner; opening it and running `main.dart` searches for an absent
+second Android project under `android/flutter/android/`. Flutter 3.47.7 is
+pinned in CI. `flutter.sdk` in `android/local.properties` or `FLUTTER_ROOT` locates the SDK;
+settings pass the resolved path to Flutter's loader so an environment-only build needs no local
+properties file. Gradle builds Flutter assets, Rust and generated Kotlin bindings. Android 16
+(API 36) is the minimum. ARM64 phones and x86_64 emulators share the debug APK; SDK 36,
+build-tools 36 and NDK 28.2.13676358 are pinned. Python 3, Cargo and both Rust Android targets
+are build prerequisites. Host binding generation reads ELF metadata and needs no PipeWire.
+
+The Flutter Gradle plugin uses the legacy AGP DSL, built-in Kotlin and KGP 2.2.20 on the plugin
+classpath. Flutter's automatic ABI filtering is disabled so the host's ARM64/x86_64 filters stay
+authoritative; an ARM32 Flutter engine without its Rust library must not admit an ARM32 install.
+`MainActivity` is a `FlutterActivity`. `FlutterBridge` exposes explicit method-channel actions
+and state-flow patches; `FlutterWire` maps records to codec values without reflection. Unsigned
+64-bit identities, positions and revisions travel as decimal text. The bridge qualifies
+`kotlin.Exception`, since UniFFI exports an `Exception` that must not hide ordinary lookup or
+argument failures. Dart owns the screens; Kotlin retains SAF, encrypted accounts, workers,
+Media3 and services. Compact and album home-screen widgets use RemoteViews with rounded,
+artwork-tinted surfaces and system light/dark colors. Explicit, immutable PendingIntents send
+transport actions through a short-lived Media3 controller, preserving audio focus and the
+service lifecycle. Metadata and the bounded session thumbnail are kept in app preferences for
+launcher refresh after process death; that fallback is paused until a live session publishes.
+Widget updates deduplicate metadata, artwork and playing state instead of sending polling ticks
+to the launcher. No widget starts a second engine or decodes the original music file.
+Compose dependencies and the old screens are removed together
+with their Activity entry point and instrumentation selectors, so a build cannot mix the two UIs.
 
 Each APK variant owns its native build task. Release uses Cargo's release profile, including
 optimization and thin LTO, in a separate generated directory; it never packages
 the debug variant's native libraries. Native symbols remain until binding generation finishes;
 Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
-key or password stored in the repository.
+key or password stored in the repository. Flutter enables R8 for release and includes
+`app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
+including names, fields, constructors and native entry points used through JNI and reflection.
+The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning
+suppressions; no missing Android or native-boundary type is suppressed.
+Keeping only Java references is insufficient: renaming `Pointer.peer` makes JNA's `initIDs`
+fail at startup with `UnsatisfiedLinkError`, before the Rust player opens. Debug startup cannot
+verify these rules; release validation checks the R8 configuration and DEX field names, then
+cold-starts the signed release APK through native player initialization.
 
 The native boundary is `resonate-mobile`, shared with iOS (`mobile.md`). On Android the owned
 descriptor arrives detached from Kotlin's `ParcelFileDescriptor`. Kotlin bindings are generated
@@ -30,9 +62,14 @@ Handwritten Kotlin, Android tests and Gradle Kotlin scripts use ktfmt's Kotlin l
 four-space indentation, wrapped calls, trailing commas and one statement per line. Generated
 UniFFI code stays outside formatting passes.
 
+The launcher uses the same five-bar blue-to-mint mark as iOS and `packaging/resonate.svg`.
+Android vector foreground and monochrome layers share its paths and use adaptive-icon safe
+padding over the same dark background. The launcher supplies its own mask, including Samsung's
+shape; themed icons use the monochrome layer rather than a tinted full-color tile.
+
 ## Audio and lifecycle
 
-`MediaLibraryService` owns a Media3 adapter over the Rust player. Compose reads published state
+`MediaLibraryService` owns a Media3 adapter over the Rust player. Flutter reads published state
 and sends controller actions; it performs no file, decode, catalog or network work. The adapter
 publishes metadata and transport state to notifications, media keys and lock-screen controls.
 The session activity opens or reuses the main Activity when its notification is tapped. Current
@@ -128,9 +165,9 @@ splits history from up next by row, a repeated song included
 
 ## Appearance and playback tools
 
-Compose uses Material 3 dynamic color schemes from the Android system, selected with the system's
-light/dark appearance. Surfaces, controls and artwork fallbacks use semantic theme roles; the
-platform theme follows day/night and its accent comes from `system_accent1_500`. Android 16 is
+Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
+rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
+theme follows day/night. Android 16 is
 the minimum app version, so there is no older-platform palette or notification-permission branch.
 The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 36 governs
 installation, and native code currently needs no newer platform symbols.
@@ -154,9 +191,6 @@ the active browser query. The native catalog remains the persisted source of tru
 presents a non-blocking floating banner with an "Add to playlist" button that opens the playlist
 picker without obstructing navigation or accessibility.
 
-Home screen widgets provide a compact 4x1/4x2 player widget and a large turntable hero widget
-with album art, track details and transport controls via `ResonatePlayerWidgetProvider` and
-`ResonateTurntableWidgetProvider`, refreshed automatically on playback and artwork updates.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
 keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
@@ -165,18 +199,22 @@ picker through the existing batched add seam; rename, revision-checked moves/rem
 undo retain their existing native behavior. Row playback passes the explicit position, so repeated
 songs select the row that was tapped.
 
-Motion uses Compose's duration-scaled animation primitives, following Android's animation scale.
-Page reveals animate one active destination rather than keeping two service-facing screens alive.
-Artwork and player labels crossfade, hearts use a spring response, and keyed collection rows
-animate placement and removal. Decorative crossfade icons expose one current label on their
-parent control, so accessibility never announces both transport or favourite states.
-
-Player, lyrics, analysis, visualizer and collection backdrops derive two tones from a bounded 16 by
-16 sample of cached cover art on a worker. Dark or unsaturated covers fall back to the system palette.
-Tone changes and fluid drifting mesh animations blend through cached radial brushes; drawing and
-artwork-scale animations read their state in draw layers rather than recomposing the library on every
-frame. The expanded player keeps a square, shadowed cover, compact album/artist links and a larger
-central transport control; pause settles the cover to a smaller scale.
+Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions and
+stops decorative drift. Artwork is loaded through the existing native cache as JPEG bytes,
+keyed in Dart by song, artwork revision and generation. The decoded Flutter cache is bounded at
+64 MiB and encoded/in-flight requests at 48 entries. The expanded player samples two tones
+from a 16 by 16 cover decode, falls back for neutral/dark/transparent art and draws radial washes
+inside a repaint boundary. The shell and expanded player place a 128-pixel cover decode behind
+glass surfaces; the expanded player uses a stronger wash. Blur sits inside a repaint boundary
+while transforms drift, and decorative movement stops when paused, offstage or reduced
+motion is requested. Paused artwork settles smaller. Artwork, lyrics, queue and the sleep timer
+share one glass pill; narrow widths and large text use icon-only buttons with named tooltips.
+Lyrics fade at the viewport edges, enlarge the active line and soften distant lines. Native
+UTF-16 wipe ranges and letter blend fractions color word timing without a Dart clock. Manual
+scroll pauses following for five seconds and offers an immediate Follow lyrics button. Restorable
+routes preserve child pages and settings search on Activity recreation. Collections are grouped
+and ordered through native `albums`, `artists`, `album_tracks` and `artist_tracks` queries;
+open collection rows resolve current metadata by catalog id so favourite changes arrive at once.
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
@@ -198,7 +236,7 @@ Sliders keep an in-progress value locally and commit on release, avoiding a file
 rebuild for each motion event.
 
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
-and the existing fade into a pause. Snapshot polling carries the remaining time; Compose keeps no
+and the existing fade into a pause. Snapshot polling carries the remaining time; Flutter keeps no
 timer, so the countdown and pause continue with the Activity in the background. A timer is not
 restored into a later engine session.
 
@@ -221,7 +259,7 @@ position edits, and have bounded in-session undo; they never invent Linux paths.
 
 Lyrics prefer saved embedded/sidecar text, fetch LRCLIB only when online, and retain a richer saved
 sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;
-Compose reads its `line` and `active` today) drives line/word highlights, scrolling, scale, opacity
+Flutter reads its `read_at`, `active` and `wipes`) drives line/word highlights, scrolling, scale, opacity
 and blur; tapping a timed line seeks the player.
 Analysis uses the shared whole-track pass for waveform, spectrum, lossless assessment, LUFS, DR,
 true peak, clipping and bit use. Eight full results are cached in memory, invalidated on rescan;
@@ -453,7 +491,8 @@ file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or S
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
 `sync_forget_device` takes; `HandedOff.id` likewise, and `sync_continue_from` and
 `sync_fetch_missing` take the id (a name is still read where no id matches). The sync screen's
-pairing code is blurred under *Tap to show* until tapped. `song_uris` lists every document's URI, hidden ones included.
+pairing code stays hidden until *Show pairing code* is pressed; its text is absent from the
+accessibility tree while hidden. `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a
@@ -469,6 +508,9 @@ controller when that device was playing.
 Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 
 ## Checks
+
+From `android/flutter/`, run `flutter pub get`, `flutter analyze` and `flutter test`. The Flutter
+tests cover repeated rows, identities, favourite updates, feedback, restoration and large text.
 
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
 both native ABIs and checks Kotlin and the manifest.

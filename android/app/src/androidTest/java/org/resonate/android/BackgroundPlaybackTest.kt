@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.provider.MediaStore
@@ -94,15 +95,23 @@ class BackgroundPlaybackTest {
                         }
                         present
                     }
-                    assertTrue(device.wait(Until.hasObject(By.desc("Song progress")), 10000))
-                    assertTrue(device.hasObject(By.desc("Previous song")))
-                    assertTrue(device.hasObject(By.desc("Next song")))
+                    assertTrue(
+                        device.wait(Until.hasObject(By.descContains("Song progress")), 10000)
+                    )
+                    assertTrue(device.hasObject(By.desc("Previous")))
+                    assertTrue(device.hasObject(By.desc("Next")))
                     device.pressHome()
                     val position = library.snapshot.value?.positionMs ?: 0uL
                     eventually { (library.snapshot.value?.positionMs ?: 0uL) > position + 500uL }
-                    instrumentation.runOnMainSync { controller.pause() }
+                    context.sendBroadcast(
+                        Intent(context, ResonatePlayerWidgetProvider::class.java)
+                            .setAction(ResonateWidgets.TOGGLE)
+                    )
                     eventually { library.snapshot.value?.transport == Transport.PAUSED }
-                    instrumentation.runOnMainSync { controller.play() }
+                    context.sendBroadcast(
+                        Intent(context, ResonatePlayerWidgetProvider::class.java)
+                            .setAction(ResonateWidgets.TOGGLE)
+                    )
                     eventually { library.snapshot.value?.transport == Transport.PLAYING }
                     assertTrue((library.snapshot.value?.positionMs ?: 0uL) > 0uL)
                     library.request { it.setSleep(SleepTimer.After(60u)) }
@@ -130,7 +139,7 @@ class BackgroundPlaybackTest {
                     notification.click()
                     assertTrue(
                         "Tapping the media notification opens Resonate",
-                        device.wait(Until.hasObject(By.desc("Song progress")), 10000),
+                        device.wait(Until.hasObject(By.descContains("Song progress")), 10000),
                     )
                     val tasks = context.getSystemService(ActivityManager::class.java).appTasks
                     assertTrue(tasks.isNotEmpty())

@@ -3,194 +3,257 @@ package org.resonate.android
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.os.Bundle
+import android.util.Base64
+import android.util.Log
 import android.widget.RemoteViews
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Transport
 
-class ResonatePlayerWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(
+@UnstableApi
+open class ResonatePlayerWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        ResonateWidgets.refresh(context, goAsync())
+    }
+
+    override fun onAppWidgetOptionsChanged(
         context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray,
+        manager: AppWidgetManager,
+        id: Int,
+        options: Bundle,
     ) {
-        val app = context.applicationContext as? ResonateApplication ?: return
-        ResonateWidgets.updateAll(context, app.library)
+        ResonateWidgets.refresh(context, goAsync())
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        ResonateWidgets.handleAction(context, intent.action)
+        if (intent.action in ResonateWidgets.actions) {
+            ResonateWidgets.control(
+                context.applicationContext,
+                requireNotNull(intent.action),
+                goAsync(),
+            )
+        }
     }
 }
 
-class ResonateTurntableWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray,
-    ) {
-        val app = context.applicationContext as? ResonateApplication ?: return
-        ResonateWidgets.updateAll(context, app.library)
-    }
+@UnstableApi class ResonateArtworkWidgetProvider : ResonatePlayerWidgetProvider()
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        ResonateWidgets.handleAction(context, intent.action)
-    }
-}
-
+@UnstableApi
 object ResonateWidgets {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    const val ACTION_PLAY_PAUSE = "org.resonate.android.ACTION_WIDGET_PLAY_PAUSE"
-    const val ACTION_PREVIOUS = "org.resonate.android.ACTION_WIDGET_PREVIOUS"
-    const val ACTION_NEXT = "org.resonate.android.ACTION_WIDGET_NEXT"
+    const val TOGGLE = "org.resonate.android.widget.TOGGLE"
+    const val PREVIOUS = "org.resonate.android.widget.PREVIOUS"
+    const val NEXT = "org.resonate.android.widget.NEXT"
+    val actions = setOf(TOGGLE, PREVIOUS, NEXT)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val io = Dispatchers.IO.limitedParallelism(1)
+    @Volatile private var latest: WidgetSong? = null
+    private var publishing: Job? = null
 
-    fun handleAction(context: Context, action: String?) {
-        val app = context.applicationContext as? ResonateApplication ?: return
-        val library = app.library
-        when (action) {
-            ACTION_PLAY_PAUSE -> {
-                library.request { native ->
-                    val snapshot = library.snapshot.value
-                    if (snapshot?.transport == Transport.PLAYING) native.pause()
-                    else native.play()
-                }
+    private data class WidgetSong(
+        val title: String,
+        val artist: String,
+        val album: String,
+        val playing: Boolean,
+        val artwork: ByteArray?,
+    )
+
+    fun publish(context: Context, snapshot: Snapshot?, artwork: ByteArray?) {
+        val track = snapshot?.current
+        val song =
+            WidgetSong(
+                track?.title ?: "Resonate",
+                track?.artist.orEmpty().ifBlank { "Your music, everywhere" },
+                track?.album.orEmpty(),
+                snapshot?.transport == Transport.PLAYING ||
+                    snapshot?.transport == Transport.LOADING,
+                artwork,
+            )
+        if (song == latest) return
+        latest = song
+        publishing?.cancel()
+        publishing = scope.launch {
+            withContext(io) {
+                val preferences = context.getSharedPreferences("widgets", Context.MODE_PRIVATE)
+                preferences
+                    .edit()
+                    .putString("title", song.title)
+                    .putString("artist", song.artist)
+                    .putString("album", song.album)
+                    .putString(
+                        "artwork",
+                        song.artwork?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
+                    )
+                    .apply()
+                ensureActive()
+                render(context, song)
             }
-            ACTION_PREVIOUS -> {
-                library.request { native ->
-                    val snapshot = library.snapshot.value
-                    val current = snapshot?.queueIndex?.toInt() ?: 0
-                    if ((snapshot?.positionMs ?: 0uL) > 3000uL || current == 0) {
-                        native.seek(0uL)
-                    } else {
-                        native.jumpTo((current - 1).toUInt())
-                    }
-                }
-            }
-            ACTION_NEXT -> {
-                library.request { native ->
-                    val snapshot = library.snapshot.value
-                    val queue = library.queue.value
-                    val current = snapshot?.queueIndex?.toInt() ?: 0
-                    if (current + 1 < queue.size) {
-                        native.jumpTo((current + 1).toUInt())
-                    }
-                }
-            }
-            else -> return
         }
-        updateAll(context, library)
     }
 
-    fun updateAll(context: Context, library: LibraryRepository) {
-        val manager = AppWidgetManager.getInstance(context) ?: return
-        val playerComp = ComponentName(context, ResonatePlayerWidgetProvider::class.java)
-        val turntableComp = ComponentName(context, ResonateTurntableWidgetProvider::class.java)
-        val playerIds = manager.getAppWidgetIds(playerComp)
-        val turntableIds = manager.getAppWidgetIds(turntableComp)
-        if (playerIds.isEmpty() && turntableIds.isEmpty()) return
+    fun stopped(context: Context) {
+        val song = latest ?: return
+        latest = song.copy(playing = false)
+        publishing?.cancel()
+        publishing = scope.launch(io) { render(context, song.copy(playing = false)) }
+    }
 
-        val snapshot = library.snapshot.value
-        val track = snapshot?.current
-        val playing = snapshot?.transport == Transport.PLAYING
-        val title = track?.title ?: "Resonate"
-        val artist = track?.artist?.ifBlank { "No song playing" } ?: "No song playing"
-        val album = track?.album.orEmpty().ifBlank { "Resonate Audio" }
-        val playPauseIcon =
-            if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-
-        val openApp =
-            PendingIntent.getActivity(
-                context,
-                0,
-                Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-        val prevIntent =
-            PendingIntent.getBroadcast(
-                context,
-                1,
-                Intent(context, ResonatePlayerWidgetProvider::class.java)
-                    .setAction(ACTION_PREVIOUS),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-        val playIntent =
-            PendingIntent.getBroadcast(
-                context,
-                2,
-                Intent(context, ResonatePlayerWidgetProvider::class.java)
-                    .setAction(ACTION_PLAY_PAUSE),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-        val nextIntent =
-            PendingIntent.getBroadcast(
-                context,
-                3,
-                Intent(context, ResonatePlayerWidgetProvider::class.java).setAction(ACTION_NEXT),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-
-        fun applyViews(artBitmap: Bitmap?) {
-            if (playerIds.isNotEmpty()) {
-                val views = RemoteViews(context.packageName, R.layout.resonate_player_widget)
-                views.setTextViewText(R.id.widget_title, title)
-                views.setTextViewText(R.id.widget_artist, artist)
-                views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
-                views.setOnClickPendingIntent(R.id.widget_root, openApp)
-                views.setOnClickPendingIntent(R.id.widget_prev, prevIntent)
-                views.setOnClickPendingIntent(R.id.widget_play_pause, playIntent)
-                views.setOnClickPendingIntent(R.id.widget_next, nextIntent)
-                if (artBitmap != null) {
-                    views.setImageViewBitmap(R.id.widget_artwork, artBitmap)
-                } else {
-                    views.setImageViewResource(
-                        R.id.widget_artwork,
-                        android.R.drawable.ic_media_play,
-                    )
+    fun refresh(context: Context, result: BroadcastReceiver.PendingResult) {
+        scope.launch {
+            try {
+                withContext(io) {
+                    val preferences = context.getSharedPreferences("widgets", Context.MODE_PRIVATE)
+                    val song =
+                        latest
+                            ?: WidgetSong(
+                                preferences.getString("title", "Resonate") ?: "Resonate",
+                                preferences.getString("artist", "Your music, everywhere").orEmpty(),
+                                preferences.getString("album", "").orEmpty(),
+                                false,
+                                preferences.getString("artwork", null)?.let {
+                                    Base64.decode(it, Base64.NO_WRAP)
+                                },
+                            )
+                    render(context, song)
                 }
-                manager.updateAppWidget(playerIds, views)
-            }
-
-            if (turntableIds.isNotEmpty()) {
-                val views = RemoteViews(context.packageName, R.layout.resonate_turntable_widget)
-                views.setTextViewText(R.id.widget_title, title)
-                views.setTextViewText(R.id.widget_artist, artist)
-                views.setTextViewText(R.id.widget_album, album)
-                views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
-                views.setOnClickPendingIntent(R.id.widget_root, openApp)
-                views.setOnClickPendingIntent(R.id.widget_prev, prevIntent)
-                views.setOnClickPendingIntent(R.id.widget_play_pause, playIntent)
-                views.setOnClickPendingIntent(R.id.widget_next, nextIntent)
-                if (artBitmap != null) {
-                    views.setImageViewBitmap(R.id.widget_artwork, artBitmap)
-                } else {
-                    views.setImageViewResource(
-                        R.id.widget_artwork,
-                        android.R.drawable.ic_media_play,
-                    )
-                }
-                manager.updateAppWidget(turntableIds, views)
+            } finally {
+                result.finish()
             }
         }
+    }
 
-        applyViews(null)
-        if (track != null) {
-            scope.launch {
-                val rawArt = library.features.mediaArtwork(track)
-                val artBitmap = rawArt?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                if (artBitmap != null) {
-                    applyViews(artBitmap)
+    fun control(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
+        scope.launch {
+            val connection =
+                MediaController.Builder(
+                        context,
+                        SessionToken(context, ComponentName(context, PlaybackService::class.java)),
+                    )
+                    .buildAsync()
+            try {
+                val controller = withContext(Dispatchers.IO) { connection.get(8, TimeUnit.SECONDS) }
+                when (action) {
+                    TOGGLE ->
+                        if (controller.playWhenReady) controller.pause()
+                        else {
+                            controller.prepare()
+                            controller.play()
+                        }
+                    PREVIOUS -> controller.seekToPrevious()
+                    NEXT -> controller.seekToNext()
                 }
+            } catch (failure: java.util.concurrent.ExecutionException) {
+                Log.w("ResonateWidgets", "Connect playback session", failure)
+            } catch (failure: java.util.concurrent.TimeoutException) {
+                Log.w("ResonateWidgets", "Connect playback session", failure)
+            } finally {
+                MediaController.releaseFuture(connection)
+                result.finish()
             }
         }
+    }
+
+    private fun render(context: Context, song: WidgetSong) {
+        val manager = AppWidgetManager.getInstance(context)
+        val layouts =
+            listOf(
+                ResonatePlayerWidgetProvider::class.java to R.layout.resonate_player_widget,
+                ResonateArtworkWidgetProvider::class.java to R.layout.resonate_artwork_widget,
+            )
+        val installed =
+            layouts
+                .map { (provider, layout) ->
+                    manager.getAppWidgetIds(ComponentName(context, provider)) to layout
+                }
+                .filter { it.first.isNotEmpty() }
+        if (installed.isEmpty()) return
+        val art = song.artwork?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+        val background = backdrop(art)
+        for ((ids, layout) in installed) {
+            val views = RemoteViews(context.packageName, layout)
+            views.setTextViewText(R.id.widget_title, song.title)
+            views.setTextViewText(R.id.widget_artist, song.artist)
+            views.setTextViewText(R.id.widget_album, song.album)
+            views.setImageViewBitmap(R.id.widget_backdrop, background)
+            if (art != null) views.setImageViewBitmap(R.id.widget_artwork, art)
+            else views.setImageViewResource(R.id.widget_artwork, R.drawable.widget_cover)
+            views.setImageViewResource(
+                R.id.widget_play_pause,
+                if (song.playing) R.drawable.widget_pause else R.drawable.widget_play,
+            )
+            views.setContentDescription(
+                R.id.widget_play_pause,
+                context.getString(
+                    if (song.playing) R.string.widget_pause else R.string.widget_play
+                ),
+            )
+            views.setOnClickPendingIntent(
+                R.id.widget_root,
+                PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            for ((id, action) in
+                listOf(
+                    R.id.widget_prev to PREVIOUS,
+                    R.id.widget_play_pause to TOGGLE,
+                    R.id.widget_next to NEXT,
+                )) {
+                views.setOnClickPendingIntent(
+                    id,
+                    PendingIntent.getBroadcast(
+                        context,
+                        id,
+                        Intent(context, ResonatePlayerWidgetProvider::class.java).setAction(action),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                )
+            }
+            manager.updateAppWidget(ids, views)
+        }
+    }
+
+    private fun backdrop(art: Bitmap?): Bitmap {
+        val bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.TRANSPARENT)
+        val tone = art?.getPixel(art.width / 2, art.height / 2) ?: Color.rgb(185, 170, 255)
+        val glow = Color.argb(100, Color.red(tone), Color.green(tone), Color.blue(tone))
+        canvas.drawCircle(
+            50f,
+            20f,
+            290f,
+            Paint().apply {
+                shader =
+                    RadialGradient(50f, 20f, 290f, glow, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            },
+        )
+        return bitmap
     }
 }
