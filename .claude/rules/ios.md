@@ -434,6 +434,17 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes; **Low Power Mode** caps at 30 fps; an inactive or backgrounded scene, or a
   view out of its window, draws nothing.
+- **The app background** is the same view with no track and an `ambience` strength
+  (`BackdropView(track: nil, moving:, ambience:)`), once behind `RootView`'s `TabView`: the palette
+  built around the accent colour (re-sampled when the accent changes), `BackdropTone.ambient`
+  (dark floor 0.05 with a range of 0.10 to 0.32, light floor 0.96 down to 0.80, chroma and range
+  scaled by the strength, so system labels keep their contrast), 30 fps, and no hold on the
+  visualizer tap or loudness. `ThemedPage` on each stack's root and every `DestinationView` hides
+  the scroll content background and clears the navigation and tab view container backgrounds; Now
+  Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
+  in the `appearance` defaults, edited in Settings › Appearance › Background: `themedBackground`
+  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). Pages with
+  their own backdrop cover it.
 - **Failure falls back to the gradient**: no Metal device, a failed compile or pipeline, or a
   uniform size the shader does not expect is logged in full at `.error` under subsystem
   `org.resonate.ios`, category `backdrop` (a successful compile logs its time at `.notice`), and the

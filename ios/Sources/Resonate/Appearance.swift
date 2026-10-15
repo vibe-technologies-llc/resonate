@@ -9,6 +9,10 @@ final class AppearanceState {
     static let shared = AppearanceState()
 
     private static let accentKey = "accent"
+    private static let backgroundKey = "themedBackground"
+    private static let movingKey = "movingBackground"
+    private static let strengthKey = "backgroundStrength"
+    static let defaultStrength = 0.6
     private static let deepenedInLight: CGFloat = 0.28
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard
@@ -16,9 +20,24 @@ final class AppearanceState {
     private(set) var accent: ResonateAccent?
     private(set) var iconRefused: String?
 
+    var themedBackground: Bool {
+        didSet { settings.set(themedBackground, forKey: Self.backgroundKey) }
+    }
+
+    var movingBackground: Bool {
+        didSet { settings.set(movingBackground, forKey: Self.movingKey) }
+    }
+
+    var backgroundStrength: Double {
+        didSet { settings.set(backgroundStrength, forKey: Self.strengthKey) }
+    }
+
     private init() {
         let kept = settings.string(forKey: Self.accentKey)
         accent = ResonateAccent.every.first { $0.name == kept }
+        themedBackground = settings.object(forKey: Self.backgroundKey) as? Bool ?? true
+        movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? true
+        backgroundStrength = settings.object(forKey: Self.strengthKey) as? Double ?? Self.defaultStrength
     }
 
     var tint: Color {
@@ -78,6 +97,7 @@ struct AppearanceView: View {
     var body: some View {
         let appearance = AppearanceState.shared
         Form {
+            background
             Section {
                 HStack(spacing: 16) {
                     Image(uiImage: icon(of: appearance.accent))
@@ -120,6 +140,29 @@ struct AppearanceView: View {
             }
         }
         .navigationTitle("Appearance")
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        @Bindable var appearance = AppearanceState.shared
+        Section {
+            Toggle("Resonate background", isOn: $appearance.themedBackground)
+            if appearance.themedBackground {
+                Toggle("Flowing", isOn: $appearance.movingBackground)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Strength")
+                    HStack(spacing: 12) {
+                        Text("Subtle").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $appearance.backgroundStrength, in: 0...1)
+                        Text("Vivid").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Background")
+        } footer: {
+            Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion and Low Power Mode keep it still or slower.")
+        }
     }
 
     private static let packaged = LinearGradient(

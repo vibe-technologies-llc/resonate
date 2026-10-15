@@ -14,15 +14,17 @@ struct BackdropView: View {
     @Environment(\.colorScheme) private var scheme
     let track: Track?
     let moving: Bool
+    let ambience: Float?
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?, moving: Bool = true) {
+    init(track: Track?, moving: Bool = true, ambience: Float? = nil) {
         self.track = track
         self.moving = moving
+        self.ambience = ambience
         _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) })
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
     }
@@ -31,14 +33,15 @@ struct BackdropView: View {
         ZStack {
             Color(.systemBackground)
             if let palette {
-                GradientBackdrop(palette: palette)
+                GradientBackdrop(palette: palette, weight: ambience ?? 1)
                 if case .metal(let gpu) = rendering {
                     MeshBackdrop(
                         gpu: gpu,
                         library: library,
                         palette: palette,
                         motion: motion,
-                        tone: scheme == .dark ? .dark : .light
+                        tone: tone,
+                        reactive: ambience == nil
                     )
                     .transition(.opacity)
                 }
@@ -48,7 +51,7 @@ struct BackdropView: View {
         .animation(.easeInOut(duration: 0.4), value: palette == nil)
         .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
         .task { await prepareRendering() }
-        .task(id: "\(track.map(Self.key(of:)) ?? ""):\(library.features.artGeneration(of: track?.id ?? 0))") { await loadPalette() }
+        .task(id: "\(track.map(Self.key(of:)) ?? ""):\(library.features.artGeneration(of: track?.id ?? 0)):\(AppearanceState.shared.accent?.name ?? "")") { await loadPalette() }
         .onAppear { visible = true }
         .onDisappear {
             visible = false
@@ -68,14 +71,19 @@ struct BackdropView: View {
         "\(track.id):\(track.artRevision)"
     }
 
+    private var tone: BackdropTone {
+        if let ambience { return .ambient(scheme, strength: ambience) }
+        return scheme == .dark ? .dark : .light
+    }
+
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
         if reduceMotion || !moving { return .still }
-        return .flowing(framesPerSecond: lowPower ? 30 : 60)
+        return .flowing(framesPerSecond: lowPower || ambience != nil ? 30 : 60)
     }
 
     private var wantsEnergy: Bool {
-        visible && moving && phase == .active && !reduceMotion && rendering.drawsMesh
+        visible && moving && ambience == nil && phase == .active && !reduceMotion && rendering.drawsMesh
     }
 
     private func listen(_ wanted: Bool) {
@@ -107,17 +115,18 @@ struct BackdropView: View {
 
 private struct GradientBackdrop: View {
     let palette: Palette
+    let weight: Float
 
     var body: some View {
         ZStack {
             RadialGradient(
-                colors: [Self.color(palette.colours[0]).opacity(0.55), .clear],
+                colors: [Self.color(palette.colours[0]).opacity(0.55 * Double(weight)), .clear],
                 center: .topLeading,
                 startRadius: 0,
                 endRadius: 600
             )
             RadialGradient(
-                colors: [Self.color(palette.colours[1]).opacity(0.35), .clear],
+                colors: [Self.color(palette.colours[1]).opacity(0.35 * Double(weight)), .clear],
                 center: .bottomTrailing,
                 startRadius: 0,
                 endRadius: 600
@@ -161,6 +170,25 @@ struct BackdropTone: Equatable {
     let lightnessRange: Float
     let chroma: Float
     let vignette: Float
+
+    static func ambient(_ scheme: ColorScheme, strength: Float) -> BackdropTone {
+        let held = min(max(strength, 0), 1)
+
+        if scheme == .dark {
+            return BackdropTone(
+                lightnessFloor: 0.05,
+                lightnessRange: 0.10 + 0.22 * held,
+                chroma: 0.5 + 0.5 * held,
+                vignette: 0.3
+            )
+        }
+        return BackdropTone(
+            lightnessFloor: 0.96 - 0.16 * held,
+            lightnessRange: 0.02 + 0.14 * held,
+            chroma: 0.3 + 0.5 * held,
+            vignette: 0.04
+        )
+    }
 }
 
 struct BackdropGPU: Sendable {
@@ -186,6 +214,7 @@ private struct MeshBackdrop: UIViewRepresentable {
     let palette: Palette
     let motion: BackdropMotion
     let tone: BackdropTone
+    let reactive: Bool
 
     func makeCoordinator() -> BackdropRenderer {
         BackdropRenderer(gpu: gpu, palette: palette)
@@ -210,6 +239,7 @@ private struct MeshBackdrop: UIViewRepresentable {
 
         renderer.library = library
         renderer.tone = tone
+        renderer.reactive = reactive
         renderer.still = motion == .still
         renderer.show(palette)
         view.motion = motion
@@ -273,6 +303,7 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
 
     weak var library: Library?
     var tone = BackdropTone.dark
+    var reactive = true
     var still = false
 
     private let gpu: BackdropGPU
@@ -331,7 +362,7 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
 
     private func advance(by step: Float) {
         let playing = library?.snapshot?.transport == .playing
-        let heard = playing && !still ? loudness() : 0
+        let heard = playing && !still && reactive ? loudness() : 0
         let reaction = heard > energy ? Self.attackSeconds : Self.releaseSeconds
         let wantedSpeed = playing ? 1 + Self.energyReach * energy : Self.restingSpeed
 

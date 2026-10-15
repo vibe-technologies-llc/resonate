@@ -138,6 +138,7 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var navigation = navigation
+        let appearance = AppearanceState.shared
         TabView(selection: $navigation.tab) {
             Tab("Songs", systemImage: "music.note", value: Root.songs) {
                 stack(.songs) { SongsView() }
@@ -157,6 +158,15 @@ struct RootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(AppearanceState.shared.tint)
+        .background {
+            if appearance.themedBackground {
+                BackdropView(
+                    track: nil,
+                    moving: appearance.movingBackground && !navigation.nowPlaying,
+                    ambience: Float(appearance.backgroundStrength)
+                )
+            }
+        }
         .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
         .safeAreaInset(edge: .top) { StatusBanner() }
         .fullScreenCover(isPresented: $navigation.nowPlaying) {
@@ -212,7 +222,20 @@ struct RootView: View {
     private func stack<Content: View>(_ root: Root, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack(path: navigation.path(root)) {
             content()
-                .navigationDestination(for: Destination.self) { DestinationView(destination: $0) }
+                .modifier(ThemedPage())
+                .navigationDestination(for: Destination.self) { DestinationView(destination: $0).modifier(ThemedPage()) }
+        }
+    }
+}
+
+struct ThemedPage: ViewModifier {
+    func body(content: Content) -> some View {
+        if AppearanceState.shared.themedBackground {
+            content
+                .scrollContentBackground(.hidden)
+                .containerBackground(for: .navigation) { Color.clear }
+        } else {
+            content
         }
     }
 }
