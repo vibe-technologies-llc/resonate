@@ -322,6 +322,11 @@ final class Library {
         snapshot?.current != nil
     }
 
+    var playingNext: Range<Int>? {
+        guard let first = snapshot?.nextFirst, let count = snapshot?.nextCount, count > 0 else { return nil }
+        return Int(first)..<Int(first) + Int(count)
+    }
+
     var playingQueueRow: Int? {
         guard let currentQueueId else { return nil }
         return queue.firstIndex { $0.queueId == currentQueueId }

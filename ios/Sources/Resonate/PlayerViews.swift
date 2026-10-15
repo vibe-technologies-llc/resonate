@@ -5,31 +5,42 @@ import SwiftUI
 
 struct MiniPlayer: View {
     private static let swipeDistance: CGFloat = 40
+    private static let titledFrom: CGFloat = 150
+    private static let skipsFrom: CGFloat = 230
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     @ScaledMetric(relativeTo: .subheadline) private var artworkEdge: CGFloat = 36
+    @ScaledMetric(relativeTo: .subheadline) private var inlineArtworkEdge: CGFloat = 28
     let zoom: Namespace.ID
     @State private var skipped = 0
+    @State private var width: CGFloat = 0
 
     var body: some View {
         let track = library.snapshot?.current
         let expanded = placement != .inline
-        HStack(spacing: 12) {
-            ArtworkView(track: track, corner: 8)
-                .frame(width: artworkEdge, height: artworkEdge)
+        let titled = expanded || width == 0 || width >= Self.titledFrom
+        let skips = expanded || width >= Self.skipsFrom
+        HStack(spacing: expanded ? 12 : 8) {
+            ArtworkView(track: track, corner: expanded ? 8 : 6)
+                .frame(width: expanded ? artworkEdge : inlineArtworkEdge, height: expanded ? artworkEdge : inlineArtworkEdge)
                 .matchedTransitionSource(id: PlayerTransition.source, in: zoom)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(track?.shownTitle ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-                if expanded {
-                    Text(track?.shownArtist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if titled {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(track?.shownTitle ?? "")
+                        .font(expanded ? .subheadline.weight(.semibold) : .footnote.weight(.semibold))
+                        .lineLimit(1)
+                    if expanded {
+                        Text(track?.shownArtist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.opacity)
+                .animation(.smooth, value: track?.id)
+            } else {
+                Spacer(minLength: 0)
             }
-            .contentTransition(.opacity)
-            .animation(.smooth, value: track?.id)
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: 0)
             if let track, expanded {
                 FavouriteButton(track: track)
             }
@@ -39,11 +50,15 @@ struct MiniPlayer: View {
             }
             PlayButton(transport: library.transport)
                 .background { MiniProgressRing() }
-            Button("Next", systemImage: "forward.fill") { skip(forward: true) }
-                .labelStyle(.iconOnly)
+            if skips {
+                Button("Next", systemImage: "forward.fill") { skip(forward: true) }
+                    .labelStyle(.iconOnly)
+            }
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, expanded ? 14 : 8)
+        .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
         .simultaneousGesture(
@@ -53,6 +68,8 @@ struct MiniPlayer: View {
             }
         )
         .sensoryFeedback(.impact(weight: .light), trigger: skipped)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(track.map { "\($0.shownTitle), \($0.shownArtist)" } ?? "")
         .accessibilityAction(named: "Open now playing") { navigation.nowPlaying = true }
         .accessibilityAction(named: "Previous") { skip(forward: false) }
         .accessibilityAction(named: "Next") { skip(forward: true) }
@@ -134,7 +151,7 @@ enum PlayerMode {
 }
 
 struct NowPlayingView: View {
-    private static let cover = "cover"
+    private static let gutter: CGFloat = 24
     private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
     private static let arriving: Animation = .easeOut(duration: 0.2)
 
@@ -142,7 +159,6 @@ struct NowPlayingView: View {
     @Environment(Navigation.self) private var navigation
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Namespace private var shared
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var choosingPlaylist = false
@@ -159,7 +175,15 @@ struct NowPlayingView: View {
                     focusedLayout(track)
                 }
             }
-            .padding(.horizontal, 24)
+            .overlayPreferenceValue(CoverSlot.self) { slot in
+                GeometryReader { proxy in
+                    if let slot {
+                        MovingCover(track: track, slot: proxy[slot], large: mode == .artwork)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .padding(.horizontal, Self.gutter)
             .background(BackdropView(track: track))
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
@@ -179,8 +203,7 @@ struct NowPlayingView: View {
     private func artworkLayout(_ track: Track?) -> some View {
         VStack(spacing: 20) {
             Spacer(minLength: 0)
-            LargeArtwork(track: track)
-                .matchedGeometryEffect(id: Self.cover, in: shared)
+            LargeArtwork()
             PlayerTitles(track: track)
             PlayerScrubber()
             TransportRow()
@@ -193,7 +216,7 @@ struct NowPlayingView: View {
 
     private func focusedLayout(_ track: Track?) -> some View {
         VStack(spacing: 16) {
-            CompactTitles(track: track, cover: Self.cover, shared: shared)
+            CompactTitles(track: track)
                 .padding(.top, 8)
             ZStack {
                 if settled == mode {
@@ -212,7 +235,7 @@ struct NowPlayingView: View {
     private func focusedContent(_ track: Track?) -> some View {
         switch mode {
         case .lyrics: LyricsPane(track: track, compact: true)
-        case .queue, .artwork: UpNextList()
+        case .queue, .artwork: UpNextList().padding(.horizontal, -Self.gutter)
         }
     }
 
@@ -235,19 +258,48 @@ struct NowPlayingView: View {
     }
 }
 
+struct CoverSlot: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct LargeArtwork: View {
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .anchorPreference(key: CoverSlot.self, value: .bounds) { $0 }
+            .padding(.horizontal, 8)
+    }
+}
+
+struct MovingCover: View {
+    private static let pausedScale: CGFloat = 0.84
+
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track?
+    let slot: CGRect
+    let large: Bool
+    @State private var edge: CGFloat = 0
 
     var body: some View {
         let playing = library.transport == .playing || library.transport == .loading
+        let drawn = edge > 0 ? edge : max(slot.width, 1)
+        let resting = large && !playing && !reduceMotion ? Self.pausedScale : 1
         ArtworkView(track: track, corner: 24)
-            .aspectRatio(1, contentMode: .fit)
+            .frame(width: drawn, height: drawn)
             .shadow(color: .black.opacity(0.3), radius: 28, y: 16)
-            .scaleEffect(playing || reduceMotion ? 1 : 0.84)
+            .scaleEffect(resting)
             .animation(.spring(duration: 0.5, bounce: 0.25), value: playing)
-            .padding(.horizontal, 8)
+            .scaleEffect(slot.width / drawn)
+            .offset(x: slot.midX - drawn / 2, y: slot.midY - drawn / 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onChange(of: slot, initial: true) { _, now in
+                if large, now.width > 0, now.width != edge { edge = now.width }
+            }
     }
 }
 
@@ -327,15 +379,12 @@ struct SongDestinations: View {
 struct CompactTitles: View {
     @ScaledMetric(relativeTo: .headline) private var artworkEdge: CGFloat = 56
     let track: Track?
-    let cover: String
-    let shared: Namespace.ID
 
     var body: some View {
         HStack(spacing: 12) {
-            ArtworkView(track: track, corner: 8)
+            Color.clear
                 .frame(width: artworkEdge, height: artworkEdge)
-                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-                .matchedGeometryEffect(id: cover, in: shared)
+                .anchorPreference(key: CoverSlot.self, value: .bounds) { $0 }
             if let track {
                 SongMenu(track: track) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -757,36 +806,27 @@ struct RoutePicker: UIViewRepresentable {
 }
 
 struct QueueView: View {
-    private static let playingRow = "playing"
-
     @Environment(Library.self) private var library
     @State private var clearing = false
 
     var body: some View {
-        ScrollViewReader { scroller in
-            List {
-                HandoffRows()
-                QueueSections(showsHistory: true, playingRowId: Self.playingRow)
-            }
-            .listStyle(.plain)
-            .onAppear { scroller.scrollTo(Self.playingRow, anchor: .top) }
-        }
-        .navigationTitle("Queue")
-        .refreshable { await library.rereadQueue() }
-        .toolbar {
-            if !library.queue.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear", systemImage: "trash") { clearing = true }
-                        .disabled(library.queue.count <= 1)
+        QueueList(inPlayer: false)
+            .navigationTitle("Queue")
+            .refreshable { await library.rereadQueue() }
+            .toolbar {
+                if !library.queue.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Clear", systemImage: "trash") { clearing = true }
+                            .disabled(library.queue.count <= 1)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 }
-                ToolbarItem(placement: .topBarTrailing) { EditButton() }
             }
-        }
-        .confirmationDialog("Clear the queue?", isPresented: $clearing, titleVisibility: .visible) {
-            Button("Clear queue", role: .destructive) { library.clearQueue() }
-        } message: {
-            Text("Songs up next and in your history are removed. The playing song keeps playing.")
-        }
+            .confirmationDialog("Clear the queue?", isPresented: $clearing, titleVisibility: .visible) {
+                Button("Clear queue", role: .destructive) { library.clearQueue() }
+            } message: {
+                Text("Songs up next and in your history are removed. The playing song keeps playing.")
+            }
     }
 }
 
@@ -809,66 +849,107 @@ struct EmptyQueue: View {
 
 struct UpNextList: View {
     var body: some View {
-        List {
-            QueueSections(showsHistory: false, playingRowId: nil)
-                .listRowBackground(Color.clear)
+        QueueList(inPlayer: true)
+    }
+}
+
+struct QueueList: View {
+    private static let playingRow = "playing"
+
+    @Environment(Library.self) private var library
+    let inPlayer: Bool
+
+    var body: some View {
+        ScrollViewReader { scroller in
+            List {
+                if !inPlayer { HandoffRows() }
+                QueueSections(inPlayer: inPlayer, playingRowId: Self.playingRow)
+                    .listRowBackground(inPlayer ? Color.clear : nil)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(inPlayer ? .hidden : .automatic)
+            .onAppear { scroller.scrollTo(Self.playingRow, anchor: .top) }
+            .onChange(of: library.currentQueueId) {
+                withAnimation(.smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
+            }
+            .onChange(of: library.queue.isEmpty) {
+                scroller.scrollTo(Self.playingRow, anchor: .top)
+            }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 }
 
 struct QueueSections: View {
+    private static let heardFaded = 0.55
+
     @Environment(Library.self) private var library
-    let showsHistory: Bool
-    let playingRowId: String?
+    let inPlayer: Bool
+    let playingRowId: String
     @State private var edited = 0
 
     var body: some View {
         let rows = library.queue
         let playing = library.playingQueueRow
         Group {
-            if rows.isEmpty, showsHistory {
-                EmptyQueue()
-            } else if rows.isEmpty {
+            if rows.isEmpty, inPlayer {
                 Text("Your queue is empty").foregroundStyle(.secondary)
+            } else if rows.isEmpty {
+                EmptyQueue()
             } else if let playing {
-                if showsHistory, playing > 0 {
-                    Section("History") { rowsOf(rows, from: 0, to: playing) }
-                }
-                if showsHistory {
-                    Section("Now playing") {
-                        QueueRow(row: rows[playing], edited: $edited)
-                            .id(playingRowId)
+                let parts = QueueParts(rows: rows.count, playing: playing, next: library.playingNext)
+                if playing > 0 {
+                    Section("History") {
+                        rowsOf(rows, parts.history).opacity(Self.heardFaded)
                     }
                 }
-                Section("Up next") {
-                    if playing + 1 < rows.count {
-                        rowsOf(rows, from: playing + 1, to: rows.count)
+                Section("Now playing") {
+                    QueueRow(row: rows[playing], edited: $edited)
+                        .id(playingRowId)
+                }
+                if !parts.next.isEmpty {
+                    Section("Playing next") { rowsOf(rows, parts.next) }
+                }
+                Section(parts.next.isEmpty ? "Up next" : "Continue playing") {
+                    if parts.rest.isEmpty {
+                        Text("Nothing more to play").foregroundStyle(.secondary)
                     } else {
-                        Text("Nothing up next").foregroundStyle(.secondary)
+                        rowsOf(rows, parts.rest)
                     }
                 }
             } else {
-                Section("Up next") { rowsOf(rows, from: 0, to: rows.count) }
+                Section("Up next") { rowsOf(rows, 0..<rows.count) }
             }
         }
         .sensoryFeedback(.selection, trigger: edited)
     }
 
-    private func rowsOf(_ rows: [Track], from start: Int, to end: Int) -> some View {
-        ForEach(Array(rows[start..<end]), id: \.queueId) { row in
+    private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {
+        ForEach(Array(rows[range]), id: \.queueId) { row in
             QueueRow(row: row, edited: $edited)
         }
         .onMove { offsets, destination in
             guard let moved = offsets.first else { return }
             edited += 1
-            library.moveInQueue(from: start + moved, to: start + destination)
+            library.moveInQueue(from: range.lowerBound + moved, to: range.lowerBound + destination)
         }
         .onDelete { offsets in
             edited += 1
-            for offset in offsets.sorted(by: >) { library.removeFromQueue(rows[start + offset]) }
+            for offset in offsets.sorted(by: >) { library.removeFromQueue(rows[range.lowerBound + offset]) }
         }
+    }
+}
+
+struct QueueParts {
+    let history: Range<Int>
+    let next: Range<Int>
+    let rest: Range<Int>
+
+    init(rows: Int, playing: Int, next asked: Range<Int>?) {
+        let after = min(playing + 1, rows)
+        history = 0..<min(playing, rows)
+        let nextEnd = asked.map { min(max($0.upperBound, after), rows) } ?? after
+        next = after..<nextEnd
+        rest = nextEnd..<rows
     }
 }
 

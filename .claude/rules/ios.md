@@ -176,7 +176,10 @@ and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and 
 field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
 skip; its progress is a ring around the play button in either placement (a bar along the accessory's
-bottom ran through the title and artist, since the system fixes the accessory's height); the output page holds `AVRoutePickerView`, since iOS owns the route.
+bottom ran through the title and artist, since the system fixes the accessory's height). Inline (the
+tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
+button always, the title from 150 pt, next from 230 pt, tighter spacing; the title stays the
+accessibility label. The output page holds `AVRoutePickerView`, since iOS owns the route.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
@@ -188,13 +191,23 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
   The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
-  each shrinking the artwork into a 56 pt header row through `matchedGeometryEffect`. The pane or
+  each shrinking the artwork into a 56 pt header row. **The cover is one view moved by a transform**:
+  each layout holds an empty slot (`LargeArtwork`, `CompactTitles`) reporting its bounds through
+  `CoverSlot` (an anchor preference), and `MovingCover`, an overlay above both, draws the artwork once
+  at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
+  re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
+  re-measured a live image every frame). The pane or
   list is mounted only once that spring is logically complete (`NowPlayingView.settled`) and
   dropped before the cover grows back, so building a `List` or the lyric timeline never competes
   with the cover's frames; Lyrics to Up next crossfades at once, the cover staying put. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the artwork layout scrolls.
-- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it;
+- **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
+  with History above it, reached by scrolling up and drawn faded, then *Playing next* (the rows the
+  engine's `Queued::next` holds, `Snapshot.next_first`/`next_count`) and *Continue playing* (*Up
+  next* where nothing was asked to play next), as the desktop's four parts (`QueueParts`); it scrolls
+  back to the playing row whenever the song changes. In the player the list takes the full width
+  (the player's gutter undone), since its rows carry their own insets;
   empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
   remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a

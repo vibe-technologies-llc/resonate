@@ -104,6 +104,10 @@ pub struct Snapshot {
     pub sleep_remaining_ms: Option<u64>,
     pub queue_revision: u64,
     pub catalog_revision: u64,
+    #[uniffi(default)]
+    pub next_first: Option<u32>,
+    #[uniffi(default)]
+    pub next_count: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -391,6 +395,10 @@ impl MobilePlayer {
             })
             .unwrap_or_else(|| current.as_ref().map_or(0, |track| track.duration_ms));
         let queue_revision = queue.revision;
+        let next_first = queue.next.map(|next| next.first() as u32);
+        let next_count = queue
+            .next
+            .map_or(0, |next| (next.last() - next.first() + 1) as u32);
         Ok(Snapshot {
             transport: match state.playback {
                 PlaybackState::Idle | PlaybackState::Stopped => Transport::Stopped,
@@ -420,6 +428,8 @@ impl MobilePlayer {
                 .and_then(|sleep| sleep.left.map(|left| left.as_millis() as u64)),
             queue_revision,
             catalog_revision: self.catalog.revision(),
+            next_first,
+            next_count,
         })
     }
 
