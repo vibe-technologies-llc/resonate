@@ -384,14 +384,21 @@ struct CollectionAction: View {
     let action: () -> Void
 
     var body: some View {
+        let ink = prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.tint)
         Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
-                .foregroundStyle(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
-                .frame(maxWidth: .infinity, minHeight: height)
-                .contentShape(.capsule)
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .foregroundStyle(ink)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .foregroundStyle(ink)
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: height)
+            .contentShape(.capsule)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
         .glassEffect(prominent ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .capsule)
         .opacity(enabled ? 1 : 0.5)
     }

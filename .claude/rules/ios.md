@@ -185,8 +185,9 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   every track shares one `Track.quality`), then Play and Shuffle as two equal-width glass
   capsules no wider than 440 pt (`CollectionAction`: a plain button under `glassEffect`, Play tinted
   with the accent and lettered white, Shuffle clear and lettered in the tint, 50 pt scaled); nothing
-  else sits in that row. `.glassProminent` drew Play's label not at all in a list row, an empty
-  capsule, so the header never uses the system's glass button styles. An album lists its tracks by disc,
+  else sits in that row. In a list row a `Label`'s icon takes the list's accent tint over any
+  button style, so `.glassProminent` drew Play's triangle blue on its blue fill: the capsule draws
+  its symbol and title as separate views, each given its colour, never a `Label`. An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's.
 - **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a
