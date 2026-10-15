@@ -2572,14 +2572,24 @@ fn fail_the_stream_as_the_graph_becomes(
     graph: &Arc<Mutex<Graph>>,
     edit: impl FnOnce(&mut Vec<SinkInfo>),
 ) {
-    let mut held = graph.lock();
-    edit(&mut held.sinks);
-    let failed = held.events.as_ref().map(|events| {
-        events.send(StreamEvent::StateChanged {
+    tell_the_stream(
+        graph,
+        edit,
+        StreamEvent::StateChanged {
             from: StreamState::Streaming,
             to: StreamState::Failed,
-        })
-    });
+        },
+    );
+}
+
+fn tell_the_stream(
+    graph: &Arc<Mutex<Graph>>,
+    edit: impl FnOnce(&mut Vec<SinkInfo>),
+    event: StreamEvent,
+) {
+    let mut held = graph.lock();
+    edit(&mut held.sinks);
+    let failed = held.events.as_ref().map(|events| events.send(event));
     assert!(
         failed.is_some_and(|sent| sent.is_ok()),
         "the fake daemon could not fail the stream"
@@ -2694,6 +2704,30 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
         heard_as_faded_in(&graph.lock().played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
     );
+    Ok(())
+}
+
+#[test]
+fn a_stream_the_system_refuses_to_start_is_lost_like_one_that_failed() -> Result<()> {
+    let (player, graph, _) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
+    tell_the_stream(
+        &graph,
+        Vec::clear,
+        StreamEvent::Refused {
+            from: StreamState::Paused,
+            op: resonate_audio::Operation::Start,
+            status: -50,
+        },
+    );
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+
+    neither_failed_nor_finished(&player);
     Ok(())
 }
 

@@ -352,7 +352,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Error::LoopStopped` (`graph_last_lost`). A failing `backend.open` takes the whole `Output` with it
   (the consumer went into the call).
 - **A device going is waited out, not billed to the row.** `Engine::fail` first hands its error to
-  `parked_for_a_device`: `NoSink`, `SinkGone`, `StreamFailed` with a track open close the output,
+  `parked_for_a_device`: `NoSink`, `SinkGone`, `StreamFailed` and `StreamRefused` (a backend's `StreamEvent::Refused`: the operation and the system's status, as RemoteIO's refused start) with a track open close the output,
   keep the row in `unbound` at the heard position, publish `Loading` (`Paused` where paused), mark
   the sink list stale, raise `Event::Waiting` not `Event::Failed`. Every sink-list answer then ends in
   `bind_the_row_waiting_for_a_device`, binding where the row was heard (on the fallback where the

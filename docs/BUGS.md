@@ -179,12 +179,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   screen rather than the one `play`/`jump` loads, and an automatic song change reaches `askRate`
   only on the next poll: RemoteIO opens at the old rate and reopens a quarter second or more into
   the song, so each change across rates starts resampled and then fades out and back
-- [S] `remote_io_render::render` is `extern "C-unwind"` (`AURenderCallback`'s type) in a library
-  `build-native.py` builds with `panic = "unwind"`: a panic in `source.fill` unwinds into
-  AudioToolbox's render thread, where `mobile.md` promises the render callbacks abort
-- [S] `remote_io::serve` drops the `OSStatus` of a refused `AudioOutputUnitStart` (`(Err(_), _) =>
-  Failed`): the engine raises a bare `StreamFailed` for what is usually an inactive session or an
-  interruption not yet ended, where an open failure carries its `Status`
 - [S] `Library.steer` never calls `nudgePoll` (only `request` does): after Play, Pause, Shuffle,
   Repeat or a tapped song the next poll waits the interval of the old snapshot, 1 s paused in front
   and 2 s behind, so the title, clock and lock-screen rate and elapsed time lag the tap

@@ -34,7 +34,9 @@ across the boundary: UniFFI's `catch_unwind` turns a panic in an exported call (
 corrupt file, a catalog row nobody foresaw) into an error the app shows, but only if the library
 unwinds. Both `ios/build-native.py` and `android/build-native.py` therefore build `resonate-mobile`
 with `CARGO_PROFILE_RELEASE_PANIC=unwind`, so a release build and a debug build fail alike. The
-render callbacks stay `extern "C"` and abort on a panic, as an unwind may not cross them.
+render callbacks abort on a panic, as an unwind may not cross them: `AURenderCallback`'s type is
+`extern "C-unwind"`, so `remote_io_render::render` catches the panic itself and calls
+`process::abort`.
 
 ## An error is the sentence the app shows
 
@@ -99,7 +101,9 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s
   `NowPlaying`); a moved rate announces `SinkChange::Reformatted` and rebinds with
   `SetSink(None)`, as does `rebind` (a media-services reset rebuilds the unit at an unchanged rate).
-  The render callback writes the source's bytes straight into the system's buffer and zeroes a short
+  A refused `AudioOutputUnitStart` or stop is a `StreamEvent::Refused` carrying the `OSStatus`, so the
+  engine's failure names the operation and the status (an inactive session, an interruption not yet
+  ended). The render callback writes the source's bytes straight into the system's buffer and zeroes a short
   fill; the stream clock is the reported latency. Drain waits that latency after the ring empties.
   `close` returns once the output thread has disposed the unit (waiting at most 3 s), so a rebind
   never opens the next unit beside a living one, and an open waits at most as long for the unit

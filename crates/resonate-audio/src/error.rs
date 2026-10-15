@@ -34,6 +34,13 @@ pub enum Error {
     SinkGone { node: SinkId },
     #[error("audio output {node} failed from {previous:?}")]
     StreamFailed { node: SinkId, previous: StreamState },
+    #[error("audio output {node} refused to {op:?} from {previous:?} (status {status})")]
+    StreamRefused {
+        node: SinkId,
+        previous: StreamState,
+        op: Operation,
+        status: i32,
+    },
     #[error("the audio output refused the requested format")]
     FormatRefused,
 }

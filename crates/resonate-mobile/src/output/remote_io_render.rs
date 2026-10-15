@@ -8,6 +8,8 @@
 
 use std::{
     ffi::c_void,
+    panic::{self, AssertUnwindSafe},
+    process,
     ptr::NonNull,
     slice,
     sync::{
@@ -35,6 +37,12 @@ pub(crate) unsafe extern "C-unwind" fn render(
     _: u32,
     buffers: *mut AudioBufferList,
 ) -> i32 {
+    let rendered =
+        panic::catch_unwind(AssertUnwindSafe(|| unsafe { rendered(rendering, buffers) }));
+    rendered.unwrap_or_else(|_| process::abort())
+}
+
+unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBufferList) -> i32 {
     let rendering = unsafe { rendering.cast::<Rendering>().as_mut() };
     let Some(buffers) = (unsafe { buffers.as_mut() }) else {
         return RENDERED;

@@ -217,12 +217,12 @@ impl Unit {
         })
     }
 
-    fn start(&self) -> Result<()> {
-        checked(Operation::Open, unsafe { AudioOutputUnitStart(self.unit) })
+    fn start(&self) -> i32 {
+        unsafe { AudioOutputUnitStart(self.unit) }
     }
 
-    fn stop(&self) -> Result<()> {
-        checked(Operation::Open, unsafe { AudioOutputUnitStop(self.unit) })
+    fn stop(&self) -> i32 {
+        unsafe { AudioOutputUnitStop(self.unit) }
     }
 }
 
@@ -350,7 +350,7 @@ fn serve(
                 Instant::now() + clock.latency().to_duration(rate).max(SHORTEST_DRAIN)
             });
             if Instant::now() >= ready_at {
-                let _ = unit.stop();
+                unit.stop();
                 let _ = announced.send(StreamEvent::Drained);
                 draining = false;
                 drain_after = None;
@@ -362,11 +362,25 @@ fn serve(
             Ok(StreamCommand::Close) | Err(RecvTimeoutError::Disconnected) => break,
             Ok(StreamCommand::Drain) => draining = true,
             Ok(StreamCommand::SetActive(active)) => {
-                let result = if active { unit.start() } else { unit.stop() };
-                let next = match (result, active) {
-                    (Err(_), _) => StreamState::Failed,
-                    (Ok(()), true) => StreamState::Streaming,
-                    (Ok(()), false) => StreamState::Paused,
+                let status = if active { unit.start() } else { unit.stop() };
+                if status != 0 {
+                    let op = if active {
+                        Operation::Start
+                    } else {
+                        Operation::Pause
+                    };
+                    let _ = announced.send(StreamEvent::Refused {
+                        from: state,
+                        op,
+                        status,
+                    });
+                    state = StreamState::Failed;
+                    continue;
+                }
+                let next = if active {
+                    StreamState::Streaming
+                } else {
+                    StreamState::Paused
                 };
                 let _ = announced.send(StreamEvent::StateChanged {
                     from: state,

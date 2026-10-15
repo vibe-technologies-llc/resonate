@@ -192,7 +192,9 @@ const fn cause_at_the_sink(sink: &resonate_audio::Error) -> Cause {
     match sink {
         Sink::NoSink => Cause::NoDevice,
         Sink::SinkGone { .. } => Cause::DeviceGone,
-        Sink::StreamFailed { .. } | Sink::FormatRefused => Cause::DeviceRefused,
+        Sink::StreamFailed { .. } | Sink::StreamRefused { .. } | Sink::FormatRefused => {
+            Cause::DeviceRefused
+        }
         Sink::Backend {
             op: resonate_audio::Operation::Format,
             ..

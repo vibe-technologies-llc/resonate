@@ -2897,6 +2897,7 @@ impl Engine {
 
         let mut renegotiated = None;
         let mut failed = None;
+        let mut refused = None;
 
         for event in events {
             match event {
@@ -2912,10 +2913,20 @@ impl Engine {
                     from,
                     to: StreamState::Failed,
                 } => failed = Some(from),
+                StreamEvent::Refused { from, op, status } => refused = Some((from, op, status)),
                 StreamEvent::StateChanged { .. } => {}
             }
         }
 
+        if let Some((previous, op, status)) = refused {
+            self.fail(Error::Sink(resonate_audio::Error::StreamRefused {
+                node,
+                previous,
+                op,
+                status,
+            }));
+            return;
+        }
         if let Some(previous) = failed {
             self.fail(Error::Sink(resonate_audio::Error::StreamFailed {
                 node,
@@ -3054,7 +3065,9 @@ impl Engine {
 
         let had_a_stream = match &error {
             Error::Sink(Sink::NoSink) => false,
-            Error::Sink(Sink::SinkGone { .. } | Sink::StreamFailed { .. }) => true,
+            Error::Sink(
+                Sink::SinkGone { .. } | Sink::StreamFailed { .. } | Sink::StreamRefused { .. },
+            ) => true,
             _ => return Err(error),
         };
         let Some(track) = self.track.as_ref().map(|track| track.id) else {
