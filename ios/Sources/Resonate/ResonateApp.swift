@@ -48,7 +48,6 @@ enum Destination: Hashable {
     case folders
     case suggestions
     case statistics
-    case online
     case wanted
     case providers
     case scrobbling
@@ -105,11 +104,6 @@ final class Navigation {
     }
 
     func open(_ destination: Destination) {
-        guard destination != .online else {
-            searchOnline()
-            return
-        }
-
         nowPlaying = false
         let root = tab == .settings && !destination.belongsToSettings ? Root.library : tab
         tab = root
@@ -312,7 +306,6 @@ struct DestinationView: View {
         case .folders: FoldersView()
         case .suggestions: SuggestionsView()
         case .statistics: StatisticsView()
-        case .online: OnlineView()
         case .wanted: WantedView()
         case .providers: ProviderView()
         case .scrobbling: ScrobblingView()

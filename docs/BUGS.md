@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `OnlineView` and `Destination.online` are unreachable (`open(.online)` switches to the
-  Search tab's Online scope), yet `ios.md` says the destination still draws a page of its own;
-  the same file's `portraitOf:` is not a parameter (`ArtworkView(track:corner:circle:)`)
 - [S] Scanning drops its reasons: `unreadable` carries none, and `setArtwork` and
   `keepSidecarLyrics` failures are `try?`; `importPlaylistFile` reads the whole file with
   `Data(contentsOf:)` before the boundary's 8 MiB refusal, so a multi-gigabyte pick risks jetsam

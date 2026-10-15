@@ -110,24 +110,6 @@ struct OnlineAnswers {
     }
 }
 
-struct OnlineView: View {
-    @Environment(Library.self) private var library
-    @State private var actions = OnlineSongActions()
-
-    var body: some View {
-        @Bindable var features = library.features
-        List {
-            OnlineSearchContent(actions: $actions).themedRows()
-        }
-        .listStyle(.plain)
-        .navigationTitle("Online music search")
-        .searchable(text: $features.onlineQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: OnlineAsked.prompt)
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .onlineSongActions($actions)
-    }
-}
-
 struct OnlineOff: View {
     @Environment(Navigation.self) private var navigation
 

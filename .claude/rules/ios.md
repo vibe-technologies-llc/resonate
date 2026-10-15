@@ -478,9 +478,8 @@ every route change (a pair of headphones at the same rate included), not from th
   never reaches the network. Your library shows the Songs results (Top, *See all* pushing the full
   list, *Did you mean*, reads, completions) and, under five songs, "Search online for “…”", which
   switches scope. With no text the page lists the recent searches and a hint; Online with online
-  features off shows why, with Open Settings. `Navigation.open(.online)` and Library tools' Online
-  search switch to this tab in Online (`searchOnline`); `Destination.online` still draws a page of
-  its own (`OnlineView`) over the same state.
+  features off shows why, with Open Settings. Library tools' Online search switches to this tab
+  in Online (`Navigation.searchOnline`); there is no destination of its own.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
   page published at once where nothing is shown yet and the rest after; albums and artists through
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. A list of 40
@@ -625,7 +624,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   must be decoded waits 300 ms of steady size, so a cover zooming between Now Playing's layouts
   does not decode at every bucket it passes. `ShownArtwork` (the last picture per song, for a view's first
   frame before it is measured) keeps 64 MiB. A circular `ArtworkView`
-  (`portraitOf:`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
+  (`ArtworkView(track:corner:circle:)`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture.
 
 ## Downloads
