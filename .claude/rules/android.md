@@ -262,7 +262,14 @@ full `track_count`, the albums and artists holding them with those named by the 
 matched); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
 Kotlin index. `albums(order)`/`artists(order)` (`CollectionOrder`: alphabetical, artist, year newest
 first, recently added, plays) group in Rust: an album by folded title plus folded album artist,
-else artist (an empty album title is no album), its `key` what `album_tracks` and `album(key)` take back, in disc
+else artist (an empty album title is no album), and then, as the desktop's `grouping_keys` gather,
+keys meeting in a release id, or in one title and one sleeve (`sleeve_of`: the document's folder
+read off its URI, a disc folder `scan::disc_in_folder` names answering its parent, a song loose in a
+granted root or SAF tree in none) are one album (`albums_of`, a union of the provisional keys, the
+largest lending its key); every member key opens it, and one whose songs bill different owners is
+*Various artists* with `AlbumHit.various_artists`, so a front end links no artist
+(`an_album_split_by_its_credits_or_discs_is_gathered_by_the_folder_holding_it`). Its `key` is what
+`album_tracks` and `album(key)` take back, in disc
 and track order with unnumbered rows last, and the free `album_key(album, artist, album_artist)`
 the same key for one song (`None` without an album), so a song's page needs no lookup;
 `albums_by(name)` lists an artist's albums, newest first, and `most_played_by(name, limit)` its

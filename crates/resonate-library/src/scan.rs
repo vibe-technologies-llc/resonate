@@ -1305,7 +1305,7 @@ const TENS: [(&str, &str); 8] = [
     ("ninety", "ninetieth"),
 ];
 
-pub(crate) fn disc_in_folder(name: &str) -> Option<NonZeroU32> {
+pub fn disc_in_folder(name: &str) -> Option<NonZeroU32> {
     let folded = numerals::plainly(name);
     numbered_after_the_word(&folded).or_else(|| named_before_the_word(&folded))
 }

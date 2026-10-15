@@ -8,7 +8,9 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::Codec;
 use resonate_core::{folded_letters, is_lettered};
-use resonate_library::{Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term};
+use resonate_library::{
+    Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term, disc_in_folder,
+};
 use rusqlite::Connection;
 
 use crate::{
@@ -24,6 +26,7 @@ const COMPLETIONS_AT_MOST: usize = 6;
 const LETTERS_A_PIECE_INSIDE_A_WORD_NEEDS: usize = 3;
 
 const BETWEEN_KEY_PARTS: char = '\u{1f}';
+const VARIOUS_ARTISTS: &str = "Various artists";
 
 const MILLISECONDS_A_SECOND: f64 = 1_000.0;
 
@@ -85,6 +88,8 @@ pub struct AlbumHit {
     pub songs: u32,
     pub duration_ms: u64,
     pub artwork_track: u64,
+    #[uniffi(default)]
+    pub various_artists: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -961,6 +966,7 @@ impl Row {
 
 struct AlbumGroup {
     key: String,
+    various_artists: bool,
     title: String,
     artist: String,
     title_name: Name,
@@ -981,6 +987,7 @@ impl AlbumGroup {
 
         Self {
             key,
+            various_artists: false,
             title: row.track.album.clone(),
             artist: artist.to_owned(),
             title_name: Name::of(&row.track.album),
@@ -1000,6 +1007,16 @@ impl AlbumGroup {
         self.rows
             .sort_by(|one, other| in_album_order(&rows[*one], &rows[*other]));
         let held = || self.rows.iter().map(|at| &rows[*at]);
+
+        let mut owners: Vec<&str> = held().map(|row| row.grouping_artist().1).collect();
+        owners.sort_unstable();
+        owners.dedup();
+        if owners.len() > 1 {
+            self.various_artists = true;
+            self.artist = VARIOUS_ARTISTS.to_owned();
+            self.artist_name = Name::of(VARIOUS_ARTISTS);
+            self.filed_artist = folded_letters(VARIOUS_ARTISTS);
+        }
 
         self.year = held().filter_map(|row| row.year).min();
         self.duration_ms = held().map(|row| row.track.duration_ms).sum();
@@ -1028,6 +1045,7 @@ impl AlbumGroup {
             songs: counted(self.rows.len()),
             duration_ms: self.duration_ms,
             artwork_track: self.artwork_track,
+            various_artists: self.various_artists,
         }
     }
 }
@@ -1137,23 +1155,7 @@ impl Index {
     }
 
     fn gathered(mut rows: Vec<Row>, revision: u64) -> Self {
-        let mut albums: Vec<AlbumGroup> = Vec::new();
-        let mut album_at: HashMap<String, usize> = HashMap::new();
-        for (at, row) in rows.iter_mut().enumerate() {
-            if row.filed_album.is_empty() {
-                continue;
-            }
-            let key = keyed(&row.filed_album, row.grouping_artist().1);
-            let group = *album_at.entry(key.clone()).or_insert_with(|| {
-                albums.push(AlbumGroup::first(key, row));
-                albums.len() - 1
-            });
-            albums[group].rows.push(at);
-            row.album_group = Some(group);
-        }
-        for album in &mut albums {
-            album.settle(&rows);
-        }
+        let (albums, album_at) = albums_of(&mut rows);
 
         let mut artists: Vec<ArtistGroup> = Vec::new();
         let mut artist_at: HashMap<String, usize> = HashMap::new();
@@ -1437,6 +1439,179 @@ fn named_first(groups: Vec<usize>, most: usize, fit: impl Fn(usize) -> Option<Fi
         .take(most)
         .map(|(_, group)| group)
         .collect()
+}
+
+fn albums_of(rows: &mut [Row]) -> (Vec<AlbumGroup>, HashMap<String, usize>) {
+    let mut keys: Vec<String> = Vec::new();
+    let mut key_at: HashMap<String, usize> = HashMap::new();
+    let mut keyed_rows: Vec<Vec<usize>> = Vec::new();
+    for (at, row) in rows.iter().enumerate() {
+        if row.filed_album.is_empty() {
+            continue;
+        }
+        let key = keyed(&row.filed_album, row.grouping_artist().1);
+        let provisional = *key_at.entry(key.clone()).or_insert_with(|| {
+            keys.push(key);
+            keyed_rows.push(Vec::new());
+            keys.len() - 1
+        });
+        keyed_rows[provisional].push(at);
+    }
+
+    let mut gathering = Gathering::of(keys.len());
+    let mut met: HashMap<Meeting, usize> = HashMap::new();
+    for (provisional, held) in keyed_rows.iter().enumerate() {
+        for at in held {
+            for meeting in meetings(&rows[*at]) {
+                match met.get(&meeting) {
+                    Some(other) => gathering.join(*other, provisional),
+                    None => {
+                        met.insert(meeting, provisional);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut albums: Vec<AlbumGroup> = Vec::new();
+    let mut group_of_root: HashMap<usize, usize> = HashMap::new();
+    let mut album_at: HashMap<String, usize> = HashMap::new();
+    let mut by_size: Vec<usize> = (0..keys.len()).collect();
+    by_size.sort_by_key(|provisional| (Reverse(keyed_rows[*provisional].len()), *provisional));
+    for provisional in by_size {
+        let root = gathering.root(provisional);
+        let group = *group_of_root.entry(root).or_insert_with(|| {
+            let first = &rows[keyed_rows[provisional][0]];
+            albums.push(AlbumGroup::first(keys[provisional].clone(), first));
+            albums.len() - 1
+        });
+        album_at.insert(keys[provisional].clone(), group);
+        for at in &keyed_rows[provisional] {
+            albums[group].rows.push(*at);
+            rows[*at].album_group = Some(group);
+        }
+    }
+    for album in &mut albums {
+        album.settle(rows);
+    }
+
+    (albums, album_at)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Meeting {
+    Release(String),
+    Sleeve { album: String, folder: String },
+}
+
+fn meetings(row: &Row) -> Vec<Meeting> {
+    let release = row
+        .track
+        .release
+        .as_deref()
+        .map(str::trim)
+        .filter(|release| !release.is_empty())
+        .map(|release| Meeting::Release(release.to_ascii_lowercase()));
+    let sleeve = sleeve_of(&row.track.uri).map(|folder| Meeting::Sleeve {
+        album: row.filed_album.clone(),
+        folder,
+    });
+
+    [release, sleeve].into_iter().flatten().collect()
+}
+
+struct Gathering {
+    parent: Vec<usize>,
+}
+
+impl Gathering {
+    fn of(count: usize) -> Self {
+        Self {
+            parent: (0..count).collect(),
+        }
+    }
+
+    fn root(&mut self, at: usize) -> usize {
+        let mut root = at;
+        while self.parent[root] != root {
+            root = self.parent[root];
+        }
+        let mut walked = at;
+        while self.parent[walked] != root {
+            let next = self.parent[walked];
+            self.parent[walked] = root;
+            walked = next;
+        }
+        root
+    }
+
+    fn join(&mut self, one: usize, other: usize) {
+        let (one, other) = (self.root(one), self.root(other));
+        if one != other {
+            self.parent[one.max(other)] = one.min(other);
+        }
+    }
+}
+
+const ANDROID_TREE: &str = "/tree/";
+const ANDROID_DOCUMENT: &str = "/document/";
+const SCHEME_ENDS: &str = "://";
+
+fn sleeve_of(uri: &str) -> Option<String> {
+    let folder = match uri.split_once(ANDROID_DOCUMENT) {
+        Some((before, document)) => {
+            let document = unescaped(document);
+            let (folder, _) = document.rsplit_once('/')?;
+            let tree = before
+                .split_once(ANDROID_TREE)
+                .map(|(_, tree)| unescaped(tree.split('/').next().unwrap_or_default()));
+            if tree.as_deref() == Some(folder) {
+                return None;
+            }
+            folder.to_owned()
+        }
+        None => {
+            let (_, held) = uri.split_once(SCHEME_ENDS)?;
+            let (folder, _) = held.rsplit_once('/')?;
+            if !folder.contains('/') {
+                return None;
+            }
+            folder
+                .split('/')
+                .map(unescaped)
+                .collect::<Vec<_>>()
+                .join("/")
+        }
+    };
+
+    match folder.rsplit_once('/') {
+        Some((parent, last)) if disc_in_folder(last).is_some() => Some(parent.to_owned()),
+        _ => Some(folder),
+    }
+}
+
+fn unescaped(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut kept = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let escaped = (bytes[at] == b'%')
+            .then(|| bytes.get(at + 1..at + 3))
+            .flatten()
+            .and_then(|hex| std::str::from_utf8(hex).ok())
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                kept.push(byte);
+                at += 3;
+            }
+            None => {
+                kept.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&kept).into_owned()
 }
 
 fn keyed(filed_album: &str, filed_artist: &str) -> String {
@@ -1797,6 +1972,141 @@ mod tests {
         assert_eq!(accented, vec![TextRange { start: 8, end: 12 }]);
         assert_eq!(pictured, vec![TextRange { start: 3, end: 7 }]);
         assert!(elsewhere.is_empty());
+    }
+
+    fn filed(catalog: &Catalog, uri: &str, tagged: Tagged<'_>) -> Track {
+        let track = song(catalog, tagged);
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET uri = ?2 WHERE id = ?1",
+                params![track.id as i64, uri],
+            )
+            .expect("a filed song");
+        catalog.track(track.id).expect("the filed song")
+    }
+
+    #[test]
+    fn an_album_split_by_its_credits_or_discs_is_gathered_by_the_folder_holding_it() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        for (uri, title, artist) in [
+            (
+                "resonate-folder://local/Witcher%203/CD1/01.flac",
+                "Geralt of Rivia",
+                "Marcin Przybyłowicz",
+            ),
+            (
+                "resonate-folder://local/Witcher%203/CD1/02.flac",
+                "Silver for Monsters",
+                "Mikolai Stroinski",
+            ),
+            (
+                "resonate-folder://local/Witcher%203/Disc%202/01.flac",
+                "Lady of the Lake",
+                "Percival",
+            ),
+            (
+                "resonate-folder://local/Elsewhere/01.flac",
+                "A Stranger",
+                "Percival",
+            ),
+        ] {
+            filed(
+                &catalog,
+                uri,
+                Tagged {
+                    title,
+                    artist,
+                    album: if title == "A Stranger" {
+                        "Another Album"
+                    } else {
+                        "The Witcher 3"
+                    },
+                    ..UNTAGGED
+                },
+            );
+        }
+
+        let albums = searching
+            .albums(&catalog, CollectionOrder::Alphabetical)
+            .expect("albums");
+        let witcher = albums
+            .iter()
+            .find(|album| album.title == "The Witcher 3")
+            .expect("the witcher");
+        let by_percival =
+            album_key("The Witcher 3".into(), "Percival".into(), String::new()).expect("a key");
+        let reached = searching
+            .album_tracks(&catalog, &by_percival)
+            .expect("the gathered album");
+
+        assert_eq!(albums.len(), 2);
+        assert_eq!(witcher.songs, 3);
+        assert_eq!(witcher.artist, VARIOUS_ARTISTS);
+        assert!(witcher.various_artists);
+        assert_eq!(reached.len(), 3);
+    }
+
+    #[test]
+    fn an_album_spread_over_folders_is_gathered_by_its_release_but_one_loose_in_a_root_stays_apart()
+    {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let release = "b1a9c0e9-d987-4042-ae91-78d6a3267d69";
+        for (uri, album) in [
+            ("resonate-folder://local/A/one.flac", "Set (Disc 1)"),
+            ("resonate-folder://local/B/two.flac", "Set (Disc 2)"),
+            ("resonate-folder://local/three.flac", "Set (Disc 1)"),
+        ] {
+            let track = filed(
+                &catalog,
+                uri,
+                Tagged {
+                    title: uri,
+                    artist: "Artist",
+                    album,
+                    ..UNTAGGED
+                },
+            );
+            if !uri.ends_with("three.flac") {
+                catalog
+                    .0
+                    .lock()
+                    .execute(
+                        "UPDATE documents SET release = ?2 WHERE id = ?1",
+                        params![track.id as i64, release],
+                    )
+                    .expect("a release");
+            }
+        }
+
+        let albums = searching
+            .albums(&catalog, CollectionOrder::Alphabetical)
+            .expect("albums");
+
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].songs, 3);
+    }
+
+    #[test]
+    fn a_song_is_filed_in_the_folder_holding_its_disc_and_nowhere_when_loose_in_a_root() {
+        assert_eq!(
+            sleeve_of("resonate-folder://local/Witcher%203/CD%202/01.flac").as_deref(),
+            Some("local/Witcher 3")
+        );
+        assert_eq!(sleeve_of("resonate-folder://local/01.flac"), None);
+        assert_eq!(
+            sleeve_of("content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum%2F01.flac").as_deref(),
+            Some("primary:Music/Album")
+        );
+        assert_eq!(
+            sleeve_of(
+                "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2F01.flac"
+            ),
+            None
+        );
     }
 
     #[test]

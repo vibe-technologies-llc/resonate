@@ -220,6 +220,8 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; every artwork edge is a
   `@ScaledMetric`.
+- **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
+  whatever grouping it last showed otherwise) and pops its stack before switching to it.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
   the full list is rows.
@@ -318,8 +320,10 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
 - **The palette** (`Palette`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
   linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded by
   lightness quantiles, six rounds. Near-black, near-white and grey pixels are dropped where at least
-  a third of the cover is vivid; a cover less than a sixteenth vivid is colourless and takes the
-  palette built around the accent colour, as does a song without a cover. Each colour is held to
+  a third of the cover is vivid; a cover less than a sixteenth vivid (black, grey, white) is
+  clustered whole and keeps its own greys, its lightness held from 0.16 (`Palette.darkestGrey`) so a
+  black cover gives a near-black field; only a song without a cover takes the palette built around
+  the accent colour. Each colour is held to
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
   Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once

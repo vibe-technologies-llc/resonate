@@ -141,7 +141,7 @@ pub use crate::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,
     },
-    scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary},
+    scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary, disc_in_folder},
     scrobble::{
         Billed, LOVES_TOLD_AT_ONCE, LastfmSession, LastfmSignIn, ListeningService, Love, Loved,
         LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers, Submitted,

@@ -187,6 +187,7 @@ struct Palette: Sendable, Equatable {
         (0.5, -0.12, 0.75),
     ]
     private static let darkest: Float = 0.3
+    static let darkestGrey: Float = 0.16
     private static let lightest: Float = 0.64
     private static let hueless: Float = 0.015
     private static let dullest: Float = 0.07
@@ -217,13 +218,17 @@ struct Palette: Sendable, Equatable {
         return Palette(colours: colours, weights: accentWeights)
     }
 
-    static func shaped(_ clusters: [(centre: SIMD3<Float>, members: Int)], smallestWeight: Float) -> Palette {
+    static func shaped(
+        _ clusters: [(centre: SIMD3<Float>, members: Int)],
+        smallestWeight: Float,
+        darkest floor: Float = darkest
+    ) -> Palette {
         let ranked = clusters.sorted { $0.members > $1.members }
         let total = Float(max(ranked.reduce(0) { $0 + $1.members }, 1))
         let raised = ranked.map { max(Float($0.members) / total, smallestWeight) }
         let sum = raised.reduce(0, +)
 
-        return Palette(colours: ranked.map { richened($0.centre) }, weights: raised.map { $0 / sum })
+        return Palette(colours: ranked.map { richened($0.centre, darkest: floor) }, weights: raised.map { $0 / sum })
     }
 
     func blended(toward other: Palette, by amount: Float) -> Palette {
@@ -233,10 +238,10 @@ struct Palette: Sendable, Equatable {
         )
     }
 
-    private static func richened(_ lab: SIMD3<Float>) -> SIMD3<Float> {
+    private static func richened(_ lab: SIMD3<Float>, darkest floor: Float = darkest) -> SIMD3<Float> {
         let chroma = (lab.y * lab.y + lab.z * lab.z).squareRoot()
         let hue = Float(atan2(Double(lab.z), Double(lab.y)))
-        let lightness = min(max(lab.x, darkest), lightest)
+        let lightness = min(max(lab.x, floor), lightest)
         var fitted = chroma < hueless ? chroma : min(max(chroma * chromaLift, dullest), richest)
 
         for _ in 0..<gamutSteps {
@@ -314,7 +319,9 @@ enum Backdrop {
         guard let pixels = labPixels(of: image), !pixels.isEmpty else { return nil }
         let vivid = pixels.filter(isVivid)
 
-        guard vivid.count * colourlessBelowOneIn >= pixels.count else { return nil }
+        guard vivid.count * colourlessBelowOneIn >= pixels.count else {
+            return Palette.shaped(clustered(pixels), smallestWeight: smallestWeight, darkest: Palette.darkestGrey)
+        }
         let chosen = vivid.count * vividOnlyFromOneIn >= pixels.count ? vivid : pixels.filter(isMidtone)
         return Palette.shaped(clustered(chosen), smallestWeight: smallestWeight)
     }

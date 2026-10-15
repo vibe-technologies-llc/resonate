@@ -50,6 +50,9 @@ struct LibraryView: View {
             }
             if !playlistsOnly, shelf == .all, folded.isEmpty {
                 Button {
+                    if library.filtering { library.setFilter(defaultTrackFilter()) }
+                    navigation.songsGrouping = .songs
+                    navigation.paths[.songs] = []
                     navigation.tab = .songs
                 } label: {
                     AllSongsRow(count: tracks.count)
@@ -107,7 +110,7 @@ struct LibraryView: View {
                                 detail: album.detail
                             )
                         }
-                        .collectionActions(.album(album.key), artist: album.artist)
+                        .collectionActions(.album(album.key), artist: album.variousArtists ? nil : album.artist)
                     }
                 }
             }
@@ -509,7 +512,7 @@ struct AlbumView: View {
                 tracks: tracks,
                 summary: ([album?.year.map(String.init)].compactMap { $0 } + [collectionSummary(tracks)]).joined(separator: " · "),
                 badge: sharedQuality(tracks),
-                openSubtitle: artist.isEmpty ? nil : { navigation.open(.artist(artist)) }
+                openSubtitle: artist.isEmpty || album?.variousArtists == true ? nil : { navigation.open(.artist(artist)) }
             )
             if read, tracks.isEmpty {
                 Text("No songs from this album are in your library yet.").foregroundStyle(.secondary)
@@ -534,7 +537,7 @@ struct AlbumView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(shownTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { CollectionMenu(tracks: tracks, artist: artist) }
+        .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist) }
         .task(id: "\(key):\(library.collectionGeneration)") { await load() }
     }
 
@@ -595,7 +598,7 @@ struct ArtistView: View {
                                     .accessibilityElement(children: .combine)
                                 }
                                 .buttonStyle(.plain)
-                                .collectionActions(.album(album.key), artist: album.artist)
+                                .collectionActions(.album(album.key), artist: album.variousArtists ? nil : album.artist)
                             }
                         }
                         .scrollTargetLayout()
