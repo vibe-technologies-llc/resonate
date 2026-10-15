@@ -1134,6 +1134,22 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_sidebar_scrolls_only_once_the_window_is_too_short_for_its_tabs(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.settle();
+
+        let roomy = driven.read(|root, _| root.sidebar_scroll.max_offset().height);
+
+        driven.cx.simulate_resize(size(px(WIDE), px(300.0)));
+        driven.settle();
+
+        let squeezed = driven.read(|root, _| root.sidebar_scroll.max_offset().height);
+
+        assert_eq!(f32::from(roomy), 0.0);
+        assert!(f32::from(squeezed) > 0.0);
+    }
+
+    #[gpui::test]
     fn a_drag_over_the_window_is_weighed_and_drawn_until_it_leaves(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let from = Folder::new();
@@ -1699,7 +1715,7 @@ mod tests {
     ) {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.click("category-Online");
+        driven.click("category-Scrobbling");
         driven.focus(|root| &root.listenbrainz);
 
         driven.cx.simulate_input("token");

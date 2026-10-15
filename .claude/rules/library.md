@@ -876,7 +876,7 @@ reads, so a write is weighed against what the rest of the build sees). `FileTags
 formats this build would not read back: it answers for AAC, AIFF, Monkey's Audio, FLAC, MP3, MP4,
 Ogg Vorbis, Opus, WAV, WavPack (WAV: `riff.rs` reads the `id3 ` chunk lofty writes); `.caf`, `.mka`,
 `.oga` and the DSD containers are passed over. `Library::retag` is the pass behind `resonate tag`
-(preview until `--apply`, like `organise`); the settings pane's *Tagging* group has the same
+(preview until `--apply`, like `organise`); the settings pane's *Rescan, refresh and retag* group has the same
 preview-then-arm shape as *Organising*.
 
 **Every field the `TagSet` names a writer can reach is a `TagField`** (names, numbers, date, label,
@@ -985,7 +985,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   was taken against); a second caller gets `Error::AlreadyWalking`. A vaulted row is
   `Unwritten::Vaulted` (`vault.md`).
 - **The preview is the plan.** One `Retagging` is built, handed to the apply or not; a failing write
-  moves from `Retagging::writes` to `passed_over`. The *Tagging* group draws the same plan
+  moves from `Retagging::writes` to `passed_over`. The tags part of *Rescan, refresh and retag* draws the same plan
   (`ui.md`).
 - **The last applied run can be put back.** Every write carries a `Held`: each touched field as read
   before, the rating where changed, a replaced picture. The apply notes it in `retagged` and
@@ -1002,7 +1002,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   writes the run again. **A walk back cut short leaves the rest to the next**: `Noted::walking_back`
   holds the record read; a write that fails or reads back otherwise has its old note put back
   (`note_again`); unless every noted file was put back (`retag::walked_back`) the files that were
-  lose their notes. `resonate tag --undo` previews, `--undo --apply` writes; the *Tagging* group
+  lose their notes. `resonate tag --undo` previews, `--undo --apply` writes; the tags part of *Rescan, refresh and retag*
   offers *Put the last run back* behind a second press wherever `Library::retag_walks_back` says a
   run is noted. **A replaced picture is kept once**: `retagged_pictures`, `retagged.picture_id`:
   `KeptPictures` weighs each against the last eight kept (`PICTURES_WEIGHED_AGAINST`), by pointer

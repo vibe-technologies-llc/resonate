@@ -12,6 +12,8 @@ impl Category {
             Self::Library => "Library",
             Self::Filters => "Filters",
             Self::Online => "Online",
+            Self::Recognition => "Recognition",
+            Self::Scrobbling => "Scrobbling",
             Self::Sync => "Sync",
             Self::Desktop => "Desktop",
             Self::Appearance => "Appearance",
@@ -33,8 +35,13 @@ impl Category {
             }
             Self::Filters => "Which file extensions and track lengths appear in your library",
             Self::Online => {
-                "What is looked up about the library, and what a request says about you"
+                "Whether the player may reach the network, what a request says about you, and what \
+                 is looked up when"
             }
+            Self::Recognition => {
+                "Studying tracks, and naming a song by ear from the desktop or a microphone"
+            }
+            Self::Scrobbling => "Where the plays you listen to are sent",
             Self::Sync => {
                 "Your other devices kept in step: pairing them, who is there, how they meet and \
                  which songs travel"
@@ -57,6 +64,8 @@ impl Category {
             Self::Library => Icon::Folder,
             Self::Filters => Icon::Search,
             Self::Online => Icon::Globe,
+            Self::Recognition => Icon::Listen,
+            Self::Scrobbling => Icon::Statistics,
             Self::Sync => Icon::Sync,
             Self::Desktop => Icon::Info,
             Self::Appearance => Icon::Appearance,
@@ -95,9 +104,7 @@ pub(crate) enum Group {
     MusicExtensions,
     MinimumLength,
     Folders,
-    Scanning,
-    Refreshing,
-    Tagging,
+    Updating,
     Organising,
     Vault,
     Inbox,
@@ -116,7 +123,6 @@ pub(crate) enum Group {
     Listening,
     Submitting,
     Lastfm,
-    LookUpNow,
     Syncing,
     Pairing,
     SyncDevices,
@@ -140,7 +146,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 64] = [
+    pub(crate) const ALL: [Self; 61] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -163,9 +169,7 @@ impl Group {
         Self::MusicExtensions,
         Self::MinimumLength,
         Self::Folders,
-        Self::Scanning,
-        Self::Refreshing,
-        Self::Tagging,
+        Self::Updating,
         Self::Organising,
         Self::Vault,
         Self::Inbox,
@@ -184,7 +188,6 @@ impl Group {
         Self::Listening,
         Self::Submitting,
         Self::Lastfm,
-        Self::LookUpNow,
         Self::Syncing,
         Self::Pairing,
         Self::SyncDevices,
@@ -230,9 +233,7 @@ impl Group {
             Self::MusicExtensions | Self::MinimumLength => Category::Filters,
             Self::MusicFolder
             | Self::Folders
-            | Self::Scanning
-            | Self::Refreshing
-            | Self::Tagging
+            | Self::Updating
             | Self::Organising
             | Self::Vault
             | Self::Inbox
@@ -242,16 +243,9 @@ impl Group {
             | Self::History
             | Self::Repeating
             | Self::PreviousButton => Category::Library,
-            Self::Lookups
-            | Self::AfterScan
-            | Self::Studies
-            | Self::Lyrics
-            | Self::Contact
-            | Self::Recognition
-            | Self::Listening
-            | Self::Submitting
-            | Self::Lastfm
-            | Self::LookUpNow => Category::Online,
+            Self::Lookups | Self::AfterScan | Self::Lyrics | Self::Contact => Category::Online,
+            Self::Studies | Self::Recognition | Self::Listening => Category::Recognition,
+            Self::Submitting | Self::Lastfm => Category::Scrobbling,
             Self::Syncing
             | Self::Pairing
             | Self::SyncDevices
@@ -299,9 +293,7 @@ impl Group {
             Self::MinimumLength => "Minimum length",
             Self::MusicFolder => "Primary music folder",
             Self::Folders => "Music folders",
-            Self::Scanning => "Scanning",
-            Self::Refreshing => "Refreshing",
-            Self::Tagging => "Tagging",
+            Self::Updating => "Rescan, refresh and retag",
             Self::Organising => "Organising",
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
@@ -320,7 +312,6 @@ impl Group {
             Self::Listening => "Listening",
             Self::Submitting => "ListenBrainz",
             Self::Lastfm => "Last.fm",
-            Self::LookUpNow => "Look up now",
             Self::Notifications => "Notifications",
             Self::Syncing => "Device sync",
             Self::Pairing => "Pairing",
@@ -372,9 +363,7 @@ impl Group {
             }
             Self::MusicFolder => MUSIC_FOLDER_HINT,
             Self::Folders => FOLDERS_HINT,
-            Self::Scanning => SCANNING_HINT,
-            Self::Refreshing => REFRESHING_HINT,
-            Self::Tagging => TAGGING_HINT,
+            Self::Updating => UPDATING_HINT,
             Self::Organising => ORGANISING_HINT,
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
@@ -393,7 +382,6 @@ impl Group {
             Self::Listening => LISTENING_HINT,
             Self::Submitting => SUBMITTING_HINT,
             Self::Lastfm => LASTFM_HINT,
-            Self::LookUpNow => LOOKUP_HINT,
             Self::Notifications => NOTIFICATIONS_HINT,
             Self::Syncing => SYNCING_HINT,
             Self::Pairing => PAIRING_HINT,
@@ -475,14 +463,11 @@ impl Group {
                  songs files library outside vault file organise layout covers lyrics"
             }
             Self::Folders => "roots directories add scan music path",
-            Self::Scanning => "rescan stop enrich tags index",
-            Self::Refreshing => {
-                "reindex re-read reread rebuild refresh length duration timestamps modified \
-                 cue sheet search index covers artwork missing database"
-            }
-            Self::Tagging => {
-                "write back retag tags metadata musicbrainz ids cover art picture \
-                              embed files"
+            Self::Updating => {
+                "rescan scan stop enrich look up refresh all force musicbrainz covers portraits \
+                 missing reindex re-read reread rebuild length duration timestamps modified cue \
+                 sheet search index artwork database write back retag tags metadata ids embed \
+                 files preview apply put back"
             }
             Self::Organising => {
                 "tidy rename move layout template pattern folder structure filename"
@@ -535,7 +520,6 @@ impl Group {
                 "scrobble scrobbling last.fm lastfm audioscrobbler sign in log in session api key \
                  secret user name password account"
             }
-            Self::LookUpNow => "enrich refresh musicbrainz covers portraits",
             Self::Notifications => "notify popup toast banner song track change desktop osd",
             Self::Discord => {
                 "rich presence status activity listening profile application id client"
@@ -692,10 +676,7 @@ impl Group {
             Self::Bands
             | Self::Measured
             | Self::Folders
-            | Self::Scanning
-            | Self::Refreshing
-            | Self::Tagging
-            | Self::LookUpNow
+            | Self::Updating
             | Self::Build
             | Self::Places
             | Self::Everything => &[],
@@ -952,23 +933,15 @@ pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks. Adding one scan
                                        away; dropping one forgets every track that came from it, \
                                        and leaves the files alone.";
 
-pub(crate) const SCANNING_HINT: &str = "Re-reads every folder above. A scan is incremental: a file \
-                                        whose size and modification time are unchanged is skipped.";
-
-pub(crate) const REFRESHING_HINT: &str = "Reads parts of the catalog again on purpose. Read \
-                                           every file again re-reads each file even where its \
-                                           size and time are unchanged — names, lengths, cue \
-                                           sheets, covers and the search index — and keeps plays, \
-                                           favourites and playlists. Look for missing covers asks \
-                                           the archive again for every album with no picture.";
-
-pub(crate) const TAGGING_HINT: &str = "Writes what a lookup answered for back into the files, so \
-     another player reads the same names: the titles and artists a reference named, the release \
-     and recording ids, the date, label, catalogue number and barcode, and the cover art where the \
-     file carries none. A name this build only guessed at is never written, a field the file \
-     already says is left alone, and a row a cue sheet cut out of a file it shares is passed over \
-     whole. Preview lists what would be written and only Apply writes anything. Nothing is written \
-     on its own: this runs when you press it and at no other time.";
+pub(crate) const UPDATING_HINT: &str = "Brings the library up to date, in three steps that never \
+     overlap. Files: Rescan reads what was added or changed since the last scan; Read every file \
+     again re-reads all of them and keeps plays, favourites and playlists. Details: Look up asks \
+     the reference about what has not been answered lately and Refresh all asks about everything \
+     again, at one paced request per album and per artist; Look for missing covers asks the \
+     archive again for every album with no picture. Tags: writes what a lookup answered back into \
+     the files so another player reads the same names. A name this build only guessed at is never \
+     written, a field the file already says is left alone, and Preview lists what would be written \
+     before Apply writes anything. Nothing is written on its own.";
 
 pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself. Importing a \
                                      track decodes it, throws every tag and picture away, keeps \
@@ -1092,11 +1065,6 @@ pub(crate) const CONTACT_HINT: &str = "What the User-Agent carries beside the na
                                        misbehaves. MusicBrainz asks for one; nothing here needs \
                                        it. It is read at start, so what is typed here is sent from \
                                        the next one.";
-
-pub(crate) const LOOKUP_HINT: &str = "Asks the reference now rather than waiting for the next \
-                                      scan. Look up asks only about what has not been answered; \
-                                      Refresh all asks about everything again, at one paced \
-                                      request per album and per artist.";
 
 pub(crate) const NOTIFICATIONS_HINT: &str = "Whether a track starting raises a popup through the \
                                              desktop's notification server. One is never raised \

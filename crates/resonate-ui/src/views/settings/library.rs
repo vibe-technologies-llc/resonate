@@ -58,9 +58,16 @@ const FOLDERS_NOTE: &str = "Everything under these folders is read into the libr
                             while the window is open. The files are only read: nothing in them \
                             changes unless Tagging or Organising below is applied.";
 
-const SCANNING_NOTE: &str = "Rescan reads what was added or changed since the last scan. Enrich \
-                             asks MusicBrainz about the albums and artists not asked lately, \
-                             which a scan does on its own when Online allows it.";
+const FILES_EYEBROW: &str = "THE FILES";
+
+const DETAILS_EYEBROW: &str = "WHAT ONLINE KNOWS";
+
+const TAGS_EYEBROW: &str = "THE TAGS IN THE FILES";
+
+const FILES_NOTE: &str = "Rescan reads what was added or changed since the last scan. Read every \
+                          file again re-reads each file whatever its size and time say: names, \
+                          lengths, cue sheets, covers and the search index. Plays, favourites and \
+                          playlists are kept.";
 
 const RESUMING_NOTE: &str = "The queue comes back paused on the row it was playing, so nothing \
                              starts on its own. Files named on the command line are queued \
@@ -110,8 +117,10 @@ fn forgets_listens(now: HistoryKept, asked: HistoryKept) -> bool {
     }
 }
 
-const REFRESHING_NOTE: &str = "The scan's progress shows under Scanning above. What MusicBrainz \
-                               answered is asked again with Refresh all under Online.";
+const DETAILS_NOTE: &str = "Look up asks MusicBrainz about the albums and artists not asked \
+                            lately, which a scan does on its own when Online allows it. Refresh \
+                            all asks about everything again. Look for missing covers asks the \
+                            archive again for every album with no picture.";
 
 const TEMPLATE_LABEL: &str = "Where each track is filed";
 
@@ -307,32 +316,65 @@ impl RootView {
         )
     }
 
-    pub(super) fn scanning_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn updating_group(&mut self, cx: &mut Context<Self>) -> Div {
+        kit::section_body()
+            .child(self.files_part(cx))
+            .child(self.details_part(cx))
+            .child(self.tags_part(cx))
+    }
+
+    fn files_part(&mut self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let scanning = library.is_scanning();
         let stopping = library.is_stopping();
         let stats = library.stats();
-        let enriching = library.is_enriching();
-        let held_back = busy || enriching || !library.can_enrich();
 
-        kit::section_body()
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(kit::eyebrow(FILES_EYEBROW))
             .child(
                 div()
                     .flex()
                     .flex_wrap()
                     .gap_2()
                     .child(self.rescan(busy, scanning, cx))
-                    .when(scanning, |row| row.child(self.stop_scan(stopping, cx)))
-                    .child(self.enrich_now(held_back, enriching, cx)),
+                    .child(self.read_everything_again(busy, cx))
+                    .when(scanning, |row| row.child(self.stop_scan(stopping, cx))),
             )
             .when(scanning, |body| {
                 body.child(progress(read_so_far(stats.unwrap_or_default())))
             })
             .child(note(match stats {
                 Some(stats) => SharedString::from(counted(stats)),
-                None => SharedString::new_static(SCANNING_NOTE),
+                None => SharedString::new_static(FILES_NOTE),
             }))
+    }
+
+    fn details_part(&mut self, cx: &mut Context<Self>) -> Div {
+        let library = self.library.read(cx);
+        let held_back = library.is_busy() || library.is_enriching() || !library.can_enrich();
+        let enriching = library.is_enriching();
+        let stopping = library.is_stopping_enrich();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(kit::eyebrow(DETAILS_EYEBROW))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(self.look_up(held_back, enriching, cx))
+                    .child(self.refresh_all(held_back, cx))
+                    .child(self.look_for_missing_covers(held_back, cx))
+                    .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
+            )
+            .child(note(DETAILS_NOTE))
     }
 
     fn rescan(&self, busy: bool, scanning: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -353,20 +395,30 @@ impl RootView {
         )
     }
 
-    fn enrich_now(
-        &self,
-        held_back: bool,
-        enriching: bool,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
+    fn read_everything_again(&self, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
-            "enrich",
-            if enriching { "Enriching…" } else { "Enrich" },
-            Icon::Globe,
+            "read-everything-again",
+            "Read every file again",
+            Icon::Redo,
+            busy,
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.read_everything_again(cx));
+            },
+            self,
+            cx,
+        )
+    }
+
+    fn look_for_missing_covers(&self, held_back: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "look-for-missing-covers",
+            "Look for missing covers",
+            Icon::Albums,
             held_back,
             |this, _, cx| {
                 this.library
-                    .update(cx, |library, cx| library.enrich(false, cx));
+                    .update(cx, |library, cx| library.look_for_missing_covers(cx));
             },
             self,
             cx,
@@ -387,44 +439,53 @@ impl RootView {
         )
     }
 
-    pub(super) fn refreshing_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let library = self.library.read(cx);
-        let busy = library.is_busy();
-        let enriching = library.is_enriching();
-        let covers_held_back = busy || enriching || !library.can_enrich();
+    fn look_up(&self, held_back: bool, enriching: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "look-up",
+            if enriching {
+                "Looking up…"
+            } else {
+                "Look up"
+            },
+            Icon::Globe,
+            held_back,
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.enrich(false, cx));
+            },
+            self,
+            cx,
+        )
+    }
 
-        kit::section_body()
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .child(action(
-                        "read-everything-again",
-                        "Read every file again",
-                        Icon::Redo,
-                        busy,
-                        |this, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.read_everything_again(cx));
-                        },
-                        self,
-                        cx,
-                    ))
-                    .child(action(
-                        "look-for-missing-covers",
-                        "Look for missing covers",
-                        Icon::Albums,
-                        covers_held_back,
-                        |this, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.look_for_missing_covers(cx));
-                        },
-                        self,
-                        cx,
-                    )),
-            )
-            .child(note(REFRESHING_NOTE))
+    fn refresh_all(&self, held_back: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "refresh-all",
+            "Refresh all",
+            Icon::Redo,
+            held_back,
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.enrich(true, cx));
+            },
+            self,
+            cx,
+        )
+    }
+
+    fn stop_lookup(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "stop-lookup",
+            if stopping { "Stopping…" } else { "Stop" },
+            Icon::Stop,
+            stopping,
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.stop_enrich(cx));
+            },
+            self,
+            cx,
+        )
     }
 
     fn choose_music_folder(&self, cx: &mut Context<Self>) {
@@ -854,7 +915,7 @@ impl RootView {
 }
 
 impl RootView {
-    pub(super) fn tagging_group(&mut self, cx: &mut Context<Self>) -> Div {
+    fn tags_part(&mut self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let tagging = library.is_tagging();
@@ -871,7 +932,11 @@ impl RootView {
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| (written(summary), listed(summary)));
 
-        kit::section_body()
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(kit::eyebrow(TAGS_EYEBROW))
             .child(note(TAGGING_NOTE))
             .child(
                 div()

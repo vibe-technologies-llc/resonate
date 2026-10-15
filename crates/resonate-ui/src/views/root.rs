@@ -68,6 +68,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{Named, QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{self, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
+        scrollbar::Scrollbars,
         search::{self, SearchShows, TopEntry, TopRun},
         settings::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, LastfmAccount, LastfmSigning, Plotted,
@@ -530,6 +531,7 @@ pub struct RootView {
     pub(crate) settings_category: Category,
     pub(crate) settings_scroll: ScrollHandle,
     pub(crate) settings_rail_scroll: ScrollHandle,
+    pub(crate) sidebar_scroll: ScrollHandle,
     pub(crate) inspector_scroll: ScrollHandle,
     pub(crate) statistics_scroll: ScrollHandle,
     pub(crate) analysis_scroll: ScrollHandle,
@@ -1063,6 +1065,7 @@ impl RootView {
             settings_category,
             settings_scroll: ScrollHandle::new(),
             settings_rail_scroll: ScrollHandle::new(),
+            sidebar_scroll: ScrollHandle::new(),
             inspector_scroll: ScrollHandle::new(),
             statistics_scroll: ScrollHandle::new(),
             analysis_scroll: ScrollHandle::new(),
@@ -4097,17 +4100,16 @@ impl RootView {
             browse = browse.child(listed);
         }
 
-        div()
+        let content = div()
+            .id("sidebar-content")
             .flex()
-            .flex_none()
             .flex_col()
+            .flex_none()
             .justify_between()
             .gap_1()
             .p_3()
-            .w(px(theme::sidebar_width()))
-            .border_r_1()
-            .border_color(rgb(theme::border()))
-            .bg(rgb(theme::surface()))
+            .min_h_full()
+            .w(px(theme::sidebar_width() - 1.0))
             .child(browse)
             .child(
                 div()
@@ -4117,7 +4119,29 @@ impl RootView {
                     .when(downloads, |column| column.child(self.download_status(cx)))
                     .when(enriching, |column| column.child(self.enrichment_status(cx)))
                     .child(self.pane_row(Pane::Settings, None, cx)),
+            );
+
+        div()
+            .relative()
+            .flex()
+            .flex_none()
+            .flex_col()
+            .w(px(theme::sidebar_width()))
+            .border_r_1()
+            .border_color(rgb(theme::border()))
+            .bg(rgb(theme::surface()))
+            .child(
+                div()
+                    .id("sidebar-scroll")
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.sidebar_scroll)
+                    .child(content),
             )
+            .child(Scrollbars::of(cx).vertical("sidebar-scrollbar", self.sidebar_scroll.clone()))
     }
 
     fn pinned_rows(&self, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
@@ -4638,7 +4662,7 @@ impl RootView {
             .names(ENRICHING_HINT)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.set_pane(Pane::Settings, cx);
-                this.show_settings(Category::Online, cx);
+                this.show_settings(Category::Library, cx);
             }))
             .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))
             .child(

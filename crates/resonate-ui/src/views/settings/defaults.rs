@@ -221,11 +221,8 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         | Group::SyncDevices
         | Group::Measured
         | Group::Folders
-        | Group::Scanning
-        | Group::Refreshing
-        | Group::Tagging
+        | Group::Updating
         | Group::Vault
-        | Group::LookUpNow
         | Group::Build
         | Group::Places
         | Group::Everything => false,
@@ -286,9 +283,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Tabs
         | Group::WindowState
         | Group::Folders
-        | Group::Scanning
-        | Group::Refreshing
-        | Group::Tagging
+        | Group::Updating
         | Group::Organising
         | Group::Vault
         | Group::Inbox
@@ -308,7 +303,6 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::SyncDevices
         | Group::SyncConnection
         | Group::SyncedSongs
-        | Group::LookUpNow
         | Group::Build
         | Group::Places
         | Group::Everything => Vec::new(),

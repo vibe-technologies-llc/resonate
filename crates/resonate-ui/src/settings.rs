@@ -37,6 +37,8 @@ pub enum SettingsCategory {
     Library,
     Filters,
     Online,
+    Recognition,
+    Scrobbling,
     Sync,
     Desktop,
     Appearance,
@@ -44,13 +46,15 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::Output,
         Self::Processing,
         Self::Equaliser,
         Self::Library,
         Self::Filters,
         Self::Online,
+        Self::Recognition,
+        Self::Scrobbling,
         Self::Sync,
         Self::Desktop,
         Self::Appearance,
@@ -65,6 +69,8 @@ impl SettingsCategory {
             Self::Library => "library",
             Self::Filters => "filters",
             Self::Online => "online",
+            Self::Recognition => "recognition",
+            Self::Scrobbling => "scrobbling",
             Self::Sync => "sync",
             Self::Desktop => "desktop",
             Self::Appearance => "appearance",

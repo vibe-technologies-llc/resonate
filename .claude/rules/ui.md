@@ -44,6 +44,10 @@ is never named.
 - **Closing removes the window; quitting follows, never the reverse.** Close control, `ctrl-q` and
   the bus's `Quit` call `Window::remove_window`; `app.rs` quits once the last window closed
   (`App::quit` under a live window logged *window not found* twice every exit).
+- **The sidebar scrolls only when it does not fit.** `RootView::sidebar` holds its column in an
+  `overflow_y_scroll` region tracked by `sidebar_scroll`, the column `min_h_full` so *Settings* stays at the
+  foot of a tall window, with a `Scrollbars` bar over its edge; a window squeezed vertically scrolls the
+  tabs instead of clipping them.
 - **The window names itself to the compositor twice.** `WindowOptions::app_id` = `APP_ID`, matched
   against `resonate.desktop` (its `StartupWMClass` held to it by a test in `app.rs`); the caption is
   `Window::set_window_title` on open (gpui's Wayland backend never reads `WindowParams::titlebar`).
@@ -292,9 +296,9 @@ is never named.
     a time, then every waiting folder in one scan. A forget mark is keyed by its root.
   - **An enrichment is deliberately not a `Work`**: `LibraryModel::enriching` is a slot of its own,
     started with `for_the_pass` (`online.md`). A running lookup greys *Look up*, *Refresh all* and
-    *Enrich* via `held_back`; a scan can still start under one. `RootView::enrichment_status` sits
+    *Look for missing covers* via `held_back`; a scan can still start under one. `RootView::enrichment_status` sits
     above the sidebar's *Settings* row while `LibraryModel::is_enriching` (a globe in `theme::faint()`
-    and *Enriching…*; a press opens `Category::Online`); the toast `looked_up` tells what was found.
+    and *Enriching…*; a press opens `Category::Library`); the toast `looked_up` tells what was found.
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`. Set via `LibraryModel::ask_about`: scoping the tracks pane
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with
@@ -1272,7 +1276,7 @@ is never named.
 
 - **Settings pane: a rail of categories over a column of sections; one table says what a section is.**
   `views/settings/` is a folder. `find.rs` = vocabulary: `Category` (Output, Processing, Equaliser,
-  Library, Filters, Online, Desktop, Appearance, About) and `Group`, one per setting, carrying category,
+  Library, Filters, Online, Recognition, Scrobbling, Sync, Desktop, Appearance, About) and `Group`, one per setting, carrying category,
   title, hint, *also*-called words, the `SettingKey`s putting it back. Nothing else enumerates sections:
   `Category::groups` filters the one table, `mod.rs::group` dispatches a `Group` to its drawing method;
   tests hold every group to one category, a unique title, its own hint, no key claimed twice. Rail =
@@ -1397,7 +1401,7 @@ is never named.
   to `SettingsWriter`, which sends what gathered to a thread of its own (`resonate-settings`) as one
   batch, one in flight, arrivals meanwhile the next; `Settings::apply` takes the whole batch. A failed
   batch is one toast; dropping the writer sends what is gathered and joins the thread. A keyless group
-  (folders, scan, *Look up now*, About's) offers no mark (test-held).
+  (folders, *Rescan, refresh and retag*, About's) offers no mark (test-held).
 - **A setting is found by typing, not by remembering the tab.** `RootView::finding` = the pane's own
   `Field`, reached by `ctrl-,` or a press, counted by `RootView::editing`, cleared and blurred by escape
   ahead of the contact field in `dismiss_search`. `Narrowing` matches every word against a group's
@@ -1528,7 +1532,7 @@ is never named.
   `ClipLength(Duration)`, `PreAmp(Trim)`), so the pane cannot turn an off-table value into `None`. A
   device named in the file but absent from the graph marks no row; the group says so.
 - **A pass that rewrites files is armed before it runs; the preview arms it.** *Organising* and
-  *Tagging*: *Preview* runs the pass with `Pass::Preview`; *Apply* is greyed until a preview landed,
+  the tags part of *Rescan, refresh and retag*: *Preview* runs the pass with `Pass::Preview`; *Apply* is greyed until a preview landed,
   then takes two presses (the second under a note saying what the first armed); *Stop* is drawn only
   while it runs. *Put the last run back* (`walks_back`, `tags_walk_back`) is armed the same way.
   `disarm` (leaving the pane or category) and the pointer leaving the settings body (a transition via
@@ -1543,14 +1547,18 @@ is never named.
   stamp is a counter on the writer connection (temp triggers over the columns a plan reads,
   `PLANNED_FROM` in `db.rs`) beside `PRAGMA data_version` for another process: a lookup landing a
   release or a scan reading a file anew takes the preview down; a counted play or favourite does not.
-  **The Tagging group draws the plan, not a count of it**: `listed` = first `WRITES_SHOWN` (12) of
+  **The tags part draws the plan, not a count of it**: `listed` = first `WRITES_SHOWN` (12) of
   `Retagging::writes`, one raised row per file over the fields to be written, *and N more*; the count
   stays the pass's own so note and rows cannot disagree.
-- **What a scan skips can be re-read on purpose.** Library's *Refreshing* group: *Read every file again*
-  (`Reading::Everything` beside `Prompted` on `LibraryModel::start_scan`): every file re-probed whatever
-  size and mtime say, each row keeping id, plays, favourite. *Look for missing covers*
-  (`Library::ask_again_for_covers` + a lookup). Both grey with `is_busy`, the covers button with
-  `can_enrich` too. What MusicBrainz answered is Online's *Refresh all*.
+- **Everything that brings the catalog up to date is one Library group, in three parts.** *Rescan,
+  refresh and retag* (`Group::Updating`, `updating_group`): *The files* (*Rescan folders*, *Read every
+  file again*, *Stop* while a scan runs), *What Online knows* (*Look up*, *Refresh all*, *Look for
+  missing covers*, *Stop* while a lookup runs) and *The tags in the files* (the armed *Preview*/*Apply*
+  pass below). *Read every file again* (`Reading::Everything` beside `Prompted` on
+  `LibraryModel::start_scan`) re-probes every file whatever size and mtime say, each row keeping id,
+  plays, favourite; *Look for missing covers* is `Library::ask_again_for_covers` + a lookup; *Refresh
+  all* is `enrich(true)`. The files part greys with `is_busy`, the lookups with `is_busy`,
+  `is_enriching` and `!can_enrich`.
 - **Library roots are edited through the desktop's file picker, or typed.** `App::prompt_for_paths`
   (`directories: true`) is the XDG portal; a machine without one says so and points at
   `RootView::typed_root` (*Or type a folder, then press enter*). `root_typed` reads a leading `~` as
