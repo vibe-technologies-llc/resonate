@@ -106,6 +106,7 @@ struct PlayButton: View {
                 .frame(width: large ? 76 : 32, height: large ? 76 : 32)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
+        .touchTarget()
         .buttonStyle(.plain)
         .modifier(GlassWhen(enabled: large))
         .sensoryFeedback(.impact(weight: .medium), trigger: pressed)
@@ -339,13 +340,13 @@ struct PlayerTitles: View {
                     SongMenu(track: track) {
                         Text(track.shownArtist)
                             .font(.title3)
-                            .foregroundStyle(Color.secondary)
+                            .nowPlayingInk()
                     }
                     if !track.album.isEmpty {
                         SongMenu(track: track) {
                             Text(track.album)
                                 .font(.subheadline)
-                                .foregroundStyle(Color.secondary.opacity(0.8))
+                                .nowPlayingInk()
                         }
                     }
                 } else {
@@ -410,7 +411,7 @@ struct CompactTitles: View {
                 SongMenu(track: track) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).lineLimit(1)
-                        Text(track.shownArtist).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(1)
+                        Text(track.shownArtist).font(.subheadline).nowPlayingInk().lineLimit(1)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -465,26 +466,28 @@ struct PlayerScrubber: View {
             }
             .frame(height: Self.touchHeight)
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
+            .accessibilityElement()
+            .accessibilityLabel("Song position")
+            .accessibilityValue("\(clock(UInt64(shown))) of \(clock(timing.durationMs))")
+            .accessibilityAdjustableAction { direction in
+                let step = direction == .increment ? Self.stepMs : -Self.stepMs
+                commit(min(max(shown + step, 0), duration))
+            }
             HStack {
                 Text(clock(UInt64(shown)))
+                    .accessibilityHidden(true)
                 Spacer()
                 QualityLine(track: library.playingTrack)
                 Spacer()
                 Text("-" + clock(UInt64(max(duration - shown, 0))))
+                    .accessibilityHidden(true)
             }
             .font(.caption.monospacedDigit())
-            .foregroundStyle(grabbed ? .primary : .secondary)
+            .nowPlayingInk(grabbed ? 1 : NowPlayingInk.secondary)
             .motion(.smooth, value: grabbed)
         }
         .allowsHitTesting(library.loaded)
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
-        .accessibilityElement()
-        .accessibilityLabel("Song position")
-        .accessibilityValue("\(clock(UInt64(shown))) of \(clock(timing.durationMs))")
-        .accessibilityAdjustableAction { direction in
-            let step = direction == .increment ? Self.stepMs : -Self.stepMs
-            commit(min(max(shown + step, 0), duration))
-        }
         .onChange(of: touching) { _, now in
             guard !now else { return }
             grabbedAt = nil
@@ -537,7 +540,7 @@ struct QualityLine: View {
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
             Text(line)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .nowPlayingInk()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 7)
@@ -560,6 +563,45 @@ struct QualityLine: View {
     }
 }
 
+struct NowPlayingInk: ViewModifier {
+    static let secondary = 0.95
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let level: Double
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(Color.primary.opacity(contrast == .increased || reduceTransparency ? 1 : level))
+    }
+}
+
+extension View {
+    func nowPlayingInk(_ level: Double = NowPlayingInk.secondary) -> some View {
+        modifier(NowPlayingInk(level: level))
+    }
+}
+
+private struct ModeMark: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            Circle()
+                .fill(Color.worn)
+                .frame(width: 5, height: 5)
+                .offset(y: 8)
+                .opacity(active ? 1 : 0)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    fileprivate func modeMark(_ active: Bool) -> some View {
+        modifier(ModeMark(active: active))
+    }
+}
+
 struct TransportRow: View {
     @Environment(Library.self) private var library
     @State private var skipped = 0
@@ -571,6 +613,7 @@ struct TransportRow: View {
             HStack(spacing: 0) {
                 Button("Shuffle", systemImage: "shuffle") { library.setShuffle(!shuffled) }
                     .foregroundStyle(shuffled ? Color.worn : .secondary)
+                    .modeMark(shuffled)
                     .accessibilityValue(shuffled ? "On" : "Off")
                     .touchTarget()
                     .frame(maxWidth: .infinity)
@@ -591,6 +634,7 @@ struct TransportRow: View {
                 .frame(maxWidth: .infinity)
                 Button("Repeat", systemImage: repeating.symbol) { library.setRepeat(repeating.following) }
                     .foregroundStyle(repeating == .off ? .secondary : Color.worn)
+                    .modeMark(repeating != .off)
                     .accessibilityValue(repeating.spoken)
                     .touchTarget()
                     .frame(maxWidth: .infinity)

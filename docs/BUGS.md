@@ -163,22 +163,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
-## iOS
-- [M] Now Playing's secondary labels (artist, album at 0.8 opacity, the times) sit on a field the
-  shader lifts to Oklab lightness 0.55 dark and 0.63–0.78 light, roughly 2.3–3.6:1 against the 4.5:1
-  small text needs, and nothing reads Increase Contrast, Reduce Transparency or
-  `colorSchemeContrast` to raise it
-- [S] VoiceOver gaps: `SeeAllHeader`'s button is an unnamed "See all" (three alike in Top results
-  and on the Library tab); `QualityLine` (codec, depth, rate, output rate) is swallowed by the
-  scrubber's `.accessibilityElement()`; the backdrop's Strength slider has no label; `ListenSheet`
-  announces no result and removes the focused *Stop listening*
-- [S] `TransportRow` shows shuffle on/off and repeat off/all by colour alone (same symbol,
-  `.secondary` against `Color.worn`): Differentiate Without Color cannot tell the mode
-- [S] The mini player's `PlayButton` is a 32 pt frame with no `touchTarget()`: a near miss falls
-  through to the container's tap and opens Now Playing instead of pausing
-- [S] `StatusCard` caps a message at three lines: at accessibility text sizes a long failure (an
-  engine sentence, a scan reason naming a file) is cut with no way to read the rest
-
 ## Command line and bus
 - [S] `resonate play` keeps the queue only on the 500 ms sample (`keep_the_queue`, itself throttled
   to `KEPT_EVERY`) and not once more as it leaves: `n` then `q`, or a `resonate queue` just before
@@ -227,10 +211,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
-- [M] The iOS pages that filter in Swift fold with Foundation (`searchFolded`), not core's
-  `folded_letters`, which spells out `ø ł đ ð þ ß æ œ ħ`: Favourites, *Add songs*, the playlist-name
-  filter and `FilterSheet.distinct` miss or split what library search treats as one (*Lodz* against
-  *Łódź*); `resonate-mobile` exports no fold to call
 
 ## Keyboard and accessibility
 - [M] Enter or Space on a ringed control presses it twice: `PressControl` fires on key-down and gpui

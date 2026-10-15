@@ -123,7 +123,7 @@ final class SearchModel {
 
 extension String {
     var searchFolded: String {
-        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        foldedText(text: self)
     }
 }
 

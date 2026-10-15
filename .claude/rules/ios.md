@@ -267,9 +267,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
   no settle wait.
 - **An icon-only control is at least 44 pt** (`touchTarget()`: a minimum frame and a rectangle
-  content shape: the favourite heart, the mini player's and the transport row's skips, shuffle and
-  repeat, a filter token, the online song menu, *See all*). A slider speaks its value in its unit
-  (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. What is lettered on the
+  content shape: the favourite heart, the mini player's skips and play button and the transport row's skips, shuffle and
+  repeat (the active mode also carries a dot, so colour is never the only sign), a filter token, the online song menu, *See all*). A slider speaks its value in its unit
+  (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. Now Playing's secondary labels (artist, album, times, the quality line) take `nowPlayingInk`, primary at 95 % and solid under Increase Contrast or Reduce Transparency, since the field behind them is lifted by the shader. A long status message opens in full on a tap and always at accessibility text sizes. What is lettered on the
   accent (Play, the active mode toggle, the swatch tick, a chosen handle) takes `Color.wornInk`,
   white or near-black, whichever contrasts more with the accent as it is drawn in the current
   appearance (`AppearanceState.ink(on:)`).
@@ -545,7 +545,7 @@ every route change (a pair of headphones at the same rate included), not from th
   rows or more ordered by name gets a section per letter run and the section index. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
   The Library tab's search uses the same model for albums and artists and folds playlist names
-  (`searchFolded`: case- and diacritic-insensitive), as the Favourites and Add-songs searches fold
+  (`searchFolded`, which is core's `folded_letters` through `folded_text`, so *Lodz* finds *Łódź* as library search does), as the Favourites and Add-songs searches fold
   a song's title, artist and album.
 - **Online** search asks as the listener types: 450 ms settle, three letters at least, one request
   generation (`Features.searchRequest`) and an in-memory answer per spelling, the last 64 per mode

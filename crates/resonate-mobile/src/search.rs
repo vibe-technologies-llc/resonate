@@ -126,6 +126,11 @@ pub fn highlights(query: String, text: String, column: SearchColumn) -> Vec<Text
 }
 
 #[uniffi::export]
+pub fn folded_text(text: String) -> String {
+    folded_letters(&text)
+}
+
+#[uniffi::export]
 pub fn album_key(album: String, artist: String, album_artist: String) -> Option<String> {
     let filed_album = folded_letters(album.trim());
     if filed_album.is_empty() {
@@ -2394,6 +2399,13 @@ mod tests {
             covers,
             vec![pictured[1], pictured[2], pictured[3], pictured[4]]
         );
+    }
+
+    #[test]
+    fn the_text_a_phone_filters_by_is_folded_as_the_search_index_folds_it() {
+        assert_eq!(folded_text("Łódź".into()), folded_text("Lodz".into()));
+        assert_eq!(folded_text("Björk".into()), folded_text("bjork".into()));
+        assert_eq!(folded_text("Straße".into()), folded_letters("Straße"));
     }
 
     #[test]

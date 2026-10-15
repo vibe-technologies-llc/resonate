@@ -500,7 +500,9 @@ struct ScanProgress: View {
 
 struct StatusCard: View {
     @Environment(Library.self) private var library
+    @Environment(\.dynamicTypeSize) private var textSize
     let message: StatusMessage
+    @State private var expanded = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -509,7 +511,11 @@ struct StatusCard: View {
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
             }
-            Text(message.text).font(.footnote).lineLimit(3)
+            Text(message.text)
+                .font(.footnote)
+                .lineLimit(expanded || textSize.isAccessibilitySize ? nil : 3)
+                .contentShape(Rectangle())
+                .onTapGesture { expanded.toggle() }
             Spacer(minLength: 0)
             Button("Dismiss") { library.dismissStatus() }
                 .font(.footnote.weight(.semibold))

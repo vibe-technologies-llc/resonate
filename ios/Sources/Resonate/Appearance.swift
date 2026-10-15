@@ -244,6 +244,8 @@ struct BackgroundView: View {
                         HStack(spacing: 12) {
                             Text("Subtle").font(.caption).foregroundStyle(.secondary)
                             Slider(value: $appearance.backgroundStrength, in: 0...1)
+                                .accessibilityLabel("Strength")
+                                .accessibilityValue(Text(appearance.backgroundStrength, format: .percent.precision(.fractionLength(0))))
                             Text("Vivid").font(.caption).foregroundStyle(.secondary)
                         }
                     }

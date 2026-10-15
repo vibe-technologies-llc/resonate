@@ -153,6 +153,7 @@ struct SeeAllHeader: View {
             Spacer()
             if more {
                 Button("See all", action: seeAll)
+                    .accessibilityLabel("See all \(title.lowercased())")
                     .font(.subheadline)
                     .textCase(nil)
                     .touchTarget()

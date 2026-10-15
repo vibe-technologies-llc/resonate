@@ -144,6 +144,17 @@ struct ListenStageView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .motion(.smooth, value: stage)
+        .onChange(of: stage) { _, now in
+            if let spoken = spoken(now) { AccessibilityNotification.Announcement(spoken).post() }
+        }
+    }
+
+    private func spoken(_ stage: ListenStage) -> String? {
+        switch stage {
+        case .found(let song): "Heard \(song.title)" + (song.artist.isEmpty ? "" : ", by \(song.artist)")
+        case .unknown, .silent, .unreached, .offline, .denied, .failed: note(stage)
+        case .idle, .recording, .asking: nil
+        }
     }
 
     private func actions(_ song: HeardSong) -> some View {
