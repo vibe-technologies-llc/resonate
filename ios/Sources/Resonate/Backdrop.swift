@@ -25,7 +25,7 @@ struct BackdropView: View {
         self.track = track
         self.moving = moving
         self.ambience = ambience
-        _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) })
+        _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) } ?? (track == nil ? Self.accentPalette() : nil))
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
     }
 
@@ -97,9 +97,17 @@ struct BackdropView: View {
         rendering = await BackdropPipeline.rendering()
     }
 
-    private func loadPalette() async {
+    private static func accentLinear() -> SIMD3<Float> {
         let accent = Color.worn.resolve(in: EnvironmentValues())
-        let accentLinear = SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
+        return SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
+    }
+
+    private static func accentPalette() -> Palette {
+        Palette.around(accent: accentLinear())
+    }
+
+    private func loadPalette() async {
+        let accentLinear = Self.accentLinear()
 
         guard let track, let image = await library.features.artwork(track) else {
             palette = Palette.around(accent: accentLinear)
