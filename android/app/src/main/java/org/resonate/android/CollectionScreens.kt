@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,13 +31,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,12 +49,14 @@ import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -104,8 +111,8 @@ fun LibraryScreen(
     val visiblePlaylists = playlists.filter { it.name.contains(query, true) }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "search") {
             OutlinedTextField(
@@ -113,10 +120,23 @@ fun LibraryScreen(
                 { query = it },
                 placeholder = { Text("Search your library") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    if (query.isNotEmpty())
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Clear, "Clear search")
+                        }
+                },
                 singleLine = true,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
                 modifier =
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics {
+                    Modifier.fillMaxWidth().semantics {
                         contentDescription = "Search your library"
                     },
             )
@@ -124,11 +144,16 @@ fun LibraryScreen(
         if (!playlistsOnly)
             item(key = "categories") {
                 Row(
-                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     listOf("All", "Playlists", "Albums", "Artists").forEach { label ->
-                        FilterChip(category == label, { category = label }, label = { Text(label) })
+                        FilterChip(
+                            category == label,
+                            { category = label },
+                            label = { Text(label) },
+                            shape = RoundedCornerShape(16.dp),
+                        )
                     }
                 }
             }
@@ -184,13 +209,13 @@ fun LibraryScreen(
                         if (query.isBlank())
                             "Make a playlist for a mood, a moment, or your next journey."
                         else "No playlists match “$query”",
-                        Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (query.isBlank())
-                        OutlinedButton(
+                        FilledTonalButton(
                             onClick = { creating = true },
-                            modifier = Modifier.padding(horizontal = 20.dp),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Icon(Icons.Default.Add, null)
                             Text("Create playlist", Modifier.padding(start = 8.dp))
@@ -252,19 +277,23 @@ fun CollectionRow(
     open: () -> Unit,
 ) {
     Surface(
-        modifier = if (pinned) modifier.padding(horizontal = 12.dp) else modifier,
-        shape = RoundedCornerShape(24.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
         color =
-            if (pinned) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f)
-            else Color.Transparent,
+            if (pinned) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.surfaceContainerLow,
         border =
-            if (pinned) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-            else null,
+            BorderStroke(
+                1.dp,
+                if (pinned) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+            ),
+        tonalElevation = if (pinned) 4.dp else 1.dp,
     ) {
         Row(
             Modifier.fillMaxWidth()
                 .clickable(onClick = open)
-                .padding(horizontal = 20.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -273,6 +302,7 @@ fun CollectionRow(
                 Text(
                     title,
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -311,7 +341,7 @@ fun AlbumRow(
     CollectionRow(
         first.album.ifBlank { "Unknown album" },
         "Album · ${first.albumArtist.ifBlank { first.artist }.ifBlank { "Unknown artist" }}",
-        artwork = { Artwork(Modifier.size(64.dp), first, library) },
+        artwork = { Artwork(Modifier.size(64.dp), first, library, RoundedCornerShape(12.dp)) },
         modifier = modifier,
         open = open,
     )
@@ -320,14 +350,14 @@ fun AlbumRow(
 @Composable
 fun CollectionHeading(title: String, action: @Composable () -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp),
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             title,
             Modifier.weight(1f),
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
         )
         action()
     }
@@ -335,19 +365,28 @@ fun CollectionHeading(title: String, action: @Composable () -> Unit = {}) {
 
 @Composable
 fun CollectionMessage(message: String) {
-    Text(message, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        message,
+        Modifier.padding(horizontal = 8.dp, vertical = 16.dp),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
 fun FavouritesArtwork(modifier: Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(12.dp)) {
+    Surface(
+        modifier,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+    ) {
         Box(
             Modifier.fillMaxSize()
                 .background(
                     Brush.linearGradient(
                         listOf(
                             MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.tertiaryContainer,
+                            MaterialTheme.colorScheme.tertiary,
                         )
                     )
                 ),
@@ -356,7 +395,7 @@ fun FavouritesArtwork(modifier: Modifier) {
             Icon(
                 Icons.Default.Favorite,
                 null,
-                Modifier.fillMaxSize(0.42f),
+                Modifier.fillMaxSize(0.48f),
                 tint = MaterialTheme.colorScheme.onPrimary,
             )
         }
@@ -367,14 +406,15 @@ fun FavouritesArtwork(modifier: Modifier) {
 private fun MusicTile(modifier: Modifier) {
     Surface(
         modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 Icons.AutoMirrored.Filled.PlaylistPlay,
                 null,
-                Modifier.size(32.dp),
+                Modifier.size(36.dp),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
@@ -401,8 +441,9 @@ fun PlaylistArtwork(playlist: MusicPlaylist, library: LibraryRepository, modifie
         }
     Surface(
         modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
     ) {
         when (rows.size) {
             0 ->
@@ -414,7 +455,7 @@ fun PlaylistArtwork(playlist: MusicPlaylist, library: LibraryRepository, modifie
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
-            1 -> Artwork(Modifier.fillMaxSize(), rows.first(), library)
+            1 -> Artwork(Modifier.fillMaxSize(), rows.first(), library, RoundedCornerShape(14.dp))
             else ->
                 Column {
                     repeat(2) { y ->
@@ -434,15 +475,25 @@ fun PlaylistArtwork(playlist: MusicPlaylist, library: LibraryRepository, modifie
     }
 }
 
+val LocalOnLiked = compositionLocalOf<(Track) -> Unit> { {} }
+
 @Composable
-fun FavouriteButton(track: Track?, library: LibraryRepository, current: Boolean = false) {
+fun FavouriteButton(
+    track: Track?,
+    library: LibraryRepository,
+    current: Boolean = false,
+    modifier: Modifier = Modifier,
+    onLiked: ((Track) -> Unit)? = null,
+) {
+    val defaultOnLiked = LocalOnLiked.current
+    val handler = onLiked ?: defaultOnLiked
     val tracks by library.allTracks.collectAsState()
     val value = tracks.find { it.id == track?.id } ?: track
     val checked = value?.favourite == true
     val subject = if (current) "current song" else value?.title.orEmpty()
     val scale =
         animateFloatAsState(
-            if (checked) 1.15f else 1f,
+            if (checked) 1.2f else 1f,
             spring(
                 dampingRatio = Spring.DampingRatioMediumBouncy,
                 stiffness = Spring.StiffnessMedium,
@@ -451,10 +502,17 @@ fun FavouriteButton(track: Track?, library: LibraryRepository, current: Boolean 
         )
     IconToggleButton(
         checked = checked,
-        onCheckedChange = { enabled -> value?.let { library.setFavourite(it.id, enabled) } },
+        onCheckedChange = { enabled ->
+            value?.let {
+                library.setFavourite(it.id, enabled)
+                if (enabled) {
+                    handler(it)
+                }
+            }
+        },
         enabled = value != null,
         modifier =
-            Modifier.semantics {
+            modifier.semantics {
                 contentDescription =
                     if (checked) "Remove $subject from favourites" else "Add $subject to favourites"
             },
@@ -486,7 +544,7 @@ fun CollectionHeader(
     detail: @Composable () -> Unit = {},
     track: Track? = null,
     library: LibraryRepository? = null,
-    artworkShape: Shape = RoundedCornerShape(24.dp),
+    artworkShape: Shape = RoundedCornerShape(28.dp),
 ) {
     val tones by rememberArtworkTones(track, library)
     AmbientBackdrop(
@@ -494,17 +552,17 @@ fun CollectionHeader(
         Modifier.fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(32.dp)),
-        strength = 0.24f,
+        strength = 0.3f,
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(20.dp),
+            Modifier.fillMaxWidth().padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Box(
-                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.shadow(20.dp, artworkShape).clip(artworkShape)) { artwork() }
+                Box(Modifier.shadow(24.dp, artworkShape).clip(artworkShape)) { artwork() }
             }
             Text(
                 title,
@@ -518,17 +576,23 @@ fun CollectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = play, enabled = enabled, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = play,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
                     Icon(Icons.Default.PlayArrow, null)
-                    Text("Play", Modifier.padding(start = 8.dp))
+                    Text("Play", Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold)
                 }
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = shuffle,
                     enabled = enabled,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(Icons.Default.Shuffle, null)
-                    Text("Shuffle", Modifier.padding(start = 8.dp))
+                    Text("Shuffle", Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -545,40 +609,62 @@ fun CollectionTrackRow(
     modifier: Modifier = Modifier,
     actions: @Composable () -> Unit = {},
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clickable(onClick = play)
-            .semantics { contentDescription = "Play song ${index + 1}: ${track.title}" }
-            .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color =
+            if (playing) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+            else Color.Transparent,
+        border =
+            if (playing)
+                BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+            else null,
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Text(
-            (index + 1).toString(),
-            Modifier.padding(end = 12.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Artwork(Modifier.size(44.dp), track, library)
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color =
-                    if (playing) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                track.artist.ifBlank { "Unknown artist" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable(onClick = play)
+                .semantics { contentDescription = "Play song ${index + 1}: ${track.title}" }
+                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                if (playing) {
+                    PlayingEqualizerBars(
+                        playing = true,
+                        modifier = Modifier.size(14.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Text(
+                        (index + 1).toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Artwork(Modifier.padding(start = 8.dp).size(44.dp), track, library, RoundedCornerShape(10.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (playing) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color =
+                        if (playing) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    track.artist.ifBlank { "Unknown artist" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            actions()
         }
-        actions()
     }
 }
 
@@ -590,10 +676,16 @@ fun FavouritesScreen(
 ) {
     val tracks by library.allTracks.collectAsState()
     val snapshot by library.snapshot.collectAsState()
+    val playing =
+        snapshot?.transport == org.resonate.android.nativecore.Transport.PLAYING
     var query by rememberSaveable { mutableStateOf("") }
     val rows = tracks.filter { it.favourite }
     val visible = rows.filter { "${it.title} ${it.artist} ${it.album}".contains(query, true) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         item(key = "header") {
             CollectionHeader(
                 "Favourites",
@@ -606,11 +698,17 @@ fun FavouritesScreen(
         }
         if (rows.isEmpty())
             item(key = "empty") {
-                CollectionMessage(
-                    "Keep the songs you love together. Tap a heart on any song or on the player to add it here."
-                )
-                Button(onClick = browse, modifier = Modifier.padding(horizontal = 20.dp)) {
-                    Text("Browse songs")
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    CollectionMessage(
+                        "Keep the songs you love together. Tap a heart on any song or on the player to add it here."
+                    )
+                    Button(
+                        onClick = browse,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text("Browse songs")
+                    }
                 }
             }
         else {
@@ -620,10 +718,23 @@ fun FavouritesScreen(
                     { query = it },
                     placeholder = { Text("Search favourites") },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty())
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, "Clear search")
+                            }
+                    },
                     singleLine = true,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors =
+                        OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Transparent,
+                        ),
                     modifier =
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 )
             }
             itemsIndexed(visible, key = { _, track -> track.id.toString() }) { index, track ->
@@ -631,7 +742,7 @@ fun FavouritesScreen(
                     track,
                     index,
                     library,
-                    snapshot?.current?.id == track.id,
+                    snapshot?.current?.id == track.id && playing,
                     { play(visible, index, false) },
                     modifier = Modifier.animateItem(),
                 ) {
@@ -654,6 +765,8 @@ fun AlbumScreen(
 ) {
     val tracks by library.allTracks.collectAsState()
     val snapshot by library.snapshot.collectAsState()
+    val playing =
+        snapshot?.transport == org.resonate.android.nativecore.Transport.PLAYING
     val rows =
         tracks
             .filter { it.album == title && it.albumArtist.ifBlank { it.artist } == artist }
@@ -662,7 +775,11 @@ fun AlbumScreen(
                     .thenBy { it.trackNumber ?: UInt.MAX_VALUE }
                     .thenBy { it.title }
             )
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         item(key = "header") {
             CollectionHeader(
                 title.ifBlank { "Unknown album" },
@@ -671,21 +788,29 @@ fun AlbumScreen(
                         collectionSummary(rows),
                     )
                     .joinToString(" · "),
-                { Artwork(Modifier.size(208.dp), rows.firstOrNull(), library) },
+                { Artwork(Modifier.size(208.dp), rows.firstOrNull(), library, RoundedCornerShape(28.dp)) },
                 { play(rows, 0, false) },
                 { play(rows, rows.indices.random(), true) },
                 rows.isNotEmpty(),
                 track = rows.firstOrNull(),
                 library = library,
                 detail = {
-                    TextButton(
-                        onClick = { navigate(artistDestination(artist)) },
-                        enabled = artist.isNotBlank(),
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
                     ) {
-                        Text(
-                            artist.ifBlank { "Unknown artist" },
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        TextButton(
+                            onClick = { navigate(artistDestination(artist)) },
+                            enabled = artist.isNotBlank(),
+                        ) {
+                            Icon(Icons.Default.Person, null, Modifier.size(16.dp))
+                            Text(
+                                artist.ifBlank { "Unknown artist" },
+                                Modifier.padding(start = 6.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 },
             )
@@ -699,7 +824,7 @@ fun AlbumScreen(
                 track,
                 index,
                 library,
-                snapshot?.current?.id == track.id,
+                snapshot?.current?.id == track.id && playing,
                 { play(rows, index, false) },
                 modifier = Modifier.animateItem(),
             ) {
@@ -718,9 +843,15 @@ fun ArtistScreen(
 ) {
     val tracks by library.allTracks.collectAsState()
     val snapshot by library.snapshot.collectAsState()
+    val playing =
+        snapshot?.transport == org.resonate.android.nativecore.Transport.PLAYING
     val rows = tracks.filter { it.artist.equals(name, true) || it.albumArtist.equals(name, true) }
     val albums = rows.groupBy { it.album to it.albumArtist.ifBlank { it.artist } }.entries.toList()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         item(key = "header") {
             CollectionHeader(
                 name.ifBlank { "Unknown artist" },
@@ -747,7 +878,7 @@ fun ArtistScreen(
                 track,
                 index,
                 library,
-                snapshot?.current?.id == track.id,
+                snapshot?.current?.id == track.id && playing,
                 { play(rows, index, false) },
                 modifier = Modifier.animateItem(),
             ) {

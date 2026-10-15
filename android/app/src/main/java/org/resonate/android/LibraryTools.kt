@@ -1,15 +1,19 @@
 package org.resonate.android
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,16 +26,38 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,13 +72,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.media3.session.MediaController
@@ -79,19 +110,25 @@ fun FolderScreen(library: LibraryRepository, chooseFolder: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        item { Button(onClick = chooseFolder) { Text("Add music folder") } }
+        item { Button(onClick = chooseFolder, shape = RoundedCornerShape(16.dp)) { Text("Add music folder") } }
         if (folders.isEmpty()) item { Text("No music folders have been added.") }
         items(folders, key = { it.uri.toString() }) { folder ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(folder.name, style = MaterialTheme.typography.titleMedium)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(folder.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         if (folder.readable) "Access available"
                         else "Unavailable · choose this folder again to restore access",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                    Text(folder.uri.toString(), style = MaterialTheme.typography.bodySmall)
-                    Row {
+                    Text(folder.uri.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(
                             onClick = { library.scan(folder.uri) },
                             enabled = folder.readable,
@@ -107,6 +144,7 @@ fun FolderScreen(library: LibraryRepository, chooseFolder: () -> Unit) {
     removing?.let { folder ->
         AlertDialog(
             onDismissRequest = { removing = null },
+            shape = RoundedCornerShape(28.dp),
             title = { Text("Remove ${folder.name}?") },
             text = {
                 Text(
@@ -137,7 +175,13 @@ fun StatisticsScreen(library: LibraryRepository, play: (List<Track>, Track) -> U
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { Text("Listening statistics", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Text(
+                "Listening statistics",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
         item {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
@@ -145,26 +189,49 @@ fun StatisticsScreen(library: LibraryRepository, play: (List<Track>, Track) -> U
             ) {
                 listOf(7u to "Week", 30u to "Month", 365u to "Year", 0u to "All time").forEach {
                     (value, label) ->
-                    FilterChip(days == value, { days = value }, label = { Text(label) })
+                    FilterChip(
+                        days == value,
+                        { days = value },
+                        label = { Text(label) },
+                        shape = RoundedCornerShape(14.dp),
+                    )
                 }
             }
         }
         statistics?.let { value ->
             item {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "${value.plays} plays · ${value.listenedMs / 60000uL} minutes listened",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "${value.songs} songs · ${value.albums} albums · ${value.artists} artists",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "${value.durationMs / 3600000uL} hours in your library",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+            item {
                 Text(
-                    "${value.plays} plays · ${value.listenedMs / 60000uL} minutes listened",
+                    "Most listened",
                     style = MaterialTheme.typography.titleLarge,
-                )
-                Text(
-                    "${value.songs} songs · ${value.albums} albums · ${value.artists} artists",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    "${value.durationMs / 3600000uL} hours in your library",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
                 )
             }
-            item { Text("Most listened", style = MaterialTheme.typography.titleLarge) }
             if (value.topTracks.isEmpty())
                 item { Text("Play a song for half its length, or four minutes, to count a play.") }
             items(value.topTracks, key = { it.id.toString() }) { track ->
@@ -183,7 +250,11 @@ fun SuggestionsScreen(library: LibraryRepository, openLibrary: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text("Suggestions", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Suggestions",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
             Text(
                 "Mixes from your library and listening history",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -200,15 +271,19 @@ fun SuggestionsScreen(library: LibraryRepository, openLibrary: () -> Unit) {
             )
             .forEach { (label, filter) ->
                 item {
-                    Card(
-                        Modifier.fillMaxWidth().clickable {
-                            library.setFilter(filter)
-                            openLibrary()
-                        }
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                        modifier =
+                            Modifier.fillMaxWidth().clickable {
+                                library.setFilter(filter)
+                                openLibrary()
+                            },
                     ) {
-                        Column(Modifier.padding(20.dp)) {
-                            Text(label, style = MaterialTheme.typography.titleLarge)
-                            Text("Explore this mix", color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("Explore this mix", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -319,18 +394,33 @@ fun LibraryFilterDialog(library: LibraryRepository, dismiss: () -> Unit) {
 
 @Composable
 fun TrackCard(track: Track, library: LibraryRepository, click: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = click).padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = click),
     ) {
-        Artwork(Modifier.size(52.dp), track, library)
-        Column(Modifier.padding(start = 12.dp)) {
-            Text(track.title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                track.artist,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Artwork(Modifier.size(52.dp), track, library, RoundedCornerShape(12.dp))
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    track.artist.ifBlank { "Unknown artist" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -341,64 +431,222 @@ fun InspectorScreen(library: LibraryRepository, track: Track?) {
     val inspector by library.features.inspector.collectAsState()
     val artist by library.features.artist.collectAsState()
     val online by library.features.online.collectAsState()
+    val tones by rememberArtworkTones(track, library)
     LaunchedEffect(track?.id) { track?.let { library.features.loadInspector(it.id) } }
     if (track == null) {
         Text("Choose a song to inspect", Modifier.padding(20.dp))
         return
     }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            Artwork(Modifier.fillMaxWidth().height(220.dp), track, library)
-            Text(track.title, style = MaterialTheme.typography.headlineSmall)
-            Text(track.artist, style = MaterialTheme.typography.titleMedium)
-        }
-        item { TextButton(onClick = { choosingPlaylist = true }) { Text("Add to playlist") } }
-        item {
-            Text("Album: ${track.album}")
-            Text("Album artist: ${track.albumArtist.ifBlank { "Not tagged" }}")
-            Text("Genre: ${track.genre.ifBlank { "Not tagged" }}")
-            Text("Date: ${track.date.ifBlank { "Not tagged" }}")
-            Text("Disc ${track.discNumber ?: "—"} · Track ${track.trackNumber ?: "—"}")
-        }
-        item {
-            Text("Source audio", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "${track.codec} · ${track.rate} Hz · ${track.channels} channels · ${track.bits ?: "Unknown"} bits"
-            )
-            Text("Duration: ${timeLabel(track.durationMs)}")
-            Text(track.uri, style = MaterialTheme.typography.bodySmall)
-        }
-        inspector
-            ?.takeIf { it.track.id == track.id }
-            ?.let { value ->
+    AmbientBackdrop(tones, Modifier.fillMaxSize(), strength = 0.40f, animated = true) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                    border = BorderStroke(1.dp, tones.primary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ArtworkSpotlight(
+                            Modifier.size(160.dp),
+                            playing = false,
+                            glowColor = tones.primary,
+                            shape = RoundedCornerShape(22.dp),
+                        ) {
+                            Artwork(Modifier.fillMaxSize(), track, library, RoundedCornerShape(22.dp))
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            track.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            track.artist,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        AudioFormatBadge(track)
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FilledTonalButton(
+                                onClick = { choosingPlaylist = true },
+                                shape = RoundedCornerShape(16.dp),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Add to playlist")
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                    border =
+                        BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Audiotrack,
+                                null,
+                                Modifier.size(20.dp),
+                                tint = tones.primary,
+                            )
+                            Text(
+                                "Source audio",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Text(
+                            "${track.codec} · ${track.rate} Hz · ${track.channels} channels · ${track.bits ?: "Unknown"} bits",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "Duration: ${timeLabel(track.durationMs)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            track.uri,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                    border =
+                        BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Album,
+                                null,
+                                Modifier.size(20.dp),
+                                tint = tones.primary,
+                            )
+                            Text(
+                                "Metadata & Tags",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Text("Album: ${track.album}")
+                        Text("Album artist: ${track.albumArtist.ifBlank { "Not tagged" }}")
+                        Text("Genre: ${track.genre.ifBlank { "Not tagged" }}")
+                        Text("Date: ${track.date.ifBlank { "Not tagged" }}")
+                        Text("Disc ${track.discNumber ?: "—"} · Track ${track.trackNumber ?: "—"}")
+                    }
+                }
+            }
+            inspector
+                ?.takeIf { it.track.id == track.id }
+                ?.let { value ->
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(22.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                            border =
+                                BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Info,
+                                        null,
+                                        Modifier.size(20.dp),
+                                        tint = tones.primary,
+                                    )
+                                    Text(
+                                        "Technical container",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Text("Container: ${value.container}")
+                                Text("Decoded format: ${value.sampleFormat}")
+                                Text("Seekable: ${if (value.seekable) "Yes" else "No"}")
+                                Text("Encoder: ${value.encoder.ifBlank { "Not tagged" }}")
+                                Text("ISRC: ${value.isrc.ifBlank { "Not tagged" }}")
+                                Text("Recording ID: ${value.track.recording ?: "Not identified"}")
+                                Text("Release ID: ${value.track.release ?: "Not identified"}")
+                                if (value.copyright.isNotBlank()) Text(value.copyright)
+                                if (value.comment.isNotBlank()) Text(value.comment)
+                            }
+                        }
+                    }
+                }
+            if (online)
                 item {
-                    Text("Container: ${value.container}")
-                    Text("Decoded format: ${value.sampleFormat}")
-                    Text("Seekable: ${if (value.seekable) "Yes" else "No"}")
-                    Text("Encoder: ${value.encoder.ifBlank { "Not tagged" }}")
-                    Text("ISRC: ${value.isrc.ifBlank { "Not tagged" }}")
-                    Text("Recording ID: ${value.track.recording ?: "Not identified"}")
-                    Text("Release ID: ${value.track.release ?: "Not identified"}")
-                    if (value.copyright.isNotBlank()) Text(value.copyright)
-                    if (value.comment.isNotBlank()) Text(value.comment)
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { library.features.enrich(listOf(track)) }) {
+                                Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(8.dp))
+                                Text("Enrich metadata, artwork and lyrics")
+                            }
+                            TextButton(onClick = { library.features.loadArtist(track.id) }) {
+                                Icon(Icons.Default.Person, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(8.dp))
+                                Text("Look up artist")
+                            }
+                        }
+                    }
                 }
-            }
-        if (online)
-            item {
-                TextButton(onClick = { library.features.enrich(listOf(track)) }) {
-                    Text("Enrich metadata, artwork and lyrics")
+            artist?.let { value ->
+                item {
+                    HorizontalDivider()
+                    ArtistInformationCard(value)
                 }
-                TextButton(onClick = { library.features.loadArtist(track.id) }) {
-                    Text("Look up artist")
-                }
-            }
-        artist?.let { value ->
-            item {
-                HorizontalDivider()
-                ArtistInformationCard(value)
             }
         }
     }
@@ -416,123 +664,421 @@ fun AnalysisScreen(library: LibraryRepository, track: Track?) {
     val savedKey by library.features.recognitionKey.collectAsState()
     var key by remember(savedKey) { mutableStateOf(savedKey) }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val tones by rememberArtworkTones(track, library)
     LaunchedEffect(track?.id) { track?.let { library.features.analyse(it.id) } }
     DisposableEffect(Unit) { onDispose { library.features.cancelAnalysis() } }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            track?.title ?: "Choose a song to analyse",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        if (busy) {
-            Text("Analysing audio…")
-            progress?.let {
-                LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth())
-            } ?: LinearProgressIndicator(Modifier.fillMaxWidth())
-            TextButton(onClick = library.features::cancelAnalysis) { Text("Cancel analysis") }
-        }
-        report
-            ?.takeIf { it.trackId == track?.id }
-            ?.let { value ->
-                Text("Assessment: ${value.verdict}", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "Integrated loudness: ${value.loudnessLufs?.let { String.format(Locale.getDefault(), "%.1f LUFS", it) } ?: "Not measurable"}"
-                )
-                Text(
-                    "True peak: ${String.format(Locale.getDefault(), "%.5f", value.truePeak)} · Dynamic range: ${value.dynamicRange ?: "—"}"
-                )
-                Text("Clipped samples: ${value.clipped} · Bits in use: ${value.bitsInUse ?: "—"}")
-                Text("Waveform", style = MaterialTheme.typography.titleLarge)
-                SignalPlot(value.waveform, false, Modifier.fillMaxWidth().height(160.dp))
-                Text("Spectrum", style = MaterialTheme.typography.titleLarge)
-                SignalPlot(
-                    value.spectrum.map { ((it + 120f) / 120f).coerceIn(0f, 1f) },
-                    false,
-                    Modifier.fillMaxWidth().height(160.dp),
-                )
-                Text(
-                    "0 – ${((value.spectrum.size - 1) * value.spectrumStepHz).toInt()} Hz",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                value.findings.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-                HorizontalDivider()
-                Text("Identify this recording", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "Recognition sends an audio signature to Shazam. With your AcoustID key it sends the whole-song fingerprint to AcoustID instead.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedTextField(
-                    key,
-                    { key = it },
-                    label = { Text("AcoustID key (optional)") },
-                    visualTransformation =
-                        androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                TextButton(onClick = { library.features.saveRecognitionKey(key) }) {
-                    Text("Save recognition key")
-                }
-                Button(
-                    onClick = { track?.let { library.features.recognise(it.id) } },
-                    enabled = online && !recognising,
+    AmbientBackdrop(tones, Modifier.fillMaxSize(), strength = 0.45f, animated = true) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, tones.primary.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text(if (recognising) "Identifying…" else "Identify by sound")
-                }
-                if (!online) Text("Enable online features in Settings to identify recordings.")
-                candidates.forEach { candidate ->
-                    Text(
-                        "${candidate.song.title} · ${candidate.song.artist} · ${candidate.score}%",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    TextButton(
-                        onClick = {
-                            uriHandler.openUri(
-                                "https://musicbrainz.org/recording/${candidate.song.recording}"
-                            )
-                        }
-                    ) {
-                        Text("View recording")
+                    Artwork(Modifier.size(56.dp), track, library, RoundedCornerShape(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            track?.title ?: "Choose a song to analyse",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            track?.artist.orEmpty().ifBlank { "Audio mastering analysis" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        AudioFormatBadge(track)
                     }
                 }
             }
+            if (busy) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
+                    border = BorderStroke(1.dp, tones.primary.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.5.dp,
+                                color = tones.primary,
+                            )
+                            Text(
+                                "Analysing audio…",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        progress?.let {
+                            LinearProgressIndicator(
+                                progress = { it },
+                                modifier = Modifier.fillMaxWidth(),
+                                strokeCap = StrokeCap.Round,
+                                color = tones.primary,
+                            )
+                        } ?: LinearProgressIndicator(
+                            Modifier.fillMaxWidth(),
+                            strokeCap = StrokeCap.Round,
+                            color = tones.primary,
+                        )
+                        TextButton(onClick = library.features::cancelAnalysis) {
+                            Text("Cancel analysis")
+                        }
+                    }
+                }
+            }
+            report
+                ?.takeIf { it.trackId == track?.id }
+                ?.let { value ->
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Analytics,
+                                    null,
+                                    Modifier.size(22.dp),
+                                    tint = tones.primary,
+                                )
+                                Text(
+                                    "Assessment: ${value.verdict}",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Text(
+                                "Integrated loudness: ${value.loudnessLufs?.let { String.format(Locale.getDefault(), "%.1f LUFS", it) } ?: "Not measurable"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "True peak: ${String.format(Locale.getDefault(), "%.5f", value.truePeak)} · Dynamic range: ${value.dynamicRange ?: "—"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "Clipped samples: ${value.clipped} · Bits in use: ${value.bitsInUse ?: "—"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (value.findings.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                value.findings.forEach {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    null,
+                                    Modifier.size(20.dp),
+                                    tint = tones.primary,
+                                )
+                                Text(
+                                    "Waveform",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            SignalPlot(
+                                value.waveform,
+                                false,
+                                Modifier.fillMaxWidth().height(160.dp),
+                                strokeColor = tones.primary,
+                                glowColor = tones.secondary,
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Speed,
+                                    null,
+                                    Modifier.size(20.dp),
+                                    tint = tones.primary,
+                                )
+                                Text(
+                                    "Spectrum",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            SignalPlot(
+                                value.spectrum.map { ((it + 120f) / 120f).coerceIn(0f, 1f) },
+                                false,
+                                Modifier.fillMaxWidth().height(160.dp),
+                                strokeColor = tones.secondary,
+                                glowColor = tones.primary,
+                            )
+                            Text(
+                                "0 – ${((value.spectrum.size - 1) * value.spectrumStepHz).toInt()} Hz",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    null,
+                                    Modifier.size(20.dp),
+                                    tint = tones.primary,
+                                )
+                                Text(
+                                    "Identify this recording",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Text(
+                                "Recognition sends an audio signature to Shazam. With your AcoustID key it sends the whole-song fingerprint to AcoustID instead.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedTextField(
+                                key,
+                                { key = it },
+                                label = { Text("AcoustID key (optional)") },
+                                visualTransformation =
+                                    androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true,
+                            )
+                            TextButton(onClick = { library.features.saveRecognitionKey(key) }) {
+                                Text("Save recognition key")
+                            }
+                            Button(
+                                onClick = { track?.let { library.features.recognise(it.id) } },
+                                enabled = online && !recognising,
+                                shape = RoundedCornerShape(16.dp),
+                            ) {
+                                Text(if (recognising) "Identifying…" else "Identify by sound")
+                            }
+                            if (!online)
+                                Text(
+                                    "Enable online features in Settings to identify recordings.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            candidates.forEach { candidate ->
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                "${candidate.song.title} · ${candidate.song.artist} · ${candidate.score}%",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                uriHandler.openUri(
+                                                    "https://musicbrainz.org/recording/${candidate.song.recording}"
+                                                )
+                                            }
+                                        ) {
+                                            Text("View recording")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+        }
     }
 }
 
 @Composable
 fun VisualizerScreen(library: LibraryRepository, snapshot: Snapshot?) {
     val samples by library.features.samples.collectAsState()
+    val tones by rememberArtworkTones(snapshot?.current, library)
     DisposableEffect(Unit) {
         library.features.visualize(true)
         onDispose { library.features.visualize(false) }
     }
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text(
-            snapshot?.current?.title ?: "Play a song to see its sound",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text("Live waveform", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SignalPlot(samples, true, Modifier.fillMaxWidth().height(300.dp))
+    AmbientBackdrop(tones, Modifier.fillMaxSize(), strength = 0.50f, animated = true) {
+        Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, tones.primary.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Artwork(Modifier.size(54.dp), snapshot?.current, library, RoundedCornerShape(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            snapshot?.current?.title ?: "Play a song to see its sound",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Live waveform",
+                                color = tones.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            AudioFormatBadge(snapshot?.current)
+                        }
+                    }
+                }
+            }
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
+                border = BorderStroke(1.2.dp, tones.primary.copy(alpha = 0.40f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                SignalPlot(
+                    samples,
+                    true,
+                    Modifier.fillMaxWidth().height(320.dp),
+                    strokeColor = tones.primary,
+                    glowColor = tones.secondary,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun SignalPlot(values: List<Float>, centered: Boolean, modifier: Modifier) {
-    val color = MaterialTheme.colorScheme.primary
+private fun SignalPlot(
+    values: List<Float>,
+    centered: Boolean,
+    modifier: Modifier,
+    strokeColor: Color = MaterialTheme.colorScheme.primary,
+    glowColor: Color = MaterialTheme.colorScheme.secondary,
+) {
     Canvas(modifier) {
+        val width = size.width
+        val height = size.height
+        val gridColor = strokeColor.copy(alpha = 0.12f)
+        val centerLineColor = strokeColor.copy(alpha = 0.25f)
+        drawLine(
+            gridColor,
+            Offset(0f, height * 0.25f),
+            Offset(width, height * 0.25f),
+            strokeWidth = 1.dp.toPx(),
+        )
+        drawLine(
+            if (centered) centerLineColor else gridColor,
+            Offset(0f, height * 0.5f),
+            Offset(width, height * 0.5f),
+            strokeWidth = if (centered) 1.5.dp.toPx() else 1.dp.toPx(),
+        )
+        drawLine(
+            gridColor,
+            Offset(0f, height * 0.75f),
+            Offset(width, height * 0.75f),
+            strokeWidth = 1.dp.toPx(),
+        )
         if (values.size < 2) return@Canvas
         val path = Path()
         values.forEachIndexed { index, raw ->
             val value = raw.takeIf { it.isFinite() } ?: 0f
-            val x = size.width * index / (values.size - 1)
+            val x = width * index / (values.size - 1)
             val y =
-                if (centered) size.height * (0.5f - value.coerceIn(-1f, 1f) * 0.45f)
-                else size.height * (1f - value.coerceIn(0f, 1f))
+                if (centered) height * (0.5f - value.coerceIn(-1f, 1f) * 0.45f)
+                else height * (1f - value.coerceIn(0f, 1f))
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        drawPath(path, color, style = Stroke(2.dp.toPx()))
+        val gradientBrush =
+            Brush.horizontalGradient(
+                listOf(strokeColor, glowColor, strokeColor)
+            )
+        drawPath(path, strokeColor.copy(alpha = 0.25f), style = Stroke(6.dp.toPx()))
+        drawPath(path, gradientBrush, style = Stroke(2.2.dp.toPx()))
     }
 }
 
@@ -548,6 +1094,7 @@ fun LyricsScreen(
     val loading by library.features.lyricsLoading.collectAsState()
     val online by library.features.online.collectAsState()
     val list = rememberLazyListState()
+    val tones by rememberArtworkTones(track, library)
     LaunchedEffect(track?.id) { track?.let { library.features.loadLyrics(it.id) } }
     val active = frame?.line?.toInt()
     LaunchedEffect(active) {
@@ -555,102 +1102,168 @@ fun LyricsScreen(
             if (!list.isScrollInProgress) list.animateScrollToItem((it - 2).coerceAtLeast(0))
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                track?.title ?: "Lyrics",
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            if (online && track != null)
-                TextButton(onClick = { library.features.loadLyrics(track.id, true) }) {
-                    Text("Refresh")
-                }
-        }
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        val lines = sheet?.takeIf { it.trackId == track?.id }?.lines.orEmpty()
-        if (lines.isEmpty() && !loading)
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    if (online) "No lyrics found for this song"
-                    else
-                        "No saved lyrics. Enable online features to look them up, or add an LRC beside the song."
-                )
-            }
-        LazyColumn(
-            state = list,
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(28.dp),
-        ) {
-            itemsIndexed(lines) { index, line ->
-                val timed = line.atMs != null
-                val lit = !timed || frame?.active?.contains(index.toUInt()) == true
-                val scale by
-                    animateFloatAsState(if (lit) 1f else 0.92f, spring(), label = "Lyric emphasis")
-                val alpha by
-                    animateFloatAsState(
-                        if (lit) 1f
-                        else if (active == null || abs(index - active) < 3) 0.55f else 0.3f,
-                        label = "Lyric focus",
-                    )
-                val color by
-                    animateColorAsState(
-                        if (lit && timed) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
-                        label = "Sung line",
-                    )
-                val position = snapshot?.positionMs ?: 0uL
-                val text = buildAnnotatedString {
-                    if (line.words.isEmpty() || !lit) append(line.text)
-                    else
-                        line.words.forEach { word ->
-                            withStyle(
-                                SpanStyle(
-                                    color =
-                                        if (position >= word.atMs) color
-                                        else color.copy(alpha = 0.4f)
-                                )
-                            ) {
-                                append(word.text)
-                            }
-                        }
-                }
-                Text(
-                    text,
-                    Modifier.fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            this.alpha = alpha
-                        }
-                        .blur(
-                            if (timed && active != null && abs(index - active) > 3) 0.5.dp else 0.dp
+    AmbientBackdrop(tones, Modifier.fillMaxSize(), strength = 0.55f, animated = true) {
+        Column(Modifier.fillMaxSize()) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, tones.primary.copy(alpha = 0.35f)),
+                modifier =
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Artwork(Modifier.size(42.dp), track, library, RoundedCornerShape(10.dp))
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(
+                            track?.title ?: "Lyrics",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        .clickable(enabled = timed) {
-                            line.atMs?.let { controller?.seekTo(it.toLong()) }
-                        },
-                    color = color,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = if (lit) FontWeight.Bold else FontWeight.Medium,
-                )
+                        Text(
+                            track?.artist.orEmpty().ifBlank { "Synchronized lyrics" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (online && track != null)
+                        FilledTonalButton(
+                            onClick = { library.features.loadLyrics(track.id, true) },
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        ) {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("Refresh")
+                        }
+                }
             }
-            item { Spacer(Modifier.height(160.dp)) }
+            if (loading)
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth(),
+                    strokeCap = StrokeCap.Round,
+                    color = tones.primary,
+                )
+            val lines = sheet?.takeIf { it.trackId == track?.id }?.lines.orEmpty()
+            if (lines.isEmpty() && !loading)
+                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f),
+                        border =
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            ),
+                        modifier = Modifier.padding(16.dp),
+                    ) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Lyrics,
+                                null,
+                                Modifier.size(48.dp),
+                                tint = tones.primary,
+                            )
+                            Text(
+                                if (online) "No lyrics found for this song"
+                                else
+                                    "No saved lyrics. Enable online features to look them up, or add an LRC beside the song.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            LazyColumn(
+                state = list,
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(28.dp),
+                contentPadding = PaddingValues(top = 40.dp, bottom = 180.dp),
+            ) {
+                itemsIndexed(lines) { index, line ->
+                    val timed = line.atMs != null
+                    val lit = !timed || frame?.active?.contains(index.toUInt()) == true
+                    val scale by
+                        animateFloatAsState(
+                            if (lit) 1.06f else 0.94f,
+                            spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessLow,
+                            ),
+                            label = "Lyric emphasis",
+                        )
+                    val alpha by
+                        animateFloatAsState(
+                            if (lit) 1f
+                            else if (active == null || abs(index - active) < 3) 0.52f else 0.22f,
+                            label = "Lyric focus",
+                        )
+                    val color by
+                        animateColorAsState(
+                            if (lit && timed) tones.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                            label = "Sung line",
+                        )
+                    val position = snapshot?.positionMs ?: 0uL
+                    val text = buildAnnotatedString {
+                        if (line.words.isEmpty() || !lit) append(line.text)
+                        else
+                            line.words.forEach { word ->
+                                withStyle(
+                                    SpanStyle(
+                                        color =
+                                            if (position >= word.atMs) color
+                                            else color.copy(alpha = 0.4f)
+                                    )
+                                ) {
+                                    append(word.text)
+                                }
+                            }
+                    }
+                    Text(
+                        text,
+                        Modifier.fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                this.alpha = alpha
+                            }
+                            .blur(
+                                if (timed && active != null && abs(index - active) > 3) 0.8.dp
+                                else 0.dp
+                            )
+                            .clickable(enabled = timed) {
+                                line.atMs?.let { controller?.seekTo(it.toLong()) }
+                            },
+                        color = color,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = if (lit) FontWeight.Bold else FontWeight.Medium,
+                    )
+                }
+            }
+            sheet
+                ?.origin
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    Text(
+                        "Lyrics: $it",
+                        Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
         }
-        sheet
-            ?.origin
-            ?.takeIf { it.isNotBlank() }
-            ?.let {
-                Text(
-                    "Lyrics: $it",
-                    Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
     }
 }
 

@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -57,12 +59,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -263,7 +267,7 @@ fun SettingsScreen(
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(key = "settings-search") {
             OutlinedTextField(
@@ -277,9 +281,16 @@ fun SettingsScreen(
                             Icon(Icons.Default.Clear, "Clear settings search")
                         }
                 },
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
                 modifier =
                     Modifier.fillMaxWidth().semantics { contentDescription = "Search settings" },
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
@@ -294,6 +305,7 @@ fun SettingsScreen(
                 Text(
                     "No settings match “$query”",
                     Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -305,7 +317,14 @@ private fun OnlineSettings(features: LibraryFeatures) {
     val online by features.online.collectAsState()
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border =
+            BorderStroke(
+                1.dp,
+                if (online) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+            ),
+        tonalElevation = 2.dp,
     ) {
         Row(
             Modifier.fillMaxWidth()
@@ -314,18 +333,28 @@ private fun OnlineSettings(features: LibraryFeatures) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(
-                Icons.Default.CloudQueue,
-                null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+            ) {
+                Icon(
+                    Icons.Default.CloudQueue,
+                    null,
+                    Modifier.padding(10.dp).size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Online features", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Online features",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     if (online) "Artwork, lyrics and music search are enabled"
                     else "Artwork, lyrics and music search are offline",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Switch(checked = online, onCheckedChange = null)
@@ -454,7 +483,7 @@ fun LibraryToolsScreen(
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         groups.forEach { (title, entries) -> item(key = title) { SettingsGroup(title, entries) } }
     }
@@ -465,13 +494,16 @@ private fun SettingsGroup(title: String, entries: List<SettingsEntry>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title,
-            Modifier.padding(start = 16.dp),
-            style = MaterialTheme.typography.labelLarge,
+            Modifier.padding(start = 12.dp),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+            tonalElevation = 1.dp,
         ) {
             Column {
                 entries.forEachIndexed { index, entry ->
@@ -488,15 +520,15 @@ private fun SettingsRow(entry: SettingsEntry) {
     Row(
         Modifier.fillMaxWidth()
             .clickable(enabled = entry.enabled, role = Role.Button, onClick = entry.action)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Surface(
             shape = RoundedCornerShape(14.dp),
             color =
-                MaterialTheme.colorScheme.secondaryContainer.copy(
-                    alpha = if (entry.enabled) 1f else 0.4f
+                MaterialTheme.colorScheme.primaryContainer.copy(
+                    alpha = if (entry.enabled) 0.5f else 0.2f
                 ),
         ) {
             Icon(
@@ -504,14 +536,15 @@ private fun SettingsRow(entry: SettingsEntry) {
                 null,
                 Modifier.padding(10.dp).size(22.dp),
                 tint =
-                    if (entry.enabled) MaterialTheme.colorScheme.onSecondaryContainer
+                    if (entry.enabled) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
                 entry.title,
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
                 color =
                     if (entry.enabled) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -536,7 +569,7 @@ private fun SettingsRow(entry: SettingsEntry) {
 @Composable
 private fun SettingsDivider() {
     HorizontalDivider(
-        Modifier.padding(start = 74.dp, end = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        Modifier.padding(start = 70.dp, end = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
     )
 }

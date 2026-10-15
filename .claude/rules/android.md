@@ -139,8 +139,9 @@ Settings use searchable groups for sound/playback, library sources and connected
 The online switch lives there; the equaliser and processing have separate pages, and profile
 import expands on request. Child-page Back restores its parent and settings search, including
 after Activity recreation. Library tools use a separate grouped page. The floating mini-player
-shows cover, title, artist, progress/time, previous/play/next controls and a favourite heart above
-navigation. Its metadata and heart have their own row so all transport targets remain 48 dp wide.
+shows cover, title, artist, previous/play/next controls and a favourite heart in a floating pill
+above navigation, with ambient tones matching the album. Its transport targets remain accessible
+touch targets, and accessibility semantics retain the song progress node.
 The expanded player links the tagged album and artist to their collection pages; route arguments
 are URI-encoded and carried in saved navigation history, so punctuation and nested Back preserve
 which collection was opened.
@@ -149,7 +150,13 @@ The navigation roots are Songs, Library, Queue and Settings. Library pins Favour
 albums and artists, with collection search and category chips. Favourites and collection counts
 read the full catalog separately from the song browser's search and filters. A completed favourite
 write updates catalog, browser, queue, snapshot and open playlist state together, then refreshes
-the active browser query. The native catalog remains the persisted source of truth.
+the active browser query. The native catalog remains the persisted source of truth. Liking a song
+presents a non-blocking floating banner with an "Add to playlist" button that opens the playlist
+picker without obstructing navigation or accessibility.
+
+Home screen widgets provide a compact 4x1/4x2 player widget and a large turntable hero widget
+with album art, track details and transport controls via `ResonatePlayerWidgetProvider` and
+`ResonateTurntableWidgetProvider`, refreshed automatically on playback and artwork updates.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
 keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
@@ -164,13 +171,12 @@ Artwork and player labels crossfade, hearts use a spring response, and keyed col
 animate placement and removal. Decorative crossfade icons expose one current label on their
 parent control, so accessibility never announces both transport or favourite states.
 
-Player and collection backdrops derive two tones from a bounded 16 by 16 sample of cached cover
-art on a worker. Dark or unsaturated covers fall back to the system palette. Tone changes blend
-through cached radial brushes; drawing and artwork-scale animations read their state in draw
-layers rather than recomposing the library on every frame. The backgrounds do not run perpetual
-animation loops, decode their own full-size images or alter the audio callback. The expanded
-player keeps a square, shadowed cover, compact album/artist links and a larger central transport
-control; pause settles the cover to a smaller scale.
+Player, lyrics, analysis, visualizer and collection backdrops derive two tones from a bounded 16 by
+16 sample of cached cover art on a worker. Dark or unsaturated covers fall back to the system palette.
+Tone changes and fluid drifting mesh animations blend through cached radial brushes; drawing and
+artwork-scale animations read their state in draw layers rather than recomposing the library on every
+frame. The expanded player keeps a square, shadowed cover, compact album/artist links and a larger
+central transport control; pause settles the cover to a smaller scale.
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all

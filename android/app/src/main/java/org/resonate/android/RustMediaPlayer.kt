@@ -86,6 +86,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             library.snapshot.collect {
                 snapshot = it
                 invalidateState()
+                ResonateWidgets.updateAll(context, library)
             }
         }
         scope.launch {
@@ -110,6 +111,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                         artworkId = track.id
                         invalidateState()
                     }
+                    ResonateWidgets.updateAll(context, library)
                 }
         }
     }

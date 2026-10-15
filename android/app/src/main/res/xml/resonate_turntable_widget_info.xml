@@ -1,0 +1,12 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="240dp"
+    android:minHeight="140dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:maxResizeWidth="560dp"
+    android:maxResizeHeight="420dp"
+    android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/resonate_turntable_widget"
+    android:description="@string/widget_turntable_description"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

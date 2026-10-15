@@ -1,12 +1,15 @@
 package org.resonate.android
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +20,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -25,11 +29,14 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -43,9 +50,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.resonate.android.nativecore.MusicPlaylist
@@ -64,6 +73,8 @@ fun PlaylistScreen(
     val selected by library.features.openPlaylist.collectAsState()
     val tracks by library.features.playlistRows.collectAsState()
     val snapshot by library.snapshot.collectAsState()
+    val playing =
+        snapshot?.transport == org.resonate.android.nativecore.Transport.PLAYING
     val syncStatus by library.features.syncStatus.collectAsState()
     val playlistSync by library.features.playlistSync.collectAsState()
     val playlist = playlists.find { it.id == id }
@@ -90,7 +101,11 @@ fun PlaylistScreen(
         syncStatus?.devices.orEmpty().filter {
             !it.thisDevice && (it.nearby || connected && it.online)
         }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         item(key = "header") {
             CollectionHeader(
                 playlist.name,
@@ -103,19 +118,22 @@ fun PlaylistScreen(
                 library = library,
             )
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = { adding = true }) {
+                FilledTonalButton(
+                    onClick = { adding = true },
+                    shape = RoundedCornerShape(16.dp),
+                ) {
                     Icon(Icons.Default.Add, null)
-                    Text("Add songs", Modifier.padding(start = 8.dp))
+                    Text("Add songs", Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold)
                 }
-                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
                 Column {
                     IconButton(onClick = { menu = true }) {
                         Icon(Icons.Default.MoreVert, "Playlist options")
                     }
-                    DropdownMenu(menu, { menu = false }) {
+                    DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(18.dp)) {
                         DropdownMenuItem(
                             text = { Text("Rename playlist") },
                             onClick = {
@@ -178,7 +196,7 @@ fun PlaylistScreen(
                 track,
                 index,
                 library,
-                snapshot?.current?.id == track.id,
+                snapshot?.current?.id == track.id && playing,
                 { play(rows, index, false) },
                 modifier = Modifier.animateItem(),
             ) {
@@ -189,7 +207,7 @@ fun PlaylistScreen(
                             "Options for song ${index + 1}: ${track.title}",
                         )
                     }
-                    DropdownMenu(options, { options = false }) {
+                    DropdownMenu(options, { options = false }, shape = RoundedCornerShape(18.dp)) {
                         DropdownMenuItem(
                             text = { Text("Add to another playlist") },
                             onClick = {
@@ -270,6 +288,7 @@ fun PlaylistScreen(
     if (deleting)
         AlertDialog(
             onDismissRequest = { deleting = false },
+            shape = RoundedCornerShape(28.dp),
             title = { Text("Delete ${playlist.name}?") },
             text = {
                 Text(
@@ -301,6 +320,7 @@ fun PlaylistNameDialog(
     var name by rememberSaveable { mutableStateOf(playlist?.name.orEmpty()) }
     AlertDialog(
         onDismissRequest = dismiss,
+        shape = RoundedCornerShape(28.dp),
         title = { Text(if (playlist == null) "Create playlist" else "Rename playlist") },
         text = {
             OutlinedTextField(
@@ -308,6 +328,7 @@ fun PlaylistNameDialog(
                 { name = it },
                 label = { Text("Playlist name") },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
             )
         },
         confirmButton = {
@@ -341,7 +362,11 @@ private fun AddPlaylistSongs(
     var selected by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     val visible = tracks.filter { "${it.title} ${it.artist} ${it.album}".contains(query, true) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = dismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    ) {
         Column(
             Modifier.fillMaxHeight(0.88f).imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -350,20 +375,38 @@ private fun AddPlaylistSongs(
                 "Add to ${playlist.name}",
                 Modifier.padding(horizontal = 20.dp),
                 style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
             )
             OutlinedTextField(
                 query,
                 { query = it },
                 placeholder = { Text("Find songs to add") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    if (query.isNotEmpty())
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Clear, "Clear search")
+                        }
+                },
                 singleLine = true,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
                 modifier =
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp).semantics {
                         contentDescription = "Find songs to add"
                     },
             )
-            LazyColumn(Modifier.weight(1f)) {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 if (visible.isEmpty())
                     item {
                         CollectionMessage(
@@ -375,35 +418,51 @@ private fun AddPlaylistSongs(
                 items(visible, key = { it.id.toString() }) { track ->
                     val id = track.id.toString()
                     val checked = id in selected
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .toggleable(
-                                checked,
-                                role = Role.Checkbox,
-                                onValueChange = {
-                                    selected = if (it) selected + id else selected - id
-                                },
-                            )
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color =
+                            if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                            else Color.Transparent,
+                        border =
+                            if (checked)
+                                BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                )
+                            else null,
+                        modifier = Modifier.fillMaxWidth().animateItem(),
                     ) {
-                        Artwork(Modifier.size(44.dp), track, library)
-                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(
-                                track.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                            Text(
-                                track.artist,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .toggleable(
+                                    checked,
+                                    role = Role.Checkbox,
+                                    onValueChange = {
+                                        selected = if (it) selected + id else selected - id
+                                    },
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Artwork(Modifier.size(44.dp), track, library, RoundedCornerShape(10.dp))
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(
+                                    track.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = if (checked) FontWeight.Bold else FontWeight.Medium,
+                                )
+                                Text(
+                                    track.artist,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Checkbox(checked, onCheckedChange = null)
                         }
-                        Checkbox(checked, onCheckedChange = null)
                     }
                 }
             }
@@ -416,10 +475,15 @@ private fun AddPlaylistSongs(
                     dismiss()
                 },
                 enabled = selected.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 20.dp, vertical = 2.dp),
             ) {
-                Text(if (selected.size == 1) "Add 1 song" else "Add ${selected.size} songs")
+                Text(
+                    if (selected.size == 1) "Add 1 song" else "Add ${selected.size} songs",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -431,9 +495,10 @@ fun PlaylistPicker(library: LibraryRepository, track: Track, dismiss: () -> Unit
     LaunchedEffect(Unit) { library.features.loadPlaylists() }
     AlertDialog(
         onDismissRequest = dismiss,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("Add to playlist") },
         text = {
-            LazyColumn {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(playlists, key = { it.id.toString() }) { playlist ->
                     CollectionRow(
                         playlist.name,
@@ -450,6 +515,8 @@ fun PlaylistPicker(library: LibraryRepository, track: Track, dismiss: () -> Unit
                         { name = it },
                         label = { Text("New playlist name") },
                         singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
                 }
             }

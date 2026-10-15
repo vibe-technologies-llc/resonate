@@ -29,5 +29,33 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <receiver
+            android:name=".ResonatePlayerWidgetProvider"
+            android:label="@string/widget_player_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_PLAY_PAUSE" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_PREVIOUS" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_NEXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/resonate_player_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".ResonateTurntableWidgetProvider"
+            android:label="@string/widget_turntable_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_PLAY_PAUSE" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_PREVIOUS" />
+                <action android:name="org.resonate.android.ACTION_WIDGET_NEXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/resonate_turntable_widget_info" />
+        </receiver>
     </application>
 </manifest>

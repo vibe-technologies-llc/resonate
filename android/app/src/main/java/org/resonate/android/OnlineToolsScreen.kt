@@ -1,5 +1,6 @@
 package org.resonate.android
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,11 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
@@ -38,17 +42,23 @@ fun AutoEqScreen(library: LibraryRepository) {
         Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("AutoEq headphone correction", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "AutoEq headphone correction",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
         OutlinedTextField(
             query,
             { query = it },
             label = { Text("Headphone model") },
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
             singleLine = true,
         )
         Button(
             onClick = { library.features.searchCorrections(query) },
             enabled = online && query.isNotBlank() && !busy,
+            shape = RoundedCornerShape(16.dp),
         ) {
             Text("Find correction")
         }
@@ -59,15 +69,31 @@ fun AutoEqScreen(library: LibraryRepository) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        LazyColumn {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(devices, key = { it.id }) { device ->
-                Column(Modifier.padding(vertical = 12.dp)) {
-                    Text(device.name, style = MaterialTheme.typography.titleMedium)
-                    TextButton(
-                        onClick = { library.features.applyCorrection(device) },
-                        enabled = !busy,
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Apply correction")
+                        Text(
+                            device.name,
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        TextButton(
+                            onClick = { library.features.applyCorrection(device) },
+                            enabled = !busy,
+                        ) {
+                            Text("Apply correction")
+                        }
                     }
                 }
             }
@@ -88,43 +114,58 @@ fun ScrobblingScreen(library: LibraryRepository) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Scrobbling", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Scrobbling",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
         Text(
             "Completed listens are queued on this device and submitted when online features are enabled.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
         )
-        SecretInput("ListenBrainz token", account.listenbrainzToken) {
-            draft = account.copy(listenbrainzToken = it)
-        }
-        SecretInput("Last.fm application key", account.lastfmKey) {
-            draft = account.copy(lastfmKey = it)
-        }
-        SecretInput("Last.fm application secret", account.lastfmSecret) {
-            draft = account.copy(lastfmSecret = it)
-        }
-        SecretInput("Last.fm session", account.lastfmSession) {
-            draft = account.copy(lastfmSession = it)
-        }
-        OutlinedTextField(
-            username,
-            { username = it },
-            label = { Text("Last.fm username") },
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        SecretInput("Last.fm password (used only to sign in)", password) { password = it }
-        TextButton(
-            onClick = {
-                library.features.signInLastFm(account, username, password)
-                password = ""
-            },
-            enabled =
-                username.isNotBlank() &&
-                    password.isNotBlank() &&
-                    account.lastfmKey.isNotBlank() &&
-                    account.lastfmSecret.isNotBlank(),
         ) {
-            Text("Sign in to Last.fm")
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SecretInput("ListenBrainz token", account.listenbrainzToken) {
+                    draft = account.copy(listenbrainzToken = it)
+                }
+                SecretInput("Last.fm application key", account.lastfmKey) {
+                    draft = account.copy(lastfmKey = it)
+                }
+                SecretInput("Last.fm application secret", account.lastfmSecret) {
+                    draft = account.copy(lastfmSecret = it)
+                }
+                SecretInput("Last.fm session", account.lastfmSession) {
+                    draft = account.copy(lastfmSession = it)
+                }
+                OutlinedTextField(
+                    username,
+                    { username = it },
+                    label = { Text("Last.fm username") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                )
+                SecretInput("Last.fm password (used only to sign in)", password) { password = it }
+                TextButton(
+                    onClick = {
+                        library.features.signInLastFm(account, username, password)
+                        password = ""
+                    },
+                    enabled =
+                        username.isNotBlank() &&
+                            password.isNotBlank() &&
+                            account.lastfmKey.isNotBlank() &&
+                            account.lastfmSecret.isNotBlank(),
+                ) {
+                    Text("Sign in to Last.fm")
+                }
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Include existing listening history", Modifier.weight(1f))
@@ -134,7 +175,8 @@ fun ScrobblingScreen(library: LibraryRepository) {
             onClick = {
                 library.features.saveScrobbling(account, history)
                 history = false
-            }
+            },
+            shape = RoundedCornerShape(16.dp),
         ) {
             Text("Save scrobbling accounts")
         }
@@ -160,6 +202,7 @@ private fun SecretInput(label: String, value: String, change: (String) -> Unit) 
         change,
         label = { Text(label) },
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
     )
