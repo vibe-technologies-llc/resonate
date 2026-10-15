@@ -38,6 +38,116 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   two engine commands; a song ending in the instant between reading the place and a command landing
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
+## iOS
+- [S] `forgetMissing` hides by the cached `FolderAccess` (`Folders.folders()` measures a folder once;
+  `refreshed()` runs only at launch and when the folders or sync pages open): a drive or share
+  unplugged while the app is away still reads as readable, so on return every song on it is hidden,
+  its queue rows (the playing one too) leave, and `syncForce` fetches them from other devices
+- [M] Removing a music folder hides nothing (`hide_missing_songs` examines only readable known
+  roots) and adding it again mints a new root id, so a rescan indexes every file under another URI:
+  each song twice, the old rows unplayable and holding the favourites, playlist rows and listens
+- [S] `keep_room_correction` forgets the kept response before writing the new file and forgets
+  again when it does not parse: a wrong pick deletes a working correction, which keeps convolving
+  until the next launch, when `restore` finds nothing and switches the correction off unsaid
+- [S] `Keychain.read` answers `""` for every failure (`errSecInteractionNotAllowed` on a launch
+  before first unlock included): `readSync` then hands `sync_start` a blank key, which mints a new
+  pairing code that `applySync` stores over the real one. `write` deletes before it adds, so a
+  refused add destroys the secret
+- [S] Erase all data leaves the `appearance` suite and the alternate icon, stops no download,
+  enrichment or listening (a late handler rewrites `library-features` after it is removed), and
+  with `songUris` failing (`try?`) deletes no song in a granted folder yet exits as if erased
+- [M] The 250 ms poll joins `snapshot`, `queue` and `save` in one throwing `Work.inOrder`:
+  `snapshot` has already taken the engine's `failure`, so a `queue` or `save` error discards it;
+  one queue row with no catalog row fails every tick and freezes transport and position; a failing
+  `save` (disk full) clears `pollFailure` on the nineteen good ticks, so its banner returns every
+  5 s where `ios.md` says once
+- [S] A TIDAL token renewed during a failed `find_download` is lost: the tuple
+  `(findDownload, refreshedTidalToken)` throws before the second is read, so the next job starts
+  from the stale keychain token and meets `AccountRefused`
+- [S] A finished download starts an enrichment pass on a metered network with "Only on Wi-Fi" on:
+  `Enrichment.landed` checks `automatic` and `online` but not `unmetered`, which `begin` does
+- [S] "Download saved songs automatically" (on by default) asks for wants over cellular, Low Data
+  Mode and Low Power Mode: `askDueWants` gates only on online, an account and a folder
+- [S] The wants loop's `else` branch sets `wantsPoll = nil` without asking whether it is still the
+  current task, so a stale task finishing after `wantsChanged` leaves a loop nothing can cancel;
+  with online off, no account or no folder the loop wakes every 30 s where `ios.md` says it stops
+- [M] `DownloadQueue.holds` reads `jobs`, appended only after `begin_download` answers, and
+  `begin_download` does not dedupe: a double tap, or *Download all missing* beside the wants loop,
+  makes two jobs and two files. `discard` ignores `Folders.delete`'s failure and drops the journal
+  entry anyway, so a partial file stays and a later scan indexes it; a kill between `index_download`
+  and the journal's removal has `recover` delete an indexed song
+- [M] Pause shares `Work.inOrder` with `queue()`, `playlists()`, `documentsMoved` and `sync_start`
+  (which joins the sync thread): `.oldDeviceUnavailable` pauses through that lane, so the speaker
+  can play on after the headphones go until a queue read or a sync restart finishes
+- [M] `NowPlaying` discards `setActive(true)` (`try?`), so a refused activation surfaces later as
+  RemoteIO's `OSStatus`; `reportRoute` reads `sampleRate` straight after `setPreferredSampleRate`,
+  and a rate-only change posts no route notification, so Rust can keep the old rate; `rewrite()`
+  clears `shown`, so every favourite flip or artwork arrival re-runs `preferRate` and the route
+  report where `ios.md` says song change and activation
+- [S] The RemoteIO unit is disposed by the output thread after a message, not by `close`: a rebind
+  or rate change can open the next unit while the old one lives, and `started.recv()` has no
+  timeout, so a media-services stall in `AudioComponentInstanceNew` blocks the engine thread
+- [S] Opening a file awaits `refresh()` (the whole catalog) before `play(tracks, at: 0)`, and
+  `pollSync` awaits it inline, freezing sync progress and `answerSyncAsked` meanwhile
+- [M] Listening: closing the sheet in *asking* and reopening it waits for the uncancellable
+  recognise call, and extra taps chain further 12 s recordings; *Keep listening* ignores `.failed`,
+  `.stopped` and `.unreached`, so offline it records every 20 s under "Listening for the next
+  song"; `.playAndRecord` with `.measurement` drops A2DP and moves the rate with playback running,
+  so the microphone hears Resonate and each Listen costs two stream reopens
+- [S] A release build aborts on a panic (`panic = "abort"`, `Cargo.toml`) where UniFFI's
+  `catch_unwind` in a debug build turns it into an error: any panic on a listener's file or
+  catalog in a boundary call kills the app
+- [S] `refreshChangedArt` reads `known` after its await: two overlapping first calls (launch,
+  `scanned`, a landing, an enrichment poll) make the second ask from 0 as known and evict every
+  picture ever changed, bumping `artGenerations` so every visible `ArtworkView` decodes again
+- [S] `Library.refresh` reads pages on `Work.aside` beside the ordered favourite write and then
+  rebuilds `favouriteIds` from rows that may predate it: a heart tapped during a long refresh
+  snaps back although the write held
+- [S] `AlbumView` and `ArtistView` keep the key or name they were opened with: *Edit album tags*
+  can change the album key, and after Save the page reads nil and says "No songs from this album
+  are in your library yet" instead of following the album or popping
+- [M] A failed read is drawn as empty: `AlbumView.load`, `ArtistView.load`, the context-menu Play,
+  Shuffle, Play next, Add to queue and Add to playlist (`CollectionActions.act`) and the tag
+  editor's read (`songTags` answers `[]`, so the editor opens blank and Save can overwrite) all
+  `try?`; the online artist, album and release pages show "were found" after a failure and, with
+  `read` set, cannot be retried until popped; `saveWanted` counts a failed chunk as 0 and announces
+  "Saved N"; `SuggestedMixCard.play` says "Nothing in X yet" for a thrown error
+- [S] A playlist's count includes rows the page hides (`playlists.rs` counts `playlist_rows`,
+  `playlist_tracks` skips `missing`), and a playlist of hidden songs shows an empty list without
+  "Your playlist starts here"; the picker says "Added to X" and dismisses before `editPlaylist`
+  runs, so a duplicate name in *Create and add* then fails on a closed sheet; Now Playing's picker
+  is built in the sheet closure and adds whichever song is playing when a row is tapped
+- [S] "All time" in Statistics is the last 366 days (`DAYS_SHOWN_AT_MOST`): the chart, its total and
+  *Busiest day* cover a year while the *Listened* tile covers all; the chart's end labels carry no
+  year
+- [S] `FilterSheet` puts *Reset* in the cancel position and applies it at once, with no Cancel; its
+  Album field is folded equality (`Dark Side` matches nothing) and its Artist picker lists album
+  artists the track-artist filter does not match; *More from <artist>* is the artist of the single
+  most played song, not the most played artist
+- [S] The Online song row leaves *Download* enabled on a song marked *In your library*
+  (`holds` asks active jobs only), where the Wanted list hides it
+- [S] The Output page reads `AVAudioSession.currentRoute`, `sampleRate` and `outputLatency` in a
+  body without observing them, so headphones plugged in at the same rate leave the old route shown
+- [S] `EqualiserGraph` keeps `touch` and `holding` in `@State`, so a drag the system cancels (a
+  call, an alert) never reaches `onEnded` and the next touch reuses the held band
+- [S] `OrganiseView` leaves `plan` standing for the 300 ms after a keystroke, so *Organise* runs the
+  previous layout's plan and its confirmation counts the old moves
+- [M] Reduce Motion is read only by `MovingCover`, the backdrop and the lyrics pane: Now Playing's
+  reshape spring, the mini player's title change and the symbol effects ignore it; the
+  *Background* footer says Low Power Mode slows the app field, which already draws at 30 fps
+  (`lowPower || ambience != nil ? 30 : 60`) either way
+- [M] Icon-only controls set no frame or content shape: the favourite heart, mini-player previous
+  and next, shuffle and repeat, the filter token, the online song menu and *See all* are smaller
+  than 44 pt; settings sliders (preamp, buffer) give VoiceOver a percentage, not dB or ms; white on
+  the accent (Play, the active mode toggle, the swatch tick) is thin on the lighter dark-mode
+  accents
+- [S] `OnlineView` and `Destination.online` are unreachable (`open(.online)` switches to the
+  Search tab's Online scope), yet `ios.md` says the destination still draws a page of its own;
+  the same file's `portraitOf:` is not a parameter (`ArtworkView(track:corner:circle:)`)
+- [S] Scanning drops its reasons: `unreadable` carries none, and `setArtwork` and
+  `keepSidecarLyrics` failures are `try?`; `importPlaylistFile` reads the whole file with
+  `Data(contentsOf:)` before the boundary's 8 MiB refusal, so a multi-gigabyte pick risks jetsam
+
 ## Formats
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
   `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the main decoder

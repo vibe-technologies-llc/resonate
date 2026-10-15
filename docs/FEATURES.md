@@ -33,6 +33,22 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## iOS parity
 - [L] Neither phone has the vault: the managed archive is built on desktop paths
+- [M] iOS never rescans on its own: a scan starts from a button or pull to refresh, so a song
+  dropped into Documents through Files (`UIFileSharingEnabled`) or a folder gaining files appears
+  only once the listener asks; missing files, by contrast, are hidden at every foregrounding
+- [M] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
+  file and the retry starts again, a large FLAC included
+- [M] iOS is built universal (`UIDeviceFamily` 1 and 2, four iPad orientations, multitasking) with no
+  size-class, readable-width or orientation handling anywhere: rows run edge to edge on an iPad and
+  no iPad layout was ever looked at; restricting the family is one line
+- [S] The Local Network permission being denied is invisible: `NearbyDevices` handles `.failed`
+  only, never `.waiting`, so nearby devices silently never appear with no hint to open Settings
+- [S] Statistics' listening chart is one summary element to VoiceOver, so no bar can be reached
+- [S] Destructive edits on iOS have no undo: swipe, menu and `onDelete` removal from the queue,
+  *Forget* on a per-output curve, and swiping down on the tag editor, *Add songs* and the filter
+  sheet drops what was typed; a *Mixed* tag field cannot be cleared (blank reads as unchanged)
+- [S] The iOS app has no `PrivacyInfo.xcprivacy`, and `ITSAppUsesNonExemptEncryption` is false
+  though sync seals its records: neither matters under free signing, both before any distribution
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

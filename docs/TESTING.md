@@ -11,6 +11,20 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
   gap of the RemoteIO reopen it causes has been heard
 
+## iOS
+- [M] `ios/Package.swift` has no test target: `Folders.uri` and `resolved` (the `..` check),
+  `Settling` and `Steered`, `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
+  against the suites in use (it misses `appearance`), `ListenNext.after`, `ArtworkBucket.fitting`,
+  `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
+- [S] `remote_io.rs` and `remote_io_render.rs` are `cfg(target_os = "ios")` alone: no host test of
+  `render` (a short fill, zero length, the `empty` flag), `Routing::route_changed` or the drain
+  wait, though `Routing` is atomics and could leave the cfg
+- [S] `build-native.py` reads the accents and `LIFTED_TOWARD_WHITE` out of Rust sources by regex and
+  recolours the SVG with a silent `replace(..., 1)`, and nothing asserts that the twenty-one PNGs
+  match `xtool.yml` and `Info.plist`
+- [S] The build is checked for Swift warnings by hand only (`ios.md`'s *Checks*); no check reads
+  `xtool dev build`'s output
+
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test

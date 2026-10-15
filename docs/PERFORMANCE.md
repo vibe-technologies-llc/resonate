@@ -6,6 +6,44 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 - [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
 
+## iOS
+- [S] The poll re-reads the queue on every tick while `catalog_revision` moves, and every enrichment
+  step, scan upsert, favourite and landing moves it: `queue()` is a query per row under the player
+  lock, then the main actor compares the arrays, on the ordered lane that carries Pause and Next
+- [S] Each 500-row page of `filtered_tracks` filters and sorts all N rows again, and `Index::read`
+  rebuilds the index under the catalog mutex whenever the revision moved: a `refresh()` at 100 000
+  songs is seconds of CPU, stalling `snapshot()`, which needs the mutex for `track_uri`
+- [S] `forgetMissing` opens every document on every foregrounding (the `.inactive` to `.active`
+  blips of Control Centre, a permission prompt or a call banner included), each open resolving its
+  folder's security-scoped bookmark again; it needs only `.background` (`leftAt`) and a cached root
+- [S] A paused Now Playing, lyrics or album page keeps the backdrop at 60 fps and the visualizer tap
+  polled every 33 ms (`wantsEnergy` ignores the transport; a failing `visualizer` retries at once),
+  and the app field draws at 30 fps on every page, which keeps the display from idling
+- [S] The palette sample (32 by 32) and the lock-screen artwork (384 px) are decoded from the 1024 px
+  bucket (`artwork(_:)` defaults to `.full`), about 4 MiB cached each, evicting row thumbnails
+- [M] A scan stores the folder's cover once per track (`artwork` is `track INTEGER PRIMARY KEY`),
+  reading up to 8 MiB across FFI for each, and `VACUUM INTO` copies them all again before a
+  migration; nothing is excluded from backup (no `isExcludedFromBackup`), so the catalog, that
+  copy and `sync-received` travel in device and iCloud backups
+- [M] The artwork cache is keyed by song: a 12-track album decodes and reads two blobs under the
+  catalog lock twelve times (`the_better_picture`); an album key or content hash would share one
+- [S] `ArtworkCache.kept` and `Features.artGenerations` only grow (NSCache evictions never prune the
+  first; the second is copied whole on each refresh)
+- [M] Whole-catalog work in view bodies and on the main actor: `LibraryView` filters `allTracks` for
+  favourites and folds playlist names each body; `AddSongsSheet` refolds every title, artist and
+  album on each toggle; `Library` rebuilds two `Set`s from `allTracks` on every heart; the queue
+  list copies `rows[range]` and scans for the playing row each body; the tag editor asks
+  `tags_writable` once per song per keystroke; `addFolder`, `removeFolder` and `folders()` measure
+  and resolve bookmarks on the main actor (a hung File Provider hangs the UI), as do about eight
+  keychain reads at launch
+- [S] The poll runs at 4 Hz paused, locked and in the background, each tick a `snapshot()`, a
+  `track_uri` query and a `nowPlaying.update`
+- [M] The synced lyrics timeline runs at display rate while a sheet plays, building a `LyricRowLook`
+  for every line and asking Rust for a frame whose position moved by milliseconds, with no throttle
+  for a line-synced sheet where nothing turns and no Low Power Mode or thermal check
+- [S] `SyncTransferRow`s are keyed by `\.offset`, so a transfer landing re-binds the rows below it to
+  other songs; the Inspector decodes an artist portrait with `UIImage(data:)` on every body
+
 ## Tagging
 - [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
