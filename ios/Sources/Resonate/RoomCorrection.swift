@@ -29,7 +29,7 @@ final class RoomCorrectionState {
         let on = on
         Task {
             do {
-                kept = try await Work.inOrder { try native.applyRoomCorrection(on: on) }
+                kept = try await Work.aside { try native.applyRoomCorrection(on: on) }
                 if kept == nil, on { remember(on: false) }
             } catch {
                 remember(on: false)

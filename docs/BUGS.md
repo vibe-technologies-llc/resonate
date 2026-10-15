@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] Pause shares `Work.inOrder` with `queue()`, `playlists()`, `documentsMoved` and `sync_start`
-  (which joins the sync thread): `.oldDeviceUnavailable` pauses through that lane, so the speaker
-  can play on after the headphones go until a queue read or a sync restart finishes
 - [M] `NowPlaying` discards `setActive(true)` (`try?`), so a refused activation surfaces later as
   RemoteIO's `OSStatus`; `reportRoute` reads `sampleRate` straight after `setPreferredSampleRate`,
   and a rate-only change posts no route notification, so Rust can keep the old rate; `rewrite()`

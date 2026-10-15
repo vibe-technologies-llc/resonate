@@ -6,6 +6,14 @@ enum Work {
         label: "org.resonate.ordered",
         qos: .userInitiated
     )
+    private static let libraryQueue = DispatchQueue(
+        label: "org.resonate.library",
+        qos: .userInitiated
+    )
+    private static let syncQueue = DispatchQueue(
+        label: "org.resonate.sync",
+        qos: .userInitiated
+    )
     private static let asideQueue = DispatchQueue(
         label: "org.resonate.aside",
         qos: .utility,
@@ -17,6 +25,22 @@ enum Work {
     ) async throws -> Value {
         try await withCheckedThrowingContinuation { continuation in
             orderedQueue.async { continuation.resume(with: Result { try body() }) }
+        }
+    }
+
+    static func inLibrary<Value: Sendable>(
+        _ body: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            libraryQueue.async { continuation.resume(with: Result { try body() }) }
+        }
+    }
+
+    static func inSync<Value: Sendable>(
+        _ body: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            syncQueue.async { continuation.resume(with: Result { try body() }) }
         }
     }
 

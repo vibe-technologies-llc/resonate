@@ -362,7 +362,7 @@ final class Features {
         let known = handoff.id
         let device = handoff.device
         work { [weak self] native in
-            let loaded = try await Work.inOrder { try native.syncContinueFrom(device: known) }
+            let loaded = try await Work.inSync { try native.syncContinueFrom(device: known) }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 library.notice("Continuing \(counted(Int(loaded), "song")) from \(device)")
@@ -476,7 +476,7 @@ final class Features {
         guard let config = syncConfig else { return }
         let enabled = syncRuns
         do {
-            let status = try await Work.inOrder {
+            let status = try await Work.inSync {
                 guard enabled else {
                     native.syncStop()
                     return native.syncStatus()
@@ -484,7 +484,7 @@ final class Features {
                 return try native.syncStart(config: config)
             }
             let free = unmetered
-            try await Work.inOrder { native.syncNetwork(unmetered: free) }
+            try await Work.inSync { native.syncNetwork(unmetered: free) }
             if !status.code.isEmpty, var latest = syncConfig, latest.key == config.key, latest.key != status.code {
                 latest.key = status.code
                 try accounts.writeSync(latest)
@@ -529,7 +529,7 @@ final class Features {
         guard free != unmetered else { return }
         unmetered = free
         work { [weak self] native in
-            try await Work.inOrder { native.syncNetwork(unmetered: free) }
+            try await Work.inSync { native.syncNetwork(unmetered: free) }
             await self?.announceNearby(native)
         }
         enrichment.networkChanged(free: free)
@@ -742,7 +742,7 @@ final class Features {
 
     func editPlaylist(_ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
         work { [weak self] native in
-            let found = try await Work.inOrder {
+            let found = try await Work.inLibrary {
                 try action(native)
                 return try native.playlists()
             }
@@ -752,7 +752,7 @@ final class Features {
 
     func undoPlaylistEdit() {
         work { [weak self] native in
-            let (undone, found) = try await Work.inOrder { (try native.undoPlaylist(), try native.playlists()) }
+            let (undone, found) = try await Work.inLibrary { (try native.undoPlaylist(), try native.playlists()) }
             guard let self else { return }
             adoptPlaylists(found, native)
             library.notice(undone ? "Undid the last playlist edit" : "There is no playlist edit to undo")
@@ -936,7 +936,7 @@ final class Features {
         organising = true
         work({ [weak self] native in
             let filed = try await Work.aside { try folders.file(folder, moves) }
-            try await Work.inOrder { try native.documentsMoved(moved: filed.moved) }
+            try await Work.inLibrary { try native.documentsMoved(moved: filed.moved) }
             guard let self else { return }
             organiseUndo = undoing || filed.back.isEmpty ? nil : (folder, filed.back)
             await library.refresh()
@@ -1246,7 +1246,7 @@ final class Features {
 
     func importPlaylist(_ name: String, _ songs: [SearchSong]) {
         work { [weak self] native in
-            let (imported, found) = try await Work.inOrder {
+            let (imported, found) = try await Work.inLibrary {
                 (try native.importMatchedPlaylist(name: name, songs: songs), try native.playlists())
             }
             await MainActor.run {

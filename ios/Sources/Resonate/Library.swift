@@ -233,14 +233,13 @@ final class Library {
             let known = listed
             let refused = unreadable
             do {
-                let (state, rows, saved) = try await Work.inOrder {
+                let (state, saved) = try await Work.inOrder {
                     let state = try native.snapshot()
-                    let wanted = QueueListed(state)
-                    let rows: Result<[Track], any Swift.Error>? =
-                        wanted == known || wanted == refused ? nil : Result { try native.queue() }
                     let saved: Result<Void, any Swift.Error>? = saving ? Result { try native.save() } : nil
-                    return (state, rows, saved)
+                    return (state, saved)
                 }
+                let wanted = QueueListed(state)
+                let rows = wanted == known || wanted == refused ? nil : await Self.read(queueOf: native)
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
                 let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
@@ -274,6 +273,14 @@ final class Library {
                 reportPolling(.snapshot, error)
             }
             try? await Task.sleep(for: Self.tick)
+        }
+    }
+
+    private static func read(queueOf native: MobilePlayer) async -> Result<[Track], any Swift.Error> {
+        do {
+            return .success(try await Work.aside { try native.queue() })
+        } catch {
+            return .failure(error)
         }
     }
 
@@ -519,7 +526,7 @@ final class Library {
     func rereadQueue() async {
         guard let native = try? await player() else { return }
         do {
-            let rows = try await Work.inOrder { try native.queue() }
+            let rows = try await Work.aside { try native.queue() }
             if queueSettling.settled { queue = rows }
         } catch {
             report(error)

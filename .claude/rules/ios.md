@@ -46,6 +46,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **`Library`** (`@MainActor @Observable`) owns the one `MobilePlayer`. Transport, favourite and
   preference actions enter one ordered queue (`Work.inOrder`, an `AsyncStream` consumed in order);
   long native calls (analysis, search, downloads, sync) run on `Work.aside`, never the main actor.
+  **Nothing slow shares the transport's lane**: a pause (the headphones leaving included) waits
+  behind only the tick and other transport and queue edits. Playlist edits and `documents_moved`
+  run on their own ordered lane (`Work.inLibrary`), `sync_start`, `sync_network` and
+  `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), and
+  the queue read, which costs a record per row, is `Work.aside`, as is applying the room
+  correction (decoding up to 64 MiB).
   A 250 ms poll reads the snapshot and saves every 20th tick, as Android does; the queue is read
   only when the snapshot's `queue_revision` or `catalog_revision` moved since the queue last shown
   (`QueueListed`), since reading it costs a catalog lookup and a record per row and a whole-library
