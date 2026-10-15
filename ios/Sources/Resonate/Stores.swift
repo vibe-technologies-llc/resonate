@@ -198,10 +198,12 @@ extension MusicProvider {
 
 enum KeychainFailure: Swift.Error, LocalizedError {
     case refused(OSStatus)
+    case unread(OSStatus)
 
     var errorDescription: String? {
         switch self {
         case .refused(let status): "The keychain refused the secret (\(status))"
+        case .unread(let status): "The keychain could not be read (\(status))"
         }
     }
 }
@@ -209,7 +211,7 @@ enum KeychainFailure: Swift.Error, LocalizedError {
 struct Keychain: Sendable {
     private static let service = "org.resonate.accounts"
 
-    func read(_ name: String) -> String {
+    func read(_ name: String) throws -> String {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.service,
@@ -218,9 +220,9 @@ struct Keychain: Sendable {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var found: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &found) == errSecSuccess,
-            let data = found as? Data
-        else { return "" }
+        let status = SecItemCopyMatching(query as CFDictionary, &found)
+        if status == errSecItemNotFound { return "" }
+        guard status == errSecSuccess, let data = found as? Data else { throw KeychainFailure.unread(status) }
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -230,10 +232,18 @@ struct Keychain: Sendable {
             kSecAttrService as String: Self.service,
             kSecAttrAccount as String: name,
         ]
-        SecItemDelete(query as CFDictionary)
-        guard !value.isEmpty else { return }
+        guard !value.isEmpty else {
+            let removed = SecItemDelete(query as CFDictionary)
+            guard removed == errSecSuccess || removed == errSecItemNotFound else { throw KeychainFailure.refused(removed) }
+            return
+        }
+        let data = Data(value.utf8)
+        let updated = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updated == errSecSuccess { return }
+        guard updated == errSecItemNotFound else { throw KeychainFailure.refused(updated) }
+
         var added = query
-        added[kSecValueData as String] = Data(value.utf8)
+        added[kSecValueData as String] = data
         added[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(added as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainFailure.refused(status) }
@@ -326,9 +336,9 @@ struct AccountStore: Sendable {
     private var plain: UserDefaults { UserDefaults(suiteName: "provider-accounts") ?? .standard }
     private var choices: UserDefaults { UserDefaults(suiteName: "library-features") ?? .standard }
 
-    func readProviders() -> ProviderAccounts {
-        let kept = secrets.read(Self.providerAccountsKey)
-        let accounts = kept.isEmpty ? migratedSingleAccount().map { [$0] } ?? [] : decoded(kept)
+    func readProviders() throws -> ProviderAccounts {
+        let kept = try secrets.read(Self.providerAccountsKey)
+        let accounts = kept.isEmpty ? try migratedSingleAccount().map { [$0] } ?? [] : decoded(kept)
         let switchedOff = (choices.stringArray(forKey: Self.switchedOffKey) ?? []).compactMap(MusicProvider.named)
         return ProviderAccounts(kept: accounts, switchedOff: Set(switchedOff))
     }
@@ -347,18 +357,18 @@ struct AccountStore: Sendable {
         return accounts?.compactMap(\.account) ?? []
     }
 
-    private func migratedSingleAccount() -> DownloadAccount? {
+    private func migratedSingleAccount() throws -> DownloadAccount? {
         let plain = plain
         guard let provider = MusicProvider.named(plain.string(forKey: Self.singleAccountProviderKey)) else { return nil }
 
         let account = DownloadAccount(
             provider: provider,
             server: plain.string(forKey: Self.singleAccountServerKey) ?? "",
-            user: secrets.read("user"),
-            password: secrets.read("password"),
-            clientId: secrets.read("client-id"),
-            clientSecret: secrets.read("client-secret"),
-            refreshToken: secrets.read("refresh-token")
+            user: try secrets.read("user"),
+            password: try secrets.read("password"),
+            clientId: try secrets.read("client-id"),
+            clientSecret: try secrets.read("client-secret"),
+            refreshToken: try secrets.read("refresh-token")
         )
         guard (try? writeProviderAccounts([account])) != nil else { return account }
 
@@ -368,12 +378,12 @@ struct AccountStore: Sendable {
         return account
     }
 
-    func readScrobbling() -> ScrobbleAccount {
+    func readScrobbling() throws -> ScrobbleAccount {
         ScrobbleAccount(
-            listenbrainzToken: secrets.read("listenbrainz"),
-            lastfmKey: secrets.read("lastfm-key"),
-            lastfmSecret: secrets.read("lastfm-secret"),
-            lastfmSession: secrets.read("lastfm-session")
+            listenbrainzToken: try secrets.read("listenbrainz"),
+            lastfmKey: try secrets.read("lastfm-key"),
+            lastfmSecret: try secrets.read("lastfm-secret"),
+            lastfmSession: try secrets.read("lastfm-session")
         )
     }
 
@@ -384,16 +394,17 @@ struct AccountStore: Sendable {
         try secrets.write("lastfm-session", account.lastfmSession)
     }
 
-    func readRecognitionKey() -> String { secrets.read("acoustid-key") }
+    func readRecognitionKey() throws -> String { try secrets.read("acoustid-key") }
 
     func writeRecognitionKey(_ value: String) throws { try secrets.write("acoustid-key", value) }
 
-    func readAuddToken() -> String { secrets.read("audd-token") }
+    func readAuddToken() throws -> String { try secrets.read("audd-token") }
 
     func writeAuddToken(_ value: String) throws { try secrets.write("audd-token", value) }
 
-    func readSync() -> SyncConfig {
+    func readSync() throws -> SyncConfig {
         let plain = plain
+        let key = try secrets.read("sync-key")
         func flag(_ key: String, _ fallback: Bool) -> Bool {
             plain.object(forKey: key) == nil ? fallback : plain.bool(forKey: key)
         }
@@ -401,7 +412,7 @@ struct AccountStore: Sendable {
             enabled: flag("sync-enabled", true),
             nearbyOnly: flag("sync-nearby-only", false),
             server: plain.string(forKey: "sync-server") ?? "",
-            key: secrets.read("sync-key"),
+            key: key,
             device: plain.string(forKey: "sync-device") ?? "",
             favourites: flag("sync-favourites", false),
             playlists: flag("sync-playlists", false),

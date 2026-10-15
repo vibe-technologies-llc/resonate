@@ -85,7 +85,7 @@ final class Listening {
 
     init(library: Library) {
         self.library = library
-        auddToken = accounts.readAuddToken()
+        auddToken = (try? accounts.readAuddToken()) ?? ""
     }
 
     func listen() {

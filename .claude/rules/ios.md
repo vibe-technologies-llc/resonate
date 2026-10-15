@@ -207,7 +207,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `MainActor.assumeIsolated` only where the framework delivers on the main thread (remote commands,
   notifications on `.main`, an expiration handler that finds itself on the main thread).
 - Secrets (provider credentials, scrobbling, AcoustID key, sync key) live in the keychain,
-  `AfterFirstUnlockThisDeviceOnly`; plain choices in `UserDefaults` suites named as Android's
+  `AfterFirstUnlockThisDeviceOnly`. `Keychain.read` answers blank only for an item that is not
+  there and throws on any other status (a launch before first unlock included), so a failed read
+  never becomes a blank sync key that mints a new pairing code over the real one: `Features`
+  keeps what it could not read unset, says so once, and reads again when the scene next becomes
+  active. `write` updates an item in place and adds it only where none exists, so a refused write
+  keeps the old secret; plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings

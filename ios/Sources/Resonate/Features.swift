@@ -91,6 +91,8 @@ final class Features {
     var artGenerations: [UInt64: Int] = [:]
     var portraitGeneration = 0
     var syncConfig: SyncConfig?
+    @ObservationIgnored private var secretsUnread = false
+    @ObservationIgnored private var unreadReported = false
     var syncStatus: SyncStatus?
     var syncHandoffs: [HandedOff] = []
     var syncFolder: String?
@@ -163,10 +165,7 @@ final class Features {
 
     func initialize(_ native: MobilePlayer) {
         room.restore(native)
-        providers = accounts.readProviders()
-        scrobbleAccount = accounts.readScrobbling()
-        recognitionKey = accounts.readRecognitionKey()
-        syncConfig = accounts.readSync()
+        readSecrets()
         native.configureOnline(enabled: online)
         downloads.recover()
         downloads.wantsChanged()
@@ -184,6 +183,19 @@ final class Features {
             await self?.library.forgetMissing()
             await self?.refreshChangedArt(native)
             self?.enrichment.begin()
+        }
+    }
+
+    private func readSecrets() {
+        var failure: (any Swift.Error)?
+        do { providers = try accounts.readProviders() } catch { failure = error }
+        do { scrobbleAccount = try accounts.readScrobbling() } catch { failure = error }
+        do { recognitionKey = try accounts.readRecognitionKey() } catch { failure = error }
+        do { syncConfig = try accounts.readSync() } catch { failure = error }
+        secretsUnread = failure != nil
+        if let failure, !unreadReported {
+            unreadReported = true
+            library.report(failure)
         }
     }
 
@@ -415,6 +427,10 @@ final class Features {
     func cameForward() {
         let wasAway = leftAt != nil
         leftAt = nil
+        if secretsUnread {
+            readSecrets()
+            if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
+        }
         guard syncRuns else {
             Task { [weak self] in await self?.library.forgetMissing() }
             return

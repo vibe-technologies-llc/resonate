@@ -39,10 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `Keychain.read` answers `""` for every failure (`errSecInteractionNotAllowed` on a launch
-  before first unlock included): `readSync` then hands `sync_start` a blank key, which mints a new
-  pairing code that `applySync` stores over the real one. `write` deletes before it adds, so a
-  refused add destroys the secret
 - [S] Erase all data leaves the `appearance` suite and the alternate icon, stops no download,
   enrichment or listening (a late handler rewrites `library-features` after it is removed), and
   with `songUris` failing (`try?`) deletes no song in a granted folder yet exits as if erased
