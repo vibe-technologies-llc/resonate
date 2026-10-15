@@ -913,18 +913,23 @@ struct QueueSections: View {
             } else if let playing {
                 let parts = QueueParts(rows: rows.count, playing: playing, next: library.playingNext)
                 if playing > 0 {
-                    Section("History") {
+                    Section {
+                        QueueHeading(title: "History")
                         rowsOf(rows, parts.history).opacity(Self.heardFaded)
                     }
                 }
-                Section("Now playing") {
+                Section {
+                    QueueHeading(title: "Now playing").id(playingRowId)
                     QueueRow(row: rows[playing], edited: $edited)
-                        .id(playingRowId)
                 }
                 if !parts.next.isEmpty {
-                    Section("Playing next") { rowsOf(rows, parts.next) }
+                    Section {
+                        QueueHeading(title: "Playing next")
+                        rowsOf(rows, parts.next)
+                    }
                 }
-                Section(parts.next.isEmpty ? "Up next" : "Continue playing") {
+                Section {
+                    QueueHeading(title: parts.next.isEmpty ? "Up next" : "Continue playing")
                     if parts.rest.isEmpty {
                         Text("Nothing more to play").foregroundStyle(.secondary)
                     } else {
@@ -932,7 +937,10 @@ struct QueueSections: View {
                     }
                 }
             } else {
-                Section("Up next") { rowsOf(rows, 0..<rows.count) }
+                Section {
+                    QueueHeading(title: "Up next")
+                    rowsOf(rows, 0..<rows.count)
+                }
             }
         }
         .sensoryFeedback(.selection, trigger: edited)
@@ -951,6 +959,19 @@ struct QueueSections: View {
             edited += 1
             for offset in offsets.sorted(by: >) { library.removeFromQueue(rows[range.lowerBound + offset]) }
         }
+    }
+}
+
+struct QueueHeading: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
