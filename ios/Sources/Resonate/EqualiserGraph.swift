@@ -311,7 +311,7 @@ struct EqualiserGraph: View {
         let chosen = selected == index
         return Text("\(index + 1)")
             .font(.caption2.weight(.bold).monospacedDigit())
-            .foregroundStyle(chosen ? Color.white : Color.worn)
+            .foregroundStyle(chosen ? Color.wornInk : Color.worn)
             .frame(width: Self.handleSize, height: Self.handleSize)
             .background(Circle().fill(chosen ? Color.worn : Color(.systemBackground)))
             .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))

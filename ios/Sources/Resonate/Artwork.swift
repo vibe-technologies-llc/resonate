@@ -414,6 +414,7 @@ struct FavouriteButton: View {
                 .foregroundStyle(favourite ? Color.pink : Color.secondary)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
+                .touchTarget()
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tapped)

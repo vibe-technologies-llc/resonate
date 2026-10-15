@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] Icon-only controls set no frame or content shape: the favourite heart, mini-player previous
-  and next, shuffle and repeat, the filter token, the online song menu and *See all* are smaller
-  than 44 pt; settings sliders (preamp, buffer) give VoiceOver a percentage, not dB or ms; white on
-  the accent (Play, the active mode toggle, the swatch tick) is thin on the lighter dark-mode
-  accents
 - [S] `OnlineView` and `Destination.online` are unreachable (`open(.online)` switches to the
   Search tab's Online scope), yet `ios.md` says the destination still draws a page of its own;
   the same file's `portraitOf:` is not a parameter (`ArtworkView(track:corner:circle:)`)

@@ -414,7 +414,7 @@ struct CollectionAction: View {
     let action: () -> Void
 
     var body: some View {
-        let ink = prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.tint)
+        let ink = prominent ? AnyShapeStyle(Color.wornInk) : AnyShapeStyle(.tint)
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)

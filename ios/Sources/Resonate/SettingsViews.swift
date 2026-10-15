@@ -296,6 +296,7 @@ struct CommittingSlider<Value: BinaryFloatingPoint & Sendable>: View where Value
     let range: ClosedRange<Value>
     let step: Value.Stride
     @Binding var editing: Value?
+    let spoken: (Value) -> String
     let commit: (Value) -> Void
     @State private var dragging = false
     @State private var settling: Task<Void, Never>?
@@ -313,6 +314,7 @@ struct CommittingSlider<Value: BinaryFloatingPoint & Sendable>: View where Value
             if !active, let editing { finish(editing) }
         }
         .accessibilityLabel(title)
+        .accessibilityValue(spoken(editing ?? value))
     }
 
     private func moved(_ chosen: Value) {
@@ -346,7 +348,15 @@ struct LevelSlider: View {
                 Spacer()
                 Text(String(format: "%+.1f dB", editing ?? value)).monospacedDigit().foregroundStyle(.secondary)
             }
-            CommittingSlider(title: title, value: value, range: range, step: 0.5, editing: $editing, commit: commit)
+            CommittingSlider(
+                title: title,
+                value: value,
+                range: range,
+                step: 0.5,
+                editing: $editing,
+                spoken: { String(format: "%+.1f decibels", Double($0)) },
+                commit: commit
+            )
         }
     }
 }
@@ -789,7 +799,8 @@ struct OutputView: View {
                         value: Double(settings.bufferMs),
                         range: 50...2000,
                         step: 50,
-                        editing: $buffer
+                        editing: $buffer,
+                        spoken: { "\(Int($0)) milliseconds" }
                     ) { chosen in
                         library.updatePreferences { var next = $0; next.bufferMs = UInt32(chosen); return next }
                     }

@@ -192,7 +192,7 @@ struct ListenControl: View {
             Image(systemName: busy ? "waveform" : "ear")
                 .font(.system(size: edge * 0.38, weight: .medium))
                 .symbolEffect(.variableColor.iterative, isActive: recording && !reduceMotion)
-                .foregroundStyle(busy ? Color.white : Color.worn)
+                .foregroundStyle(busy ? Color.wornInk : Color.worn)
                 .frame(width: edge, height: edge)
                 .contentShape(.circle)
         }

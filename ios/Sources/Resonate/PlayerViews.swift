@@ -53,11 +53,13 @@ struct MiniPlayer: View {
             if expanded {
                 Button("Previous", systemImage: "backward.fill") { skip(forward: false) }
                     .labelStyle(.iconOnly)
+                    .touchTarget()
             }
             PlayButton(transport: library.transport)
             if skips {
                 Button("Next", systemImage: "forward.fill") { skip(forward: true) }
                     .labelStyle(.iconOnly)
+                    .touchTarget()
             }
         }
         .buttonStyle(.plain)
@@ -544,12 +546,14 @@ struct TransportRow: View {
                 Button("Shuffle", systemImage: "shuffle") { library.setShuffle(!shuffled) }
                     .foregroundStyle(shuffled ? Color.worn : .secondary)
                     .accessibilityValue(shuffled ? "On" : "Off")
+                    .touchTarget()
                     .frame(maxWidth: .infinity)
                 Button("Previous", systemImage: "backward.fill") {
                     skipped += 1
                     library.previous()
                 }
                 .font(.title)
+                .touchTarget()
                 .frame(maxWidth: .infinity)
                 PlayButton(transport: library.transport, large: true)
                 Button("Next", systemImage: "forward.fill") {
@@ -557,10 +561,12 @@ struct TransportRow: View {
                     library.next()
                 }
                 .font(.title)
+                .touchTarget()
                 .frame(maxWidth: .infinity)
                 Button("Repeat", systemImage: repeating.symbol) { library.setRepeat(repeating.following) }
                     .foregroundStyle(repeating == .off ? .secondary : Color.worn)
                     .accessibilityValue(repeating.spoken)
+                    .touchTarget()
                     .frame(maxWidth: .infinity)
             }
             .labelStyle(.iconOnly)
@@ -756,7 +762,7 @@ struct PlayerModes: View {
         .labelStyle(.iconOnly)
         .font(.title3)
         .frame(width: 48, height: 48)
-        .foregroundStyle(active ? Color.white : Color.primary)
+        .foregroundStyle(active ? Color.wornInk : Color.primary)
         .glassEffect(active ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
         .buttonStyle(.plain)
         .accessibilityAddTraits(active ? .isSelected : [])

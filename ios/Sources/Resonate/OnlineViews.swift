@@ -455,7 +455,7 @@ struct OnlineSongRow: View {
                     .disabled(song.held || features.downloads.holds(song))
                 Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.title3)
+                Image(systemName: "ellipsis.circle").font(.title3).touchTarget()
             }
             .accessibilityLabel("Song actions")
         }

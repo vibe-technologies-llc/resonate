@@ -155,6 +155,7 @@ struct SeeAllHeader: View {
                 Button("See all", action: seeAll)
                     .font(.subheadline)
                     .textCase(nil)
+                    .touchTarget()
             }
         }
     }

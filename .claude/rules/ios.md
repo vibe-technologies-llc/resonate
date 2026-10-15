@@ -228,6 +228,13 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   symbol effect is inactive and a content transition `.identity`, and a banner arrives by fading
   rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
   no settle wait.
+- **An icon-only control is at least 44 pt** (`touchTarget()`: a minimum frame and a rectangle
+  content shape: the favourite heart, the mini player's and the transport row's skips, shuffle and
+  repeat, a filter token, the online song menu, *See all*). A slider speaks its value in its unit
+  (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. What is lettered on the
+  accent (Play, the active mode toggle, the swatch tick, a chosen handle) takes `Color.wornInk`,
+  white or near-black, whichever contrasts more with the accent as it is drawn in the current
+  appearance (`AppearanceState.ink(on:)`).
 - **A closure a framework may call off the main thread is never formed on the main actor.** Swift 6
   makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
   queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in

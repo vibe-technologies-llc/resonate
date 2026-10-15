@@ -14,6 +14,8 @@ final class AppearanceState {
     private static let strengthKey = "backgroundStrength"
     static let defaultStrength = 0.4
     private static let deepenedInLight: CGFloat = 0.28
+    private static let darkInkWhite: CGFloat = 0.08
+    private static let darkInkLuminance: CGFloat = 0.0067
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard
 
@@ -42,6 +44,32 @@ final class AppearanceState {
 
     var tint: Color {
         accent.map(Self.color) ?? Color.accentColor
+    }
+
+    var ink: Color {
+        accent.map(Self.ink(on:)) ?? .white
+    }
+
+    static func ink(on accent: ResonateAccent) -> Color {
+        let worn = rgb(accent.hex)
+        return Color(UIColor { traits in
+            let deepened = traits.userInterfaceStyle == .dark ? 0 : Self.deepenedInLight
+            let luminance = luminance(
+                red: worn.red * (1 - deepened),
+                green: worn.green * (1 - deepened),
+                blue: worn.blue * (1 - deepened)
+            )
+            let lightContrast = (1 + 0.05) / (luminance + 0.05)
+            let darkContrast = (luminance + 0.05) / (darkInkLuminance + 0.05)
+            return lightContrast >= darkContrast ? .white : UIColor(white: darkInkWhite, alpha: 1)
+        })
+    }
+
+    nonisolated private static func luminance(red: CGFloat, green: CGFloat, blue: CGFloat) -> CGFloat {
+        func linear(_ channel: CGFloat) -> CGFloat {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 
     func wear(_ chosen: ResonateAccent?) {
@@ -92,6 +120,13 @@ final class AppearanceState {
 
 extension Color {
     @MainActor static var worn: Color { AppearanceState.shared.tint }
+    @MainActor static var wornInk: Color { AppearanceState.shared.ink }
+}
+
+extension View {
+    func touchTarget() -> some View {
+        frame(minWidth: 44, minHeight: 44).contentShape(.rect)
+    }
 }
 
 struct AppearanceView: View {
@@ -117,13 +152,14 @@ struct AppearanceView: View {
                 }
                 .padding(.vertical, 4)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: swatch + 12), spacing: 12)], spacing: 16) {
-                    AccentSwatch(name: "Resonate", fill: AnyShapeStyle(Self.packaged), chosen: appearance.accent == nil, edge: swatch) {
+                    AccentSwatch(name: "Resonate", fill: AnyShapeStyle(Self.packaged), ink: .white, chosen: appearance.accent == nil, edge: swatch) {
                         appearance.wear(nil)
                     }
                     ForEach(ResonateAccent.every) { accent in
                         AccentSwatch(
                             name: accent.name.capitalized,
                             fill: AnyShapeStyle(AppearanceState.color(of: accent)),
+                            ink: AppearanceState.ink(on: accent),
                             chosen: appearance.accent == accent,
                             edge: swatch
                         ) {
@@ -201,6 +237,7 @@ struct BackgroundView: View {
 struct AccentSwatch: View {
     let name: String
     let fill: AnyShapeStyle
+    let ink: Color
     let chosen: Bool
     let edge: CGFloat
     let choose: () -> Void
@@ -215,7 +252,7 @@ struct AccentSwatch: View {
                         if chosen {
                             Image(systemName: "checkmark")
                                 .font(.body.weight(.bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(ink)
                         }
                     }
                     .padding(3)

@@ -216,6 +216,7 @@ struct FilterChips: View {
                             FilterToken(label: chip.label)
                         }
                         .buttonStyle(.borderless)
+                        .touchTarget()
                         .accessibilityLabel("Remove filter \(chip.label)")
                     }
                 }
