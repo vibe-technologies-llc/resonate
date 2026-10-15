@@ -323,6 +323,12 @@ final class Folders: Documents, @unchecked Sendable {
         return try body(files)
     }
 
+    static func root(of uri: String) -> String? {
+        let opening = "\(scheme)://"
+        guard uri.hasPrefix(opening) else { return nil }
+        return uri.dropFirst(opening.count).split(separator: "/", maxSplits: 1).first.map(String.init)
+    }
+
     func prefix(of id: String) -> String {
         "\(Self.scheme)://\(id)"
     }

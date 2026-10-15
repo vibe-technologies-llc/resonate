@@ -74,6 +74,7 @@ final class Features {
     var listeningDetail: ListeningDetail?
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
+    private(set) var statisticsDays: UInt32?
     var lyrics: LyricSheet?
     var lyricsLoading = false
     var recognitionKey = ""
@@ -911,6 +912,7 @@ final class Features {
             if statistics != found { statistics = found }
             if listeningDetail != detail { listeningDetail = detail }
             if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
+            statisticsDays = days
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })
@@ -970,7 +972,10 @@ final class Features {
     }
 
     func tagsWritable(_ track: Track) -> Bool {
-        library.native?.tagsWritable(name: track.name) ?? false
+        guard library.native?.tagsWritable(name: track.name) == true,
+            let root = Folders.root(of: track.uri)
+        else { return false }
+        return library.folderList.first { $0.id == root }?.writable ?? false
     }
 
     func editTags(_ tracks: [Track], _ change: SongTags) {

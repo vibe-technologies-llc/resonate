@@ -17,13 +17,19 @@ final class Enrichment {
     var automatic: Bool {
         didSet {
             settings.set(automatic, forKey: Self.automaticKey)
-            if automatic { begin() }
+            guard automatic != oldValue else { return }
+            if automatic { begin() } else if running { stop() }
         }
     }
     var unmeteredOnly: Bool {
         didSet {
             settings.set(unmeteredOnly, forKey: Self.unmeteredKey)
-            if !unmeteredOnly { begin() }
+            guard unmeteredOnly != oldValue else { return }
+            if !unmeteredOnly {
+                begin()
+            } else if running, !library.features.unmetered {
+                stop()
+            }
         }
     }
 

@@ -164,16 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `StatisticsView` hands the newly picked `days` to the tiles and chart while
-  `features.statistics` and `listeningDetail` still hold the previous period, until
-  `loadStatistics`' three calls land, and for good if one fails: the old total is divided by the new
-  span and the old days regrouped by the new unit
-- [S] Switching *Fetch automatically* off, or *Only on Wi-Fi* on while on cellular, never stops a
-  running enrichment pass (`Enrichment`'s `didSet`s only `begin`): it keeps using the network until
-  it ends or the path next changes
-- [S] `Features.tagsWritable` asks `tags_writable` about the file kind alone, ignoring
-  `MusicFolder.writable`: *Edit tags* is offered for songs in a read-only grant, and Save dismisses
-  the sheet before a banner says the songs were left as they were
 - [S] A playing line-synced lyric sheet swaps `TimelineView(.periodic)` for `.animation` when
   `stage.isMoving` turns true, and the `DragGesture` lives under that branch: `grab` rebuilds
   `LyricSheetView` mid-gesture, `onEnded` never fires, the drag dies after a few points and

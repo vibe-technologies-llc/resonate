@@ -424,7 +424,7 @@ every route change (a pair of headphones at the same rate included), not from th
 - **The queue is saved as a playlist** from the Queue tab's toolbar (`createPlaylist` with every
   queue row, repeats kept).
 - **Statistics is a page of its own** (`StatisticsView.swift`), a row beside Favourites, All songs and
-  Suggestions on the Library tab as well as in Library tools. Under the period picker: tiles
+  Suggestions on the Library tab as well as in Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
   (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
@@ -450,7 +450,7 @@ every route change (a pair of headphones at the same rate included), not from th
 ## Tags
 
 - **A song's or an album's tags are edited in a sheet** (`TagEditor.swift`, `Navigation.tagging`):
-  *Edit tags* in a song's menu where `tags_writable` says its kind can be written, *Edit album tags*
+  *Edit tags* in a song's menu where `tags_writable` says its kind can be written and its folder (`MusicFolder.writable`) is, *Edit album tags*
   in an album page's menu. One song shows all eleven fields; several hide title and track number,
   show a field the songs share with its value and one they differ in as *Mixed* (changed only once
   typed into), and read at most 500 songs. *Save* sends only the fields that moved. `Features.editTags`
@@ -668,7 +668,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
   cancels the poll (the pass goes on in Rust), coming back reads the status once and resumes it.
   The line reads "Finding artwork and details · N of M", "Artwork and details up to date" or the
-  `EnrichmentStop` in words; a finished pass refreshes the library once. Settings' *Artwork and
+  `EnrichmentStop` in words; a finished pass refreshes the library once. Switching *Fetch automatically* off, or *Only on Wi-Fi* on while the path is metered, stops a running pass. Settings' *Artwork and
   details* group (shown while online) holds both toggles, "Look again for missing covers"
   (`ask_again_for_covers`, then a start), the line and Stop. Library tools' "Refresh artwork and
   details" confirms with the song count, stops any pass and starts one with `refresh`, and offers

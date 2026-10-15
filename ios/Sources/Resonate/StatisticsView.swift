@@ -15,6 +15,7 @@ struct StatisticsView: View {
         let features = library.features
         let statistics = features.statistics
         let detail = features.listeningDetail
+        let loadedDays = features.statisticsDays ?? days
         ThemedList {
             Picker("Period", selection: $days) {
                 ForEach(Self.spans, id: \.0) { Text($0.1).tag($0.0) }
@@ -22,7 +23,7 @@ struct StatisticsView: View {
             .pickerStyle(.segmented)
             if let statistics, let detail {
                 Section {
-                    StatisticsTiles(statistics: statistics, detail: detail, span: days)
+                    StatisticsTiles(statistics: statistics, detail: detail, span: loadedDays)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -36,7 +37,7 @@ struct StatisticsView: View {
                 } else {
                     if !detail.days.isEmpty {
                         Section("Listening over time") {
-                            ListeningChart(days: detail.days, span: days, selected: $selected)
+                            ListeningChart(days: detail.days, span: loadedDays, selected: $selected)
                                 .padding(.vertical, 8)
                         }
                     }
