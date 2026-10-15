@@ -182,8 +182,11 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   playlist's own options menu on a playlist).
 - **A collection header** (`CollectionHeader`) is the artwork, the title, the subtitle (an album's
   artist a tinted link to the artist page), the summary, an optional quality capsule (an album whose
-  every track shares one `Track.quality`), then Play and Shuffle as two equal-width large glass
-  buttons no wider than 440 pt; nothing else sits in that row. An album lists its tracks by disc,
+  every track shares one `Track.quality`), then Play and Shuffle as two equal-width glass
+  capsules no wider than 440 pt (`CollectionAction`: a plain button under `glassEffect`, Play tinted
+  with the accent and lettered white, Shuffle clear and lettered in the tint, 50 pt scaled); nothing
+  else sits in that row. `.glassProminent` drew Play's label not at all in a list row, an empty
+  capsule, so the header never uses the system's glass button styles. An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's.
 - **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a

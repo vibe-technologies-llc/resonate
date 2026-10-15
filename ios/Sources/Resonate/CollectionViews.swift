@@ -355,23 +355,15 @@ struct CollectionHeader<Artwork: View>: View {
                 }
             }
             HStack(spacing: 12) {
-                Button {
+                CollectionAction(title: "Play", symbol: "play.fill", prominent: true) {
                     acted += 1
                     library.play(tracks, at: 0)
-                } label: {
-                    Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent)
-                Button {
+                CollectionAction(title: "Shuffle", symbol: "shuffle", prominent: false) {
                     acted += 1
                     library.shuffle(tracks)
-                } label: {
-                    Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass)
             }
-            .font(.headline)
-            .controlSize(.large)
             .frame(maxWidth: Self.widestActions)
             .disabled(tracks.isEmpty)
         }
@@ -380,6 +372,28 @@ struct CollectionHeader<Artwork: View>: View {
         .sensoryFeedback(.success, trigger: acted)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+}
+
+struct CollectionAction: View {
+    @Environment(\.isEnabled) private var enabled
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 50
+    let title: String
+    let symbol: String
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+                .frame(maxWidth: .infinity, minHeight: height)
+                .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(prominent ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .capsule)
+        .opacity(enabled ? 1 : 0.5)
     }
 }
 
