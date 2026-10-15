@@ -65,7 +65,7 @@ final class Listening {
     static let followedEverySeconds = 20
     private static let heardKept = 8
 
-    private enum Outcome {
+    private enum Outcome: Sendable {
         case answered(HeardAnswer)
         case denied
         case failed(String)
@@ -96,6 +96,7 @@ final class Listening {
             stage = .offline
             return
         }
+        stage = .recording(nth: 1, since: .now)
         running = Task {
             await previous?.value
             await self.name()
@@ -178,20 +179,29 @@ final class Listening {
     private func follow() async {
         while keepsListening, stage.namedOrMissed {
             following = .waiting
-            guard (try? await Task.sleep(for: .seconds(Self.followedEverySeconds))) != nil,
-                keepsListening, library.features.online
-            else { break }
+            guard (try? await Task.sleep(for: .seconds(Self.followedEverySeconds))) != nil, keepsListening else { break }
+            guard library.features.online else {
+                stage = .offline
+                break
+            }
             following = .listening
             let outcome = await recordAndAsk {}
             guard !Task.isCancelled else { return }
             switch outcome {
             case .answered(let answer):
-                if case .tell(let song) = ListenNext.after(answer, naming: nil, standing: standing) {
-                    land(song)
+                switch answer {
+                case .unreached(let service):
+                    stage = .unreached(service)
+                default:
+                    if case .tell(let song) = ListenNext.after(answer, naming: nil, standing: standing) {
+                        land(song)
+                    }
                 }
             case .denied:
                 stage = .denied
-            case .failed, .stopped:
+            case .failed(let text):
+                stage = .failed(text)
+            case .stopped:
                 break
             }
         }
@@ -204,6 +214,7 @@ final class Listening {
 
     private func recordAndAsk(asking: () -> Void) async -> Outcome {
         guard await Microphone.allowed() else { return .denied }
+        if library.transport == .playing || library.transport == .loading { library.pause() }
         let clip: HeardClip
         do {
             clip = try await Microphone.record(for: Self.clipSeconds, through: library.nowPlaying)
@@ -215,14 +226,27 @@ final class Listening {
         guard !Task.isCancelled else { return .stopped }
         asking()
         let token = auddToken
+        let native: MobilePlayer
         do {
-            let native = try await library.player()
-            let answer = try await Work.aside {
-                try native.recogniseHeard(samples: clip.samples, rate: clip.rate, auddToken: token)
-            }
-            return .answered(answer)
+            native = try await library.player()
         } catch {
             return .failed(explained(error))
+        }
+        let answer = OnlyOnce<Outcome>()
+        Task.detached {
+            do {
+                let heard = try await Work.aside {
+                    try native.recogniseHeard(samples: clip.samples, rate: clip.rate, auddToken: token)
+                }
+                answer.give(.answered(heard))
+            } catch {
+                answer.give(.failed(explained(error)))
+            }
+        }
+        return await withTaskCancellationHandler {
+            await answer.value()
+        } onCancel: {
+            answer.give(.stopped)
         }
     }
 
@@ -232,6 +256,41 @@ final class Listening {
         if heard.count > Self.heardKept { heard.removeLast(heard.count - Self.heardKept) }
         stage = .found(song)
         named += 1
+    }
+}
+
+final class OnlyOnce<Value: Sendable>: Sendable {
+    private struct Held: Sendable {
+        var done = false
+        var early: Value?
+        var waiting: CheckedContinuation<Value, Never>?
+    }
+
+    private let held = Mutex(Held())
+
+    func give(_ value: Value) {
+        let waiting = held.withLock { held -> CheckedContinuation<Value, Never>? in
+            guard !held.done else { return nil }
+            held.done = true
+            guard let waiting = held.waiting else {
+                held.early = value
+                return nil
+            }
+            held.waiting = nil
+            return waiting
+        }
+        waiting?.resume(returning: value)
+    }
+
+    func value() async -> Value {
+        await withCheckedContinuation { continuation in
+            let ready = held.withLock { held -> Value? in
+                if let early = held.early { return early }
+                held.waiting = continuation
+                return nil
+            }
+            if let ready { continuation.resume(returning: ready) }
+        }
     }
 }
 

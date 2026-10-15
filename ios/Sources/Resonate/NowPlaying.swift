@@ -49,6 +49,7 @@ final class NowPlaying {
     private var written: Written?
     private var observers: [NSObjectProtocol] = []
     private var ratedTrack: UInt64?
+    private var listening = false
     private var reportedRate: UInt32?
     private var settling: Task<Void, Never>?
 
@@ -101,11 +102,13 @@ final class NowPlaying {
 
     func beginListening() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker])
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
         try session.setActive(true)
+        listening = true
     }
 
     func endListening() {
+        listening = false
         configureSession()
         if library.transport != .playing {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -172,6 +175,7 @@ final class NowPlaying {
             resumeAfterInterruption = false
             library.pause()
         }
+        guard !listening else { return }
         reportRoute(rebind: false)
     }
 

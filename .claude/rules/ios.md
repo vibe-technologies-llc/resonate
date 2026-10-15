@@ -670,12 +670,18 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   records another clip `followedEverySeconds` (20) after a named song or the last miss, keeping a
   song whose `HeardSong.key` (folded title and artist, made in Rust) matches quietly. A new run
   awaits the previous task first, so a cancelled recording's cleanup never lands inside the next
-  one. A found song is a card (cover decoded on `Work.aside`, title, artist, album · year, the
+  one; the recognise call is raced against cancellation (`OnlyOnce`), so closing the sheet while
+  *asking* frees the next run at once and the late answer is dropped, and the stage turns to
+  recording on the tap itself, so extra taps start nothing. *Keep listening* ends where a clip
+  cannot be asked (a service out of reach, a failure, offline), saying why, instead of recording
+  every 20 s. Resonate pauses when it listens, since the microphone would only hear it. A found song is a card (cover decoded on `Work.aside`, title, artist, album · year, the
   naming service) with *Find it* (the Search tab, Your library, artist and title typed), *Open*
   where the service gave a link and *Listen again*; the last eight stay as *Heard earlier* for the
   run, and a new song is felt (`sensoryFeedback(.success)`).
 - **`Microphone.record`** asks `AVAudioApplication` for the microphone (`NSMicrophoneUsageDescription`),
-  switches the session to `.playAndRecord`, `.measurement`, through `NowPlaying.beginListening`,
+  switches the session to `.playAndRecord`, `.measurement` with A2DP kept, through
+  `NowPlaying.beginListening` (route changes are not reported to Rust meanwhile, so the rate the
+  category moves costs no reopen of the output, only the one report on `endListening`),
   taps `AVAudioEngine`'s input as a mono mix into a `ClipSink` (a `Mutex`, its tap block built
   `nonisolated`) until 12 s are held or 3 s past that, and hands the samples and the input's rate to
   `recognise_heard`. `NowPlaying.endListening` puts back `.playback` and, with nothing playing,

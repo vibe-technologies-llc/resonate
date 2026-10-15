@@ -31,7 +31,7 @@ struct ListenSheet: View {
                             .symbolEffect(.variableColor.iterative, isActive: listening.following == .listening)
                     }
                 } footer: {
-                    Text("Listens for the next song every \(Listening.followedEverySeconds) seconds while this stays open.")
+                    Text("Listens for the next song every \(Listening.followedEverySeconds) seconds while this stays open. Resonate pauses while it listens, so the microphone hears the room.")
                 }
                 if !earlier.isEmpty {
                     Section("Heard earlier") {

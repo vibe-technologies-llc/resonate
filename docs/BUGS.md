@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] Listening: closing the sheet in *asking* and reopening it waits for the uncancellable
-  recognise call, and extra taps chain further 12 s recordings; *Keep listening* ignores `.failed`,
-  `.stopped` and `.unreached`, so offline it records every 20 s under "Listening for the next
-  song"; `.playAndRecord` with `.measurement` drops A2DP and moves the rate with playback running,
-  so the microphone hears Resonate and each Listen costs two stream reopens
 - [S] A release build aborts on a panic (`panic = "abort"`, `Cargo.toml`) where UniFFI's
   `catch_unwind` in a debug build turns it into an error: any panic on a listener's file or
   catalog in a boundary call kills the app
