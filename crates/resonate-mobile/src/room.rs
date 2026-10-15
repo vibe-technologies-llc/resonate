@@ -13,6 +13,7 @@ use crate::{Error, MobilePlayer, Result};
 
 pub const IMPULSE_BYTES_AT_MOST: usize = 64 * 1024 * 1024;
 const KEPT_STEM: &str = "room-correction";
+const CANDIDATE_STEM: &str = "room-correction-candidate";
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImpulseOp {
@@ -62,10 +63,19 @@ impl Room {
     }
 
     fn kept(&self) -> Result<Option<PathBuf>> {
+        self.stemmed(KEPT_STEM)
+    }
+
+    fn stemmed(&self, wanted: &str) -> Result<Option<PathBuf>> {
+        Ok(self.every(wanted)?.into_iter().next())
+    }
+
+    fn every(&self, wanted: &str) -> Result<Vec<PathBuf>> {
         let listed = fs::read_dir(&self.folder).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Find,
             source,
         })?;
+        let mut found = Vec::new();
         for entry in listed {
             let path = entry
                 .map_err(|source| Error::ImpulseFile {
@@ -73,11 +83,11 @@ impl Room {
                     source,
                 })?
                 .path();
-            if path.file_stem().and_then(|stem| stem.to_str()) == Some(KEPT_STEM) {
-                return Ok(Some(path));
+            if path.file_stem().and_then(|stem| stem.to_str()) == Some(wanted) {
+                found.push(path);
             }
         }
-        Ok(None)
+        Ok(found)
     }
 
     fn forget(&self) -> Result<()> {
@@ -90,7 +100,17 @@ impl Room {
         Ok(())
     }
 
-    fn keep(&self, bytes: &[u8], extension: &str) -> Result<PathBuf> {
+    fn drop_candidates(&self) -> Result<()> {
+        while let Some(path) = self.stemmed(CANDIDATE_STEM)? {
+            fs::remove_file(&path).map_err(|source| Error::ImpulseFile {
+                op: ImpulseOp::Remove,
+                source,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn stage(&self, bytes: &[u8], extension: &str) -> Result<PathBuf> {
         let extension = extension.to_ascii_lowercase();
         if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
             return Err(Error::ImpulseExtension);
@@ -98,13 +118,49 @@ impl Room {
         if bytes.len() > IMPULSE_BYTES_AT_MOST {
             return Err(Error::ImpulseTooLarge);
         }
-        self.forget()?;
-        let path = self.folder.join(format!("{KEPT_STEM}.{extension}"));
+        self.drop_candidates()?;
+        let path = self.folder.join(format!("{CANDIDATE_STEM}.{extension}"));
         fs::write(&path, bytes).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Keep,
             source,
         })?;
         Ok(path)
+    }
+
+    fn promote(&self, candidate: &Path) -> Result<PathBuf> {
+        let extension = candidate
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .ok_or(Error::ImpulseExtension)?;
+        let target = self.folder.join(format!("{KEPT_STEM}.{extension}"));
+        fs::rename(candidate, &target).map_err(|source| Error::ImpulseFile {
+            op: ImpulseOp::Keep,
+            source,
+        })?;
+        for older in self
+            .every(KEPT_STEM)?
+            .into_iter()
+            .filter(|path| *path != target)
+        {
+            fs::remove_file(&older).map_err(|source| Error::ImpulseFile {
+                op: ImpulseOp::Remove,
+                source,
+            })?;
+        }
+        Ok(target)
+    }
+
+    fn keep(&self, bytes: &[u8], extension: &str, sources: &Sources) -> Result<Impulse> {
+        let candidate = self.stage(bytes, extension)?;
+        let impulse = match read(sources, &candidate) {
+            Ok(impulse) => impulse,
+            Err(error) => {
+                let _ = fs::remove_file(&candidate);
+                return Err(error);
+            }
+        };
+        self.promote(&candidate)?;
+        Ok(impulse)
     }
 }
 
@@ -119,14 +175,8 @@ impl MobilePlayer {
         bytes: Vec<u8>,
         extension: String,
     ) -> Result<RoomCorrection> {
-        let path = self.room.keep(&bytes, &extension)?;
-        match read(&self.sources, &path) {
-            Ok(impulse) => Ok(RoomCorrection::of(&impulse)),
-            Err(error) => {
-                self.room.forget()?;
-                Err(error)
-            }
-        }
+        let impulse = self.room.keep(&bytes, &extension, &self.sources)?;
+        Ok(RoomCorrection::of(&impulse))
     }
 
     pub fn apply_room_correction(&self, on: bool) -> Result<Option<RoomCorrection>> {
@@ -185,14 +235,18 @@ mod tests {
         let room = Room::under(folder.clone());
         let sources = Sources::local();
 
-        room.keep(b"an older response", "flac")
+        let older = room
+            .stage(b"an older response", "flac")
             .expect("a first file");
-        let path = room
-            .keep(&wave(&[i16::MAX, 0, 0, 0, 0, 0, 0, 0]), "WAV")
+        room.promote(&older).expect("an older response kept");
+        let impulse = room
+            .keep(&wave(&[i16::MAX, 0, 0, 0, 0, 0, 0, 0]), "WAV", &sources)
             .expect("a kept response");
-        let impulse = read(&sources, &path).expect("an impulse");
 
-        assert_eq!(room.kept().expect("a listing"), Some(path));
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.wav"))
+        );
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
         assert_eq!(RoomCorrection::of(&impulse).channels, 1);
         assert_eq!(RoomCorrection::of(&impulse).rate, 48_000);
@@ -207,11 +261,29 @@ mod tests {
         let folder = folder("refused");
         let room = Room::under(folder.clone());
 
-        let named = room.keep(b"text", "txt");
-        let large = room.keep(&vec![0; IMPULSE_BYTES_AT_MOST + 1], "wav");
+        let named = room.stage(b"text", "txt");
+        let large = room.stage(&vec![0; IMPULSE_BYTES_AT_MOST + 1], "wav");
 
         assert!(matches!(named, Err(Error::ImpulseExtension)));
         assert!(matches!(large, Err(Error::ImpulseTooLarge)));
         assert_eq!(room.kept().expect("a listing"), None);
+    }
+
+    #[test]
+    fn a_response_that_does_not_read_leaves_the_kept_one_standing() {
+        let folder = folder("unreadable");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+
+        room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
+            .expect("a kept response");
+        let refused = room.keep(b"not a wave at all", "wav", &sources);
+
+        assert!(refused.is_err());
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.wav"))
+        );
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 }

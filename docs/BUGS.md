@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `keep_room_correction` forgets the kept response before writing the new file and forgets
-  again when it does not parse: a wrong pick deletes a working correction, which keeps convolving
-  until the next launch, when `restore` finds nothing and switches the correction off unsaid
 - [S] `Keychain.read` answers `""` for every failure (`errSecInteractionNotAllowed` on a launch
   before first unlock included): `readSync` then hands `sync_start` a blank key, which mints a new
   pairing code that `applySync` stores over the real one. `write` deletes before it adds, so a

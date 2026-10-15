@@ -119,9 +119,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   *Stop correcting* drops it, so the last gesture wins. One response for all devices, no binding.
 - **The phones keep one response file** (`resonate-mobile/src/room.rs`): `keep_room_correction(bytes,
   extension)` refuses an extension outside `AUDIO_EXTENSIONS` (`ImpulseExtension`) or more than
-  `IMPULSE_BYTES_AT_MOST` (64 MiB, `ImpulseTooLarge`), replaces any `room-correction.*` in the
-  player's folder, and reads it back through `read_impulse` over the local provider, removing it
-  where it holds no response (`NoImpulse`); `apply_room_correction(on)` sends `SetConvolution` with
+  `IMPULSE_BYTES_AT_MOST` (64 MiB, `ImpulseTooLarge`), stages the bytes as
+  `room-correction-candidate.*` in the player's folder, reads them back through `read_impulse`
+  over the local provider, and only a response that reads replaces any `room-correction.*`; one
+  that holds no response (`NoImpulse`) is dropped and the kept response stands; `apply_room_correction(on)` sends `SetConvolution` with
   the kept response or none, answering its channels, rate and length; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
   `playback` suite and applies the response at start (`RoomCorrectionState`, the equaliser page's
