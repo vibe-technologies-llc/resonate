@@ -205,9 +205,10 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **Coming back from the background rebuilds sync.** iOS may reclaim a suspended app's sockets, which
   left the QUIC endpoint deaf until a setting restarted sync. So when the scene returns to active
   after `.background` (`Features.wentToBackground`/`cameForward`) and no transfer held the app
-  awake, `NearbyDevices.restart` drops the listener and browser and `applySync` starts sync afresh
-  (`sync_start` leaves the old one first); then missing songs are hidden and, where some were,
-  sync is forced.
+  awake (a transfers hold whose expiration handler ran counts as lost, `transferHoldLapsed`),
+  `NearbyDevices.restart` drops the listener and browser and `applySync` starts sync afresh
+  (`sync_start` leaves the old one first); then missing songs are hidden, whether or not the start
+  failed, and, where some were and sync started, sync is forced.
 - **`Folders`** is the `Documents` callback. A chosen folder is a security-scoped bookmark kept in
   Application Support (`folders.plist`); the app's own Documents folder (`UIFileSharingEnabled`,
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits

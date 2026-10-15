@@ -164,13 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `Features.cameForward` skips rebuilding sync's sockets while `transferring` is true, which
-  nothing clears when the transfers' `BackgroundHold` expires (its `expired` is the no-op default)
-  or the app suspends: back in front, the endpoint iOS reclaimed stays deaf until a setting restarts
-  sync
-- [S] `Features.cameForward` runs `applySync` and `forgetMissing` in one throwing block: while
-  `sync_start` fails (a bad own-server address, a bind refused), songs whose files went while the
-  app was away are never hidden on coming forward
 - [S] `NowPlaying.beginListening` sets `.playAndRecord`/`.measurement` before `setActive(true)`, and
   `Microphone.record` registers its `endListening` defer only after it returns: an activation
   refused (a call, another app on the microphone) leaves playback on the recording category without

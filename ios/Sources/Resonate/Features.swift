@@ -53,10 +53,12 @@ final class Features {
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
     @ObservationIgnored lazy var listening = Listening(library: library)
     @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
-    @ObservationIgnored private let transfers = BackgroundHold(
+    @ObservationIgnored private lazy var transfers = BackgroundHold(
         name: "Fetching songs from your devices",
-        continued: BackgroundHold.transfers
+        continued: BackgroundHold.transfers,
+        expired: { [unowned self] in transferHoldLapsed = true }
     )
+    @ObservationIgnored private var transferHoldLapsed = false
 
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
@@ -500,12 +502,20 @@ final class Features {
             Task { [weak self] in await self?.library.forgetMissing() }
             return
         }
-        if !transferring {
+        if !transferring || transferHoldLapsed {
+            transferHoldLapsed = false
             nearby?.restart()
             work { [weak self] native in
-                try await self?.applySync(native)
-                guard let changed = await self?.library.forgetMissing(), changed.hidden > 0 else { return }
-                try await Work.aside { native.syncForce() }
+                var failure: (any Swift.Error)?
+                do {
+                    try await self?.applySync(native)
+                } catch {
+                    failure = error
+                }
+                if let changed = await self?.library.forgetMissing(), changed.hidden > 0, failure == nil {
+                    try await Work.aside { native.syncForce() }
+                }
+                if let failure { throw failure }
             }
             return
         }
