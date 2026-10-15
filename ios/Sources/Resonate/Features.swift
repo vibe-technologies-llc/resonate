@@ -127,6 +127,7 @@ final class Features {
     @ObservationIgnored private var analysisRequest = 0
     @ObservationIgnored private var recognitionRequest = 0
     @ObservationIgnored private var lyricRequest = 0
+    @ObservationIgnored private var playlistRequest = 0
     @ObservationIgnored private var searchRequest = 0
     @ObservationIgnored private var onlinePending: Task<Void, Never>?
     @ObservationIgnored private var onlineAnswers = OnlineAnswers()
@@ -462,10 +463,17 @@ final class Features {
     }
 
     func stopForErasing() async {
-        syncPolling?.cancel()
+        let polling = syncPolling
+        let arrivals = arriving
+        syncPolling = nil
+        arriving = nil
+        polling?.cancel()
+        arrivals?.cancel()
         submitting?.cancel()
         visualization?.cancel()
         onlinePending?.cancel()
+        await polling?.value
+        await arrivals?.value
         nearby?.follow(record: nil)
         syncAskedAt = nil
         listening.stop()
@@ -823,10 +831,16 @@ final class Features {
                 self?.adoptPlaylists(found, native)
                 then?(nil)
             } catch {
+                await self?.reloadOpenPlaylist()
                 guard let then else { throw error }
                 then(explained(error))
             }
         }
+    }
+
+    func reloadOpenPlaylist() async {
+        guard let open = openPlaylist, let native = try? await library.player() else { return }
+        await reloadPlaylist(native, open)
     }
 
     func undoPlaylistEdit() {
@@ -849,6 +863,8 @@ final class Features {
     }
 
     private func reloadPlaylist(_ native: MobilePlayer, _ id: UInt64) async {
+        playlistRequest += 1
+        let request = playlistRequest
         do {
             let (rows, found) = try await Work.aside {
                 var rows: [Track] = []
@@ -859,6 +875,7 @@ final class Features {
                 }
                 return (rows, try native.playlists())
             }
+            guard request == playlistRequest else { return }
             if openPlaylist == id { playlistRows = rows }
             playlists = found
         } catch {

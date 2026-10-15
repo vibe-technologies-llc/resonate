@@ -146,7 +146,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   folders as well as the app's own; nothing else in those folders), then `Erasure.everything`
   empties Application Support, Caches, Documents and tmp, removes the `library-features`,
   `playback`, `provider-accounts` and `appearance` suites and the standard domain, and deletes
-  every keychain class, then the app exits. With the pairing code gone, other devices hear nothing.
+  every keychain class, then the app exits. With the pairing code gone, other devices hear nothing. The sync poll and the arrivals task are awaited, not only cancelled, so a landing in progress is in the second read; the run holds a background task, and `ErasingOverlay` on the root view blocks every tap and closes the open sheets. When `Folders.delete` could not remove some song (a read-only grant, an offline cloud folder) the bookmarks (`Folders.kept`) are not erased, the app does not exit, and the overlay says how many songs stayed and to close Resonate.
 - **The sync page leads with what is happening; setup sits a step away** (`SyncView.swift`). The
   page is the *Sync this iPhone* switch, then a status section (`SyncStateRow`: spinner, *Up to
   date* check, warning or the network mark, a headline and `syncStanding`; *Sync now* turning into
@@ -397,7 +397,7 @@ every route change (a pair of headphones at the same rate included), not from th
   a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
   for the song's artist and album artist) and follows it, or pops where the album is gone, so
   *Edit album tags* leaves the page on the album, not on "No songs from this album". A playlist's rows are keyed by song and occurrence, move and remove at once, and
-  every edit reads the playlist's latest revision inside the library's ordered lane; its rows survive a
+  every edit reads the playlist's latest revision inside the library's ordered lane; a refused edit, a scan, and the hiding or restoring of missing songs or a folder's songs reload the open page, and a reload lands only if it is the latest asked (`Features.playlistRequest`); its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
   playlist of hidden songs reads as empty and offers *Your playlist starts here*. The playlist

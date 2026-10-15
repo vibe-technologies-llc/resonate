@@ -126,6 +126,35 @@ extension Destination {
     }
 }
 
+struct ErasingOverlay: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if library.erasing {
+            ZStack {
+                Rectangle()
+                    .fill(.black.opacity(0.4))
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {}
+                Group {
+                    if let left = library.erasedLeaving {
+                        Text("Everything else is erased. \(counted(left, "song")) could not be deleted and stay in their folders, which Resonate keeps. Close Resonate and open it again.")
+                    } else {
+                        ProgressView("Erasing…")
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .padding(24)
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
+                .padding(.horizontal, 24)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isModal)
+        }
+    }
+}
+
 struct RootView: View {
     @Environment(Library.self) private var library
     @State private var navigation = Navigation()
@@ -212,6 +241,18 @@ struct RootView: View {
             case .success(let url): library.addFolder(url)
             case .failure(let failure): library.report(failure)
             }
+        }
+        .disabled(library.erasing)
+        .overlay { ErasingOverlay() }
+        .onChange(of: library.erasing) { _, erasing in
+            guard erasing else { return }
+            navigation.nowPlaying = false
+            navigation.sleepTimer = false
+            navigation.filters = false
+            navigation.listening = false
+            navigation.choosingFolder = false
+            navigation.tagging = nil
+            library.features.sharing = nil
         }
         .environment(navigation)
     }

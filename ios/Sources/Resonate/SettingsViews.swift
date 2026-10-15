@@ -110,13 +110,6 @@ struct SettingsView: View {
         } message: {
             Text("Every song Resonate lists is deleted from this iPhone, including those in folders you added. This cannot be undone. Resonate closes once it is done; open it again to start fresh.")
         }
-        .overlay {
-            if library.erasing {
-                ProgressView("Erasing…")
-                    .padding(24)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 20))
-            }
-        }
         .buttonStyle(.plain)
         .searchable(text: $search, prompt: "Search settings")
         .overlay {

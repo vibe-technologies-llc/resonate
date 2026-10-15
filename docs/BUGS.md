@@ -164,18 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [M] The open playlist's rows drift from the catalog and an edit by shown index lands on a
-  neighbour: `PlaylistView.move` and `remove` change `playlistRows` before `editPlaylist`, which
-  reloads only on success, so a refused edit keeps an order the catalog never took; `reloadPlaylist`
-  runs unordered on the concurrent `Work.aside` with no generation, so an older read can land last;
-  and hiding missing songs or a folder never reloads the page though `shown_positions` no longer
-  counts those rows
-- [M] *Erase all data* can leave songs behind while saying all is gone: `eraseEverything` discards
-  `Folders.delete`'s answer (a read-only grant, an offline cloud folder) before `Erasure.everything`
-  drops the bookmarks; `stopForErasing` cancels the sync poll without awaiting it or
-  `adoptArrivals`, so a landing finishing after the second `song_uris` read stays; and with no
-  background task or input block, a locked phone suspends it halfway while the overlay lets taps
-  through
 - [S] `Features.cameForward` skips rebuilding sync's sockets while `transferring` is true, which
   nothing clears when the transfers' `BackgroundHold` expires (its `expired` is the no-op default)
   or the app suspends: back in front, the endpoint iOS reclaimed stays deaf until a setting restarts

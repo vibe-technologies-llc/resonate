@@ -75,6 +75,7 @@ enum FolderFailure: Swift.Error, LocalizedError {
 final class Folders: Documents, @unchecked Sendable {
     static let scheme = "resonate-folder"
     static let local = "local"
+    static let kept = ["folders.plist", "forgotten-folders.plist"]
     private static let deepest = 32
     private static let copiesChecked = 50
     private static let coverNames = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]

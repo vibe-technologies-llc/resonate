@@ -13,8 +13,12 @@ enum Erasure {
         ]
     }
 
-    static func everything() {
+    static func everything(keeping names: [String] = []) {
         let files = FileManager.default
+        let support = Library.supportFolder
+        let kept = names.compactMap { name in
+            (try? Data(contentsOf: support.appendingPathComponent(name))).map { (name, $0) }
+        }
         let places = [
             files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
             files.urls(for: .cachesDirectory, in: .userDomainMask)[0],
@@ -22,6 +26,11 @@ enum Erasure {
             files.temporaryDirectory,
         ]
         places.forEach(emptied)
+
+        if !kept.isEmpty {
+            try? files.createDirectory(at: support, withIntermediateDirectories: true)
+            for (name, data) in kept { try? data.write(to: support.appendingPathComponent(name), options: .atomic) }
+        }
 
         for suite in suites {
             let defaults = UserDefaults(suiteName: suite)

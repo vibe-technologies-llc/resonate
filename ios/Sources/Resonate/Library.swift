@@ -2,6 +2,7 @@ import Accessibility
 import Foundation
 import Observation
 import ResonateNative
+import UIKit
 
 typealias NativeAction = @Sendable (MobilePlayer) async -> Void
 
@@ -106,6 +107,11 @@ final class Library {
     private static let pollBackgroundIdle: Duration = .seconds(2)
     private static let noticeLasts: Duration = .seconds(6)
 
+    nonisolated static var supportFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Resonate", isDirectory: true)
+    }
+
     let folders: Folders
     let clock = PlayClock()
     var allTracks: [Track] = [] {
@@ -147,6 +153,7 @@ final class Library {
     var status: StatusMessage?
     var scanning = false
     private(set) var erasing = false
+    private(set) var erasedLeaving: Int?
     var scanned = 0
     var preferences: PlaybackPreferences?
     var route: OutputRoute?
@@ -203,8 +210,7 @@ final class Library {
     @ObservationIgnored lazy var tabSearch = SearchModel(library: self, remembering: true)
 
     init() {
-        support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Resonate", isDirectory: true)
+        support = Self.supportFolder
         folders = Folders(support: support)
         (actions, enqueue) = AsyncStream.makeStream(of: NativeAction.self)
         Task { [weak self] in await self?.serveActions() }
@@ -918,7 +924,10 @@ final class Library {
         let prefix = "\(Folders.scheme)://\(folder)/"
         guard let changed = try? await Work.aside({ try native.hideSongsUnder(prefix: prefix) }) else { return }
         if changed.leftTheQueue > 0 { await rereadQueue() }
-        if changed.hidden > 0 { await refresh() }
+        if changed.hidden > 0 {
+            await refresh()
+            await features.reloadOpenPlaylist()
+        }
     }
 
     func rescan() {
@@ -999,6 +1008,7 @@ final class Library {
             failure = error
         }
         await refresh()
+        await features.reloadOpenPlaylist()
         if !scanStopped, failure == nil, tally.complete { await forgetMissing() }
         features.scanned()
         await remeasureFolders()
@@ -1117,6 +1127,7 @@ final class Library {
         if changed.leftTheQueue > 0 { await rereadQueue() }
         guard changed.hidden > 0 || changed.restored > 0 else { return changed }
         await refresh()
+        await features.reloadOpenPlaylist()
         if changed.hidden > 0 {
             let fetching = features.syncConfig.map { $0.enabled && ($0.everything || $0.favourites || $0.playlists) } ?? false
             let gone = changed.hidden == 1 ? "1 song whose file is gone was hidden" : "\(changed.hidden) songs whose files are gone were hidden"
@@ -1166,6 +1177,7 @@ final class Library {
         erasing = true
         let opened = native
         let documents = folders
+        let holding = UIApplication.shared.beginBackgroundTask(withName: "Erasing your data")
         Task {
             var songs: [String] = []
             if let opened {
@@ -1173,6 +1185,7 @@ final class Library {
                     songs = try await Work.inOrder { try opened.songUris() }
                 } catch {
                     erasing = false
+                    UIApplication.shared.endBackgroundTask(holding)
                     report(error)
                     return
                 }
@@ -1192,11 +1205,14 @@ final class Library {
             }
             await AppearanceState.shared.resetIcon()
             let erased = songs
-            _ = try? await Work.aside {
-                erased.forEach { documents.delete($0) }
-                Erasure.everything()
-            }
-            exit(0)
+            let stuck = (try? await Work.aside {
+                let stuck = erased.filter { !documents.delete($0) }
+                Erasure.everything(keeping: stuck.isEmpty ? [] : Folders.kept)
+                return stuck.count
+            }) ?? 0
+            guard stuck > 0 else { exit(0) }
+            erasedLeaving = stuck
+            UIApplication.shared.endBackgroundTask(holding)
         }
     }
 }
