@@ -48,7 +48,7 @@ impl MobilePlayer {
 
     pub fn playlist_tracks(&self, id: u64, offset: u32, limit: u32) -> Result<Vec<Track>> {
         let connection = self.catalog.0.lock();
-        let mut query = connection.prepare("SELECT d.*, p.position FROM playlist_rows p JOIN documents d ON d.id = p.track WHERE p.playlist = ?1 ORDER BY p.position LIMIT ?2 OFFSET ?3").map_err(read_error)?;
+        let mut query = connection.prepare("SELECT d.*, p.position FROM playlist_rows p JOIN documents d ON d.id = p.track WHERE p.playlist = ?1 AND d.missing = 0 ORDER BY p.position LIMIT ?2 OFFSET ?3").map_err(read_error)?;
         query
             .query_map(params![id as i64, limit.min(500), offset], |row| {
                 let mut track = read(row)?;
@@ -102,10 +102,11 @@ impl MobilePlayer {
     pub fn remove_from_playlist(&self, id: u64, revision: u64, position: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
             let mut rows = playlist_rows(connection, id)?;
-            if position as usize >= rows.len() {
+            let shown = shown_positions(connection, &rows)?;
+            let Some(at) = shown.get(position as usize) else {
                 return Err(Error::PlaylistChanged);
-            }
-            rows.remove(position as usize);
+            };
+            rows.remove(*at);
             replace_rows(connection, id, &rows)
         })
     }
@@ -113,11 +114,12 @@ impl MobilePlayer {
     pub fn move_in_playlist(&self, id: u64, revision: u64, from: u32, to: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
             let mut rows = playlist_rows(connection, id)?;
-            if from as usize >= rows.len() || to as usize >= rows.len() {
+            let shown = shown_positions(connection, &rows)?;
+            let (Some(from), Some(to)) = (shown.get(from as usize), shown.get(to as usize)) else {
                 return Err(Error::PlaylistChanged);
-            }
-            let row = rows.remove(from as usize);
-            rows.insert(to as usize, row);
+            };
+            let row = rows.remove(*from);
+            rows.insert(*to, row);
             replace_rows(connection, id, &rows)
         })
     }
@@ -303,6 +305,23 @@ fn saved_playlist(connection: &Connection, id: u64) -> Result<Option<SavedPlayli
         })
     })
     .transpose()
+}
+
+fn shown_positions(connection: &Connection, rows: &[u64]) -> Result<Vec<usize>> {
+    let mut query = connection
+        .prepare("SELECT id FROM documents WHERE missing = 1")
+        .map_err(read_error)?;
+    let hidden = query
+        .query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+        .map_err(read_error)?
+        .collect::<rusqlite::Result<std::collections::BTreeSet<_>>>()
+        .map_err(read_error)?;
+    Ok(rows
+        .iter()
+        .enumerate()
+        .filter(|(_, track)| !hidden.contains(track))
+        .map(|(at, _)| at)
+        .collect())
 }
 
 fn playlist_rows(connection: &Connection, id: u64) -> Result<Vec<u64>> {

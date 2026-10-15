@@ -85,7 +85,9 @@ ALTER TABLE wanted ADD COLUMN offered_at INTEGER;";
 
 const V8: &str = "CREATE TABLE refused_offers (identity TEXT NOT NULL, taken_from TEXT NOT NULL, refused INTEGER NOT NULL, PRIMARY KEY(identity, taken_from)) STRICT;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
+const V9: &str = "ALTER TABLE documents ADD COLUMN missing INTEGER NOT NULL DEFAULT 0;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 
@@ -166,7 +168,7 @@ impl Catalog {
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             ON CONFLICT(uri) DO UPDATE SET name = excluded.name, title = CASE WHEN excluded.title = excluded.name AND documents.title != documents.name THEN documents.title ELSE excluded.title END,
             artist = coalesce(nullif(excluded.artist, ''), documents.artist), album = coalesce(nullif(excluded.album, ''), documents.album), duration_ms = excluded.duration_ms,
-            rate = excluded.rate, codec = excluded.codec",
+            rate = excluded.rate, codec = excluded.codec, missing = 0",
                 params![
                     track.uri,
                     track.name,
@@ -188,7 +190,7 @@ impl Catalog {
         let connection = self.0.lock();
         let mut query = connection
             .prepare(
-                "SELECT * FROM documents WHERE
+                "SELECT * FROM documents WHERE missing = 0 AND
             instr(folded(title || ' ' || artist || ' ' || album || ' ' || album_artist), folded(?1)) > 0
             ORDER BY title COLLATE NOCASE, id LIMIT ?2 OFFSET ?3",
             )

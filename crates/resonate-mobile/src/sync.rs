@@ -900,7 +900,7 @@ impl Catalog for DocumentCatalog {
         let connection = self.catalog.0.lock();
         connection
             .prepare(&format!(
-                "SELECT d.name, {RECORDING_COLUMNS} FROM documents d ORDER BY d.id"
+                "SELECT d.name, {RECORDING_COLUMNS} FROM documents d WHERE d.missing = 0 ORDER BY d.id"
             ))
             .and_then(|mut query| {
                 query
@@ -1010,7 +1010,7 @@ struct Indexed {
 impl Indexed {
     fn read(connection: &Connection) -> rusqlite::Result<Self> {
         let mut query = connection.prepare_cached(
-            "SELECT id, recording, title, artist, album, duration_ms FROM documents ORDER BY id",
+            "SELECT id, recording, title, artist, album, duration_ms FROM documents WHERE missing = 0 ORDER BY id",
         )?;
         let mut rows = query.query([])?;
         let mut indexed = Self::default();

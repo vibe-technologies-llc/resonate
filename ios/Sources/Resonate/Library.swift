@@ -732,7 +732,7 @@ final class Library {
             failure = error
         }
         await refresh()
-        if failure == nil, !scanStopped { await forgetMissing() }
+        if !scanStopped { await forgetMissing() }
         features.scanned()
         folderList = folders.folders()
         if let failure {
@@ -791,10 +791,12 @@ final class Library {
         let prefixes = folders.folders()
             .filter(\.readable)
             .map { "\(Folders.scheme)://\($0.id)/" }
-        guard let forgotten = try? await Work.aside({ try native.forgetMissingSongs(prefixes: prefixes) }),
-              forgotten > 0 else { return }
+        guard let changed = try? await Work.aside({ try native.hideMissingSongs(prefixes: prefixes) }),
+              changed.hidden > 0 || changed.restored > 0 else { return }
         await refresh()
-        notice("Removed \(counted(Int(forgotten), "song")) whose files are gone")
+        if changed.hidden > 0 {
+            notice("Hid \(counted(Int(changed.hidden), "song")) whose files are gone")
+        }
     }
 
     func notice(_ message: String) {

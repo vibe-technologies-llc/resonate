@@ -1121,7 +1121,8 @@ impl Index {
             heard.entry(track).or_default().push(began);
         }
 
-        let mut documents = connection.prepare("SELECT * FROM documents ORDER BY id")?;
+        let mut documents =
+            connection.prepare("SELECT * FROM documents WHERE missing = 0 ORDER BY id")?;
         let rows = documents
             .query_map([], read)?
             .map(|track| {
