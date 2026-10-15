@@ -435,12 +435,12 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   the palette changes; **Low Power Mode** caps at 30 fps; an inactive or backgrounded scene, or a
   view out of its window, draws nothing.
 - **The app background** is the same view with no track and an `ambience` strength
-  (`BackdropView(track: nil, moving:, ambience:)`), once behind `RootView`'s `TabView`: the palette
+  (`BackdropView(track: nil, moving:, ambience:)`), as the `containerBackground(for: .navigation)` of every page (a clear one is drawn as the system's own, so a single view behind the `TabView` never shows; only pages in a window draw, and the clock is the wall clock so a pushed page starts in phase): the palette
   built around the accent colour (re-sampled when the accent changes), `BackdropTone.ambient`
   (dark floor 0.05 with a range of 0.10 to 0.32, light floor 0.96 down to 0.80, chroma and range
   scaled by the strength, so system labels keep their contrast), 30 fps, and no hold on the
   visualizer tap or loudness. `ThemedPage` on each stack's root and every `DestinationView` hides
-  the scroll content background and clears the navigation and tab view container backgrounds; Now
+  the scroll content background and sets that background; Now
   Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
   in the `appearance` defaults, edited in Settings › Appearance › Background: `themedBackground`
   (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). Pages with

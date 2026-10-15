@@ -368,7 +368,11 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
 
         energy += (heard - energy) * Self.settled(step, within: reaction)
         speed += (wantedSpeed - speed) * Self.settled(step, within: Self.speedSettlingSeconds)
-        flow = (flow + Double(step * speed)).truncatingRemainder(dividingBy: Self.loopSeconds)
+        if reactive {
+            flow = (flow + Double(step * speed)).truncatingRemainder(dividingBy: Self.loopSeconds)
+        } else {
+            flow = (CACurrentMediaTime() * Double(Self.restingSpeed)).truncatingRemainder(dividingBy: Self.loopSeconds)
+        }
     }
 
     private func loudness() -> Float {
