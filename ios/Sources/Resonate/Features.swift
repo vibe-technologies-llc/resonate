@@ -95,6 +95,8 @@ final class Features {
     var syncAskedAt: Date?
     var syncLanding = 0
     var tagsUndoable = false
+    var organising = false
+    var organiseUndo: (folder: String, back: [FiledSong])?
 
     @ObservationIgnored private var inspectorRequest = 0
     @ObservationIgnored private var inspectorArtistRequest = 0
@@ -827,6 +829,38 @@ final class Features {
         } else {
             library.notice("Nothing to change")
         }
+    }
+
+    func organisePlan(_ folder: MusicFolder, layout: String) async throws -> OrganisePlan {
+        let native = try await library.player()
+        let prefix = library.folders.prefix(of: folder.id)
+        return try await Work.aside { try native.planOrganise(folder: prefix, layout: layout) }
+    }
+
+    func organise(_ folder: MusicFolder, _ moves: [FiledSong]) {
+        file(folder.id, moves, undoing: false)
+    }
+
+    func putFilesBack() {
+        guard let (folder, back) = organiseUndo else { return }
+        file(folder, back, undoing: true)
+    }
+
+    private func file(_ folder: String, _ moves: [FiledSong], undoing: Bool) {
+        let folders = library.folders
+        organising = true
+        work({ [weak self] native in
+            let filed = try await Work.aside { try folders.file(folder, moves) }
+            try await Work.inOrder { try native.documentsMoved(moved: filed.moved) }
+            guard let self else { return }
+            organiseUndo = undoing || filed.back.isEmpty ? nil : (folder, filed.back)
+            await library.refresh()
+            let moved = counted(filed.moved.count, "song")
+            let said = undoing ? "Put \(moved) back where they were" : "Filed \(moved)"
+            library.notice(filed.failed > 0 ? "\(said); \(counted(filed.failed, "song")) could not be moved" : said)
+        }, finally: { [weak self] in
+            self?.organising = false
+        })
     }
 
     func saveRecognitionKey(_ value: String) {

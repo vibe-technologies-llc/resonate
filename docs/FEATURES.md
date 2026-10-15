@@ -4,7 +4,8 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [L] Android still needs organising, vault workflows and per-route equaliser bindings
+- [M] Android does not organise its folders or bind a curve to an output; iOS does both (moves in
+  Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
 - [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
 - [S] Android has no room correction: `keep_room_correction` and `apply_room_correction` keep and
@@ -31,9 +32,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   channels is passed over (and counted), where the desktop keeps it on those channels
 
 ## iOS parity
-- [L] iOS lacks what Android lacks (organising, vault), plus CarPlay and a widget
-- [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
-  `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
+- [L] Neither phone has the vault: the managed archive is built on desktop paths
+- [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
+  linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
+- [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
+  paid team on request, and a free signing cannot carry it
+- [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
+  library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
+  `build-std`
 
 ## Playback and output
 - [M] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so

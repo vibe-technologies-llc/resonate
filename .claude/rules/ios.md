@@ -269,6 +269,17 @@ accessibility label. The output page holds `AVRoutePickerView`, since iOS owns t
   saved, a failure is reported with how many were left. Library tools offers *Undo tag edit* while
   `tags_to_undo` names a step (`Features.undoTags`, through the same paths).
 
+- **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout
+  field (`organise-layout` in `library-features`, the desktop's `DEFAULT_LAYOUT` until changed)
+  checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`
+  on `Work.aside`: counts and the first fifty moves), and *Organise*, confirmed. `Folders.file` moves
+  inside the root's security scope: a destination that exists, or a source outside the root, is
+  counted failed; a same-stem `.lrc` moves along where its place is free; folders the moves left
+  empty (a `.DS_Store` aside) are removed up to the root. The new URIs are `uri(root:relative:)`'s,
+  the scan's own spelling, so a rescan finds the same rows; `documents_moved` runs on `Work.inOrder`.
+  The moves back are kept for the session: Library tools' *Put files back* files them again the
+  other way.
+
 ## Appearance
 
 - **The accent is the desktop's, chosen on Settings › Appearance** (`Appearance.swift`):

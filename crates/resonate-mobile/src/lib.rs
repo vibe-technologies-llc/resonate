@@ -12,6 +12,7 @@ mod loves;
 mod lyrics;
 mod mixes;
 mod online_tools;
+mod organising;
 mod output;
 mod playback;
 mod playlists;
@@ -173,35 +174,7 @@ impl MobilePlayer {
             room: room::Room::under(PathBuf::from(&folder)),
             tag_undo: tagging::TagUndo::default(),
         });
-        let (ids, at, position) = this.catalog.resume()?;
-        if !ids.is_empty() {
-            let tracks = ids
-                .into_iter()
-                .map(|id| this.catalog.track(id))
-                .collect::<Result<Vec<_>>>()?;
-            let rate = tracks
-                .get(at as usize)
-                .or_else(|| tracks.first())
-                .map_or(SampleRate::HZ_48000, |track| {
-                    SampleRate::new(track.rate).unwrap_or(SampleRate::HZ_48000)
-                });
-            let rows = tracks
-                .into_iter()
-                .map(|track| {
-                    Ok(Resumable {
-                        location: location(&track.uri)?,
-                        span: None,
-                        held: Some(TrackId::new(track.id)?),
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            this.command(Command::Resume(Resumption {
-                rows,
-                row: at as usize,
-                at: Frames::from_duration(Duration::from_millis(position), rate),
-                ..Resumption::default()
-            }))?;
-        }
+        this.resume_saved()?;
         Ok(this)
     }
 
@@ -492,6 +465,39 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    pub(crate) fn resume_saved(&self) -> Result<()> {
+        let (ids, at, position) = self.catalog.resume()?;
+        if !ids.is_empty() {
+            let tracks = ids
+                .into_iter()
+                .map(|id| self.catalog.track(id))
+                .collect::<Result<Vec<_>>>()?;
+            let rate = tracks
+                .get(at as usize)
+                .or_else(|| tracks.first())
+                .map_or(SampleRate::HZ_48000, |track| {
+                    SampleRate::new(track.rate).unwrap_or(SampleRate::HZ_48000)
+                });
+            let rows = tracks
+                .into_iter()
+                .map(|track| {
+                    Ok(Resumable {
+                        location: location(&track.uri)?,
+                        span: None,
+                        held: Some(TrackId::new(track.id)?),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            self.command(Command::Resume(Resumption {
+                rows,
+                row: at as usize,
+                at: Frames::from_duration(Duration::from_millis(position), rate),
+                ..Resumption::default()
+            }))?;
+        }
+        Ok(())
+    }
+
     fn command(&self, command: Command) -> Result<()> {
         self.player
             .lock()

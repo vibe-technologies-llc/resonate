@@ -199,6 +199,11 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("The layout cannot be read: {source}")]
+    LayoutUnreadable {
+        #[source]
+        source: Box<resonate_library::Error>,
+    },
     #[error("Tags of this kind of file cannot be written")]
     TagsUnwritable,
     #[error("The file did not read back with the tags written")]

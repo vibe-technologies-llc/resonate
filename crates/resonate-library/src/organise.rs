@@ -200,7 +200,7 @@ impl Layout {
         })
     }
 
-    pub(crate) fn render(&self, named: &Named<'_>, naming: Naming) -> Option<PathBuf> {
+    pub fn render(&self, named: &Named<'_>, naming: Naming) -> Option<PathBuf> {
         let last = self.segments.len().checked_sub(1)?;
         let extension = named.extension.filter(|extension| !extension.is_empty());
         let ahead_of_the_extension =
@@ -362,7 +362,7 @@ fn flush(literal: &mut String, pieces: &mut Vec<Piece>) {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Named<'a> {
+pub struct Named<'a> {
     pub album_artist: Option<&'a str>,
     pub artist: Option<&'a str>,
     pub album: Option<&'a str>,
@@ -400,7 +400,7 @@ fn write_field(field: Field, named: &Named<'_>, into: &mut String) {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) enum Naming {
+pub enum Naming {
     #[default]
     Anything,
     Portable,

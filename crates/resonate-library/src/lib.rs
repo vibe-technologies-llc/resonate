@@ -115,8 +115,8 @@ pub use crate::{
         TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
     },
     organise::{
-        Companion, DEFAULT_LAYOUT, Field, Layout, Move, OrganiseOptions, OrganiseProgress,
-        OrganiseStats, OrganiseSummary, Plan, Refusal, Refused, Sidecar,
+        Companion, DEFAULT_LAYOUT, Field, Layout, Move, Named, Naming, OrganiseOptions,
+        OrganiseProgress, OrganiseStats, OrganiseSummary, Plan, Refusal, Refused, Sidecar,
     },
     pass::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,

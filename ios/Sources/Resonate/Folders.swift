@@ -3,6 +3,12 @@ import Foundation
 import ResonateNative
 import Synchronization
 
+struct FiledMoves: Sendable {
+    var moved: [MovedDocument] = []
+    var back: [FiledSong] = []
+    var failed = 0
+}
+
 struct MusicFolder: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
@@ -67,6 +73,7 @@ final class Folders: Documents, @unchecked Sendable {
     static let local = "local"
     private static let deepest = 32
     private static let coverNames = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"]
+    private static let sidecarExtension = "lrc"
     private static let sidecarLimit = 1024 * 1024
     private static let coverLimit = 8 * 1024 * 1024
 
@@ -241,6 +248,63 @@ final class Folders: Documents, @unchecked Sendable {
             return SongFile(uri: uri, path: url.path)
         }
         return try body(files)
+    }
+
+    func prefix(of id: String) -> String {
+        "\(Self.scheme)://\(id)"
+    }
+
+    func file(_ id: String, _ moves: [FiledSong]) throws -> FiledMoves {
+        let (root, scoped) = try root(id)
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let manager = FileManager.default
+        let rootPath = root.standardizedFileURL.path
+        var filed = FiledMoves()
+        var left: Set<URL> = []
+        for song in moves {
+            guard let (from, fromScoped) = try? resolved(song.from) else {
+                filed.failed += 1
+                continue
+            }
+            defer { if fromScoped { from.stopAccessingSecurityScopedResource() } }
+            let to = song.to.reduce(root) { $0.appendingPathComponent($1) }
+            let fromPath = from.standardizedFileURL.path
+            guard fromPath.hasPrefix(rootPath + "/"), !manager.fileExists(atPath: to.path) else {
+                filed.failed += 1
+                continue
+            }
+            do {
+                try manager.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try manager.moveItem(at: from, to: to)
+            } catch {
+                filed.failed += 1
+                continue
+            }
+            let sidecar = from.deletingPathExtension().appendingPathExtension(Self.sidecarExtension)
+            let sidecarTo = to.deletingPathExtension().appendingPathExtension(Self.sidecarExtension)
+            if manager.fileExists(atPath: sidecar.path), !manager.fileExists(atPath: sidecarTo.path) {
+                try? manager.moveItem(at: sidecar, to: sidecarTo)
+            }
+            let placed = uri(root: id, relative: song.to.joined(separator: "/"))
+            let before = fromPath.dropFirst(rootPath.count + 1).split(separator: "/").map(String.init)
+            filed.moved.append(MovedDocument(id: song.id, uri: placed))
+            filed.back.append(FiledSong(id: song.id, from: placed, to: before))
+            left.insert(from.deletingLastPathComponent().standardizedFileURL)
+        }
+        for folder in left { Self.prune(folder, above: rootPath) }
+        return filed
+    }
+
+    private static func prune(_ folder: URL, above rootPath: String) {
+        let manager = FileManager.default
+        var standing = folder
+        while standing.path.hasPrefix(rootPath + "/"),
+            let held = try? manager.contentsOfDirectory(atPath: standing.path),
+            held.allSatisfy({ $0 == ".DS_Store" })
+        {
+            try? manager.removeItem(at: standing)
+            standing = standing.deletingLastPathComponent()
+        }
     }
 
     func delete(_ uri: String) {

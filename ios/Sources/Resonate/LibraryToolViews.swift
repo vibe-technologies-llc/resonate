@@ -50,6 +50,12 @@ struct LibraryToolsView: View {
                     ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
                 }
                 RefreshArtworkRow()
+                if library.features.organiseUndo != nil {
+                    Button { library.features.putFilesBack() } label: {
+                        ToolRow(title: "Put files back", detail: "Return the songs you last organised to where they were", symbol: "arrow.uturn.backward.circle")
+                    }
+                    .disabled(library.features.organising)
+                }
                 if library.features.tagsUndoable {
                     Button { library.features.undoTags() } label: {
                         ToolRow(title: "Undo tag edit", detail: "Put back the tags you last saved", symbol: "arrow.uturn.backward")
@@ -90,6 +96,7 @@ struct FoldersView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var removing: MusicFolder?
+    @State private var organising: MusicFolder?
 
     var body: some View {
         List {
@@ -104,6 +111,7 @@ struct FoldersView: View {
                         folder: folder,
                         scanning: library.scanning,
                         rescan: { library.scan(folder.id) },
+                        organise: { organising = folder },
                         remove: { removing = folder }
                     )
                     .swipeActions {
@@ -118,6 +126,7 @@ struct FoldersView: View {
             }
         }
         .navigationTitle("Music folders")
+        .sheet(item: $organising) { OrganiseSheet(folder: $0) }
         .task { library.folderList = await library.folders.refreshed() }
         .confirmationDialog(
             "Remove \(removing?.name ?? "this folder")?",
@@ -136,6 +145,7 @@ struct FolderRow: View {
     let folder: MusicFolder
     let scanning: Bool
     let rescan: () -> Void
+    let organise: () -> Void
     let remove: () -> Void
 
     var body: some View {
@@ -161,6 +171,8 @@ struct FolderRow: View {
             HStack {
                 Button("Rescan", systemImage: "arrow.clockwise", action: rescan)
                     .disabled(!folder.readable || scanning)
+                Button("Organise", systemImage: "folder.badge.gearshape", action: organise)
+                    .disabled(!folder.writable || scanning)
                 if folder.id != Folders.local {
                     Button("Remove access", systemImage: "xmark.circle", role: .destructive, action: remove)
                 }

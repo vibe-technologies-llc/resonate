@@ -245,6 +245,20 @@ before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` nam
 `song_tags(id)` reads a song's fields through the document provider. `TagsWritten` counts written,
 unchanged and failed songs with the first failure's sentence.
 
+**A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
+`plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as
+`LayoutUnreadable`; `organise_layout_problem` says why before asking, `default_organise_layout` is
+`DEFAULT_LAYOUT`) and renders every unhidden document whose URI lies under the folder's prefix
+through `Layout::render` with `Named` filled from its row (album artist, artist and album where
+given, title, the year off the date's first four digits, disc, the album's disc count, track,
+the file name's extension) under `Naming::Anything`. A song rendering nothing is `unplaced`, one
+already at its place `unchanged`, one whose place another song stands at or claimed first `taken`;
+the rest are `FiledSong`s (id, URI, the path's components). The front end moves each file and
+reports the new URIs in one `documents_moved`: where any moved song is in the queue it saves the
+queue first (by the old URIs, which the catalog still names), rewrites every moved row's URI in one
+transaction (ids, and with them favourites, plays, playlists and lyrics, stay), then resumes the
+saved queue at its row and position, playing again where it was playing.
+
 ## Searching the documents
 
 `search.rs` keeps every document row in memory, folded through `folded_letters` (the desktop's
