@@ -196,6 +196,7 @@ struct EqualiserGraph: View {
     let edit: (EqualiserCurve) -> Void
     let commit: (EqualiserCurve) -> Void
     let add: (EqualiserBand) -> Void
+    let discard: () -> Void
 
     private static let reach: CGFloat = 32
     private static let tapTravel: CGFloat = 8
@@ -223,6 +224,7 @@ struct EqualiserGraph: View {
     @State private var pinched: Pinched?
     @State private var grabs = 0
     @State private var releases = 0
+    @GestureState private var dragged = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -237,6 +239,9 @@ struct EqualiserGraph: View {
             .contentShape(Rectangle())
             .gesture(dragging(scale))
             .simultaneousGesture(pinching)
+        }
+        .onChange(of: dragged) { _, now in
+            if !now { dragEnded() }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
         .sensoryFeedback(.selection, trigger: releases)
@@ -347,8 +352,16 @@ struct EqualiserGraph: View {
         commit(curve.replacing(index, with: band))
     }
 
+    private func dragEnded() {
+        guard let ended = touch else { return }
+        touch = nil
+        holding = pinched != nil
+        if case .band(let held) = ended, held.moved, pinched == nil { discard() }
+    }
+
     private func dragging(_ scale: EqualiserScale) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .updating($dragged) { _, state, _ in state = true }
             .onChanged { value in
                 if touch == nil { touch = touched(at: value.startLocation, scale: scale) }
                 guard pinched == nil, case .band(var held) = touch else { return }

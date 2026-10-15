@@ -403,7 +403,8 @@ struct SoundSettingsView: View {
                         holding: $holding,
                         edit: { draft = $0 },
                         commit: { commit($0) },
-                        add: { add($0, to: curve) }
+                        add: { add($0, to: curve) },
+                        discard: { draft = nil }
                     )
                     .frame(height: 280)
                     .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))

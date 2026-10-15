@@ -726,7 +726,9 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   one-finger drag beginning within 32 pt of a handle moves it, frequency across and gain up (tidied
   to 0.1, 1 or 10 Hz by decade and to 0.1 dB); a pinch turns the Q of the held band, else the
   selected one; a tap on empty space adds a peaking band there (Q 1) and switches the equaliser on.
-  Grab and release are felt (`sensoryFeedback`). What a gesture moves is a draft drawn at once; the
+  Grab and release are felt (`sensoryFeedback`). A drag the system cancels (a call, an alert) never
+  reaches `onEnded`; a `@GestureState` flag falling with a touch still held releases it and discards
+  the draft, so the next touch starts clean. What a gesture moves is a draft drawn at once; the
   engine and the store hear the release, once, as the sliders did, and the draft gives way when the
   committed curve arrives, or a second after the release where none did, so a refused commit
   cannot linger.
