@@ -400,6 +400,7 @@ enum Backdrop {
 
 struct FavouriteButton: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
     @State private var tapped = 0
 
@@ -411,8 +412,8 @@ struct FavouriteButton: View {
         } label: {
             Image(systemName: favourite ? "heart.fill" : "heart")
                 .foregroundStyle(favourite ? Color.pink : Color.secondary)
-                .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(.bounce, value: tapped)
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tapped)

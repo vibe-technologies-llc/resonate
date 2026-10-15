@@ -222,6 +222,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   writes the system extrapolates elapsed time from the rate. Every command answers
   `.noSuchContent` with nothing loaded; next is enabled only before the last row or while the
   queue repeats; shuffle, repeat (`.one` is the engine's 1, `.all` its 2) and stop are offered.
+- **Reduce Motion is honoured by every animation, not by the three motion-heavy views alone.** An
+  implicit animation goes through `.motion(_:calm:value:)` (`Appearance.swift`: none, or the calm
+  fade given, under Reduce Motion), an explicit one is `withAnimation(reduceMotion ? nil : …)`, a
+  symbol effect is inactive and a content transition `.identity`, and a banner arrives by fading
+  rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
+  no settle wait.
 - **A closure a framework may call off the main thread is never formed on the main actor.** Swift 6
   makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
   queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in
@@ -525,7 +531,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   visualizer page each hold the tap without switching off the other's; a backdrop holds it only
   while visible, active and moving.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
-  the palette changes; **Low Power Mode** caps at 30 fps; an inactive or backgrounded scene, or a
+  the palette changes; **Low Power Mode** caps at 30 fps (the app field at 15); an inactive or backgrounded scene, or a
   view out of its window, draws nothing.
 - **The app background** is the same view with no track and an `ambience` strength
   (`BackdropView(track: nil, moving:, ambience:)`), as the `containerBackground(for: .navigation)` of every page (a clear one is drawn as the system's own, so a single view behind the `TabView` never shows; only pages in a window draw, and the clock is the wall clock so a pushed page starts in phase): the palette

@@ -7,6 +7,7 @@ struct ListenSheet: View {
     @Environment(Navigation.self) private var navigation
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var token = ""
 
     var body: some View {
@@ -28,7 +29,7 @@ struct ListenSheet: View {
                         Label(note, systemImage: "waveform")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .symbolEffect(.variableColor.iterative, isActive: listening.following == .listening)
+                            .symbolEffect(.variableColor.iterative, isActive: listening.following == .listening && !reduceMotion)
                     }
                 } footer: {
                     Text("Listens for the next song every \(Listening.followedEverySeconds) seconds while this stays open. Resonate pauses while it listens, so the microphone hears the room.")
@@ -142,7 +143,7 @@ struct ListenStageView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .animation(.smooth, value: stage)
+        .motion(.smooth, value: stage)
     }
 
     private func actions(_ song: HeardSong) -> some View {
@@ -178,6 +179,7 @@ struct ListenStageView: View {
 }
 
 struct ListenControl: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let listening: Listening
     let edge: CGFloat
 
@@ -189,7 +191,7 @@ struct ListenControl: View {
         } label: {
             Image(systemName: busy ? "waveform" : "ear")
                 .font(.system(size: edge * 0.38, weight: .medium))
-                .symbolEffect(.variableColor.iterative, isActive: recording)
+                .symbolEffect(.variableColor.iterative, isActive: recording && !reduceMotion)
                 .foregroundStyle(busy ? Color.white : Color.worn)
                 .frame(width: edge, height: edge)
                 .contentShape(.circle)

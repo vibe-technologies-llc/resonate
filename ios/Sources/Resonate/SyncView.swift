@@ -118,6 +118,7 @@ struct SyncView: View {
 
 struct SyncStatusSection: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let features = library.features
@@ -135,7 +136,7 @@ struct SyncStatusSection: View {
                     features.forceSync()
                 } label: {
                     Label(features.syncAskedAt == nil ? "Sync now" : "Syncing…", systemImage: "arrow.triangle.2.circlepath")
-                        .symbolEffect(.rotate, options: .repeat(.continuous), isActive: features.syncAskedAt != nil)
+                        .symbolEffect(.rotate, options: .repeat(.continuous), isActive: features.syncAskedAt != nil && !reduceMotion)
                 }
                 .disabled(!features.syncRuns || features.syncAskedAt != nil)
             }
@@ -149,6 +150,7 @@ struct SyncStatusSection: View {
 
 struct SyncStateRow: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let features = library.features
@@ -179,7 +181,7 @@ struct SyncStateRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .animation(.smooth, value: headline(features))
+        .motion(.smooth, value: headline(features))
     }
 
     private func headline(_ features: Features) -> String {
@@ -304,6 +306,7 @@ struct KnownDeviceRow: View {
 
 struct PairingSheet: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @State private var joining = ""
     @State private var confirmingJoin = false
@@ -336,7 +339,7 @@ struct PairingSheet: View {
                                     }
                                 }
                                 .contentShape(Rectangle())
-                                .onTapGesture { withAnimation(.smooth) { revealed.toggle() } }
+                                .onTapGesture { withAnimation(reduceMotion ? nil : .smooth) { revealed.toggle() } }
                                 .accessibilityLabel(revealed ? code : "Pairing code, hidden")
                                 .accessibilityHint(revealed ? "Hides the code" : "Shows the code")
                                 .accessibilityAddTraits(.isButton)

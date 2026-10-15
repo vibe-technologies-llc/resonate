@@ -13,6 +13,7 @@ struct MiniPlayer: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .subheadline) private var artworkEdge: CGFloat = 36
     @ScaledMetric(relativeTo: .subheadline) private var inlineArtworkEdge: CGFloat = 28
     let zoom: Namespace.ID
@@ -41,8 +42,8 @@ struct MiniPlayer: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentTransition(.opacity)
-                .animation(.smooth, value: track?.id)
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .motion(.smooth, value: track?.id)
             } else {
                 Spacer(minLength: 0)
             }
@@ -93,6 +94,7 @@ extension PlayClock {
 
 struct PlayButton: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let transport: Transport
     var large = false
     @State private var pressed = 0
@@ -106,7 +108,7 @@ struct PlayButton: View {
             Image(systemName: playingish ? "pause.fill" : "play.fill")
                 .font(large ? .system(size: 34, weight: .semibold) : .title3)
                 .frame(width: large ? 76 : 32, height: large ? 76 : 32)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
         .buttonStyle(.plain)
         .modifier(GlassWhen(enabled: large))
@@ -143,6 +145,7 @@ struct NowPlayingView: View {
     @Environment(Navigation.self) private var navigation
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var picked: PickedTracks?
@@ -221,6 +224,11 @@ struct NowPlayingView: View {
     }
 
     private func choose(_ target: PlayerMode) {
+        guard !reduceMotion else {
+            mode = target
+            settled = target == .artwork ? nil : target
+            return
+        }
         let coverMoves = (mode == .artwork) != (target == .artwork)
         guard coverMoves else {
             withAnimation(Self.arriving) {
@@ -283,7 +291,7 @@ struct MovingCover: View {
             .frame(width: drawn, height: drawn)
             .shadow(color: .black.opacity(0.3), radius: 28, y: 16)
             .scaleEffect(resting)
-            .animation(.spring(duration: 0.5, bounce: 0.25), value: playing)
+            .motion(.spring(duration: 0.5, bounce: 0.25), value: playing)
             .scaleEffect(slot.width / drawn)
             .offset(x: slot.midX - drawn / 2, y: slot.midY - drawn / 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -395,6 +403,7 @@ struct CompactTitles: View {
 }
 
 struct PlayerScrubber: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let nearEnoughMs: Double = 1500
     private static let holdAtMost: Duration = .seconds(1)
     private static let restingHeight: CGFloat = 7
@@ -433,7 +442,7 @@ struct PlayerScrubber: View {
                     .gesture(drag(across: width, of: duration, from: shown))
             }
             .frame(height: Self.touchHeight)
-            .animation(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
+            .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             HStack {
                 Text(clock(UInt64(shown)))
                 Spacer()
@@ -443,7 +452,7 @@ struct PlayerScrubber: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(grabbed ? .primary : .secondary)
-            .animation(.smooth, value: grabbed)
+            .motion(.smooth, value: grabbed)
         }
         .allowsHitTesting(library.loaded)
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
@@ -625,7 +634,7 @@ struct VolumeRow: View {
             }
             .frame(height: Self.touchHeight)
             .background { VolumeDriver(volume: volume).allowsHitTesting(false) }
-            .animation(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
+            .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
         }
         .accessibilityElement()
@@ -856,6 +865,7 @@ struct QueueList: View {
     private static let playingRow = "playing"
 
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let inPlayer: Bool
 
     var body: some View {
@@ -869,7 +879,7 @@ struct QueueList: View {
             .scrollContentBackground(inPlayer ? .hidden : .automatic)
             .onAppear { scroller.scrollTo(Self.playingRow, anchor: .top) }
             .onChange(of: library.currentQueueId) {
-                withAnimation(.smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
+                withAnimation(reduceMotion ? nil : .smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
             }
             .onChange(of: library.queue.isEmpty) {
                 scroller.scrollTo(Self.playingRow, anchor: .top)

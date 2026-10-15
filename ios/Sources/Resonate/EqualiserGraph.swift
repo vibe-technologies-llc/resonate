@@ -317,7 +317,7 @@ struct EqualiserGraph: View {
             .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))
             .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
             .scaleEffect(heldBand == index ? 1.25 : 1)
-            .animation(.snappy(duration: 0.15), value: heldBand == index)
+            .motion(.snappy(duration: 0.15), value: heldBand == index)
             .position(x: scale.x(band.frequencyHz), y: scale.y(curve.level(of: band)))
             .allowsHitTesting(false)
             .accessibilityElement()

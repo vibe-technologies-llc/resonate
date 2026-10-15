@@ -79,7 +79,8 @@ struct BackdropView: View {
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
         if reduceMotion || !moving { return .still }
-        return .flowing(framesPerSecond: lowPower || ambience != nil ? 30 : 60)
+        if ambience != nil { return .flowing(framesPerSecond: lowPower ? 15 : 30) }
+        return .flowing(framesPerSecond: lowPower ? 30 : 60)
     }
 
     private var wantsEnergy: Bool {

@@ -39,10 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] Reduce Motion is read only by `MovingCover`, the backdrop and the lyrics pane: Now Playing's
-  reshape spring, the mini player's title change and the symbol effects ignore it; the
-  *Background* footer says Low Power Mode slows the app field, which already draws at 30 fps
-  (`lowPower || ambience != nil ? 30 : 60`) either way
 - [M] Icon-only controls set no frame or content shape: the favourite heart, mini-player previous
   and next, shuffle and repeat, the filter token, the online song menu and *See all* are smaller
   than 44 pt; settings sliders (preamp, buffer) give VoiceOver a percentage, not dB or ms; white on

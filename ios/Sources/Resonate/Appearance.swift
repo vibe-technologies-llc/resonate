@@ -156,6 +156,23 @@ struct AppearanceView: View {
     }
 }
 
+private struct CalmedAnimation<Value: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let animation: Animation?
+    let calm: Animation?
+    let value: Value
+
+    func body(content: Content) -> some View {
+        content.animation(reduceMotion ? calm : animation, value: value)
+    }
+}
+
+extension View {
+    func motion<Value: Equatable>(_ animation: Animation?, calm: Animation? = nil, value: Value) -> some View {
+        modifier(CalmedAnimation(animation: animation, calm: calm, value: value))
+    }
+}
+
 struct BackgroundView: View {
     var body: some View {
         @Bindable var appearance = AppearanceState.shared
@@ -174,7 +191,7 @@ struct BackgroundView: View {
                     }
                 }
             } footer: {
-                Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion and Low Power Mode keep it still or slower.")
+                Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion keeps it still, and Low Power Mode slows it.")
             }
         }
         .navigationTitle("Background")

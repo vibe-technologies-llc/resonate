@@ -353,32 +353,37 @@ struct LiveSong<Content: View>: View {
 }
 
 struct StatusBanner: View {
+    private static let fade: Animation = .linear(duration: 0.12)
+
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let arrival: AnyTransition = reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
         VStack(spacing: 8) {
             if library.scanning {
                 ScanProgress()
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(arrival)
             }
             if let activity = library.features.syncActivity {
                 SyncProgress(activity: activity)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(arrival)
             }
             if let message = library.status {
                 StatusCard(message: message)
                     .id(message.serial)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(arrival)
             }
         }
-        .animation(.smooth, value: library.status)
-        .animation(.smooth, value: library.scanning)
-        .animation(.smooth, value: library.features.syncActivity == nil)
+        .motion(.smooth, calm: Self.fade, value: library.status)
+        .motion(.smooth, calm: Self.fade, value: library.scanning)
+        .motion(.smooth, calm: Self.fade, value: library.features.syncActivity == nil)
     }
 }
 
 struct SyncProgress: View {
     @Environment(Navigation.self) private var navigation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let activity: SyncActivity
 
     var body: some View {
@@ -404,7 +409,7 @@ struct SyncProgress: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
-                            .contentTransition(.numericText())
+                            .contentTransition(reduceMotion ? .identity : .numericText())
                     }
                 }
                 Spacer(minLength: 0)
@@ -438,6 +443,7 @@ struct SyncProgress: View {
 
 struct ScanProgress: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 12) {
@@ -445,7 +451,7 @@ struct ScanProgress: View {
             Text("Reading music folder… \(counted(library.scanned, "song"))")
                 .font(.footnote)
                 .monospacedDigit()
-                .contentTransition(.numericText())
+                .contentTransition(reduceMotion ? .identity : .numericText())
             Spacer(minLength: 0)
             Button("Stop") { library.stopScanning() }
                 .font(.footnote.weight(.semibold))

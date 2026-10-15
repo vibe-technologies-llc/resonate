@@ -518,12 +518,13 @@ struct StandardTrackMenus: ViewModifier {
 
 struct NowPlayingIndicator: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Image(systemName: "waveform")
             .font(.callout.weight(.semibold))
             .foregroundStyle(.tint)
-            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: library.transport == .playing)
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: library.transport == .playing && !reduceMotion)
             .accessibilityHidden(true)
     }
 }
