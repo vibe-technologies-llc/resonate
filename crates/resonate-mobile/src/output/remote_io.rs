@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select, unbounded};
 use objc2_audio_toolbox::{
     AURenderCallbackStruct, AudioComponentDescription, AudioComponentFindNext,
     AudioComponentInstanceDispose, AudioComponentInstanceNew, AudioOutputUnitStart,
@@ -39,6 +39,7 @@ const OUTPUT_BUS: u32 = 0;
 const STEREO_CHANNELS: u32 = 2;
 const FLOAT_BYTES: u32 = size_of::<f32>() as u32;
 const COMMAND_POLL: Duration = Duration::from_millis(10);
+const QUIET_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
 const UNIT_WITHIN: Duration = Duration::from_secs(3);
 const SHORTEST_DRAIN: Duration = Duration::from_millis(20);
 const MILLISECONDS_A_SECOND: f64 = 1000.0;
@@ -48,16 +49,21 @@ pub(crate) struct Routing {
     latency: AtomicU64,
     announce: Sender<SinkChange>,
     changes: Receiver<SinkChange>,
+    latency_moved: Sender<()>,
+    latency_moves: Receiver<()>,
 }
 
 impl Routing {
     pub(crate) fn new() -> Self {
         let (announce, changes) = unbounded();
+        let (latency_moved, latency_moves) = bounded(1);
         Self {
             rate: AtomicU32::new(SampleRate::HZ_48000.hz()),
             latency: AtomicU64::new(0),
             announce,
             changes,
+            latency_moved,
+            latency_moves,
         }
     }
 
@@ -74,7 +80,9 @@ impl Routing {
             return false;
         };
         let latency = latency_ms.max(0.0) * f64::from(rate.hz()) / MILLISECONDS_A_SECOND;
-        self.latency.store(latency as u64, Ordering::Relaxed);
+        if self.latency.swap(latency as u64, Ordering::Relaxed) != latency as u64 {
+            let _ = self.latency_moved.try_send(());
+        }
         let moved = self.rate.swap(rate.hz(), Ordering::Relaxed) != rate.hz();
         if moved {
             let _ = self.announce.send(SinkChange::Reformatted(OUTPUT));
@@ -358,10 +366,16 @@ fn serve(
         } else {
             drain_after = None;
         }
-        match asked.recv_timeout(COMMAND_POLL) {
-            Ok(StreamCommand::Close) | Err(RecvTimeoutError::Disconnected) => break,
-            Ok(StreamCommand::Drain) => draining = true,
-            Ok(StreamCommand::SetActive(active)) => {
+        let wait = if draining { COMMAND_POLL } else { QUIET_WAIT };
+        let command = select! {
+            recv(asked) -> command => Some(command),
+            recv(routing.latency_moves) -> _ => None,
+            default(wait) => None,
+        };
+        match command {
+            Some(Ok(StreamCommand::Close) | Err(_)) => break,
+            Some(Ok(StreamCommand::Drain)) => draining = true,
+            Some(Ok(StreamCommand::SetActive(active))) => {
                 let status = if active { unit.start() } else { unit.stop() };
                 if status != 0 {
                     let op = if active {
@@ -388,7 +402,7 @@ fn serve(
                 });
                 state = next;
             }
-            Err(RecvTimeoutError::Timeout) => {}
+            None => {}
         }
     }
 }
