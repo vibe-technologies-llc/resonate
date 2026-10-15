@@ -229,6 +229,22 @@ summary studies are persisted. A `Watch` cancels decoding. The live visualizer s
 engine tap only while visible and samples on a worker; it never involves Kotlin in the callback.
 The inspector probes the original document and displays both technical and tagged metadata.
 
+**Tags are written through the desktop's writer, at a path the front end opens** (`tagging.rs`).
+`FileTags` writes by path alone (staged copy, journal, read back: `library.md`'s *Writing the catalog
+back into the files*), so `edit_tags(songs, change)` takes each document as a `SongFile` (its URI and
+the path the front end resolved and holds open: iOS's security-scoped folder; Android's SAF gives no
+path, so Android offers none). `SongTags` is eleven text fields (`EDITABLE`: title, artist, album,
+album artist, genre, date, track and disc number and total, composer), each `None` to leave, blank to
+clear, else the value; a number must be a whole number above zero (`TagNumber`). Only the fields
+differing from what the file holds are written (`planned`); the file is read back and every field
+weighed (`TagsUnconfirmed`), then the row's names and numbers are set to what it now reads, the
+title falling back to the file name. Formats `FileTags::writes` refuses are `TagsUnwritable`
+(`tags_writable(name)` asks first). Each call is one undo step of what every written field held
+before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` names its URIs and
+`undo_tags(songs)` writes them back (`tags_written_reach_the_file_and_the_catalog_and_one_undo_puts_them_back`).
+`song_tags(id)` reads a song's fields through the document provider. `TagsWritten` counts written,
+unchanged and failed songs with the first failure's sentence.
+
 ## Searching the documents
 
 `search.rs` keeps every document row in memory, folded through `folded_letters` (the desktop's

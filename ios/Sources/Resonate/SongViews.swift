@@ -554,6 +554,9 @@ struct TrackMenu: View {
         }
         Section {
             Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+            if library.features.tagsWritable(track) {
+                Button("Edit tags", systemImage: "pencil") { navigation.tagging = TagEditing(tracks: [track]) }
+            }
             Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
             Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
             if let albumPage = track.albumPage {

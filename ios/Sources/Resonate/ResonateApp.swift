@@ -90,6 +90,7 @@ final class Navigation {
     var sleepTimer = false
     var filters = false
     var listening = false
+    var tagging: TagEditing?
     var songsGrouping = Grouping.songs
     var searchPlace = SearchPlace.library
 
@@ -170,6 +171,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $navigation.filters) {
             FilterSheet()
+        }
+        .sheet(item: $navigation.tagging) { editing in
+            TagEditorSheet(tracks: editing.tracks)
         }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()

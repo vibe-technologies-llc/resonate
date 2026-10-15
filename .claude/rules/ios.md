@@ -257,6 +257,18 @@ accessibility label. The output page holds `AVRoutePickerView`, since iOS owns t
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.
 
+## Tags
+
+- **A song's or an album's tags are edited in a sheet** (`TagEditor.swift`, `Navigation.tagging`):
+  *Edit tags* in a song's menu where `tags_writable` says its kind can be written, *Edit album tags*
+  in an album page's menu. One song shows all eleven fields; several hide title and track number,
+  show a field the songs share with its value and one they differ in as *Mixed* (changed only once
+  typed into), and read at most 500 songs. *Save* sends only the fields that moved. `Features.editTags`
+  resolves every URI to its path inside `Folders.withPaths`, which holds each folder's security
+  scope open for the whole write, and runs `edit_tags` on `Work.aside`; a notice counts what was
+  saved, a failure is reported with how many were left. Library tools offers *Undo tag edit* while
+  `tags_to_undo` names a step (`Features.undoTags`, through the same paths).
+
 ## Appearance
 
 - **The accent is the desktop's, chosen on Settings › Appearance** (`Appearance.swift`):

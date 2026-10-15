@@ -232,6 +232,17 @@ final class Folders: Documents, @unchecked Sendable {
         throw FolderFailure.refused(name)
     }
 
+    func withPaths<Value>(_ uris: [String], _ body: ([SongFile]) throws -> Value) throws -> Value {
+        var opened: [(URL, Bool)] = []
+        defer { for (url, scoped) in opened where scoped { url.stopAccessingSecurityScopedResource() } }
+        let files = try uris.map { uri in
+            let (url, scoped) = try resolved(uri)
+            opened.append((url, scoped))
+            return SongFile(uri: uri, path: url.path)
+        }
+        return try body(files)
+    }
+
     func delete(_ uri: String) {
         guard let (url, scoped) = try? resolved(uri) else { return }
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }

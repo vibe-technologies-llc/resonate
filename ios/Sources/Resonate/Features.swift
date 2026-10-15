@@ -94,6 +94,7 @@ final class Features {
     var transferring = false
     var syncAskedAt: Date?
     var syncLanding = 0
+    var tagsUndoable = false
 
     @ObservationIgnored private var inspectorRequest = 0
     @ObservationIgnored private var inspectorArtistRequest = 0
@@ -783,6 +784,48 @@ final class Features {
         work { [weak self] native in
             try await Work.aside { try native.keepLyricText(id: id, text: text) }
             self?.loadLyrics(id)
+        }
+    }
+
+    func songTags(_ ids: [UInt64]) async -> [SongTags] {
+        guard let native = try? await library.player() else { return [] }
+        return (try? await Work.aside { try ids.map { try native.songTags(id: $0) } }) ?? []
+    }
+
+    func tagsWritable(_ track: Track) -> Bool {
+        library.native?.tagsWritable(name: track.name) ?? false
+    }
+
+    func editTags(_ tracks: [Track], _ change: SongTags) {
+        let uris = tracks.map(\.uri)
+        let folders = library.folders
+        work { [weak self] native in
+            let told = try await Work.aside {
+                try folders.withPaths(uris) { try native.editTags(songs: $0, change: change) }
+            }
+            await self?.tagged(native, told, undoing: false)
+        }
+    }
+
+    func undoTags() {
+        let folders = library.folders
+        work { [weak self] native in
+            let told = try await Work.aside {
+                try folders.withPaths(native.tagsToUndo()) { try native.undoTags(songs: $0) }
+            }
+            await self?.tagged(native, told, undoing: true)
+        }
+    }
+
+    private func tagged(_ native: MobilePlayer, _ told: TagsWritten, undoing: Bool) async {
+        tagsUndoable = !native.tagsToUndo().isEmpty
+        if told.written > 0 { await library.refresh() }
+        if let failure = told.failure {
+            library.report(TagFailure(text: told.written > 0 ? "\(failure) (\(counted(Int(told.failed), "song")) left as they were)" : failure))
+        } else if told.written > 0 {
+            library.notice(undoing ? "Put back the tags of \(counted(Int(told.written), "song"))" : "Saved the tags of \(counted(Int(told.written), "song"))")
+        } else {
+            library.notice("Nothing to change")
         }
     }
 

@@ -19,6 +19,7 @@ mod queue_edit;
 mod room;
 mod search;
 mod sync;
+mod tagging;
 mod vanished;
 
 use std::{
@@ -132,6 +133,7 @@ pub struct MobilePlayer {
     routing: Arc<output::Routing>,
     enriching: enrichment::Enriching,
     room: room::Room,
+    tag_undo: tagging::TagUndo,
 }
 
 #[uniffi::export]
@@ -169,6 +171,7 @@ impl MobilePlayer {
             routing,
             enriching: enrichment::Enriching::default(),
             room: room::Room::under(PathBuf::from(&folder)),
+            tag_undo: tagging::TagUndo::default(),
         });
         let (ids, at, position) = this.catalog.resume()?;
         if !ids.is_empty() {

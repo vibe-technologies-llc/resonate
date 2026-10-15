@@ -199,6 +199,12 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Tags of this kind of file cannot be written")]
+    TagsUnwritable,
+    #[error("The file did not read back with the tags written")]
+    TagsUnconfirmed,
+    #[error("A track or disc number must be a whole number above zero")]
+    TagNumber,
     #[error("A room correction file must be an audio file")]
     ImpulseExtension,
     #[error("The room correction file is larger than 64 MiB")]

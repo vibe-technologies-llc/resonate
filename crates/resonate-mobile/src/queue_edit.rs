@@ -292,6 +292,7 @@ mod tests {
                 routing: Arc::new(Routing::new()),
                 enriching: crate::enrichment::Enriching::default(),
                 room: crate::room::Room::under(std::env::temp_dir()),
+                tag_undo: crate::tagging::TagUndo::default(),
             };
 
             let songs = SONGS

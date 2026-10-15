@@ -50,6 +50,11 @@ struct LibraryToolsView: View {
                     ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
                 }
                 RefreshArtworkRow()
+                if library.features.tagsUndoable {
+                    Button { library.features.undoTags() } label: {
+                        ToolRow(title: "Undo tag edit", detail: "Put back the tags you last saved", symbol: "arrow.uturn.backward")
+                    }
+                }
             }
             Section {
                 NavigationLink(value: current.map { _ in Destination.lyrics(nil) }) {

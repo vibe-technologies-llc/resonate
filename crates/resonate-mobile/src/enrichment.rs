@@ -2260,6 +2260,7 @@ mod tests {
             routing: Arc::new(crate::output::Routing::new()),
             enriching: Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
+            tag_undo: crate::tagging::TagUndo::default(),
         }
     }
 

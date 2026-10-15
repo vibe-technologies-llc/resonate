@@ -427,6 +427,7 @@ struct CollectionMenu: View {
     @Environment(Navigation.self) private var navigation
     let tracks: [Track]
     var artist: String?
+    var editsTags = false
     @State private var choosingPlaylist = false
     @State private var queued = 0
 
@@ -436,6 +437,11 @@ struct CollectionMenu: View {
             if let artist, !artist.isEmpty {
                 Section {
                     Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
+                }
+            }
+            if editsTags {
+                Section {
+                    Button("Edit album tags", systemImage: "pencil") { navigation.tagging = TagEditing(tracks: tracks) }
                 }
             }
         }
@@ -537,7 +543,7 @@ struct AlbumView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(shownTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist) }
+        .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist, editsTags: true) }
         .task(id: "\(key):\(library.collectionGeneration)") { await load() }
     }
 
