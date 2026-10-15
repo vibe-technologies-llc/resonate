@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] A release build aborts on a panic (`panic = "abort"`, `Cargo.toml`) where UniFFI's
-  `catch_unwind` in a debug build turns it into an error: any panic on a listener's file or
-  catalog in a boundary call kills the app
 - [S] `refreshChangedArt` reads `known` after its await: two overlapping first calls (launch,
   `scanned`, a landing, an enrichment poll) make the second ask from 0 as known and evict every
   picture ever changed, bumping `artGenerations` so every visible `ArtworkView` decodes again

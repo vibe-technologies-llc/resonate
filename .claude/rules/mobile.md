@@ -27,6 +27,15 @@ unit**: `output/remote_io.rs` creates, configures and disposes a RemoteIO unit t
 render callback. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
+## A panic is an error on the phones
+
+The workspace's release profile aborts on a panic, which is right for the desktop binary and wrong
+across the boundary: UniFFI's `catch_unwind` turns a panic in an exported call (a listener's
+corrupt file, a catalog row nobody foresaw) into an error the app shows, but only if the library
+unwinds. Both `ios/build-native.py` and `android/build-native.py` therefore build `resonate-mobile`
+with `CARGO_PROFILE_RELEASE_PANIC=unwind`, so a release build and a debug build fail alike. The
+render callbacks stay `extern "C"` and abort on a panic, as an unwind may not cross them.
+
 ## An error is the sentence the app shows
 
 `Error` is `flat_error`, so a front end sees its `Display` alone: a variant a listener can meet is

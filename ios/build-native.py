@@ -101,6 +101,7 @@ environment.update(
     CARGO_TARGET_DIR=str(target),
     RUSTFLAGS="",
     CARGO_PROFILE_DEV_DEBUG="0",
+    CARGO_PROFILE_RELEASE_PANIC="unwind",
     SDKROOT=str(sdk),
     IPHONEOS_DEPLOYMENT_TARGET=DEPLOYMENT_TARGET,
 )

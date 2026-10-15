@@ -44,6 +44,7 @@ for triple, abi in [("aarch64-linux-android", "arm64-v8a"), ("x86_64-linux-andro
     command = [cargo, "build", "--locked", "-p", "resonate-mobile", "--lib", "--target", triple]
     if args.profile == "release":
         native["CARGO_PROFILE_RELEASE_STRIP"] = "debuginfo"
+        native["CARGO_PROFILE_RELEASE_PANIC"] = "unwind"
         command.append("--release")
     run(command, native)
     destination = output / "jniLibs" / abi
