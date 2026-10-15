@@ -135,6 +135,8 @@ enum PlayerMode {
 
 struct NowPlayingView: View {
     private static let cover = "cover"
+    private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
+    private static let arriving: Animation = .easeOut(duration: 0.2)
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -142,6 +144,7 @@ struct NowPlayingView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Namespace private var shared
     @State private var mode = PlayerMode.artwork
+    @State private var settled: PlayerMode?
     @State private var choosingPlaylist = false
 
     var body: some View {
@@ -183,7 +186,7 @@ struct NowPlayingView: View {
             TransportRow()
             SleepCountdown()
             VolumeRow()
-            PlayerModes(mode: $mode)
+            PlayerModes(mode: mode, choose: choose)
             Spacer(minLength: 0)
         }
     }
@@ -192,19 +195,43 @@ struct NowPlayingView: View {
         VStack(spacing: 16) {
             CompactTitles(track: track, cover: Self.cover, shared: shared)
                 .padding(.top, 8)
-            Group {
-                switch mode {
-                case .lyrics: LyricsPane(track: track, compact: true)
-                case .queue, .artwork: UpNextList()
+            ZStack {
+                if settled == mode {
+                    focusedContent(track).transition(.opacity)
                 }
             }
-            .frame(maxHeight: .infinity)
-            .transition(.opacity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             PlayerScrubber()
             TransportRow()
-            PlayerModes(mode: $mode)
+            PlayerModes(mode: mode, choose: choose)
         }
         .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func focusedContent(_ track: Track?) -> some View {
+        switch mode {
+        case .lyrics: LyricsPane(track: track, compact: true)
+        case .queue, .artwork: UpNextList()
+        }
+    }
+
+    private func choose(_ target: PlayerMode) {
+        let coverMoves = (mode == .artwork) != (target == .artwork)
+        guard coverMoves else {
+            withAnimation(Self.arriving) {
+                mode = target
+                settled = target
+            }
+            return
+        }
+        settled = nil
+        withAnimation(Self.reshaping, completionCriteria: .logicallyComplete) {
+            mode = target
+        } completion: {
+            guard mode == target, target != .artwork else { return }
+            withAnimation(Self.arriving) { settled = target }
+        }
     }
 }
 
@@ -525,44 +552,102 @@ struct SleepCountdown: View {
 }
 
 struct VolumeRow: View {
+    private static let restingHeight: CGFloat = 7
+    private static let grabbedHeight: CGFloat = 14
+    private static let touchHeight: CGFloat = 34
+    private static let step: Float = 1 / 16
+
+    @State private var volume = SystemVolumeLevel()
+    @State private var dragging: Float?
+    @State private var grabbedAt: Float?
+
     var body: some View {
+        let shown = dragging ?? volume.level
+        let grabbed = dragging != nil
+
         HStack(spacing: 12) {
             Image(systemName: "speaker.fill").foregroundStyle(.secondary).accessibilityHidden(true)
-            SystemVolume().frame(height: 34)
+            GeometryReader { space in
+                let width = max(space.size.width, 1)
+                Capsule()
+                    .fill(.primary.opacity(0.16))
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
+                            .frame(width: width * CGFloat(shown))
+                    }
+                    .clipShape(Capsule())
+                    .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(drag(across: width, from: shown))
+            }
+            .frame(height: Self.touchHeight)
+            .background { VolumeDriver(volume: volume).allowsHitTesting(false) }
+            .animation(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
         }
+        .accessibilityElement()
+        .accessibilityLabel("Volume")
+        .accessibilityValue(Text(Double(shown), format: .percent.precision(.fractionLength(0))))
+        .accessibilityAdjustableAction { direction in
+            let step = direction == .increment ? Self.step : -Self.step
+            volume.set(min(max(shown + step, 0), 1))
+        }
+        .onAppear { volume.watch() }
+        .onDisappear { volume.stopWatching() }
+    }
+
+    private func drag(across width: CGFloat, from shown: Float) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { change in
+                let start = grabbedAt ?? shown
+                if grabbedAt == nil { grabbedAt = start }
+                let moved = Float(change.translation.width / width)
+                let wanted = min(max(start + moved, 0), 1)
+
+                dragging = wanted
+                volume.set(wanted)
+            }
+            .onEnded { _ in
+                grabbedAt = nil
+                dragging = nil
+            }
     }
 }
 
-struct SystemVolume: UIViewRepresentable {
-    func makeUIView(context: Context) -> CentredVolume {
-        CentredVolume()
+@MainActor
+@Observable
+final class SystemVolumeLevel {
+    private(set) var level: Float = AVAudioSession.sharedInstance().outputVolume
+    @ObservationIgnored weak var driver: MPVolumeView?
+    @ObservationIgnored private var watching: NSKeyValueObservation?
+
+    func watch() {
+        guard watching == nil else { return }
+        level = AVAudioSession.sharedInstance().outputVolume
+        watching = Self.observing { [weak self] heard in self?.level = heard }
     }
 
-    func updateUIView(_ uiView: CentredVolume, context: Context) {}
-}
-
-final class CentredVolume: UIView {
-    private let volume = MPVolumeView(frame: .zero)
-
-    init() {
-        super.init(frame: .zero)
-        volume.setValue(false, forKey: "showsRouteButton")
-        addSubview(volume)
+    func stopWatching() {
+        watching?.invalidate()
+        watching = nil
     }
 
-    required init?(coder: NSCoder) {
-        nil
+    func set(_ wanted: Float) {
+        level = wanted
+        guard let slider = driver.flatMap(Self.slider(in:)) else { return }
+        slider.setValue(wanted, animated: false)
+        slider.sendActions(for: .valueChanged)
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        volume.frame = bounds
-        volume.layoutIfNeeded()
-        guard let slider = Self.slider(in: volume) else { return }
-        let track = slider.convert(slider.bounds, to: self)
-
-        volume.frame = bounds.offsetBy(dx: 0, dy: bounds.midY - track.midY)
+    nonisolated private static func observing(
+        _ heard: @escaping @MainActor @Sendable (Float) -> Void
+    ) -> NSKeyValueObservation {
+        AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { _, change in
+            guard let value = change.newValue else { return }
+            Task { @MainActor in heard(value) }
+        }
     }
 
     private static func slider(in view: UIView) -> UISlider? {
@@ -574,8 +659,28 @@ final class CentredVolume: UIView {
     }
 }
 
+struct VolumeDriver: UIViewRepresentable {
+    private static let barelyShown: CGFloat = 0.01
+
+    let volume: SystemVolumeLevel
+
+    func makeUIView(context: Context) -> MPVolumeView {
+        let driver = MPVolumeView(frame: .zero)
+        driver.setValue(false, forKey: "showsRouteButton")
+        driver.alpha = Self.barelyShown
+        driver.isUserInteractionEnabled = false
+        volume.driver = driver
+        return driver
+    }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {
+        volume.driver = uiView
+    }
+}
+
 struct PlayerModes: View {
-    @Binding var mode: PlayerMode
+    let mode: PlayerMode
+    let choose: (PlayerMode) -> Void
     @State private var switched = 0
 
     var body: some View {
@@ -596,9 +701,7 @@ struct PlayerModes: View {
         let active = mode == target
         return Button(title, systemImage: symbol) {
             switched += 1
-            withAnimation(.spring(duration: 0.45, bounce: 0.15)) {
-                mode = active ? .artwork : target
-            }
+            choose(active ? .artwork : target)
         }
         .labelStyle(.iconOnly)
         .font(.title3)
@@ -671,10 +774,6 @@ struct QueueView: View {
         .navigationTitle("Queue")
         .refreshable { await library.rereadQueue() }
         .toolbar {
-            if library.loaded {
-                ToolbarItem(placement: .topBarTrailing) { SleepTimerButton() }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            }
             if !library.queue.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Clear", systemImage: "trash") { clearing = true }

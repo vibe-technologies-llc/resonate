@@ -122,6 +122,9 @@ row alone (Apple Music's Clear empties Up Next), everything where nothing is cur
 reads the queue's revision and is refused `QueueChanged` if it moved before the command lands; an
 unknown queue id is `UnknownQueueRow`, a row or gap outside the queue `QueueRowOutOfRange`, a
 closed player `Closed`. An edit waits for the engine's answer, so the next `queue()` shows it.
+The snapshot's `current` carries the playing row's `queue_id`, as `queue()` does, so a front end
+splits history from up next by row, a repeated song included
+(`the_playing_song_names_its_queue_row_as_the_queue_does`).
 
 ## Appearance and playback tools
 

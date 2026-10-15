@@ -367,6 +367,10 @@ impl MobilePlayer {
                     document_uri(&item.location)
                         .ok()
                         .and_then(|uri| self.catalog.track_uri(&uri).ok())
+                        .map(|mut track| {
+                            track.queue_id = Some(item.id.get());
+                            track
+                        })
                 })
         });
         let duration_ms = state

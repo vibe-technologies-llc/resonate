@@ -14,6 +14,7 @@ struct ArtworkLoad: Equatable {
 
 struct ArtworkView: View {
     private static let arrival: TimeInterval = 0.2
+    private static let settlesWithin: Duration = .milliseconds(300)
 
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -22,6 +23,7 @@ struct ArtworkView: View {
     var circle = false
     @State private var image: UIImage?
     @State private var bucket: ArtworkBucket?
+    @State private var wanted: ArtworkBucket?
 
     init(track: Track?, corner: CGFloat = 12, circle: Bool = false) {
         self.track = track
@@ -47,11 +49,10 @@ struct ArtworkView: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             max(proxy.size.width, proxy.size.height)
         } action: { edge in
-            let fitting = ArtworkBucket.fitting(points: edge, scale: displayScale)
-            bucket = fitting
-            if image == nil, let held = held(at: fitting) { image = held }
+            measured(ArtworkBucket.fitting(points: edge, scale: displayScale))
         }
         .task(id: load) { await show(load) }
+        .task(id: wanted) { await grow(to: wanted) }
         .accessibilityHidden(true)
     }
 
@@ -70,6 +71,33 @@ struct ArtworkView: View {
             portraitGeneration: portraitMbid == nil ? 0 : features.portraitGeneration,
             bucket: bucket
         )
+    }
+
+    private func measured(_ fitting: ArtworkBucket) {
+        guard let shown = bucket, image != nil else {
+            bucket = fitting
+            wanted = nil
+            if image == nil, let held = held(at: fitting) { image = held }
+            return
+        }
+        guard fitting.rawValue > shown.rawValue else {
+            wanted = nil
+            return
+        }
+        if let held = held(at: fitting) {
+            bucket = fitting
+            wanted = nil
+            image = held
+        } else {
+            wanted = fitting
+        }
+    }
+
+    private func grow(to target: ArtworkBucket?) async {
+        guard let target else { return }
+        try? await Task.sleep(for: Self.settlesWithin)
+        guard !Task.isCancelled else { return }
+        bucket = target
     }
 
     private func held(at bucket: ArtworkBucket) -> UIImage? {

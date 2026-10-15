@@ -454,6 +454,33 @@ mod tests {
     }
 
     #[test]
+    fn the_playing_song_names_its_queue_row_as_the_queue_does() {
+        let harness = Harness::new();
+        harness.resumed("abca", 0, 400);
+        let ids = harness.queue_ids();
+
+        let resumed = harness.settled(|snapshot| snapshot.current.is_some());
+
+        assert_eq!(
+            resumed.current.and_then(|current| current.queue_id),
+            Some(ids[0])
+        );
+
+        harness.player.next().expect("a skip");
+        let skipped = harness.settled(|snapshot| {
+            snapshot
+                .current
+                .as_ref()
+                .is_some_and(|current| current.id == harness.song('b').id)
+        });
+
+        assert_eq!(
+            skipped.current.and_then(|current| current.queue_id),
+            Some(ids[1])
+        );
+    }
+
+    #[test]
     fn an_empty_queue_takes_what_is_queued_paused_on_its_first_row() {
         let harness = Harness::new();
 

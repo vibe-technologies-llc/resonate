@@ -387,12 +387,6 @@ struct LibraryToolbar: ToolbarContent {
     @Environment(Navigation.self) private var navigation
 
     var body: some ToolbarContent {
-        if library.loaded {
-            ToolbarItem(placement: .topBarTrailing) {
-                SleepTimerButton()
-            }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis") {
                 Button("Add music folder", systemImage: "folder.badge.plus") {
@@ -409,18 +403,5 @@ struct LibraryToolbar: ToolbarContent {
                 }
             }
         }
-    }
-}
-
-struct SleepTimerButton: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-
-    var body: some View {
-        let running = library.snapshot?.sleep != nil
-        Button("Sleep timer", systemImage: running ? "moon.zzz.fill" : "moon.zzz") {
-            navigation.sleepTimer = true
-        }
-        .accessibilityValue(running ? "On" : "Off")
     }
 }

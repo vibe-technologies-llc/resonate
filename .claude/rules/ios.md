@@ -173,11 +173,19 @@ bottom ran through the title and artist, since the system fixes the accessory's 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
   release and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
-  Repeat cycles off, all, one. Volume is the system's (`MPVolumeView`, its route button hidden).
-  The glass row toggles two modes inside the cover: Lyrics (`NowPlayingLyrics`, the compact
-  `LyricsPane`) and Up next, each shrinking the artwork into a 56 pt header row through
-  `matchedGeometryEffect`; sleep, equaliser, visualizer and output sit in the More menu. At
-  accessibility text sizes the artwork layout scrolls.
+  Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
+  capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
+  `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
+  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO, built `nonisolated`)
+  and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
+  (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
+  The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
+  each shrinking the artwork into a 56 pt header row through `matchedGeometryEffect`. The pane or
+  list is mounted only once that spring is logically complete (`NowPlayingView.settled`) and
+  dropped before the cover grows back, so building a `List` or the lyric timeline never competes
+  with the cover's frames; Lyrics to Up next crossfades at once, the cover staying put. Sleep,
+  equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
+  (Settings has its row). At accessibility text sizes the artwork layout scrolls.
 - **The queue** splits History, Now playing and Up next around the playing row and scrolls to it;
   empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
@@ -389,7 +397,10 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   its art changes. **A held picture shows in the frame the view appears**: `ArtworkView` asks
   `cachedArtwork`/`cachedPortrait` (a synchronous read of the same cache) as soon as it knows its
   bucket and before any await; only a picture that had to be decoded fades in (0.2 s), so rows
-  scrolled back into view never pop. `ShownArtwork` (the last picture per song, for a view's first
+  scrolled back into view never pop. **A view's bucket only grows, and grows once it settles**: a
+  smaller measure keeps the picture shown, a larger one already held swaps at once, and one that
+  must be decoded waits 300 ms of steady size, so a cover zooming between Now Playing's layouts
+  does not decode at every bucket it passes. `ShownArtwork` (the last picture per song, for a view's first
   frame before it is measured) keeps 64 MiB. A circular `ArtworkView`
   (`portraitOf:`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture.
