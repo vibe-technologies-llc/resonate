@@ -32,6 +32,7 @@ final class Features {
     private static let syncAnswersAfter: TimeInterval = 1.5
     private static let syncGivesUpAfter: TimeInterval = 45
     private static let landingPause: TimeInterval = 60
+    private static let landingTriesAtMost = 3
     private static let visualizerFrame: Duration = .milliseconds(33)
     nonisolated private static let wantedChunk = 500
 
@@ -112,7 +113,7 @@ final class Features {
             downloads.foregroundChanged(foreground)
         }
     }
-    @ObservationIgnored private var landingRefusedUntil = Date.distantPast
+    @ObservationIgnored private var landingRefused: [UInt64: RefusedLanding] = [:]
     @ObservationIgnored private var leftAt: Date?
 
     init(library: Library) {
@@ -239,6 +240,21 @@ final class Features {
             saveSync(config)
         } catch {
             library.report(error)
+        }
+    }
+
+    func forgetSyncDevices(_ devices: [SyncedDevice]) {
+        let ids = devices.map(\.id)
+        let names = devices.map(\.name)
+        guard !ids.isEmpty else { return }
+        work { [weak self] native in
+            let status = try await Work.aside {
+                for id in ids { _ = try native.syncForgetDevice(id: id) }
+                return native.syncStatus()
+            }
+            guard let self else { return }
+            if syncStatus != status { syncStatus = status }
+            library.notice(names.count == 1 ? "Removed \(names[0])" : "Removed \(counted(names.count, "device"))")
         }
     }
 
@@ -478,16 +494,19 @@ final class Features {
     }
 
     private func landReceived(_ native: MobilePlayer, _ waiting: [ReceivedSong]) async -> Int {
-        guard Date() >= landingRefusedUntil else { return 0 }
         guard let folder = writableFolder(syncFolder) else {
             syncNotice = "Add a music folder with write access to keep songs from your devices"
             return 0
         }
         let folders = library.folders
+        let now = Date()
+        let still = Set(waiting.map(\.id))
+        landingRefused = landingRefused.filter { still.contains($0.key) }
+        let due = waiting.filter { (landingRefused[$0.id]?.until ?? .distantPast) <= now }
         var landed = 0
-        syncLanding = waiting.count
+        syncLanding = due.count
         defer { syncLanding = 0 }
-        for received in waiting {
+        for received in due {
             guard !Task.isCancelled else { return landed }
             let name = received.name
             var created: String?
@@ -499,18 +518,18 @@ final class Features {
                 created = nil
                 settings.removeObject(forKey: "unfinished-sync-landing")
                 landed += 1
-                syncLanding = waiting.count - landed
+                landingRefused[received.id] = nil
             } catch {
                 if let created {
                     folders.delete(created)
                     settings.removeObject(forKey: "unfinished-sync-landing")
                 }
-                landingRefusedUntil = Date().addingTimeInterval(Self.landingPause)
+                await refuseLanding(native, received.id)
                 let explanation = explained(error)
                 if explanation != syncNotice { library.report(error) }
                 syncNotice = explanation
-                break
             }
+            syncLanding = max(syncLanding - 1, 0)
         }
         if landed > 0 {
             syncNotice = nil
@@ -520,6 +539,16 @@ final class Features {
             enrichment.begin()
         }
         return landed
+    }
+
+    private func refuseLanding(_ native: MobilePlayer, _ id: UInt64) async {
+        let tries = (landingRefused[id]?.tries ?? 0) + 1
+        guard tries >= Self.landingTriesAtMost else {
+            landingRefused[id] = RefusedLanding(until: Date().addingTimeInterval(Self.landingPause), tries: tries)
+            return
+        }
+        landingRefused[id] = nil
+        _ = try? await Work.aside { try native.syncRefuseReceived(id: id) }
     }
 
     func artGeneration(of id: UInt64) -> Int {
@@ -1119,4 +1148,9 @@ final class Features {
             _ = try? await Work.aside { try native.visualizer(enabled: false) }
         }
     }
+}
+
+struct RefusedLanding {
+    let until: Date
+    let tries: Int
 }

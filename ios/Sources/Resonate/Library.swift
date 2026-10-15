@@ -861,9 +861,19 @@ final class Library {
         scanTask?.cancel()
         features.stopForErasing()
         let opened = native
+        let documents = folders
         Task {
-            if let opened { _ = try? await Work.inOrder { try opened.shutdown() } }
-            _ = try? await Work.aside { Erasure.everything() }
+            let songs: [String]
+            if let opened {
+                songs = (try? await Work.inOrder { try opened.songUris() }) ?? []
+                _ = try? await Work.inOrder { try opened.shutdown() }
+            } else {
+                songs = []
+            }
+            _ = try? await Work.aside {
+                songs.forEach(documents.delete)
+                Erasure.everything()
+            }
             exit(0)
         }
     }

@@ -528,14 +528,21 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SongFiled {
+    Filed(PathBuf),
+    Nowhere,
+    Refused,
+}
+
 pub(crate) fn file_song(
     library: &Library,
     recording: &Recording,
     extension: &str,
     reader: &mut dyn Read,
-) -> Result<Option<PathBuf>> {
+) -> Result<SongFiled> {
     let Some(into) = library.delivering_into() else {
-        return Ok(None);
+        return Ok(SongFiled::Nowhere);
     };
     let Some(folder) = into
         .path
@@ -543,7 +550,7 @@ pub(crate) fn file_song(
         .ok()
         .filter(|folder| folder.is_dir())
     else {
-        return Ok(None);
+        return Ok(SongFiled::Nowhere);
     };
     let root = library
         .root_reaching(&folder)?
@@ -560,7 +567,7 @@ pub(crate) fn file_song(
         extension: Some(extension),
     };
     let Some(relative) = into.layout.render(&named, Naming::of(&folder)) else {
-        return Ok(None);
+        return Ok(SongFiled::Refused);
     };
     let whole = folder.join(relative);
     match filed::landed_beside(library, &whole, reader) {
@@ -568,12 +575,12 @@ pub(crate) fn file_song(
             if let Err(error) = library.scan(scanning(root)).and_then(PassHandle::join) {
                 tracing::warn!(%error, "the folder a song from another device was filed in could not be read yet");
             }
-            Ok(Some(path))
+            Ok(SongFiled::Filed(path))
         }
         Err(Unfiled::Catalog(error)) => Err(error),
         Err(unfiled) => {
             tracing::warn!(?unfiled, path = %whole.display(), "a song from another device could not be filed");
-            Ok(None)
+            Ok(SongFiled::Refused)
         }
     }
 }

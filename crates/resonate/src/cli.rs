@@ -174,7 +174,7 @@ pub struct SyncArgs {
     #[arg(
         long,
         value_name = "CODE",
-        conflicts_with_all = ["leave", "fetch", "handoff"],
+        conflicts_with_all = ["leave", "forget", "fetch", "handoff"],
         help = "Join the devices whose pairing code this is, leaving the ones this device synced \
                 with"
     )]
@@ -182,10 +182,18 @@ pub struct SyncArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["fetch", "handoff"],
+        conflicts_with_all = ["forget", "fetch", "handoff"],
         help = "Leave the devices this one synchronises with; it starts afresh with a new code"
     )]
     pub leave: bool,
+
+    #[arg(
+        long,
+        value_name = "DEVICE",
+        conflicts_with_all = ["fetch", "handoff"],
+        help = "Take a device that is away off every device's list; one that syncs again comes back"
+    )]
+    pub forget: Option<String>,
 
     #[arg(
         long,

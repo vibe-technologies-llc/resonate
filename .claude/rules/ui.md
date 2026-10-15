@@ -1305,8 +1305,11 @@ is never named.
   `run` winds it down (`wound_down`: cancel, wait up to `WIND_DOWN_WITHIN` 10 s) before the library's
   own pass. A file being copied is `.<name>.<pid>.resonate-part` until renamed into place whole.
 - **Device sync = two Online groups and three gestures** (`views/settings/sync.rs`, `sync.md`).
-  *Device sync*: switch, the pairing code and who shares it, *Join with a code* (read by
-  `Syncing::reads_as_a_code`; blank does nothing), device name, server; *Songs between devices*: the
+  *Device sync*: switch, the pairing code, *Copy*, *Sync now* and *Regenerate pairing code* (armed
+  by the first press, `regenerating_the_code`; the second clears `sync-key` for the next start and
+  leaves a note until then), a row per other device (`reading` of its name and standing) with
+  *Remove* on one that is away (`Syncing::forget` by `SyncedDevice::id`), *Join with a code* (read
+  by `Syncing::reads_as_a_code`; blank does nothing), device name, server; *Songs between devices*: the
   three `sync-songs` switches. Each writes `ResonateApp::synchronised` and the file for the next
   start; a reset never forgets the code. The `Syncing` seam on `Stored` (absent without the `sync`
   feature) answers the rest: a playlist's menu offers *Fetch N missing songs from* each online

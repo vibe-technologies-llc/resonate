@@ -43,6 +43,7 @@ pub enum SyncOp {
     Missing,
     Keep,
     Handoffs,
+    Forget,
 }
 
 #[derive(Clone, Copy, Debug)]

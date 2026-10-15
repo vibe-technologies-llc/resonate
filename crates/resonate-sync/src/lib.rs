@@ -17,8 +17,8 @@ pub use crate::{
         RemoteListen, Resumed,
     },
     change::{
-        Change, Clock, DeviceNote, FavouriteNote, Handoff, Listen, Platform, PlaylistBody,
-        PlaylistKey, PlaylistNote, Stamp,
+        Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
+        PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{Derived, DeviceId, SpaceId, SyncKey, Token},

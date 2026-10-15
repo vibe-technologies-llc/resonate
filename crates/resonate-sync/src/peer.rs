@@ -27,6 +27,8 @@ pub const DIAL_WITHIN: Duration = Duration::from_secs(8);
 const CHUNK_BYTES: usize = 64 * 1024;
 const HELD_PER_FRAME: usize = 512;
 const CHUNKS_IN_FLIGHT: usize = 8;
+const NOTED_EXTENSION: &str = "from";
+pub const A_FETCH_GOES_QUIET_AFTER: Duration = Duration::from_secs(30);
 
 pub async fn dialled(
     endpoint: &Endpoint,
@@ -275,14 +277,68 @@ pub async fn fetch(
     staged: &Path,
     received: impl Fn(u64, u64),
 ) -> Result<Fetched> {
-    let offset = fs::metadata(staged)
+    let noted = staged.with_extension(NOTED_EXTENSION);
+    let offset = resumable(staged, &noted, device).await;
+    if let Some(fetched) = fetched_from(
+        connection, device, recording, staged, &noted, offset, &received,
+    )
+    .await?
+    {
+        return Ok(fetched);
+    }
+    fetched_from(connection, device, recording, staged, &noted, 0, &received)
+        .await?
+        .ok_or(Error::Missing(device))
+}
+
+async fn resumable(staged: &Path, noted: &Path, device: DeviceId) -> u64 {
+    let from_here = fs::read_to_string(noted).await.ok().is_some_and(|note| {
+        note.split_once(' ')
+            .is_some_and(|(from, _)| from == device.to_string())
+    });
+    if !from_here {
+        let _ = fs::remove_file(staged).await;
+        let _ = fs::remove_file(noted).await;
+        return 0;
+    }
+    fs::metadata(staged)
         .await
         .map(|metadata| metadata.len())
-        .unwrap_or_default();
-    let (mut send, mut recv) = connection
-        .open_bi()
+        .unwrap_or_default()
+}
+
+async fn noted_size(noted: &Path) -> Option<u64> {
+    let note = fs::read_to_string(noted).await.ok()?;
+    note.split_once(' ')?.1.trim().parse().ok()
+}
+
+async fn quietly_short<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
+    timeout(A_FETCH_GOES_QUIET_AFTER, waiting)
         .await
-        .map_err(|source| Error::Connection(Box::new(source)))?;
+        .unwrap_or_else(|_| {
+            Err(Error::stream(
+                StreamOp::Read,
+                std::io::Error::from(std::io::ErrorKind::TimedOut),
+            ))
+        })
+}
+
+async fn fetched_from(
+    connection: &Connection,
+    device: DeviceId,
+    recording: &Recording,
+    staged: &Path,
+    noted: &Path,
+    offset: u64,
+    received: &impl Fn(u64, u64),
+) -> Result<Option<Fetched>> {
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
     let request = ToPeer::Fetch {
         recording: recording.clone(),
         offset,
@@ -290,7 +346,7 @@ pub async fn fetch(
     send_frame(&mut send, &request.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
-    let Some(header) = read_frame(&mut recv).await? else {
+    let Some(header) = quietly_short(read_frame(&mut recv)).await? else {
         return Err(Error::Missing(device));
     };
     let (size, extension) = match FromPeer::decoded(&header)? {
@@ -303,6 +359,15 @@ pub async fn fetch(
             return Err(Error::Missing(device));
         }
     };
+    if offset > 0 && noted_size(noted).await != Some(size) {
+        let _ = recv.stop(0_u32.into());
+        let _ = fs::remove_file(staged).await;
+        let _ = fs::remove_file(noted).await;
+        return Ok(None);
+    }
+    fs::write(noted, format!("{device} {size}"))
+        .await
+        .map_err(|source| file_failed(FileOp::Stage, noted, source))?;
 
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -313,10 +378,12 @@ pub async fn fetch(
     let mut have = offset;
     let mut chunk = vec![0; CHUNK_BYTES];
     loop {
-        let read = recv
-            .read(&mut chunk)
-            .await
-            .map_err(|source| Error::stream(StreamOp::Read, source))?;
+        let read = quietly_short(async {
+            recv.read(&mut chunk)
+                .await
+                .map_err(|source| Error::stream(StreamOp::Read, source))
+        })
+        .await?;
         let Some(read) = read else {
             break;
         };
@@ -332,6 +399,7 @@ pub async fn fetch(
     file.sync_all()
         .await
         .map_err(|source| file_failed(FileOp::Write, staged, source))?;
+    let _ = fs::remove_file(noted).await;
     if have != size {
         let _ = fs::remove_file(staged).await;
         return Err(Error::stream(
@@ -339,10 +407,10 @@ pub async fn fetch(
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
         ));
     }
-    Ok(Fetched {
+    Ok(Some(Fetched {
         staged: staged.to_path_buf(),
         extension,
-    })
+    }))
 }
 
 fn file_failed(op: FileOp, path: &Path, source: std::io::Error) -> Error {
@@ -359,4 +427,47 @@ pub async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|_| Error::Stopped)?
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, process};
+
+    use super::*;
+
+    fn staged_in(name: &str) -> PathBuf {
+        let folder = env::temp_dir().join(format!("resonate-peer-{name}-{}", process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder");
+        folder.join("song.part")
+    }
+
+    #[tokio::test]
+    async fn a_partial_is_resumed_only_from_the_device_it_came_from() {
+        let staged = staged_in("resumed");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+        let sender = DeviceId([1; 16]);
+        let other = DeviceId([2; 16]);
+        std::fs::write(&staged, [0_u8; 100]).expect("a partial");
+        std::fs::write(&noted, format!("{sender} 4000")).expect("a note");
+
+        let from_the_sender = resumable(&staged, &noted, sender).await;
+        let from_another = resumable(&staged, &noted, other).await;
+
+        assert_eq!(from_the_sender, 100);
+        assert_eq!(from_another, 0);
+        assert!(!staged.exists());
+        assert!(!noted.exists());
+    }
+
+    #[tokio::test]
+    async fn a_partial_no_note_names_is_started_over() {
+        let staged = staged_in("unnoted");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+        std::fs::write(&staged, [0_u8; 100]).expect("a partial");
+
+        let offset = resumable(&staged, &noted, DeviceId([1; 16])).await;
+
+        assert_eq!(offset, 0);
+        assert!(!staged.exists());
+    }
 }

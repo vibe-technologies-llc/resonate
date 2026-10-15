@@ -9,7 +9,9 @@ use std::{
 };
 
 use resonate_core::{MediaLocation, Recording};
-use resonate_library::{Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats};
+use resonate_library::{
+    Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled,
+};
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -263,9 +265,11 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
     }));
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
-    let filed = library
-        .file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?
-        .expect("filed");
+    let SongFiled::Filed(filed) =
+        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?
+    else {
+        panic!("filed");
+    };
 
     assert!(filed.starts_with(&tree.root));
     assert!(
@@ -275,5 +279,26 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
     );
     let resolved = library.resolve_recording(&arriving)?.expect("catalogued");
     assert_eq!(resolved.location, MediaLocation::local(&filed));
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behind() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let arriving = song("Seamus", "Pink Floyd", "Meddle");
+
+    let filed = library.file_song_from_elsewhere(
+        &arriving,
+        "wav",
+        &mut Cursor::new(b"RIFF this is no wave at all".to_vec()),
+    )?;
+
+    assert_eq!(filed, SongFiled::Refused);
+    assert!(!tree.root.join("Meddle/Seamus.wav").exists());
     Ok(())
 }

@@ -203,6 +203,19 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
+    pub(crate) fn uris(&self) -> Result<Vec<String>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare("SELECT uri FROM documents ORDER BY id")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let found = query
+            .query_map([], |row| row.get(0))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        found
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
     pub(crate) fn track(&self, id: u64) -> Result<Track> {
         self.0
             .lock()

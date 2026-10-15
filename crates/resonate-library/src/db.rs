@@ -2398,7 +2398,7 @@ impl Library {
         recording: &resonate_core::Recording,
         extension: &str,
         reader: &mut dyn std::io::Read,
-    ) -> Result<Option<PathBuf>> {
+    ) -> Result<synced::SongFiled> {
         synced::file_song(self, recording, extension, reader)
     }
 

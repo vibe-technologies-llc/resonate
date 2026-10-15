@@ -133,7 +133,12 @@ pub(crate) fn landed_beside(
     library.staging(&staged).map_err(Unfiled::Catalog)?;
     let landed = staged_from(reader, &staged).and_then(|_held| placed(&staged, whole));
     staged_away(library, &staged);
-    landed
+    let path = landed?;
+    if resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path)).is_err() {
+        let _ = fs::remove_file(&path);
+        return Err(Unfiled::Undecodable);
+    }
+    Ok(path)
 }
 
 fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {

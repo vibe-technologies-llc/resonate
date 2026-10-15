@@ -91,6 +91,19 @@ platforms; the catalog seam stays thin.
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count.
 - **Entering another space forgets the last one** (`enter_space`), so everything local is owed again.
+  A new pairing code is therefore all *regenerate* is: each front end mints or clears the key and
+  starts again; the old space ages out on the server.
+- **A device is forgotten by a tombstone, last writer wins like any note.** `Ledger::forget_device`
+  (`Sync::forget`, refused for this device and for one already gone) sets V2's `devices.gone`,
+  restamps the row, owes it and drops the device's handoff; it travels as `Change::Forgotten` (wire
+  tag 5, which a build without it skips), and a snapshot carries every tombstone, so neither an old
+  note nor another device's snapshot brings the device back. `devices()` and `handoffs()` leave the
+  forgotten out. **A forgotten device that still syncs speaks up**: hearing its own tombstone it
+  restamps and owes its own note, which outranks the tombstone, so only a device that is truly gone
+  stays off the list
+  (`a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back`,
+  `a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again`). The front ends offer it
+  only for a device that is not online.
 
 ## The seam
 
@@ -102,7 +115,9 @@ Failures are a `Refused` the implementation logs (errors.md: no boxed error). Th
 local; a recording resolves by MBID, else folded artist, title words and album with lengths within
 2 s; a remote playlist write moves `modified` past any undo step's `left_at` and drops those steps,
 `undo::overtaken`). A song from another device is filed in the music folder under `organise-as`
-like a delivery (`filed::landed_beside`) and its root scanned; with no music folder it is refused.
+like a delivery (`filed::landed_beside`) and its root scanned; with no music folder it is refused
+(`SongFiled::Nowhere`), and one that does not probe is deleted and answered `false`
+(`SongFiled::Refused`), so a damaged file is never filed to be fetched again.
 
 ## The service
 
@@ -166,6 +181,14 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   `everything` runs at most every 10 s, since that lists the whole of the other's holdings. A song is
   fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked. Only whole-file, unvaulted songs are offered. A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
+- **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
+  chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
+  that song and the run goes on to the next. **A partial is resumed only from the file it began as**:
+  a `.from` note beside it names the sending device and the size it announced; another device, or a
+  size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). **A song
+  that failed waits before a follow asks for it again**: a failed fetch or landing, and a phone's
+  refused landing (`Sync::refused`), go into `Running::failed_lately`, and follows pass the song over
+  for `A_FAILED_SONG_WAITS` (30 min); an asked fetch (`Work::Fetch`) tries it at once.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile.
 

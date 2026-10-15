@@ -2107,10 +2107,17 @@ fn players() -> Result<()> {
 #[cfg(feature = "sync")]
 fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> {
     let settings = settings_path(cli)?;
-    let asked = match (&args.join, &args.fetch, &args.from, &args.handoff) {
+    let asked = match (
+        &args.join,
+        &args.forget,
+        &args.fetch,
+        &args.from,
+        &args.handoff,
+    ) {
         (Some(code), ..) => sync::Asked::Join(code),
         _ if args.leave => sync::Asked::Leave,
-        (_, Some(playlist), Some(from), _) => sync::Asked::Fetch { playlist, from },
+        (_, Some(device), ..) => sync::Asked::Forget(device),
+        (_, _, Some(playlist), Some(from), _) => sync::Asked::Fetch { playlist, from },
         (.., Some(from)) => sync::Asked::Handoff { from },
         _ => sync::Asked::Standing,
     };

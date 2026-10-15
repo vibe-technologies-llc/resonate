@@ -67,6 +67,11 @@ data class MusicFolder(val uri: Uri, val name: String, val readable: Boolean, va
 
 data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolean)
 
+data class RefusedLanding(val until: Long, val tries: Int)
+
+private const val LANDING_PAUSE_MS = 60000L
+private const val LANDING_TRIES_AT_MOST = 3
+
 private fun mimeOf(extension: String) =
     when (extension) {
         "flac" -> "audio/flac"
@@ -151,7 +156,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
     @Volatile private var unmetered = false
     @Volatile private var foreground = true
-    @Volatile private var landingRefusedUntil = 0L
+    private val landingRefused = mutableMapOf<ULong, RefusedLanding>()
 
     fun downloadServiceReady() {
         downloadReady.complete(Unit)
@@ -428,7 +433,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private suspend fun landReceived(native: MobilePlayer, waiting: List<ReceivedSong>) {
-        if (System.currentTimeMillis() < landingRefusedUntil) return
         val destinations = folders.value.filter { it.readable && it.writable }
         val folder =
             destinations.find { it.uri.toString() == syncFolder.value }
@@ -437,8 +441,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             syncNotice.value = "Add a music folder with write access to keep songs from your devices"
             return
         }
+        val now = System.currentTimeMillis()
+        landingRefused.keys.retainAll(waiting.map { it.id }.toSet())
+        val due = waiting.filter { (landingRefused[it.id]?.until ?: 0L) <= now }
         var landed = 0
-        for (received in waiting) {
+        for (received in due) {
             currentCoroutineContext().ensureActive()
             var created: Uri? = null
             try {
@@ -467,14 +474,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 native.syncReceive(received.id, descriptor, uri.toString())
                 created = null
                 settings.edit().remove("unfinished-sync-landing").commit()
+                landingRefused.remove(received.id)
                 landed++
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                landingRefusedUntil = System.currentTimeMillis() + 60000L
+                refuseLanding(native, received.id)
                 syncNotice.value = failure.message ?: "A song from another device could not be kept"
                 library.report(failure)
-                break
             } finally {
                 created?.let { uri ->
                     try {
@@ -492,6 +499,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
             refreshWanted(native)
             refreshArtwork()
             library.notice("Kept $landed ${if (landed == 1) "song" else "songs"} from your devices")
+        }
+    }
+
+    private fun refuseLanding(native: MobilePlayer, id: ULong) {
+        val tries = (landingRefused[id]?.tries ?: 0) + 1
+        if (tries < LANDING_TRIES_AT_MOST) {
+            landingRefused[id] = RefusedLanding(System.currentTimeMillis() + LANDING_PAUSE_MS, tries)
+            return
+        }
+        landingRefused.remove(id)
+        try {
+            native.syncRefuseReceived(id)
+        } catch (failure: Exception) {
+            android.util.Log.w("Resonate", "A song from another device stays waiting", failure)
         }
     }
 

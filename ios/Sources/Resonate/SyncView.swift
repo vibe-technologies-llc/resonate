@@ -26,7 +26,7 @@ struct SyncView: View {
     @State private var device = ""
     @State private var server = ""
     @State private var confirmingJoin = false
-    @State private var confirmingLeave = false
+    @State private var confirmingRegenerate = false
     @State private var copies = 0
     private static let hostedServer = "resonate.tecnio.dev"
 
@@ -73,11 +73,13 @@ struct SyncView: View {
                         if code == nil { join() } else { confirmingJoin = true }
                     }
                     .disabled(!syncReadsAsACode(code: joining))
-                    Button("Leave and make a new code", role: .destructive) { confirmingLeave = true }
+                    Button("Regenerate pairing code", systemImage: "arrow.clockwise", role: .destructive) {
+                        confirmingRegenerate = true
+                    }
                 } header: {
                     Text("Pairing code")
                 } footer: {
-                    Text("Enter this code on another device to join it to this one.")
+                    Text("Enter this code on another device to join it to this one. Regenerate it if someone else may have seen it.")
                 }
                 Section("This device") {
                     TextField("Device name", text: $device, prompt: Text("iPhone"))
@@ -102,11 +104,37 @@ struct SyncView: View {
                     SyncTransfers(transfers: status.transfers)
                 }
                 if let status, !status.devices.isEmpty {
-                    Section("Devices") {
-                        ForEach(status.devices, id: \.name) { known in
+                    let offline = status.devices.filter { !$0.online && !$0.thisDevice }
+                    Section {
+                        ForEach(status.devices, id: \.id) { known in
                             KnownDeviceRow(known: known)
+                                .swipeActions(edge: .trailing) {
+                                    if !known.online, !known.thisDevice {
+                                        Button("Remove", systemImage: "trash", role: .destructive) {
+                                            features.forgetSyncDevices([known])
+                                        }
+                                    }
+                                }
+                                .contextMenu {
+                                    if !known.online, !known.thisDevice {
+                                        Button("Remove device", systemImage: "trash", role: .destructive) {
+                                            features.forgetSyncDevices([known])
+                                        }
+                                    }
+                                }
+                        }
+                        if offline.count > 1 {
+                            Button("Remove offline devices", systemImage: "trash", role: .destructive) {
+                                features.forgetSyncDevices(offline)
+                            }
                         }
                         HandoffRows()
+                    } header: {
+                        Text("Devices")
+                    } footer: {
+                        if !offline.isEmpty {
+                            Text("Swipe an offline device to remove it from every device's list. A removed device that syncs again comes back.")
+                        }
                     }
                 }
                 SyncDestinations()
@@ -126,10 +154,10 @@ struct SyncView: View {
         } message: {
             Text("This iPhone leaves the devices it syncs with now and syncs with the devices that share this code.")
         }
-        .confirmationDialog("Leave and make a new code?", isPresented: $confirmingLeave, titleVisibility: .visible) {
-            Button("Leave and make a new code", role: .destructive) { features.newSyncGroup() }
+        .confirmationDialog("Regenerate the pairing code?", isPresented: $confirmingRegenerate, titleVisibility: .visible) {
+            Button("Regenerate pairing code", role: .destructive) { features.newSyncGroup() }
         } message: {
-            Text("This iPhone stops syncing with your other devices until they join its new code.")
+            Text("Your other devices stop syncing with this iPhone until you enter the new code on them. Playlists, favourites and history stay here and are sent again under the new code.")
         }
     }
 

@@ -390,7 +390,13 @@ waiting song as held so it is not asked for twice. Kotlin polls `sync_received`,
 the chosen writable music folder (the first one unless chosen), journals its URI as
 `unfinished-sync-landing`, and hands the fresh descriptor to `sync_receive`, which copies the bytes,
 validates and indexes the document as a download is, and forgets the waiting song whether or not that
-succeeded; a failed landing deletes only the new document and pauses landing for a minute.
+succeeded, telling the sync service of a failure (`Sync::refused`) so the song is not fetched again at
+once. **A failed landing holds back that song alone**: it deletes only the new document and waits a
+minute before that song is tried again, the rest landing meanwhile; a song refused
+`LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`. A received song's
+file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it.
+`SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
+`sync_forget_device` takes. `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a

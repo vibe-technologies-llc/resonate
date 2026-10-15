@@ -188,7 +188,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **`sync` (on) and the five `sync-*` keys** (`sync.md`): `sync-server` blank = the hosted
   `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted beside the roots; `sync-key` the
   pairing code, minted and written back on the first start that syncs, withheld by `Debug`, joined
-  by `resonate sync --join` or the pane, cleared by `--leave`; `sync-device` the name other devices
+  by `resonate sync --join` or the pane, cleared by `--leave` or the pane's *Regenerate pairing code*
+  (two presses; a new code is minted at the next start); `resonate sync --forget <device>` takes a
+  device that is away off every list (`Error::SyncDeviceOnline` for one online); `sync-device` the name other devices
   see (default `Linux`); `sync-songs` an array of `favourites`, `playlists`, `everything` (empty =
   only on request). Off whenever `online` is (`Config::syncs`). The pane writes them for the next
   start. **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window

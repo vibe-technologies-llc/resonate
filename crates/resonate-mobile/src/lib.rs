@@ -229,6 +229,10 @@ impl MobilePlayer {
         self.catalog.track(track.id)
     }
 
+    pub fn song_uris(&self) -> Result<Vec<String>> {
+        self.catalog.uris()
+    }
+
     pub fn tracks(&self, text: String, offset: u32, limit: u32) -> Result<Vec<Track>> {
         self.catalog.tracks(&text, offset, limit)
     }

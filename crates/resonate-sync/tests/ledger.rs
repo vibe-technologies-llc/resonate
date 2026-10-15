@@ -415,3 +415,68 @@ fn entering_another_space_forgets_the_last_one() {
     );
     assert!(!desk.ledger.enter_space(SpaceId([6; 16])).expect("entered"));
 }
+
+fn device_names(device: &Device) -> Vec<String> {
+    device
+        .ledger
+        .devices()
+        .expect("devices")
+        .into_iter()
+        .map(|note| note.name)
+        .collect()
+}
+
+#[test]
+fn a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    let mut old = Device::new("Old phone", &["A"]);
+    let old_note = old.send();
+    desk.receive(&old_note);
+    phone.receive(&old_note);
+    let old_id = old.ledger.device();
+    let desk_id = desk.ledger.device();
+
+    let forgotten = desk.ledger.forget_device(old_id).expect("forgotten");
+
+    assert!(forgotten);
+    assert!(!desk.ledger.forget_device(old_id).expect("forgotten again"));
+    assert!(!desk.ledger.forget_device(desk_id).expect("this device"));
+    assert!(!device_names(&desk).contains(&"Old phone".to_owned()));
+
+    sync(&mut desk, &mut phone);
+    phone.receive(&old_note);
+
+    assert!(!device_names(&phone).contains(&"Old phone".to_owned()));
+
+    let mut tablet = Device::new("Tablet", &["A"]);
+    let snapshot = phone.ledger.snapshot().expect("snapshot");
+    tablet.receive(&old_note);
+    tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
+
+    assert!(!device_names(&tablet).contains(&"Old phone".to_owned()));
+    assert!(device_names(&tablet).contains(&"Desk".to_owned()));
+}
+
+#[test]
+fn a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    sync(&mut phone, &mut desk);
+    let phone_id = phone.ledger.device();
+
+    desk.ledger.forget_device(phone_id).expect("forgotten");
+    sync(&mut desk, &mut phone);
+
+    assert!(!device_names(&desk).contains(&"Phone".to_owned()));
+
+    let spoken = phone.send();
+    desk.receive(&spoken);
+
+    assert!(
+        spoken
+            .iter()
+            .any(|change| matches!(change, Change::Device(note) if note.device == phone_id))
+    );
+    assert!(device_names(&desk).contains(&"Phone".to_owned()));
+}

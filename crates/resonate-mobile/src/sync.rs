@@ -38,6 +38,7 @@ use crate::{
 const LEDGER: &str = "sync.sqlite";
 const STAGING: &str = "sync-staging";
 const RECEIVED: &str = "sync-received";
+const UNFILEABLE: [char; 9] = ['/', '\\', '?', ':', '*', '"', '<', '>', '|'];
 #[cfg(not(target_os = "ios"))]
 const DEVICE_NAME: &str = "Android";
 #[cfg(target_os = "ios")]
@@ -119,6 +120,7 @@ pub enum DevicePlatform {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SyncedDevice {
+    pub id: String,
     pub name: String,
     pub platform: DevicePlatform,
     pub online: bool,
@@ -271,6 +273,7 @@ impl MobilePlayer {
                         Platform::Ios => DevicePlatform::Ios,
                         Platform::Other => DevicePlatform::Other,
                     },
+                    id: device.id.to_string(),
                     name: device.name,
                     online: device.online,
                     nearby: device.nearby,
@@ -370,7 +373,22 @@ impl MobilePlayer {
         if let Err(error) = self.forget_received(id, &path) {
             tracing::warn!(%error, "a landed song from another device is still listed as waiting");
         }
+        if landed.is_err() {
+            self.refused_to_land(&received.song);
+        }
         landed
+    }
+
+    pub fn sync_refuse_received(&self, id: u64) -> Result<()> {
+        let received = self
+            .sync_received()?
+            .into_iter()
+            .find(|received| received.id == id)
+            .ok_or(Error::UnknownReceivedSong)?;
+        let path = self.waiting_path(id)?.ok_or(Error::UnknownReceivedSong)?;
+        self.forget_received(id, &path)?;
+        self.refused_to_land(&received.song);
+        Ok(())
     }
 
     pub fn sync_missing_from(&self, playlist: u64) -> Result<u32> {
@@ -425,6 +443,22 @@ impl MobilePlayer {
             .map_err(|source| Error::sync(SyncOp::Keep, source))
     }
 
+    pub fn sync_forget_device(&self, id: String) -> Result<bool> {
+        let running = self.syncing.running.lock();
+        let running = running.as_ref().ok_or(Error::SyncOff)?;
+        let device = running
+            .sync
+            .shown()
+            .devices
+            .into_iter()
+            .find(|device| !device.this && device.id.to_string() == id.trim())
+            .ok_or(Error::UnknownSyncDevice)?;
+        running
+            .sync
+            .forget(device.id)
+            .map_err(|source| Error::sync(SyncOp::Forget, source))
+    }
+
     pub fn sync_handoffs(&self) -> Result<Vec<HandedOff>> {
         let running = self.syncing.running.lock();
         let Some(running) = running.as_ref() else {
@@ -468,6 +502,12 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    fn refused_to_land(&self, song: &SearchSong) {
+        if let Some(running) = self.syncing.running.lock().as_ref() {
+            running.sync.refused(&recording_of(song));
+        }
+    }
+
     fn started(&self, config: SyncConfig) -> Result<Running> {
         let key = if config.key.trim().is_empty() {
             SyncKey::minted()
@@ -1192,7 +1232,7 @@ fn file_name_for(song: &SearchSong, extension: &str) -> String {
     let stem = format!("{} - {}", song.artist, song.title)
         .chars()
         .map(|letter| {
-            if letter.is_control() || matches!(letter, '/' | '\\') {
+            if letter.is_control() || UNFILEABLE.contains(&letter) {
                 '_'
             } else {
                 letter
@@ -1202,6 +1242,16 @@ fn file_name_for(song: &SearchSong, extension: &str) -> String {
     named_within("", OsStr::new(&stem), format!(".{extension}"))
         .to_string_lossy()
         .into_owned()
+}
+
+fn recording_of(song: &SearchSong) -> Recording {
+    Recording {
+        title: song.title.clone(),
+        artist: song.artist.clone(),
+        album: song.album.clone(),
+        mbid: Mbid::new(&song.recording).ok(),
+        length: song.duration_ms.map(Duration::from_millis),
+    }
 }
 
 fn named(sync: &Sync, name: &str) -> Option<SyncDevice> {

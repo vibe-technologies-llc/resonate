@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use parking_lot::{Mutex, RwLock};
 use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, SendStream, TokioRuntime};
 use resonate_core::{Recording, RecordingKey};
@@ -56,6 +56,7 @@ const COMPACT_PAST_RECORDS: u64 = 512;
 const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 const BLOBS_PER_APPEND: usize = 32;
 const FOLLOW_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
+pub const A_FAILED_SONG_WAITS: Duration = Duration::from_secs(30 * 60);
 const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
 const FIRST_REDIAL: Duration = Duration::from_secs(1);
@@ -130,6 +131,7 @@ enum Command {
     Transfers(bool),
     Heard(Beacon),
     Force,
+    Forgot,
     Stop,
 }
 
@@ -166,6 +168,7 @@ struct Running {
     events: UnboundedSender<Event>,
     answering: Arc<Answering>,
     fetching: Mutex<AHashSet<RecordingKey>>,
+    failed_lately: Mutex<AHashMap<RecordingKey, Instant>>,
 }
 
 enum Work {
@@ -335,6 +338,7 @@ impl Sync {
             events,
             answering,
             fetching: Mutex::new(AHashSet::new()),
+            failed_lately: Mutex::new(AHashMap::new()),
         });
 
         let (commands, received) = mpsc::unbounded_channel();
@@ -399,12 +403,24 @@ impl Sync {
         let _ = self.commands.send(Command::Fetch { recordings, from });
     }
 
+    pub fn refused(&self, recording: &Recording) {
+        self.running.failed(recording);
+    }
+
     pub fn allow_transfers(&self, allowed: bool) {
         let _ = self.commands.send(Command::Transfers(allowed));
     }
 
     pub fn force(&self) {
         let _ = self.commands.send(Command::Force);
+    }
+
+    pub fn forget(&self, device: DeviceId) -> Result<bool> {
+        let forgotten = self.ledger.lock().forget_device(device)?;
+        if forgotten {
+            let _ = self.commands.send(Command::Forgot);
+        }
+        Ok(forgotten)
     }
 
     pub fn keep_songs_of(&self, at: LocalPlaylistId, keep: bool) -> Result<bool> {
@@ -445,6 +461,28 @@ impl Drop for Sync {
 }
 
 impl Running {
+    fn failed(&self, recording: &Recording) {
+        self.failed_lately
+            .lock()
+            .insert(recording.key(), Instant::now());
+    }
+
+    fn asked_again(&self, recordings: &[Recording]) {
+        let mut failed = self.failed_lately.lock();
+        for recording in recordings {
+            failed.remove(&recording.key());
+        }
+    }
+
+    fn not_failed_lately(&self, recordings: Vec<Recording>) -> Vec<Recording> {
+        let mut failed = self.failed_lately.lock();
+        failed.retain(|_, at| at.elapsed() < A_FAILED_SONG_WAITS);
+        recordings
+            .into_iter()
+            .filter(|recording| !failed.contains_key(&recording.key()))
+            .collect()
+    }
+
     fn stand(&self, standing: Standing) {
         self.shown.write().standing = standing;
     }
@@ -569,6 +607,10 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     Ok(())
                 }
                 Some(Command::Force) => syncing.forced().await,
+                Some(Command::Forgot) => {
+                    syncing.forgot();
+                    Ok(())
+                }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch(recordings)).await,
             },
             Some(event) = inbound.events.recv() => syncing.event(event).await,
@@ -1635,6 +1677,11 @@ impl Syncing {
         Ok((changes, told))
     }
 
+    fn forgot(&mut self) {
+        self.publish_devices();
+        self.look_at = Some(Instant::now());
+    }
+
     async fn forced(&mut self) -> Result<()> {
         self.wait = FIRST_RETRY;
         self.followed.clear();
@@ -1733,9 +1780,12 @@ fn spawn_tell(device: DeviceId, connection: Connection, whole: bool, changes: Ve
 fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, work: Work) {
     tokio::spawn(async move {
         let recordings = match work {
-            Work::Fetch(recordings) => recordings,
+            Work::Fetch(recordings) => {
+                running.asked_again(&recordings);
+                recordings
+            }
             Work::Follow => match followed_songs(&running, &connection).await {
-                Ok(recordings) => recordings,
+                Ok(recordings) => running.not_failed_lately(recordings),
                 Err(error) => {
                     tracing::debug!(%error, "a device's songs could not be listed");
                     return;
@@ -1861,6 +1911,9 @@ async fn fetch_claimed(
             TransferState::Failed
         }
     };
+    if state == TransferState::Failed {
+        running.failed(&recording);
+    }
     running.transfer(&recording, device, |transfer| transfer.state = state);
 }
 

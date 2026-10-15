@@ -1,14 +1,14 @@
-use gpui::{Context, Div, Window, div, prelude::*, px, rgb};
+use gpui::{Context, Div, SharedString, Stateful, Window, div, prelude::*, px, rgb};
 use resonate_core::SyncedSongs;
 
 use crate::{
-    Notice, ResonateApp, Setting, SyncStanding, Synchronised, clipboard,
+    Notice, ResonateApp, Setting, SyncStanding, SyncedDevice, Synchronised, clipboard,
     icons::Icon,
     theme,
     views::{
         kit::{self, Tone},
         root::RootView,
-        settings::{note, switch_row},
+        settings::{note, reading, switch_row},
     },
 };
 
@@ -35,6 +35,18 @@ const CODE_COPIED: &str = "The pairing code is on the clipboard";
 const FORCED: &str = "Reaching the server and the devices on this network again";
 
 const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device and restart first";
+
+const REGENERATE_HINT: &str = "Make a new pairing code at the next start, so a code someone else saw \
+                               reaches nothing; your other devices then join the new one";
+
+const ARMED_TO_REGENERATE: &str = "Press again to make a new code: every device using this one stops \
+                                   syncing with this device until the new code is typed into it";
+
+const REGENERATED: &str = "A new pairing code is made when Resonate next starts; type it into your \
+                           other devices then";
+
+const FORGET_HINT: &str = "Take this device off every device's list; one that syncs again comes \
+                           back";
 
 const NOT_A_CODE: &str = "That is not a pairing code: it is 35 letters and digits, as another \
                           device's Device sync group shows it";
@@ -116,31 +128,28 @@ impl RootView {
                         ),
                         move |this, _, cx| this.force_sync(cx),
                         cx,
-                    )),
+                    ))
+                    .child(self.regenerate_button(cx)),
             );
-            let others = shown
+            if self.regenerating_the_code {
+                body = body.child(note(ARMED_TO_REGENERATE));
+            } else if self.code_regenerated {
+                body = body.child(note(REGENERATED));
+            }
+            let mut others = shown
                 .devices
                 .iter()
                 .filter(|device| !device.this)
-                .map(|device| {
-                    format!(
-                        "{} ({})",
-                        device.name,
-                        match (device.nearby, device.online) {
-                            (true, _) => "on this network",
-                            (false, true) => "online",
-                            (false, false) => "away",
-                        }
-                    )
-                })
-                .collect::<Vec<_>>();
-            body = body.child(note(if others.is_empty() {
-                "No other device shares this code yet: type it into another device's Device \
-                 sync group"
-                    .to_owned()
-            } else {
-                format!("Synchronised with {}", others.join(", "))
-            }));
+                .peekable();
+            if others.peek().is_none() {
+                body = body.child(note(
+                    "No other device shares this code yet: type it into another device's Device \
+                     sync group",
+                ));
+            }
+            for device in others {
+                body = body.child(self.device_row(device, cx));
+            }
             if shown.moving > 0 {
                 body = body.child(note(format!(
                     "{} songs on their way from another device",
@@ -250,6 +259,91 @@ impl RootView {
     ) {
         cx.update_global::<ResonateApp, _>(|global, _| change(&mut global.synchronised));
         self.store(setting, cx);
+        cx.notify();
+    }
+
+    fn regenerate_button(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let armed = self.regenerating_the_code;
+        self.in_the_ring(
+            "sync-regenerate",
+            kit::button(
+                "sync-regenerate",
+                Some(Icon::Undo),
+                if armed {
+                    "Press again to regenerate"
+                } else {
+                    "Regenerate pairing code"
+                },
+                REGENERATE_HINT,
+                if armed {
+                    Tone::Destructive
+                } else {
+                    Tone::Outlined
+                },
+            ),
+            move |this, _, cx| {
+                if armed {
+                    this.regenerate_the_code(cx);
+                } else {
+                    this.regenerating_the_code = true;
+                    cx.notify();
+                }
+            },
+            cx,
+        )
+    }
+
+    fn device_row(&mut self, device: &SyncedDevice, cx: &mut Context<Self>) -> Div {
+        let standing = match (device.nearby, device.online) {
+            (true, _) => "On this network",
+            (false, true) => "Online",
+            (false, false) => "Away",
+        };
+        let row = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .child(reading(device.name.clone(), standing));
+        if device.online {
+            return row;
+        }
+        let id = device.id.clone();
+        let name = device.name.clone();
+        let control = format!("sync-forget-{}", device.id);
+        row.child(self.in_the_ring_at(
+            control.clone(),
+            kit::button(
+                SharedString::from(control),
+                Some(Icon::Delete),
+                "Remove",
+                FORGET_HINT,
+                Tone::Outlined,
+            ),
+            move |this, _, cx| this.forget_sync_device(&id, &name, cx),
+            cx,
+        ))
+    }
+
+    fn regenerate_the_code(&mut self, cx: &mut Context<Self>) {
+        self.regenerating_the_code = false;
+        self.code_regenerated = true;
+        self.store(&Setting::SyncKey(String::new()), cx);
+        self.report(Notice::Done(REGENERATED.to_owned()), cx);
+        cx.notify();
+    }
+
+    fn forget_sync_device(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
+        let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
+            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            return;
+        };
+        let notice = if syncing.forget(id) {
+            Notice::Done(format!("{name} is off the list of your devices"))
+        } else {
+            Notice::Trouble(format!("{name} could not be taken off the list"))
+        };
+        self.report(notice, cx);
         cx.notify();
     }
 

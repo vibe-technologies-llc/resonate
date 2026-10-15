@@ -90,11 +90,18 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   banner that opens the sync page; the page leads with `SyncStateRow` (spinner, *Up to date*
   check or warning, then the standing), *Sync now* turning into *Syncing…*, and the active then the
   ten latest finished transfers; the Settings row says the same.
-- **Erase all data** (the last Settings section, confirmed) shuts the player down, then
-  `Erasure.everything` empties Application Support, Caches, Documents (the songs kept in the app's
-  own folder) and tmp, removes the `library-features`, `playback` and `provider-accounts` suites and
-  the standard domain, and deletes every keychain class, then the app exits. Granted folders
-  elsewhere keep their music; with the pairing code gone, other devices hear nothing.
+- **Erase all data** (the last Settings section, confirmed) reads every song's URI (`song_uris`,
+  hidden ones included), shuts the player down, deletes each of those files through `Folders.delete`
+  (the songs in granted folders as well as the app's own; nothing else in those folders), then
+  `Erasure.everything` empties Application Support, Caches, Documents and tmp, removes the
+  `library-features`, `playback` and `provider-accounts` suites and the standard domain, and deletes
+  every keychain class, then the app exits. With the pairing code gone, other devices hear nothing.
+- **The sync page regenerates the code and removes stale devices.** *Regenerate pairing code*
+  (confirmed) is `Features.newSyncGroup`: a minted code, sync started afresh at once. A device row
+  that is offline and not this iPhone swipes (or long-presses) to *Remove*, and *Remove offline
+  devices* takes every such row (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by
+  `SyncedDevice.id`, since a reinstalled phone keeps its name. Landing a received song backs off per
+  song (`landingRefused`), never pausing the rest (`android.md`).
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
   (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`

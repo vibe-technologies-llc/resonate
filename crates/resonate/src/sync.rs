@@ -13,7 +13,7 @@ use resonate_core::{PlaylistId, Recording, SyncedSongs};
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
 #[cfg(feature = "sync")]
-use resonate_library::{Error as LibraryError, PlaylistName, SyncedPlaylist};
+use resonate_library::{Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist};
 #[cfg(feature = "sync")]
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
@@ -389,8 +389,9 @@ impl Catalog for Catalogued {
             .library
             .file_song_from_elsewhere(recording, extension, &mut file)
         {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => {
+            Ok(SongFiled::Filed(_)) => Ok(true),
+            Ok(SongFiled::Refused) => Ok(false),
+            Ok(SongFiled::Nowhere) => {
                 tracing::warn!(
                     "a song from another device has nowhere to land: set music-folder to the \
                      folder songs are filed in"
@@ -411,6 +412,7 @@ pub(crate) enum Asked<'a> {
     Standing,
     Join(&'a str),
     Leave,
+    Forget(&'a str),
     Fetch { playlist: &'a str, from: &'a str },
     Handoff { from: &'a str },
 }
@@ -432,6 +434,19 @@ pub(crate) fn asked(
         Asked::Leave => {
             config::clear(settings, ConfigKey::SyncKey)?;
             said!("This device left its devices; a new pairing code is made when it next syncs");
+            Ok(None)
+        }
+        Asked::Forget(name) => {
+            let library = library.ok_or(Error::SyncOff)?;
+            let running = running(config, settings, &library)?;
+            let sync = &running.sync;
+            let _ = connected(sync);
+            let device = device_named(sync, name)?;
+            if device.online {
+                return Err(Error::SyncDeviceOnline(name.into()));
+            }
+            sync.forget(device.id).map_err(Error::Sync)?;
+            said!("{} is off the list of your devices", device.name);
             Ok(None)
         }
         Asked::Standing => {
@@ -664,6 +679,7 @@ impl resonate_ui::Syncing for Running {
                 .devices
                 .into_iter()
                 .map(|device| resonate_ui::SyncedDevice {
+                    id: device.id.to_string(),
                     name: device.name,
                     online: device.online,
                     nearby: device.nearby,
@@ -685,6 +701,22 @@ impl resonate_ui::Syncing for Running {
 
     fn reads_as_a_code(&self, code: &str) -> bool {
         SyncKey::from_code(code).is_ok()
+    }
+
+    fn forget(&self, device: &str) -> bool {
+        let Some(found) = self
+            .sync
+            .shown()
+            .devices
+            .into_iter()
+            .find(|known| !known.this && known.id.to_string() == device)
+        else {
+            return false;
+        };
+        self.sync.forget(found.id).unwrap_or_else(|error| {
+            tracing::warn!(%error, "a device could not be taken off the list");
+            false
+        })
     }
 
     fn missing_from(&self, playlist: PlaylistId) -> usize {

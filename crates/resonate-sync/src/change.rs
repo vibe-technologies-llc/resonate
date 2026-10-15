@@ -32,6 +32,12 @@ pub struct DeviceNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceForgotten {
+    pub device: DeviceId,
+    pub stamp: Stamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaylistBody {
     pub name: String,
     pub entries: Vec<Recording>,
@@ -73,6 +79,7 @@ pub struct Handoff {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Device(DeviceNote),
+    Forgotten(DeviceForgotten),
     Playlist(PlaylistNote),
     Favourite(FavouriteNote),
     Listen(Listen),
@@ -128,6 +135,7 @@ impl Change {
     pub fn stamp(&self) -> Option<Stamp> {
         match self {
             Self::Device(note) => Some(note.stamp),
+            Self::Forgotten(forgotten) => Some(forgotten.stamp),
             Self::Playlist(note) => Some(note.stamp),
             Self::Favourite(note) => Some(note.stamp),
             Self::Handoff(handoff) => Some(handoff.stamp),

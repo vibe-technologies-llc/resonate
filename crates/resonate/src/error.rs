@@ -629,6 +629,10 @@ pub enum Error {
     #[error("{0} handed off nothing this catalog holds")]
     NothingHandedOff(Box<str>),
 
+    #[cfg(feature = "sync")]
+    #[error("{0} is online, so it stays listed; only a device that is away can be taken off")]
+    SyncDeviceOnline(Box<str>),
+
     #[cfg(feature = "ui")]
     #[error(transparent)]
     Ui(#[from] resonate_ui::Error),

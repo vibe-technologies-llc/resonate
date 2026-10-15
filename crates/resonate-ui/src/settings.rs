@@ -854,6 +854,7 @@ pub enum SyncStanding {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncedDevice {
+    pub id: String,
     pub name: String,
     pub online: bool,
     pub nearby: bool,
@@ -880,6 +881,8 @@ pub trait Syncing: Send + Sync {
     fn reads_as_a_code(&self, code: &str) -> bool;
 
     fn force(&self);
+
+    fn forget(&self, device: &str) -> bool;
 
     fn missing_from(&self, playlist: PlaylistId) -> usize;
 

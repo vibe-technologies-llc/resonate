@@ -82,14 +82,14 @@ struct SettingsView: View {
                     }
                     .disabled(library.erasing)
                 } footer: {
-                    Text("Removes your library, playlists, favourites, listening history, settings, accounts and pairing code from this iPhone, and the songs kept in Resonate’s own folder. Folders you added from elsewhere keep their music. Your other devices are not touched.")
+                    Text("Removes your library, playlists, favourites, listening history, settings, accounts and pairing code from this iPhone, and deletes every song in it: those in Resonate’s own folder and those in folders you added. Other files in those folders stay. Your other devices are not touched.")
                 }
             }
         }
         .confirmationDialog("Erase all data?", isPresented: $confirmingErase, titleVisibility: .visible) {
             Button("Erase everything", role: .destructive) { library.eraseEverything() }
         } message: {
-            Text("This cannot be undone. Resonate closes once it is done; open it again to start fresh.")
+            Text("Every song Resonate lists is deleted from this iPhone, including those in folders you added. This cannot be undone. Resonate closes once it is done; open it again to start fresh.")
         }
         .overlay {
             if library.erasing {

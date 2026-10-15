@@ -9,8 +9,8 @@ use crate::{
     DeviceId, Error, Malformed, Result, SpaceId, Token,
     catalog::Held,
     change::{
-        Change, DeviceNote, FavouriteNote, Handoff, Listen, Platform, PlaylistBody, PlaylistKey,
-        PlaylistNote, Stamp,
+        Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
+        PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
 };
@@ -849,6 +849,11 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.duration(handoff.position);
             writer.flag(handoff.playing);
         }
+        Change::Forgotten(forgotten) => {
+            writer.byte(5);
+            writer.device(forgotten.device);
+            writer.stamp(forgotten.stamp);
+        }
     }
     writer.finish()
 }
@@ -926,6 +931,10 @@ fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
                 playing: reader.flag()?,
             })
         }
+        5 => Change::Forgotten(DeviceForgotten {
+            device: reader.device()?,
+            stamp: reader.stamp()?,
+        }),
         _ => return Ok(None),
     };
     reader.done()?;
@@ -1145,6 +1154,10 @@ mod tests {
                 at: 0,
                 position: Duration::from_secs(3),
                 playing: true,
+            }),
+            Change::Forgotten(DeviceForgotten {
+                device: DeviceId([4; DEVICE_BYTES]),
+                stamp: stamp(),
             }),
         ];
 

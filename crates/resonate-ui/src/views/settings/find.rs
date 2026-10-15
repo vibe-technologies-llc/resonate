@@ -521,7 +521,8 @@ impl Group {
             }
             Self::Syncing => {
                 "sync synchronise synchronize devices phone android pair pairing code server \
-                 account cloud playlists favourites history handoff"
+                 account cloud playlists favourites history handoff regenerate new code remove \
+                 forget stale old device"
             }
             Self::SyncedSongs => {
                 "sync copy transfer download songs files phone android peer playlists favourites \

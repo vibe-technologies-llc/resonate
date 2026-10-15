@@ -7,8 +7,8 @@ use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
     catalog::{Catalog, LocalPlaylist, LocalPlaylistId, Refused, RemoteListen, Resumed},
     change::{
-        Change, Clock, DeviceNote, FavouriteNote, Handoff, Listen, Platform, PlaylistBody,
-        PlaylistKey, PlaylistNote, Stamp, wall_nanos,
+        Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
+        PlaylistBody, PlaylistKey, PlaylistNote, Stamp, wall_nanos,
     },
     merge::{DIGEST_BYTES, Synced, names_alike, projection_digest, spliced},
     wire::{
@@ -90,7 +90,11 @@ CREATE TABLE handoffs (
 ) STRICT;
 ";
 
-const MIGRATIONS: &[&str] = &[V1];
+const V2: &str = "
+ALTER TABLE devices ADD COLUMN gone INTEGER NOT NULL DEFAULT 0;
+";
+
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 const FORGET_THE_SPACE: &str = "
 DELETE FROM devices;
@@ -691,11 +695,7 @@ impl Ledger {
 
     pub fn owed(&self) -> Result<Vec<Vec<Change>>> {
         let mut changes = Vec::new();
-        changes.extend(
-            self.devices_where("owed = 1")?
-                .into_iter()
-                .map(Change::Device),
-        );
+        changes.extend(self.device_changes_where("owed = 1")?);
         changes.extend(
             self.playlist_notes("owed = 1")?
                 .into_iter()
@@ -721,7 +721,7 @@ impl Ledger {
 
     pub fn snapshot(&self) -> Result<Vec<Vec<Change>>> {
         let mut changes = Vec::new();
-        changes.extend(self.devices_where("1")?.into_iter().map(Change::Device));
+        changes.extend(self.device_changes_where("1")?);
         changes.extend(self.playlist_notes("1")?.into_iter().map(Change::Playlist));
         changes.extend(
             self.favourite_notes("1")?
@@ -740,6 +740,10 @@ impl Ledger {
                 Change::Device(note) => transaction.execute(
                     "UPDATE devices SET owed = 0 WHERE device = ?1 AND nanos = ?2",
                     params![note.device.0.as_slice(), note.stamp.nanos],
+                ),
+                Change::Forgotten(forgotten) => transaction.execute(
+                    "UPDATE devices SET owed = 0 WHERE device = ?1 AND nanos = ?2",
+                    params![forgotten.device.0.as_slice(), forgotten.stamp.nanos],
                 ),
                 Change::Playlist(note) => transaction.execute(
                     "UPDATE playlists SET owed = 0 WHERE key = ?1 AND nanos = ?2 AND stamped_by = ?3",
@@ -780,6 +784,10 @@ impl Ledger {
                     self.device_arrived(note)?;
                     false
                 }
+                Change::Forgotten(forgotten) => {
+                    self.forgotten_arrived(forgotten)?;
+                    false
+                }
                 Change::Playlist(note) => self.playlist_arrived(catalog, note)?,
                 Change::Favourite(note) => self.favourite_arrived(catalog, note)?,
                 Change::Listen(listen) => self.listen_arrived(catalog, listen)?,
@@ -801,7 +809,7 @@ impl Ledger {
         self.connection
             .execute(
                 "INSERT INTO devices (device, name, platform, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT (device) DO UPDATE SET name = ?2, platform = ?3, nanos = ?4, stamped_by = ?5
+                 ON CONFLICT (device) DO UPDATE SET name = ?2, platform = ?3, nanos = ?4, stamped_by = ?5, gone = 0
                  WHERE (?4, ?5) > (devices.nanos, devices.stamped_by)",
                 params![
                     note.device.0.as_slice(),
@@ -813,6 +821,75 @@ impl Ledger {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
+    }
+
+    fn forgotten_arrived(&mut self, forgotten: &DeviceForgotten) -> Result<()> {
+        if forgotten.device == self.device {
+            return self.speak_up_for_myself();
+        }
+        let transaction = self.writing()?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO devices (device, name, platform, nanos, stamped_by, gone) VALUES (?1, '', ?2, ?3, ?4, 1)
+                 ON CONFLICT (device) DO UPDATE SET nanos = ?3, stamped_by = ?4, gone = 1
+                 WHERE (?3, ?4) > (devices.nanos, devices.stamped_by)",
+                params![
+                    forgotten.device.0.as_slice(),
+                    platform_tag(Platform::Other),
+                    forgotten.stamp.nanos,
+                    forgotten.stamp.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        if changed > 0 {
+            transaction
+                .execute(
+                    "DELETE FROM handoffs WHERE device = ?1",
+                    params![forgotten.device.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    fn speak_up_for_myself(&mut self) -> Result<()> {
+        let stamp = self.clock.now(self.device);
+        self.connection
+            .execute(
+                "UPDATE devices SET nanos = ?2, stamped_by = ?1, owed = 1, gone = 0 WHERE device = ?1",
+                params![self.device.0.as_slice(), stamp.nanos],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    pub fn forget_device(&mut self, device: DeviceId) -> Result<bool> {
+        if device == self.device {
+            return Ok(false);
+        }
+        let stamp = self.clock.now(self.device);
+        let transaction = self.writing()?;
+        let changed = transaction
+            .execute(
+                "UPDATE devices SET gone = 1, nanos = ?2, stamped_by = ?3, owed = 1 WHERE device = ?1 AND gone = 0",
+                params![device.0.as_slice(), stamp.nanos, stamp.device.0.as_slice()],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        if changed > 0 {
+            transaction
+                .execute(
+                    "DELETE FROM handoffs WHERE device = ?1",
+                    params![device.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.keep_the_clock()?;
+        Ok(changed > 0)
     }
 
     fn handoff_arrived(&mut self, handoff: &Handoff) -> Result<()> {
@@ -1242,11 +1319,28 @@ impl Ledger {
     }
 
     pub fn devices(&self) -> Result<Vec<DeviceNote>> {
-        self.devices_where("1")
+        self.devices_where("gone = 0")
     }
 
     pub fn handoffs(&self) -> Result<Vec<Handoff>> {
-        self.handoffs_where("1")
+        self.handoffs_where("device NOT IN (SELECT device FROM devices WHERE gone = 1)")
+    }
+
+    fn device_changes_where(&self, condition: &str) -> Result<Vec<Change>> {
+        let forgotten = self
+            .devices_where(&format!("gone = 1 AND ({condition})"))?
+            .into_iter()
+            .map(|note| {
+                Change::Forgotten(DeviceForgotten {
+                    device: note.device,
+                    stamp: note.stamp,
+                })
+            });
+        let noted = self
+            .devices_where(&format!("gone = 0 AND ({condition})"))?
+            .into_iter()
+            .map(Change::Device);
+        Ok(noted.chain(forgotten).collect())
     }
 
     fn devices_where(&self, condition: &str) -> Result<Vec<DeviceNote>> {
