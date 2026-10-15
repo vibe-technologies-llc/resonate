@@ -57,6 +57,8 @@ enum FolderFailure: Swift.Error, LocalizedError {
     case notAFolderUri(String)
     case refused(String)
     case alreadyAdded(String)
+    case overlapping(String)
+    case unreadable(String)
 
     var errorDescription: String? {
         switch self {
@@ -64,6 +66,8 @@ enum FolderFailure: Swift.Error, LocalizedError {
         case .notAFolderUri: "That song is not inside a chosen music folder"
         case .refused(let name): "\(name) could not be created"
         case .alreadyAdded: "This folder is already in your library"
+        case .overlapping(let name): "\(name) holds or sits inside a folder already in your library"
+        case .unreadable(let name): "\(name) could not be read"
         }
     }
 }
@@ -86,6 +90,7 @@ final class Folders: Documents, @unchecked Sendable {
     private var access: [String: FolderAccess] = [:]
     private var forgotten: [String: String] = [:]
     private var scans: [String: ScanStop] = [:]
+    private var writing: Set<String> = []
     private let extensions: Set<String>
 
     init(support: URL) {
@@ -145,7 +150,9 @@ final class Folders: Documents, @unchecked Sendable {
         let known = lock.withLock { Array(names.keys) }
         let granted = known.map { id in lock.withLock { access[id] } ?? recordAccess(id) }.map(\.path)
         let documents = FolderAccess.of(Self.documentsFolder).path
-        guard !(granted + [documents]).contains(chosen.path) else { throw FolderFailure.alreadyAdded(url.lastPathComponent) }
+        let held = (granted + [documents]).filter { !$0.isEmpty }
+        guard !held.contains(chosen.path) else { throw FolderFailure.alreadyAdded(url.lastPathComponent) }
+        guard !held.contains(where: { Self.overlap($0, chosen.path) }) else { throw FolderFailure.overlapping(url.lastPathComponent) }
 
         let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let id = lock.withLock { forgotten[chosen.path] }
@@ -158,6 +165,10 @@ final class Folders: Documents, @unchecked Sendable {
         }
         try persist()
         return id
+    }
+
+    private static func overlap(_ first: String, _ second: String) -> Bool {
+        first.hasPrefix(second + "/") || second.hasPrefix(first + "/")
     }
 
     func remove(_ id: String) throws {
@@ -182,7 +193,11 @@ final class Folders: Documents, @unchecked Sendable {
         return "\(Self.scheme)://\(root)/\(escaped.joined(separator: "/"))"
     }
 
-    func scan(_ id: String, found: (FoundDocument) throws -> Void) throws {
+    func scan(
+        _ id: String,
+        skipped: (String, any Swift.Error) -> Void,
+        found: (FoundDocument) throws -> Void
+    ) throws {
         let stop = ScanStop()
         lock.withLock { scans[id] = stop }
         defer { lock.withLock { if scans[id] === stop { scans[id] = nil } } }
@@ -192,11 +207,18 @@ final class Folders: Documents, @unchecked Sendable {
 
         var pending: [(URL, String, Int)] = [(root, "", 0)]
         while !stop.isStopped, let (folder, relative, depth) = pending.popLast() {
-            let children = (try? FileManager.default.contentsOfDirectory(
-                at: folder,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )) ?? []
+            let children: [URL]
+            do {
+                children = try FileManager.default.contentsOfDirectory(
+                    at: folder,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                if relative.isEmpty { throw FolderFailure.unreadable(lock.withLock { names[id] } ?? folder.lastPathComponent) }
+                skipped(relative, error)
+                continue
+            }
             var audio: [(URL, String)] = []
             var sidecars: [String: String] = [:]
             var covers: [String: String] = [:]
@@ -207,7 +229,7 @@ final class Folders: Documents, @unchecked Sendable {
                 if (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                     if depth < Self.deepest { pending.append((child, path, depth + 1)) }
                 } else if extensions.contains((lower as NSString).pathExtension) {
-                    audio.append((child, path))
+                    if !isBeingWritten(uri(root: id, relative: path)) { audio.append((child, path)) }
                 } else if lower.hasSuffix(".lrc") {
                     sidecars[String(lower.dropLast(4))] = uri(root: id, relative: path)
                 } else if Self.coverNames.contains(lower) {
@@ -272,11 +294,21 @@ final class Folders: Documents, @unchecked Sendable {
             let path = root.appendingPathComponent(candidate).path
             let descriptor = Darwin.open(path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
             if descriptor >= 0 {
-                return (uri(root: id, relative: candidate), descriptor)
+                let created = uri(root: id, relative: candidate)
+                lock.withLock { _ = writing.insert(created) }
+                return (created, descriptor)
             }
             if errno != EEXIST { break }
         }
         throw FolderFailure.refused(name)
+    }
+
+    func written(_ uri: String) {
+        lock.withLock { _ = writing.remove(uri) }
+    }
+
+    private func isBeingWritten(_ uri: String) -> Bool {
+        lock.withLock { writing.contains(uri) }
     }
 
     func withPaths<Value>(_ uris: [String], _ body: ([SongFile]) throws -> Value) throws -> Value {
@@ -349,6 +381,12 @@ final class Folders: Documents, @unchecked Sendable {
 
     @discardableResult
     func delete(_ uri: String) -> Bool {
+        let gone = removed(uri)
+        if gone { written(uri) }
+        return gone
+    }
+
+    private func removed(_ uri: String) -> Bool {
         let resolution: (URL, Bool)
         do {
             resolution = try resolved(uri)

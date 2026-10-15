@@ -164,19 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `Features.file` (organise, *Put files back*) is not exclusive with a scan (`organising` only
-  disables its two buttons): a rescan during the moves indexes the new URIs first,
-  `documents_moved`'s rekey then hits `uri UNIQUE` and rolls back, and the moved songs are hidden as
-  missing while their new rows carry no favourites, listens or playlist rows
-- [S] `Folders.add` refuses only a folder whose path equals a granted root's: a subfolder or parent
-  of a root, or of Documents, is scanned under a second root id and every song in the overlap is
-  indexed twice, splitting its plays and favourite
-- [S] `Folders.scan` reads each directory with `(try? contentsOfDirectory(...)) ?? []`: an
-  unreachable File Provider folder or a refused subfolder ends the scan as "Read 0 songs" with no
-  failure, and the missing-song pass then hides everything under it
-- [S] `Folders.fresh` creates a download's or a received song's destination under its final name in
-  the music folder, and a scan may run meanwhile: the half-written file is indexed or reported
-  unreadable, and a cancelled job deletes a file whose row stays until the next missing-song pass
 - [M] The open playlist's rows drift from the catalog and an edit by shown index lands on a
   neighbour: `PlaylistView.move` and `remove` change `playlistRows` before `editPlaylist`, which
   reloads only on success, so a refused edit keeps an order the catalog never took; `reloadPlaylist`

@@ -213,7 +213,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits
   `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB once for the
   whole folder (`FolderCovers` gathers the songs sharing it and keeps it in one `keep_folder_cover`
-  call, stored once) and a same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL`. A file opened
+  call, stored once) and a same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL` and held out of every scan until their writer says the file is whole (`Folders.written`; `delete` says it too), so a scan never indexes a half-written download, landing or copy. A file opened
   in Resonate from elsewhere is played where it already is when its resolved path lies in a granted
   folder (`Folders.granted`, the most specific root), else played from an identical copy already in
   `local` (`localCopy`: same name or `name (n)`, equal contents), else copied into `local` and
@@ -231,8 +231,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   same root id: a rescan indexes the same URIs and restores the hidden rows with their favourites,
   playlist rows and listens, instead of minting a second copy of every song. A folder whose resolved,
   symlink-free path is already granted, or is the app's Documents, is refused
-  (`FolderFailure.alreadyAdded`). A scan runs on a GCD queue where `Task` cancellation cannot reach,
-  so it walks under a `ScanStop` flag; removing a folder stops its walk. The scan's notice
+  (`FolderFailure.alreadyAdded`), and so is one that holds or sits inside a granted folder or Documents (`FolderFailure.overlapping`), since a song in the overlap would be indexed under two root ids and split its plays and favourite. A scan runs on a GCD queue where `Task` cancellation cannot reach,
+  so it walks under a `ScanStop` flag; removing a folder stops its walk. A root it cannot list fails the scan (`FolderFailure.unreadable`); a subfolder it cannot list is counted and named in the tally, and the missing-song pass after a scan runs only when the scan failed nowhere and read everything, so an offline File Provider folder never hides its songs as missing. The scan's notice
   gives its reasons: the first unreadable song and why, and the covers and lyrics sheets that
   could not be kept, with the first of those.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
@@ -459,7 +459,7 @@ every route change (a pair of headphones at the same rate included), not from th
   checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`
   on `Work.aside`: counts and the first fifty moves; a plan stands only for the layout it was made for, so
   *Organise* waits for the preview of what is typed and never runs, or counts, the previous
-  layout's), and *Organise*, confirmed. `Folders.file` moves
+  layout's), and *Organise*, confirmed, which waits for any scan running or queued before it and holds the scans asked after it (`Library.afterScans`, the scans' own chain), so the new URIs are never indexed beside the old rows. `Folders.file` moves
   inside the root's security scope: a destination that exists, or a source outside the root, is
   counted failed; a same-stem `.lrc` moves along where its place is free; folders the moves left
   empty (a `.DS_Store` aside) are removed up to the root. The new URIs are `uri(root:relative:)`'s,

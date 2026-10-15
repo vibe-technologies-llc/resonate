@@ -675,6 +675,7 @@ final class Features {
                 settings.set(uri, forKey: "unfinished-sync-landing")
                 _ = try await Work.aside { try native.syncReceive(id: received.id, descriptor: descriptor, uri: uri) }
                 created = nil
+                folders.written(uri)
                 settings.removeObject(forKey: "unfinished-sync-landing")
                 landed += 1
                 landingRefused[received.id] = nil
@@ -1012,18 +1013,24 @@ final class Features {
     private func file(_ folder: String, _ moves: [FiledSong], undoing: Bool) {
         let folders = library.folders
         organising = true
-        work({ [weak self] native in
-            let filed = try await Work.aside { try folders.file(folder, moves) }
-            try await Work.inLibrary { try native.documentsMoved(moved: filed.moved) }
+        if library.scanning { library.notice("Filing songs once the scan ends") }
+        library.afterScans { [weak self] in
             guard let self else { return }
-            organiseUndo = undoing || filed.back.isEmpty ? nil : (folder, filed.back)
-            await library.refresh()
-            let moved = counted(filed.moved.count, "song")
-            let said = undoing ? "Put \(moved) back where they were" : "Filed \(moved)"
-            library.notice(filed.failed > 0 ? "\(said); \(counted(filed.failed, "song")) could not be moved" : said)
-        }, finally: { [weak self] in
-            self?.organising = false
-        })
+            defer { organising = false }
+            do {
+                let native = try await library.player()
+                let filed = try await Work.aside { try folders.file(folder, moves) }
+                try await Work.inLibrary { try native.documentsMoved(moved: filed.moved) }
+                organiseUndo = undoing || filed.back.isEmpty ? nil : (folder, filed.back)
+                await library.refresh()
+                let moved = counted(filed.moved.count, "song")
+                let said = undoing ? "Put \(moved) back where they were" : "Filed \(moved)"
+                library.notice(filed.failed > 0 ? "\(said); \(counted(filed.failed, "song")) could not be moved" : said)
+            } catch is CancellationError {
+            } catch {
+                library.report(error)
+            }
+        }
     }
 
     func saveRecognitionKey(_ value: String) {

@@ -948,6 +948,15 @@ final class Library {
         }
     }
 
+    func afterScans(_ job: @escaping @MainActor () async -> Void) {
+        let previous = scanTask
+        scanTask = Task {
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await job()
+        }
+    }
+
     private func walk(_ id: String) async {
         guard let queued = queuedScans.firstIndex(of: id) else { return }
         queuedScans.remove(at: queued)
@@ -968,7 +977,7 @@ final class Library {
             try await Work.aside { [weak self] in
                 let covers = FolderCovers(folders: folders, native: native, tally: tally)
                 defer { covers.flush() }
-                try folders.scan(id) { document in
+                try folders.scan(id, skipped: { path, reason in tally.skipped(path, reason) }) { document in
                     do {
                         let track = try native.indexDocument(uri: document.uri, name: document.name)
                         let read = tally.indexed()
@@ -990,7 +999,7 @@ final class Library {
             failure = error
         }
         await refresh()
-        if !scanStopped { await forgetMissing() }
+        if !scanStopped, failure == nil, tally.complete { await forgetMissing() }
         features.scanned()
         await remeasureFolders()
         if let failure {
@@ -1093,6 +1102,7 @@ final class Library {
             folders.delete(uri)
             throw error
         }
+        folders.written(uri)
         let name = (uri as NSString).lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
         return (uri, name)
     }
@@ -1279,6 +1289,19 @@ final class Tally: @unchecked Sendable {
     private var firstUnreadable: String?
     private var companions: [Companion: Int] = [:]
     private var firstCompanion: String?
+    private var unreached = 0
+    private var firstUnreached: String?
+
+    var complete: Bool {
+        lock.withLock { unreached == 0 }
+    }
+
+    func skipped(_ path: String, _ reason: any Swift.Error) {
+        lock.withLock {
+            unreached += 1
+            if firstUnreached == nil { firstUnreached = "\(path): \(explained(reason))" }
+        }
+    }
 
     func indexed() -> Int {
         lock.withLock {
@@ -1311,6 +1334,9 @@ final class Tally: @unchecked Sendable {
 
     private var trouble: String {
         var told = ""
+        if unreached > 0 {
+            told += "; \(counted(unreached, "folder")) could not be read" + (firstUnreached.map { " (\($0))" } ?? "")
+        }
         if unreadable > 0 {
             told += "; \(unreadable) unreadable" + (firstUnreadable.map { " (\($0))" } ?? "")
         }

@@ -380,6 +380,7 @@ final class DownloadQueue {
             update(id) { $0.state = .validating }
             let track = try await Work.aside { try native.indexDownload(job: id, uri: uri, name: offer.name) }
             created[id] = nil
+            folders.written(uri)
             journal { $0.removeAll { $0 == uri } }
 
             update(id) { $0.state = .done(track) }
