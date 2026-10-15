@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] `NowPlaying` discards `setActive(true)` (`try?`), so a refused activation surfaces later as
-  RemoteIO's `OSStatus`; `reportRoute` reads `sampleRate` straight after `setPreferredSampleRate`,
-  and a rate-only change posts no route notification, so Rust can keep the old rate; `rewrite()`
-  clears `shown`, so every favourite flip or artwork arrival re-runs `preferRate` and the route
-  report where `ios.md` says song change and activation
 - [S] The RemoteIO unit is disposed by the output thread after a message, not by `close`: a rebind
   or rate change can open the next unit while the old one lives, and `started.recv()` has no
   timeout, so a media-services stall in `AudioComponentInstanceNew` blocks the engine thread

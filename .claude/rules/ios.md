@@ -207,7 +207,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
   reported again, so a rate the route took moves `route_changed` and reopens RemoteIO at it; a route
-  that keeps its own rate (the speaker, Bluetooth) changes nothing. Now-playing info is written
+  that keeps its own rate (the speaker, Bluetooth) changes nothing. A rate-only change posts no
+  route notification, so the rate is read again 0.25, 1 and 3 s after asking and reported where it
+  moved from the one last reported; the ask is once per song (`ratedTrack`), so a favourite flip or
+  an artwork arrival rewrites the now-playing info without touching the session. A refused
+  activation is shown at once, not left to surface as RemoteIO's `OSStatus`. Now-playing info is written
   only when the song, transport, artwork, favourite, queue place or count, shuffle or repeat change,
   or the position drifts more than 1.5 s from what the written rate predicts (a seek); between
   writes the system extrapolates elapsed time from the rate. Every command answers

@@ -8,6 +8,7 @@ final class NowPlaying {
     nonisolated private static let artworkEdge: CGFloat = 384
     private static let secondsPerMillisecond = 0.001
     private static let driftBeforeRewriteMs: Double = 1500
+    private static let rateSettles: [Duration] = [.milliseconds(250), .milliseconds(750), .seconds(2)]
     static let followsSongRateKey = "follow-song-rate"
     static let playbackSettings = UserDefaults(suiteName: "playback") ?? .standard
 
@@ -47,6 +48,9 @@ final class NowPlaying {
     private var shown: Shown?
     private var written: Written?
     private var observers: [NSObjectProtocol] = []
+    private var ratedTrack: UInt64?
+    private var reportedRate: UInt32?
+    private var settling: Task<Void, Never>?
 
     init(library: Library) {
         self.library = library
@@ -86,7 +90,11 @@ final class NowPlaying {
     }
 
     func activate() {
-        try? AVAudioSession.sharedInstance().setActive(true)
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            library.report(error)
+        }
         preferRate(of: shown?.track)
         reportRoute(rebind: false)
     }
@@ -115,6 +123,19 @@ final class NowPlaying {
         let wanted = Self.followsSongRate ? Double(track?.rate ?? 0) : 0
         guard wanted != session.preferredSampleRate else { return }
         try? session.setPreferredSampleRate(wanted)
+        settleRoute()
+    }
+
+    private func settleRoute() {
+        settling?.cancel()
+        settling = Task { [weak self] in
+            for wait in Self.rateSettles {
+                try? await Task.sleep(for: wait)
+                guard !Task.isCancelled, let self else { return }
+                let rate = UInt32(AVAudioSession.sharedInstance().sampleRate.rounded())
+                if rate != reportedRate { reportRoute(rebind: false) }
+            }
+        }
     }
 
     private func configureSession() {
@@ -126,6 +147,7 @@ final class NowPlaying {
         library.outputRouteChanged(OutputRoute.current)
         let session = AVAudioSession.sharedInstance()
         let rate = UInt32(session.sampleRate.rounded())
+        reportedRate = rate
         let latency = (session.outputLatency + session.ioBufferDuration) * 1000
         library.request { try $0.outputRouteChanged(rate: rate, latencyMs: latency, rebind: rebind) }
     }
@@ -247,17 +269,17 @@ final class NowPlaying {
         guard native != nil, var state = library.snapshot else { return }
         state.positionMs = library.clock.positionMs
         state.durationMs = library.clock.durationMs
-        shown = nil
-        update(state)
+        update(state, forced: true)
     }
 
-    func update(_ snapshot: Snapshot) {
+    func update(_ snapshot: Snapshot, forced: Bool = false) {
         let center = MPNowPlayingInfoCenter.default()
         guard let track = snapshot.current else {
             guard shown != nil || center.nowPlayingInfo != nil else { return }
             center.nowPlayingInfo = nil
             center.playbackState = .stopped
             shown = nil
+            ratedTrack = nil
             written = nil
             artworkFor = nil
             artwork = nil
@@ -283,11 +305,12 @@ final class NowPlaying {
         let now = ContinuousClock.now
         let drift = written.map { abs($0.expected(at: now) - Double(snapshot.positionMs)) } ?? .infinity
 
-        if next.track.id != shown?.track.id {
+        if track.id != ratedTrack {
+            ratedTrack = track.id
             preferRate(of: track)
             reportRoute(rebind: false)
         }
-        guard next != shown || drift > Self.driftBeforeRewriteMs else { return }
+        guard forced || next != shown || drift > Self.driftBeforeRewriteMs else { return }
         write(next, position: snapshot.positionMs, at: now)
     }
 
