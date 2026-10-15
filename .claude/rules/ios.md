@@ -313,12 +313,12 @@ hardware rate and latency from `Library.routeReading`, which `NowPlaying.reportR
 every route change (a pair of headphones at the same rate included), not from the session in its body.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
-  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
-  release and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
+  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
+  release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
   Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
   capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
-  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO, built `nonisolated`)
+  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO, built `nonisolated`; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out)
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
   The driver is mounted 600 ms after the row appears (or at the first touch), so building an
@@ -574,7 +574,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   black cover gives a near-black field; only a song without a cover takes the palette built around
   the accent colour. Each colour is held to
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
-  Palettes are remembered per song and art revision, so a page opens on its field at once.
+  A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
   per process with `makeLibrary(source:)` on a utility task (`BackdropPipeline`): the offline
   `metal` compiler in the SDK is an arm64 Mach-O that cannot run on the Linux host, so the package
@@ -820,7 +820,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   and frozen while a handle is held, as on the desktop. The response is `response_curve` at 256
   points and the stream's rate, asked by `EqualiserResponse` on `Work.aside`: the latest curve asked
   wins and asks are at least 30 ms apart while one is pending, so a drag is followed without
-  queueing. It is washed to the zero line.
+  queueing; a curve asked that equals the one drawn clears what is pending, so a step back within the throttle never lets the older ask land. It is washed to the zero line.
 - **A handle per band**, numbered, lifted by the preamp (a gainless kind sits at the preamp). A
   one-finger drag beginning within 32 pt of a handle moves it, frequency across and gain up (tidied
   to 0.1, 1 or 10 Hz by decade and to 0.1 dB); a pinch turns the Q of the held band, else the

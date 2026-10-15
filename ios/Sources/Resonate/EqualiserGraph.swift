@@ -163,7 +163,10 @@ final class EqualiserResponse {
 
     func follow(_ curve: EqualiserCurve, rate: UInt32?) {
         let next = Asked(curve: curve, rate: rate)
-        guard next != drawn else { return }
+        if next == drawn, !working {
+            asked = nil
+            return
+        }
         asked = next
         guard !working else { return }
         working = true

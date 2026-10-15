@@ -124,7 +124,10 @@ struct BackdropView: View {
     private func loadPalette() async {
         let accentLinear = Self.accentLinear()
 
-        guard let track, let image = await library.features.artwork(track, bucket: .tile) else {
+        let found = if let track { await library.features.artwork(track, bucket: .tile) } else { nil as UIImage? }
+        guard !Task.isCancelled else { return }
+
+        guard let track, let image = found else {
             let around = AccentPaletteMemory.palette(around: accentLinear)
             if palette != around { palette = around }
             return

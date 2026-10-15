@@ -438,6 +438,7 @@ struct PlayerScrubber: View {
     @State private var grabbedAt: Double?
     @State private var held: Double?
     @State private var grabs = 0
+    @GestureState private var touching = false
 
     var body: some View {
         let timing = library.clock
@@ -484,6 +485,11 @@ struct PlayerScrubber: View {
             let step = direction == .increment ? Self.stepMs : -Self.stepMs
             commit(min(max(shown + step, 0), duration))
         }
+        .onChange(of: touching) { _, now in
+            guard !now else { return }
+            grabbedAt = nil
+            dragging = nil
+        }
         .onChange(of: timing.positionMs) { _, now in
             if let target = held, abs(Double(now) - target) < Self.nearEnoughMs { held = nil }
         }
@@ -496,6 +502,7 @@ struct PlayerScrubber: View {
 
     private func drag(across width: CGFloat, of duration: Double, from shown: Double) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($touching) { _, held, _ in held = true }
             .onChanged { change in
                 let start = grabbedAt ?? shown
                 if grabbedAt == nil {
@@ -637,6 +644,7 @@ struct VolumeRow: View {
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
     @State private var driven = false
+    @GestureState private var touching = false
 
     var body: some View {
         let shown = dragging ?? volume.level
@@ -674,6 +682,11 @@ struct VolumeRow: View {
             driven = true
             volume.set(min(max(shown + step, 0), 1))
         }
+        .onChange(of: touching) { _, now in
+            guard !now else { return }
+            grabbedAt = nil
+            dragging = nil
+        }
         .onAppear { volume.watch() }
         .onDisappear { volume.stopWatching() }
         .task {
@@ -684,6 +697,7 @@ struct VolumeRow: View {
 
     private func drag(across width: CGFloat, from shown: Float) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($touching) { _, held, _ in held = true }
             .onChanged { change in
                 let start = grabbedAt ?? shown
                 if grabbedAt == nil { grabbedAt = start }
@@ -704,6 +718,9 @@ struct VolumeRow: View {
 @MainActor
 @Observable
 final class SystemVolumeLevel {
+    private static let seedTries = 10
+    private static let seedEvery: Duration = .milliseconds(100)
+
     private(set) var level: Float = 0
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
@@ -715,7 +732,20 @@ final class SystemVolumeLevel {
         watching = Self.observing { [weak self] heard in self?.hear(heard) }
         Task {
             let current = await Work.inSession { AVAudioSession.sharedInstance().outputVolume }
-            if watching != nil, !heardSinceWatching { level = current }
+            if watching != nil, !heardSinceWatching, driver == nil || current > 0 { level = current }
+        }
+    }
+
+    func seed(from driver: MPVolumeView) {
+        Task {
+            for _ in 0..<Self.seedTries {
+                driver.layoutIfNeeded()
+                if let slider = Self.slider(in: driver) {
+                    if watching != nil, !heardSinceWatching { level = slider.value }
+                    return
+                }
+                try? await Task.sleep(for: Self.seedEvery)
+            }
         }
     }
 
@@ -766,6 +796,7 @@ struct VolumeDriver: UIViewRepresentable {
         driver.alpha = Self.barelyShown
         driver.isUserInteractionEnabled = false
         volume.driver = driver
+        volume.seed(from: driver)
         return driver
     }
 

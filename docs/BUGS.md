@@ -164,16 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `EqualiserResponse.follow` returns early when the asked curve equals `drawn` without clearing
-  a pending `asked`: a drag stepping B, C, B within the 30 ms throttle (common after tidying to 10
-  Hz and 0.1 dB) lets the queued C land, leaving the trace a step off the curve
-- [S] `BackdropView.loadPalette` checks cancellation only on the sampled path; `ArtworkCache`
-  answers a cancelled waiter `nil`, so a superseded task takes the no-artwork branch and may assign
-  the accent palette after the new song's: skipping quickly can leave Now Playing's field on accent
-  colours for the whole song
-- [S] `PlayerScrubber` and `VolumeRow` keep the drag in `@State` cleared only in `onEnded`: a drag
-  the system cancels (a call, an alert, the zoom's dismissal taking the touch) freezes the scrubber
-  on the dragged value and starts the next drag from a stale `grabbedAt`
 - [S] `AppearanceState.wear` starts an unordered task per swatch tap and `setAlternateIconName`
   refuses a second request while one is pending: two quick taps show "Resource temporarily
   unavailable" and can leave the Home Screen icon on the first accent and the tint on the second,
@@ -184,9 +174,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] `AddSongsSheet` opens with `keyed = .empty` and its overlay reads "Add a music folder in
   Settings to start your library." until `SongKeys.of` has folded every song: a large library is
   told it is empty while it loads
-- [S] `SystemVolumeLevel.watch` seeds the volume bar from `outputVolume`, which reads 0 until the
-  session is active: Now Playing on a restored, paused queue draws an empty bar and speaks "Volume,
-  0%" until the first play
 - [S] `SettingsView` always emits `Section("Connected services")` while its rows are gated by the
   search: a search for *equaliser* leaves an empty Connected services header between the matching
   sections
