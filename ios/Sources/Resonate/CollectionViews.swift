@@ -65,6 +65,7 @@ struct LibraryView: View {
                         NavigationLink(value: Destination.playlist(playlist.id)) {
                             PlaylistShelfRow(playlist: playlist)
                         }
+                        .collectionActions(.playlist(playlist.id))
                     }
                     Button("Create playlist", systemImage: "plus") { naming = true }
                     if playlists.isEmpty, folded.isEmpty {
@@ -74,48 +75,59 @@ struct LibraryView: View {
                     }
                 }
             }
-            if !playlistsOnly, shelf == .all || shelf == .albums {
+            if !playlistsOnly, shelf == .all, !albumHits.isEmpty {
+                Section {
+                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked) { navigation.open($0.destination) }
+                } header: {
+                    SeeAllHeader(title: "Albums", more: albumHits.count > Self.shelved) { shelf = .albums }
+                }
+            }
+            if !playlistsOnly, shelf == .all, !artistHits.isEmpty {
+                Section {
+                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked) { navigation.open($0.destination) }
+                } header: {
+                    SeeAllHeader(title: "Artists", more: artistHits.count > Self.shelved) { shelf = .artists }
+                }
+            }
+            if !playlistsOnly, shelf == .all, albumHits.isEmpty, artistHits.isEmpty, asked.isEmpty {
+                Text("Add a music folder in Settings to see your albums and artists here.").foregroundStyle(.secondary)
+            }
+            if !playlistsOnly, shelf == .albums {
                 Section("Albums") {
                     if albumHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your albums here.").foregroundStyle(.secondary)
                     } else if albumHits.isEmpty, answered {
                         Text("No albums match “\(asked)”").foregroundStyle(.secondary)
                     }
-                    ForEach(shelf == .all ? Array(albumHits.prefix(Self.shelved)) : albumHits, id: \.key) { album in
+                    ForEach(albumHits, id: \.key) { album in
                         NavigationLink(value: album.destination) {
-                            FoundCollectionRow(
+                            CollectionRow(
                                 track: library.artworkTrack(album.artworkTrack),
                                 title: lit(album.shownTitle, by: asked, in: .album),
-                                detail: album.detail,
-                                disclosed: false
+                                detail: album.detail
                             )
                         }
-                    }
-                    if shelf == .all, albumHits.count > Self.shelved {
-                        Button("All albums") { shelf = .albums }
+                        .collectionActions(.album(album.key), artist: album.artist)
                     }
                 }
             }
-            if !playlistsOnly, shelf == .all || shelf == .artists {
+            if !playlistsOnly, shelf == .artists {
                 Section("Artists") {
                     if artistHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your artists here.").foregroundStyle(.secondary)
                     } else if artistHits.isEmpty, answered {
                         Text("No artists match “\(asked)”").foregroundStyle(.secondary)
                     }
-                    ForEach(shelf == .all ? Array(artistHits.prefix(Self.shelved)) : artistHits, id: \.name) { artist in
+                    ForEach(artistHits, id: \.name) { artist in
                         NavigationLink(value: artist.destination) {
-                            FoundCollectionRow(
+                            CollectionRow(
                                 track: library.artworkTrack(artist.artworkTrack),
                                 title: lit(artist.shownName, by: asked, in: .artist),
                                 detail: artist.detail,
-                                circle: true,
-                                disclosed: false
+                                circle: true
                             )
                         }
-                    }
-                    if shelf == .all, artistHits.count > Self.shelved {
-                        Button("All artists") { shelf = .artists }
+                        .collectionActions(.artist(artist.name))
                     }
                 }
             }
@@ -216,12 +228,8 @@ struct SuggestionsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.title2)
-                .foregroundStyle(.tint)
+            MosaicArtwork(covers: [], accents: MixAccents(from: .teal, to: .blue), mark: "sparkles", name: "", corner: 10)
                 .frame(width: artworkEdge, height: artworkEdge)
-                .background(.quaternary, in: .rect(cornerRadius: 10))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Suggestions").font(.body.weight(.medium))
                 Text("Mixes from your library").font(.subheadline).foregroundStyle(.secondary)
@@ -270,38 +278,15 @@ struct PlaylistArtwork: View {
     @State private var covers: [Track] = []
 
     var body: some View {
-        Group {
-            if covers.count >= 4 {
-                Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-                    GridRow {
-                        ArtworkView(track: covers[0], corner: 0)
-                        ArtworkView(track: covers[1], corner: 0)
-                    }
-                    GridRow {
-                        ArtworkView(track: covers[2], corner: 0)
-                        ArtworkView(track: covers[3], corner: 0)
-                    }
-                }
-                .clipShape(.rect(cornerRadius: corner, style: .continuous))
-            } else if let first = covers.first {
-                ArtworkView(track: first, corner: corner)
-            } else {
-                Image(systemName: "music.note.list")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary, in: .rect(cornerRadius: corner, style: .continuous))
+        let name = playlist?.name ?? ""
+        MosaicArtwork(covers: covers, accents: namedAccents(name: name), mark: "music.note.list", name: name, corner: corner)
+            .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
+                guard let playlist, let native = try? await library.player() else { return }
+                let id = playlist.id
+                let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
+                var seen = Set<String>()
+                covers = Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(4))
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
-        .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
-            guard let playlist, let native = try? await library.player() else { return }
-            let id = playlist.id
-            let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
-            var seen = Set<String>()
-            covers = Array(rows.filter { seen.insert("\($0.album)\u{1F}\($0.groupingArtist)").inserted }.prefix(4))
-        }
     }
 }
 
@@ -309,46 +294,6 @@ func collectionSummary(_ tracks: [Track]) -> String {
     let minutes = tracks.reduce(UInt64(0)) { $0 + $1.durationMs } / 60_000
     let length = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
     return "\(counted(tracks.count, "song")) · \(length)"
-}
-
-func albumSongs(in tracks: [Track], title: String, artist: String) -> [Track] {
-    tracks
-        .filter { $0.album == title && $0.groupingArtist == artist }
-        .sorted { first, second in
-            (first.discNumber ?? 1, first.trackNumber ?? .max, first.shownTitle)
-                < (second.discNumber ?? 1, second.trackNumber ?? .max, second.shownTitle)
-        }
-}
-
-func artistSongs(in tracks: [Track], named name: String) -> [Track] {
-    guard !name.isEmpty else { return tracks.filter { $0.artist.isEmpty } }
-    return tracks.filter { track in
-        track.artist.caseInsensitiveCompare(name) == .orderedSame
-            || track.albumArtist.caseInsensitiveCompare(name) == .orderedSame
-    }
-}
-
-struct ShelvedAlbum: Identifiable {
-    let title: String
-    let artist: String
-    let tracks: [Track]
-
-    var id: String { "\(title.count):\(title)\(artist)" }
-
-    static func of(_ tracks: [Track]) -> [ShelvedAlbum] {
-        var order: [String] = []
-        var grouped: [String: ShelvedAlbum] = [:]
-        for track in tracks {
-            let album = ShelvedAlbum(title: track.album, artist: track.groupingArtist, tracks: [track])
-            if let kept = grouped[album.id] {
-                grouped[album.id] = ShelvedAlbum(title: kept.title, artist: kept.artist, tracks: kept.tracks + [track])
-            } else {
-                order.append(album.id)
-                grouped[album.id] = album
-            }
-        }
-        return order.compactMap { grouped[$0] }
-    }
 }
 
 struct CollectionCover: View {
@@ -362,6 +307,7 @@ struct CollectionCover: View {
 
 struct CollectionHeader<Artwork: View>: View {
     private static var largestArtwork: CGFloat { 300 }
+    private static var widestActions: CGFloat { 440 }
 
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .title2) private var artworkEdge: CGFloat = 220
@@ -369,53 +315,65 @@ struct CollectionHeader<Artwork: View>: View {
     let subtitle: String
     let tracks: [Track]
     var summary: String?
+    var badge: String?
+    var openSubtitle: (() -> Void)?
     @ViewBuilder let artwork: () -> Artwork
     @State private var acted = 0
 
     var body: some View {
         let edge = min(artworkEdge, Self.largestArtwork)
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             artwork()
                 .frame(width: edge, height: edge)
                 .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
-            VStack(spacing: 4) {
-                Text(title).font(.title2.weight(.bold)).multilineTextAlignment(.center)
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
                 if !subtitle.isEmpty {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    if let openSubtitle {
+                        Button(subtitle, action: openSubtitle)
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                            .buttonStyle(.plain)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }
                 }
                 Text(summary ?? collectionSummary(tracks))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    Button("Play", systemImage: "play.fill") {
-                        acted += 1
-                        library.play(tracks, at: 0)
-                    }
-                    .buttonStyle(.glassProminent)
-                    Button("Shuffle", systemImage: "shuffle") {
-                        acted += 1
-                        library.shuffle(tracks)
-                    }
-                    .buttonStyle(.glass)
-                    Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                        acted += 1
-                        library.playNext(tracks)
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.glass)
-                    Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
-                        acted += 1
-                        library.addToQueue(tracks)
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.glass)
+                if let badge {
+                    Text(badge)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: .capsule)
                 }
-                .disabled(tracks.isEmpty)
             }
+            HStack(spacing: 12) {
+                Button {
+                    acted += 1
+                    library.play(tracks, at: 0)
+                } label: {
+                    Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                Button {
+                    acted += 1
+                    library.shuffle(tracks)
+                } label: {
+                    Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glass)
+            }
+            .font(.headline)
+            .controlSize(.large)
+            .frame(maxWidth: Self.widestActions)
+            .disabled(tracks.isEmpty)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -426,38 +384,128 @@ struct CollectionHeader<Artwork: View>: View {
 }
 
 extension CollectionHeader where Artwork == CollectionCover {
-    init(title: String, subtitle: String, tracks: [Track], summary: String? = nil, circle: Bool = false) {
-        self.init(title: title, subtitle: subtitle, tracks: tracks, summary: summary) {
+    init(
+        title: String,
+        subtitle: String,
+        tracks: [Track],
+        summary: String? = nil,
+        badge: String? = nil,
+        circle: Bool = false,
+        openSubtitle: (() -> Void)? = nil
+    ) {
+        self.init(title: title, subtitle: subtitle, tracks: tracks, summary: summary, badge: badge, openSubtitle: openSubtitle) {
             CollectionCover(track: tracks.first, circle: circle)
         }
     }
 }
 
+struct CollectionMenu: View {
+    @Environment(Navigation.self) private var navigation
+    let tracks: [Track]
+    var artist: String?
+    @State private var choosingPlaylist = false
+    @State private var queued = 0
+
+    var body: some View {
+        Menu("More", systemImage: "ellipsis") {
+            CollectionQueueActions(tracks: tracks, choosingPlaylist: $choosingPlaylist, queued: $queued)
+            if let artist, !artist.isEmpty {
+                Section {
+                    Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
+                }
+            }
+        }
+        .disabled(tracks.isEmpty)
+        .sensoryFeedback(.success, trigger: queued)
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: tracks) }
+    }
+}
+
+struct CollectionQueueActions: View {
+    @Environment(Library.self) private var library
+    let tracks: [Track]
+    @Binding var choosingPlaylist: Bool
+    @Binding var queued: Int
+
+    var body: some View {
+        Section {
+            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                queued += 1
+                library.playNext(tracks)
+            }
+            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                queued += 1
+                library.addToQueue(tracks)
+            }
+        }
+        Section {
+            Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+        }
+    }
+}
+
+struct AlbumDisc: Identifiable {
+    let number: UInt32
+    let tracks: [Track]
+
+    var id: UInt32 { number }
+
+    static func of(_ tracks: [Track]) -> [AlbumDisc] {
+        var discs: [AlbumDisc] = []
+        for track in tracks {
+            let number = track.discNumber ?? 1
+            if let last = discs.last, last.number == number {
+                discs[discs.count - 1] = AlbumDisc(number: number, tracks: last.tracks + [track])
+            } else {
+                discs.append(AlbumDisc(number: number, tracks: [track]))
+            }
+        }
+        return discs
+    }
+}
+
+func sharedQuality(_ tracks: [Track]) -> String? {
+    guard let quality = tracks.first?.quality, !quality.isEmpty, tracks.allSatisfy({ $0.quality == quality }) else { return nil }
+    return quality
+}
+
 struct AlbumView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let title: String
-    let artist: String
+    let key: String
+    @State private var album: AlbumHit?
+    @State private var tracks: [Track] = []
+    @State private var read = false
 
     var body: some View {
-        let tracks = albumSongs(in: library.allTracks, title: title, artist: artist)
-        let shownTitle = title.isEmpty ? "Unknown album" : title
-        let year = tracks.lazy.map { String($0.date.prefix(4)) }.first { $0.count == 4 && Int($0) != nil }
+        let shownTitle = album?.shownTitle ?? ""
+        let artist = album?.artist ?? ""
+        let discs = AlbumDisc.of(tracks)
         List {
             CollectionHeader(
                 title: shownTitle,
-                subtitle: artist.isEmpty ? "Unknown artist" : artist,
+                subtitle: album?.shownArtist ?? "",
                 tracks: tracks,
-                summary: ([year].compactMap { $0 } + [collectionSummary(tracks)]).joined(separator: " · ")
+                summary: ([album?.year.map(String.init)].compactMap { $0 } + [collectionSummary(tracks)]).joined(separator: " · "),
+                badge: sharedQuality(tracks),
+                openSubtitle: artist.isEmpty ? nil : { navigation.open(.artist(artist)) }
             )
-            if tracks.isEmpty {
+            if read, tracks.isEmpty {
                 Text("No songs from this album are in your library yet.").foregroundStyle(.secondary)
             }
-            ForEach(tracks, id: \.id) { track in
-                TrackRow(track: track, numbered: track.trackNumber) {
-                    library.play(tracks, selected: track)
+            ForEach(discs) { disc in
+                Section {
+                    ForEach(disc.tracks, id: \.id) { track in
+                        TrackRow(track: track, numbered: track.trackNumber, albumArtist: artist) {
+                            library.play(tracks, selected: track)
+                        }
+                        .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    if discs.count > 1 {
+                        Text("Disc \(disc.number)")
+                    }
                 }
-                .listRowBackground(Color.clear)
             }
         }
         .listStyle(.plain)
@@ -465,51 +513,68 @@ struct AlbumView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(shownTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if !artist.isEmpty {
-                Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
-            }
+        .toolbar { CollectionMenu(tracks: tracks, artist: artist) }
+        .task(id: "\(key):\(library.collectionGeneration)") { await load() }
+    }
+
+    private func load() async {
+        guard let native = try? await library.player() else { return }
+        let key = key
+        guard let (found, rows) = try? await Work.aside({ (try native.album(key: key), try native.albumTracks(key: key)) }) else {
+            return
         }
+        album = found
+        tracks = rows
+        read = true
     }
 }
 
 struct ArtistView: View {
+    private static let topSongs: UInt32 = 5
+
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .subheadline) private var albumEdge: CGFloat = 140
     let name: String
+    @State private var albums: [AlbumHit] = []
+    @State private var tracks: [Track] = []
+    @State private var top: [Track] = []
+    @State private var seeingAll = false
+    @State private var read = false
 
     var body: some View {
-        let tracks = artistSongs(in: library.allTracks, named: name)
-        let records = ShelvedAlbum.of(tracks)
         let shownName = name.isEmpty ? "Unknown artist" : name
         List {
             CollectionHeader(
                 title: shownName,
                 subtitle: "Artist",
                 tracks: tracks,
-                summary: "\(counted(records.count, "album")) · \(counted(tracks.count, "song"))",
+                summary: "\(counted(albums.count, "album")) · \(counted(tracks.count, "song"))",
                 circle: true
             )
-            if tracks.isEmpty {
+            if read, tracks.isEmpty {
                 Text("No music by this artist is in your library yet.").foregroundStyle(.secondary)
             }
-            if !records.isEmpty {
+            if !albums.isEmpty {
                 Section("Albums") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
-                            ForEach(records) { record in
-                                NavigationLink(value: Destination.album(title: record.title, artist: record.artist)) {
+                            ForEach(albums, id: \.key) { album in
+                                NavigationLink(value: album.destination) {
                                     VStack(alignment: .leading) {
-                                        ArtworkView(track: record.tracks.first).frame(width: albumEdge, height: albumEdge)
-                                        Text(record.title.isEmpty ? "Unknown album" : record.title)
+                                        ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
+                                            .frame(width: albumEdge, height: albumEdge)
+                                        Text(album.shownTitle)
                                             .font(.subheadline.weight(.medium))
                                             .lineLimit(1)
-                                        Text(counted(record.tracks.count, "song")).font(.caption).foregroundStyle(.secondary)
+                                        Text(album.year.map(String.init) ?? counted(Int(album.songs), "song"))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
                                     }
                                     .frame(width: albumEdge)
                                     .accessibilityElement(children: .combine)
                                 }
                                 .buttonStyle(.plain)
+                                .collectionActions(.album(album.key), artist: album.artist)
                             }
                         }
                         .scrollTargetLayout()
@@ -519,20 +584,44 @@ struct ArtistView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            Section("Songs") {
-                ForEach(tracks, id: \.id) { track in
-                    TrackRow(track: track) {
-                        library.play(tracks, selected: track)
+            if !tracks.isEmpty {
+                let shown = seeingAll || top.isEmpty ? tracks : top
+                Section {
+                    ForEach(shown, id: \.id) { track in
+                        TrackRow(track: track, showsAlbum: true) {
+                            library.play(shown, selected: track)
+                        }
+                    }
+                } header: {
+                    SeeAllHeader(title: seeingAll ? "Songs" : "Top songs", more: !seeingAll && tracks.count > top.count) {
+                        seeingAll = true
                     }
                 }
+                .listRowBackground(Color.clear)
             }
-            .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
         .background(BackdropView(track: tracks.first, moving: false))
         .scrollContentBackground(.hidden)
         .navigationTitle(shownName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { CollectionMenu(tracks: tracks) }
+        .task(id: "\(name):\(library.collectionGeneration)") { await load() }
+    }
+
+    private func load() async {
+        guard let native = try? await library.player() else { return }
+        let name = name
+        let most = Self.topSongs
+        guard let (found, rows, played) = try? await Work.aside({
+            (try native.albumsBy(name: name), try native.artistTracks(name: name), try native.mostPlayedBy(name: name, limit: most))
+        }) else {
+            return
+        }
+        albums = found
+        tracks = rows
+        top = played
+        read = true
     }
 }
 
@@ -570,6 +659,81 @@ struct FavouritesView: View {
         .listStyle(.plain)
         .searchable(text: $search, prompt: "Search favourites")
         .navigationTitle("Favourites")
+        .toolbar { CollectionMenu(tracks: favourites) }
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+enum CollectionSource: Sendable {
+    case album(String)
+    case artist(String)
+    case playlist(UInt64)
+
+    nonisolated func tracks(_ native: MobilePlayer) throws -> [Track] {
+        switch self {
+        case .album(let key): try native.albumTracks(key: key)
+        case .artist(let name): try native.artistTracks(name: name)
+        case .playlist(let id): try native.playlistTracks(id: id, offset: 0, limit: Library.page)
+        }
+    }
+}
+
+struct PickedTracks: Identifiable {
+    let id = UUID()
+    let tracks: [Track]
+}
+
+struct CollectionActions: ViewModifier {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let source: CollectionSource
+    var artist: String?
+    @State private var picked: PickedTracks?
+    @State private var acted = 0
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Section {
+                    Button("Play", systemImage: "play.fill") { act { library.play($0, at: 0) } }
+                    Button("Shuffle", systemImage: "shuffle") { act { library.shuffle($0) } }
+                }
+                Section {
+                    Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
+                    Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
+                }
+                Section {
+                    Button("Add to playlist", systemImage: "text.badge.plus") { act { picked = PickedTracks(tracks: $0) } }
+                    if let artist, !artist.isEmpty {
+                        Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
+                    }
+                }
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
+                    .tint(.indigo)
+                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
+                    .tint(.orange)
+            }
+            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .sensoryFeedback(.success, trigger: acted)
+    }
+
+    private func act(_ action: @escaping @MainActor ([Track]) -> Void) {
+        let source = source
+        Task {
+            guard let native = try? await library.player(),
+                let tracks = try? await Work.aside({ try source.tracks(native) }),
+                !tracks.isEmpty
+            else { return }
+            acted += 1
+            action(tracks)
+        }
+    }
+}
+
+extension View {
+    func collectionActions(_ source: CollectionSource, artist: String? = nil) -> some View {
+        modifier(CollectionActions(source: source, artist: artist))
     }
 }

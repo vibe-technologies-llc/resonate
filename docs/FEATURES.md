@@ -14,12 +14,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account and runs one download at a time; the boundary races
   every account and runs jobs side by side, but Settings stores one and the screens show one job
-- [M] Neither phone asks for its wants on its own: `poll_wanted_due` says which are due, and
-  nothing calls it on a timer
+- [M] Android does not ask for its wants on its own: `poll_wanted_due` and `next_wanted_due` say
+  which are due and when, and only iOS calls them on a timer
 - [S] A wanted row keeps no release, disc or position, so a want downloaded from the Wanted list is
   asked with less than the search result it was saved from
-- [S] A delivery refused as the wrong song is declined for the run alone on the phones; the
-  desktop remembers it 30 days in `refused_offers`
 - [M] Android shapes the equaliser through ten octave sliders and a preamp: an AutoEq or imported
   curve plays and is kept, but its bands are edited only on iOS's graph, and moving a slider
   replaces it with ten bands
@@ -29,8 +27,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## iOS parity
 - [L] iOS lacks what Android lacks (tagging/organising, vault, convolution, per-route equaliser,
   favourite feedback sync, microphone recognition), plus CarPlay and a widget
-- [M] iOS output is RemoteIO at the session's rate; it never asks the session for the playing
-  song's rate, so an external DAC that could follow it stays on the system rate
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
 - [S] A download or a song from another device continues in the background only for the time iOS

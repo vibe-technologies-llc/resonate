@@ -8,6 +8,7 @@ mod equaliser;
 mod error;
 mod features;
 mod lyrics;
+mod mixes;
 mod online_tools;
 mod output;
 mod playback;

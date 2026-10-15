@@ -7,6 +7,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
+- [S · blocked: hardware] An iPhone following the song's rate (`follow-song-rate`) is not proved on
+  a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
+  gap of the RemoteIO reopen it causes has been heard
+
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test

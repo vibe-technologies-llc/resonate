@@ -35,6 +35,8 @@ const YEAR_DIGITS: usize = 4;
 
 const FIRST_DISC: u32 = 1;
 
+const PICTURED_BY_AT_MOST: usize = 4;
+
 static NOTHING_SUNG: Name = Name { words: Vec::new() };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -117,6 +119,22 @@ pub fn highlights(query: String, text: String, column: SearchColumn) -> Vec<Text
 }
 
 #[uniffi::export]
+pub fn album_key(album: String, artist: String, album_artist: String) -> Option<String> {
+    let filed_album = folded_letters(album.trim());
+    if filed_album.is_empty() {
+        return None;
+    }
+    let filed_album_artist = folded_letters(album_artist.trim());
+    let grouping = if filed_album_artist.is_empty() {
+        folded_letters(artist.trim())
+    } else {
+        filed_album_artist
+    };
+
+    Some(keyed(&filed_album, &grouping))
+}
+
+#[uniffi::export]
 impl MobilePlayer {
     pub fn search_library(&self, text: String, limit: u32) -> Result<LibrarySearch> {
         self.services.searching.search(&self.catalog, &text, limit)
@@ -130,8 +148,26 @@ impl MobilePlayer {
         self.services.searching.artists(&self.catalog, order)
     }
 
+    pub fn pictured_by(&self, filter: TrackFilter) -> Result<Vec<u64>> {
+        self.services.searching.pictured_by(&self.catalog, &filter)
+    }
+
+    pub fn album(&self, key: String) -> Result<Option<AlbumHit>> {
+        self.services.searching.album(&self.catalog, &key)
+    }
+
     pub fn album_tracks(&self, key: String) -> Result<Vec<Track>> {
         self.services.searching.album_tracks(&self.catalog, &key)
+    }
+
+    pub fn most_played_by(&self, name: String, limit: u32) -> Result<Vec<Track>> {
+        self.services
+            .searching
+            .most_played_by(&self.catalog, &name, limit)
+    }
+
+    pub fn albums_by(&self, name: String) -> Result<Vec<AlbumHit>> {
+        self.services.searching.albums_by(&self.catalog, &name)
     }
 
     pub fn artist_tracks(&self, name: String) -> Result<Vec<Track>> {
@@ -199,10 +235,50 @@ impl Searching {
         offset: u32,
         limit: u32,
     ) -> Result<Vec<Track>> {
+        let Some((index, found)) = self.admitted_in_order(catalog, filter)? else {
+            return Ok(Vec::new());
+        };
+
+        Ok(found
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit.min(LISTED_AT_MOST) as usize)
+            .map(|at| index.rows[at].track.clone())
+            .collect())
+    }
+
+    pub(crate) fn pictured_by(&self, catalog: &Catalog, filter: &TrackFilter) -> Result<Vec<u64>> {
+        let Some((index, found)) = self.admitted_in_order(catalog, filter)? else {
+            return Ok(Vec::new());
+        };
+
+        let mut pictured: Vec<usize> = Vec::new();
+        for at in found.into_iter().take(LISTED_AT_MOST as usize) {
+            if pictured.len() == PICTURED_BY_AT_MOST {
+                break;
+            }
+            let Some(album) = index.rows[at].album_group else {
+                continue;
+            };
+            if !pictured.contains(&album) && index.albums[album].has_a_picture(&index.rows) {
+                pictured.push(album);
+            }
+        }
+        Ok(pictured
+            .into_iter()
+            .map(|album| index.albums[album].artwork_track)
+            .collect())
+    }
+
+    fn admitted_in_order(
+        &self,
+        catalog: &Catalog,
+        filter: &TrackFilter,
+    ) -> Result<Option<(Arc<Index>, Vec<usize>)>> {
         let asking = (!filter.text.trim().is_empty())
             .then(|| Asking::of(&Search::read(&filter.text), now()));
         if asking.as_ref().is_some_and(Asking::asks_nothing) {
-            return Ok(Vec::new());
+            return Ok(None);
         }
 
         let index = self.index(catalog)?;
@@ -237,12 +313,7 @@ impl Searching {
             directed.then(one.track.id.cmp(&other.track.id))
         });
 
-        Ok(found
-            .into_iter()
-            .skip(offset as usize)
-            .take(limit.min(LISTED_AT_MOST) as usize)
-            .map(|at| index.rows[at].track.clone())
-            .collect())
+        Ok(Some((index, found)))
     }
 
     pub(crate) fn albums(
@@ -267,6 +338,51 @@ impl Searching {
         artists.sort_by(|one, other| artist_order(order, one, other));
 
         Ok(artists.into_iter().map(ArtistGroup::hit).collect())
+    }
+
+    pub(crate) fn album(&self, catalog: &Catalog, key: &str) -> Result<Option<AlbumHit>> {
+        let index = self.index(catalog)?;
+
+        Ok(index
+            .album_at
+            .get(key)
+            .map(|group| index.albums[*group].hit()))
+    }
+
+    pub(crate) fn most_played_by(
+        &self,
+        catalog: &Catalog,
+        name: &str,
+        limit: u32,
+    ) -> Result<Vec<Track>> {
+        let index = self.index(catalog)?;
+        let Some(artist) = index.artist_at.get(&folded_letters(name.trim())) else {
+            return Ok(Vec::new());
+        };
+
+        let mut rows = index.artists[*artist].rows.clone();
+        rows.sort_by_key(|at| Reverse(index.rows[*at].plays()));
+        rows.truncate(limit.min(LISTED_AT_MOST) as usize);
+        Ok(index.tracks_at(&rows))
+    }
+
+    pub(crate) fn albums_by(&self, catalog: &Catalog, name: &str) -> Result<Vec<AlbumHit>> {
+        let index = self.index(catalog)?;
+        let Some(artist) = index.artist_at.get(&folded_letters(name.trim())) else {
+            return Ok(Vec::new());
+        };
+
+        let mut held: Vec<usize> = index.artists[*artist]
+            .rows
+            .iter()
+            .filter_map(|at| index.rows[*at].album_group)
+            .collect();
+        held.sort_unstable();
+        held.dedup();
+        let mut albums: Vec<&AlbumGroup> = held.into_iter().map(|at| &index.albums[at]).collect();
+        albums.sort_by(|one, other| album_order(CollectionOrder::Year, one, other));
+
+        Ok(albums.into_iter().map(AlbumGroup::hit).collect())
     }
 
     pub(crate) fn album_tracks(&self, catalog: &Catalog, key: &str) -> Result<Vec<Track>> {
@@ -892,6 +1008,10 @@ impl AlbumGroup {
         self.artwork_track = pictured_among(held());
     }
 
+    fn has_a_picture(&self, rows: &[Row]) -> bool {
+        self.rows.iter().any(|at| rows[*at].track.art_revision > 0)
+    }
+
     fn names(&self) -> [(Field, &Name); 2] {
         [
             (Field::Album, &self.title_name),
@@ -1022,11 +1142,7 @@ impl Index {
             if row.filed_album.is_empty() {
                 continue;
             }
-            let key = format!(
-                "{}{BETWEEN_KEY_PARTS}{}",
-                row.filed_album,
-                row.grouping_artist().1
-            );
+            let key = keyed(&row.filed_album, row.grouping_artist().1);
             let group = *album_at.entry(key.clone()).or_insert_with(|| {
                 albums.push(AlbumGroup::first(key, row));
                 albums.len() - 1
@@ -1320,6 +1436,10 @@ fn named_first(groups: Vec<usize>, most: usize, fit: impl Fn(usize) -> Option<Fi
         .take(most)
         .map(|(_, group)| group)
         .collect()
+}
+
+fn keyed(filed_album: &str, filed_artist: &str) -> String {
+    format!("{filed_album}{BETWEEN_KEY_PARTS}{filed_artist}")
 }
 
 fn pictured_among<'a>(mut rows: impl Iterator<Item = &'a Row> + Clone) -> u64 {
@@ -1752,6 +1872,138 @@ mod tests {
                 .map(|artist| (artist.name.as_str(), artist.songs, artist.albums))
                 .collect::<Vec<_>>(),
             vec![("Pink Floyd", 5, 1), ("Roger Waters", 1, 1)]
+        );
+    }
+
+    #[test]
+    fn an_album_spelled_two_ways_is_one_page_under_the_key_a_song_names() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let first = song(
+            &catalog,
+            Tagged {
+                title: "Hyperballad",
+                artist: "Björk",
+                album: "Post",
+                number: Some(4),
+                date: "1995",
+                ..UNTAGGED
+            },
+        );
+        song(
+            &catalog,
+            Tagged {
+                title: "Army of Me",
+                artist: "Bjork",
+                album: "POST ",
+                number: Some(1),
+                ..UNTAGGED
+            },
+        );
+        let joga = song(
+            &catalog,
+            Tagged {
+                title: "Joga",
+                artist: "Björk",
+                album: "Homogenic",
+                date: "1997",
+                ..UNTAGGED
+            },
+        );
+        catalog
+            .0
+            .lock()
+            .execute(
+                "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, 1700000000, 30000, 1), (?1, 1700000600, 30000, 1)",
+                [joga.id as i64],
+            )
+            .expect("two plays");
+
+        let key = album_key(
+            first.album.clone(),
+            first.artist.clone(),
+            first.album_artist.clone(),
+        )
+        .expect("an album key");
+        let album = searching.album(&catalog, &key).expect("the album");
+        let tracks = searching
+            .album_tracks(&catalog, &key)
+            .expect("the album's tracks");
+        let albums = searching
+            .albums_by(&catalog, "bjork")
+            .expect("the artist's albums");
+
+        assert_eq!(album.map(|album| album.songs), Some(2));
+        assert_eq!(titles(&tracks), vec!["Army of Me", "Hyperballad"]);
+        assert_eq!(
+            albums
+                .iter()
+                .map(|album| album.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Homogenic", "Post"]
+        );
+        assert_eq!(
+            titles(
+                &searching
+                    .most_played_by(&catalog, "Björk", 2)
+                    .expect("the most played")
+            ),
+            vec!["Joga", "Army of Me"]
+        );
+        assert_eq!(album_key(" ".into(), "Björk".into(), String::new()), None);
+        assert_eq!(
+            album_key("Post".into(), "Bjork".into(), String::new()),
+            Some(key)
+        );
+    }
+
+    #[test]
+    fn a_mix_is_pictured_by_the_albums_its_first_rows_fall_on_that_hold_a_picture() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let mut pictured = Vec::new();
+        for (title, album, artwork) in [
+            ("One", "Bare", false),
+            ("Two", "First", true),
+            ("Three", "First", true),
+            ("Four", "Second", true),
+            ("Five", "Third", true),
+            ("Six", "Fourth", true),
+            ("Seven", "Fifth", true),
+        ] {
+            let track = song(
+                &catalog,
+                Tagged {
+                    title,
+                    album,
+                    artist: "Somebody",
+                    ..UNTAGGED
+                },
+            );
+            if artwork {
+                catalog
+                    .0
+                    .lock()
+                    .execute(
+                        "UPDATE documents SET art_revision = 1 WHERE id = ?1",
+                        [track.id as i64],
+                    )
+                    .expect("a picture");
+                pictured.push(track.id);
+            }
+        }
+        let added_first = TrackFilter {
+            order: TrackOrder::Added,
+            ..TrackFilter::default()
+        };
+
+        let covers = searching
+            .pictured_by(&catalog, &added_first)
+            .expect("the pictures");
+
+        assert_eq!(
+            covers,
+            vec![pictured[1], pictured[2], pictured[3], pictured[4]]
         );
     }
 

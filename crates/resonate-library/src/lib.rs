@@ -161,7 +161,7 @@ pub use crate::{
     sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{
         ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary,
-        RETRY_WAITS, TRIES_BEFORE_GIVING_UP,
+        REFUSALS_REMEMBERED_FOR, RETRY_WAITS, TRIES_BEFORE_GIVING_UP,
     },
     synced::{HeldSong, SyncedListen, SyncedPlaylist},
     take_in::{

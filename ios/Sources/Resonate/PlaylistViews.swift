@@ -26,6 +26,8 @@ struct PlaylistView: View {
     @State private var adding = false
     @State private var seen = false
     @State private var edited = 0
+    @State private var choosingPlaylist = false
+    @State private var queued = 0
 
     var body: some View {
         let features = library.features
@@ -74,6 +76,9 @@ struct PlaylistView: View {
             ToolbarItem(placement: .topBarTrailing) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Playlist options", systemImage: "ellipsis") {
+                    if !rows.isEmpty {
+                        CollectionQueueActions(tracks: rows, choosingPlaylist: $choosingPlaylist, queued: $queued)
+                    }
                     PlaylistOptions(id: id, renaming: $renaming, deleting: $deleting)
                 }
                 .simultaneousGesture(TapGesture().onEnded { features.loadPlaylistSync(id) })
@@ -108,6 +113,8 @@ struct PlaylistView: View {
             Text("The music files stay in your library. You can undo this action from a playlist's options.")
         }
         .sheet(isPresented: $adding) { AddSongsSheet(id: id) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: rows) }
+        .sensoryFeedback(.success, trigger: queued)
     }
 
     private func edit(_ change: @escaping @Sendable (MobilePlayer, UInt64) throws -> Void) {
@@ -258,14 +265,12 @@ struct AddSongsSheet: View {
                 .accessibilityAddTraits(chosen.contains(track.id) ? .isSelected : [])
             }
             .overlay {
-                if tracks.isEmpty {
-                    ContentUnavailableView(
-                        library.allTracks.isEmpty ? "Add a music folder in Settings to start your library." : "No songs match “\(search)”",
-                        systemImage: "music.note"
-                    )
+                if library.allTracks.isEmpty {
+                    ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
+                } else if tracks.isEmpty {
+                    NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
                 }
             }
-            .overlay { if tracks.isEmpty, !folded.isEmpty { NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass") } }
             .searchable(text: $search, prompt: "Find songs to add")
             .navigationTitle("Add songs")
             .navigationBarTitleDisplayMode(.inline)

@@ -196,10 +196,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `album_tracks`, `artist_tracks` and `highlights` answer all of it at the boundary and wait to be
   called there. Android opens an artist page by raw `artist == name || albumArtist == name`, so its
   empty *Unknown artist* lists nearly every song
-- [S] iOS's album and artist pages match in Swift (`albumSongs`, `artistSongs`: exact album title
-  and grouping artist, case-insensitive names) rather than through `album_tracks`/`artist_tracks`,
-  whose keys fold accents: an album tagged *Bjork* on one track and *Björk* on another is one card
-  on the shelf and two pages
 - [S] The albums and artists panes match a search over hidden rows and other copies
   (`Matching::grouped` takes neither `THE_BEST_COPY` nor `A_SHOWN_TRACK`): a hidden *Seamus* lists
   *Meddle* and Pink Floyd for `seamus` while the tracks pane lists nothing

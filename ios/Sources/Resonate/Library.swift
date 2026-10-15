@@ -91,6 +91,7 @@ final class Library {
         didSet { artistRuns = Self.runs(of: artists, in: collectionOrder) }
     }
     private(set) var artistRuns: [LetterRun] = []
+    private(set) var collectionGeneration = 0
     var collectionOrder = CollectionOrder.alphabetical {
         didSet { if collectionOrder != oldValue { reloadCollections() } }
     }
@@ -617,6 +618,7 @@ final class Library {
                 guard request == collectionRequest else { return }
                 self.albums = albums
                 self.artists = artists
+                collectionGeneration += 1
             } catch {
                 report(error)
             }

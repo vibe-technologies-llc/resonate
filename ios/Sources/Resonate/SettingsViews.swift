@@ -510,6 +510,7 @@ struct ProcessingView: View {
 struct OutputView: View {
     @Environment(Library.self) private var library
     @State private var buffer: Double?
+    @AppStorage(NowPlaying.followsSongRateKey, store: NowPlaying.playbackSettings) private var followsSongRate = true
 
     var body: some View {
         let session = AVAudioSession.sharedInstance()
@@ -537,6 +538,12 @@ struct OutputView: View {
                 Text("Current stream")
             } footer: {
                 Text("iOS owns the physical route; the system mixer and the chosen device determine the output format.")
+            }
+            Section {
+                Toggle("Match the song's sample rate", isOn: $followsSongRate)
+                    .onChange(of: followsSongRate) { library.nowPlaying.songRateFollowingChanged() }
+            } footer: {
+                Text("Asks the route for each song's own rate, so a USB DAC that can follow it plays without resampling. The built-in speaker and most wireless routes keep their own rate. A change of rate between songs costs a short gap.")
             }
             if let settings = library.preferences {
                 Section {

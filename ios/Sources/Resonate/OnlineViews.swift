@@ -403,6 +403,7 @@ struct OnlineSongsSection: View {
 }
 
 struct OnlinePlaceholder: View {
+    @ScaledMetric(relativeTo: .body) private var edge: CGFloat = 44
     let symbol: String
     var circle = false
 
@@ -411,7 +412,7 @@ struct OnlinePlaceholder: View {
             Rectangle().fill(.quaternary)
             Image(systemName: symbol).foregroundStyle(.secondary)
         }
-        .frame(width: 44, height: 44)
+        .frame(width: edge, height: edge)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8, style: .continuous)))
         .accessibilityHidden(true)
     }

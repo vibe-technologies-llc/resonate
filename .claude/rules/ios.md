@@ -99,7 +99,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
   the main actor). The category is set at start but the session is activated only on play
-  (`activate()`), so opening Resonate never stops another app's audio. Now-playing info is written
+  (`activate()`), so opening Resonate never stops another app's audio. **The session is asked for
+  the playing song's rate** (`preferRate`): on every song change and activation, while "Match the
+  song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
+  default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
+  reported again, so a rate the route took moves `route_changed` and reopens RemoteIO at it; a route
+  that keeps its own rate (the speaker, Bluetooth) changes nothing. Now-playing info is written
   only when the song, transport, artwork, favourite, queue place or count, shuffle or repeat change,
   or the position drifts more than 1.5 s from what the written rate predicts (a seek); between
   writes the system extrapolates elapsed time from the rate. Every command answers
@@ -131,16 +136,63 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   `LyricsPane`) and Up next, each shrinking the artwork into a 56 pt header row through
   `matchedGeometryEffect`; sleep, equaliser, visualizer and output sit in the More menu. At
   accessibility text sizes the artwork layout scrolls.
-- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it.
+- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it;
+  empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
   remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
-  song row's leading swipe and context-menu actions and a collection header's buttons.
-- **Collections** are titled by their entity and drawn over a still backdrop. Albums order
-  untagged tracks after tagged ones; an artist matches case-insensitively, an empty name only songs
-  with no artist. A playlist's rows are keyed by song and occurrence, move and remove at once, and
+  song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
+  `CollectionMenu` (`CollectionQueueActions`: Play next, Add to queue, Add to playlist; inside the
+  playlist's own options menu on a playlist).
+- **A collection header** (`CollectionHeader`) is the artwork, the title, the subtitle (an album's
+  artist a tinted link to the artist page), the summary, an optional quality capsule (an album whose
+  every track shares one `Track.quality`), then Play and Shuffle as two equal-width large glass
+  buttons no wider than 440 pt; nothing else sits in that row. An album lists its tracks by disc,
+  a *Disc N* header only where there is more than one, each row numbered with its length at the
+  trailing edge and a second line only for a track artist other than the album's.
+- **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a
+  `CollectionSource`): a context menu with Play, Shuffle, Play next, Add to queue, Add to playlist
+  and an album's Go to artist, and the song row's leading Play next / Add to queue swipe, its songs
+  read on `Work.aside` when the action is chosen (`album_tracks`, `artist_tracks`, the playlist's
+  first page). Lists, search results, shelves and the artist page's albums all carry it.
+- **One row per kind**: a collection is a `CollectionRow` (lit title, optional chevron) and a song a
+  `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
+  search result swipes, marks the playing song and is felt as a list row is; every artwork edge is a
+  `@ScaledMetric`.
+- **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
+  `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
+  the full list is rows.
+- **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
+  never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
+  `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
+  the index's own arithmetic, `nil` without an album, which hides *Go to album*). `AlbumView` reads
+  `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions),
+  `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
+  shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
+  `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
+  reload, keeping the last answer meanwhile. A playlist's rows are keyed by song and occurrence, move and remove at once, and
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.
+
+## Suggestions and generated art
+
+- **A mix's art is drawn, never stored, as the desktop's** (`ui.md`'s mosaic): `MosaicArtwork`
+  (`Mosaic.swift`) draws no cover as a 135° gradient between two `MixAccent`s with the mark (an SF
+  Symbol, 22 % of the side) and, from 100 pt, the name lettered (bold, 11 %, at most three lines) in
+  the first accent's ink; one cover whole; two to four as a 2×2, a missing tile filled with the
+  accents in turn; continuous corners and a hairline. `MixAccent.color` is the system colour of the
+  accent's hue (mauve purple, amber yellow, peach orange). A name's accents are `named_accents(name)`,
+  core's `Accent::named_pair`, so a genre, artist or playlist wears the colours it wears on the
+  desktop. A playlist is drawn the same way from its first four albums.
+- **Suggestions is a grid of cards** (`SuggestionsView`, adaptive columns at least 160 pt): each
+  `SuggestedMix` is a `TrackFilter` with a title, a line saying what it holds, an accent pair and a
+  mark (Never heard teal/blue, Your favourites mauve/red, Most played red/peach, Recently added
+  green/teal, High-resolution green/blue, the top artist's mix its named accents). Covers are
+  `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
+  `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
+  holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
+  play button and the context menu (Play, Shuffle, Show songs) play its first page at once.
+  `SuggestionsRow` wears a teal and blue sparkles tile.
 
 ## Search
 
@@ -320,8 +372,18 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   sentence (`explained`) on its row, never in the banner, with "Try again"; a finished one offers
   Play and Go to album.
 - **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
-  held, each row has Download and Remove, a held row reads "In your library", and pulling to
+  held, each row leads with a placeholder tile, keeps title and artist · album to a line each and
+  ends in a Download icon (Remove is its swipe), a held row reads "In your library", and pulling to
   refresh reads the matches again. Online search's song rows enqueue one song.
+- **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
+  reads `next_wanted_due`, sleeps until then held to 30 s at least and 30 min at most (the
+  desktop's `RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`), then enqueues `poll_wanted_due`'s songs into
+  the remembered folder, only while online, with a ready account and a remembered writable folder:
+  it never raises the folder sheet or the provider notice. A song it asked is not asked again on its
+  own for 30 min, so a provider that stays away cannot pile failed rows up. It stops with nothing
+  due, going inactive or the switch off, and restarts on any change of wants, accounts, providers,
+  folder or online. "Download saved songs automatically" on Saved for later
+  (`download-wants-automatically` in `library-features`, on by default) is the switch.
 - **The journal is a list**: `unfinished-download` holds the URIs of every job's document still
   being written, removed one by one as each lands or is deleted; on the next start each is deleted,
   and a single string left by an older build is read as a list of one.

@@ -5,7 +5,7 @@ use gpui::{
     PathPromptOptions, Pixels, Point, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
     uniform_list,
 };
-use resonate_core::{AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
+use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
 use resonate_engine::{Command, Placement, QueueItem, Queued, Unclaimed};
 use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
 use smallvec::smallvec;
@@ -1986,7 +1986,7 @@ impl RootView {
 
         Mosaic {
             drawn: &drawn,
-            ground: mosaic::named_accents(name),
+            ground: Accent::named_pair(name),
             mark: if query { Icon::Search } else { Icon::Playlists },
             name,
         }

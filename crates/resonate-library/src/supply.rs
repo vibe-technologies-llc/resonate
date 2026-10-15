@@ -34,7 +34,7 @@ use crate::{
 };
 
 pub const POLL_AGAIN_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
-pub(crate) const REFUSALS_REMEMBERED_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub const REFUSALS_REMEMBERED_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const RETRY_WAITS: [Duration; 5] = [
     Duration::from_secs(60),
     Duration::from_secs(5 * 60),

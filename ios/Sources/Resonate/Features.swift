@@ -142,6 +142,7 @@ final class Features {
         syncConfig = accounts.readSync()
         native.configureOnline(enabled: online)
         downloads.recover()
+        downloads.wantsChanged()
         if let left = settings.string(forKey: "unfinished-sync-landing") {
             library.folders.delete(left)
             settings.removeObject(forKey: "unfinished-sync-landing")
@@ -190,6 +191,7 @@ final class Features {
             await MainActor.run {
                 self?.online = enabled
                 self?.settings.set(enabled, forKey: "online")
+                self?.downloads.wantsChanged()
                 if enabled {
                     self?.enrichment.begin()
                     self?.askOnline()
@@ -824,6 +826,7 @@ final class Features {
     func turnProvider(_ provider: MusicProvider, on: Bool) {
         providers.turn(provider, on: on)
         accounts.writeSwitchedOff(providers.switchedOff)
+        downloads.wantsChanged()
     }
 
     var downloadAccounts: [DownloadAccount] { providers.asked }
@@ -844,6 +847,7 @@ final class Features {
         kept.keep(account)
         try accounts.writeProviderAccounts(kept.accounts)
         providers = kept
+        downloads.wantsChanged()
     }
 
     func saveWanted(_ songs: [SearchSong]) {
@@ -884,6 +888,7 @@ final class Features {
                     if page.count < Library.page { return rows }
                 }
             }
+            downloads.wantsChanged()
         } catch {
             library.report(error)
         }

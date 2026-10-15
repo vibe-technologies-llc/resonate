@@ -8,6 +8,12 @@ final class NowPlaying {
     nonisolated private static let artworkEdge: CGFloat = 384
     private static let secondsPerMillisecond = 0.001
     private static let driftBeforeRewriteMs: Double = 1500
+    static let followsSongRateKey = "follow-song-rate"
+    static let playbackSettings = UserDefaults(suiteName: "playback") ?? .standard
+
+    static var followsSongRate: Bool {
+        playbackSettings.object(forKey: followsSongRateKey) == nil || playbackSettings.bool(forKey: followsSongRateKey)
+    }
 
     private struct Shown: Equatable {
         let track: Track
@@ -81,7 +87,20 @@ final class NowPlaying {
 
     func activate() {
         try? AVAudioSession.sharedInstance().setActive(true)
+        preferRate(of: shown?.track)
         reportRoute(rebind: false)
+    }
+
+    func songRateFollowingChanged() {
+        preferRate(of: shown?.track)
+        reportRoute(rebind: false)
+    }
+
+    private func preferRate(of track: Track?) {
+        let session = AVAudioSession.sharedInstance()
+        let wanted = Self.followsSongRate ? Double(track?.rate ?? 0) : 0
+        guard wanted != session.preferredSampleRate else { return }
+        try? session.setPreferredSampleRate(wanted)
     }
 
     private func configureSession() {
@@ -249,6 +268,10 @@ final class NowPlaying {
         let now = ContinuousClock.now
         let drift = written.map { abs($0.expected(at: now) - Double(snapshot.positionMs)) } ?? .infinity
 
+        if next.track.id != shown?.track.id {
+            preferRate(of: track)
+            reportRoute(rebind: false)
+        }
         guard next != shown || drift > Self.driftBeforeRewriteMs else { return }
         write(next, position: snapshot.positionMs, at: now)
     }

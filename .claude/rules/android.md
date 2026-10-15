@@ -94,7 +94,7 @@ recordings, separate from playable documents. V6 adds `listens.elsewhere` (anoth
 from tags on index), `album_key` and `art_changed`; `album_art` (one release, group and cover per
 album key, with its own clocks and `cover_asked`), `artists` (a kept profile and portrait per
 artist id, with its clocks and `portrait_asked`), the one-row `enrichment` mark, and `wanted.tried`,
-`misses`, `offered_at`. The album key is `folded(album) || char(31) || folded(album artist, else
+`misses`, `offered_at`. V8 adds `refused_offers` (identity, `taken_from`, `refused` stamp). The album key is `folded(album) || char(31) || folded(album artist, else
 artist)`, empty for a song without an album: the apps' grouping, folded. Triggers keep it on every
 insert and on any write of `album`, `artist` or `album_artist`, and stamp `art_changed` with the
 next catalog-wide number whenever `art_revision` moves; both call the connection's `folded`, which
@@ -253,8 +253,12 @@ full `track_count`, the albums and artists holding them with those named by the 
 matched); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
 Kotlin index. `albums(order)`/`artists(order)` (`CollectionOrder`: alphabetical, artist, year newest
 first, recently added, plays) group in Rust: an album by folded title plus folded album artist,
-else artist (an empty album title is no album), its `key` what `album_tracks` takes back, in disc
-and track order with unnumbered rows last; an artist by folded name, holding every song whose
+else artist (an empty album title is no album), its `key` what `album_tracks` and `album(key)` take back, in disc
+and track order with unnumbered rows last, and the free `album_key(album, artist, album_artist)`
+the same key for one song (`None` without an album), so a song's page needs no lookup;
+`albums_by(name)` lists an artist's albums, newest first, and `most_played_by(name, limit)` its
+songs by counted plays; `pictured_by(filter)` answers the
+artwork songs of up to four pictured albums the filter's rows fall on, first rows first; an artist by folded name, holding every song whose
 artist or album artist folds to it. `artist_tracks("")` is the songs naming no artist alone, the
 *Unknown artist* group, never every song lacking an album artist. `filtered_tracks` reads the same
 index: its text is the grammar, its album, artist and genre compare folded, and a page costs a sort
@@ -331,7 +335,10 @@ provider and cause (`NoProvider`, `NotFound`, `Unreachable`, `ProviderAway` (als
 behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the code,
 `ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,
 `DownloadCancelled`); with nothing found, the first provider failure is told before `NotFound`. A
-delivery `index_download` refuses as `WrongSong` is declined by every later find this run.
+delivery `index_download` refuses as `WrongSong` is declined by every later find of that song for
+`REFUSALS_REMEMBERED_FOR` (30 days, the desktop's), across restarts: V8's `refused_offers` keeps it
+by the song's wanted identity and the place it was taken from, and each refusal written sweeps the
+rows past that age.
 
 Only a fresh SAF document is opened for writing; its URI is journalled before streaming, bytes are
 bounded at 8 GiB, and codec probe/duration validation (within `LENGTHS_AGREE_WITHIN`) precedes
@@ -350,7 +357,8 @@ within `A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY`, the one naming most identity, in f
 and playlist listings keep their repeats. A find for a wanted song notes the try on its row as the
 desktop does (V7 `tried`, `misses`): an offer zeroes the misses, nothing heard from every provider
 counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
-desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`).
+desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
+and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.
 
 ## Device sync
 
