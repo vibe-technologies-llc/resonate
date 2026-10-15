@@ -136,7 +136,7 @@ struct FoldersView: View {
         ) { folder in
             Button("Remove access", role: .destructive) { library.removeFolder(folder) }
         } message: { _ in
-            Text("Your music files stay where they are. Cached library entries remain, but playback from this folder will need access again.")
+            Text("Your music files stay where they are. Its songs are hidden until you add the folder again.")
         }
     }
 }

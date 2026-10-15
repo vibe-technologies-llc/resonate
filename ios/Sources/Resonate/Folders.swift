@@ -80,14 +80,17 @@ final class Folders: Documents, @unchecked Sendable {
 
     private let lock = NSLock()
     private let bookmarks: URL
+    private let forgottenFile: URL
     private var roots: [String: Data] = [:]
     private var names: [String: String] = [:]
     private var access: [String: FolderAccess] = [:]
+    private var forgotten: [String: String] = [:]
     private var scans: [String: ScanStop] = [:]
     private let extensions: Set<String>
 
     init(support: URL) {
         bookmarks = support.appendingPathComponent("folders.plist")
+        forgottenFile = support.appendingPathComponent("forgotten-folders.plist")
         extensions = Set(audioExtensions())
         if let data = try? Data(contentsOf: bookmarks),
             let stored = try? PropertyListDecoder().decode([String: [Data]].self, from: data)
@@ -96,6 +99,11 @@ final class Folders: Documents, @unchecked Sendable {
                 roots[id] = entry[0]
                 names[id] = String(decoding: entry[1], as: UTF8.self)
             }
+        }
+        if let data = try? Data(contentsOf: forgottenFile),
+            let stored = try? PropertyListDecoder().decode([String: String].self, from: data)
+        {
+            forgotten = stored
         }
     }
 
@@ -140,11 +148,13 @@ final class Folders: Documents, @unchecked Sendable {
         guard !(granted + [documents]).contains(chosen.path) else { throw FolderFailure.alreadyAdded(url.lastPathComponent) }
 
         let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let id = lock.withLock { forgotten[chosen.path] }
+            ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
         lock.withLock {
             roots[id] = bookmark
             names[id] = url.lastPathComponent
             access[id] = chosen
+            forgotten[chosen.path] = nil
         }
         try persist()
         return id
@@ -153,6 +163,7 @@ final class Folders: Documents, @unchecked Sendable {
     func remove(_ id: String) throws {
         lock.withLock {
             scans[id]?.stop()
+            if let path = access[id]?.path, !path.isEmpty { forgotten[path] = id }
             roots[id] = nil
             names[id] = nil
             access[id] = nil
@@ -405,12 +416,14 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     private func persist() throws {
-        let stored = lock.withLock {
-            roots.reduce(into: [String: [Data]]()) { kept, entry in
+        let (stored, remembered) = lock.withLock {
+            let stored = roots.reduce(into: [String: [Data]]()) { kept, entry in
                 kept[entry.key] = [entry.value, Data((names[entry.key] ?? "").utf8)]
             }
+            return (stored, forgotten)
         }
         try FileManager.default.createDirectory(at: bookmarks.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PropertyListEncoder().encode(stored).write(to: bookmarks, options: .atomic)
+        try PropertyListEncoder().encode(remembered).write(to: forgottenFile, options: .atomic)
     }
 }

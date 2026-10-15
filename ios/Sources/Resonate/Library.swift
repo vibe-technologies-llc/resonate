@@ -730,9 +730,18 @@ final class Library {
         do {
             try folders.remove(folder.id)
             folderList = folders.folders()
+            Task { [weak self] in await self?.hideSongs(under: folder.id) }
         } catch {
             report(error)
         }
+    }
+
+    private func hideSongs(under folder: String) async {
+        guard let native = try? await player() else { return }
+        let prefix = "\(Folders.scheme)://\(folder)/"
+        guard let changed = try? await Work.aside({ try native.hideSongsUnder(prefix: prefix) }) else { return }
+        if changed.leftTheQueue > 0 { await rereadQueue() }
+        if changed.hidden > 0 { await refresh() }
     }
 
     func rescan() {

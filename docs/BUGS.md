@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] Removing a music folder hides nothing (`hide_missing_songs` examines only readable known
-  roots) and adding it again mints a new root id, so a rescan indexes every file under another URI:
-  each song twice, the old rows unplayable and holding the favourites, playlist rows and listens
 - [S] `keep_room_correction` forgets the kept response before writing the new file and forgets
   again when it does not parse: a wrong pick deletes a working correction, which keeps convolving
   until the next launch, when `restore` finds nothing and switches the correction off unsaid

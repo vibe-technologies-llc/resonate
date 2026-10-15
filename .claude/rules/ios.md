@@ -176,7 +176,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves
   only a bookmark it has not measured, `refreshed()` re-measures every one on `Work.aside` (the
   folder and sync pages call it, and so does every hiding of missing songs, since a drive unplugged
-  while the app was away still reads as readable from the cache), and a scan re-measures its own root. A folder whose resolved,
+  while the app was away still reads as readable from the cache), and a scan re-measures its own root. A folder removed hides its songs at once
+  (`hide_songs_under` its prefix, the queue rows with them), though its files are still there, and
+  its path is remembered (`forgotten-folders.plist`, path to root id) so granting it again gets the
+  same root id: a rescan indexes the same URIs and restores the hidden rows with their favourites,
+  playlist rows and listens, instead of minting a second copy of every song. A folder whose resolved,
   symlink-free path is already granted, or is the app's Documents, is refused
   (`FolderFailure.alreadyAdded`). A scan runs on a GCD queue where `Task` cancellation cannot reach,
   so it walks under a `ScanStop` flag; removing a folder stops its walk.

@@ -52,6 +52,22 @@ impl MobilePlayer {
             left_the_queue: counted(self.drop_missing_from_queue()),
         })
     }
+
+    pub fn hide_songs_under(&self, prefix: String) -> Result<MissingSongs> {
+        let hide = self
+            .catalog
+            .documents_under(&[prefix])?
+            .into_iter()
+            .filter_map(|(id, _, missing)| (!missing).then_some(id))
+            .collect::<Vec<_>>();
+        self.catalog.mark_missing(&hide, &[])?;
+
+        Ok(MissingSongs {
+            hidden: counted(hide.len()),
+            restored: 0,
+            left_the_queue: counted(self.drop_missing_from_queue()),
+        })
+    }
 }
 
 impl MobilePlayer {

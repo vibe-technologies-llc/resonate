@@ -555,6 +555,30 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_removed_hides_its_songs_though_every_file_is_still_there() {
+        let harness = Harness::new();
+        harness.resumed("abcd", 2, 400);
+
+        let changed = harness
+            .player
+            .hide_songs_under(FOLDER.into())
+            .expect("hidden");
+
+        assert_eq!(changed.hidden, 4);
+        assert_eq!(changed.restored, 0);
+        assert_eq!(changed.left_the_queue, 4);
+        assert_eq!(harness.queued(), "");
+        assert_eq!(
+            harness
+                .player
+                .hide_songs_under(FOLDER.into())
+                .expect("hidden again")
+                .hidden,
+            0
+        );
+    }
+
+    #[test]
     fn a_move_names_the_row_it_lands_before_as_swiftui_does_in_both_directions() {
         let harness = Harness::new();
         harness.resumed("abcd", 1, 400);
