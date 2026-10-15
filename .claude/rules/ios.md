@@ -55,7 +55,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate and underruns. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
-  redrawn four times a second; only the views that show the position (mini player ring, Now Playing
+  redrawn four times a second; only the views that show the position (Now Playing
   slider and times, sleep countdowns, the output page) read the clock, each in a view of its own.
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)

@@ -54,7 +54,6 @@ struct MiniPlayer: View {
                     .labelStyle(.iconOnly)
             }
             PlayButton(transport: library.transport)
-                .background { MiniProgressRing() }
             if skips {
                 Button("Next", systemImage: "forward.fill") { skip(forward: true) }
                     .labelStyle(.iconOnly)
@@ -89,27 +88,6 @@ struct MiniPlayer: View {
 extension PlayClock {
     var playedFraction: Double {
         durationMs > 0 ? min(Double(positionMs) / Double(durationMs), 1) : 0
-    }
-}
-
-struct MiniProgressRing: View {
-    private static let lineWidth: CGFloat = 2
-
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let fraction = library.clock.playedFraction
-        ZStack {
-            Circle()
-                .stroke(.quaternary, lineWidth: Self.lineWidth)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(.tint, style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 0.25), value: fraction)
-        }
-        .padding(Self.lineWidth / 2)
-        .accessibilityHidden(true)
     }
 }
 
