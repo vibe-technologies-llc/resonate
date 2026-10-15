@@ -183,6 +183,7 @@ enum Event {
     Unmet(DeviceId),
     Redial(DeviceId),
     Gone(DeviceId, usize),
+    CutShort(DeviceId),
     Dropped(usize, Error),
 }
 
@@ -521,14 +522,14 @@ impl Running {
         Some(record)
     }
 
-    fn listed_as_landed(&self, recording: &Recording, from: DeviceId) {
+    fn listed_waiting_as(&self, recording: &Recording, from: DeviceId, state: TransferState) {
         let mut shown = self.shown.write();
         if let Some(listed) = shown.transfers.iter_mut().find(|transfer| {
             transfer.from == from
                 && transfer.recording == *recording
                 && transfer.state == TransferState::Waiting
         }) {
-            listed.state = TransferState::Landed;
+            listed.state = state;
         }
     }
 
@@ -990,6 +991,9 @@ impl Syncing {
                 self.peers.insert(device, connection);
             }
             Event::Punched(device, None) => self.unreached(device),
+            Event::CutShort(device) => {
+                self.followed.remove(&device);
+            }
             Event::Unmet(device) => {
                 self.unreached(device);
                 self.redial_later(device);
@@ -1694,6 +1698,7 @@ impl Syncing {
     }
 
     async fn forced(&mut self) -> Result<()> {
+        self.running.failed_lately.lock().clear();
         self.wait = FIRST_RETRY;
         self.followed.clear();
         self.dialled_at.clear();
@@ -1803,7 +1808,16 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
                 }
             },
         };
-        for recording in recordings {
+        let mut left = recordings.into_iter();
+        while let Some(recording) = left.next() {
+            if connection.close_reason().is_some() {
+                running.listed_waiting_as(&recording, device, TransferState::Failed);
+                for unasked in left.by_ref() {
+                    running.listed_waiting_as(&unasked, device, TransferState::Failed);
+                }
+                let _ = running.events.send(Event::CutShort(device));
+                return;
+            }
             fetch_one(&running, device, &connection, recording).await;
         }
     });
@@ -1864,7 +1878,7 @@ async fn fetch_one(
         return;
     }
     if held_already(running, &recording).await {
-        running.listed_as_landed(&recording, device);
+        running.listed_waiting_as(&recording, device, TransferState::Landed);
     } else {
         fetch_claimed(running, device, connection, recording).await;
     }
@@ -1913,6 +1927,7 @@ async fn fetch_claimed(
         },
     )
     .await;
+    let mut refused_here = false;
     let landed = match fetched {
         Ok(fetched) => {
             let catalog = Arc::clone(&running.catalog);
@@ -1925,6 +1940,7 @@ async fn fetch_claimed(
             })
             .await;
             let _ = tokio::fs::remove_file(&staged).await;
+            refused_here = !matches!(landed, Ok(true));
             landed
         }
         Err(error) => Err(error),
@@ -1937,7 +1953,7 @@ async fn fetch_claimed(
             TransferState::Failed
         }
     };
-    if state == TransferState::Failed {
+    if refused_here {
         running.failed(&recording);
     }
     running.transfer(&recording, device, |transfer| transfer.state = state);

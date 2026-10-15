@@ -189,9 +189,13 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   that song and the run goes on to the next. **A partial is resumed only from the file it began as**:
   a `.from` note beside it names the sending device and the size it announced; another device, or a
   size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). **A song
-  that failed waits before a follow asks for it again**: a failed fetch or landing, and a phone's
-  refused landing (`Sync::refused`), go into `Running::failed_lately`, and follows pass the song over
-  for `A_FAILED_SONG_WAITS` (30 min); an asked fetch (`Work::Fetch`) tries it at once.
+  the catalog refused waits before a follow asks for it again**: a landing answered `false` or
+  refused, and a phone's refused landing (`Sync::refused`), go into `Running::failed_lately`, and
+  follows pass the song over for `A_FAILED_SONG_WAITS` (30 min); an asked fetch (`Work::Fetch`)
+  tries it at once and *Sync now* forgets them all. **A fetch cut off by the network is no verdict
+  on the song**: it never enters `failed_lately`, and a run whose connection closes stops there
+  (the songs it had not reached are not failed one by one) and sends `Event::CutShort`, which lets
+  the next meeting with that device follow at once rather than after `FOLLOW_A_DEVICE_EVERY`.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile.
 
