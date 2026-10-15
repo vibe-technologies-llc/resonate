@@ -425,7 +425,7 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
 - **Suggestions is a grid of cards** (`SuggestionsView`, adaptive columns at least 160 pt): each
   `SuggestedMix` is a `TrackFilter` with a title, a line saying what it holds, an accent pair and a
   mark (Never heard teal/blue, Your favourites mauve/red, Most played red/peach, Recently added
-  green/teal, High-resolution green/blue, the top artist's mix its named accents). Covers are
+  green/teal, High-resolution green/blue, the most listened artist's mix, `listening_detail`'s first artist, its named accents). Covers are
   `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
   `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
   holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
@@ -450,7 +450,9 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   is submitted or one of its results opened. Searching spans the catalog: filters shape browsing
   only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
   are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
-  `FilterSheet`), and each part of the filter set shows under the picker as a small capsule token
+  `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
+  artist, not an album artist; an album's title, since the filter compares folded equality), Cancel
+  closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
   that clears it. Playlists and Suggestions are reached from the Library tab (Suggestions is a row
   beside Favourites and All songs), online search from the Search tab.
 - **The Search tab** (`SearchTab.swift`) has scopes Your library (the default) and Online

@@ -239,7 +239,7 @@ struct SuggestionsView: View {
     @State private var covers: [String: [UInt64]] = [:]
 
     var body: some View {
-        let mixes = SuggestedMix.offered(topArtist: library.features.statistics?.topTracks.first?.artist)
+        let mixes = SuggestedMix.offered(topArtist: library.features.listeningDetail?.artists.first?.name)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Mixes from your library and listening history").foregroundStyle(.secondary)
@@ -338,13 +338,14 @@ struct FilterSheet: View {
     @State private var filter = defaultTrackFilter()
     @State private var genres: [String] = []
     @State private var artists: [String] = []
+    @State private var albums: [String] = []
 
     var body: some View {
         NavigationStack {
             Form {
                 CataloguePicker(title: "Genre", choice: $filter.genre, names: genres)
                 CataloguePicker(title: "Artist", choice: $filter.artist, names: artists)
-                TextField("Album", text: $filter.album)
+                CataloguePicker(title: "Album", choice: $filter.album, names: albums)
                 Toggle("Favourites only", isOn: $filter.favourites)
                 Toggle("Unplayed only", isOn: $filter.unplayed)
                 Toggle("High-resolution only", isOn: Binding(
@@ -356,15 +357,16 @@ struct FilterSheet: View {
                     ForEach(FilterChip.orderNames, id: \.1) { Text($0.1).tag($0.0) }
                 }
                 Toggle("Descending", isOn: $filter.descending)
+                Section {
+                    Button("Reset", role: .destructive) { filter = defaultTrackFilter() }
+                        .disabled(filter == defaultTrackFilter())
+                }
             }
             .navigationTitle("Filter and sort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        library.setFilter(defaultTrackFilter())
-                        dismiss()
-                    }
+                    Button(role: .close) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply") {
@@ -380,12 +382,13 @@ struct FilterSheet: View {
 
     private func readNames() async {
         let tracks = library.allTracks
-        let named = library.artists.map(\.name)
-        let (genres, artists) = await Task.detached(priority: .userInitiated) {
-            (FilterSheet.distinct(tracks.map(\.genre)), FilterSheet.distinct(named))
+        let titles = library.albums.map(\.title)
+        let (genres, artists, albums) = await Task.detached(priority: .userInitiated) {
+            (FilterSheet.distinct(tracks.map(\.genre)), FilterSheet.distinct(tracks.map(\.artist)), FilterSheet.distinct(titles))
         }.value
         self.genres = genres
         self.artists = artists
+        self.albums = albums
     }
 
     nonisolated private static func distinct(_ names: [String]) -> [String] {

@@ -39,10 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `FilterSheet` puts *Reset* in the cancel position and applies it at once, with no Cancel; its
-  Album field is folded equality (`Dark Side` matches nothing) and its Artist picker lists album
-  artists the track-artist filter does not match; *More from <artist>* is the artist of the single
-  most played song, not the most played artist
 - [S] The Online song row leaves *Download* enabled on a song marked *In your library*
   (`holds` asks active jobs only), where the Wanted list hides it
 - [S] The Output page reads `AVAudioSession.currentRoute`, `sampleRate` and `outputLatency` in a
