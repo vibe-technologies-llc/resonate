@@ -265,14 +265,12 @@ struct AddSongsSheet: View {
                 .accessibilityAddTraits(chosen.contains(track.id) ? .isSelected : [])
             }
             .overlay {
-                if tracks.isEmpty {
-                    ContentUnavailableView(
-                        library.allTracks.isEmpty ? "Add a music folder in Settings to start your library." : "No songs match “\(search)”",
-                        systemImage: "music.note"
-                    )
+                if library.allTracks.isEmpty {
+                    ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
+                } else if tracks.isEmpty {
+                    NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
                 }
             }
-            .overlay { if tracks.isEmpty, !folded.isEmpty { NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass") } }
             .searchable(text: $search, prompt: "Find songs to add")
             .navigationTitle("Add songs")
             .navigationBarTitleDisplayMode(.inline)

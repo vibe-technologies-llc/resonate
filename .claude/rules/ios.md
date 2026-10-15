@@ -136,7 +136,8 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   `LyricsPane`) and Up next, each shrinking the artwork into a 56 pt header row through
   `matchedGeometryEffect`; sleep, equaliser, visualizer and output sit in the More menu. At
   accessibility text sizes the artwork layout scrolls.
-- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it.
+- **The queue** splits History, Now playing and Up next around the playing row and scrolls to it;
+  empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
   remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
   song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
@@ -358,7 +359,8 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   sentence (`explained`) on its row, never in the banner, with "Try again"; a finished one offers
   Play and Go to album.
 - **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
-  held, each row has Download and Remove, a held row reads "In your library", and pulling to
+  held, each row leads with a placeholder tile, keeps title and artist · album to a line each and
+  ends in a Download icon (Remove is its swipe), a held row reads "In your library", and pulling to
   refresh reads the matches again. Online search's song rows enqueue one song.
 - **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
   reads `next_wanted_due`, sleeps until then held to 30 s at least and 30 min at most (the

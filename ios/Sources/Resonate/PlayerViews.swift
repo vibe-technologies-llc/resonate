@@ -286,12 +286,12 @@ struct SongDestinations: View {
 
     var body: some View {
         if let albumPage = track.albumPage {
-            Button("Go to Album", systemImage: "square.stack") { navigation.open(albumPage) }
+            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
         }
-        Button("Go to Artist", systemImage: "music.mic") {
-            navigation.open(.artist(track.artist))
+        if !track.artist.isEmpty {
+            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
         }
-        Button("Song Details", systemImage: "info.circle") {
+        Button("Song details", systemImage: "info.circle") {
             navigation.open(.inspector(track))
         }
     }
@@ -675,17 +675,36 @@ struct QueueView: View {
                 ToolbarItem(placement: .topBarTrailing) { SleepTimerButton() }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Clear", systemImage: "trash") { clearing = true }
-                    .disabled(library.queue.count <= 1)
+            if !library.queue.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Clear", systemImage: "trash") { clearing = true }
+                        .disabled(library.queue.count <= 1)
+                }
+                ToolbarItem(placement: .topBarTrailing) { EditButton() }
             }
-            ToolbarItem(placement: .topBarTrailing) { EditButton() }
         }
         .confirmationDialog("Clear the queue?", isPresented: $clearing, titleVisibility: .visible) {
             Button("Clear queue", role: .destructive) { library.clearQueue() }
         } message: {
             Text("Songs up next and in your history are removed. The playing song keeps playing.")
         }
+    }
+}
+
+struct EmptyQueue: View {
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Your queue is empty", systemImage: "list.bullet")
+        } description: {
+            Text("Songs you play, play next or add to the queue appear here.")
+        } actions: {
+            Button("Browse songs") { navigation.tab = .songs }
+                .buttonStyle(.glass)
+        }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 }
 
@@ -710,7 +729,9 @@ struct QueueSections: View {
         let rows = library.queue
         let playing = library.playingQueueRow
         Group {
-            if rows.isEmpty {
+            if rows.isEmpty, showsHistory {
+                EmptyQueue()
+            } else if rows.isEmpty {
                 Text("Your queue is empty").foregroundStyle(.secondary)
             } else if let playing {
                 if showsHistory, playing > 0 {

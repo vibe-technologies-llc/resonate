@@ -95,16 +95,27 @@ struct DownloadsView: View {
 struct DownloadJobRow: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 44
     let job: DownloadJob
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(job.song.title).font(.body.weight(.medium)).lineLimit(1)
-            Text([job.song.artist, job.provider.map { "from \($0.title)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            state
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if case .done(let track) = job.state {
+                    ArtworkView(track: track, corner: 8)
+                } else {
+                    OnlinePlaceholder(symbol: "arrow.down.circle")
+                }
+            }
+            .frame(width: artworkEdge, height: artworkEdge)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(job.song.title).font(.body.weight(.medium)).lineLimit(1)
+                Text([job.song.artist, job.provider.map { "from \($0.title)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                state
+            }
         }
     }
 
@@ -248,30 +259,35 @@ struct WantedView: View {
 
 struct WantedRow: View {
     @Environment(Library.self) private var library
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 44
     let wanted: WantedSong
 
     var body: some View {
         let features = library.features
         let song = wanted.song
-        VStack(alignment: .leading, spacing: 6) {
-            Text(song.title).font(.body.weight(.medium))
-            Text(song.artist).font(.subheadline).foregroundStyle(.secondary)
-            if !song.album.trimmingCharacters(in: .whitespaces).isEmpty {
-                Text(song.album).font(.caption).foregroundStyle(.secondary)
-            }
-            if wanted.held {
-                Label("In your library", systemImage: "checkmark.circle.fill")
+        HStack(spacing: 12) {
+            OnlinePlaceholder(symbol: wanted.held ? "checkmark" : "music.note")
+                .frame(width: artworkEdge, height: artworkEdge)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.title).font(.body.weight(.medium)).lineLimit(1)
+                Text([song.artist, song.album].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
-                    .foregroundStyle(.tint)
-            }
-            HStack {
-                if !wanted.held, features.online {
-                    Button("Download") { features.downloads.enqueue([song]) }
-                        .disabled(features.downloads.holds(song))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if wanted.held {
+                    Label("In your library", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.tint)
                 }
-                Button("Remove", role: .destructive) { features.removeWanted(wanted.id) }
             }
-            .buttonStyle(.glass)
+            Spacer(minLength: 0)
+            if !wanted.held, features.online {
+                Button("Download", systemImage: "arrow.down.circle") { features.downloads.enqueue([song]) }
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .buttonStyle(.borderless)
+                    .disabled(features.downloads.holds(song))
+            }
         }
         .swipeActions {
             Button("Remove", role: .destructive) { features.removeWanted(wanted.id) }
