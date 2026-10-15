@@ -199,6 +199,18 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("A room correction file must be an audio file")]
+    ImpulseExtension,
+    #[error("The room correction file is larger than 64 MiB")]
+    ImpulseTooLarge,
+    #[error("The file holds no response room correction can use")]
+    NoImpulse,
+    #[error("The room correction file could not be {op}")]
+    ImpulseFile {
+        op: crate::room::ImpulseOp,
+        #[source]
+        source: io::Error,
+    },
     #[error("the application folder could not be created")]
     Folder {
         op: StoreOp,

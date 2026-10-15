@@ -434,6 +434,7 @@ mod tests {
             syncing: crate::sync::Syncing::under(env::temp_dir()),
             routing: Arc::new(crate::output::Routing::new()),
             enriching: crate::enrichment::Enriching::default(),
+            room: crate::room::Room::under(std::env::temp_dir()),
         }
     }
 

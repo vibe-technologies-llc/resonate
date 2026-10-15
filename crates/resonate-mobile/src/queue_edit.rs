@@ -291,6 +291,7 @@ mod tests {
                 syncing: Syncing::under(folder.clone()),
                 routing: Arc::new(Routing::new()),
                 enriching: crate::enrichment::Enriching::default(),
+                room: crate::room::Room::under(std::env::temp_dir()),
             };
 
             let songs = SONGS

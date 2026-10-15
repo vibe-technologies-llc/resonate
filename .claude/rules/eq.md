@@ -11,6 +11,8 @@ paths:
   - "crates/resonate-ui/src/views/settings/curve.rs"
   - "crates/resonate/src/equaliser.rs"
   - "crates/resonate-mobile/src/equaliser.rs"
+  - "crates/resonate-mobile/src/room.rs"
+  - "ios/Sources/Resonate/RoomCorrection.swift"
   - "ios/Sources/Resonate/EqualiserGraph.swift"
 ---
 
@@ -115,6 +117,15 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   The binary reads the file at start, `explain` names it; the pane's *Room correction* group reads
   one on a background thread. `RootView::reading_the_room` is one task: a second pick replaces it,
   *Stop correcting* drops it, so the last gesture wins. One response for all devices, no binding.
+- **The phones keep one response file** (`resonate-mobile/src/room.rs`): `keep_room_correction(bytes,
+  extension)` refuses an extension outside `AUDIO_EXTENSIONS` (`ImpulseExtension`) or more than
+  `IMPULSE_BYTES_AT_MOST` (64 MiB, `ImpulseTooLarge`), replaces any `room-correction.*` in the
+  player's folder, and reads it back through `read_impulse` over the local provider, removing it
+  where it holds no response (`NoImpulse`); `apply_room_correction(on)` sends `SetConvolution` with
+  the kept response or none, answering its channels, rate and length; `forget_room_correction`
+  clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
+  `playback` suite and applies the response at start (`RoomCorrectionState`, the equaliser page's
+  *Room correction* section, `fileImporter` of audio).
 
 ## The binding
 

@@ -541,6 +541,10 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   playing (`followRoute`); unbinding, or forgetting the output in use under *Curves kept for other
   outputs*, falls back to the shared curve at once. The switch stays one for every output, as on the
   desktop. The engine still gets one curve as its `Equalisation` fallback.
+- **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
+  audio file reads at most 64 MiB and one byte on `Work.aside` and keeps it through
+  `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length
+  and *Forget the response* follow (`eq.md`'s *Room correction*). One response serves every output.
 
 ## Checks
 

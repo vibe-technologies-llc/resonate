@@ -16,6 +16,7 @@ mod output;
 mod playback;
 mod playlists;
 mod queue_edit;
+mod room;
 mod search;
 mod sync;
 mod vanished;
@@ -126,6 +127,7 @@ pub struct MobilePlayer {
     syncing: sync::Syncing,
     routing: Arc<output::Routing>,
     enriching: enrichment::Enriching,
+    room: room::Room,
 }
 
 #[uniffi::export]
@@ -162,6 +164,7 @@ impl MobilePlayer {
             syncing: sync::Syncing::under(PathBuf::from(&folder)),
             routing,
             enriching: enrichment::Enriching::default(),
+            room: room::Room::under(PathBuf::from(&folder)),
         });
         let (ids, at, position) = this.catalog.resume()?;
         if !ids.is_empty() {

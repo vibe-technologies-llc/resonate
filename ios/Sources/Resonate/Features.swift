@@ -43,6 +43,7 @@ final class Features {
     @ObservationIgnored lazy var enrichment = Enrichment(library: library)
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
     @ObservationIgnored lazy var listening = Listening(library: library)
+    @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
     @ObservationIgnored private let transfers = BackgroundHold(
         name: "Fetching songs from your devices",
         continued: BackgroundHold.transfers
@@ -152,6 +153,7 @@ final class Features {
     }
 
     func initialize(_ native: MobilePlayer) {
+        room.restore(native)
         providers = accounts.readProviders()
         scrobbleAccount = accounts.readScrobbling()
         recognitionKey = accounts.readRecognitionKey()

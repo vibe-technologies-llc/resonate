@@ -424,6 +424,7 @@ struct SoundSettingsView: View {
                         Label("Headphone correction and profile import", systemImage: "headphones")
                     }
                 }
+                RoomCorrectionSection()
                 let others = library.boundRoutes.filter { $0.id != library.route?.id }
                 if !others.isEmpty {
                     Section {

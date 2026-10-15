@@ -4,8 +4,10 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [L] Android still needs document tagging/organising with undo, vault workflows, convolution and
-  per-route equaliser bindings
+- [L] Android still needs document tagging/organising with undo, vault workflows and per-route
+  equaliser bindings
+- [S] Android has no room correction: `keep_room_correction` and `apply_room_correction` keep and
+  play a response, and only iOS offers them
 - [S] Android sends favourites only from its button: `tell_loves` loves and takes back on its own,
   and only iOS calls it
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
@@ -28,8 +30,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   channels is passed over (and counted), where the desktop keeps it on those channels
 
 ## iOS parity
-- [L] iOS lacks what Android lacks (tagging/organising, vault, convolution), plus CarPlay and a
-  widget
+- [L] iOS lacks what Android lacks (tagging/organising, vault), plus CarPlay and a widget
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
 
