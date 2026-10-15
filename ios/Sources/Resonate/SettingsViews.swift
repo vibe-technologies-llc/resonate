@@ -32,6 +32,7 @@ struct SettingsView: View {
         "Download providers TIDAL Subsonic Monochrome",
         "Scrobbling ListenBrainz Last.fm",
         "Erase all data reset everything delete start over",
+        "Appearance accent colour icon tint theme",
     ]
 
     var body: some View {
@@ -47,6 +48,17 @@ struct SettingsView: View {
             if !sources.isEmpty {
                 Section("Library sources") {
                     ForEach(sources) { entryRow($0) }
+                }
+            }
+            if shown("Appearance accent colour icon tint theme") {
+                Section("Appearance") {
+                    NavigationLink(value: Destination.appearance) {
+                        ToolRow(
+                            title: "Accent colour",
+                            detail: AppearanceState.shared.accent.map { $0.name.capitalized } ?? "Resonate",
+                            symbol: "paintpalette"
+                        )
+                    }
                 }
             }
             Section("Connected services") {

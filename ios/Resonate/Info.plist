@@ -10,6 +10,68 @@
 	<string>1</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>Icon</string>
+			</array>
+		</dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>Mauve</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconMauve</string>
+				</array>
+			</dict>
+			<key>Blue</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconBlue</string>
+				</array>
+			</dict>
+			<key>Teal</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconTeal</string>
+				</array>
+			</dict>
+			<key>Green</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconGreen</string>
+				</array>
+			</dict>
+			<key>Amber</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconAmber</string>
+				</array>
+			</dict>
+			<key>Peach</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconPeach</string>
+				</array>
+			</dict>
+			<key>Red</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>IconRed</string>
+				</array>
+			</dict>
+		</dict>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

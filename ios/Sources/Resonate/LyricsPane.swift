@@ -78,7 +78,7 @@ struct LyricsPane: View {
     private func following(_ sheet: LyricSheet) -> some View {
         let playback = LyricPlayback.of(library.snapshot, at: library.clock.positionMs, showing: track)
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
-        let inks = LyricInks(scheme: scheme, accent: Color.accentColor.resolve(in: environment))
+        let inks = LyricInks(scheme: scheme, accent: Color.worn.resolve(in: environment))
         let awake = visible && phase == .active
         let sounding = playback?.playing == true && sheet.detail != .unsynced
         let moving = awake && (sounding || stage.isMoving(at: Date.now.timeIntervalSinceReferenceDate))

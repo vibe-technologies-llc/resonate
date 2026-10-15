@@ -90,7 +90,7 @@ struct BackdropView: View {
     }
 
     private func loadPalette() async {
-        let accent = Color.accentColor.resolve(in: EnvironmentValues())
+        let accent = Color.worn.resolve(in: EnvironmentValues())
         let accentLinear = SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
 
         guard let track, let image = await library.features.artwork(track) else {

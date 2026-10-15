@@ -4,3 +4,25 @@ product: Resonate
 infoPath: Resonate/Info.plist
 iconPath: Resonate/Icon.png
 entitlementsPath: Resonate/Resonate.entitlements
+resources:
+  - Generated/icons/IconMauve.png
+  - Generated/icons/IconMauve@2x.png
+  - Generated/icons/IconMauve@3x.png
+  - Generated/icons/IconBlue.png
+  - Generated/icons/IconBlue@2x.png
+  - Generated/icons/IconBlue@3x.png
+  - Generated/icons/IconTeal.png
+  - Generated/icons/IconTeal@2x.png
+  - Generated/icons/IconTeal@3x.png
+  - Generated/icons/IconGreen.png
+  - Generated/icons/IconGreen@2x.png
+  - Generated/icons/IconGreen@3x.png
+  - Generated/icons/IconAmber.png
+  - Generated/icons/IconAmber@2x.png
+  - Generated/icons/IconAmber@3x.png
+  - Generated/icons/IconPeach.png
+  - Generated/icons/IconPeach@2x.png
+  - Generated/icons/IconPeach@3x.png
+  - Generated/icons/IconRed.png
+  - Generated/icons/IconRed@2x.png
+  - Generated/icons/IconRed@3x.png

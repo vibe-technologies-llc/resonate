@@ -293,10 +293,10 @@ struct EqualiserGraph: View {
         }
 
         guard response.count > 1 else { return }
-        context.fill(scale.washed(response), with: .color(.accentColor.opacity(0.18)))
+        context.fill(scale.washed(response), with: .color(Color.worn.opacity(0.18)))
         context.stroke(
             scale.traced(response),
-            with: .color(.accentColor),
+            with: .color(Color.worn),
             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
         )
     }
@@ -306,10 +306,10 @@ struct EqualiserGraph: View {
         let chosen = selected == index
         return Text("\(index + 1)")
             .font(.caption2.weight(.bold).monospacedDigit())
-            .foregroundStyle(chosen ? Color.white : Color.accentColor)
+            .foregroundStyle(chosen ? Color.white : Color.worn)
             .frame(width: Self.handleSize, height: Self.handleSize)
-            .background(Circle().fill(chosen ? Color.accentColor : Color(.systemBackground)))
-            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
+            .background(Circle().fill(chosen ? Color.worn : Color(.systemBackground)))
+            .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))
             .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
             .scaleEffect(heldBand == index ? 1.25 : 1)
             .animation(.snappy(duration: 0.15), value: heldBand == index)

@@ -405,7 +405,7 @@ struct TrackRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(query.map { lit(track.shownTitle, by: $0, in: .title) } ?? AttributedString(track.shownTitle))
                             .font(.body.weight(playingHere ? .semibold : .regular))
-                            .foregroundStyle(playingHere ? Color.accentColor : Color.primary)
+                            .foregroundStyle(playingHere ? Color.worn : Color.primary)
                             .lineLimit(1)
                         if let detail {
                             Text(detail)

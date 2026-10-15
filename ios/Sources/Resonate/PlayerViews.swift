@@ -541,7 +541,7 @@ struct TransportRow: View {
         GlassEffectContainer(spacing: 24) {
             HStack(spacing: 0) {
                 Button("Shuffle", systemImage: "shuffle") { library.setShuffle(!shuffled) }
-                    .foregroundStyle(shuffled ? Color.accentColor : .secondary)
+                    .foregroundStyle(shuffled ? Color.worn : .secondary)
                     .accessibilityValue(shuffled ? "On" : "Off")
                     .frame(maxWidth: .infinity)
                 Button("Previous", systemImage: "backward.fill") {
@@ -558,7 +558,7 @@ struct TransportRow: View {
                 .font(.title)
                 .frame(maxWidth: .infinity)
                 Button("Repeat", systemImage: repeating.symbol) { library.setRepeat(repeating.following) }
-                    .foregroundStyle(repeating == .off ? .secondary : Color.accentColor)
+                    .foregroundStyle(repeating == .off ? .secondary : Color.worn)
                     .accessibilityValue(repeating.spoken)
                     .frame(maxWidth: .infinity)
             }
@@ -756,7 +756,7 @@ struct PlayerModes: View {
         .font(.title3)
         .frame(width: 48, height: 48)
         .foregroundStyle(active ? Color.white : Color.primary)
-        .glassEffect(active ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .circle)
+        .glassEffect(active ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
         .buttonStyle(.plain)
         .accessibilityAddTraits(active ? .isSelected : [])
     }

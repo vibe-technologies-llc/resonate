@@ -51,7 +51,7 @@ struct SignalPlot: View {
                     path.addLine(to: CGPoint(x: x, y: size.height * (1 - level)))
                 }
             }
-            context.stroke(path, with: .color(.accentColor), lineWidth: mirrored ? max(step * 0.7, 1) : 1.5)
+            context.stroke(path, with: .color(Color.worn), lineWidth: mirrored ? max(step * 0.7, 1) : 1.5)
         }
         .accessibilityHidden(true)
     }

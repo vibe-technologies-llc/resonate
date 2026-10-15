@@ -190,12 +190,12 @@ struct ListenControl: View {
             Image(systemName: busy ? "waveform" : "ear")
                 .font(.system(size: edge * 0.38, weight: .medium))
                 .symbolEffect(.variableColor.iterative, isActive: recording)
-                .foregroundStyle(busy ? Color.white : Color.accentColor)
+                .foregroundStyle(busy ? Color.white : Color.worn)
                 .frame(width: edge, height: edge)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(busy ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .circle)
+        .glassEffect(busy ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
         .accessibilityLabel(busy ? "Stop listening" : "Listen")
         .accessibilityHint(busy ? "" : "Records a few seconds from the microphone and names the song")
     }

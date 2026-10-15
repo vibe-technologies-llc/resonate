@@ -402,7 +402,7 @@ struct CollectionAction: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
-        .glassEffect(prominent ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .capsule)
+        .glassEffect(prominent ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .capsule)
         .opacity(enabled ? 1 : 0.5)
     }
 }

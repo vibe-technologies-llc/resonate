@@ -61,6 +61,7 @@ enum Destination: Hashable {
     case visualizer
     case songAnalysis(UInt64?)
     case songDetails(UInt64)
+    case appearance
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -124,7 +125,7 @@ final class Navigation {
 extension Destination {
     var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .autoEq, .scrobbling, .providers, .sync, .folders: true
+        case .sound, .processing, .output, .autoEq, .scrobbling, .providers, .sync, .folders, .appearance: true
         default: false
         }
     }
@@ -155,10 +156,12 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .tint(AppearanceState.shared.tint)
         .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
         .safeAreaInset(edge: .top) { StatusBanner() }
         .fullScreenCover(isPresented: $navigation.nowPlaying) {
             NowPlayingView()
+                .tint(AppearanceState.shared.tint)
                 .navigationTransition(.zoom(sourceID: PlayerTransition.source, in: player))
                 .environment(navigation)
         }
@@ -230,6 +233,7 @@ struct DestinationView: View {
         case .output: OutputView()
         case .sound: SoundSettingsView()
         case .processing: ProcessingView()
+        case .appearance: AppearanceView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }

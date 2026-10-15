@@ -11,7 +11,7 @@ The iOS front end is SwiftUI, a SwiftPM package under `ios/` built, signed and i
 with xtool (`xtool.yml`: bundle `org.resonate.ios`, `Resonate/Info.plist`, `Resonate/Icon.png`,
 `Resonate/Resonate.entitlements`). iOS 26 is the minimum, so the app draws with Liquid Glass and
 needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.22.2 or later; older builds miss Xcode 27's SDK),
-`zip` for `--ipa`, the `darwin` Swift SDK
+`zip` for `--ipa`, `rsvg-convert` (librsvg) for the accent icons, the `darwin` Swift SDK
 `xtool setup` builds from Xcode's `.xip`, the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
 None of this is in CI: the SDK cannot be fetched without the listener's Apple ID.
 
@@ -22,7 +22,13 @@ None of this is in CI: the SDK cannot be fetched without the listener's Apple ID
 `IPHONEOS_DEPLOYMENT_TARGET` 26.0; C dependencies compiled by clang against the SDK's
 `iPhoneOS.sdk`), generates the Swift bindings, and lays out `ios/Generated/`: `ResonateNativeFFI` (the
 header and a module map that links `resonate_mobile`), `ResonateNative` (the bindings) and `lib/`.
-`Package.swift` takes those as a system-library target and a Swift target and links the archive
+It also reads the Resonate palette's seven accents out of `resonate-ui`'s `theme.rs` (the `RESONATE`
+flavour) and `launcher.rs`'s `LIFTED_TOWARD_WHITE`, writes them as `ResonateAccent.every`
+(`Generated/ResonateNative/Accents.swift`), and draws `packaging/resonate.svg` recoloured as the
+desktop's launcher does (light stop the accent lifted toward white, deep stop the accent) into
+`Generated/icons/Icon<Accent>{,@2x,@3x}.png` (1024, 120, 180 px) with `rsvg-convert`; `xtool.yml`'s
+`resources` copies them to the bundle root and `Info.plist`'s `CFBundleIcons` names each as an
+alternate icon beside the primary `Icon`. `Package.swift` takes those as a system-library target and a Swift target and links the archive
 from `Generated/lib` with AudioToolbox, CoreAudio, Security and SystemConfiguration. Everything under
 `ios/Generated`, `ios/.cargo-target` and `ios/.build` is generated, never checked in or edited.
 
@@ -250,6 +256,17 @@ accessibility label. The output page holds `AVRoutePickerView`, since iOS owns t
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.
+
+## Appearance
+
+- **The accent is the desktop's, chosen on Settings › Appearance** (`Appearance.swift`):
+  *Resonate* (the default: the system accent and the packaged icon) or one of `ResonateAccent.every`,
+  kept as `accent` in the `appearance` suite. `AppearanceState.shared` (`@Observable`) is read by
+  `.tint` at the root and the Now Playing cover and by `Color.worn`, which every view drawing the
+  accent itself uses instead of `Color.accentColor` (that reads the asset catalog, never a tint set
+  in code). An accent is drawn as its hex in dark mode and 28 % deeper in light, since the desktop's
+  hexes are lit for dark grounds. Choosing one sets the alternate icon of its name
+  (`setAlternateIconName`, `nil` for Resonate); a refusal is said under the swatches.
 
 ## Suggestions and generated art
 

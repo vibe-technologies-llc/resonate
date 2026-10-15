@@ -296,7 +296,7 @@ struct SyncTransferRow: View {
     private var tint: Color {
         switch transfer.state {
         case .waiting: .secondary
-        case .moving: .accentColor
+        case .moving: Color.worn
         case .landed: .green
         case .failed: .orange
         }
