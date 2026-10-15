@@ -14,23 +14,23 @@ class MiniPlayer extends StatelessWidget {
   final VoidCallback onOpen;
   @override
   Widget build(BuildContext context) => Glass(
-    radius: 26,
+    radius: AppGeometry.chromeRadius,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         InkWell(
           onTap: onOpen,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+            padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
             child: Row(
               children: [
                 Artwork(
                   model: model,
                   track: model.current,
-                  size: 48,
-                  radius: 14,
+                  size: 40,
+                  radius: 12,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: motion(context, 200),
@@ -42,7 +42,7 @@ class MiniPlayer extends StatelessWidget {
                           title(model.current),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                         Text(
                           artist(model.current),
@@ -938,9 +938,9 @@ class QueuePage extends StatelessWidget {
       children: [
         Padding(
           padding: EdgeInsets.fromLTRB(
-            compact ? 0 : 24,
-            compact ? 0 : 20,
-            compact ? 0 : 16,
+            compact ? 0 : AppGeometry.pageInset,
+            compact ? 0 : AppGeometry.pageTop,
+            compact ? 0 : AppGeometry.pageInset,
             10,
           ),
           child: Row(
@@ -953,8 +953,7 @@ class QueuePage extends StatelessWidget {
                       compact ? 'Up next' : 'Queue',
                       style: compact
                           ? Theme.of(context).textTheme.titleLarge
-                          : Theme.of(context).textTheme.headlineLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                          : Theme.of(context).textTheme.headlineLarge,
                     ),
                     if (!compact && queue.isNotEmpty)
                       Text(

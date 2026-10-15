@@ -10,6 +10,28 @@ import 'model.dart';
 const accent = Color(0xFFB9AAFF);
 const mint = Color(0xFF9AE5CD);
 
+abstract final class AppGeometry {
+  static const pageInset = 24.0;
+  static const pageTop = 20.0;
+  static const cardRadius = 20.0;
+  static const controlRadius = 16.0;
+  static const chromeRadius = 24.0;
+  static const touchTarget = 48.0;
+}
+
+EdgeInsets pageInsets(
+  BuildContext context, {
+  double top = AppGeometry.pageTop,
+}) => EdgeInsets.fromLTRB(
+  AppGeometry.pageInset,
+  top,
+  AppGeometry.pageInset,
+  MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+);
+
+const musicFolderGuidance =
+    'Use Downloads directly with the Downloads option. For other folders, choose Add music folder.';
+
 Duration motion(BuildContext context, [int milliseconds = 350]) =>
     MediaQuery.disableAnimationsOf(context)
     ? Duration.zero
@@ -19,7 +41,7 @@ class Glass extends StatelessWidget {
   const Glass({
     super.key,
     required this.child,
-    this.radius = 28,
+    this.radius = AppGeometry.chromeRadius,
     this.padding = EdgeInsets.zero,
   });
   final Widget child;
@@ -35,14 +57,12 @@ class Glass extends StatelessWidget {
         filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: (dark ? const Color(0xFF24242D) : Colors.white).withValues(
-              alpha: dark ? .54 : .65,
-            ),
+            color: Theme.of(context).colorScheme.surfaceContainer
+                .withValues(alpha: dark ? .78 : .88),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(
-              color: (dark ? Colors.white : Colors.black).withValues(
-                alpha: .08,
-              ),
+              color: Theme.of(context).colorScheme.outlineVariant
+                  .withValues(alpha: .6),
             ),
           ),
           child: Padding(padding: padding, child: child),
@@ -156,8 +176,7 @@ class ProgressiveBlurBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final tint = dark ? const Color(0xFF101017) : const Color(0xFFF8F7FC);
+    final tint = Theme.of(context).scaffoldBackgroundColor;
     return Stack(
       children: [
         Positioned.fill(
@@ -247,12 +266,7 @@ Future<List<Color>> extractArtworkColors(
       colors.add(
         weight == 0
             ? (half == 0 ? accent : mint)
-            : Color.fromARGB(
-                255,
-                r ~/ weight,
-                g ~/ weight,
-                b ~/ weight,
-              ),
+            : Color.fromARGB(255, r ~/ weight, g ~/ weight, b ~/ weight),
       );
     }
     if (cacheKey.isNotEmpty) {
@@ -290,12 +304,7 @@ class _ArtworkState extends State<Artwork> {
   @override
   void didUpdateWidget(Artwork oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.track['id'] != widget.track['id'] ||
-        oldWidget.track['artRevision'] != widget.track['artRevision'] ||
-        oldWidget.model.state['artworkGeneration'] !=
-            widget.model.state['artworkGeneration']) {
-      _load();
-    }
+    _load();
   }
 
   @override
@@ -328,26 +337,29 @@ class _ArtworkState extends State<Artwork> {
     } else {
       _bytes = null;
     }
-    widget.model.artwork(widget.track).then((bytes) async {
-      if (bytes != null) {
-        _artworkBytesCache[key] = bytes;
-        while (_artworkBytesCache.length > 96) {
-          final oldest = _artworkBytesCache.keys.first;
-          _artworkBytesCache.remove(oldest);
-          _artworkColorsCache.remove(oldest);
-        }
-      }
-      if (!mounted || _key != key) return;
-      if (_bytes != bytes) {
-        setState(() => _bytes = bytes);
-      }
-      if (widget.onColors != null) {
-        final colors = bytes == null
-            ? const [accent, mint]
-            : await extractArtworkColors(bytes, key);
-        _publishColors(key, colors);
-      }
-    }).catchError((Object _) {});
+    widget.model
+        .artwork(widget.track)
+        .then((bytes) async {
+          if (bytes != null) {
+            _artworkBytesCache[key] = bytes;
+            while (_artworkBytesCache.length > 96) {
+              final oldest = _artworkBytesCache.keys.first;
+              _artworkBytesCache.remove(oldest);
+              _artworkColorsCache.remove(oldest);
+            }
+          }
+          if (!mounted || _key != key) return;
+          if (_bytes != bytes) {
+            setState(() => _bytes = bytes);
+          }
+          if (widget.onColors != null) {
+            final colors = bytes == null
+                ? const [accent, mint]
+                : await extractArtworkColors(bytes, key);
+            _publishColors(key, colors);
+          }
+        })
+        .catchError((Object _) {});
   }
 
   void _publishColors(String key, List<Color> colors) {
@@ -419,12 +431,14 @@ class ArtworkAtmosphere extends StatefulWidget {
     required this.child,
     this.colors,
     this.immersive = false,
+    this.subdued = false,
   });
   final PlayerModel model;
   final RowData track;
   final Widget child;
   final List<Color>? colors;
   final bool immersive;
+  final bool subdued;
 
   @override
   State<ArtworkAtmosphere> createState() => _ArtworkAtmosphereState();
@@ -444,12 +458,7 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
   @override
   void didUpdateWidget(ArtworkAtmosphere oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.track['id'] != widget.track['id'] ||
-        oldWidget.track['artRevision'] != widget.track['artRevision'] ||
-        oldWidget.model.state['artworkGeneration'] !=
-            widget.model.state['artworkGeneration']) {
-      _load();
-    }
+    _load();
   }
 
   void _load() {
@@ -470,35 +479,39 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
     if (_artworkBytesCache.containsKey(key)) {
       _artwork = _artworkBytesCache[key];
     }
-    widget.model.artwork(widget.track).then((bytes) async {
-      if (bytes != null) {
-        _artworkBytesCache[key] = bytes;
-      }
-      if (!mounted || _key != key) return;
-      if (bytes == null) {
-        setState(() {
-          _artwork = null;
-          _extractedColors = const [accent, mint];
-        });
-        return;
-      }
-      final colors = await extractArtworkColors(bytes, key);
-      if (!mounted || _key != key) return;
-      setState(() {
-        _artwork = bytes;
-        _extractedColors = colors;
-      });
-    }).catchError((Object _) {});
+    widget.model
+        .artwork(widget.track)
+        .then((bytes) async {
+          if (bytes != null) {
+            _artworkBytesCache[key] = bytes;
+          }
+          if (!mounted || _key != key) return;
+          if (bytes == null) {
+            setState(() {
+              _artwork = null;
+              _extractedColors = const [accent, mint];
+            });
+            return;
+          }
+          final colors = await extractArtworkColors(bytes, key);
+          if (!mounted || _key != key) return;
+          setState(() {
+            _artwork = bytes;
+            _extractedColors = colors;
+          });
+        })
+        .catchError((Object _) {});
   }
 
   @override
   Widget build(BuildContext context) {
     final activeColors = widget.colors ?? _extractedColors;
     return Ambient(
-      animated: widget.model.playing,
+      animated: widget.model.playing && !widget.subdued,
       colors: activeColors,
       artwork: _artwork,
       immersive: widget.immersive,
+      subdued: widget.subdued,
       child: widget.child,
     );
   }
@@ -512,9 +525,11 @@ class Ambient extends StatefulWidget {
     this.animated = false,
     this.artwork,
     this.immersive = false,
+    this.subdued = false,
   });
   final Uint8List? artwork;
   final bool immersive;
+  final bool subdued;
   final Widget child;
   final List<Color> colors;
   final bool animated;
@@ -579,6 +594,7 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
                   color1 ?? accent,
                   color2 ?? mint,
                   dark,
+                  widget.subdued ? .25 : 1,
                 ),
               ),
             ),
@@ -589,10 +605,7 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
             duration: motion(context, 650),
             layoutBuilder: (currentChild, previousChildren) => Stack(
               fit: StackFit.expand,
-              children: [
-                ...previousChildren,
-                ?currentChild,
-              ],
+              children: [...previousChildren, ?currentChild],
             ),
             child: widget.artwork != null
                 ? ClipRect(
@@ -601,12 +614,16 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
                       animation: _drift,
                       child: RepaintBoundary(
                         child: Opacity(
-                          opacity: widget.immersive
-                              ? (dark ? .58 : .38)
-                              : (dark ? .22 : .15),
+                          opacity:
+                              (widget.immersive
+                                  ? (dark ? .58 : .38)
+                                  : (dark ? .22 : .15)) *
+                              (widget.subdued ? .3 : 1),
                           child: ImageFiltered(
-                            imageFilter:
-                                ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                            imageFilter: ui.ImageFilter.blur(
+                              sigmaX: 32,
+                              sigmaY: 32,
+                            ),
                             child: Image.memory(
                               widget.artwork!,
                               fit: BoxFit.cover,
@@ -656,11 +673,12 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
 }
 
 class _AmbientPainter extends CustomPainter {
-  _AmbientPainter(this.drift, this.first, this.second, this.dark)
+  _AmbientPainter(this.drift, this.first, this.second, this.dark, this.strength)
     : super(repaint: drift);
   final Animation<double> drift;
   final Color first, second;
   final bool dark;
+  final double strength;
   @override
   void paint(Canvas canvas, Size size) {
     final t = drift.value;
@@ -675,7 +693,9 @@ class _AmbientPainter extends CustomPainter {
         radius,
         Paint()
           ..shader = ui.Gradient.radial(points[i], radius, [
-            (i == 0 ? first : second).withValues(alpha: dark ? .24 : .16),
+            (i == 0 ? first : second).withValues(
+              alpha: (dark ? .24 : .16) * strength,
+            ),
             Colors.transparent,
           ]),
       );
@@ -684,7 +704,10 @@ class _AmbientPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AmbientPainter old) =>
-      first != old.first || second != old.second || dark != old.dark;
+      first != old.first ||
+      second != old.second ||
+      dark != old.dark ||
+      strength != old.strength;
 }
 
 class ActionIcon extends StatelessWidget {
@@ -730,11 +753,7 @@ class SectionTitle extends StatelessWidget {
     child: Row(
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
         ),
         ?action,
       ],
@@ -905,7 +924,8 @@ class ScanProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scanned = model.allTracks.length;
-    final text = model.state['status'] as String? ??
+    final text =
+        model.state['status'] as String? ??
         (scanned > 0
             ? 'Reading music folder… $scanned ${scanned == 1 ? 'song' : 'songs'}'
             : 'Reading music folder…');
@@ -1063,7 +1083,10 @@ class StatusCard extends StatelessWidget {
             TextButton(
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
               ),
               onPressed: model.dismissNotice,
               child: const Text(

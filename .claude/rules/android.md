@@ -105,8 +105,14 @@ The emulator's native playback test must load and play audio, not merely install
 
 ## Documents and catalog
 
-The user chooses folders through the Storage Access Framework. Persistable read/write grants
-survive restart; neither broad storage permission nor guessed filesystem paths are used.
+The user chooses folders through the Storage Access Framework or enables Downloads through
+MediaStore. Persistable read/write grants survive restart; neither all-files access nor guessed
+filesystem paths are used. Downloads asks for `READ_MEDIA_AUDIO` only when reading existing
+music is requested. Its scan queries audio rows beneath `Download/` on the primary volume,
+excluding pending and trashed files; it does not filter by `IS_MUSIC`, which misses unclassified
+downloads. All MediaStore entries use their Files URI, including new deliveries, so rescanning
+the same file preserves its catalog identity and favourites. Embedded artwork remains available;
+the music permission does not grant access to separate picture or lyric sidecars.
 The `content` media provider preserves the document URI's escaping exactly, including `%3A`,
 `%2F` and `%25`, through a saved `MediaLocation`. Kotlin opens a descriptor on a worker; Rust
 uses the same codec and transport as Linux. A forward-only document uses the codec's spool,
@@ -212,6 +218,16 @@ content includes the system and toolbar insets at the start, so controls begin b
 and pass beneath the blur as they scroll. Fixed search controls retain those insets outside the
 results viewport.
 
+Settings use neutral surfaces with the same text roles and geometry as the library: 24-pixel
+page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork keeps a quarter
+of the radial wash and three tenths of the image opacity, without decorative drift, so bright
+covers cannot compete with labels. Cards have opaque neutral surfaces; secondary text retains
+its own contrasting color. Root headings align with their actions and omit decorative captions.
+The mini-player keeps 40-pixel artwork and 48-pixel touch targets; navigation is 64 pixels high,
+or 72 for large text. Narrow widths and large text show only the selected navigation label.
+Scrolling lists take their bottom inset from the scaffold rather than reserving a fixed 180
+pixels, keeping the final row clear without leaving an empty tail.
+
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
 keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
 four existing track covers loaded off the main thread. Playlist detail adds a searchable multi-song
@@ -227,8 +243,10 @@ blur clears as dismissal completes, preventing a black gap or a second route exi
 
 Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions and
 stops decorative drift. Artwork is loaded through the existing native cache as JPEG bytes,
-keyed in Dart by song, artwork revision and generation. The decoded Flutter cache is bounded at
-64 MiB and encoded/in-flight requests at 48 entries. The expanded player samples two tones
+keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
+on updates; comparing two references to the mutable model misses a newly published generation.
+The decoded Flutter cache is bounded at 64 MiB and encoded/in-flight requests at 48 entries.
+The expanded player samples two tones
 from a 16 by 16 cover decode, falls back for neutral/dark/transparent art and draws radial washes
 inside a repaint boundary. The shell and expanded player place a 128-pixel cover decode behind
 glass surfaces; the expanded player uses a stronger wash. Blur sits inside a repaint boundary
@@ -436,6 +454,30 @@ cover, or takes that cover where it betters a thumbnail; no per-song archive cop
 `artist_portrait(mbid)` reads the kept portrait; `ask_again_for_covers` clears `cover_asked` on
 albums still without one.
 
+Android's Artwork and details section uses this same pass. Automatic lookup defaults on;
+Only on Wi-Fi defaults off and uses the unmetered-network signal. Both choices persist in
+preferences. Initialization, scans and new downloads or sync arrivals start an automatic pass
+only when those choices and online permit it. Restricting an automatic pass to Wi-Fi stops it
+when the network becomes metered. Explicit refresh confirms the library count, restarts with
+refresh enabled and offers Stop; retrying missing covers clears only the existing cover retry
+marks. Kotlin reads progress and artwork revisions every two seconds while the Activity is
+visible and a pass runs, updates Flutter's artwork generation and refreshes completed catalog
+metadata. Leaving the Activity stops observation; native shutdown owns stopping the pass.
+The controller awaits the engine before taking its operation mutex, and repeated foreground
+notifications do nothing: the first Activity start can precede the service's engine creation,
+so waiting there under the mutex would block every later artwork action.
+
+The SAF folder chooser starts at Music. Android refuses a tree grant for the storage root and
+Downloads itself; Settings offers Use Downloads and the download chooser offers Downloads
+directly. This uses MediaStore rather than sending the listener back to the restricted picker.
+New deliveries insert a pending row into the Downloads collection with `Download/` as their
+relative path, pass its detached descriptor through the existing validation/indexing flow, then
+publish it. Duplicate names create separate files. Cleanup and interrupted-delivery recovery
+delete only the journalled new row through MediaStore; SAF destinations retain document deletion
+and the exact granted URI. Downloads is saved among the chosen sources and rescanned with them;
+removing it keeps files and catalog entries. Sync uses Downloads only when explicitly chosen as
+its destination, so enabling the source never changes the previous automatic destination.
+
 Search covers songs, albums, artists, release editions and songs within a release; artist
 discography pages by identity. Shared song, album, artist and playlist links use the library's
 existing resolvers; remote playlist order and repeats are retained, within the service's own page
@@ -494,8 +536,9 @@ delivery `index_download` refuses as `WrongSong` is declined by every later find
 by the song's wanted identity and the place it was taken from, and each refusal written sweeps the
 rows past that age.
 
-Only a fresh SAF document is opened for writing; its URI is journalled before streaming, bytes are
-bounded at 8 GiB, and codec probe/duration validation (within `LENGTHS_AGREE_WITHIN`) precedes
+Only a fresh SAF document or pending Downloads row is opened for writing; its URI is journalled
+before streaming, bytes are bounded at 8 GiB, and codec probe/duration validation (within
+`LENGTHS_AGREE_WITHIN`) precedes
 catalog insertion. Failed or interrupted deliveries delete only that newly created document,
 including journal recovery on the next start. Validated deliveries fill the song's recording,
 release, artist id, disc and position where the document names none, and missing catalog names,
@@ -580,7 +623,9 @@ clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document
 identity, decode, rate conversion, playback, pause, seeking, resumption, sound-setting restoration,
 sleep timers, metadata/artwork/sidecar lyrics, analysis, filtering, duplicate playlist/queue rows,
-listening thresholds, saved wants and local playlist import, a loopback provider download and
+listening thresholds, saved artwork preferences and offline enrichment, saved wants and local
+playlist import, a loopback provider download, MediaStore Downloads publication and stable rescan
+identity, music access to another app's audio in Downloads, and
 cancellation, encrypted account storage, pinned favourites and player hearts, collection links,
 playlist picker/edit/undo and repeated-row playback, tool navigation, Activity recreation and
 background controls through Media3, notification artwork and opening, and task-dismissal pause. CI uses an API 36 x86_64

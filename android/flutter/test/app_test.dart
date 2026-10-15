@@ -663,6 +663,15 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
+      final pictureRequests = calls
+          .where((call) => call.method == 'artwork')
+          .length;
+      events.add({'artworkGeneration': '33'});
+      await tester.pumpAndSettle();
+      expect(
+        calls.where((call) => call.method == 'artwork'),
+        hasLength(pictureRequests + 1),
+      );
       events.add({
         'lyricFrame': {
           'readAt': 22,
@@ -911,6 +920,248 @@ void main() {
           .toList();
       expect(saved, hasLength(1));
       expect(saved.single.arguments, {'name': 'Queue saved'});
+    },
+  );
+  testWidgets(
+    'artwork controls send native actions and reflect progress and restrictions',
+    (tester) async {
+      events.add({
+        'online': true,
+        'enrichmentAutomatic': true,
+        'enrichmentUnmeteredOnly': false,
+        'enrichmentStatus': {'running': false, 'stopped': 'FINISHED'},
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ArtworkDetailsSection(model: model),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(calls.any((call) => call.method == 'enrichmentStatus'), isTrue);
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Only on Wi-Fi'));
+      await tester.pump();
+      expect(calls.last.method, 'enrichmentUnmeteredOnly');
+      expect(calls.last.arguments, {'enabled': true});
+      await tester.tap(
+        find.widgetWithText(
+          SwitchListTile,
+          'Fetch artwork and details automatically',
+        ),
+      );
+      await tester.pump();
+      expect(calls.last.method, 'enrichmentAutomatic');
+      expect(calls.last.arguments, {'enabled': false});
+      events.add({'enrichmentAutomatic': false});
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.widgetWithText(SwitchListTile, 'Only on Wi-Fi'),
+            )
+            .onChanged,
+        isNull,
+      );
+      await tester.ensureVisible(find.text('Look again for missing covers'));
+      await tester.tap(find.text('Look again for missing covers'));
+      await tester.pump();
+      expect(calls.last.method, 'retryMissingCovers');
+      events.add({
+        'coversAskedAgain': 3,
+        'enrichmentStatus': {'running': true, 'due': 20, 'asked': 5},
+      });
+      await tester.pump();
+      expect(find.text('Asking again for 3 albums'), findsOneWidget);
+      expect(
+        find.text('Finding artwork and details · 5 of 20'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        .25,
+      );
+      await tester.ensureVisible(find.text('Stop'));
+      await tester.tap(find.text('Stop'));
+      await tester.pump();
+      expect(calls.last.method, 'stopEnrichment');
+      events.add({
+        'enrichmentStatus': {'running': false, 'stopped': 'UNREACHABLE'},
+      });
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Stopped: MusicBrainz could not be reached'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('artwork settings are searchable and hidden while offline', (
+    tester,
+  ) async {
+    await mount(tester);
+    events.add({'online': true});
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'missing covers');
+    await tester.pumpAndSettle();
+    expect(find.text('Artwork and details'), findsOneWidget);
+    expect(find.text('No settings found'), findsNothing);
+    events.add({'online': false});
+    await tester.pumpAndSettle();
+    expect(find.text('Artwork and details'), findsNothing);
+    expect(find.text('No settings found'), findsOneWidget);
+  });
+
+  testWidgets('refreshing artwork needs confirmation and uses the batch seam', (
+    tester,
+  ) async {
+    events.add({
+      'online': true,
+      'allTracks': [first],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => refreshArtworkAndDetails(context, model),
+              child: const Text('Open refresh'),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (final action in ['Cancel', 'Refresh']) {
+      await tester.tap(find.text('Open refresh'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1 song.'), findsOneWidget);
+      await tester.tap(find.text(action));
+      await tester.pumpAndSettle();
+      if (action == 'Cancel') {
+        expect(
+          calls.any((call) => call.method == 'refreshEnrichment'),
+          isFalse,
+        );
+      }
+    }
+    expect(
+      calls.where((call) => call.method == 'refreshEnrichment'),
+      hasLength(1),
+    );
+    expect(calls.any((call) => call.method == 'enrich'), isFalse);
+  });
+
+  testWidgets('compact bottom controls retain touch targets with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 720);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await mount(tester, populated: true);
+    for (final label in ['Previous', 'Play', 'Next']) {
+      final size = tester.getSize(find.byTooltip(label));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+    final navigation = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(
+      navigation.labelBehavior,
+      NavigationDestinationLabelBehavior.onlyShowSelected,
+    );
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Downloads works without a folder grant and music access is explicit',
+    (tester) async {
+      await mount(tester);
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'folders');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Music folders'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use Downloads'));
+      await tester.pump();
+      expect(calls.last.method, 'useDownloads');
+      expect(calls.any((c) => c.method == 'chooseFolder'), isFalse);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => chooseDownload(context, model, {'id': '9'}),
+                child: const Text('Choose destination'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Choose destination'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Downloads'));
+      await tester.pumpAndSettle();
+      expect(calls.last.method, 'downloadToDownloads');
+      expect(calls.last.arguments, {'id': '9'});
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'download destinations explain Android restrictions and preserve granted folder URIs',
+    (tester) async {
+      const folder =
+          'content://com.android.externalstorage.documents/tree/primary%3ADownload%2FResonate';
+      events.add({
+        'folders': [
+          {
+            'name': 'Resonate downloads',
+            'uri': folder,
+            'readable': true,
+            'writable': true,
+          },
+          {
+            'name': 'Read only',
+            'uri': 'content://test/readonly',
+            'readable': true,
+            'writable': false,
+          },
+        ],
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => chooseDownload(context, model, {'id': '9'}),
+                child: const Text('Choose destination'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Choose destination'));
+      await tester.pumpAndSettle();
+      expect(find.text(musicFolderGuidance), findsOneWidget);
+      expect(find.text('Read only'), findsNothing);
+      await tester.tap(find.text('Resonate downloads'));
+      await tester.pumpAndSettle();
+      expect(calls.last.method, 'download');
+      expect(calls.last.arguments, {'id': '9', 'uri': folder});
+      expect(tester.takeException(), isNull);
     },
   );
 }

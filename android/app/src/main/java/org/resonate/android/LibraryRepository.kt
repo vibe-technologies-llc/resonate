@@ -297,89 +297,114 @@ class LibraryRepository(private val context: Context) {
         var failed = 0
         try {
             val native = engine.await()
-            val root = DocumentsContract.getTreeDocumentId(tree)
-            val pending = ArrayDeque<Pair<String, Int>>()
-            pending.add(root to 0)
-            while (pending.isNotEmpty()) {
-                val (parent, depth) = pending.removeFirst()
-                val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
-                val columns =
-                    arrayOf(
-                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                        DocumentsContract.Document.COLUMN_MIME_TYPE,
-                    )
-                val audio = ArrayList<Pair<Uri, String>>()
-                val sidecars = HashMap<String, Uri>()
-                val covers = HashMap<String, Uri>()
-                context.contentResolver.query(children, columns, null, null, null)?.use { cursor ->
-                    while (cursor.moveToNext()) {
-                        currentCoroutineContext().ensureActive()
-                        val id = cursor.getString(0)
-                        val name = cursor.getString(1) ?: continue
-                        val mime = cursor.getString(2)
-                        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                        val lower = name.lowercase(java.util.Locale.ROOT)
-                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            if (depth < 32) pending.add(id to depth + 1)
-                        } else if (lower.substringAfterLast('.', "") in extensions)
-                            audio.add(uri to name)
-                        else if (lower.endsWith(".lrc")) sidecars[lower.removeSuffix(".lrc")] = uri
-                        else if (
-                            lower in
-                                listOf(
-                                    "cover.jpg",
-                                    "folder.jpg",
-                                    "front.jpg",
-                                    "cover.png",
-                                    "folder.png",
-                                    "front.png",
-                                )
-                        )
-                            covers[lower] = uri
-                    }
-                }
-                val cover =
-                    listOf(
-                            "cover.jpg",
-                            "cover.png",
-                            "folder.jpg",
-                            "folder.png",
-                            "front.jpg",
-                            "front.png",
-                        )
-                        .firstNotNullOfOrNull { covers[it] }
-                        ?.let { readDocumentWithin(it, 8 * 1024 * 1024) }
-                for ((uri, name) in audio) {
+            if (tree == MusicDocuments.downloads) {
+                for ((uri, name) in MusicDocuments.downloadedAudio(context)) {
                     currentCoroutineContext().ensureActive()
+                    if (
+                        name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) !in
+                            extensions
+                    )
+                        continue
                     try {
-                        val track = native.indexDocument(uri.toString(), name)
+                        native.indexDocument(uri.toString(), name)
                         indexed++
-                        try {
-                            if (cover != null) native.setArtwork(track.id, cover)
-                            sidecars[name.substringBeforeLast('.').lowercase(java.util.Locale.ROOT)]
-                                ?.let { sidecar ->
-                                    readDocumentWithin(sidecar, 1024 * 1024)?.let {
-                                        native.keepSidecarLyrics(track.id, it)
-                                    }
-                                }
-                        } catch (failure: Exception) {
-                            Log.w(
-                                "Resonate",
-                                "Companion artwork or lyrics could not be read",
-                                failure,
-                            )
-                        }
                     } catch (failure: Exception) {
-                        Log.w("Resonate", "Audio document could not be indexed", failure)
+                        Log.w("Resonate", "Downloaded audio could not be indexed", failure)
                         failed++
                     }
                     mutableStatus.value = scanSummary(indexed, failed)
+                }
+            } else {
+                val root = DocumentsContract.getTreeDocumentId(tree)
+                val pending = ArrayDeque<Pair<String, Int>>()
+                pending.add(root to 0)
+                while (pending.isNotEmpty()) {
+                    val (parent, depth) = pending.removeFirst()
+                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+                    val columns =
+                        arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        )
+                    val audio = ArrayList<Pair<Uri, String>>()
+                    val sidecars = HashMap<String, Uri>()
+                    val covers = HashMap<String, Uri>()
+                    context.contentResolver.query(children, columns, null, null, null)?.use { cursor
+                        ->
+                        while (cursor.moveToNext()) {
+                            currentCoroutineContext().ensureActive()
+                            val id = cursor.getString(0)
+                            val name = cursor.getString(1) ?: continue
+                            val mime = cursor.getString(2)
+                            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                            val lower = name.lowercase(java.util.Locale.ROOT)
+                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                if (depth < 32) pending.add(id to depth + 1)
+                            } else if (lower.substringAfterLast('.', "") in extensions)
+                                audio.add(uri to name)
+                            else if (lower.endsWith(".lrc"))
+                                sidecars[lower.removeSuffix(".lrc")] = uri
+                            else if (
+                                lower in
+                                    listOf(
+                                        "cover.jpg",
+                                        "folder.jpg",
+                                        "front.jpg",
+                                        "cover.png",
+                                        "folder.png",
+                                        "front.png",
+                                    )
+                            )
+                                covers[lower] = uri
+                        }
+                    }
+                    val cover =
+                        listOf(
+                                "cover.jpg",
+                                "cover.png",
+                                "folder.jpg",
+                                "folder.png",
+                                "front.jpg",
+                                "front.png",
+                            )
+                            .firstNotNullOfOrNull { covers[it] }
+                            ?.let { readDocumentWithin(it, 8 * 1024 * 1024) }
+                    for ((uri, name) in audio) {
+                        currentCoroutineContext().ensureActive()
+                        try {
+                            val track = native.indexDocument(uri.toString(), name)
+                            indexed++
+                            try {
+                                if (cover != null) native.setArtwork(track.id, cover)
+                                sidecars[
+                                        name
+                                            .substringBeforeLast('.')
+                                            .lowercase(java.util.Locale.ROOT)]
+                                    ?.let { sidecar ->
+                                        readDocumentWithin(sidecar, 1024 * 1024)?.let {
+                                            native.keepSidecarLyrics(track.id, it)
+                                        }
+                                    }
+                            } catch (failure: Exception) {
+                                Log.w(
+                                    "Resonate",
+                                    "Companion artwork or lyrics could not be read",
+                                    failure,
+                                )
+                            }
+                        } catch (failure: Exception) {
+                            Log.w("Resonate", "Audio document could not be indexed", failure)
+                            failed++
+                        }
+                        mutableStatus.value = scanSummary(indexed, failed)
+                    }
                 }
             }
             refresh()
             features.refreshArtwork()
             features.refreshFolders()
+            features.enrichment.begin()
             mutableStatus.value = scanSummary(indexed, failed)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -401,6 +426,7 @@ class LibraryRepository(private val context: Context) {
         }
 
     fun rescan() {
+        if (features.downloadsEnabled()) scan(MusicDocuments.downloads)
         context.contentResolver.persistedUriPermissions
             .filter { it.isReadPermission }
             .forEach { scan(it.uri) }

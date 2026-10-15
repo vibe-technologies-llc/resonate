@@ -54,6 +54,10 @@ class FlutterBridge(
             watch("preferences", library.preferences)
             watch("filter", library.filter)
             watch("online", features.online)
+            watch("enrichmentAutomatic", features.enrichment.automatic)
+            watch("enrichmentUnmeteredOnly", features.enrichment.unmeteredOnly)
+            watch("enrichmentStatus", features.enrichment.status)
+            watch("coversAskedAgain", features.enrichment.coversAskedAgain)
             watch("folders", features.folders)
             watch("playlists", features.playlists)
             watch("playlistRows", features.playlistRows)
@@ -137,6 +141,7 @@ class FlutterBridge(
                 ?: features.wanted.value.first { it.id == id() }.song
         when (call.method) {
             "chooseFolder" -> activity.chooseFolder()
+            "useDownloads" -> activity.useDownloads()
             "notifications" -> activity.allowNotifications()
             "search" -> library.search(text("text"))
             "filter" -> {
@@ -276,6 +281,12 @@ class FlutterBridge(
             "visualize" -> features.visualize(flag("enabled"))
             "enrich" ->
                 features.enrich(ids().map { key -> library.allTracks.value.first { it.id == key } })
+            "enrichmentAutomatic" -> features.enrichment.setAutomatic(flag("enabled"))
+            "enrichmentUnmeteredOnly" -> features.enrichment.setUnmeteredOnly(flag("enabled"))
+            "enrichmentStatus" -> features.enrichment.read()
+            "refreshEnrichment" -> features.enrichment.refresh()
+            "retryMissingCovers" -> features.enrichment.retryMissingCovers()
+            "stopEnrichment" -> features.enrichment.stop()
             "recognise" -> features.recognise(id())
             "recognitionKey" -> features.saveRecognitionKey(text("value"))
             "searchOnline" -> features.searchOnline(text("text"))
@@ -298,6 +309,7 @@ class FlutterBridge(
                     song(),
                     features.folders.value.first { it.uri.toString() == text("uri") },
                 )
+            "downloadToDownloads" -> features.download(song(), features.useDownloads())
             "cancelDownload" -> features.cancelDownload()
             "provider" -> features.saveProviderAccount(provider(args))
             "authorizeTidal" -> features.authorizeTidal(provider(args))
@@ -401,7 +413,7 @@ class FlutterBridge(
             "newSyncGroup" -> features.newSyncGroup()
             "syncFolder" ->
                 features.chooseSyncFolder(
-                    features.folders.value.first { it.uri.toString() == text("uri") },
+                    features.folders.value.first { it.uri.toString() == text("uri") }
                 )
             "forceSync" ->
                 withContext(Dispatchers.IO) {
@@ -413,10 +425,12 @@ class FlutterBridge(
                 }
             "searchLibrary" ->
                 return withContext(Dispatchers.IO) {
-                    library.native().searchLibrary(
-                        text("text"),
-                        number("limit").toUInt().takeIf { it > 0u } ?: 500u,
-                    )
+                    library
+                        .native()
+                        .searchLibrary(
+                            text("text"),
+                            number("limit").toUInt().takeIf { it > 0u } ?: 500u,
+                        )
                 }
             "saveQueueAsPlaylist" ->
                 return withContext(Dispatchers.IO) {

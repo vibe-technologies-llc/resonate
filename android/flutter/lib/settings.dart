@@ -103,18 +103,20 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
   @override
   Widget build(BuildContext context) {
     final query = _query.value.text.toLowerCase();
+    final showOnline = query.isEmpty || 'online features'.contains(query);
+    final showArtwork =
+        widget.model.online &&
+        (query.isEmpty ||
+            'artwork and details automatically portraits wi-fi missing covers lyrics'
+                .contains(query));
     final entries = _settings
         .where((e) => '${e.title} ${e.detail}'.toLowerCase().contains(query))
         .toList();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 180),
+      padding: pageInsets(context),
       children: [
-        Text(
-          'Settings',
-          style: Theme.of(context).textTheme.headlineLarge
-              ?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 22),
+        Text('Settings', style: Theme.of(context).textTheme.headlineLarge),
+        const SizedBox(height: 20),
         TextField(
           controller: _query.value,
           onChanged: (_) => setState(() {}),
@@ -123,7 +125,7 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
             prefixIcon: Icon(Icons.search_rounded),
           ),
         ),
-        if (query.isEmpty || 'online features'.contains(query))
+        if (showOnline)
           Padding(
             padding: const EdgeInsets.only(top: 18),
             child: Card.filled(
@@ -172,30 +174,172 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
               ),
             ),
           ],
-        if (entries.isEmpty && query.isNotEmpty)
+        if (showArtwork) ArtworkDetailsSection(model: widget.model),
+        if (entries.isEmpty && !showArtwork && !showOnline)
           const EmptyState(
             icon: Icons.search_off_rounded,
             title: 'No settings found',
             detail: 'Try sound, folders, or a service name.',
           ),
-        const SizedBox(height: 28),
-        Center(
-          child: Text(
-            'RESONATE',
-            style: Theme.of(context).textTheme.labelMedium
-                ?.copyWith(letterSpacing: 4),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Center(
-          child: Text(
-            'A little closer to your music.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
       ],
     );
   }
+}
+
+class ArtworkDetailsSection extends StatefulWidget {
+  const ArtworkDetailsSection({super.key, required this.model});
+  final PlayerModel model;
+
+  @override
+  State<ArtworkDetailsSection> createState() => _ArtworkDetailsSectionState();
+}
+
+class _ArtworkDetailsSectionState extends State<ArtworkDetailsSection> {
+  @override
+  void initState() {
+    super.initState();
+    widget.model.call('enrichmentStatus');
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.model,
+    builder: (context, _) {
+      final model = widget.model;
+      final automatic = model.state['enrichmentAutomatic'] != false;
+      final status = row(model.state['enrichmentStatus']);
+      final running = status['running'] == true;
+      final due = integer(status['due']);
+      final asked = integer(status['asked']);
+      final covers = model.state['coversAskedAgain'];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionTitle('Artwork and details'),
+          Card.filled(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Fetch artwork and details automatically'),
+                  subtitle: const Text(
+                    'Covers, artist portraits, lyrics and MusicBrainz details',
+                  ),
+                  value: automatic,
+                  onChanged: model.online
+                      ? (enabled) => model.call('enrichmentAutomatic', {
+                          'enabled': enabled,
+                        })
+                      : null,
+                ),
+                SwitchListTile(
+                  title: const Text('Only on Wi-Fi'),
+                  subtitle: const Text(
+                    'Wait for a network that is not metered',
+                  ),
+                  value: model.state['enrichmentUnmeteredOnly'] == true,
+                  onChanged: automatic && model.online
+                      ? (enabled) => model.call('enrichmentUnmeteredOnly', {
+                          'enabled': enabled,
+                        })
+                      : null,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.image_search_rounded),
+                  title: const Text('Look again for missing covers'),
+                  subtitle: Text(
+                    covers == null
+                        ? 'Ask again for albums still without a cover'
+                        : 'Asking again for $covers ${integer(covers) == 1 ? 'album' : 'albums'}',
+                  ),
+                  enabled: model.online,
+                  onTap: model.online
+                      ? () => model.call('retryMissingCovers')
+                      : null,
+                ),
+                ListTile(
+                  leading: running
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          status['stopped'] == 'FINISHED'
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.info_outline_rounded,
+                        ),
+                  title: Text(
+                    enrichmentLine(status),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  trailing: running
+                      ? TextButton(
+                          onPressed: () => model.call('stopEnrichment'),
+                          child: const Text('Stop'),
+                        )
+                      : null,
+                ),
+                if (running && due > 0)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: LinearProgressIndicator(
+                      value: (asked / due).clamp(0, 1),
+                      semanticsLabel:
+                          'Artwork lookup progress: $asked of $due songs',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+String enrichmentLine(RowData status) {
+  if (status['running'] == true) {
+    final due = integer(status['due']);
+    return due > 0
+        ? 'Finding artwork and details · ${integer(status['asked'])} of $due'
+        : 'Finding artwork and details';
+  }
+  return switch (status['stopped']) {
+    'FINISHED' => 'Artwork and details up to date',
+    'CANCELLED' => 'Stopped',
+    'OFFLINE' => 'Stopped: offline',
+    'UNREACHABLE' => 'Stopped: MusicBrainz could not be reached',
+    'REFUSED' => 'Stopped: the service refused too many requests',
+    'FAILED' => 'Stopped: the library could not be read',
+    _ => 'Not looked up yet',
+  };
+}
+
+Future<void> refreshArtworkAndDetails(
+  BuildContext context,
+  PlayerModel model,
+) async {
+  final count = model.allTracks.length;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Refresh artwork and details?'),
+      content: Text(
+        'Covers, artist portraits, details and lyrics will be looked up again for $count ${count == 1 ? 'song' : 'songs'}. This runs in the background and can take a while.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Refresh'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true && model.online) await model.call('refreshEnrichment');
 }
 
 class SettingsDetail extends StatefulWidget {
@@ -243,6 +387,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
       return ArtworkAtmosphere(
         model: widget.model,
         track: widget.model.current,
+        subdued: true,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           extendBody: true,
@@ -301,14 +446,14 @@ class _SettingsDetailState extends State<SettingsDetail> {
     },
   );
 
-  Widget _list(List<Widget> children) => ListView(
-    padding: EdgeInsets.fromLTRB(
-      24,
-      MediaQuery.paddingOf(context).top + kToolbarHeight + 24,
-      24,
-      180,
+  Widget _list(List<Widget> children) => Builder(
+    builder: (context) => ListView(
+      padding: pageInsets(
+        context,
+        top: MediaQuery.paddingOf(context).top + AppGeometry.pageInset,
+      ),
+      children: children,
     ),
-    children: children,
   );
 
   Widget _processing() {
@@ -316,8 +461,9 @@ class _SettingsDetailState extends State<SettingsDetail> {
     final prefs = model.preferences;
     if (prefs.isEmpty) return const Center(child: CircularProgressIndicator());
     return _list([
-      const SectionTitle('Sound, your way'),
-      const Text('Processing runs in the shared Resonate audio engine.'),
+      const Text(
+        'Keep volume consistent and choose how your music is processed.',
+      ),
       const SizedBox(height: 24),
       _choice('ReplayGain', 'replayGain', ['OFF', 'TRACK', 'ALBUM']),
       _choice('Resampling quality', 'quality', [
@@ -370,7 +516,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
 
   Widget _folders() => _list([
     const Text(
-      'Your folders stay yours. Resonate reads only the folders you choose.',
+      'Add music folders or use Downloads. Android asks for music access to read existing songs in Downloads.',
     ),
     const SizedBox(height: 20),
     ...rows(widget.model.state['folders']).map(
@@ -379,12 +525,17 @@ class _SettingsDetailState extends State<SettingsDetail> {
           leading: const Icon(Icons.folder_outlined),
           title: Text('${folder['name']}'),
           subtitle: Text(
-            folder['readable'] == true
+            folder['uri'] == 'content://media/external_primary/downloads'
+                ? 'Tap to allow music access and scan existing songs'
+                : folder['readable'] == true
                 ? (folder['writable'] == true
                       ? 'Read and write access'
                       : 'Read access')
                 : 'Access unavailable',
           ),
+          onTap: folder['uri'] == 'content://media/external_primary/downloads'
+              ? () => widget.model.call('useDownloads')
+              : null,
           trailing: ActionIcon(
             icon: Icons.link_off_rounded,
             label: 'Remove access',
@@ -417,6 +568,14 @@ class _SettingsDetailState extends State<SettingsDetail> {
       ),
     ),
     const SizedBox(height: 16),
+    const Text(musicFolderGuidance),
+    const SizedBox(height: 16),
+    FilledButton.icon(
+      onPressed: () => widget.model.call('useDownloads'),
+      icon: const Icon(Icons.download_rounded),
+      label: const Text('Use Downloads'),
+    ),
+    const SizedBox(height: 12),
     FilledButton.icon(
       onPressed: () => widget.model.call('chooseFolder'),
       icon: const Icon(Icons.add_rounded),
@@ -499,9 +658,9 @@ class _SettingsDetailState extends State<SettingsDetail> {
       child: const Text('Rescan folders'),
     ),
     TextButton(
-      onPressed: () => widget.model.call('enrich', {
-        'ids': widget.model.allTracks.map((t) => t['id']).toList(),
-      }),
+      onPressed: !widget.model.online || widget.model.allTracks.isEmpty
+          ? null
+          : () => refreshArtworkAndDetails(context, widget.model),
       child: const Text('Refresh artwork and details'),
     ),
   ]);
@@ -691,7 +850,10 @@ class _EqualiserPaneState extends State<EqualiserPane> {
     final preampLimit = decimal(_limits['preampAtMostDb']);
     final gainLimit = decimal(_limits['gainAtMostDb']);
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 180),
+      padding: pageInsets(
+        context,
+        top: widget.topInset + AppGeometry.pageInset,
+      ),
       children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -831,7 +993,10 @@ class _CorrectionPaneState extends State<CorrectionPane> {
         const LinearProgressIndicator(),
       Expanded(
         child: ListView(
-          padding: const EdgeInsets.only(bottom: 180),
+          padding: EdgeInsets.only(
+            bottom:
+                MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+          ),
           children: rows(widget.model.state['corrections']).indexed
               .map(
                 (entry) => ListTile(
@@ -1017,7 +1182,10 @@ class _AccountPaneState extends State<AccountPane> {
       }
     }
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 180),
+      padding: pageInsets(
+        context,
+        top: widget.topInset + AppGeometry.pageInset,
+      ),
       children: [
         if (kind == 'provider') ...[
           const Text(
@@ -1247,9 +1415,8 @@ class _AccountPaneState extends State<AccountPane> {
                   child: Row(
                     children: [
                       TextButton.icon(
-                        onPressed: () => setState(
-                          () => _showSyncCode = !_showSyncCode,
-                        ),
+                        onPressed: () =>
+                            setState(() => _showSyncCode = !_showSyncCode),
                         icon: Icon(
                           _showSyncCode
                               ? Icons.visibility_off_outlined
@@ -1291,9 +1458,7 @@ class _AccountPaneState extends State<AccountPane> {
                             .withValues(alpha: .6),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outlineVariant
+                          color: Theme.of(context).colorScheme.outlineVariant
                               .withValues(alpha: .5),
                         ),
                       ),
@@ -1344,8 +1509,9 @@ class _AccountPaneState extends State<AccountPane> {
                   final devList = rows(
                     row(model.state['syncStatus'])['devices'],
                   );
-                  final thisDev =
-                      devList.where((d) => d['thisDevice'] == true).toList();
+                  final thisDev = devList
+                      .where((d) => d['thisDevice'] == true)
+                      .toList();
                   final others =
                       devList.where((d) => d['thisDevice'] != true).toList()
                         ..sort((a, b) {
@@ -1370,17 +1536,17 @@ class _AccountPaneState extends State<AccountPane> {
                     final isThis = device['thisDevice'] == true;
                     final isOnline = device['online'] == true;
                     final isNearby = device['nearby'] == true;
-                    final platform =
-                        '${device['platform'] ?? ''}'.toLowerCase();
+                    final platform = '${device['platform'] ?? ''}'
+                        .toLowerCase();
                     final icon = isThis
                         ? Icons.phone_android_rounded
                         : platform.contains('iphone') ||
-                                platform.contains('ios')
+                              platform.contains('ios')
                         ? Icons.phone_iphone_rounded
                         : platform.contains('mac') ||
-                                platform.contains('linux') ||
-                                platform.contains('windows') ||
-                                platform.contains('desktop')
+                              platform.contains('linux') ||
+                              platform.contains('windows') ||
+                              platform.contains('desktop')
                         ? Icons.computer_rounded
                         : Icons.devices_rounded;
                     final stateLabel = isThis
@@ -1410,10 +1576,8 @@ class _AccountPaneState extends State<AccountPane> {
                                 shape: BoxShape.circle,
                                 color: isOnline
                                     ? Colors.green
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .outline
-                                        .withValues(alpha: .5),
+                                    : Theme.of(context).colorScheme.outline
+                                          .withValues(alpha: .5),
                               ),
                             ),
                           if (!isThis && !isOnline)
@@ -1423,9 +1587,8 @@ class _AccountPaneState extends State<AccountPane> {
                                 size: 20,
                               ),
                               tooltip: 'Remove device',
-                              onPressed: () => model.forgetSyncDevice(
-                                '${device['id']}',
-                              ),
+                              onPressed: () =>
+                                  model.forgetSyncDevice('${device['id']}'),
                             ),
                         ],
                       ),
@@ -1448,7 +1611,9 @@ class _AccountPaneState extends State<AccountPane> {
                 ),
                 SwitchListTile(
                   title: const Text('Sync playlists'),
-                  subtitle: const Text('Playlists set to keep their songs here'),
+                  subtitle: const Text(
+                    'Playlists set to keep their songs here',
+                  ),
                   value: _draft['playlists'] == true,
                   onChanged: (v) => setState(() => _draft['playlists'] = v),
                 ),
@@ -1474,8 +1639,9 @@ class _AccountPaneState extends State<AccountPane> {
               margin: EdgeInsets.zero,
               child: Column(
                 children: [
-                  for (final transfer
-                      in rows(row(model.state['syncStatus'])['transfers'])) ...[
+                  for (final transfer in rows(
+                    row(model.state['syncStatus'])['transfers'],
+                  )) ...[
                     () {
                       final artistName = '${transfer['artist'] ?? ''}';
                       final fromDevice = '${transfer['from'] ?? ''}';
@@ -1510,7 +1676,9 @@ class _AccountPaneState extends State<AccountPane> {
                             : const SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                       );
                     }(),
@@ -1547,9 +1715,8 @@ class _AccountPaneState extends State<AccountPane> {
                                 color: Colors.green,
                               )
                             : null,
-                        onTap: () => model.call('syncFolder', {
-                          'uri': folder['uri'],
-                        }),
+                        onTap: () =>
+                            model.call('syncFolder', {'uri': folder['uri']}),
                       ),
                     ),
               ],

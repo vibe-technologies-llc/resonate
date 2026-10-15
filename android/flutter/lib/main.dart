@@ -24,41 +24,174 @@ class ResonateApp extends StatelessWidget {
 
   ThemeData _theme(Brightness brightness) {
     final dark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF8772E7),
-      brightness: brightness,
-      primary: dark ? accent : const Color(0xFF6650A7),
-      surface: dark ? const Color(0xFF14141C) : const Color(0xFFF8F7FC),
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF8772E7),
+          brightness: brightness,
+          primary: dark ? accent : const Color(0xFF6650A7),
+          surface: dark ? const Color(0xFF14151B) : const Color(0xFFF8F9FC),
+        ).copyWith(
+          surfaceContainerLow: dark ? const Color(0xFF202127) : Colors.white,
+          surfaceContainer: dark
+              ? const Color(0xFF282930)
+              : const Color(0xFFF0F1F6),
+          onSurfaceVariant: dark
+              ? const Color(0xFFCACBD4)
+              : const Color(0xFF51535F),
+          outlineVariant: dark
+              ? const Color(0xFF3B3D47)
+              : const Color(0xFFDCDEE7),
+        );
+    final text = ThemeData(brightness: brightness).textTheme
+        .copyWith(
+          headlineLarge: const TextStyle(
+            fontSize: 30,
+            height: 1.2,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.6,
+          ),
+          headlineMedium: const TextStyle(
+            fontSize: 26,
+            height: 1.25,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.4,
+          ),
+          headlineSmall: const TextStyle(
+            fontSize: 22,
+            height: 1.3,
+            fontWeight: FontWeight.w600,
+          ),
+          titleLarge: const TextStyle(
+            fontSize: 18,
+            height: 1.3,
+            fontWeight: FontWeight.w600,
+          ),
+          titleMedium: const TextStyle(
+            fontSize: 16,
+            height: 1.4,
+            fontWeight: FontWeight.w600,
+          ),
+          bodyLarge: const TextStyle(fontSize: 16, height: 1.4),
+          bodyMedium: const TextStyle(fontSize: 14, height: 1.4),
+          bodySmall: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurfaceVariant,
+          ),
+          labelLarge: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          labelMedium: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+          labelSmall: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        )
+        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface)
+        .copyWith(
+          bodySmall: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurfaceVariant,
+          ),
+        );
+    final controlShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
     );
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      textTheme: text,
       scaffoldBackgroundColor: dark
-          ? const Color(0xFF101017)
-          : const Color(0xFFF8F7FC),
+          ? const Color(0xFF111218)
+          : const Color(0xFFF8F9FC),
       visualDensity: VisualDensity.standard,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
+        foregroundColor: scheme.onSurface,
+        surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleSpacing: 8,
+        titleTextStyle: text.titleLarge,
+        actionsPadding: const EdgeInsets.only(right: 8),
+      ),
+      cardTheme: CardThemeData(
+        color: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppGeometry.cardRadius),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.onSurface.withValues(alpha: .045),
+        fillColor: scheme.surfaceContainer,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
           borderSide: BorderSide.none,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(48, 50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+          minimumSize: const Size(48, 48),
+          shape: controlShape,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: controlShape,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: controlShape,
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size.square(AppGeometry.touchTarget),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        minTileHeight: 64,
+        minVerticalPadding: 12,
+        horizontalTitleGap: 16,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        titleTextStyle: text.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
+        subtitleTextStyle: text.bodyMedium?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: scheme.primary.withValues(alpha: .16),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => text.labelMedium?.copyWith(
+            color: states.contains(WidgetState.selected)
+                ? scheme.onSurface
+                : scheme.onSurfaceVariant,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w600
+                : FontWeight.w500,
           ),
         ),
       ),
-      listTileTheme: const ListTileThemeData(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant,
+        thickness: .5,
+        space: 1,
       ),
       sliderTheme: const SliderThemeData(
         trackHeight: 4,
@@ -148,6 +281,7 @@ class _AppShellState extends State<AppShell>
       return ArtworkAtmosphere(
         model: model,
         track: model.current,
+        subdued: _tab.value == 3,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           extendBody: true,
@@ -223,29 +357,37 @@ class AppBottomBar extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (model.current.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: MiniPlayer(
                       model: model,
                       onOpen: () => open('player'),
                     ),
                   ),
                 Glass(
-                  radius: 30,
+                  radius: AppGeometry.chromeRadius,
                   child: NavigationBar(
                     backgroundColor: Colors.transparent,
                     elevation: 0,
-                    height: 72,
+                    height: MediaQuery.textScalerOf(context).scale(12) > 18
+                        ? 72
+                        : 64,
+                    labelBehavior:
+                        MediaQuery.sizeOf(context).width < 360 ||
+                            MediaQuery.textScalerOf(context).scale(12) > 18
+                        ? NavigationDestinationLabelBehavior.onlyShowSelected
+                        : NavigationDestinationLabelBehavior.alwaysShow,
                     selectedIndex: currentTab,
                     onDestinationSelected: (index) {
                       AppShell.currentTab.value = index;
                       if (!isRoot) {
-                        Navigator.of(context).popUntil((route) => route.isFirst);
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
                       }
                     },
                     destinations: const [
@@ -256,8 +398,7 @@ class AppBottomBar extends StatelessWidget {
                       ),
                       NavigationDestination(
                         icon: Icon(Icons.library_music_outlined),
-                        selectedIcon:
-                            Icon(Icons.library_music_rounded),
+                        selectedIcon: Icon(Icons.library_music_rounded),
                         label: 'Library',
                       ),
                       NavigationDestination(

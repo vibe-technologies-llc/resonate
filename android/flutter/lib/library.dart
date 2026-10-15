@@ -38,7 +38,12 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppGeometry.pageTop,
+                AppGeometry.pageInset,
+                0,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -46,12 +51,8 @@ class _LibraryPageState extends State<LibraryPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          'YOUR MUSIC, BEAUTIFULLY',
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                letterSpacing: 2,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
+                          'Your library',
+                          style: Theme.of(context).textTheme.headlineLarge,
                         ),
                       ),
                       ActionIcon(
@@ -60,13 +61,6 @@ class _LibraryPageState extends State<LibraryPage> {
                         onPressed: () => widget.open('tools'),
                       ),
                     ],
-                  ),
-                  Text(
-                    'Your library',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -1,
-                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -316,7 +310,12 @@ class _LibraryPageState extends State<LibraryPage> {
                 detail: 'Add a music folder to bring your albums, artists and favourites together.',
               ),
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 180)),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height:
+                  MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+            ),
+          ),
         ],
       ),
     );
@@ -410,7 +409,12 @@ class SongsPage extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 16, 12),
+          padding: const EdgeInsets.fromLTRB(
+            AppGeometry.pageInset,
+            AppGeometry.pageTop,
+            AppGeometry.pageInset,
+            12,
+          ),
           child: Column(
             children: [
               Row(
@@ -418,8 +422,7 @@ class SongsPage extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Songs',
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.headlineLarge,
                     ),
                   ),
                   ActionIcon(
@@ -485,7 +488,11 @@ class SongsPage extends StatelessWidget {
                   bottomExtent: 32,
                   child: ListView.builder(
                     key: const PageStorageKey('songs'),
-                    padding: const EdgeInsets.only(bottom: 180),
+                    padding: EdgeInsets.only(
+                      bottom:
+                          MediaQuery.paddingOf(context).bottom +
+                          AppGeometry.pageInset,
+                    ),
                     itemCount: tracks.length,
                     itemBuilder: (_, index) => SongTile(
                       model: model,

@@ -133,6 +133,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val enriching = MutableStateFlow(false)
     val samples = MutableStateFlow<List<Float>>(emptyList())
     val artworkGeneration = MutableStateFlow(0)
+    val enrichment = ArtworkEnrichment(library, settings, scope, ::refreshArtwork)
     private val lyricRequest = AtomicLong()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
@@ -227,10 +228,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         native.configureOnline(online.value)
+        enrichment.initialize(online.value)
         if (!downloading.value)
             settings.getString("unfinished-download", null)?.let { value ->
                 try {
-                    DocumentsContract.deleteDocument(context.contentResolver, Uri.parse(value))
+                    MusicDocuments.delete(context, Uri.parse(value))
                     settings.edit().remove("unfinished-download").commit()
                 } catch (failure: Exception) {
                     library.report(failure)
@@ -238,7 +240,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         settings.getString("unfinished-sync-landing", null)?.let { value ->
             try {
-                DocumentsContract.deleteDocument(context.contentResolver, Uri.parse(value))
+                MusicDocuments.delete(context, Uri.parse(value))
                 settings.edit().remove("unfinished-sync-landing").commit()
             } catch (failure: Exception) {
                 library.report(failure)
@@ -272,6 +274,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             native.configureOnline(enabled)
             online.value = enabled
+            enrichment.onlineChanged(enabled)
             settings.edit().putBoolean("online", enabled).commit()
             applySync(native)
         }
@@ -303,11 +306,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun foreground(visible: Boolean) {
         foreground = visible
+        enrichment.foreground(visible)
     }
 
     fun loadPlaylistSync(id: ULong) = work { native ->
-        playlistSync.value =
-            PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
+        playlistSync.value = PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
     }
 
     fun fetchMissing(id: ULong, device: SyncedDevice) = work { native ->
@@ -321,8 +324,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun keepSongs(id: ULong, keep: Boolean) = work { native ->
         native.syncKeepSongs(id, keep)
-        playlistSync.value =
-            PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
+        playlistSync.value = PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
     }
 
     fun continueFrom(handoff: HandedOff, play: () -> Unit) = work { native ->
@@ -398,6 +400,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private fun networkChanged(free: Boolean) {
         if (free == unmetered) return
         unmetered = free
+        enrichment.networkChanged(free)
         work { it.syncNetwork(free) }
     }
 
@@ -448,9 +451,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val destinations = folders.value.filter { it.readable && it.writable }
         val folder =
             destinations.find { it.uri.toString() == syncFolder.value }
-                ?: destinations.firstOrNull()
+                ?: destinations.firstOrNull { it.uri != MusicDocuments.downloads }
         if (folder == null) {
-            syncNotice.value = "Add a music folder with write access to keep songs from your devices"
+            syncNotice.value =
+                "Add a music folder with write access to keep songs from your devices"
             return
         }
         val now = System.currentTimeMillis()
@@ -461,19 +465,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
             currentCoroutineContext().ensureActive()
             var created: Uri? = null
             try {
-                val parent =
-                    DocumentsContract.buildDocumentUriUsingTree(
-                        folder.uri,
-                        DocumentsContract.getTreeDocumentId(folder.uri),
-                    )
                 val uri =
-                    requireNotNull(
-                        DocumentsContract.createDocument(
-                            context.contentResolver,
-                            parent,
-                            mimeOf(received.extension),
-                            received.name,
-                        )
+                    MusicDocuments.create(
+                        context,
+                        folder.uri,
+                        mimeOf(received.extension),
+                        received.name,
                     )
                 created = uri
                 check(
@@ -484,6 +481,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 val descriptor =
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
                 native.syncReceive(received.id, descriptor, uri.toString())
+                MusicDocuments.publish(context, uri)
                 created = null
                 settings.edit().remove("unfinished-sync-landing").commit()
                 landingRefused.remove(received.id)
@@ -497,7 +495,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             } finally {
                 created?.let { uri ->
                     try {
-                        DocumentsContract.deleteDocument(context.contentResolver, uri)
+                        MusicDocuments.delete(context, uri)
                         settings.edit().remove("unfinished-sync-landing").commit()
                     } catch (failure: Exception) {
                         library.report(failure)
@@ -510,6 +508,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             library.refresh()
             refreshWanted(native)
             refreshArtwork()
+            enrichment.begin()
             library.notice("Kept $landed ${if (landed == 1) "song" else "songs"} from your devices")
         }
     }
@@ -517,7 +516,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private fun refuseLanding(native: MobilePlayer, id: ULong) {
         val tries = (landingRefused[id]?.tries ?: 0) + 1
         if (tries < LANDING_TRIES_AT_MOST) {
-            landingRefused[id] = RefusedLanding(System.currentTimeMillis() + LANDING_PAUSE_MS, tries)
+            landingRefused[id] =
+                RefusedLanding(System.currentTimeMillis() + LANDING_PAUSE_MS, tries)
             return
         }
         landingRefused.remove(id)
@@ -527,6 +527,27 @@ class LibraryFeatures(private val context: Context, private val library: Library
             android.util.Log.w("Resonate", "A song from another device stays waiting", failure)
         }
     }
+
+    fun useDownloads(): MusicFolder {
+        val uri = MusicDocuments.downloads
+        check(
+            settings
+                .edit()
+                .putStringSet(
+                    "folders",
+                    settings.getStringSet("folders", emptySet()).orEmpty() + uri.toString(),
+                )
+                .commit()
+        ) {
+            "The Downloads choice could not be saved"
+        }
+        refreshFolders()
+        return MusicFolder(uri, "Downloads", true, true)
+    }
+
+    fun downloadsEnabled() =
+        MusicDocuments.downloads.toString() in
+            settings.getStringSet("folders", emptySet()).orEmpty()
 
     fun refreshFolders() {
         scope.launch {
@@ -540,6 +561,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 known
                     .map { value ->
                         val uri = Uri.parse(value)
+                        if (uri == MusicDocuments.downloads) {
+                            return@map MusicFolder(uri, "Downloads", true, true)
+                        }
                         var name =
                             settings.getString("folder-name:$value", null)
                                 ?: uri.lastPathSegment.orEmpty().substringAfter(':')
@@ -767,15 +791,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun tick(native: MobilePlayer, snapshot: Snapshot) {
+        enrichment.playing(snapshot.current?.id)
         lyrics.value?.let { sheet ->
             if (snapshot.current?.id == sheet.trackId)
                 lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
         }
         actualOutput.value = native.outputDevice()
         if (downloading.value)
-            downloadJob
-                ?.let(native::downloadProgress)
-                ?.let { progress -> downloadedBytes.value = progress.received }
+            downloadJob?.let(native::downloadProgress)?.let { progress ->
+                downloadedBytes.value = progress.received
+            }
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
     }
 
@@ -989,21 +1014,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     accounts.write(renewed)
                     providerAccount.value = renewed
                 }
-                val parent =
-                    DocumentsContract.buildDocumentUriUsingTree(
-                        folder.uri,
-                        DocumentsContract.getTreeDocumentId(folder.uri),
-                    )
                 val mime = mimeOf(offer.extension)
-                val uri =
-                    requireNotNull(
-                        DocumentsContract.createDocument(
-                            context.contentResolver,
-                            parent,
-                            mime,
-                            offer.name,
-                        )
-                    )
+                val uri = MusicDocuments.create(context, folder.uri, mime, offer.name)
                 created = uri
                 check(settings.edit().putString("unfinished-download", uri.toString()).commit()) {
                     "The download could not be recorded"
@@ -1013,19 +1025,21 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
                 val count = native.downloadOffer(job, descriptor)
                 native.indexDownload(job, uri.toString(), offer.name)
+                MusicDocuments.publish(context, uri)
                 refreshWanted(native)
                 created = null
                 settings.edit().remove("unfinished-download").commit()
                 downloadStatus.value = "Downloaded ${offer.name} · ${count / 1024uL} KiB"
                 library.refresh()
                 refreshArtwork()
+                enrichment.begin()
             } catch (failure: Exception) {
                 downloadStatus.value = failure.message ?: "Download failed"
                 throw failure
             } finally {
                 created?.let {
                     try {
-                        DocumentsContract.deleteDocument(context.contentResolver, it)
+                        MusicDocuments.delete(context, it)
                         settings.edit().remove("unfinished-download").commit()
                     } catch (failure: Exception) {
                         library.report(failure)
@@ -1183,6 +1197,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun stop() {
+        enrichment.close()
         scope.coroutineContext.cancelChildren()
         submitting = null
         visualization = null

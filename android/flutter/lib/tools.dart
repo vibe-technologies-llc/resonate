@@ -1006,13 +1006,25 @@ Future<void> chooseDownload(
       shrinkWrap: true,
       children: [
         const ListTile(
-          title: Text(
-            'Choose a music folder',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
+          title: Text('Choose a music folder'),
+          subtitle: Text(musicFolderGuidance),
+        ),
+        ListTile(
+          leading: const Icon(Icons.download_rounded),
+          title: const Text('Downloads'),
+          subtitle: const Text('Save directly in your Downloads folder'),
+          onTap: () {
+            model.call('downloadToDownloads', song);
+            Navigator.pop(sheet);
+          },
         ),
         ...rows(model.state['folders'])
-            .where((f) => f['readable'] == true && f['writable'] == true)
+            .where(
+              (f) =>
+                  f['readable'] == true &&
+                  f['writable'] == true &&
+                  f['uri'] != 'content://media/external_primary/downloads',
+            )
             .map(
               (folder) => ListTile(
                 leading: const Icon(Icons.folder_outlined),

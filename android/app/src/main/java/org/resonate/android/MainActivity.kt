@@ -3,7 +3,10 @@ package org.resonate.android
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -44,6 +47,13 @@ class MainActivity : FlutterActivity() {
     fun chooseFolder() {
         startActivityForResult(
             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                .putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    DocumentsContract.buildDocumentUri(
+                        "com.android.externalstorage.documents",
+                        "primary:${Environment.DIRECTORY_MUSIC}",
+                    ),
+                )
                 .addFlags(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
@@ -55,6 +65,33 @@ class MainActivity : FlutterActivity() {
 
     fun allowNotifications() {
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST)
+    }
+
+    fun useDownloads() {
+        if (
+            checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            library.features.useDownloads()
+            library.scan(MusicDocuments.downloads)
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_AUDIO), AUDIO_REQUEST)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != AUDIO_REQUEST) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            library.features.useDownloads()
+            library.scan(MusicDocuments.downloads)
+        } else {
+            library.notice("Allow music access to read existing songs in Downloads")
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -100,5 +137,6 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val FOLDER_REQUEST = 41
         const val NOTIFICATION_REQUEST = 42
+        const val AUDIO_REQUEST = 43
     }
 }

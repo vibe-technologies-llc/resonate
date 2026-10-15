@@ -133,7 +133,12 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppGeometry.pageTop,
+                AppGeometry.pageInset,
+                8,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -142,10 +147,7 @@ class _SearchPageState extends State<SearchPage> {
                       Expanded(
                         child: Text(
                           'Search',
-                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -1,
-                          ),
+                          style: Theme.of(context).textTheme.headlineLarge,
                         ),
                       ),
                       ActionIcon(
@@ -241,7 +243,7 @@ class _SearchPageState extends State<SearchPage> {
   ) {
     if (query.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 180),
+        padding: pageInsets(context, top: 8),
         children: [
           if (_recents.isNotEmpty) ...[
             Row(
@@ -249,9 +251,8 @@ class _SearchPageState extends State<SearchPage> {
                 Expanded(
                   child: Text(
                     'Recent searches',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 TextButton(
@@ -270,7 +271,10 @@ class _SearchPageState extends State<SearchPage> {
                       (recent) => ListTile(
                         leading: const Icon(Icons.history_rounded),
                         title: Text(recent),
-                        trailing: const Icon(Icons.north_west_rounded, size: 18),
+                        trailing: const Icon(
+                          Icons.north_west_rounded,
+                          size: 18,
+                        ),
                         onTap: () {
                           _controller.text = recent;
                           _onSearchChanged(recent);
@@ -306,7 +310,10 @@ class _SearchPageState extends State<SearchPage> {
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) => Glass(
                   radius: 16,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   child: Text(
                     reads[i],
                     style: TextStyle(
@@ -335,7 +342,10 @@ class _SearchPageState extends State<SearchPage> {
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      Icon(Icons.auto_fix_high_rounded, color: Theme.of(context).colorScheme.primary),
+                      Icon(
+                        Icons.auto_fix_high_rounded,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text.rich(
@@ -344,7 +354,9 @@ class _SearchPageState extends State<SearchPage> {
                             children: [
                               TextSpan(
                                 text: didYouMean,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               const TextSpan(text: '?'),
                             ],
@@ -412,9 +424,8 @@ class _SearchPageState extends State<SearchPage> {
                   children: [
                     Text(
                       'Songs',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
                     if (_libraryScope == 'Top' && trackCount > 5)
@@ -447,9 +458,8 @@ class _SearchPageState extends State<SearchPage> {
                   children: [
                     Text(
                       'Albums',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
                     if (_libraryScope == 'Top' && albums.length > 6)
@@ -476,7 +486,10 @@ class _SearchPageState extends State<SearchPage> {
                         borderRadius: BorderRadius.circular(16),
                         onTap: () {
                           _saveRecent(query);
-                          widget.open('collection', {...albums[i], 'kind': 'album'});
+                          widget.open('collection', {
+                            ...albums[i],
+                            'kind': 'album',
+                          });
                         },
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -485,7 +498,9 @@ class _SearchPageState extends State<SearchPage> {
                               aspectRatio: 1,
                               child: Artwork(
                                 model: widget.model,
-                                track: widget.model.trackById(albums[i]['artworkTrack']),
+                                track: widget.model.trackById(
+                                  albums[i]['artworkTrack'],
+                                ),
                                 radius: 16,
                               ),
                             ),
@@ -494,7 +509,10 @@ class _SearchPageState extends State<SearchPage> {
                               '${albums[i]['title']}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                             Text(
                               '${albums[i]['artist']}',
@@ -524,7 +542,10 @@ class _SearchPageState extends State<SearchPage> {
                     borderRadius: BorderRadius.circular(16),
                     onTap: () {
                       _saveRecent(query);
-                      widget.open('collection', {...albums[i], 'kind': 'album'});
+                      widget.open('collection', {
+                        ...albums[i],
+                        'kind': 'album',
+                      });
                     },
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -533,7 +554,9 @@ class _SearchPageState extends State<SearchPage> {
                           aspectRatio: 1,
                           child: Artwork(
                             model: widget.model,
-                            track: widget.model.trackById(albums[i]['artworkTrack']),
+                            track: widget.model.trackById(
+                              albums[i]['artworkTrack'],
+                            ),
                             radius: 16,
                           ),
                         ),
@@ -564,9 +587,8 @@ class _SearchPageState extends State<SearchPage> {
                   children: [
                     Text(
                       'Artists',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
                     if (_libraryScope == 'Top' && artists.length > 6)
@@ -617,7 +639,10 @@ class _SearchPageState extends State<SearchPage> {
                       children: [
                         const CircleAvatar(
                           backgroundColor: Color(0xFF6D4C99),
-                          child: Icon(Icons.public_rounded, color: Colors.white),
+                          child: Icon(
+                            Icons.public_rounded,
+                            color: Colors.white,
+                          ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -626,11 +651,16 @@ class _SearchPageState extends State<SearchPage> {
                             children: [
                               Text(
                                 'Search online for “$query”',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               const Text(
                                 'Find releases, songs and downloads online',
-                                style: TextStyle(fontSize: 12, color: Colors.white70),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
                               ),
                             ],
                           ),
@@ -642,7 +672,12 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ),
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 180)),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height:
+                  MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+            ),
+          ),
         ],
       ],
     );
@@ -668,7 +703,7 @@ class _SearchPageState extends State<SearchPage> {
     final collection = row(model.state['onlineCollection']);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 180),
+      padding: pageInsets(context, top: 8),
       children: [
         Row(
           children: [
@@ -745,7 +780,9 @@ class _SearchPageState extends State<SearchPage> {
               trailing: PopupMenuButton<String>(
                 onSelected: (v) => v == 'save'
                     ? model.call('saveWanted', {'recording': song['recording']})
-                    : chooseDownload(context, model, {'recording': song['recording']}),
+                    : chooseDownload(context, model, {
+                        'recording': song['recording'],
+                      }),
                 itemBuilder: (_) => [
                   const PopupMenuItem(
                     value: 'save',
@@ -784,7 +821,9 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
         ],
-        const SizedBox(height: 180),
+        SizedBox(
+          height: MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+        ),
       ],
     );
   }
@@ -797,10 +836,15 @@ class _SearchPageState extends State<SearchPage> {
         title: const Text('Open music link'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'URL from TIDAL, Spotify or MusicBrainz'),
+          decoration: const InputDecoration(
+            labelText: 'URL from TIDAL, Spotify or MusicBrainz',
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Open'),
