@@ -81,7 +81,9 @@ struct LyricsPane: View {
         let inks = LyricInks(scheme: scheme, accent: Color.worn.resolve(in: environment))
         let awake = visible && phase == .active
         let sounding = playback?.playing == true && sheet.detail != .unsynced
-        let moving = awake && (sounding || stage.isMoving(at: Date.now.timeIntervalSinceReferenceDate))
+        let turning = awake && stage.isMoving(at: Date.now.timeIntervalSinceReferenceDate)
+        let animating = turning || (awake && sounding && sheet.detail == .words)
+        let ticking = !animating && awake && sounding
         let native = library.native
         let still = reduceMotion
         let scale = displayScale
@@ -89,8 +91,8 @@ struct LyricsPane: View {
         _ = stage.beat
 
         return GeometryReader { proxy in
-            TimelineView(.animation(minimumInterval: nil, paused: !moving)) { timeline in
-                let now = (moving ? timeline.date : Date.now).timeIntervalSinceReferenceDate
+            let content = { (date: Date, running: Bool) -> LyricSheetView in
+                let now = (running ? date : Date.now).timeIntervalSinceReferenceDate
                 let scene = stage.scene(
                     of: LyricCue(
                         sheet: sheet,
@@ -103,10 +105,11 @@ struct LyricsPane: View {
                         still: still,
                         scale: scale,
                         awake: awake,
-                        running: moving
+                        running: animating || ticking,
+                        animating: animating
                     )
                 )
-                LyricSheetView(
+                return LyricSheetView(
                     scene: scene,
                     stage: stage,
                     measures: measures,
@@ -114,6 +117,15 @@ struct LyricsPane: View {
                     compact: compact,
                     seek: seek
                 )
+            }
+            if ticking {
+                TimelineView(.periodic(from: .now, by: LyricPace.lineSyncedTick)) { timeline in
+                    content(timeline.date, true)
+                }
+            } else {
+                TimelineView(.animation(minimumInterval: LyricPace.frameCap, paused: !animating)) { timeline in
+                    content(timeline.date, animating)
+                }
             }
         }
     }
@@ -396,6 +408,15 @@ enum LyricSpace {
 }
 
 enum LyricPace {
+    static let lineSyncedTick: TimeInterval = 0.1
+    static let sparingFrame: TimeInterval = 1.0 / 30
+
+    static var frameCap: TimeInterval? {
+        let info = ProcessInfo.processInfo
+        let hot = info.thermalState == .serious || info.thermalState == .critical
+        return info.isLowPowerModeEnabled || hot ? sparingFrame : nil
+    }
+
     static let turn: TimeInterval = 0.42
     static let glide: TimeInterval = 0.6
     static let launchedAtMost = 4.0
@@ -923,6 +944,7 @@ struct LyricCue {
     let scale: CGFloat
     let awake: Bool
     let running: Bool
+    let animating: Bool
 }
 
 struct LyricBreathing {
@@ -1031,7 +1053,8 @@ final class LyricStage {
 
         let scene = drawn(at: now, cue: cue)
 
-        if cue.awake, !cue.running, isMoving(at: now) { nudge() }
+        if cue.awake, !cue.animating, isMoving(at: now) { nudge() }
+        if cue.awake, cue.animating, synced, sheet?.detail == .lines, !isMoving(at: now) { nudge() }
         return scene
     }
 

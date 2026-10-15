@@ -593,8 +593,11 @@ entries, `mobile.md`'s *Lyrics*): the same `TURN`, `Glide`/`Leg`, falloffs, casc
 breath dots, word sweep and *END OF LYRICS* mark, with the same constants, arithmetic drawn from
 `lyric_frame`. `LyricStage` holds the motion outside observation (only `beat` is observed, bumped
 where a paused timeline must wake) and turns each `TimelineView(.animation)` tick into a
-`LyricScene`; the timeline runs while the pane is visible and a synced sheet plays or anything
-still turns. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
+`LyricScene`; the timeline runs at the display's rate only while something moves: anything turning,
+or a word-synced sheet playing (its sweep); a line-synced sheet playing with nothing turning ticks
+at 10 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn
+(`nudge`), and back. Low Power Mode or a serious thermal state caps the rate at 30 fps
+(`LyricPace.frameCap`). The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
 moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
 the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
