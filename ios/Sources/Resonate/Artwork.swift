@@ -116,7 +116,7 @@ struct ArtworkView: View {
             return
         }
         if let held = held(at: bucket) {
-            image = held
+            if image !== held { image = held }
             return
         }
         let features = library.features
@@ -129,7 +129,7 @@ struct ArtworkView: View {
         guard !Task.isCancelled else { return }
         if image == nil, shown != nil {
             withAnimation(.easeOut(duration: Self.arrival)) { image = shown }
-        } else {
+        } else if image !== shown {
             image = shown
         }
         if let shown, !portrayed { ShownArtwork.keep(shown, for: track) }

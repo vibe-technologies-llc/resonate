@@ -124,7 +124,7 @@ struct BrowsedSongs: View {
     }
 
     private func row(_ track: Track, among tracks: [Track]) -> some View {
-        TrackRow(track: track, current: library.snapshot?.current?.id == track.id) {
+        TrackRow(track: track) {
             library.play(tracks, selected: track)
         }
     }

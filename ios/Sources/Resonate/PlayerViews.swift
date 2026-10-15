@@ -21,7 +21,7 @@ struct MiniPlayer: View {
     @State private var width: CGFloat = 0
 
     var body: some View {
-        let track = library.snapshot?.current
+        let track = library.playingTrack
         let expanded = placement != .inline
         let titled = expanded || width == 0 || width >= Self.titledFrom
         let skips = expanded || width >= Self.skipsFrom
@@ -153,7 +153,7 @@ struct NowPlayingView: View {
     @State private var picked: PickedTracks?
 
     var body: some View {
-        let track = library.snapshot?.current
+        let track = library.playingTrack
         NavigationStack {
             Group {
                 if mode == .artwork, typeSize.isAccessibilitySize {
@@ -473,7 +473,7 @@ struct PlayerScrubber: View {
             HStack {
                 Text(clock(UInt64(shown)))
                 Spacer()
-                QualityLine(track: library.snapshot?.current)
+                QualityLine(track: library.playingTrack)
                 Spacer()
                 Text("-" + clock(UInt64(max(duration - shown, 0))))
             }
@@ -713,11 +713,21 @@ final class SystemVolumeLevel {
     private(set) var level: Float = 0
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
+    @ObservationIgnored private var heardSinceWatching = false
 
     func watch() {
         guard watching == nil else { return }
-        level = AVAudioSession.sharedInstance().outputVolume
-        watching = Self.observing { [weak self] heard in self?.level = heard }
+        heardSinceWatching = false
+        watching = Self.observing { [weak self] heard in self?.hear(heard) }
+        Task {
+            let current = await Work.inSession { AVAudioSession.sharedInstance().outputVolume }
+            if watching != nil, !heardSinceWatching { level = current }
+        }
+    }
+
+    private func hear(_ heard: Float) {
+        heardSinceWatching = true
+        level = heard
     }
 
     func stopWatching() {
@@ -726,6 +736,7 @@ final class SystemVolumeLevel {
     }
 
     func set(_ wanted: Float) {
+        heardSinceWatching = true
         level = wanted
         guard let slider = driver.flatMap(Self.slider(in:)) else { return }
         slider.setValue(wanted, animated: false)

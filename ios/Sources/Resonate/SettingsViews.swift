@@ -163,7 +163,7 @@ struct SettingsView: View {
                 symbol: "moon",
                 keywords: "sound playback pause minutes end song queue",
                 opening: .sleepTimer,
-                available: library.snapshot?.current != nil
+                available: library.playingTrack != nil
             ),
         ]
     }

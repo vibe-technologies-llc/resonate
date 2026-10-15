@@ -14,6 +14,10 @@ enum Work {
         label: "org.resonate.sync",
         qos: .userInitiated
     )
+    private static let sessionQueue = DispatchQueue(
+        label: "org.resonate.session",
+        qos: .userInitiated
+    )
     private static let asideQueue = DispatchQueue(
         label: "org.resonate.aside",
         qos: .utility,
@@ -25,6 +29,18 @@ enum Work {
     ) async throws -> Value {
         try await withCheckedThrowingContinuation { continuation in
             orderedQueue.async { continuation.resume(with: Result { try body() }) }
+        }
+    }
+
+    static func enqueueInOrder(_ body: @escaping @Sendable () -> Void) {
+        orderedQueue.async(execute: body)
+    }
+
+    static func inSession<Value: Sendable>(
+        _ body: @escaping @Sendable () -> Value
+    ) async -> Value {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async { continuation.resume(returning: body()) }
         }
     }
 

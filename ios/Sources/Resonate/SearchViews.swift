@@ -130,7 +130,7 @@ struct SearchResults: View {
     }
 
     private func songRow(_ track: Track, among tracks: [Track], _ query: String) -> some View {
-        TrackRow(track: track, current: library.snapshot?.current?.id == track.id, query: query) {
+        TrackRow(track: track, query: query) {
             search.remember()
             library.play(tracks, selected: track)
         }

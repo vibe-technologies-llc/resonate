@@ -7,7 +7,7 @@ struct LyricsView: View {
 
     var body: some View {
         let features = library.features
-        let track = chosen ?? library.snapshot?.current
+        let track = chosen ?? library.playingTrack
         let sheet = features.lyrics?.trackId == track?.id ? features.lyrics : nil
         LyricsPane(track: track, compact: false)
             .safeAreaInset(edge: .bottom) {
@@ -63,7 +63,7 @@ struct AnalysisView: View {
 
     var body: some View {
         let features = library.features
-        let track = chosen ?? library.snapshot?.current
+        let track = chosen ?? library.playingTrack
         let report = features.analysis?.trackId == track?.id ? features.analysis : nil
         Group {
             if let track {
@@ -208,7 +208,7 @@ struct VisualizerView: View {
     var body: some View {
         let samples = library.features.samples
         VStack(spacing: 20) {
-            if library.snapshot?.transport != .playing, samples.isEmpty {
+            if library.transport != .playing, samples.isEmpty {
                 ContentUnavailableView("Play a song to see its sound", systemImage: "waveform")
             } else {
                 SignalPlot(values: samples, mirrored: true)
@@ -216,13 +216,13 @@ struct VisualizerView: View {
                     .padding()
                     .glassEffect(.regular, in: .rect(cornerRadius: 24))
             }
-            if let track = library.snapshot?.current {
+            if let track = library.playingTrack {
                 Text(track.shownTitle).font(.headline)
                 Text(track.quality).font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .padding()
-        .background(BackdropView(track: library.snapshot?.current))
+        .background(BackdropView(track: library.playingTrack))
         .navigationTitle("Live waveform")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { library.features.visualize(true) }

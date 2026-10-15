@@ -23,7 +23,7 @@ struct LibraryToolsView: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        let current = library.snapshot?.current
+        let current = library.playingTrack
         ThemedList {
             Section("Your library") {
                 NavigationLink(value: Destination.playlists) {

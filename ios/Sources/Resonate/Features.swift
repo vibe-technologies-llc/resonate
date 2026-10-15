@@ -774,7 +774,9 @@ final class Features {
     func loadPlaylists() {
         work { [weak self] native in
             let found = try await Work.aside { try native.playlists() }
-            await MainActor.run { self?.playlists = found }
+            await MainActor.run {
+                if self?.playlists != found { self?.playlists = found }
+            }
         }
     }
 
@@ -870,10 +872,10 @@ final class Features {
                 try native.listeningDetail(days: days, limit: shown, utcOffsetSeconds: offset)
             }
             let breakdown = try await Work.aside { try native.libraryBreakdown() }
-            guard request == self?.statisticsRequest else { return }
-            self?.statistics = found
-            self?.listeningDetail = detail
-            self?.libraryBreakdown = breakdown
+            guard let self, request == statisticsRequest else { return }
+            if statistics != found { statistics = found }
+            if listeningDetail != detail { listeningDetail = detail }
+            if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })

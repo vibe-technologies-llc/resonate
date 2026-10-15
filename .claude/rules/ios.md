@@ -51,7 +51,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   run on their own ordered lane (`Work.inLibrary`), `sync_start`, `sync_network` and
   `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), and
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
-  correction (decoding up to 64 MiB).
+  correction (decoding up to 64 MiB). **No `AVAudioSession` call runs on the main actor**: each is
+  a call into the audio server that can take tens of milliseconds. Activation is queued straight
+  onto the transport's lane (`Work.enqueueInOrder`, so it precedes the `play()` steered after it),
+  and the preferred rate, the route, rate and latency readings and the volume are read on their own
+  serial lane (`Work.inSession`); the main actor only applies the answer.
   The poll reads the snapshot every 250 ms while the scene is active and
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
   500 ms playing in the background, 1 s paused in the foreground and 2 s paused in the background,
@@ -67,7 +71,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate and underruns. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
-  redrawn four times a second; only the views that show the position (Now Playing
+  redrawn four times a second; `transport`, `playingTrack` and `playingNext` are derived from each
+  snapshot assigned (`Library.derive`) and stored only when they move, so a view that needs the
+  playing song or the transport is not rebuilt by a pause, a shuffle or a sleep timer, and a list
+  never reads `snapshot` in the body that builds its rows (a row marks itself by `currentId`): the
+  Songs list doing so re-diffed the whole library on every play and pause, in the frame Now
+  Playing's cover began its spring; only the views that show the position (Now Playing
   slider and times, sleep countdowns, the output page) read the clock, each in a view of its own.
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
@@ -226,7 +235,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   so it walks under a `ScanStop` flag; removing a folder stops its walk. The scan's notice
   gives its reasons: the first unreadable song and why, and the covers and lyrics sheets that
   could not be kept, with the first of those.
-- **`NowPlaying`** owns the audio session (`.playback`, long-form), reports the route to Rust,
+- **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
+  (a route report asked while another is reading is the one applied, carrying any rebind owed), reports the route to Rust,
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
   the main actor). The category is set at start but the session is activated only on play

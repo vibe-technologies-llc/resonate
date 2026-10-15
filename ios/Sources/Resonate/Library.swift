@@ -138,7 +138,12 @@ final class Library {
         didSet { findPlayingRow() }
     }
     private(set) var playingQueueRow: Int?
-    var snapshot: Snapshot?
+    private(set) var snapshot: Snapshot? {
+        didSet { derive(from: snapshot) }
+    }
+    private(set) var transport = Transport.stopped
+    private(set) var playingTrack: Track?
+    private(set) var playingNext: Range<Int>?
     var status: StatusMessage?
     var scanning = false
     private(set) var erasing = false
@@ -426,17 +431,22 @@ final class Library {
         }
     }
 
-    var transport: Transport {
-        snapshot?.transport ?? .stopped
-    }
-
     var loaded: Bool {
-        snapshot?.current != nil
+        playingTrack != nil
     }
 
-    var playingNext: Range<Int>? {
-        guard let first = snapshot?.nextFirst, let count = snapshot?.nextCount, count > 0 else { return nil }
-        return Int(first)..<Int(first) + Int(count)
+    private func derive(from state: Snapshot?) {
+        let shownTransport = state?.transport ?? .stopped
+        let next = state.flatMap(Self.askedNext(in:))
+
+        if transport != shownTransport { transport = shownTransport }
+        if playingTrack != state?.current { playingTrack = state?.current }
+        if playingNext != next { playingNext = next }
+    }
+
+    private static func askedNext(in state: Snapshot) -> Range<Int>? {
+        guard let first = state.nextFirst, state.nextCount > 0 else { return nil }
+        return Int(first)..<Int(first) + Int(state.nextCount)
     }
 
     private func findPlayingRow() {

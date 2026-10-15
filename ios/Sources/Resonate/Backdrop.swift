@@ -84,7 +84,7 @@ struct BackdropView: View {
     }
 
     private var sounding: Bool {
-        library.snapshot?.transport == .playing
+        library.transport == .playing
     }
 
     private static func rate(sounding: Bool, ambient: Bool, lowPower: Bool) -> Int {
@@ -118,14 +118,15 @@ struct BackdropView: View {
     }
 
     private static func accentPalette() -> Palette {
-        Palette.around(accent: accentLinear())
+        AccentPaletteMemory.palette(around: accentLinear())
     }
 
     private func loadPalette() async {
         let accentLinear = Self.accentLinear()
 
         guard let track, let image = await library.features.artwork(track, bucket: .tile) else {
-            palette = Palette.around(accent: accentLinear)
+            let around = AccentPaletteMemory.palette(around: accentLinear)
+            if palette != around { palette = around }
             return
         }
         let sampled = await Backdrop.palette(of: image, accent: accentLinear)
@@ -176,6 +177,18 @@ private enum PaletteMemory {
             if kept.count >= most { kept.removeAll() }
             kept[key] = palette
         }
+    }
+}
+
+@MainActor
+private enum AccentPaletteMemory {
+    private static var kept: (accent: SIMD3<Float>, palette: Palette)?
+
+    static func palette(around accent: SIMD3<Float>) -> Palette {
+        if let kept, kept.accent == accent { return kept.palette }
+        let palette = Palette.around(accent: accent)
+        kept = (accent, palette)
+        return palette
     }
 }
 

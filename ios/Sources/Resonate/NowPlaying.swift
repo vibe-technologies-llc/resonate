@@ -52,6 +52,13 @@ final class NowPlaying {
     private var listening = false
     private var reportedRate: UInt32?
     private var settling: Task<Void, Never>?
+    private var routeAsks = 0
+    private var rebindOwed = false
+
+    private struct Activation: Sendable {
+        let refusal: (any Swift.Error)?
+        let rateAsked: Bool
+    }
 
     init(library: Library) {
         self.library = library
@@ -91,13 +98,38 @@ final class NowPlaying {
     }
 
     func activate() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            library.report(error)
+        let wanted = Self.wantedRate(of: shown?.track)
+        Work.enqueueInOrder { [weak self] in
+            let activation = Self.activated(preferring: wanted)
+            Task { @MainActor in self?.settle(after: activation) }
         }
-        preferRate(of: shown?.track)
+    }
+
+    private func settle(after activation: Activation) {
+        if let refusal = activation.refusal { library.report(refusal) }
+        if activation.rateAsked { settleRoute() }
         reportRoute(rebind: false)
+    }
+
+    nonisolated private static func activated(preferring wanted: Double) -> Activation {
+        let session = AVAudioSession.sharedInstance()
+        var refusal: (any Swift.Error)?
+        do {
+            try session.setActive(true)
+        } catch {
+            refusal = error
+        }
+        return Activation(refusal: refusal, rateAsked: preferred(wanted, by: session))
+    }
+
+    nonisolated private static func preferred(_ wanted: Double, by session: AVAudioSession) -> Bool {
+        guard wanted != session.preferredSampleRate else { return false }
+        try? session.setPreferredSampleRate(wanted)
+        return true
+    }
+
+    private static func wantedRate(of track: Track?) -> Double {
+        followsSongRate ? Double(track?.rate ?? 0) : 0
     }
 
     func beginListening() throws {
@@ -117,16 +149,16 @@ final class NowPlaying {
     }
 
     func songRateFollowingChanged() {
-        preferRate(of: shown?.track)
-        reportRoute(rebind: false)
+        askRate(of: shown?.track)
     }
 
-    private func preferRate(of track: Track?) {
-        let session = AVAudioSession.sharedInstance()
-        let wanted = Self.followsSongRate ? Double(track?.rate ?? 0) : 0
-        guard wanted != session.preferredSampleRate else { return }
-        try? session.setPreferredSampleRate(wanted)
-        settleRoute()
+    private func askRate(of track: Track?) {
+        let wanted = Self.wantedRate(of: track)
+        Task {
+            let asked = await Work.inSession { Self.preferred(wanted, by: .sharedInstance()) }
+            if asked { settleRoute() }
+            reportRoute(rebind: false)
+        }
     }
 
     private func settleRoute() {
@@ -134,8 +166,8 @@ final class NowPlaying {
         settling = Task { [weak self] in
             for wait in Self.rateSettles {
                 try? await Task.sleep(for: wait)
+                let rate = await Work.inSession { UInt32(AVAudioSession.sharedInstance().sampleRate.rounded()) }
                 guard !Task.isCancelled, let self else { return }
-                let rate = UInt32(AVAudioSession.sharedInstance().sampleRate.rounded())
                 if rate != reportedRate { reportRoute(rebind: false) }
             }
         }
@@ -147,13 +179,23 @@ final class NowPlaying {
 
     private func reportRoute(rebind: Bool) {
         guard native != nil else { return }
-        let reading = RouteReading.current
+        routeAsks += 1
+        rebindOwed = rebindOwed || rebind
+        let ask = routeAsks
+        Task {
+            let reading = await Work.inSession { RouteReading.current }
+            guard ask == routeAsks else { return }
+            report(reading, rebind: rebindOwed)
+            rebindOwed = false
+        }
+    }
+
+    private func report(_ reading: RouteReading, rebind: Bool) {
         if reading != library.routeReading { library.routeReading = reading }
-        library.outputRouteChanged(OutputRoute.current)
-        let session = AVAudioSession.sharedInstance()
-        let rate = UInt32(session.sampleRate.rounded())
+        library.outputRouteChanged(reading.outputs.first.map { OutputRoute(id: $0.id, name: $0.name) })
+        let rate = UInt32(reading.sampleRate.rounded())
+        let latency = reading.latencyMs
         reportedRate = rate
-        let latency = (session.outputLatency + session.ioBufferDuration) * 1000
         library.request { try $0.outputRouteChanged(rate: rate, latencyMs: latency, rebind: rebind) }
     }
 
@@ -313,8 +355,7 @@ final class NowPlaying {
 
         if track.id != ratedTrack {
             ratedTrack = track.id
-            preferRate(of: track)
-            reportRoute(rebind: false)
+            askRate(of: track)
         }
         guard forced || next != shown || drift > Self.driftBeforeRewriteMs else { return }
         write(next, position: snapshot.positionMs, at: now)
