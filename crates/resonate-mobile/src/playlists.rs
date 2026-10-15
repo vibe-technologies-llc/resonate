@@ -31,7 +31,7 @@ pub(crate) struct PlaylistUndo {
 impl MobilePlayer {
     pub fn playlists(&self) -> Result<Vec<MusicPlaylist>> {
         let connection = self.catalog.0.lock();
-        let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows WHERE playlist = p.id), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
+        let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE r.playlist = p.id AND d.missing = 0), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
         query
             .query_map([], |row| {
                 Ok(MusicPlaylist {
@@ -437,5 +437,48 @@ pub(crate) mod tests {
             player.playlist_tracks(id, 0, 100).expect("its rows").len(),
             2
         );
+    }
+
+    #[test]
+    fn a_playlist_counts_only_the_songs_its_page_shows() {
+        let player = player();
+        let shown = player
+            .catalog
+            .upsert(Track {
+                uri: "content://test/shown.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song");
+        let hidden = player
+            .catalog
+            .upsert(Track {
+                uri: "content://test/hidden.flac".into(),
+                ..Track::default()
+            })
+            .expect("another song");
+        let id = player.create_playlist("Mixed".into()).expect("a list");
+        player
+            .add_to_playlist(id, vec![shown.id, hidden.id, hidden.id])
+            .expect("rows");
+
+        assert_eq!(player.playlists().expect("the list")[0].songs, 3);
+
+        player
+            .catalog
+            .mark_missing(&[hidden.id as i64], &[])
+            .expect("hidden");
+
+        assert_eq!(player.playlists().expect("the list")[0].songs, 1);
+        assert_eq!(
+            player.playlist_tracks(id, 0, 100).expect("its rows").len(),
+            1
+        );
+
+        player
+            .catalog
+            .mark_missing(&[shown.id as i64], &[])
+            .expect("hidden");
+
+        assert_eq!(player.playlists().expect("the list")[0].songs, 0);
     }
 }

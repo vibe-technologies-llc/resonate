@@ -376,6 +376,8 @@ struct PlaylistPicker: View {
     @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 44
     let tracks: [Track]
     @State private var name = ""
+    @State private var asking = false
+    @State private var failure: String?
 
     var body: some View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -386,14 +388,15 @@ struct PlaylistPicker: View {
                         .submitLabel(.done)
                         .onSubmit { create(trimmed) }
                     Button("Create and add", systemImage: "plus") { create(trimmed) }
-                        .disabled(trimmed.isEmpty)
+                        .disabled(trimmed.isEmpty || asking)
+                } footer: {
+                    if let failure { Text(failure).foregroundStyle(.red) }
                 }
                 Section {
                     ForEach(library.features.playlists, id: \.id) { playlist in
                         Button {
-                            library.features.addToPlaylist(playlist.id, tracks)
-                            library.notice("Added to \(playlist.name)")
-                            dismiss()
+                            asking = true
+                            library.features.addToPlaylist(playlist.id, tracks) { finished($0, playlist.name) }
                         } label: {
                             HStack(spacing: 12) {
                                 PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
@@ -405,6 +408,7 @@ struct PlaylistPicker: View {
                             .accessibilityElement(children: .combine)
                         }
                         .buttonStyle(.plain)
+                        .disabled(asking)
                     }
                 }
             }
@@ -419,9 +423,16 @@ struct PlaylistPicker: View {
     }
 
     private func create(_ trimmed: String) {
-        guard !trimmed.isEmpty else { return }
-        library.features.createPlaylist(trimmed, with: tracks)
-        library.notice("Added to \(trimmed)")
+        guard !trimmed.isEmpty, !asking else { return }
+        asking = true
+        library.features.createPlaylist(trimmed, with: tracks) { finished($0, trimmed) }
+    }
+
+    private func finished(_ problem: String?, _ playlist: String) {
+        asking = false
+        failure = problem
+        guard problem == nil else { return }
+        library.notice("Added to \(playlist)")
         dismiss()
     }
 }

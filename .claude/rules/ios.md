@@ -336,7 +336,12 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   *Edit album tags* leaves the page on the album, not on "No songs from this album". A playlist's rows are keyed by song and occurrence, move and remove at once, and
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
-  disappears.
+  disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
+  playlist of hidden songs reads as empty and offers *Your playlist starts here*. The playlist
+  picker stays open until the edit has answered: it says "Added to X" and closes on success, and
+  on a failure (a duplicate name in *Create and add*) shows it under the field; Now Playing's picker
+  is made for the song playing when *Add to playlist* was chosen, not the one playing when a row is
+  tapped.
 
 ## Playlist files and listening
 

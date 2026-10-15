@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] A playlist's count includes rows the page hides (`playlists.rs` counts `playlist_rows`,
-  `playlist_tracks` skips `missing`), and a playlist of hidden songs shows an empty list without
-  "Your playlist starts here"; the picker says "Added to X" and dismisses before `editPlaylist`
-  runs, so a duplicate name in *Create and add* then fails on a closed sheet; Now Playing's picker
-  is built in the sheet closure and adds whichever song is playing when a row is tapped
 - [S] "All time" in Statistics is the last 366 days (`DAYS_SHOWN_AT_MOST`): the chart, its total and
   *Busiest day* cover a year while the *Listened* tile covers all; the chart's end labels carry no
   year

@@ -145,7 +145,7 @@ struct NowPlayingView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
-    @State private var choosingPlaylist = false
+    @State private var picked: PickedTracks?
 
     var body: some View {
         let track = library.snapshot?.current
@@ -174,12 +174,10 @@ struct NowPlayingView: View {
                     Button("Close", systemImage: "chevron.down") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    PlayerMoreMenu(track: track, choosingPlaylist: $choosingPlaylist)
+                    PlayerMoreMenu(track: track) { picked = PickedTracks(tracks: [$0]) }
                 }
             }
-            .sheet(isPresented: $choosingPlaylist) {
-                if let track { PlaylistPicker(tracks: [track]) }
-            }
+            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
         }
     }
 
@@ -760,13 +758,13 @@ struct PlayerMoreMenu: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track?
-    @Binding var choosingPlaylist: Bool
+    let addToPlaylist: (Track) -> Void
 
     var body: some View {
         Menu("More", systemImage: "ellipsis") {
             if let track {
                 Section {
-                    Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { addToPlaylist(track) }
                     Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
                     Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
                 }

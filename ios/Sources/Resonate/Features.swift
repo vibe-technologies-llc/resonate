@@ -22,6 +22,8 @@ enum ArtistLookup {
     case missing
 }
 
+typealias PlaylistEdited = @MainActor (String?) -> Void
+
 struct WantedSaving: Sendable {
     let saved: UInt64
     let failure: (any Swift.Error)?
@@ -744,26 +746,32 @@ final class Features {
         playlistRows = []
     }
 
-    func createPlaylist(_ name: String, with tracks: [Track] = []) {
+    func createPlaylist(_ name: String, with tracks: [Track] = [], then: PlaylistEdited? = nil) {
         let ids = tracks.map(\.id)
-        editPlaylist { native in
+        editPlaylist({ native in
             let id = try native.createPlaylist(name: name)
             if !ids.isEmpty { try native.addToPlaylist(id: id, tracks: ids) }
-        }
+        }, then: then)
     }
 
-    func addToPlaylist(_ id: UInt64, _ tracks: [Track]) {
+    func addToPlaylist(_ id: UInt64, _ tracks: [Track], then: PlaylistEdited? = nil) {
         let ids = tracks.map(\.id)
-        editPlaylist { native in try native.addToPlaylist(id: id, tracks: ids) }
+        editPlaylist({ native in try native.addToPlaylist(id: id, tracks: ids) }, then: then)
     }
 
-    func editPlaylist(_ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
+    func editPlaylist(_ action: @escaping @Sendable (MobilePlayer) throws -> Void, then: PlaylistEdited? = nil) {
         work { [weak self] native in
-            let found = try await Work.inLibrary {
-                try action(native)
-                return try native.playlists()
+            do {
+                let found = try await Work.inLibrary {
+                    try action(native)
+                    return try native.playlists()
+                }
+                self?.adoptPlaylists(found, native)
+                then?(nil)
+            } catch {
+                guard let then else { throw error }
+                then(explained(error))
             }
-            self?.adoptPlaylists(found, native)
         }
     }
 
