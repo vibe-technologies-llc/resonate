@@ -54,6 +54,8 @@ final class NowPlaying {
     private var settling: Task<Void, Never>?
     private var routeAsks = 0
     private var rebindOwed = false
+    private var lastTransport: Transport?
+    private var wasSleeping = false
 
     private struct Activation: Sendable {
         let refusal: (any Swift.Error)?
@@ -97,8 +99,8 @@ final class NowPlaying {
         enableCommands(for: nil)
     }
 
-    func activate() {
-        let wanted = Self.wantedRate(of: shown?.track)
+    func activate(loading track: Track? = nil) {
+        let wanted = Self.wantedRate(of: track ?? shown?.track)
         Work.enqueueInOrder { [weak self] in
             let activation = Self.activated(preferring: wanted)
             Task { @MainActor in self?.settle(after: activation) }
@@ -134,8 +136,13 @@ final class NowPlaying {
 
     func beginListening() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
-        try session.setActive(true)
+        do {
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
+            try session.setActive(true)
+        } catch {
+            configureSession()
+            throw error
+        }
         listening = true
     }
 
@@ -320,7 +327,21 @@ final class NowPlaying {
         update(state, forced: true)
     }
 
+    private func releaseSessionIfDone(_ snapshot: Snapshot) {
+        let sleeping = snapshot.sleepRemainingMs != nil
+        let stopped = snapshot.transport == .stopped && lastTransport != nil && lastTransport != .stopped
+        let sleptOff = snapshot.transport == .paused && lastTransport == .playing && wasSleeping && !sleeping
+        lastTransport = snapshot.transport
+        wasSleeping = sleeping
+        guard (stopped || sleptOff), !listening, let native else { return }
+        Work.enqueueInOrder {
+            guard let now = try? native.snapshot(), now.transport != .playing, now.transport != .loading else { return }
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     func update(_ snapshot: Snapshot, forced: Bool = false) {
+        releaseSessionIfDone(snapshot)
         let center = MPNowPlayingInfoCenter.default()
         guard let track = snapshot.current else {
             guard shown != nil || center.nowPlayingInfo != nil else { return }

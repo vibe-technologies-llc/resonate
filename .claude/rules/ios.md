@@ -58,7 +58,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   serial lane (`Work.inSession`); the main actor only applies the answer.
   The poll reads the snapshot every 250 ms while the scene is active and
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
-  500 ms playing in the background, 1 s paused in the foreground and 2 s paused in the background,
+  500 ms playing in the background (100 ms in the last 1.5 s of a playing song, so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s paused in the background,
   and saves every 5 s, as Android does; the queue is read
   only when the snapshot's `queue_revision` moved since the queue last shown (`QueueListed`), or
   its `catalog_revision` moved and 3 s have passed since the last read (`catalogRereadAfter`), since
@@ -241,8 +241,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
   the main actor). The category is set at start but the session is activated only on play
-  (`activate()`), so opening Resonate never stops another app's audio. **The session is asked for
-  the playing song's rate** (`preferRate`): on every song change and activation, while "Match the
+  (`activate()`), so opening Resonate never stops another app's audio; it is deactivated with
+  `.notifyOthersOnDeactivation` when the transport turns stopped (Stop, the queue's end) or a sleep
+  timer paused it (`releaseSessionIfDone`, on the transport's lane and only if nothing plays by
+  then), so the app audio it interrupted may resume. **The session is asked for
+  the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activate(loading:)`, not the one on the lock screen), while "Match the
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
   reported again, so a rate the route took moves `route_changed` and reopens RemoteIO at it; a route
@@ -796,7 +799,9 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   run, and a new song is felt (`sensoryFeedback(.success)`).
 - **`Microphone.record`** asks `AVAudioApplication` for the microphone (`NSMicrophoneUsageDescription`),
   switches the session to `.playAndRecord`, `.measurement` with A2DP kept, through
-  `NowPlaying.beginListening` (route changes are not reported to Rust meanwhile, so the rate the
+  `NowPlaying.beginListening` (an activation refused puts `.playback` back at once; a session
+  interruption or an engine configuration change ends the clip with `MicrophoneFailure.interrupted`,
+  never a short clip spending a try) (route changes are not reported to Rust meanwhile, so the rate the
   category moves costs no reopen of the output, only the one report on `endListening`),
   taps `AVAudioEngine`'s input as a mono mix into a `ClipSink` (a `Mutex`, its tap block built
   `nonisolated`) until 12 s are held or 3 s past that, and hands the samples and the input's rate to

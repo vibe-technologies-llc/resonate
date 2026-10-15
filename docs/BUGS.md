@@ -164,21 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `NowPlaying.beginListening` sets `.playAndRecord`/`.measurement` before `setActive(true)`, and
-  `Microphone.record` registers its `endListening` defer only after it returns: an activation
-  refused (a call, another app on the microphone) leaves playback on the recording category without
-  the long-form `.playback` policy until relaunch
-- [S] `Microphone.record` observes neither the session's interruption nor
-  `AVAudioEngineConfigurationChange`: a call, a headset plugged in or a media-services reset stops
-  the engine mid-clip, `ClipSink.filled` waits out the 15 s deadline and the short clip spends one
-  of `triesOnAMiss` on an `unknown` or `silent`
-- [S] The playback session is never deactivated: `setActive(false, .notifyOthersOnDeactivation)`
-  runs only in `endListening`, so after Stop, the queue's end or a sleep timer another app's audio
-  Resonate interrupted is never told it may resume
-- [S] `NowPlaying.activate` asks the session for the rate of `shown?.track`, the song on the lock
-  screen rather than the one `play`/`jump` loads, and an automatic song change reaches `askRate`
-  only on the next poll: RemoteIO opens at the old rate and reopens a quarter second or more into
-  the song, so each change across rates starts resampled and then fades out and back
 - [S] `Library.steer` never calls `nudgePoll` (only `request` does): after Play, Pause, Shuffle,
   Repeat or a tapped song the next poll waits the interval of the old snapshot, 1 s paused in front
   and 2 s behind, so the title, clock and lock-screen rate and elapsed time lag the tap

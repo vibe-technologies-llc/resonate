@@ -301,10 +301,12 @@ struct HeardClip: Sendable {
 
 enum MicrophoneFailure: LocalizedError {
     case unavailable
+    case interrupted
 
     var errorDescription: String? {
         switch self {
         case .unavailable: "No microphone is available to listen with."
+        case .interrupted: "Listening was interrupted by a call, a change of headphones or another app."
         }
     }
 }
@@ -334,7 +336,9 @@ enum Microphone {
 
         let sink = ClipSink(wanted: Int(format.sampleRate * seconds))
         input.installTap(onBus: 0, bufferSize: tapFrames, format: format, block: ClipSink.tap(into: sink))
+        let watching = sink.interruptions(of: engine)
         defer {
+            watching.forEach { NotificationCenter.default.removeObserver($0) }
             input.removeTap(onBus: 0)
             engine.stop()
         }
@@ -358,6 +362,7 @@ final class ClipSink: Sendable {
         var waiting: CheckedContinuation<[Float], any Swift.Error>?
         var done = false
         var stopped = false
+        var interrupted = false
     }
 
     private let wanted: Int
@@ -372,6 +377,31 @@ final class ClipSink: Sendable {
 
     nonisolated static func tap(into sink: ClipSink) -> AVAudioNodeTapBlock {
         { buffer, _ in sink.take(buffer) }
+    }
+
+    nonisolated func interruptions(of engine: AVAudioEngine) -> [any NSObjectProtocol] {
+        let center = NotificationCenter.default
+        return [
+            center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { @Sendable [self] note in
+                let began = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                    .flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began
+                if began { interrupt() }
+            },
+            center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { @Sendable [self] _ in
+                interrupt()
+            },
+        ]
+    }
+
+    func interrupt() {
+        let waiting = held.withLock { held -> CheckedContinuation<[Float], any Swift.Error>? in
+            guard !held.done else { return nil }
+            held.done = true
+            held.interrupted = true
+            defer { held.waiting = nil }
+            return held.waiting
+        }
+        waiting?.resume(throwing: MicrophoneFailure.interrupted)
     }
 
     func finish() {
@@ -389,6 +419,7 @@ final class ClipSink: Sendable {
             try await withCheckedThrowingContinuation { continuation in
                 let ready = held.withLock { held -> Result<[Float], any Swift.Error>? in
                     if held.stopped { return .failure(CancellationError()) }
+                    if held.interrupted { return .failure(MicrophoneFailure.interrupted) }
                     if held.done { return .success(held.samples) }
                     held.waiting = continuation
                     return nil

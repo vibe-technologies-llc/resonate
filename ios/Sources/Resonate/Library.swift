@@ -102,6 +102,8 @@ final class Library {
     private static let savedEvery: Duration = .seconds(5)
     private static let busyAfterAsking: Duration = .seconds(2)
     private static let pollBusy: Duration = .milliseconds(250)
+    private static let pollNearEnd: Duration = .milliseconds(100)
+    private static let nearTheEndMs: UInt64 = 1500
     private static let pollIdle: Duration = .seconds(1)
     private static let pollBackgroundPlaying: Duration = .milliseconds(500)
     private static let pollBackgroundIdle: Duration = .seconds(2)
@@ -349,11 +351,16 @@ final class Library {
         if ContinuousClock.now < busyUntil { return Self.pollBusy }
         let moving = state.transport == .playing || state.transport == .loading
         switch (foreground, moving) {
-        case (true, true): return Self.pollBusy
+        case (true, true): return Self.endingSoon(state) ? Self.pollNearEnd : Self.pollBusy
         case (true, false): return analysing ? Self.pollBusy : Self.pollIdle
-        case (false, true): return Self.pollBackgroundPlaying
+        case (false, true): return Self.endingSoon(state) ? Self.pollNearEnd : Self.pollBackgroundPlaying
         case (false, false): return Self.pollBackgroundIdle
         }
+    }
+
+    private static func endingSoon(_ state: Snapshot) -> Bool {
+        state.transport == .playing && state.durationMs > state.positionMs
+            && state.durationMs - state.positionMs <= nearTheEndMs
     }
 
     private static func read(queueOf native: MobilePlayer) async -> Result<[Track], any Swift.Error> {
@@ -499,7 +506,7 @@ final class Library {
         let ids = rows.map(\.id)
         let start = UInt32(min(max(index, 0), rows.count - 1))
 
-        nowPlaying.activate()
+        nowPlaying.activate(loading: rows[Int(start)])
         steer(.loading) { native in
             try native.load(ids: ids, startAt: start, autoplay: false)
             try native.setShuffle(shuffled: shuffle)
@@ -517,7 +524,7 @@ final class Library {
 
     func jump(to row: Track) {
         guard let index = queue.firstIndex(where: { $0.queueId == row.queueId }) else { return }
-        nowPlaying.activate()
+        nowPlaying.activate(loading: row)
         steer(.loading) { native in
             try native.jumpTo(index: UInt32(index))
             try native.play()
