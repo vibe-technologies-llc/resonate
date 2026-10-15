@@ -287,6 +287,7 @@ private struct MeshBackdrop: UIViewRepresentable {
 final class BackdropMetalView: UIView {
     private static let drawingScale: CGFloat = 1
     private static let framesQueuedAhead: Float = 2
+    private static let placeholderLingers: TimeInterval = 0.15
 
     override static var layerClass: AnyClass { CAMetalLayer.self }
 
@@ -298,7 +299,8 @@ final class BackdropMetalView: UIView {
 
     private let renderer: BackdropRenderer
     private var link: CAMetalDisplayLink?
-    private var drewFirstFrame = false
+    private var placeholder: CALayer?
+    private var drewLiveFrame = false
 
     init(device: any MTLDevice, renderer: BackdropRenderer) {
         self.renderer = renderer
@@ -328,26 +330,35 @@ final class BackdropMetalView: UIView {
         let size = CGSize(width: bounds.width * Self.drawingScale, height: bounds.height * Self.drawingScale)
         guard let metal = metalLayer, size.width >= 1, size.height >= 1, metal.drawableSize != size else { return }
         metal.drawableSize = size
-        drawFirstFrame()
+        placeholder?.frame = bounds
+        showPlaceholder()
         redrawIfStill()
     }
 
-    private func drawFirstFrame() {
-        guard !drewFirstFrame, window != nil, UIApplication.shared.applicationState == .active,
-            let metal = metalLayer, metal.drawableSize.width >= 1, metal.drawableSize.height >= 1,
-            let drawable = metal.nextDrawable()
+    private func showPlaceholder() {
+        guard placeholder == nil, !drewLiveFrame, window != nil, UIApplication.shared.applicationState == .active,
+            bounds.width >= 1, bounds.height >= 1,
+            let image = renderer.placeholder(aspect: Float(bounds.width / bounds.height), at: CACurrentMediaTime())
         else { return }
-        drewFirstFrame = true
-        metal.presentsWithTransaction = true
-        renderer.draw(on: drawable, at: CACurrentMediaTime(), withTransaction: true)
-        metal.presentsWithTransaction = false
+        let layer = CALayer()
+        layer.frame = bounds
+        layer.contents = image
+        layer.contentsGravity = .resize
+        self.layer.addSublayer(layer)
+        placeholder = layer
+    }
+
+    private func retirePlaceholder() {
+        guard let held = placeholder else { return }
+        placeholder = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.placeholderLingers) { held.removeFromSuperlayer() }
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         contentScaleFactor = Self.drawingScale
         metalLayer?.contentsScale = Self.drawingScale
-        drawFirstFrame()
+        showPlaceholder()
         applyMotion()
     }
 
@@ -391,6 +402,8 @@ final class BackdropMetalView: UIView {
 
     private func draw(on drawable: any CAMetalDrawable, presentedAt moment: CFTimeInterval) {
         renderer.draw(on: drawable, at: moment)
+        drewLiveFrame = true
+        retirePlaceholder()
         if motion == .still { link?.isPaused = true }
     }
 }
@@ -413,6 +426,8 @@ final class BackdropRenderer {
     private static let loopSeconds: Double = 360
     private static let stillMoment: Float = 13
     private static let longestStep: CFTimeInterval = 1.0 / 15
+    private static let placeholderWidth = 48
+    private static let placeholderBytesPerPixel = 4
 
     weak var library: Library?
     var tone = BackdropTone.dark
@@ -451,7 +466,7 @@ final class BackdropRenderer {
         crossfadeBegan = now
     }
 
-    func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval, withTransaction: Bool = false) {
+    func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
         let step = Float(min(max(moment - (lastFrame ?? moment), 0), Self.longestStep))
 
         lastFrame = moment
@@ -475,14 +490,57 @@ final class BackdropRenderer {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         BackdropPipeline.reportFailures(of: commands)
-        if withTransaction {
-            commands.commit()
-            commands.waitUntilScheduled()
-            drawable.present()
-        } else {
-            commands.present(drawable)
-            commands.commit()
-        }
+        commands.present(drawable)
+        commands.commit()
+    }
+
+    func placeholder(aspect: Float, at moment: CFTimeInterval) -> CGImage? {
+        let width = Self.placeholderWidth
+        let height = max(Int((Float(width) / max(aspect, 0.1)).rounded()), 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: BackdropPipeline.pixelFormat,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = .renderTarget
+        descriptor.storageMode = .shared
+        guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { return nil }
+
+        advance(by: 0, at: moment)
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
+        guard let commands = gpu.queue.makeCommandBuffer(),
+            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
+        else { return nil }
+        var uniforms = self.uniforms(at: moment, drawable: CGSize(width: width, height: height))
+
+        encoder.setRenderPipelineState(gpu.pipeline)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.endEncoding()
+        commands.commit()
+        commands.waitUntilCompleted()
+        guard commands.status == .completed else { return nil }
+
+        var pixels = [UInt8](repeating: 0, count: width * height * Self.placeholderBytesPerPixel)
+        texture.getBytes(&pixels, bytesPerRow: width * Self.placeholderBytesPerPixel, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8 * Self.placeholderBytesPerPixel,
+            bytesPerRow: width * Self.placeholderBytesPerPixel,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
     }
 
     private func advance(by step: Float, at moment: CFTimeInterval) {
