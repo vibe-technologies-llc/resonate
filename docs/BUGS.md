@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] A TIDAL token renewed during a failed `find_download` is lost: the tuple
-  `(findDownload, refreshedTidalToken)` throws before the second is read, so the next job starts
-  from the stale keychain token and meets `AccountRefused`
 - [S] A finished download starts an enrichment pass on a metered network with "Only on Wi-Fi" on:
   `Enrichment.landed` checks `automatic` and `online` but not `unmetered`, which `begin` does
 - [S] "Download saved songs automatically" (on by default) asks for wants over cellular, Low Data

@@ -582,7 +582,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   begins one job per song not already queued (`begin_download`), two run at once and the rest
   wait. A job asks `find_download` with every account that is on and ready
   (`Features.downloadAccounts`, `ProviderAccounts.asked`), keeps a renewed TIDAL token on the TIDAL
-  account, creates the destination with `Folders.fresh` on `Work.aside`, journals its URI, copies
+  account (also from a find that failed, so the next job does not start from a token already spent), creates the destination with `Folders.fresh` on `Work.aside`, journals its URI, copies
   (`download_offer`), indexes (`index_download`), drops the journal entry, seeks the new song in the
   lookup and refreshes the library, the wants and the changed art. With no ready account nothing is
   begun and the downloads row offers "Set up a download provider" until one is ready; a job's row

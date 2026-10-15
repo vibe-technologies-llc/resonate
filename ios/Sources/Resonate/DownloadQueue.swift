@@ -334,10 +334,12 @@ final class DownloadQueue {
         let accounts = library.features.downloadAccounts
         let folders = library.folders
         do {
-            let (offer, renewed) = try await Work.aside {
-                (try native.findDownload(job: id, accounts: accounts), native.refreshedTidalToken())
+            let (found, renewed) = try await Work.aside {
+                let found = Result { try native.findDownload(job: id, accounts: accounts) }
+                return (found, native.refreshedTidalToken())
             }
             if let renewed { library.features.keepRenewedTidalToken(renewed) }
+            let offer = try found.get()
             update(id) {
                 $0.provider = offer.provider
                 $0.total = offer.total ?? $0.total
