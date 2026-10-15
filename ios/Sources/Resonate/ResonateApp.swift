@@ -7,6 +7,10 @@ struct ResonateApp: App {
     @State private var library = Library()
     @Environment(\.scenePhase) private var phase
 
+    init() {
+        BackgroundHold.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

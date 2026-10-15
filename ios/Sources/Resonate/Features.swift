@@ -43,7 +43,10 @@ final class Features {
     @ObservationIgnored lazy var enrichment = Enrichment(library: library)
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
     @ObservationIgnored lazy var listening = Listening(library: library)
-    @ObservationIgnored private let transfers = BackgroundHold(name: "Resonate transfers")
+    @ObservationIgnored private let transfers = BackgroundHold(
+        name: "Fetching songs from your devices",
+        continued: BackgroundHold.transfers
+    )
 
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
@@ -337,6 +340,17 @@ final class Features {
         return syncAskedAt == nil ? nil : .syncing
     }
 
+    private static func fetched(_ status: SyncStatus) -> ContinuedProgress {
+        let active = status.transfers.filter { $0.state == .waiting || $0.state == .moving }
+        let size = active.reduce(UInt64(0)) { $0 + $1.size }
+        let received = active.reduce(UInt64(0)) { $0 + min($1.received, $1.size) }
+        return ContinuedProgress(
+            done: Int64(clamping: received),
+            total: Int64(clamping: size),
+            subtitle: counted(active.count, "song") + " left"
+        )
+    }
+
     var syncUpToDate: Bool {
         guard let status = syncStatus, status.standing != .off else { return false }
         return syncActivity == nil && status.settled
@@ -483,6 +497,7 @@ final class Features {
                 let moving = status.moving > 0 || !waiting.isEmpty
                 if transferring != moving { transferring = moving }
                 transfers.hold(transferring)
+                if transferring { transfers.progress(Self.fetched(status)) }
                 answerSyncAsked(status)
                 if !waiting.isEmpty { kept += await landReceived(native, waiting) }
                 if kept > 0, !transferring {

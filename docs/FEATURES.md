@@ -32,8 +32,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   plus CarPlay and a widget
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
-- [S] A download or a song from another device continues in the background only for the time iOS
-  grants a background task; Android keeps a foreground service
 
 ## Playback and output
 - [M] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so

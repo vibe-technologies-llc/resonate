@@ -461,10 +461,17 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **The destination is remembered**: `download-folder` in `library-features`; the folder sheet
   appears only when none is kept or it is no longer readable and writable, with "Remember this
   folder" on by default; Downloads offers "Ask for a folder each time".
-- **One background task is held while a job runs** (`BackgroundHold`, also the sync transfers'
-  hold): its expiration handler, built `nonisolated`, cancels every running job and pauses the
-  waiting ones until the scene is active again, so each cancelled job still deletes its document
-  and its journal entry, or the next start does.
+- **A running job continues in the background as a continued-processing task** (`BackgroundHold`,
+  also the sync transfers' hold): `hold(true)` begins a plain background task and, while the app
+  is active, submits a `BGContinuedProcessingTaskRequest` (`org.resonate.ios.downloads.<uuid>` or
+  `.transfers.<uuid>`, strategy `.fail`; both wildcards are in `BGTaskSchedulerPermittedIdentifiers`
+  and registered on the main queue in `ResonateApp.init`). Once the system starts it, the plain
+  task ends and the system's progress shows the batch: each job a thousand steps, settled whole,
+  running by its fraction, "N of M songs" (transfers: bytes received of the known sizes, "N songs
+  left"). `hold(false)` completes it; a refused request leaves the plain task alone. Either
+  expiration handler, built `nonisolated`, cancels every running job and pauses the waiting ones
+  until the scene is active again, so each cancelled job still deletes its document and its journal
+  entry, or the next start does, and the continued task completes unsuccessfully.
 
 ## Listen
 

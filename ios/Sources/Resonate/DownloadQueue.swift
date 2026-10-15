@@ -1,4 +1,6 @@
+import BackgroundTasks
 import Foundation
+import OSLog
 import Observation
 import ResonateNative
 import UIKit
@@ -100,6 +102,7 @@ final class DownloadQueue {
     private static let wantsAutomaticallyKey = "download-wants-automatically"
     private static let wantsAskedAtLeast: Duration = .seconds(30)
     private static let wantsAskedEvery: Duration = .seconds(30 * 60)
+    private static let progressSteps: Int64 = 1000
 
     var jobs: [DownloadJob] = []
     var awaitingFolder: [SearchSong] = []
@@ -119,7 +122,11 @@ final class DownloadQueue {
     @ObservationIgnored private var paused = false
     @ObservationIgnored private var wantsPoll: Task<Void, Never>?
     @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
-    @ObservationIgnored private lazy var background = BackgroundHold(name: "Resonate downloads") { [weak self] in
+    @ObservationIgnored private var batch: Set<UInt64> = []
+    @ObservationIgnored private lazy var background = BackgroundHold(
+        name: "Downloading songs",
+        continued: BackgroundHold.downloads
+    ) { [weak self] in
         self?.expire()
     }
 
@@ -281,8 +288,28 @@ final class DownloadQueue {
             }
         }
         let running = jobs.contains { $0.state.inFlight }
+        if running {
+            batch.formUnion(jobs.filter { !$0.state.settled }.map(\.id))
+        } else {
+            batch = []
+        }
         background.hold(running)
+        showProgress()
         if running { follow(native) }
+    }
+
+    private func showProgress() {
+        let held = jobs.filter { batch.contains($0.id) }
+        guard !held.isEmpty else { return }
+        let settled = held.filter(\.state.settled).count
+        let done = held.reduce(Int64(0)) { sum, job in
+            sum + (job.state.settled ? Self.progressSteps : Int64((job.fraction ?? 0) * Double(Self.progressSteps)))
+        }
+        background.progress(ContinuedProgress(
+            done: done,
+            total: Int64(held.count) * Self.progressSteps,
+            subtitle: "\(settled) of \(counted(held.count, "song"))"
+        ))
     }
 
     private func run(_ job: DownloadJob, _ native: MobilePlayer) async {
@@ -352,6 +379,7 @@ final class DownloadQueue {
                     ids.compactMap { id in native.downloadProgress(job: id).map { (id, $0) } }
                 }) ?? []
                 for (id, progress) in read { update(id) { $0.follow(progress) } }
+                showProgress()
             }
         }
     }
@@ -382,27 +410,110 @@ final class DownloadQueue {
 
 @MainActor
 final class BackgroundHold {
+    static let downloads = "org.resonate.ios.downloads"
+    static let transfers = "org.resonate.ios.transfers"
+    private static var asked: [String: BackgroundHold] = [:]
+
     private let name: String
+    private let continued: String?
     private let expired: @MainActor () -> Void
     private var identifier = UIBackgroundTaskIdentifier.invalid
+    private var request: String?
+    private var task: BGContinuedProcessingTask?
+    private var shown = ContinuedProgress()
 
-    init(name: String, expired: @escaping @MainActor () -> Void = {}) {
+    init(name: String, continued: String? = nil, expired: @escaping @MainActor () -> Void = {}) {
         self.name = name
+        self.continued = continued
         self.expired = expired
     }
 
-    func hold(_ busy: Bool) {
-        if busy, identifier == .invalid {
-            identifier = UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: Self.expiry(of: self))
-        } else if !busy, identifier != .invalid {
-            UIApplication.shared.endBackgroundTask(identifier)
-            identifier = .invalid
+    static func register() {
+        for prefix in [downloads, transfers] {
+            BGTaskScheduler.shared.register(forTaskWithIdentifier: "\(prefix).*", using: .main, launchHandler: launched)
         }
+    }
+
+    func hold(_ busy: Bool) {
+        if busy {
+            if identifier == .invalid, task == nil {
+                identifier = UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: Self.expiry(of: self))
+            }
+            askToContinue()
+        } else {
+            endPlain()
+            finishContinued(success: true)
+        }
+    }
+
+    func progress(_ progress: ContinuedProgress) {
+        shown = progress
+        show()
+    }
+
+    private func askToContinue() {
+        guard let continued, request == nil, task == nil, UIApplication.shared.applicationState == .active else { return }
+        let id = "\(continued).\(UUID().uuidString)"
+        let asking = BGContinuedProcessingTaskRequest(identifier: id, title: name, subtitle: shown.subtitle)
+        asking.strategy = .fail
+        do {
+            try BGTaskScheduler.shared.submit(asking)
+            request = id
+            Self.asked[id] = self
+        } catch {
+            Logger(subsystem: "org.resonate.ios", category: "background")
+                .notice("\(self.name, privacy: .public) was not given time to continue: \(error, privacy: .public)")
+        }
+    }
+
+    private func began(_ given: BGContinuedProcessingTask) {
+        request = nil
+        task = given
+        given.expirationHandler = Self.expiry(of: self)
+        endPlain()
+        show()
+    }
+
+    private func show() {
+        guard let task else { return }
+        task.progress.totalUnitCount = max(shown.total, 1)
+        task.progress.completedUnitCount = min(shown.done, max(shown.total, 1))
+        task.updateTitle(name, subtitle: shown.subtitle)
+    }
+
+    private func endPlain() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+
+    private func finishContinued(success: Bool) {
+        if let request { Self.asked[request] = nil }
+        request = nil
+        task?.setTaskCompleted(success: success)
+        task = nil
     }
 
     private func expire() {
         expired()
-        hold(false)
+        endPlain()
+        finishContinued(success: false)
+    }
+
+    private static func started(_ given: BGTask) {
+        guard let given = given as? BGContinuedProcessingTask,
+            let hold = asked.removeValue(forKey: given.identifier),
+            hold.request == given.identifier
+        else {
+            given.setTaskCompleted(success: false)
+            return
+        }
+        hold.began(given)
+    }
+
+    nonisolated private static func launched(_ given: BGTask) {
+        nonisolated(unsafe) let deliveredOnTheMainQueue = given
+        MainActor.assumeIsolated { started(deliveredOnTheMainQueue) }
     }
 
     nonisolated private static func expiry(of hold: BackgroundHold) -> @Sendable () -> Void {
@@ -414,4 +525,10 @@ final class BackgroundHold {
             }
         }
     }
+}
+
+struct ContinuedProgress: Equatable {
+    var done: Int64 = 0
+    var total: Int64 = 0
+    var subtitle = ""
 }
