@@ -45,9 +45,13 @@ final class Enrichment {
 
     var line: String { Self.line(of: status) }
 
-    func begin() {
+    private var mayAsk: Bool {
         let features = library.features
-        guard automatic, features.online, !unmeteredOnly || features.unmetered else { return }
+        return automatic && features.online && (!unmeteredOnly || features.unmetered)
+    }
+
+    func begin() {
+        guard mayAsk else { return }
         start(Self.everything, stoppingFirst: false, seeking: library.snapshot?.current?.id)
     }
 
@@ -64,7 +68,7 @@ final class Enrichment {
     }
 
     func landed(_ track: UInt64) {
-        guard automatic, library.features.online else {
+        guard mayAsk else {
             seek(track)
             return
         }

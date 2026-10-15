@@ -122,6 +122,7 @@ final class DownloadQueue {
     @ObservationIgnored private var created: [UInt64: String] = [:]
     @ObservationIgnored private var paused = false
     @ObservationIgnored private var wantsPoll: Task<Void, Never>?
+    @ObservationIgnored private var wantsGeneration = 0
     @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var batch: Set<UInt64> = []
     @ObservationIgnored private lazy var background = BackgroundHold(
@@ -204,6 +205,7 @@ final class DownloadQueue {
     func stopForErasing() async {
         wantsPoll?.cancel()
         wantsPoll = nil
+        wantsGeneration += 1
         paused = true
         for job in jobs where job.state == .waiting { update(job.id) { $0.state = .cancelled } }
         if let native = library.native {
@@ -229,6 +231,7 @@ final class DownloadQueue {
     func wantsChanged() {
         wantsPoll?.cancel()
         wantsPoll = nil
+        wantsGeneration += 1
         askForWants()
     }
 
@@ -238,6 +241,7 @@ final class DownloadQueue {
         } else {
             wantsPoll?.cancel()
             wantsPoll = nil
+            wantsGeneration += 1
         }
         guard active, paused else { return }
         paused = false
@@ -248,19 +252,29 @@ final class DownloadQueue {
     }
 
     private func askForWants() {
-        guard wantsPoll == nil, asksForWants, library.features.foreground else { return }
-        wantsPoll = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let native = try? await self?.library.player(),
-                    let next = (try? await Work.aside({ try native.nextWantedDue() })) ?? nil
-                else {
-                    self?.wantsPoll = nil
-                    return
-                }
-                try? await Task.sleep(for: DownloadQueue.waitForWants(dueAt: next))
-                guard !Task.isCancelled, let self else { return }
-                await askDueWants(native)
-            }
+        guard wantsPoll == nil, mayAskForWants, library.features.foreground else { return }
+        wantsGeneration += 1
+        let generation = wantsGeneration
+        wantsPoll = Task { [weak self] in await self?.keepAskingForWants(generation) }
+    }
+
+    private var mayAskForWants: Bool {
+        let features = library.features
+        return asksForWants && features.online && features.unmetered && !ProcessInfo.processInfo.isLowPowerModeEnabled
+            && !features.downloadAccounts.isEmpty && rememberedFolder != nil
+    }
+
+    private func keepAskingForWants(_ generation: Int) async {
+        defer {
+            if wantsGeneration == generation { wantsPoll = nil }
+        }
+        while !Task.isCancelled, mayAskForWants {
+            guard let native = try? await library.player(),
+                let next = (try? await Work.aside({ try native.nextWantedDue() })) ?? nil
+            else { return }
+            try? await Task.sleep(for: DownloadQueue.waitForWants(dueAt: next))
+            guard !Task.isCancelled else { return }
+            await askDueWants(native)
         }
     }
 
@@ -271,7 +285,7 @@ final class DownloadQueue {
     }
 
     private func askDueWants(_ native: MobilePlayer) async {
-        guard asksForWants, library.features.online, !library.features.downloadAccounts.isEmpty, let folder = rememberedFolder,
+        guard mayAskForWants, let folder = rememberedFolder,
             let due = try? await Work.aside({ try native.pollWantedDue() })
         else { return }
         let now = ContinuousClock.now

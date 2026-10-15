@@ -39,13 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] A finished download starts an enrichment pass on a metered network with "Only on Wi-Fi" on:
-  `Enrichment.landed` checks `automatic` and `online` but not `unmetered`, which `begin` does
-- [S] "Download saved songs automatically" (on by default) asks for wants over cellular, Low Data
-  Mode and Low Power Mode: `askDueWants` gates only on online, an account and a folder
-- [S] The wants loop's `else` branch sets `wantsPoll = nil` without asking whether it is still the
-  current task, so a stale task finishing after `wantsChanged` leaves a loop nothing can cancel;
-  with online off, no account or no folder the loop wakes every 30 s where `ios.md` says it stops
 - [M] `DownloadQueue.holds` reads `jobs`, appended only after `begin_download` answers, and
   `begin_download` does not dedupe: a double tap, or *Download all missing* beside the wants loop,
   makes two jobs and two files. `discard` ignores `Folders.delete`'s failure and drops the journal

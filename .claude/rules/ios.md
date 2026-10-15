@@ -539,7 +539,8 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   turn on and when the network becomes unmetered. It is refused while "Fetch artwork and details
   automatically" is off (`enrich-automatically`, on by default) or, with "Only on Wi-Fi"
   (`enrich-unmetered`, off by default), while the path `NWPathMonitor` reports is expensive or
-  constrained; a metered network then stops the pass. Both keys live in the `library-features`
+  constrained, for a song landing from a download or another device as for any other start; a
+  metered network then stops the pass. Both keys live in the `library-features`
   suite. Each start also seeks the playing song, and `Features.tick` hands every song change to
   `Enrichment.playing`, which calls `seek_enrichment` while a pass runs.
 - **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
@@ -612,11 +613,14 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
   reads `next_wanted_due`, sleeps until then held to 30 s at least and 30 min at most (the
   desktop's `RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`), then enqueues `poll_wanted_due`'s songs into
-  the remembered folder, only while online, with a ready account and a remembered writable folder:
-  it never raises the folder sheet or the provider notice. A song it asked is not asked again on its
-  own for 30 min, so a provider that stays away cannot pile failed rows up. It stops with nothing
-  due, going inactive or the switch off, and restarts on any change of wants, accounts, providers,
-  folder or online. "Download saved songs automatically" on Saved for later
+  the remembered folder, only while online, on a network that is neither expensive nor constrained
+  (Cellular and Low Data Mode wait), outside Low Power Mode, with a ready account and a remembered
+  writable folder (`mayAskForWants`): it never raises the folder sheet or the provider notice. A song it asked is not asked again on its
+  own for 30 min, so a provider that stays away cannot pile failed rows up. It ends, rather
+  than waking every 30 s, when any of those conditions fails, nothing is due, the scene goes
+  inactive or the switch is off, and restarts on any change of wants, accounts, providers, folder
+  list, online, network cost or Low Power Mode. Each loop knows its generation, so a task that
+  finishes after a restart never clears the loop that replaced it. "Download saved songs automatically" on Saved for later
   (`download-wants-automatically` in `library-features`, on by default) is the switch.
 - **The journal is a list**: `unfinished-download` holds the URIs of every job's document still
   being written, removed one by one as each lands or is deleted; on the next start each is deleted,

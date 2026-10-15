@@ -121,7 +121,12 @@ final class Library {
     var route: OutputRoute?
     var boundRoutes: [OutputRoute] = []
     var filter: TrackFilter = defaultTrackFilter()
-    var folderList: [MusicFolder] = []
+    var folderList: [MusicFolder] = [] {
+        didSet {
+            guard folderList != oldValue else { return }
+            features.downloads.wantsChanged()
+        }
+    }
     private(set) var currentId: UInt64?
     private(set) var currentQueueId: UInt64?
     private(set) var favouriteIds: Set<UInt64> = []

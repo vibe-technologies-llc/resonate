@@ -121,6 +121,7 @@ final class Features {
     @ObservationIgnored private var syncPolling: Task<Void, Never>?
     @ObservationIgnored private var nearby: NearbyDevices?
     @ObservationIgnored private var network: NWPathMonitor?
+    @ObservationIgnored private var power: (any NSObjectProtocol)?
     @ObservationIgnored private(set) var unmetered = false
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
@@ -515,6 +516,13 @@ final class Features {
         }
         monitor.start(queue: DispatchQueue(label: "org.resonate.network"))
         network = monitor
+        power = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange,
+            object: nil,
+            queue: .main
+        ) { @Sendable [weak self] _ in
+            Task { @MainActor in self?.downloads.wantsChanged() }
+        }
     }
 
     private func networkChanged(_ free: Bool) {
@@ -525,6 +533,7 @@ final class Features {
             await self?.announceNearby(native)
         }
         enrichment.networkChanged(free: free)
+        if free { downloads.wantsChanged() }
     }
 
     private func pollSync(_ native: MobilePlayer) async {
