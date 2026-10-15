@@ -88,12 +88,6 @@ struct MiniPlayer: View {
     }
 }
 
-extension PlayClock {
-    var playedFraction: Double {
-        durationMs > 0 ? min(Double(positionMs) / Double(durationMs), 1) : 0
-    }
-}
-
 struct PlayButton: View {
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

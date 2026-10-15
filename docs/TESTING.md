@@ -24,6 +24,18 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   match `xtool.yml` and `Info.plist`
 - [S] The build is checked for Swift warnings by hand only (`ios.md`'s *Checks*); no check reads
   `xtool dev build`'s output
+- [S] `explained` digs the sentence out of the generated `ResonateNative.Error` with `Mirror` (one
+  level for a `String` payload, two for `message:`), and nothing holds the shape: a UniFFI upgrade
+  changing the flat error falls back to `String(reflecting:)`, and every banner shows a debug print
+- [M] More pure Swift is unproved beside the list above: `Folders.file` (the root-prefix guard,
+  existing-destination refusal, the `.lrc` move, `prune`, the *Put files back* list), polling
+  (`QueueListed.isDue`, `pollInterval`, `Library.steady`, `NowPlaying.Written.expected`,
+  `Tally.summary`), sync (`syncStanding`, `SyncTransfers.keyed`, `syncActivity`'s fraction,
+  `answerSyncAsked`, `landable`, `SyncRoute.init`), lists and search (`lit`, `LetterRun.runs`,
+  `SearchModel`'s generations, `QueueParts`, `ListeningBar.grouped`, `PlaylistEntry.of`,
+  `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `ArtworkCache`'s flights,
+  `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
+  192-byte stride against the shader's `Field`
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

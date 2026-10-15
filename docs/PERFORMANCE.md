@@ -23,6 +23,50 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S] Typing a folder into the library settings checks `is_dir` and `canonicalize`s on the window's
   thread, where dropping one does it on the background executor: a hung mount hangs the window
 
+## iOS
+- [S] Applying room correction (`RoomCorrectionState.turn`, and `choose` after a pick) goes through
+  `Library.request`, the transport's lane, and decodes the whole response there (up to 64 MiB):
+  play, pause, seek and the activation ahead of `play()` wait behind it, where `ios.md` puts it on
+  `Work.aside`
+- [S] `AVAudioSession` calls still run on the main actor against `ios.md`: `routeReading`'s default
+  (`RouteReading.current`, in `Library.init`), `OutputRoute.current` in `start`, `configureSession`
+  at launch and on a media-services reset, and Listen's `setCategory`/`setActive` in both directions
+  from the `@MainActor` `Microphone`
+- [S] Folder and native calls that may hang run on the main actor: `Features.landReceived` calls
+  `Folders.fresh` and `delete` per received song and `begin` deletes the landing journal's
+  leftovers, `DownloadQueue.recover` calls `song_uris` and `Folders.delete`, and
+  `Enrichment.stopForErasing` joins the pass; downloads do the same steps on `Work.aside`
+- [S] `Library.start` awaits `refresh()` (every catalog page, then indexing on the main actor)
+  before the first `poll`: on a large library the restored mini player and lock-screen info appear
+  only once the whole catalog is read, and remote commands answer `.noSuchContent` meanwhile
+- [S] `pollSync` awaits `landReceived` inline, which copies each song and awaits `library.refresh`,
+  `refreshWanted` and `refreshChangedArt`: the fetching card's progress, `syncHandoffs` and
+  `answerSyncAsked` stand still while a large song lands, unlike `adoptArrivals`, which has a task
+  of its own
+- [M] `Folders.root` resolves the bookmark and starts a scope on every call, once per
+  `openDocument`, `companion`, `withPaths` element and organise move: each missing-song pass and
+  scan pays a `URL(resolvingBookmarkData:)` per song
+- [S] Every keychain write (`saveSync` on each sync switch, `saveScrobbling`'s four items,
+  `saveRecognitionKey`, `keepProviderAccount`, the minted code, `signInLastFm`) runs
+  `SecItemUpdate`/`SecItemAdd` on the main actor, though the launch reads moved off it
+- [S] `SettingsView.soundEntries` reads `clock.sleepRemainingMs` in the root body: while a sleep
+  timer runs, every tick rebuilds the whole Settings list and its search filter
+- [S] `FavouritesView.body` folds title, artist and album of every favourite on the main actor per
+  evaluation with text typed, at every keystroke and heart; *Add songs* folds once off the main
+  thread (`SongKeys`) and filters after 150 ms
+- [S] `DownloadQueue.follow` assigns each job's progress every 250 ms even unchanged (finding,
+  validating, stalled), and `@Observable` notifies regardless: Online search, *Saved for later* and
+  the Downloads summary redraw four times a second for the whole transfer
+- [S] `VisualizerView` holds the tap from `onAppear` to `onDisappear`, and `tapHoldersChanged` reads
+  neither `foreground` nor the transport: with the page open the 30 Hz read loop runs while paused
+  and while playing in the background
+- [S] `BackdropView.rate` reads Low Power Mode alone: on a serious or critical thermal state the
+  full-screen shader keeps 60 fps, where the lyric timeline drops to 30
+- [S] `remote_io::serve` wakes every 10 ms (`recv_timeout(COMMAND_POLL)`, `clock.note`) for as long
+  as the stream is open, paused included; the latency moves only in `route_changed`
+- [S] `OnlinePlaceholder` clips every online song, album, artist, release, want and download row
+  with `AnyShape`, the offscreen mask `ArtworkClip` exists to avoid
+
 ## Command line and bus
 - [M] MCP opens a fresh D-Bus connection for every player call, a subscribed now-playing resource
   twice a second on the one answering thread

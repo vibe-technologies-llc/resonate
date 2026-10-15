@@ -96,6 +96,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read
   in `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
 - [S] `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
+- [S] The phones' statistics disagree with their own chart: `statistics` sums `heard_ms` over every
+  listen, while the chart, *Busiest day*, *Songs heard* and the top lists count `counted = 1` alone,
+  so *Listened* never equals the chart's total and skips inflate the daily average
+- [S] `listening_detail` cuts days at the phone's current UTC offset (`day * 86400 - offset`), and
+  the phones regroup those instants in the local calendar: under summer time every winter day starts
+  at 23:00 the day before, so the 1st of a month counts in the previous month and *Busiest day*
+  reads a day early
 
 ## Providers and network
 - [M] Last.fm is sent a batch in requests of 50 (`LastFm::submit`) and answers `Err` at the first
@@ -156,6 +163,150 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
+## iOS
+- [S] `Library.open` hands any `resonate://` URL to `offerPairing`, and *Join these devices?* says
+  "the code you scanned" showing neither the code nor where it came from: a link opened from a web
+  page or another app joins a stranger's group, which then receives this iPhone's playlists,
+  favourites and history and may send songs into the music folder
+- [S] `PairingSheet`'s Copy puts the pairing code, the secret every sync key derives from, on
+  `UIPasteboard.general` with no `localOnly` or expiry: it stays there and Universal Clipboard hands
+  it to every device on the Apple ID
+- [S] `Features.file` (organise, *Put files back*) is not exclusive with a scan (`organising` only
+  disables its two buttons): a rescan during the moves indexes the new URIs first,
+  `documents_moved`'s rekey then hits `uri UNIQUE` and rolls back, and the moved songs are hidden as
+  missing while their new rows carry no favourites, listens or playlist rows
+- [S] `Folders.add` refuses only a folder whose path equals a granted root's: a subfolder or parent
+  of a root, or of Documents, is scanned under a second root id and every song in the overlap is
+  indexed twice, splitting its plays and favourite
+- [S] `Folders.scan` reads each directory with `(try? contentsOfDirectory(...)) ?? []`: an
+  unreachable File Provider folder or a refused subfolder ends the scan as "Read 0 songs" with no
+  failure, and the missing-song pass then hides everything under it
+- [S] `Folders.fresh` creates a download's or a received song's destination under its final name in
+  the music folder, and a scan may run meanwhile: the half-written file is indexed or reported
+  unreadable, and a cancelled job deletes a file whose row stays until the next missing-song pass
+- [M] The open playlist's rows drift from the catalog and an edit by shown index lands on a
+  neighbour: `PlaylistView.move` and `remove` change `playlistRows` before `editPlaylist`, which
+  reloads only on success, so a refused edit keeps an order the catalog never took; `reloadPlaylist`
+  runs unordered on the concurrent `Work.aside` with no generation, so an older read can land last;
+  and hiding missing songs or a folder never reloads the page though `shown_positions` no longer
+  counts those rows
+- [M] *Erase all data* can leave songs behind while saying all is gone: `eraseEverything` discards
+  `Folders.delete`'s answer (a read-only grant, an offline cloud folder) before `Erasure.everything`
+  drops the bookmarks; `stopForErasing` cancels the sync poll without awaiting it or
+  `adoptArrivals`, so a landing finishing after the second `song_uris` read stays; and with no
+  background task or input block, a locked phone suspends it halfway while the overlay lets taps
+  through
+- [S] `Features.joinSync` returns silently while `syncConfig` is nil, and the pairing alert then
+  opens an empty sync page: a `resonate://pair/` link that cold-launches the app is confirmed before
+  `readSecrets` has run (it waits behind the catalog's opening and migrations), and the pairing is
+  lost with no notice
+- [S] `Features.cameForward` skips rebuilding sync's sockets while `transferring` is true, which
+  nothing clears when the transfers' `BackgroundHold` expires (its `expired` is the no-op default)
+  or the app suspends: back in front, the endpoint iOS reclaimed stays deaf until a setting restarts
+  sync
+- [S] `Features.cameForward` runs `applySync` and `forgetMissing` in one throwing block: while
+  `sync_start` fails (a bad own-server address, a bind refused), songs whose files went while the
+  app was away are never hidden on coming forward
+- [S] `NowPlaying.beginListening` sets `.playAndRecord`/`.measurement` before `setActive(true)`, and
+  `Microphone.record` registers its `endListening` defer only after it returns: an activation
+  refused (a call, another app on the microphone) leaves playback on the recording category without
+  the long-form `.playback` policy until relaunch
+- [S] `Microphone.record` observes neither the session's interruption nor
+  `AVAudioEngineConfigurationChange`: a call, a headset plugged in or a media-services reset stops
+  the engine mid-clip, `ClipSink.filled` waits out the 15 s deadline and the short clip spends one
+  of `triesOnAMiss` on an `unknown` or `silent`
+- [S] The playback session is never deactivated: `setActive(false, .notifyOthersOnDeactivation)`
+  runs only in `endListening`, so after Stop, the queue's end or a sleep timer another app's audio
+  Resonate interrupted is never told it may resume
+- [S] `NowPlaying.activate` asks the session for the rate of `shown?.track`, the song on the lock
+  screen rather than the one `play`/`jump` loads, and an automatic song change reaches `askRate`
+  only on the next poll: RemoteIO opens at the old rate and reopens a quarter second or more into
+  the song, so each change across rates starts resampled and then fades out and back
+- [S] `remote_io_render::render` is `extern "C-unwind"` (`AURenderCallback`'s type) in a library
+  `build-native.py` builds with `panic = "unwind"`: a panic in `source.fill` unwinds into
+  AudioToolbox's render thread, where `mobile.md` promises the render callbacks abort
+- [S] `remote_io::serve` drops the `OSStatus` of a refused `AudioOutputUnitStart` (`(Err(_), _) =>
+  Failed`): the engine raises a bare `StreamFailed` for what is usually an inactive session or an
+  interruption not yet ended, where an open failure carries its `Status`
+- [S] `Library.steer` never calls `nudgePoll` (only `request` does): after Play, Pause, Shuffle,
+  Repeat or a tapped song the next poll waits the interval of the old snapshot, 1 s paused in front
+  and 2 s behind, so the title, clock and lock-screen rate and elapsed time lag the tap
+- [S] `Library.poll` applies `steered` after `await read(queueOf:)`, which is due after every
+  `play`: a command answered during the queue read has already reset `steered`, so the snapshot
+  taken before it is published raw and Now Playing flips back to the old song or transport until the
+  next poll
+- [S] `Library.show` lets any later notice replace an undismissed failure, and the failure is
+  already marked shown (`shownFailure`, `pollFailures`): a scan tally or "Added to queue" wipes an
+  engine or poll failure that is then never raised again
+- [S] `Library.hideSongs(under:)` and `forgetMissing` drop a failing `hide_songs_under` or
+  `hide_missing_songs` with `try?`: a removed folder's songs stay listed, and a failing pass repeats
+  at every foregrounding, silently
+- [S] The *Player volume* slider (`ProcessingView`) sends `set_volume` and nothing keeps it
+  (`PlaybackPreferences` and `Resumption` carry no volume; the engine starts at `Volume::MAX`): a
+  trimmed volume is back at full after a relaunch, and the thumb lags the finger since it reads
+  `snapshot.volume`
+- [S] `SuggestedMix.offered` builds *Most played* and *Recently played* from an order alone
+  (`TrackFilter` has no played-only switch): past the played songs both run on into every unplayed
+  one, so Play queues unheard music under a "what you listened to" card
+- [S] `StatisticsView` hands the newly picked `days` to the tiles and chart while
+  `features.statistics` and `listeningDetail` still hold the previous period, until
+  `loadStatistics`' three calls land, and for good if one fails: the old total is divided by the new
+  span and the old days regrouped by the new unit
+- [S] Switching *Fetch automatically* off, or *Only on Wi-Fi* on while on cellular, never stops a
+  running enrichment pass (`Enrichment`'s `didSet`s only `begin`): it keeps using the network until
+  it ends or the path next changes
+- [S] `Features.tagsWritable` asks `tags_writable` about the file kind alone, ignoring
+  `MusicFolder.writable`: *Edit tags* is offered for songs in a read-only grant, and Save dismisses
+  the sheet before a banner says the songs were left as they were
+- [S] A playing line-synced lyric sheet swaps `TimelineView(.periodic)` for `.animation` when
+  `stage.isMoving` turns true, and the `DragGesture` lives under that branch: `grab` rebuilds
+  `LyricSheetView` mid-gesture, `onEnded` never fires, the drag dies after a few points and
+  `hand.grabbedFrom` stays set, leaving the pane at display rate with *Follow* offered
+- [S] `RoomCorrectionState.restore` reads `apply_room_correction(on: false)`, which answers `nil`,
+  so after a relaunch with correction off the row shows a blank channels, rate and length; turning
+  it on with the response file gone flips straight back with no message (`turn` ignores a `nil`
+  answer)
+- [S] `EqualiserResponse.follow` returns early when the asked curve equals `drawn` without clearing
+  a pending `asked`: a drag stepping B, C, B within the 30 ms throttle (common after tidying to 10
+  Hz and 0.1 dB) lets the queued C land, leaving the trace a step off the curve
+- [S] `BackdropView.loadPalette` checks cancellation only on the sampled path; `ArtworkCache`
+  answers a cancelled waiter `nil`, so a superseded task takes the no-artwork branch and may assign
+  the accent palette after the new song's: skipping quickly can leave Now Playing's field on accent
+  colours for the whole song
+- [S] `PlayerScrubber` and `VolumeRow` keep the drag in `@State` cleared only in `onEnded`: a drag
+  the system cancels (a call, an alert, the zoom's dismissal taking the touch) freezes the scrubber
+  on the dragged value and starts the next drag from a stale `grabbedAt`
+- [S] `AppearanceState.wear` starts an unordered task per swatch tap and `setAlternateIconName`
+  refuses a second request while one is pending: two quick taps show "Resource temporarily
+  unavailable" and can leave the Home Screen icon on the first accent and the tint on the second,
+  with nothing reconciling them later
+- [S] `Library.playOpened` indexes or copies every file of a batch before its one `play`: opening
+  several large files from Files plays nothing, and shows nothing, until every copy is done, where
+  `ios.md` says the first plays once indexed
+- [S] `AddSongsSheet` opens with `keyed = .empty` and its overlay reads "Add a music folder in
+  Settings to start your library." until `SongKeys.of` has folded every song: a large library is
+  told it is empty while it loads
+- [S] `SystemVolumeLevel.watch` seeds the volume bar from `outputVolume`, which reads 0 until the
+  session is active: Now Playing on a restored, paused queue draws an empty bar and speaks "Volume,
+  0%" until the first play
+- [S] `SettingsView` always emits `Section("Connected services")` while its rows are gated by the
+  search: a search for *equaliser* leaves an empty Connected services header between the matching
+  sections
+- [M] Now Playing's secondary labels (artist, album at 0.8 opacity, the times) sit on a field the
+  shader lifts to Oklab lightness 0.55 dark and 0.63–0.78 light, roughly 2.3–3.6:1 against the 4.5:1
+  small text needs, and nothing reads Increase Contrast, Reduce Transparency or
+  `colorSchemeContrast` to raise it
+- [S] VoiceOver gaps: `SeeAllHeader`'s button is an unnamed "See all" (three alike in Top results
+  and on the Library tab); `QualityLine` (codec, depth, rate, output rate) is swallowed by the
+  scrubber's `.accessibilityElement()`; the backdrop's Strength slider has no label; `ListenSheet`
+  announces no result and removes the focused *Stop listening*
+- [S] `TransportRow` shows shuffle on/off and repeat off/all by colour alone (same symbol,
+  `.secondary` against `Color.worn`): Differentiate Without Color cannot tell the mode
+- [S] The mini player's `PlayButton` is a 32 pt frame with no `touchTarget()`: a near miss falls
+  through to the container's tap and opens Now Playing instead of pausing
+- [S] `StatusCard` caps a message at three lines: at accessibility text sizes a long failure (an
+  engine sentence, a scan reason naming a file) is cut with no way to read the rest
+
 ## Command line and bus
 - [S] `resonate play` keeps the queue only on the 500 ms sample (`keep_the_queue`, itself throttled
   to `KEPT_EVERY`) and not once more as it leaves: `n` then `q`, or a `resonate queue` just before
@@ -204,6 +355,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
+- [M] The iOS pages that filter in Swift fold with Foundation (`searchFolded`), not core's
+  `folded_letters`, which spells out `ø ł đ ð þ ß æ œ ħ`: Favourites, *Add songs*, the playlist-name
+  filter and `FilterSheet.distinct` miss or split what library search treats as one (*Lodz* against
+  *Łódź*); `resonate-mobile` exports no fold to call
 
 ## Keyboard and accessibility
 - [M] Enter or Space on a ringed control presses it twice: `PressControl` fires on key-down and gpui

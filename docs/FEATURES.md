@@ -49,6 +49,21 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   sheet drops what was typed; a *Mixed* tag field cannot be cleared (blank reads as unchanged)
 - [S] The iOS app has no `PrivacyInfo.xcprivacy`, and `ITSAppUsesNonExemptEncryption` is false
   though sync seals its records: neither matters under free signing, both before any distribution
+- [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
+  caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
+- [M] The phones' equaliser has no *Fit the preamp*: `resonate-mobile` exports no peak of the curve,
+  so an AutoEq or boosted curve clips until the preamp is lowered by eye, where the desktop fits it
+  from `peak_db`
+- [S] A playlist row's Play, Shuffle, Play next and Add to queue (`CollectionSource.tracks`) and a
+  suggested mix's Play and Shuffle read one 500-row page: a larger playlist or *Never heard* acts on
+  its first 500 songs in name order, shuffle included, though the playlist page reads every page
+- [S] TIDAL sign-in on iOS has no Cancel: `authorizeTidal` blocks in `finish_tidal_authorization`
+  until the code is approved or lapses, and the button stays disabled throughout, though the seam
+  cancels on `Ok(None)`
+- [S] iOS online search answers nothing under three characters (`OnlineAsked.chain`): *U2*, *XX* or
+  a two-character CJK name cannot be searched, where the boundary and desktop have no floor
+- [S] iOS restores no navigation: `Navigation` is plain `@State` with no `SceneStorage`, so a
+  relaunch after the system reclaims the app lands on the Library root, whatever page was open
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

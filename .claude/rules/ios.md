@@ -173,9 +173,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   The Inspector's artist portrait is decoded once off the main thread, at the 768 px page bucket, when it arrives. Landing a received song backs off per song
   (`landingRefused`), never pausing the rest (`android.md`).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
-  assigns `syncConfig` on the main actor at once, then restarts on `Work.inOrder`, so a second switch
+  assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
   flipped straight after builds on the first; `applySync` puts a minted code into the *current*
-  config only where its key is still the one that start used. `syncNetwork` runs on `Work.inOrder`
+  config only where its key is still the one that start used. `syncNetwork` runs on `Work.inSync`
   after the start with the network as it is then, and `syncForce` on `Work.aside`, so nothing on
   the main actor waits on `sync_start`'s lock. Sync runs while switched on and online, or with
   *This network only* whatever online says (`Features.syncRuns`).
@@ -295,8 +295,8 @@ The views follow Android's screens and wording (`android.md`): tabs Songs, Libra
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
-skip; its progress is a ring around the play button in either placement (a bar along the accessory's
-bottom ran through the title and artist, since the system fixes the accessory's height). Inline (the
+skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
+since the system fixes the accessory's height, and a ring around the play button was dropped). Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
 button always, the title from 150 pt, next from 200 pt (a minimised capsule beside the search
 button is about 220 pt, and without next the title trailed into empty glass), tighter spacing and a
