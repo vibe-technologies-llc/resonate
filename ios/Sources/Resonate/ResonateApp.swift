@@ -61,6 +61,7 @@ enum Destination: Hashable {
     case songAnalysis(UInt64?)
     case songDetails(UInt64)
     case appearance
+    case background
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -125,7 +126,7 @@ final class Navigation {
 extension Destination {
     var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .scrobbling, .providers, .sync, .folders, .appearance: true
+        case .sound, .processing, .output, .scrobbling, .providers, .sync, .folders, .appearance, .background: true
         default: false
         }
     }
@@ -308,6 +309,7 @@ struct DestinationView: View {
         case .sound: SoundSettingsView()
         case .processing: ProcessingView()
         case .appearance: AppearanceView()
+        case .background: BackgroundView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }

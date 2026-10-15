@@ -97,7 +97,6 @@ struct AppearanceView: View {
     var body: some View {
         let appearance = AppearanceState.shared
         ThemedForm {
-            background
             Section {
                 HStack(spacing: 16) {
                     Image(uiImage: icon(of: appearance.accent))
@@ -139,30 +138,7 @@ struct AppearanceView: View {
                 }
             }
         }
-        .navigationTitle("Appearance")
-    }
-
-    @ViewBuilder
-    private var background: some View {
-        @Bindable var appearance = AppearanceState.shared
-        Section {
-            Toggle("Resonate background", isOn: $appearance.themedBackground)
-            if appearance.themedBackground {
-                Toggle("Flowing", isOn: $appearance.movingBackground)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Strength")
-                    HStack(spacing: 12) {
-                        Text("Subtle").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $appearance.backgroundStrength, in: 0...1)
-                        Text("Vivid").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        } header: {
-            Text("Background")
-        } footer: {
-            Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion and Low Power Mode keep it still or slower.")
-        }
+        .navigationTitle("Accent colour")
     }
 
     private static let packaged = LinearGradient(
@@ -173,6 +149,31 @@ struct AppearanceView: View {
 
     private func icon(of accent: ResonateAccent?) -> UIImage {
         UIImage(named: accent?.iconName ?? "Icon") ?? UIImage()
+    }
+}
+
+struct BackgroundView: View {
+    var body: some View {
+        @Bindable var appearance = AppearanceState.shared
+        ThemedForm {
+            Section {
+                Toggle("Resonate background", isOn: $appearance.themedBackground)
+                if appearance.themedBackground {
+                    Toggle("Flowing", isOn: $appearance.movingBackground)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Strength")
+                        HStack(spacing: 12) {
+                            Text("Subtle").font(.caption).foregroundStyle(.secondary)
+                            Slider(value: $appearance.backgroundStrength, in: 0...1)
+                            Text("Vivid").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } footer: {
+                Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion and Low Power Mode keep it still or slower.")
+            }
+        }
+        .navigationTitle("Background")
     }
 }
 

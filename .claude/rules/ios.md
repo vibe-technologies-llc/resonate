@@ -316,7 +316,7 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
 
 ## Appearance
 
-- **The accent is the desktop's, chosen on Settings › Appearance** (`Appearance.swift`):
+- **The accent is the desktop's, chosen on Settings › Appearance › Accent colour** (`Appearance.swift`):
   *Resonate* (the default: the system accent and the packaged icon) or one of `ResonateAccent.every`,
   kept as `accent` in the `appearance` suite. `AppearanceState.shared` (`@Observable`) is read by
   `.tint` at the root and the Now Playing cover and by `Color.worn`, which every view drawing the
@@ -442,7 +442,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   visualizer tap or loudness. `ThemedPage` on each stack's root and every `DestinationView` hides
   the scroll content background and sets that background; Now
   Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
-  in the `appearance` defaults, edited in Settings › Appearance › Background: `themedBackground`
+  in the `appearance` defaults, edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of its own beside `AppearanceView`): `themedBackground`
   (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). A plain list's rows
   draw their own opaque fill, so each one is `themedRows()` (a clear `listRowBackground` while the
   background is on), keeping separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which

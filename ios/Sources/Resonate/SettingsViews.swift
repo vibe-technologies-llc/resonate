@@ -32,7 +32,7 @@ struct SettingsView: View {
         "Download providers TIDAL Subsonic Monochrome",
         "Scrobbling ListenBrainz Last.fm",
         "Erase all data reset everything delete start over",
-        "Appearance accent colour icon tint theme",
+        "Appearance accent colour icon tint theme background shader wallpaper",
     ]
 
     var body: some View {
@@ -50,13 +50,20 @@ struct SettingsView: View {
                     ForEach(sources) { entryRow($0) }
                 }
             }
-            if shown("Appearance accent colour icon tint theme") {
+            if shown("Appearance accent colour icon tint theme background shader wallpaper") {
                 Section("Appearance") {
                     NavigationLink(value: Destination.appearance) {
                         ToolRow(
                             title: "Accent colour",
                             detail: AppearanceState.shared.accent.map { $0.name.capitalized } ?? "Resonate",
                             symbol: "paintpalette"
+                        )
+                    }
+                    NavigationLink(value: Destination.background) {
+                        ToolRow(
+                            title: "Background",
+                            detail: AppearanceState.shared.themedBackground ? "Resonate" : "Off",
+                            symbol: "sparkles.rectangle.stack"
                         )
                     }
                 }
