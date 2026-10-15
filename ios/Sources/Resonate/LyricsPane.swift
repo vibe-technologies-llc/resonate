@@ -118,14 +118,8 @@ struct LyricsPane: View {
                     seek: seek
                 )
             }
-            if ticking {
-                TimelineView(.periodic(from: .now, by: LyricPace.lineSyncedTick)) { timeline in
-                    content(timeline.date, true)
-                }
-            } else {
-                TimelineView(.animation(minimumInterval: LyricPace.frameCap, paused: !animating)) { timeline in
-                    content(timeline.date, animating)
-                }
+            TimelineView(LyricSchedule(ticking: ticking, paused: !animating)) { timeline in
+                content(timeline.date, ticking || animating)
             }
         }
     }
@@ -133,6 +127,18 @@ struct LyricsPane: View {
     private func seek(to moment: UInt64) {
         stage.followAgain(at: Date.now.timeIntervalSinceReferenceDate)
         library.request { try $0.seek(positionMs: moment) }
+    }
+}
+
+struct LyricSchedule: TimelineSchedule {
+    let ticking: Bool
+    let paused: Bool
+
+    func entries(from start: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
+        if ticking {
+            return AnySequence(PeriodicTimelineSchedule(from: start, by: LyricPace.lineSyncedTick).entries(from: start, mode: mode))
+        }
+        return AnySequence(AnimationTimelineSchedule(minimumInterval: LyricPace.frameCap, paused: paused).entries(from: start, mode: mode))
     }
 }
 

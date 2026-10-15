@@ -640,7 +640,7 @@ where a paused timeline must wake) and turns each `TimelineView(.animation)` tic
 `LyricScene`; the timeline runs at the display's rate only while something moves: anything turning,
 or a word-synced sheet playing (its sweep); a line-synced sheet playing with nothing turning ticks
 at 10 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn
-(`nudge`), and back. Low Power Mode or a serious thermal state caps the rate at 30 fps
+(`nudge`), and back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two views swapped, so a drag in progress survives the change. Low Power Mode or a serious thermal state caps the rate at 30 fps
 (`LyricPace.frameCap`). The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
 moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
 the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.

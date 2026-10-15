@@ -164,10 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] A playing line-synced lyric sheet swaps `TimelineView(.periodic)` for `.animation` when
-  `stage.isMoving` turns true, and the `DragGesture` lives under that branch: `grab` rebuilds
-  `LyricSheetView` mid-gesture, `onEnded` never fires, the drag dies after a few points and
-  `hand.grabbedFrom` stays set, leaving the pane at display rate with *Follow* offered
 - [S] `RoomCorrectionState.restore` reads `apply_room_correction(on: false)`, which answers `nil`,
   so after a relaunch with correction off the row shows a blank channels, rate and length; turning
   it on with the response file gone flips straight back with no message (`turn` ignores a `nil`
