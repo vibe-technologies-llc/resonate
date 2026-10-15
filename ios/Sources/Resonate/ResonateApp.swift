@@ -192,10 +192,10 @@ struct RootView: View {
                 navigation.paths[.settings] = [.sync]
             }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
+        } message: { code in
             Text(library.features.syncConfig?.key.isEmpty == false
-                ? "This iPhone leaves the devices it syncs with now and syncs with the devices of the code you scanned."
-                : "This iPhone syncs its playlists, favourites and history with the devices of the code you scanned.")
+                ? "A link asks this iPhone to leave the devices it syncs with now and sync with the devices of the code \(code). Join only if that is your code or one you were given."
+                : "A link asks this iPhone to share its playlists, favourites and history with the devices of the code \(code). Join only if that is your code or one you were given.")
         }
         .onChange(of: library.features.playlistToShow) { _, shown in
             guard let shown else { return }

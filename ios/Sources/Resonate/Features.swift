@@ -115,6 +115,7 @@ final class Features {
     var syncAskedAt: Date?
     var syncLanding = 0
     var pairingOffered: String?
+    @ObservationIgnored private var joinWaiting: String?
     var tagsUndoable = false
     var organising = false
     var organiseUndo: (folder: String, back: [FiledSong])?
@@ -240,6 +241,7 @@ final class Features {
             unreadReported = true
             library.report(failure)
         }
+        if let code = joinWaiting, syncConfig != nil { joinSync(code) }
     }
 
     private func submitScrobbles(_ native: MobilePlayer) async {
@@ -322,7 +324,12 @@ final class Features {
     }
 
     func joinSync(_ code: String) {
-        guard var config = syncConfig else { return }
+        guard var config = syncConfig else {
+            joinWaiting = code
+            library.notice("Joining as soon as this iPhone's settings are read")
+            return
+        }
+        joinWaiting = nil
         config.key = code.trimmingCharacters(in: .whitespacesAndNewlines)
         config.enabled = true
         saveSync(config)

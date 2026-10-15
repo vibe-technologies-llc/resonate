@@ -1,6 +1,7 @@
 import ResonateNative
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 func syncStanding(_ status: SyncStatus?, config: SyncConfig?, online: Bool) -> String {
     guard let config, config.enabled else { return "Off" }
@@ -314,6 +315,8 @@ struct PairingSheet: View {
     @State private var copies = 0
     @State private var revealed = false
 
+    private static let copiedFor: TimeInterval = 120
+
     var body: some View {
         let code = shownCode
         let reads = syncReadsAsACode(code: joining)
@@ -351,7 +354,13 @@ struct PairingSheet: View {
                         if let code {
                             HStack(spacing: 12) {
                                 Button {
-                                    UIPasteboard.general.string = code
+                                    UIPasteboard.general.setItems(
+                                        [[UTType.plainText.identifier: code]],
+                                        options: [
+                                            .localOnly: true,
+                                            .expirationDate: Date().addingTimeInterval(Self.copiedFor),
+                                        ]
+                                    )
                                     copies += 1
                                 } label: {
                                     Label("Copy", systemImage: "doc.on.doc")

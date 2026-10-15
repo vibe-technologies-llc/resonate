@@ -157,14 +157,14 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   transfers, and *Options*: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
   folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
-  `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy and Share,
+  `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
   is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
   tapped, and covered again whenever the sheet opens. **A computer is paired by the system
   camera**: `Info.plist` registers the `resonate` URL scheme, so the Camera app or the Control
   Centre scanner opens the desktop's QR code (`resonate://pair/<code>`) in Resonate; `Library.open`
   hands it to `Features.offerPairing` (`sync_code_in_link`), and the root view asks *Join these
-  devices?* before `joinSync` (which also turns sync on) and opens the sync page. Resonate itself
+  devices?*, naming the code the link holds, before `joinSync` (which also turns sync on) and opens the sync page; a join confirmed before the keychain read has landed waits (`joinWaiting`) and runs when it does. Resonate itself
   never touches the camera, so it asks for no camera permission. No page names the hosted server's domain. A device that is away and
   not this iPhone swipes (or long-presses) to *Remove*; the section's menu removes every such one
   (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by `SyncedDevice.id`, since a

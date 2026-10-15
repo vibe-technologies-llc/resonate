@@ -164,13 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `Library.open` hands any `resonate://` URL to `offerPairing`, and *Join these devices?* says
-  "the code you scanned" showing neither the code nor where it came from: a link opened from a web
-  page or another app joins a stranger's group, which then receives this iPhone's playlists,
-  favourites and history and may send songs into the music folder
-- [S] `PairingSheet`'s Copy puts the pairing code, the secret every sync key derives from, on
-  `UIPasteboard.general` with no `localOnly` or expiry: it stays there and Universal Clipboard hands
-  it to every device on the Apple ID
 - [S] `Features.file` (organise, *Put files back*) is not exclusive with a scan (`organising` only
   disables its two buttons): a rescan during the moves indexes the new URIs first,
   `documents_moved`'s rekey then hits `uri UNIQUE` and rolls back, and the moved songs are hidden as
@@ -196,10 +189,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `adoptArrivals`, so a landing finishing after the second `song_uris` read stays; and with no
   background task or input block, a locked phone suspends it halfway while the overlay lets taps
   through
-- [S] `Features.joinSync` returns silently while `syncConfig` is nil, and the pairing alert then
-  opens an empty sync page: a `resonate://pair/` link that cold-launches the app is confirmed before
-  `readSecrets` has run (it waits behind the catalog's opening and migrations), and the pairing is
-  lost with no notice
 - [S] `Features.cameForward` skips rebuilding sync's sockets while `transferring` is true, which
   nothing clears when the transfers' `BackgroundHold` expires (its `expired` is the no-op default)
   or the app suspends: back in front, the endpoint iOS reclaimed stays deaf until a setting restarts
