@@ -13,6 +13,8 @@ struct ArtworkLoad: Equatable {
 }
 
 struct ArtworkView: View {
+    private static let arrival: TimeInterval = 0.2
+
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
     let track: Track?
@@ -42,11 +44,12 @@ struct ArtworkView: View {
             }
         }
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous)))
-        .animation(.easeInOut(duration: 0.36), value: image)
         .onGeometryChange(for: CGFloat.self) { proxy in
             max(proxy.size.width, proxy.size.height)
         } action: { edge in
-            bucket = ArtworkBucket.fitting(points: edge, scale: displayScale)
+            let fitting = ArtworkBucket.fitting(points: edge, scale: displayScale)
+            bucket = fitting
+            if image == nil, let held = held(at: fitting) { image = held }
         }
         .task(id: load) { await show(load) }
         .accessibilityHidden(true)
@@ -69,10 +72,23 @@ struct ArtworkView: View {
         )
     }
 
+    private func held(at bucket: ArtworkBucket) -> UIImage? {
+        guard let track else { return nil }
+        let features = library.features
+        if let mbid = portraitMbid, let portrait = features.cachedPortrait(mbid, bucket: bucket) {
+            return portrait
+        }
+        return features.cachedArtwork(track, bucket: bucket)
+    }
+
     private func show(_ load: ArtworkLoad) async {
         guard let bucket = load.bucket else { return }
         guard let track else {
             image = nil
+            return
+        }
+        if let held = held(at: bucket) {
+            image = held
             return
         }
         let features = library.features
@@ -83,14 +99,18 @@ struct ArtworkView: View {
         if shown == nil { shown = await features.artwork(track, bucket: bucket) }
 
         guard !Task.isCancelled else { return }
-        image = shown
+        if image == nil, shown != nil {
+            withAnimation(.easeOut(duration: Self.arrival)) { image = shown }
+        } else {
+            image = shown
+        }
         if let shown, !portrayed { ShownArtwork.keep(shown, for: track) }
     }
 }
 
 @MainActor
 enum ShownArtwork {
-    private static let budget = 24 * 1024 * 1024
+    private static let budget = 64 * 1024 * 1024
 
     private final class Shown {
         let revision: UInt64

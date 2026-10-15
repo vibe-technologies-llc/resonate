@@ -34,6 +34,16 @@ final class PlayClock {
     }
 }
 
+struct QueueListed: Equatable {
+    let queue: UInt64
+    let catalog: UInt64
+
+    init(_ state: Snapshot) {
+        queue = state.queueRevision
+        catalog = state.catalogRevision
+    }
+}
+
 struct Steered {
     var transport: Transport?
     var shuffle: Bool?
@@ -194,6 +204,7 @@ final class Library {
 
     private func poll(_ native: MobilePlayer) async {
         var ticks = 0
+        var listed: QueueListed?
         while !Task.isCancelled {
             ticks += 1
             let saving = ticks % Self.ticksBetweenSaves == 0
@@ -201,10 +212,11 @@ final class Library {
             let steeringSettled = steering.settled
             let queueAsked = queueSettling.asked
             let queueSettled = queueSettling.settled
+            let known = listed
             do {
                 let (state, rows) = try await Work.inOrder {
                     let state = try native.snapshot()
-                    let rows = try native.queue()
+                    let rows = QueueListed(state) == known ? nil : try native.queue()
                     if saving { try native.save() }
                     return (state, rows)
                 }
@@ -213,7 +225,10 @@ final class Library {
 
                 pollFailure = nil
                 publish(steeringFresh ? state : steered.applied(to: state))
-                if queueFresh, queue != rows { queue = rows }
+                if queueFresh, let rows {
+                    if queue != rows { queue = rows }
+                    listed = QueueListed(state)
+                }
                 nowPlaying.update(state)
                 await features.tick(native, state)
             } catch {
@@ -245,6 +260,8 @@ final class Library {
         steady.outputRate = 0
         steady.underruns = 0
         steady.failure = nil
+        steady.queueRevision = 0
+        steady.catalogRevision = 0
         return steady
     }
 

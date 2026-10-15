@@ -40,7 +40,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **`Library`** (`@MainActor @Observable`) owns the one `MobilePlayer`. Transport, favourite and
   preference actions enter one ordered queue (`Work.inOrder`, an `AsyncStream` consumed in order);
   long native calls (analysis, search, downloads, sync) run on `Work.aside`, never the main actor.
-  A 250 ms poll reads the snapshot and queue and saves every 20th tick, as Android does.
+  A 250 ms poll reads the snapshot and saves every 20th tick, as Android does; the queue is read
+  only when the snapshot's `queue_revision` or `catalog_revision` moved since the queue last shown
+  (`QueueListed`), since reading it costs a catalog lookup and a record per row and a whole-library
+  queue read four times a second kept the CPU busy and the main thread comparing thousands of rows.
+  State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
+  only when it changed, so an unchanged answer redraws nothing.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate and underruns. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
@@ -374,12 +379,18 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   rise in `portraits` bumps `portraitGeneration` and forgets the kept portraits.
 - **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself
   (`onGeometryChange`), multiplies by the display scale and rounds up to a bucket of 96, 192, 384,
-  768 or 1024 px; an entry is keyed by song (or portrait), art revision, generation and bucket.
+  512, 768 or 1024 px; an entry is keyed by song (or portrait), art revision, generation and bucket.
   `CGImageSourceCreateThumbnailAtIndex` decodes on `Work.aside` with the bucket as its largest
   edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
   that disappears leaves its wait, and the last to leave cancels a decode still waiting for a
-  slot. Pictures cost their bitmap bytes against 32 MiB (a 96 px row about 36 KiB); a song
-  without a picture is remembered as missing until its art changes. A circular `ArtworkView`
+  slot. Pictures are decoded display-ready (`preparingForDisplay`), so nothing converts them on the
+  main thread at first draw, and cost their bitmap bytes against 160 MiB (`DecodedPictures`; a 96 px
+  row about 36 KiB, a 512 px shelf 1 MiB); a song without a picture is remembered as missing until
+  its art changes. **A held picture shows in the frame the view appears**: `ArtworkView` asks
+  `cachedArtwork`/`cachedPortrait` (a synchronous read of the same cache) as soon as it knows its
+  bucket and before any await; only a picture that had to be decoded fades in (0.2 s), so rows
+  scrolled back into view never pop. `ShownArtwork` (the last picture per song, for a view's first
+  frame before it is measured) keeps 64 MiB. A circular `ArtworkView`
   (`portraitOf:`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture.
 

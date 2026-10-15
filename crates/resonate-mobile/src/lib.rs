@@ -99,6 +99,8 @@ pub struct Snapshot {
     pub failure: Option<String>,
     pub sleep: Option<SleepTimer>,
     pub sleep_remaining_ms: Option<u64>,
+    pub queue_revision: u64,
+    pub catalog_revision: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -375,6 +377,7 @@ impl MobilePlayer {
                     .map(|frames| frames.to_duration(track.source.rate).as_millis() as u64)
             })
             .unwrap_or_else(|| current.as_ref().map_or(0, |track| track.duration_ms));
+        let queue_revision = queue.revision;
         Ok(Snapshot {
             transport: match state.playback {
                 PlaybackState::Idle | PlaybackState::Stopped => Transport::Stopped,
@@ -402,6 +405,8 @@ impl MobilePlayer {
             sleep_remaining_ms: state
                 .sleeping
                 .and_then(|sleep| sleep.left.map(|left| left.as_millis() as u64)),
+            queue_revision,
+            catalog_revision: self.catalog.revision(),
         })
     }
 

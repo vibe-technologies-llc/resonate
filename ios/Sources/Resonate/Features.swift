@@ -445,8 +445,9 @@ final class Features {
                 }
                 if nearby == nil { nearby = NearbyDevices(native: native) }
                 nearby?.follow(record: record)
-                syncStatus = status
-                transferring = status.moving > 0 || !waiting.isEmpty
+                if syncStatus != status { syncStatus = status }
+                let moving = status.moving > 0 || !waiting.isEmpty
+                if transferring != moving { transferring = moving }
                 transfers.hold(transferring)
                 answerSyncAsked(status)
                 if !waiting.isEmpty { kept += await landReceived(native, waiting) }
@@ -454,7 +455,7 @@ final class Features {
                     library.notice("Kept \(counted(kept, "song")) from your devices")
                     kept = 0
                 }
-                syncHandoffs = handoffs
+                if syncHandoffs != handoffs { syncHandoffs = handoffs }
                 if arrivals != status.arrivals {
                     arrivals = status.arrivals
                     await library.refresh()
@@ -525,15 +526,31 @@ final class Features {
         artGenerations[id] ?? 0
     }
 
+    func cachedArtwork(_ track: Track, bucket: ArtworkBucket) -> UIImage? {
+        artworks.cached(artworkRequest(track, bucket: bucket))
+    }
+
+    func cachedPortrait(_ mbid: String, bucket: ArtworkBucket) -> UIImage? {
+        artworks.cached(portraitRequest(mbid, bucket: bucket))
+    }
+
+    private func artworkRequest(_ track: Track, bucket: ArtworkBucket) -> ArtworkRequest {
+        ArtworkRequest(subject: .track(track.id), revision: track.artRevision, generation: artGeneration(of: track.id), bucket: bucket)
+    }
+
+    private func portraitRequest(_ mbid: String, bucket: ArtworkBucket) -> ArtworkRequest {
+        ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration, bucket: bucket)
+    }
+
     func artwork(_ track: Track, bucket: ArtworkBucket = .full) async -> UIImage? {
         let id = track.id
-        let request = ArtworkRequest(subject: .track(id), revision: track.artRevision, generation: artGeneration(of: id), bucket: bucket)
+        let request = artworkRequest(track, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
         return await artworks.image(request) { try native.artwork(id: id) }
     }
 
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
-        let request = ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration, bucket: bucket)
+        let request = portraitRequest(mbid, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
         return await artworks.image(request) { try native.artistPortrait(mbid: mbid) }
     }

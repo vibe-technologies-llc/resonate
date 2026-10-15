@@ -6,6 +6,7 @@ enum ArtworkBucket: Int, CaseIterable, Sendable {
     case row = 96
     case tile = 192
     case card = 384
+    case shelf = 512
     case page = 768
     case full = 1024
 
@@ -83,8 +84,29 @@ actor DecodeSlots {
     }
 }
 
+final class DecodedPictures: @unchecked Sendable {
+    private static let costLimit = 160 * 1024 * 1024
+
+    private let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = costLimit
+        return cache
+    }()
+
+    func object(forKey name: NSString) -> UIImage? {
+        cache.object(forKey: name)
+    }
+
+    func setObject(_ image: UIImage, forKey name: NSString, cost: Int) {
+        cache.setObject(image, forKey: name, cost: cost)
+    }
+
+    func removeObject(forKey name: NSString) {
+        cache.removeObject(forKey: name)
+    }
+}
+
 actor ArtworkCache {
-    private static let costLimit = 32 * 1024 * 1024
     private static let decodesAtOnce = 4
 
     private struct Flight {
@@ -92,15 +114,15 @@ actor ArtworkCache {
         var waiting: Int
     }
 
-    private let pictures: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = costLimit
-        return cache
-    }()
+    private let pictures = DecodedPictures()
     private let missing = NSCache<NSString, NSNull>()
     private let slots = DecodeSlots(decodesAtOnce)
     private var kept: [ArtworkSubject: Set<NSString>] = [:]
     private var flights: [ArtworkRequest: Flight] = [:]
+
+    nonisolated func cached(_ request: ArtworkRequest) -> UIImage? {
+        pictures.object(forKey: request.name)
+    }
 
     func image(
         _ request: ArtworkRequest,
@@ -213,7 +235,8 @@ enum ArtworkDecoder {
             kCGImageSourceShouldCacheImmediately: true,
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return UIImage(cgImage: image)
+        let picture = UIImage(cgImage: image)
+        return picture.preparingForDisplay() ?? picture
     }
 
     static func cost(of image: UIImage) -> Int {
