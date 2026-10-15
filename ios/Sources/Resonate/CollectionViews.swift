@@ -31,7 +31,7 @@ struct LibraryView: View {
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
         let matchedNothing = !playlistsOnly && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
-        List {
+        ThemedList {
             if matchedNothing {
                 ContentUnavailableView.search(text: asked)
                     .listRowSeparator(.hidden)

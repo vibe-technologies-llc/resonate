@@ -24,7 +24,7 @@ struct LibraryToolsView: View {
 
     var body: some View {
         let current = library.snapshot?.current
-        List {
+        ThemedList {
             Section("Your library") {
                 NavigationLink(value: Destination.playlists) {
                     ToolRow(title: "Playlists", detail: "Listen to your collections", symbol: "music.note.list")
@@ -99,7 +99,7 @@ struct FoldersView: View {
     @State private var organising: MusicFolder?
 
     var body: some View {
-        List {
+        ThemedList {
             Section {
                 Text("Music is read through the folders you grant. Songs you put in Resonate's folder in the Files app are read from On this iPhone.")
                     .font(.subheadline)
@@ -196,7 +196,7 @@ struct StatisticsView: View {
     var body: some View {
         let features = library.features
         let statistics = features.statistics
-        List {
+        ThemedList {
             Picker("Period", selection: $days) {
                 ForEach(Self.spans, id: \.0) { Text($0.1).tag($0.0) }
             }

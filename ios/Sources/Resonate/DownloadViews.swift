@@ -65,7 +65,7 @@ struct DownloadsView: View {
 
     var body: some View {
         let downloads = library.features.downloads
-        List {
+        ThemedList {
             if downloads.jobs.isEmpty {
                 ContentUnavailableView(
                     "No downloads",
@@ -232,7 +232,7 @@ struct WantedView: View {
         let features = library.features
         let shown = features.wanted.filter { !missingOnly || !$0.held }
         let missing = features.wanted.filter { !$0.held }.map(\.song)
-        List {
+        ThemedList {
             Section {
                 Text("Keep recordings you want and download them when one of your providers has a match.").foregroundStyle(.secondary)
                 Toggle("Missing from library only", isOn: $missingOnly)
@@ -304,7 +304,7 @@ struct ProviderView: View {
 
     var body: some View {
         let providers = library.features.providers
-        Form {
+        ThemedForm {
             Section {
                 LabeledContent("Asked for each song", value: providers.asked.isEmpty ? "None ready" : providersDetail(providers.asked))
             } footer: {

@@ -223,6 +223,28 @@ extension View {
     func themedRows() -> some View {
         listRowBackground(AppearanceState.shared.themedBackground ? Color.clear : nil)
     }
+
+    @MainActor
+    func themedCards() -> some View {
+        let frost = AppearanceState.shared.themedBackground ? Rectangle().fill(.regularMaterial) : nil
+        return listRowBackground(frost)
+    }
+}
+
+struct ThemedList<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        List { content.themedCards() }
+    }
+}
+
+struct ThemedForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Form { content.themedCards() }
+    }
 }
 
 struct ThemedPage: ViewModifier {

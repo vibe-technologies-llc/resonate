@@ -96,7 +96,7 @@ struct AppearanceView: View {
 
     var body: some View {
         let appearance = AppearanceState.shared
-        Form {
+        ThemedForm {
             background
             Section {
                 HStack(spacing: 16) {

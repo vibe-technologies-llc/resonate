@@ -67,7 +67,7 @@ struct AnalysisView: View {
         let report = features.analysis?.trackId == track?.id ? features.analysis : nil
         Group {
             if let track {
-                List {
+                ThemedList {
                     Section { CollectionRow(track: track, title: track.shownTitle, detail: track.quality) }
                     Section { AnalysisProgress(track: track, analysed: report != nil) }
                     if let report {
@@ -240,7 +240,7 @@ struct InspectorView: View {
         let features = library.features
         let inspector = features.inspector?.track.id == track.id ? features.inspector : nil
         let shown = inspector?.track ?? track
-        List {
+        ThemedList {
             InspectorCover(track: shown)
             Section {
                 Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }

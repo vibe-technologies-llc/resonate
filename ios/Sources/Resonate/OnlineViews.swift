@@ -524,7 +524,7 @@ struct OnlineArtistPage: View {
     @State private var readingMore = false
 
     var body: some View {
-        List {
+        ThemedList {
             if let details { ArtistInformationSection(artist: details) }
             Section("Albums") {
                 ForEach(albums, id: \.id) { album in
@@ -581,7 +581,7 @@ struct OnlineAlbumPage: View {
     @State private var read = false
 
     var body: some View {
-        List {
+        ThemedList {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(album.title).font(.title2.weight(.bold))
@@ -620,7 +620,7 @@ struct OnlineReleasePage: View {
     @State private var actions = OnlineSongActions()
 
     var body: some View {
-        List {
+        ThemedList {
             DownloadProgress()
             OnlineSongsSection(songs: songs, heading: release.title, collected: true, actions: $actions)
             if read, songs.isEmpty {

@@ -46,7 +46,7 @@ struct SyncView: View {
 
     var body: some View {
         let features = library.features
-        Form {
+        ThemedForm {
             if let config = features.syncConfig {
                 Section {
                     Toggle("Sync this iPhone", isOn: Binding(
@@ -457,7 +457,7 @@ struct SyncSongsPage: View {
     var body: some View {
         let features = library.features
         let destinations = library.folderList.filter { $0.readable && $0.writable }
-        Form {
+        ThemedForm {
             Section {
                 SyncSwitch(title: "Favourites", detail: "Songs favoured on another device", choice: \.favourites)
                 SyncSwitch(title: "Kept playlists", detail: "Playlists set to keep their songs here", choice: \.playlists)
@@ -512,7 +512,7 @@ struct SyncConnectionPage: View {
 
     var body: some View {
         let features = library.features
-        Form {
+        ThemedForm {
             if let config = features.syncConfig {
                 let route = chosen ?? SyncRoute(config)
                 Section {

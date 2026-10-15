@@ -445,7 +445,9 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   in the `appearance` defaults, edited in Settings › Appearance › Background: `themedBackground`
   (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). A plain list's rows
   draw their own opaque fill, so each one is `themedRows()` (a clear `listRowBackground` while the
-  background is on), keeping separators; a new plain list does the same. Pages with
+  background is on), keeping separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which
+  wrap `List` and `Form`) frosts its cards instead, `themedCards()` filling each with
+  `.regularMaterial` so the field shows through; sheets keep the plain `List` and `Form`. Pages with
   their own backdrop cover it.
 - **Failure falls back to the gradient**: no Metal device, a failed compile or pipeline, or a
   uniform size the shader does not expect is logged in full at `.error` under subsystem

@@ -39,7 +39,7 @@ struct SettingsView: View {
         let features = library.features
         let sound = soundEntries.filter { matches($0.searched) }
         let sources = sourceEntries.filter { matches($0.searched) }
-        List {
+        ThemedList {
             if !sound.isEmpty {
                 Section("Sound and playback") {
                     ForEach(sound) { entryRow($0) }
@@ -367,7 +367,7 @@ struct SoundSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let settings = library.preferences {
                 let curve = draft ?? settings.equaliser
                 Section {
@@ -673,7 +673,7 @@ struct ProcessingView: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let settings = library.preferences {
                 Section("Player volume") {
                     Slider(
@@ -744,7 +744,7 @@ struct OutputView: View {
     var body: some View {
         let session = AVAudioSession.sharedInstance()
         let route = session.currentRoute.outputs
-        Form {
+        ThemedForm {
             Section("Route") {
                 ForEach(route, id: \.uid) { output in
                     VStack(alignment: .leading) {
@@ -806,7 +806,7 @@ struct ScrobblingView: View {
 
     var body: some View {
         let features = library.features
-        Form {
+        ThemedForm {
             Section {
                 SecureField("ListenBrainz token", text: $account.listenbrainzToken)
             } header: {
