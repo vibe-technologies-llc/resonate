@@ -133,6 +133,8 @@ pub enum Error {
     InvalidWantedSong,
     #[error("online features are switched off")]
     OnlineOff,
+    #[error("The clip could not be named: {0}")]
+    Heard(#[from] resonate_listen::Error),
     #[error("a playlist name must have between one and 255 bytes")]
     InvalidPlaylistName,
     #[error("another playlist already has that name")]

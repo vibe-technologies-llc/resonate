@@ -91,6 +91,20 @@ final class NowPlaying {
         reportRoute(rebind: false)
     }
 
+    func beginListening() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker])
+        try session.setActive(true)
+    }
+
+    func endListening() {
+        configureSession()
+        if library.transport != .playing {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        reportRoute(rebind: false)
+    }
+
     func songRateFollowingChanged() {
         preferRate(of: shown?.track)
         reportRoute(rebind: false)

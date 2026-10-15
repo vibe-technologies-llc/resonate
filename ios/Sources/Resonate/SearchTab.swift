@@ -50,6 +50,9 @@ struct SearchTab: View {
             if place == .library, search.asking, search.hasAnswer {
                 ToolbarItem(placement: .topBarTrailing) { ProgressView() }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
+            }
         }
         .onlineSongActions($actions)
         .onChange(of: place) { _, now in

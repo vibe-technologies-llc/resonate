@@ -22,6 +22,8 @@
 	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Resonate listens for a few seconds when you ask it to name the song playing around you.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_resonate-sync._udp</string>

@@ -12,6 +12,7 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 resonate-analysis.workspace = true
 resonate-library.workspace = true
+resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 resonate-online.workspace = true
 resonate-providers.workspace = true

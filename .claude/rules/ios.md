@@ -465,6 +465,31 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   waiting ones until the scene is active again, so each cancelled job still deletes its document
   and its journal entry, or the next start does.
 
+## Listen
+
+- **Listen names the song playing around the iPhone** (`Listening.swift`, `ListenViews.swift`), the
+  desktop's Listen sheet (`ui.md`) on the microphone: a sheet (`Navigation.listening`, medium and
+  large) opened from the Search tab's ear and Library tools' *Listen*, recording at once; closing it
+  or the scene going to the background stops a recording and drops the ask about it.
+  `Listening.stage` walks `ListenStage` (recording, asking, then found, unknown, silent, unreached,
+  offline, denied, failed); `ListenNext.after` is the desktop's `then`: a miss or a silent clip is
+  recorded again up to `triesOnAMiss` (3), a service out of reach is said at once. *Keep listening*
+  records another clip `followedEverySeconds` (20) after a named song or the last miss, keeping a
+  song whose `HeardSong.key` (folded title and artist, made in Rust) matches quietly. A new run
+  awaits the previous task first, so a cancelled recording's cleanup never lands inside the next
+  one. A found song is a card (cover decoded on `Work.aside`, title, artist, album · year, the
+  naming service) with *Find it* (the Search tab, Your library, artist and title typed), *Open*
+  where the service gave a link and *Listen again*; the last eight stay as *Heard earlier* for the
+  run, and a new song is felt (`sensoryFeedback(.success)`).
+- **`Microphone.record`** asks `AVAudioApplication` for the microphone (`NSMicrophoneUsageDescription`),
+  switches the session to `.playAndRecord`, `.measurement`, through `NowPlaying.beginListening`,
+  taps `AVAudioEngine`'s input as a mono mix into a `ClipSink` (a `Mutex`, its tap block built
+  `nonisolated`) until 12 s are held or 3 s past that, and hands the samples and the input's rate to
+  `recognise_heard`. `NowPlaying.endListening` puts back `.playback` and, with nothing playing,
+  deactivates the session so another app's audio may resume.
+- **The AudD token** is the keychain's `audd-token`, typed in the sheet's *Recognition* section;
+  blank, only Shazam is asked (`online.md`).
+
 ## The equaliser
 
 - **The curve is drawn and shaped on a graph** (`EqualiserGraph.swift`, in `SoundSettingsView`):

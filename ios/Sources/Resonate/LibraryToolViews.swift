@@ -43,6 +43,9 @@ struct LibraryToolsView: View {
                 Button { navigation.searchOnline() } label: {
                     ToolRow(title: "Online search", detail: "Find songs, artists, albums and shared music", symbol: "globe")
                 }
+                Button { navigation.listening = true } label: {
+                    ToolRow(title: "Listen", detail: "Name the song playing around you", symbol: "ear")
+                }
                 NavigationLink(value: Destination.wanted) {
                     ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
                 }

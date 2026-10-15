@@ -313,6 +313,10 @@ struct AccountStore: Sendable {
 
     func writeRecognitionKey(_ value: String) throws { try secrets.write("acoustid-key", value) }
 
+    func readAuddToken() -> String { secrets.read("audd-token") }
+
+    func writeAuddToken(_ value: String) throws { try secrets.write("audd-token", value) }
+
     func readSync() -> SyncConfig {
         let plain = plain
         func flag(_ key: String, _ fallback: Bool) -> Bool {

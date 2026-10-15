@@ -5,8 +5,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
 - [L] Android still needs document tagging/organising with undo, vault workflows, convolution,
-  per-route equaliser bindings, automatic favourite feedback synchronization and microphone
-  recognition
+  per-route equaliser bindings and automatic favourite feedback synchronization
+- [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
+  microphone
 - [S] Android does not start the background lookup (`start_enrichment`), follow
   `enrichment_status` or refresh pictures through `art_changed_since`; a song is still looked up
   only where the front end asks `enrich_track`
@@ -26,7 +27,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## iOS parity
 - [L] iOS lacks what Android lacks (tagging/organising, vault, convolution, per-route equaliser,
-  favourite feedback sync, microphone recognition), plus CarPlay and a widget
+  favourite feedback sync), plus CarPlay and a widget
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
 - [S] A download or a song from another device continues in the background only for the time iOS

@@ -366,8 +366,8 @@ cut down; the AudD ones were written from the service's documentation. `tests/li
 
 ## Mobile composition
 
-Android and iOS compose the same `Online`, LRCLIB, AutoEq, ListenBrainz, Last.fm and network-provider
-implementations through `resonate-mobile`, over its document catalog. It shares one paced client
+Android and iOS compose the same `Online`, LRCLIB, AutoEq, ListenBrainz, Last.fm, Shazam, AudD and
+network-provider implementations through `resonate-mobile`, over its document catalog. It shares one paced client
 for metadata services and follows that client's online gate. It never invents local paths for granted
 document URIs or imports the PipeWire capture implementation. Android orchestration, account storage and
 cache rules are in `android.md`.

@@ -42,6 +42,7 @@ final class Features {
     @ObservationIgnored private let artworks = ArtworkCache()
     @ObservationIgnored lazy var enrichment = Enrichment(library: library)
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
+    @ObservationIgnored lazy var listening = Listening(library: library)
     @ObservationIgnored private let transfers = BackgroundHold(name: "Resonate transfers")
 
     var tidalAuthorization: TidalAuthorization?

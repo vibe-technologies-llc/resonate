@@ -84,6 +84,7 @@ final class Navigation {
     var choosingFolder = false
     var sleepTimer = false
     var filters = false
+    var listening = false
     var songsGrouping = Grouping.songs
     var searchPlace = SearchPlace.library
 
@@ -162,6 +163,11 @@ struct RootView: View {
         }
         .sheet(isPresented: $navigation.filters) {
             FilterSheet()
+        }
+        .sheet(isPresented: $navigation.listening) {
+            ListenSheet()
+                .presentationDetents([.medium, .large])
+                .environment(navigation)
         }
         .fileImporter(isPresented: $navigation.choosingFolder, allowedContentTypes: [.folder]) { result in
             switch result {

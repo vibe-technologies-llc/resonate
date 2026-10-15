@@ -314,6 +314,10 @@ uncoded name/artist/length matches must be unique, so an ambiguous row stays mis
 and distinguish held from missing against the current catalog; downloads refresh that view. Recognition
 is explicitly asked from Analysis: a supplied AcoustID key sends the stored whole-track print,
 otherwise `ByEar` sends a Shazam signature. Candidates are shown, never written as a guess.
+`recognise_heard(samples, rate, audd_token)` names a mono clip the front end recorded (`listening.rs`):
+Shazam, then AudD where a token is given, answering `HeardAnswer` (`Named` with a `HeardSong` whose
+`by` is the service's name and `key` its folded title and artist, `Missed`, `Silent`, `Unreached`
+naming the service); only iOS records one yet.
 
 AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load as the curve's
 bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,

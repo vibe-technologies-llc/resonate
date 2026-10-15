@@ -5655,6 +5655,7 @@ dependencies = [
  "resonate-engine",
  "resonate-eq",
  "resonate-library",
+ "resonate-listen",
  "resonate-lyrics",
  "resonate-monochrome",
  "resonate-online",

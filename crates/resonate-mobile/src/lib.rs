@@ -7,6 +7,7 @@ mod enrichment;
 mod equaliser;
 mod error;
 mod features;
+mod listening;
 mod lyrics;
 mod mixes;
 mod online_tools;
