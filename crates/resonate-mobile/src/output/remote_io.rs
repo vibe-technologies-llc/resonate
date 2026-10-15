@@ -39,6 +39,7 @@ const OUTPUT_BUS: u32 = 0;
 const STEREO_CHANNELS: u32 = 2;
 const FLOAT_BYTES: u32 = size_of::<f32>() as u32;
 const COMMAND_POLL: Duration = Duration::from_millis(10);
+const UNIT_WITHIN: Duration = Duration::from_secs(3);
 const SHORTEST_DRAIN: Duration = Duration::from_millis(20);
 const MILLISECONDS_A_SECOND: f64 = 1000.0;
 
@@ -248,6 +249,7 @@ impl Opener for Device {
         let (commands, asked) = unbounded();
         let (announced, events) = unbounded();
         let (ready, started) = bounded(1);
+        let (disposed, closed) = bounded(1);
         let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
         let empty = Arc::new(AtomicBool::new(false));
         let thread_clock = Arc::clone(&clock);
@@ -280,16 +282,39 @@ impl Opener for Device {
                     &asked,
                     &announced,
                 );
+                drop(unit);
+                let _ = disposed.send(());
             })
             .map_err(|source| Error::Backend {
                 op: Operation::Open,
                 source,
             })?;
-        started.recv().map_err(|_| Error::LoopStopped)??;
+        match started.recv_timeout(UNIT_WITHIN) {
+            Ok(opened) => opened?,
+            Err(RecvTimeoutError::Timeout) => {
+                return Err(Error::Backend {
+                    op: Operation::Open,
+                    source: io::ErrorKind::TimedOut.into(),
+                });
+            }
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::LoopStopped),
+        }
         Ok(SinkStream::new(
             events,
             clock,
-            Box::new(move |command| commands.send(command).map_err(|_| Error::Disconnected)),
+            Box::new(move |command| {
+                let closing = matches!(command, StreamCommand::Close);
+                commands.send(command).map_err(|_| Error::Disconnected)?;
+                if closing {
+                    closed
+                        .recv_timeout(UNIT_WITHIN)
+                        .map_err(|_| Error::Backend {
+                            op: Operation::Close,
+                            source: io::ErrorKind::TimedOut.into(),
+                        })?;
+                }
+                Ok(())
+            }),
         ))
     }
 }
