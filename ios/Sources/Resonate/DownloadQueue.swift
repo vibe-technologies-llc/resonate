@@ -105,7 +105,10 @@ final class DownloadQueue {
     private static let progressSteps: Int64 = 1000
     private static let erasureWaitTicks = 40
 
-    var jobs: [DownloadJob] = []
+    var jobs: [DownloadJob] = [] {
+        didSet { findHeld() }
+    }
+    private(set) var held: Set<String> = []
     var awaitingFolder: [SearchSong] = []
     var missedProvider = false
     var asksForWants: Bool {
@@ -125,7 +128,9 @@ final class DownloadQueue {
     @ObservationIgnored private var wantsGeneration = 0
     @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var batch: Set<UInt64> = []
-    @ObservationIgnored private var beginning: Set<String> = []
+    @ObservationIgnored private var beginning: Set<String> = [] {
+        didSet { findHeld() }
+    }
     @ObservationIgnored private lazy var background = BackgroundHold(
         name: "Downloading songs",
         continued: BackgroundHold.downloads
@@ -154,7 +159,12 @@ final class DownloadQueue {
     }
 
     func holds(_ song: SearchSong) -> Bool {
-        beginning.contains(song.id) || active.contains { $0.song.id == song.id }
+        held.contains(song.id)
+    }
+
+    private func findHeld() {
+        let found = beginning.union(jobs.lazy.filter { !$0.state.settled }.map(\.song.id))
+        if found != held { held = found }
     }
 
     private var journaled: [String] {

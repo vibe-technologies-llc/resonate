@@ -96,6 +96,15 @@ final class AppearanceState {
 
 enum AccentColours {
     private static let deepenedInLight: CGFloat = 0.28
+    private static let cardWhiteInDark: CGFloat = 0.11
+    private static let cardOpacityInDark: CGFloat = 0.62
+    private static let cardOpacityInLight: CGFloat = 0.66
+
+    static let card = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: cardWhiteInDark, alpha: cardOpacityInDark)
+            : UIColor(white: 1, alpha: cardOpacityInLight)
+    })
     private static let darkInkWhite: CGFloat = 0.08
     private static let darkInkLuminance: CGFloat = 0.0067
 
@@ -143,6 +152,7 @@ enum AccentColours {
 extension Color {
     @MainActor static var worn: Color { AppearanceState.shared.tint }
     @MainActor static var wornInk: Color { AppearanceState.shared.ink }
+    static let themedCard = AccentColours.card
 }
 
 extension View {

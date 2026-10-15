@@ -35,10 +35,41 @@ final class PlayClock {
     }
 }
 
-struct FavouriteWrite {
+struct FavouriteWrite: Equatable {
     let value: Bool
     let serial: Int
     var answeredAfter: Int?
+}
+
+struct CatalogShown: Sendable {
+    let rows: [Track]
+    let index: [UInt64: Int]
+    let favourites: [Track]
+    let favouriteIds: Set<UInt64>
+    let artwork: [UInt64: Track]
+
+    init(_ rows: [Track]) {
+        self.rows = rows
+        index = Dictionary(rows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+        favourites = rows.filter(\.favourite)
+        favouriteIds = Set(favourites.map(\.id))
+        artwork = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+    }
+}
+
+struct CatalogChanges: Sendable {
+    let rows: [Track]
+    let catalog: CatalogShown?
+    let listedRuns: [LetterRun]?
+
+    init(_ rows: [Track], shown: [Track], listed: [Track]?, titled: Bool) {
+        self.rows = rows
+        catalog = rows == shown ? nil : CatalogShown(rows)
+        listedRuns = listed.flatMap { listed in
+            guard listed != rows else { return nil }
+            return titled ? LetterRun.runs(of: rows, named: \.shownTitle) : []
+        }
+    }
 }
 
 enum PollPart: Hashable {
@@ -116,9 +147,7 @@ final class Library {
 
     let folders: Folders
     let clock = PlayClock()
-    var allTracks: [Track] = [] {
-        didSet { if !marking { indexCatalog() } }
-    }
+    private(set) var allTracks: [Track] = []
     var tracks: [Track] = [] {
         didSet {
             guard !marking else { return }
@@ -151,6 +180,7 @@ final class Library {
     }
     private(set) var transport = Transport.stopped
     private(set) var playingTrack: Track?
+    private(set) var loaded = false
     private(set) var playingNext: Range<Int>?
     var status: StatusMessage?
     var scanning = false
@@ -303,7 +333,7 @@ final class Library {
                 if saving { lastSaved = .now }
                 wait = pollInterval(foreground: features.foreground, state: state, analysing: features.analysisBusy)
                 let wanted = QueueListed(state)
-                let rows = wanted.isDue(after: refused ?? known, since: readAt) ? await Self.read(queueOf: native) : nil
+                let rows = wanted.isDue(after: refused ?? known, since: readAt) ? await Self.read(queueOf: native, shown: queue) : nil
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
                 let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
@@ -315,7 +345,7 @@ final class Library {
                     pollFailures[.queue] = nil
                     unreadable = nil
                     if queueFresh {
-                        if queue != read { queue = read }
+                        if let read { queue = read }
                         listed = QueueListed(state)
                         readAt = .now
                     }
@@ -374,9 +404,12 @@ final class Library {
             && state.durationMs - state.positionMs <= nearTheEndMs
     }
 
-    private static func read(queueOf native: MobilePlayer) async -> Result<[Track], any Swift.Error> {
+    private static func read(queueOf native: MobilePlayer, shown: [Track]) async -> Result<[Track]?, any Swift.Error> {
         do {
-            return .success(try await Work.aside { try native.queue() })
+            return .success(try await Work.aside {
+                let read = try native.queue()
+                return read == shown ? nil : read
+            })
         } catch {
             return .failure(error)
         }
@@ -455,9 +488,6 @@ final class Library {
         }
     }
 
-    var loaded: Bool {
-        playingTrack != nil
-    }
 
     private func derive(from state: Snapshot?) {
         let shownTransport = state?.transport ?? .stopped
@@ -467,7 +497,11 @@ final class Library {
             transport = shownTransport
             features.tapHoldersChanged()
         }
-        if playingTrack != state?.current { playingTrack = state?.current }
+        if playingTrack != state?.current {
+            playingTrack = state?.current
+            if let track = playingTrack { Task { await BackdropView.prepare(track, features: features) } }
+        }
+        if loaded != (playingTrack != nil) { loaded = playingTrack != nil }
         if playingNext != next { playingNext = next }
     }
 
@@ -486,17 +520,20 @@ final class Library {
     }
 
     func track(_ id: UInt64) -> Track? {
-        if let current = snapshot?.current, current.id == id { return current }
-        return allTracks.first { $0.id == id }
-            ?? queue.first { $0.id == id }
+        if let playingTrack, playingTrack.id == id { return playingTrack }
+        if let at = catalogIndex[id] { return allTracks[at] }
+        return queue.first { $0.id == id }
             ?? features.playlistRows.first { $0.id == id }
             ?? features.statistics?.topTracks.first { $0.id == id }
     }
 
-    private func indexCatalog() {
-        catalogIndex = Dictionary(allTracks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { kept, _ in kept })
-        favouriteTracks = allTracks.filter(\.favourite)
-        favouriteIds = Set(favouriteTracks.map(\.id))
+    private func adopt(_ catalog: CatalogShown) {
+        catalogEpoch += 1
+        catalogIndex = catalog.index
+        allTracks = catalog.rows
+        artworkTracks = catalog.artwork
+        if favouriteIds != catalog.favouriteIds { favouriteIds = catalog.favouriteIds }
+        if favouriteTracks != catalog.favourites { favouriteTracks = catalog.favourites }
     }
 
     private func keepFavourite(_ track: Track, at place: Int) {
@@ -703,15 +740,11 @@ final class Library {
             }
         }
 
-        marking = true
-        if let at = catalogIndex[id], allTracks[at].favourite != favourite {
-            allTracks[at].favourite = favourite
-            keepFavourite(allTracks[at], at: at)
+        if let at = catalogIndex[id], favouriteIds.contains(id) != favourite {
+            var marked = allTracks[at]
+            marked.favourite = favourite
+            keepFavourite(marked, at: at)
         }
-        if let at = tracks.firstIndex(where: { $0.id == id }), tracks[at].favourite != favourite {
-            tracks[at].favourite = favourite
-        }
-        marking = false
         if filter.favourites, !favourite { tracks = tracks.filter { $0.id != id } }
         queue = marked(queue)
         if snapshot?.current?.id == id { snapshot?.current?.favourite = favourite }
@@ -805,13 +838,13 @@ final class Library {
             let first = try await Work.aside { try native.filteredTracks(filter: everything, offset: 0, limit: Library.page) }
             guard request == catalogRequest else { return }
             if !catalogRead || first.count < Library.page {
-                publishCatalog(first, request: request)
+                await publishCatalog(first, request: request)
             }
             guard first.count == Library.page else { return }
 
             let rest = try await Work.aside { try Library.pages(native, everything, from: Library.page) }
             guard request == catalogRequest else { return }
-            publishCatalog(first + rest, request: request)
+            await publishCatalog(first + rest, request: request)
         } catch {
             report(error)
         }
@@ -828,17 +861,32 @@ final class Library {
         }
     }
 
-    private func publishCatalog(_ read: [Track], request: Int) {
-        let rows = settled(read, request: request)
-        catalogEpoch += 1
-        allTracks = rows
-        artworkTracks = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+    private func publishCatalog(_ read: [Track], request: Int) async {
+        let asked = catalogChanges(read, request: request)
+        let writes = favouriteWrites
+
+        guard var changes = try? await Work.aside(asked), request == catalogRequest else { return }
+        if favouriteWrites != writes { changes = catalogChanges(read, request: request)() }
+        if let catalog = changes.catalog { adopt(catalog) }
         catalogRead = true
-        if !filtering {
-            queryRequest += 1
-            tracks = rows
-            tracksRead = true
+        guard !filtering else { return }
+
+        queryRequest += 1
+        if let runs = changes.listedRuns {
+            marking = true
+            tracks = changes.rows
+            marking = false
+            trackRuns = runs
         }
+        tracksRead = true
+    }
+
+    private func catalogChanges(_ read: [Track], request: Int) -> @Sendable () -> CatalogChanges {
+        let rows = settled(read, request: request)
+        let shown = allTracks
+        let listed = filtering ? nil : tracks
+        let titled = filter.order == .title
+        return { CatalogChanges(rows, shown: shown, listed: listed, titled: titled) }
     }
 
     func reload(fresh: Bool = false) {
@@ -1022,8 +1070,7 @@ final class Library {
                 try folders.scan(id, skipped: { path, reason in tally.skipped(path, reason) }) { document in
                     do {
                         let track = try native.indexDocument(uri: document.uri, name: document.name)
-                        let read = tally.indexed()
-                        Task { @MainActor in self?.reached(read) }
+                        if let read = tally.indexed() { Task { @MainActor in self?.reached(read) } }
                         covers.add(track.id, cover: document.cover, named: document.name)
                         if let lyrics = document.lyrics, let bytes = folders.companion(lyrics, sidecar: true) {
                             do {
@@ -1347,8 +1394,11 @@ final class Tally: @unchecked Sendable {
         case lyrics
     }
 
+    private static let postedEvery = Duration.milliseconds(200)
+
     private let lock = NSLock()
     private var read = 0
+    private var posted: ContinuousClock.Instant?
     private var unreadable = 0
     private var firstUnreadable: String?
     private var companions: [Companion: Int] = [:]
@@ -1367,9 +1417,12 @@ final class Tally: @unchecked Sendable {
         }
     }
 
-    func indexed() -> Int {
+    func indexed() -> Int? {
         lock.withLock {
             read += 1
+            let now = ContinuousClock.now
+            if let posted, posted.duration(to: now) < Self.postedEvery { return nil }
+            posted = now
             return read
         }
     }

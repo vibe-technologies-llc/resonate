@@ -13,60 +13,66 @@ struct BackdropView: View {
     @Environment(\.colorScheme) private var scheme
     let track: Track?
     let moving: Bool
-    let ambience: Float?
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?, moving: Bool = true, ambience: Float? = nil) {
+    init(track: Track?, moving: Bool = true) {
         self.track = track
         self.moving = moving
-        self.ambience = ambience
-        _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) } ?? Self.accentPalette())
+        let recalled = track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) }
+        _palette = State(initialValue: recalled ?? (moving ? Self.accentPalette() : nil))
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
     }
 
     var body: some View {
         ZStack {
-            Color(.systemBackground)
+            if moving {
+                Color(.systemBackground)
+            }
             if let palette {
-                if case .metal(let gpu) = rendering {
-                    MeshBackdrop(
-                        gpu: gpu,
-                        library: library,
-                        palette: palette,
-                        motion: motion,
-                        tone: tone,
-                        reactive: ambience == nil,
-                        playing: sounding
-                    )
+                field(palette)
                     .transition(.opacity)
-                } else {
-                    GradientBackdrop(palette: palette, weight: ambience ?? 1)
-                }
             }
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.4), value: palette == nil)
         .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
         .task { await prepareRendering() }
-        .task(id: "\(track.map(Self.key(of:)) ?? ""):\(library.features.artGeneration(of: track?.id ?? 0)):\(AppearanceState.shared.accent?.name ?? "")") { await loadPalette() }
+        .task(id: paletteRequest) { await loadPalette() }
         .onAppear { visible = true }
         .onDisappear {
             visible = false
             listen(false)
         }
         .onChange(of: wantsEnergy) { _, wanted in listen(wanted) }
-        .onReceive(Self.powerStateChanges) { _ in lowPower = ProcessInfo.processInfo.sparesFrames }
+        .onReceive(ProcessInfo.powerStateChanges) { _ in lowPower = ProcessInfo.processInfo.sparesFrames }
     }
 
-    private static var powerStateChanges: some Publisher<Notification, Never> {
-        NotificationCenter.default
-            .publisher(for: .NSProcessInfoPowerStateDidChange)
-            .merge(with: NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification))
-            .receive(on: DispatchQueue.main)
+    @ViewBuilder
+    private func field(_ palette: Palette) -> some View {
+        switch rendering {
+        case .metal(let gpu) where moving:
+            MeshBackdrop(gpu: gpu, library: library, palette: palette, motion: motion, tone: tone, playing: sounding)
+        case .metal(let gpu):
+            StillBackdrop(gpu: gpu, palette: palette, tone: tone)
+        case .gradient, .loading:
+            GradientBackdrop(palette: palette, weight: 1)
+        }
+    }
+
+    static func prepare(_ track: Track, features: Features) async {
+        let key = key(of: track)
+        guard PaletteMemory.recalled(key) == nil, let image = await features.artwork(track, bucket: .tile) else { return }
+        let sampled = await Backdrop.palette(of: image, accent: accentLinear())
+        PaletteMemory.remember(sampled, as: key)
+    }
+
+    private var paletteRequest: String {
+        guard let track else { return ":\(AppearanceState.shared.accent?.name ?? "")" }
+        return "\(Self.key(of: track)):\(library.features.artGeneration(of: track.id)):\(AppearanceState.shared.accent?.name ?? "")"
     }
 
     private static func key(of track: Track) -> String {
@@ -74,33 +80,30 @@ struct BackdropView: View {
     }
 
     private var tone: BackdropTone {
-        if let ambience { return .ambient(scheme, strength: ambience) }
-        return scheme == .dark ? .dark : .light
+        scheme == .dark ? .dark : .light
     }
 
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
-        if reduceMotion || !moving { return .still }
-        return .flowing(framesPerSecond: Self.rate(sounding: sounding, ambient: ambience != nil, lowPower: lowPower))
+        if reduceMotion { return .still }
+        return .flowing(framesPerSecond: Self.rate(sounding: sounding, lowPower: lowPower))
     }
 
     private var sounding: Bool {
         library.transport == .playing
     }
 
-    private static func rate(sounding: Bool, ambient: Bool, lowPower: Bool) -> Int {
-        switch (ambient, sounding, lowPower) {
-        case (true, true, false): 20
-        case (true, _, _): 10
-        case (false, true, false): 30
-        case (false, true, true): 20
-        case (false, false, false): 15
-        case (false, false, true): 10
+    private static func rate(sounding: Bool, lowPower: Bool) -> Int {
+        switch (sounding, lowPower) {
+        case (true, false): 30
+        case (true, true): 20
+        case (false, false): 15
+        case (false, true): 10
         }
     }
 
     private var wantsEnergy: Bool {
-        visible && moving && ambience == nil && phase == .active && !reduceMotion && rendering.drawsMesh && sounding
+        moving && visible && phase == .active && !reduceMotion && rendering.drawsMesh && sounding
     }
 
     private func listen(_ wanted: Bool) {
@@ -114,22 +117,27 @@ struct BackdropView: View {
         rendering = await BackdropPipeline.rendering()
     }
 
-    private static func accentLinear() -> SIMD3<Float> {
+    static func accentLinear() -> SIMD3<Float> {
         let accent = Color.worn.resolve(in: EnvironmentValues())
         return SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
     }
 
-    private static func accentPalette() -> Palette {
+    static func accentPalette() -> Palette {
         AccentPaletteMemory.palette(around: accentLinear())
     }
 
     private func loadPalette() async {
         let accentLinear = Self.accentLinear()
 
-        let found = if let track { await library.features.artwork(track, bucket: .tile) } else { nil as UIImage? }
+        guard let track else {
+            let shown = moving ? AccentPaletteMemory.palette(around: accentLinear) : nil
+            if palette != shown { palette = shown }
+            return
+        }
+        let found = await library.features.artwork(track, bucket: .tile)
         guard !Task.isCancelled else { return }
 
-        guard let track, let image = found else {
+        guard let image = found else {
             let around = AccentPaletteMemory.palette(around: accentLinear)
             if palette != around { palette = around }
             return
@@ -138,7 +146,46 @@ struct BackdropView: View {
         guard !Task.isCancelled else { return }
 
         PaletteMemory.remember(sampled, as: Self.key(of: track))
-        palette = sampled
+        if palette != sampled { palette = sampled }
+    }
+}
+
+struct AppBackdrop: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.colorScheme) private var scheme
+    let strength: Float
+    let moving: Bool
+    let frozen: Bool
+    @State private var rendering = BackdropPipeline.finished ?? .loading
+    @State private var lowPower = ProcessInfo.processInfo.sparesFrames
+
+    var body: some View {
+        let palette = BackdropView.accentPalette()
+        let tone = BackdropTone.ambient(scheme, strength: strength)
+
+        ZStack {
+            Color(.systemBackground)
+            if case .metal(let gpu) = rendering {
+                AmbientBackdrop(gpu: gpu, look: AmbientLook(palette: palette, tone: tone, motion: motion))
+                    .transition(.opacity)
+            } else {
+                GradientBackdrop(palette: palette, weight: strength)
+            }
+        }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
+        .task {
+            guard case .loading = rendering else { return }
+            rendering = await BackdropPipeline.rendering()
+        }
+        .onReceive(ProcessInfo.powerStateChanges) { _ in lowPower = ProcessInfo.processInfo.sparesFrames }
+    }
+
+    private var motion: AmbientMotion {
+        if frozen || phase != .active { return .frozen }
+        if reduceMotion || !moving { return .still }
+        return .flowing(framesPerSecond: lowPower ? 5 : 10)
     }
 }
 
@@ -203,6 +250,12 @@ enum BackdropMotion: Equatable {
     case dormant
 }
 
+enum AmbientMotion: Equatable {
+    case flowing(framesPerSecond: Int)
+    case still
+    case frozen
+}
+
 struct BackdropTone: Equatable {
     static let dark = BackdropTone(lightnessFloor: 0.06, lightnessRange: 0.74, chroma: 1, vignette: 0.32)
     static let light = BackdropTone(lightnessFloor: 0.52, lightnessRange: 0.4, chroma: 0.7, vignette: 0.12)
@@ -249,13 +302,449 @@ enum BackdropRendering: Sendable {
     }
 }
 
+struct FieldBlend {
+    private static let crossfadeSeconds: CFTimeInterval = 1.2
+
+    private(set) var shown: Palette
+    private var leaving: Palette
+    private(set) var shownPacked: FieldUniforms.Five
+    private(set) var leavingPacked: FieldUniforms.Five
+    private var began = -CFTimeInterval.infinity
+
+    init(_ palette: Palette) {
+        shown = palette
+        leaving = palette
+        shownPacked = FieldUniforms.packed(palette)
+        leavingPacked = shownPacked
+    }
+
+    mutating func show(_ palette: Palette, at now: CFTimeInterval) -> Bool {
+        guard palette != shown else { return false }
+        let reached = Self.eased(progress(at: now))
+
+        leaving = leaving.blended(toward: shown, by: reached)
+        shown = palette
+        leavingPacked = FieldUniforms.packed(leaving)
+        shownPacked = FieldUniforms.packed(shown)
+        began = now
+        return true
+    }
+
+    func progress(at now: CFTimeInterval) -> Float {
+        Float(min(max((now - began) / Self.crossfadeSeconds, 0), 1))
+    }
+
+    func fading(at now: CFTimeInterval) -> Bool {
+        progress(at: now) < 1
+    }
+
+    private static func eased(_ progress: Float) -> Float {
+        progress * progress * (3 - 2 * progress)
+    }
+}
+
+struct FieldSize: Equatable, Hashable {
+    let width: Int
+    let height: Int
+
+    init?(_ size: CGSize) {
+        guard size.width >= 1, size.height >= 1 else { return nil }
+        width = Int(size.width.rounded(.up))
+        height = Int(size.height.rounded(.up))
+    }
+
+    var aspect: Float {
+        Float(width) / Float(height)
+    }
+}
+
+enum FieldPicture {
+    private static let bytesPerPixel = 4
+
+    static func rendered(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) async -> CGImage? {
+        guard let encoded = encoded(by: gpu, uniforms, size: size) else { return nil }
+
+        await withCheckedContinuation { continuation in
+            encoded.commands.addCompletedHandler(resuming(continuation))
+            encoded.commands.commit()
+        }
+        guard encoded.commands.status == .completed else { return nil }
+        return image(of: encoded.texture, size: size)
+    }
+
+    static func renderedNow(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) -> CGImage? {
+        guard let encoded = encoded(by: gpu, uniforms, size: size) else { return nil }
+        encoded.commands.commit()
+        encoded.commands.waitUntilCompleted()
+        guard encoded.commands.status == .completed else { return nil }
+        return image(of: encoded.texture, size: size)
+    }
+
+    private static func resuming(_ continuation: CheckedContinuation<Void, Never>) -> @Sendable (any MTLCommandBuffer) -> Void {
+        { _ in continuation.resume() }
+    }
+
+    private static func encoded(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) -> (commands: any MTLCommandBuffer, texture: any MTLTexture)? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: BackdropPipeline.pixelFormat,
+            width: size.width,
+            height: size.height,
+            mipmapped: false
+        )
+        descriptor.usage = .renderTarget
+        descriptor.storageMode = .shared
+        guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { return nil }
+
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
+        guard let commands = gpu.queue.makeCommandBuffer(),
+            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
+        else { return nil }
+        var uniforms = uniforms
+
+        encoder.setRenderPipelineState(gpu.pipeline)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.endEncoding()
+        BackdropPipeline.reportFailures(of: commands)
+        return (commands, texture)
+    }
+
+    private static func image(of texture: any MTLTexture, size: FieldSize) -> CGImage? {
+        let bytesPerRow = size.width * bytesPerPixel
+        var pixels = Data(count: bytesPerRow * size.height)
+
+        pixels.withUnsafeMutableBytes { bytes in
+            guard let base = bytes.baseAddress else { return }
+            texture.getBytes(base, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, size.width, size.height), mipmapLevel: 0)
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData), let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        return CGImage(
+            width: size.width,
+            height: size.height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8 * bytesPerPixel,
+            bytesPerRow: bytesPerRow,
+            space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+}
+
+private struct StillRequest: Equatable {
+    let palette: Palette
+    let tone: BackdropTone
+    let size: FieldSize?
+}
+
+@MainActor
+private enum StillPictures {
+    private static let most = 8
+    private static var kept: [(request: StillRequest, image: CGImage)] = []
+
+    static func recalled(_ request: StillRequest) -> CGImage? {
+        kept.first { $0.request == request }?.image
+    }
+
+    static func remember(_ image: CGImage, for request: StillRequest) {
+        kept.removeAll { $0.request == request }
+        kept.append((request, image))
+        if kept.count > most { kept.removeFirst(kept.count - most) }
+    }
+}
+
+private struct StillBackdrop: View {
+    private struct Shown {
+        let image: CGImage
+        let order: Int
+    }
+
+    let gpu: BackdropGPU
+    let palette: Palette
+    let tone: BackdropTone
+    @State private var size: FieldSize?
+    @State private var shown: Shown?
+
+    var body: some View {
+        ZStack {
+            if let shown {
+                Image(decorative: shown.image, scale: 1)
+                    .resizable()
+                    .id(shown.order)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: FieldSize?.self) { FieldSize($0.size) } action: { size = $0 }
+        .task(id: request) { await draw(request) }
+    }
+
+    private var request: StillRequest {
+        StillRequest(palette: palette, tone: tone, size: size)
+    }
+
+    private func draw(_ request: StillRequest) async {
+        guard let size = request.size else { return }
+        if let kept = StillPictures.recalled(request) {
+            show(kept, fading: shown != nil)
+            return
+        }
+        let uniforms = FieldUniforms.still(palette: request.palette, tone: request.tone, aspect: size.aspect)
+
+        guard let image = await FieldPicture.rendered(by: gpu, uniforms, size: size), !Task.isCancelled else { return }
+        StillPictures.remember(image, for: request)
+        show(image, fading: true)
+    }
+
+    private func show(_ image: CGImage, fading: Bool) {
+        let next = Shown(image: image, order: (shown?.order ?? 0) + 1)
+        guard fading else {
+            shown = next
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.5)) { shown = next }
+    }
+}
+
+struct AmbientLook: Equatable {
+    let palette: Palette
+    let tone: BackdropTone
+    let motion: AmbientMotion
+}
+
+private struct AmbientBackdrop: UIViewRepresentable {
+    let gpu: BackdropGPU
+    let look: AmbientLook
+
+    func makeUIView(context: Context) -> AmbientLayerView {
+        AmbientLayerView(gpu: gpu)
+    }
+
+    func updateUIView(_ view: AmbientLayerView, context: Context) {
+        view.look = look
+    }
+}
+
+final class AmbientLayerView: UIView {
+    let gpu: BackdropGPU
+    private var shown: CGImage?
+
+    var look: AmbientLook? {
+        didSet {
+            guard window != nil, let look, look != oldValue else { return }
+            AmbientField.shared.wear(look, gpu: gpu)
+        }
+    }
+
+    init(gpu: BackdropGPU) {
+        self.gpu = gpu
+        super.init(frame: .zero)
+        isOpaque = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        layer.contentsGravity = .resizeAspectFill
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    var size: FieldSize? {
+        FieldSize(bounds.size)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else {
+            AmbientField.shared.leave(self)
+            return
+        }
+        if let look { AmbientField.shared.wear(look, gpu: gpu) }
+        AmbientField.shared.join(self)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if window != nil { AmbientField.shared.laidOut(self) }
+    }
+
+    func show(_ image: CGImage) {
+        guard image !== shown else { return }
+        shown = image
+        layer.contents = image
+    }
+}
+
+@MainActor
+final class AmbientField: NSObject {
+    static let shared = AmbientField()
+
+    private static let speed = 0.18
+    private static let loopSeconds = 360.0
+    private static let longestStep: CFTimeInterval = 0.25
+    private static let fadingFramesPerSecond: Float = 30
+
+    private let views = NSHashTable<AmbientLayerView>.weakObjects()
+    private var gpu: BackdropGPU?
+    private var blend: FieldBlend?
+    private var tone: BackdropTone?
+    private var motion = AmbientMotion.frozen
+    private var flow: Double = 0
+    private var lastStep: CFTimeInterval?
+    private var link: CADisplayLink?
+    private var drawing = false
+    private var owed = false
+    private var latest: (image: CGImage, size: FieldSize)?
+
+    func wear(_ look: AmbientLook, gpu: BackdropGPU) {
+        let now = CACurrentMediaTime()
+        let toneChanged = look.tone != tone
+        var changed = toneChanged || look.motion != motion
+
+        self.gpu = gpu
+        tone = look.tone
+        motion = look.motion
+        if var blend {
+            changed = blend.show(look.palette, at: now) || changed
+            self.blend = blend
+        } else {
+            blend = FieldBlend(look.palette)
+            changed = true
+        }
+        guard changed else { return }
+        if toneChanged || latest == nil {
+            drawNow()
+        } else {
+            owed = true
+        }
+        schedule()
+    }
+
+    func join(_ view: AmbientLayerView) {
+        views.add(view)
+        if let latest, latest.size == wanted {
+            view.show(latest.image)
+        } else {
+            drawNow()
+        }
+        schedule()
+    }
+
+    func leave(_ view: AmbientLayerView) {
+        views.remove(view)
+        schedule()
+    }
+
+    func laidOut(_ view: AmbientLayerView) {
+        if let latest, latest.size == wanted {
+            view.show(latest.image)
+        } else {
+            drawNow()
+        }
+    }
+
+    private var shownOn: [AmbientLayerView] {
+        views.allObjects.filter { $0.window != nil }
+    }
+
+    private var wanted: FieldSize? {
+        shownOn.compactMap(\.size).max { $0.width * $0.height < $1.width * $1.height }
+    }
+
+    private var flowingRate: Float? {
+        if case .flowing(let framesPerSecond) = motion { return Float(framesPerSecond) }
+        return nil
+    }
+
+    private func uniforms(at now: CFTimeInterval, size: FieldSize) -> FieldUniforms? {
+        guard let blend, let tone else { return nil }
+        return FieldUniforms(
+            blend: blend,
+            time: motion == .still ? FieldUniforms.stillMoment : Float(flow),
+            energy: 0,
+            progress: blend.progress(at: now),
+            aspect: size.aspect,
+            tone: tone
+        )
+    }
+
+    private func drawNow() {
+        guard let gpu, let size = wanted, let uniforms = uniforms(at: CACurrentMediaTime(), size: size),
+            let image = FieldPicture.renderedNow(by: gpu, uniforms, size: size)
+        else { return }
+        present(image, size: size)
+    }
+
+    private func draw(at now: CFTimeInterval) {
+        guard !drawing else {
+            owed = true
+            return
+        }
+        guard let gpu, let size = wanted, let uniforms = uniforms(at: now, size: size) else { return }
+
+        owed = false
+        drawing = true
+        Task {
+            let image = await FieldPicture.rendered(by: gpu, uniforms, size: size)
+            drawing = false
+            if let image { present(image, size: size) }
+            schedule()
+        }
+    }
+
+    private func present(_ image: CGImage, size: FieldSize) {
+        latest = (image, size)
+        for view in shownOn {
+            view.show(image)
+        }
+    }
+
+    private func schedule() {
+        let now = CACurrentMediaTime()
+        let fading = blend?.fading(at: now) ?? false
+        let running = !shownOn.isEmpty && (flowingRate != nil || fading || owed)
+
+        guard running else {
+            link?.invalidate()
+            link = nil
+            lastStep = nil
+            return
+        }
+        let rate = fading ? Self.fadingFramesPerSecond : flowingRate ?? Self.fadingFramesPerSecond
+        let started = link ?? {
+            let link = CADisplayLink(target: self, selector: #selector(tick))
+            link.add(to: .main, forMode: .common)
+            self.link = link
+            return link
+        }()
+        started.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let now = link.targetTimestamp
+
+        if flowingRate != nil {
+            let step = min(max(now - (lastStep ?? now), 0), Self.longestStep)
+            flow = (flow + step * Self.speed).truncatingRemainder(dividingBy: Self.loopSeconds)
+        }
+        lastStep = now
+        draw(at: now)
+        schedule()
+    }
+}
+
 private struct MeshBackdrop: UIViewRepresentable {
     let gpu: BackdropGPU
     let library: Library
     let palette: Palette
     let motion: BackdropMotion
     let tone: BackdropTone
-    let reactive: Bool
     let playing: Bool
 
     func makeCoordinator() -> BackdropRenderer {
@@ -271,7 +760,6 @@ private struct MeshBackdrop: UIViewRepresentable {
 
         renderer.library = library
         renderer.tone = tone
-        renderer.reactive = reactive
         renderer.playing = playing
         renderer.still = motion == .still
         renderer.show(palette)
@@ -337,8 +825,8 @@ final class BackdropMetalView: UIView {
 
     private func showPlaceholder() {
         guard placeholder == nil, !drewLiveFrame, window != nil, UIApplication.shared.applicationState == .active,
-            bounds.width >= 1, bounds.height >= 1,
-            let image = renderer.placeholder(aspect: Float(bounds.width / bounds.height), at: CACurrentMediaTime())
+            let size = FieldSize(bounds.size),
+            let image = renderer.placeholder(aspect: size.aspect, at: CACurrentMediaTime())
         else { return }
         let layer = CALayer()
         layer.frame = bounds
@@ -358,7 +846,10 @@ final class BackdropMetalView: UIView {
         super.didMoveToWindow()
         contentScaleFactor = Self.drawingScale
         metalLayer?.contentsScale = Self.drawingScale
-        showPlaceholder()
+        if window != nil {
+            drewLiveFrame = false
+            showPlaceholder()
+        }
         applyMotion()
     }
 
@@ -416,7 +907,6 @@ extension BackdropMetalView: @preconcurrency CAMetalDisplayLinkDelegate {
 
 @MainActor
 final class BackdropRenderer {
-    private static let crossfadeSeconds: CFTimeInterval = 1.2
     private static let attackSeconds: Float = 0.12
     private static let releaseSeconds: Float = 0.6
     private static let speedSettlingSeconds: Float = 1.2
@@ -424,23 +914,16 @@ final class BackdropRenderer {
     private static let energyReach: Float = 0.25
     private static let fullEnergyLoudness: Float = 0.25
     private static let loopSeconds: Double = 360
-    private static let stillMoment: Float = 13
     private static let longestStep: CFTimeInterval = 1.0 / 15
-    private static let placeholderWidth = 48
-    private static let placeholderBytesPerPixel = 4
+    private static let placeholderWidth = 96
 
     weak var library: Library?
     var tone = BackdropTone.dark
-    var reactive = true
     var playing = false
     var still = false
 
     private let gpu: BackdropGPU
-    private var shown: Palette
-    private var leaving: Palette
-    private var shownPacked: FieldUniforms.Five
-    private var leavingPacked: FieldUniforms.Five
-    private var crossfadeBegan = -CFTimeInterval.infinity
+    private var blend: FieldBlend
     private var flow: Double = 0
     private var speed = BackdropRenderer.restingSpeed
     private var energy: Float = 0
@@ -448,29 +931,18 @@ final class BackdropRenderer {
 
     init(gpu: BackdropGPU, palette: Palette) {
         self.gpu = gpu
-        shown = palette
-        leaving = palette
-        shownPacked = FieldUniforms.packed(palette)
-        leavingPacked = shownPacked
+        blend = FieldBlend(palette)
     }
 
     func show(_ palette: Palette) {
-        guard palette != shown else { return }
-        let now = CACurrentMediaTime()
-        let reached = Self.eased(crossfade(at: now))
-
-        leaving = leaving.blended(toward: shown, by: reached)
-        shown = palette
-        leavingPacked = FieldUniforms.packed(leaving)
-        shownPacked = FieldUniforms.packed(shown)
-        crossfadeBegan = now
+        _ = blend.show(palette, at: CACurrentMediaTime())
     }
 
     func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
         let step = Float(min(max(moment - (lastFrame ?? moment), 0), Self.longestStep))
 
         lastFrame = moment
-        advance(by: step, at: moment)
+        advance(by: step)
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
@@ -479,14 +951,11 @@ final class BackdropRenderer {
         guard let commands = gpu.queue.makeCommandBuffer(),
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
         else { return }
-        let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
-        let uniforms = self.uniforms(at: moment, drawable: size)
+        let aspect = drawable.texture.height > 0 ? Float(drawable.texture.width) / Float(drawable.texture.height) : 1
+        var uniforms = uniforms(at: moment, aspect: aspect)
 
         encoder.setRenderPipelineState(gpu.pipeline)
-        withUnsafeBytes(of: uniforms) { bytes in
-            guard let base = bytes.baseAddress else { return }
-            encoder.setFragmentBytes(base, length: bytes.count, index: 0)
-        }
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         BackdropPipeline.reportFailures(of: commands)
@@ -495,66 +964,19 @@ final class BackdropRenderer {
     }
 
     func placeholder(aspect: Float, at moment: CFTimeInterval) -> CGImage? {
-        let width = Self.placeholderWidth
-        let height = max(Int((Float(width) / max(aspect, 0.1)).rounded()), 1)
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: BackdropPipeline.pixelFormat,
-            width: width,
-            height: height,
-            mipmapped: false
-        )
-        descriptor.usage = .renderTarget
-        descriptor.storageMode = .shared
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { return nil }
-
-        advance(by: 0, at: moment)
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = texture
-        pass.colorAttachments[0].loadAction = .dontCare
-        pass.colorAttachments[0].storeAction = .store
-        guard let commands = gpu.queue.makeCommandBuffer(),
-            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
-        else { return nil }
-        var uniforms = self.uniforms(at: moment, drawable: CGSize(width: width, height: height))
-
-        encoder.setRenderPipelineState(gpu.pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        encoder.endEncoding()
-        commands.commit()
-        commands.waitUntilCompleted()
-        guard commands.status == .completed else { return nil }
-
-        var pixels = [UInt8](repeating: 0, count: width * height * Self.placeholderBytesPerPixel)
-        texture.getBytes(&pixels, bytesPerRow: width * Self.placeholderBytesPerPixel, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
-        return CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 8 * Self.placeholderBytesPerPixel,
-            bytesPerRow: width * Self.placeholderBytesPerPixel,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
+        let height = max(Int((Float(Self.placeholderWidth) / max(aspect, 0.1)).rounded()), 1)
+        guard let size = FieldSize(CGSize(width: Self.placeholderWidth, height: height)) else { return nil }
+        return FieldPicture.renderedNow(by: gpu, uniforms(at: moment, aspect: size.aspect), size: size)
     }
 
-    private func advance(by step: Float, at moment: CFTimeInterval) {
-        let heard = playing && !still && reactive ? loudness() : 0
+    private func advance(by step: Float) {
+        let heard = playing && !still ? loudness() : 0
         let reaction = heard > energy ? Self.attackSeconds : Self.releaseSeconds
         let wantedSpeed = playing ? 1 + Self.energyReach * energy : Self.restingSpeed
 
         energy += (heard - energy) * Self.settled(step, within: reaction)
         speed += (wantedSpeed - speed) * Self.settled(step, within: Self.speedSettlingSeconds)
-        if reactive {
-            flow = (flow + Double(step * speed)).truncatingRemainder(dividingBy: Self.loopSeconds)
-        } else {
-            flow = (moment * Double(Self.restingSpeed)).truncatingRemainder(dividingBy: Self.loopSeconds)
-        }
+        flow = (flow + Double(step * speed)).truncatingRemainder(dividingBy: Self.loopSeconds)
     }
 
     private func loudness() -> Float {
@@ -562,33 +984,19 @@ final class BackdropRenderer {
         return min(rms / Self.fullEnergyLoudness, 1)
     }
 
-    private func crossfade(at now: CFTimeInterval) -> Float {
-        Float(min(max((now - crossfadeBegan) / Self.crossfadeSeconds, 0), 1))
-    }
-
-    private func uniforms(at now: CFTimeInterval, drawable size: CGSize) -> FieldUniforms {
-        let aspect = size.width > 0 && size.height > 0 ? Float(size.width / size.height) : 1
-
-        return FieldUniforms(
-            colours: shownPacked,
-            previous: leavingPacked,
-            time: still ? Self.stillMoment : Float(flow),
+    private func uniforms(at now: CFTimeInterval, aspect: Float) -> FieldUniforms {
+        FieldUniforms(
+            blend: blend,
+            time: still ? FieldUniforms.stillMoment : Float(flow),
             energy: still ? 0 : energy,
-            progress: still ? 1 : crossfade(at: now),
+            progress: still ? 1 : blend.progress(at: now),
             aspect: aspect,
-            lightnessFloor: tone.lightnessFloor,
-            lightnessRange: tone.lightnessRange,
-            chroma: tone.chroma,
-            vignette: tone.vignette
+            tone: tone
         )
     }
 
     private static func settled(_ step: Float, within seconds: Float) -> Float {
         Float(1 - exp(-Double(step / seconds)))
-    }
-
-    private static func eased(_ progress: Float) -> Float {
-        progress * progress * (3 - 2 * progress)
     }
 }
 
@@ -605,6 +1013,25 @@ struct FieldUniforms {
     var lightnessRange: Float
     var chroma: Float
     var vignette: Float
+
+    static let stillMoment: Float = 13
+
+    init(blend: FieldBlend, time: Float, energy: Float, progress: Float, aspect: Float, tone: BackdropTone) {
+        colours = blend.shownPacked
+        previous = blend.leavingPacked
+        self.time = time
+        self.energy = energy
+        self.progress = progress
+        self.aspect = aspect
+        lightnessFloor = tone.lightnessFloor
+        lightnessRange = tone.lightnessRange
+        chroma = tone.chroma
+        vignette = tone.vignette
+    }
+
+    static func still(palette: Palette, tone: BackdropTone, aspect: Float) -> FieldUniforms {
+        FieldUniforms(blend: FieldBlend(palette), time: stillMoment, energy: 0, progress: 1, aspect: aspect, tone: tone)
+    }
 
     static func packed(_ palette: Palette) -> Five {
         let packed = zip(palette.colours, palette.weights).map { colour, weight in
@@ -868,5 +1295,12 @@ enum BackdropShader {
 extension ProcessInfo {
     var sparesFrames: Bool {
         isLowPowerModeEnabled || thermalState == .serious || thermalState == .critical
+    }
+
+    static var powerStateChanges: some Publisher<Notification, Never> {
+        NotificationCenter.default
+            .publisher(for: .NSProcessInfoPowerStateDidChange)
+            .merge(with: NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification))
+            .receive(on: DispatchQueue.main)
     }
 }

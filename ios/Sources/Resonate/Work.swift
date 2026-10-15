@@ -22,6 +22,11 @@ enum Work {
         label: "org.resonate.secrets",
         qos: .userInitiated
     )
+    private static let onScreenQueue = DispatchQueue(
+        label: "org.resonate.on-screen",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
     private static let asideQueue = DispatchQueue(
         label: "org.resonate.aside",
         qos: .utility,
@@ -69,6 +74,14 @@ enum Work {
     ) async throws -> Value {
         try await withCheckedThrowingContinuation { continuation in
             secretsQueue.async { continuation.resume(with: Result { try body() }) }
+        }
+    }
+
+    static func onScreen<Value: Sendable>(
+        _ body: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            onScreenQueue.async { continuation.resume(with: Result { try body() }) }
         }
     }
 

@@ -145,6 +145,8 @@ enum StatisticsRank: Hashable {
 }
 
 struct StatTile: View {
+    private static let corner: CGFloat = 16
+
     let title: String
     let value: String
     let detail: String?
@@ -167,10 +169,14 @@ struct StatTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(fill, in: RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(detail.map { "\(value), \($0)" } ?? value)
+    }
+
+    private var fill: Color {
+        AppearanceState.shared.themedBackground ? Color.themedCard : Color(.secondarySystemGroupedBackground)
     }
 }
 
@@ -308,11 +314,29 @@ struct ListeningChart: View {
     let days: [ListenedOnDay]
     let span: UInt32
     @Binding var selected: Date?
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 120
 
     var body: some View {
         let bars = ListeningBar.grouped(days, span: span)
-        let tallest = max(bars.map(\.listenedMs).max() ?? 1, 1)
+        ListeningBars(bars: bars, span: span, tallest: max(bars.map(\.listenedMs).max() ?? 1, 1), selected: $selected)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Listening over time")
+            .accessibilityValue(summary(bars))
+    }
+
+    private func summary(_ bars: [ListeningBar]) -> String {
+        guard let busiest = bars.max(by: { $0.listenedMs < $1.listenedMs }) else { return "Nothing heard" }
+        return "\(bars.count) periods. The most was \(StatisticsView.spoken(busiest.listenedMs)), \(busiest.caption(span: span))"
+    }
+}
+
+struct ListeningBars: View {
+    let bars: [ListeningBar]
+    let span: UInt32
+    let tallest: UInt64
+    @Binding var selected: Date?
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 120
+
+    var body: some View {
         let chosen = bars.first { $0.starts == selected }
         VStack(alignment: .leading, spacing: 8) {
             readout(chosen, bars)
@@ -342,9 +366,6 @@ struct ListeningChart: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Listening over time")
-        .accessibilityValue(summary(bars))
     }
 
     @ViewBuilder
@@ -369,7 +390,10 @@ struct ListeningChart: View {
     private func choose(at x: CGFloat, of width: CGFloat, in bars: [ListeningBar]) {
         guard !bars.isEmpty, width > 0 else { return }
         let place = Int(x / width * CGFloat(bars.count))
-        selected = bars[min(max(place, 0), bars.count - 1)].starts
+        let starts = bars[min(max(place, 0), bars.count - 1)].starts
+
+        guard selected != starts else { return }
+        selected = starts
     }
 
     private var unitName: String {
@@ -378,11 +402,6 @@ struct ListeningChart: View {
         case 365: "week"
         default: "day"
         }
-    }
-
-    private func summary(_ bars: [ListeningBar]) -> String {
-        guard let busiest = bars.max(by: { $0.listenedMs < $1.listenedMs }) else { return "Nothing heard" }
-        return "\(bars.count) periods. The most was \(StatisticsView.spoken(busiest.listenedMs)), \(busiest.caption(span: span))"
     }
 }
 

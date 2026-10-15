@@ -2,8 +2,13 @@ import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct PlaylistEntry: Identifiable {
-    let id: String
+struct PlaylistEntry: Identifiable, Equatable {
+    struct Key: Hashable {
+        let song: UInt64
+        let occurrence: Int
+    }
+
+    let id: Key
     let position: Int
     let track: Track
 
@@ -12,8 +17,22 @@ struct PlaylistEntry: Identifiable {
         return rows.enumerated().map { position, track in
             let occurrence = seen[track.id, default: 0]
             seen[track.id] = occurrence + 1
-            return PlaylistEntry(id: "\(track.id)#\(occurrence)", position: position, track: track)
+            return PlaylistEntry(id: Key(song: track.id, occurrence: occurrence), position: position, track: track)
         }
+    }
+}
+
+@MainActor
+final class PlaylistEntries {
+    private var rows: [Track] = []
+    private var entries: [PlaylistEntry] = []
+
+    func of(_ shown: [Track]) -> [PlaylistEntry] {
+        if shown != rows {
+            rows = shown
+            entries = PlaylistEntry.of(shown)
+        }
+        return entries
     }
 }
 
@@ -80,6 +99,7 @@ struct PlaylistView: View {
     @State private var queued = 0
     @State private var exported: PlaylistFile?
     @State private var exporting = false
+    @State private var entries = PlaylistEntries()
 
     var body: some View {
         let features = library.features
@@ -102,8 +122,9 @@ struct PlaylistView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
-            ForEach(PlaylistEntry.of(rows)) { entry in
-                PlaylistRow(entry: entry, count: rows.count, rows: rows, move: move, remove: remove)
+            ForEach(entries.of(rows)) { entry in
+                PlaylistRow(entry: entry, count: rows.count, move: move, remove: remove)
+                    .equatable()
                     .listRowBackground(Color.clear)
             }
             .onMove { from, to in
@@ -262,12 +283,11 @@ struct PlaylistOptions: View {
     }
 }
 
-struct PlaylistRow: View {
+struct PlaylistRow: View, Equatable {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let entry: PlaylistEntry
     let count: Int
-    let rows: [Track]
     let move: (Int, Int) -> Void
     let remove: (Int) -> Void
     @State private var choosingPlaylist = false
@@ -278,7 +298,7 @@ struct PlaylistRow: View {
         let position = entry.position
         let favourite = library.isFavourite(track)
         TrackRow(track: track, ownsMenus: false) {
-            library.play(rows, at: position)
+            library.play(library.features.playlistRows, at: position)
         }
         .swipeActions(edge: .trailing) {
             Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
@@ -313,6 +333,10 @@ struct PlaylistRow: View {
         }
         .sensoryFeedback(.success, trigger: queued)
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
+    }
+
+    nonisolated static func == (shown: PlaylistRow, other: PlaylistRow) -> Bool {
+        shown.entry == other.entry && shown.count == other.count
     }
 }
 

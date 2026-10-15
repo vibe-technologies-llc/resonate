@@ -37,7 +37,11 @@ struct ArtworkRequest: Hashable, Sendable {
     }
 
     var songName: NSString {
-        "song:\(revision):\(generation):\(subject)" as NSString
+        switch subject {
+        case .track(let id): "song:\(revision):\(generation):track:\(id)" as NSString
+        case .portrait(let mbid): "song:\(revision):\(generation):portrait:\(mbid)" as NSString
+        case .picture(let id): "song:\(revision):\(generation):picture:\(id)" as NSString
+        }
     }
 
     func of(picture: UInt64) -> ArtworkRequest {
@@ -144,6 +148,7 @@ final class DecodedPictures: @unchecked Sendable {
 
 actor ArtworkCache {
     private static let decodesAtOnce = 4
+    private static let lookupsAtOnce = 4
 
     private struct Flight {
         let task: Task<UIImage?, Never>
@@ -154,6 +159,7 @@ actor ArtworkCache {
     private let missing = NSCache<NSString, NSNull>()
     private let songs = PicturesOfSongs()
     private let slots = DecodeSlots(decodesAtOnce)
+    private let lookups = DecodeSlots(lookupsAtOnce)
     private var flights: [ArtworkRequest: Flight] = [:]
 
     nonisolated func cached(_ request: ArtworkRequest) -> UIImage? {
@@ -172,10 +178,20 @@ actor ArtworkCache {
             picture = known
         } else {
             do {
-                picture = try await Work.aside(identifying)
+                try await lookups.acquire()
             } catch {
                 return nil
             }
+            let found: UInt64??
+            do {
+                found = try await Work.onScreen(identifying)
+            } catch {
+                found = nil
+            }
+            await lookups.release()
+
+            guard let found else { return nil }
+            picture = found
             songs.keep(picture, for: request)
         }
         guard let picture else { return nil }
@@ -208,7 +224,7 @@ actor ArtworkCache {
     ) -> Task<UIImage?, Never> {
         let slots = slots
         let edge = request.bucket.rawValue
-        return Task.detached(priority: .utility) { [weak self] in
+        return Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 try await slots.acquire()
             } catch {
@@ -216,7 +232,7 @@ actor ArtworkCache {
             }
             let decoded: DecodedArtwork
             do {
-                decoded = try await Work.aside { ArtworkDecoder.decoded(try reading(), edge: edge) }
+                decoded = try await Work.onScreen { ArtworkDecoder.decoded(try reading(), edge: edge) }
             } catch {
                 decoded = .unread
             }

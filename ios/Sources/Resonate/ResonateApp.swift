@@ -274,8 +274,7 @@ extension View {
 
     @MainActor
     func themedCards() -> some View {
-        let frost = AppearanceState.shared.themedBackground ? Rectangle().fill(.regularMaterial) : nil
-        return listRowBackground(frost)
+        listRowBackground(AppearanceState.shared.themedBackground ? Color.themedCard : nil)
     }
 }
 
@@ -304,10 +303,10 @@ struct ThemedPage: ViewModifier {
             content
                 .scrollContentBackground(.hidden)
                 .containerBackground(for: .navigation) {
-                    BackdropView(
-                        track: nil,
-                        moving: appearance.movingBackground && !navigation.nowPlaying,
-                        ambience: Float(appearance.backgroundStrength)
+                    AppBackdrop(
+                        strength: Float(appearance.backgroundStrength),
+                        moving: appearance.movingBackground,
+                        frozen: navigation.nowPlaying
                     )
                 }
         } else {

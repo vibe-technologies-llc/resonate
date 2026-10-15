@@ -4,13 +4,6 @@ import UIKit
 
 struct LyricsPane: View {
     @Environment(Library.self) private var library
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.displayScale) private var displayScale
-    @Environment(\.scenePhase) private var phase
-    @Environment(\.self) private var environment
-    @ScaledMetric(relativeTo: .title) private var fullWords: CGFloat = 32
-    @ScaledMetric(relativeTo: .title2) private var compactWords: CGFloat = 28
     @State private var stage: LyricStage
     @State private var visible = false
     @State private var lookedLong = false
@@ -35,7 +28,7 @@ struct LyricsPane: View {
                     description: Text("Play a song to follow its words.")
                 )
             } else if let sheet, !sheet.lines.isEmpty {
-                following(sheet)
+                LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact)
             } else if features.lyricsLoading || sheet == nil {
                 looking
             } else {
@@ -74,8 +67,25 @@ struct LyricsPane: View {
             Color.clear
         }
     }
+}
 
-    private func following(_ sheet: LyricSheet) -> some View {
+private struct LyricFollowing: View {
+    @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.self) private var environment
+    @ScaledMetric(relativeTo: .title) private var fullWords: CGFloat = 32
+    @ScaledMetric(relativeTo: .title2) private var compactWords: CGFloat = 28
+
+    let sheet: LyricSheet
+    let track: Track?
+    let stage: LyricStage
+    let visible: Bool
+    let compact: Bool
+
+    var body: some View {
         let playback = LyricPlayback.of(library.snapshot, at: library.clock.positionMs, showing: track)
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
         let inks = LyricInks(scheme: scheme, accent: Color.worn.resolve(in: environment))
@@ -416,9 +426,10 @@ enum LyricSpace {
 enum LyricPace {
     static let lineSyncedTick: TimeInterval = 0.1
     static let sparingFrame: TimeInterval = 1.0 / 30
+    static let steadyFrame: TimeInterval = 1.0 / 60
 
-    static var frameCap: TimeInterval? {
-        ProcessInfo.processInfo.sparesFrames ? sparingFrame : nil
+    static var frameCap: TimeInterval {
+        ProcessInfo.processInfo.sparesFrames ? sparingFrame : steadyFrame
     }
 
     static let turn: TimeInterval = 0.42

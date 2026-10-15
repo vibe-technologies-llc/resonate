@@ -200,6 +200,8 @@ struct PinnedLabelStyle: LabelStyle {
 }
 
 struct FavouritesArtwork: View {
+    static let corner: CGFloat = 10
+
     var body: some View {
         Image(systemName: "heart.fill")
             .font(.title2)
@@ -207,7 +209,7 @@ struct FavouritesArtwork: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: .rect(cornerRadius: 10)
+                in: .rect(cornerRadius: Self.corner)
             )
             .accessibilityHidden(true)
     }
@@ -302,21 +304,58 @@ struct PlaylistNameField: View {
 }
 
 struct PlaylistArtwork: View {
+    private static let rowsSampled: UInt32 = 32
+    private static let coversShown = 4
+
     @Environment(Library.self) private var library
     let playlist: MusicPlaylist?
     var corner: CGFloat = 10
-    @State private var covers: [Track] = []
+    @State private var covers: [Track]?
 
     var body: some View {
         let name = playlist?.name ?? ""
-        MosaicArtwork(covers: covers, accents: namedAccents(name: name), mark: "music.note.list", name: name, corner: corner)
+        let held = playlist.flatMap { PlaylistCovers.held(for: $0) }
+        MosaicArtwork(covers: covers ?? held ?? [], accents: namedAccents(name: name), mark: "music.note.list", name: name, corner: corner)
             .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
-                guard let playlist, let native = try? await library.player() else { return }
+                guard let playlist else { return }
+                if let held = PlaylistCovers.held(for: playlist) {
+                    covers = held
+                    return
+                }
+                guard let native = try? await library.player() else { return }
                 let id = playlist.id
-                let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
-                var seen = Set<String>()
-                covers = Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(4))
+                let sampled = Self.rowsSampled
+                let shown = Self.coversShown
+                let found = try? await Work.aside { try Self.distinctAlbums(of: native.playlistTracks(id: id, offset: 0, limit: sampled), keeping: shown) }
+                guard !Task.isCancelled else { return }
+
+                if let found { PlaylistCovers.keep(found, for: playlist) }
+                covers = found ?? []
             }
+    }
+
+    private nonisolated static func distinctAlbums(of rows: [Track], keeping count: Int) -> [Track] {
+        var seen = Set<String>()
+        return Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(count))
+    }
+}
+
+@MainActor
+enum PlaylistCovers {
+    private struct Held {
+        let revision: UInt64
+        let covers: [Track]
+    }
+
+    private static var kept: [UInt64: Held] = [:]
+
+    static func held(for playlist: MusicPlaylist) -> [Track]? {
+        guard let held = kept[playlist.id], held.revision == playlist.revision else { return nil }
+        return held.covers
+    }
+
+    static func keep(_ covers: [Track], for playlist: MusicPlaylist) {
+        kept[playlist.id] = Held(revision: playlist.revision, covers: covers)
     }
 }
 
@@ -326,12 +365,50 @@ func collectionSummary(_ tracks: [Track]) -> String {
     return "\(counted(tracks.count, "song")) · \(length)"
 }
 
+enum CoverOutline {
+    case rounded(CGFloat)
+    case circle
+
+    func path(in rect: CGRect) -> Path {
+        switch self {
+        case .rounded(let corner): RoundedRectangle(cornerRadius: corner, style: .continuous).path(in: rect)
+        case .circle: Circle().path(in: rect)
+        }
+    }
+}
+
+struct HeaderShadow: View {
+    private static let blur: CGFloat = 18
+    private static let drop: CGFloat = 10
+    private static let darkness = 0.25
+    private static let reach = blur * 2 + drop
+    private static let drawnAtScale: CGFloat = 1
+
+    let outline: CoverOutline
+
+    var body: some View {
+        Canvas { context, size in
+            let cover = CGRect(origin: .zero, size: size).insetBy(dx: Self.reach, dy: Self.reach)
+            guard cover.width > 0, cover.height > 0 else { return }
+
+            context.addFilter(.shadow(color: .black.opacity(Self.darkness), radius: Self.blur, y: Self.drop, options: .shadowOnly))
+            context.fill(outline.path(in: cover), with: .color(.black))
+        }
+        .environment(\.displayScale, Self.drawnAtScale)
+        .padding(-Self.reach)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 struct CollectionCover: View {
+    static let corner: CGFloat = 20
+
     let track: Track?
     var circle = false
 
     var body: some View {
-        ArtworkView(track: track, corner: 20, circle: circle)
+        ArtworkView(track: track, corner: Self.corner, circle: circle)
     }
 }
 
@@ -347,6 +424,7 @@ struct CollectionHeader<Artwork: View>: View {
     var summary: String?
     var badge: String?
     var openSubtitle: (() -> Void)?
+    var outline = CoverOutline.rounded(CollectionCover.corner)
     @ViewBuilder let artwork: () -> Artwork
     @State private var acted = 0
 
@@ -355,7 +433,7 @@ struct CollectionHeader<Artwork: View>: View {
         VStack(spacing: 16) {
             artwork()
                 .frame(width: edge, height: edge)
-                .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
+                .background { HeaderShadow(outline: outline) }
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title2.weight(.bold))
@@ -444,7 +522,15 @@ extension CollectionHeader where Artwork == CollectionCover {
         circle: Bool = false,
         openSubtitle: (() -> Void)? = nil
     ) {
-        self.init(title: title, subtitle: subtitle, tracks: tracks, summary: summary, badge: badge, openSubtitle: openSubtitle) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            tracks: tracks,
+            summary: summary,
+            badge: badge,
+            openSubtitle: openSubtitle,
+            outline: circle ? .circle : .rounded(CollectionCover.corner)
+        ) {
             CollectionCover(track: tracks.first, circle: circle)
         }
     }
@@ -556,6 +642,7 @@ struct AlbumView: View {
     var body: some View {
         let shownTitle = album?.shownTitle ?? ""
         let artist = album?.artist ?? ""
+        let credit = AlbumCredit(artist)
         let discs = AlbumDisc.of(tracks)
         List {
             CollectionHeader(
@@ -574,7 +661,7 @@ struct AlbumView: View {
             ForEach(discs) { disc in
                 Section {
                     ForEach(disc.tracks, id: \.id) { track in
-                        TrackRow(track: track, numbered: track.trackNumber, albumArtist: artist) {
+                        TrackRow(track: track, numbered: track.trackNumber, albumArtist: credit) {
                             library.play(tracks, selected: track)
                         }
                         .listRowBackground(Color.clear)
@@ -767,7 +854,7 @@ struct FavouritesView: View {
         let favourites = library.favouriteTracks
         let shown = folded.isEmpty ? favourites : found
         List {
-            CollectionHeader(title: "Favourites", subtitle: "", tracks: favourites) {
+            CollectionHeader(title: "Favourites", subtitle: "", tracks: favourites, outline: .rounded(FavouritesArtwork.corner)) {
                 FavouritesArtwork()
             }
             if favourites.isEmpty {

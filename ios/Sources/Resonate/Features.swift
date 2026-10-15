@@ -45,6 +45,7 @@ final class Features {
     private static let loudnessFrame: Duration = .milliseconds(50)
     private static let visualizerRetry: Duration = .seconds(2)
     private static let artGenerationsAtMost = 4096
+    private static let artStampsAtMost = 20_000
     nonisolated private static let wantedChunk = 500
 
     @ObservationIgnored private unowned let library: Library
@@ -105,8 +106,9 @@ final class Features {
     var searching = false
     var enriching = false
     var samples: [Float] = []
-    var artGenerations: [UInt64: Int] = [:]
-    var artEpoch = 0
+    @ObservationIgnored private var artStamps: [UInt64: ArtStamp] = [:]
+    @ObservationIgnored private var artStamped = 0
+    private(set) var artEpoch = 0
     var portraitGeneration = 0
     var syncConfig: SyncConfig?
     @ObservationIgnored private var secretsUnread = false
@@ -297,7 +299,8 @@ final class Features {
     func tick(_ native: MobilePlayer, _ snapshot: Snapshot) async {
         enrichment.playing(snapshot.current?.id)
         guard analysisBusy else { return }
-        analysisProgress = (try? await Work.aside { native.analysisProgress() }) ?? nil
+        let progress = (try? await Work.aside { native.analysisProgress() }) ?? nil
+        if analysisProgress != progress { analysisProgress = progress }
     }
 
     func setOnline(_ enabled: Bool) {
@@ -677,7 +680,8 @@ final class Features {
         await library.refresh()
         guard !Task.isCancelled else { return }
         do {
-            playlists = try await Work.aside { try native.playlists() }
+            let found = try await Work.aside { try native.playlists() }
+            if playlists != found { playlists = found }
             if let open = openPlaylist, playlists.contains(where: { $0.id == open }) {
                 await reloadPlaylist(native, open)
             }
@@ -760,7 +764,14 @@ final class Features {
     }
 
     func artGeneration(of id: UInt64) -> Int {
-        artEpoch * Self.artGenerationsAtMost + (artGenerations[id] ?? 0)
+        artEpoch * Self.artGenerationsAtMost + stamp(of: id).value
+    }
+
+    private func stamp(of id: UInt64) -> ArtStamp {
+        if let kept = artStamps[id] { return kept }
+        let made = ArtStamp()
+        artStamps[id] = made
+        return made
     }
 
     func cachedArtwork(_ track: Track, bucket: ArtworkBucket) -> UIImage? {
@@ -814,13 +825,14 @@ final class Features {
         artRevision = max(artRevision ?? 0, changed.revision)
         guard known, !changed.tracks.isEmpty else { return }
 
-        var generations = artGenerations
-        for id in changed.tracks { generations[id, default: 0] += 1 }
-        if generations.count > Self.artGenerationsAtMost {
+        artStamped += changed.tracks.count
+        guard artStamped <= Self.artGenerationsAtMost, artStamps.count <= Self.artStampsAtMost else {
+            artStamped = 0
+            artStamps = [:]
             artEpoch += 1
-            generations = [:]
+            return
         }
-        artGenerations = generations
+        for id in changed.tracks { stamp(of: id).value += 1 }
     }
 
     func loadPlaylists() {
@@ -889,7 +901,7 @@ final class Features {
     }
 
     private func adoptPlaylists(_ found: [MusicPlaylist], _ native: MobilePlayer) {
-        playlists = found
+        if playlists != found { playlists = found }
         guard let open = openPlaylist else { return }
         if found.contains(where: { $0.id == open }) {
             Task { await reloadPlaylist(native, open) }
@@ -912,8 +924,8 @@ final class Features {
                 return (rows, try native.playlists())
             }
             guard request == playlistRequest else { return }
-            if openPlaylist == id { playlistRows = rows }
-            playlists = found
+            if openPlaylist == id, playlistRows != rows { playlistRows = rows }
+            if playlists != found { playlists = found }
         } catch {
             library.report(error)
         }
@@ -1558,4 +1570,10 @@ private struct SecretsRead: Sendable {
 struct RefusedLanding {
     let until: Date
     let tries: Int
+}
+
+@MainActor
+@Observable
+final class ArtStamp {
+    var value = 0
 }

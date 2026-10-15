@@ -68,7 +68,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   only when the snapshot's `queue_revision` moved since the queue last shown (`QueueListed`), or
   its `catalog_revision` moved and 3 s have passed since the last read (`catalogRereadAfter`), since
   every enrichment step, scan upsert, favourite and landing moves the catalog and a whole-library
-  queue read four times a second kept the CPU busy and the main thread comparing thousands of rows.
+  queue read four times a second kept the CPU busy and the main thread comparing thousands of rows;
+  the rows read are compared with those shown on `Work.aside`, and an equal read assigns nothing.
   `queue()` copies the rows under the player lock and reads their documents afterwards in one
   catalog lock (`tracks_at`).
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
@@ -96,7 +97,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   when the page draws (`.lyrics(nil)` still means the playing song).
 - **A view body does no whole-catalog work.** `Library` keeps what views derive from `allTracks`:
   `catalogIndex` (id to place), `favouriteIds` and `favouriteTracks` (in catalog order), so a heart
-  changes one row in place and inserts or removes one favourite (`markFavourite`, `keepFavourite`)
+  changes one row in place and inserts or removes one favourite (`markFavourite`, `keepFavourite`;
+  a heart never rewrites `allTracks` or `tracks`, whose rows' own `favourite` may lag until the next
+  read, since writing one element of either redrew the whole Songs list and Library tab)
   and the Library tab and Favourites read `favouriteTracks` instead of filtering; `playingQueueRow`
   is found when the queue or the playing row changes; the queue's sections iterate slices, never
   copies; `Features.foldedName(of:)` holds each playlist name folded; the add-songs sheet folds
@@ -112,7 +115,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   its own: a queue or save that fails never discards the snapshot already taken (which holds the
   engine's failure), a queue that cannot be read is not asked again until its revision moves, and
   a failing save is told once however many good ticks lie between its tries. A scan shows its own
-  live line ("Reading music folder… N songs") with Stop (`stopScanning`, `Folders.stopScanning`);
+  live line ("Reading music folder… N songs", the count posted at most every 200 ms) with Stop (`stopScanning`, `Folders.stopScanning`);
   its error is reported, never replaced by the tally, and removing a folder drops its queued scan.
   Sync reports once as well: songs landing from other devices are counted and told in one notice
   when the transfers stop, a landing failure is told once per distinct text, and a failing sync
@@ -305,7 +308,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
-field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1,
+field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
 skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
 since the system fixes the accessory's height, and a ring around the play button was dropped). Inline (the
@@ -373,7 +376,7 @@ every route change (a pair of headphones at the same rate included), not from th
   with the accent and lettered white, Shuffle clear and lettered in the tint, 50 pt scaled); nothing
   else sits in that row. In a list row a `Label`'s icon takes the list's accent tint over any
   button style, so `.glassProminent` drew Play's triangle blue on its blue fill: the capsule draws
-  its symbol and title as separate views, each given its colour, never a `Label`. An album lists its tracks by disc,
+  its symbol and title as separate views, each given its colour, never a `Label`. The artwork's shadow is `HeaderShadow`, a shadow-only `Canvas` drawn once at scale 1 in the cover's outline, never `.shadow`, which was blurred again on every scrolled frame; a playlist's mosaic picks are kept per playlist and revision (`PlaylistCovers`). An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's.
 - **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
@@ -389,7 +392,7 @@ every route change (a pair of headphones at the same rate included), not from th
   first page). Lists, search results, shelves and the artist page's albums all carry it.
 - **One row per kind**: a collection is a `CollectionRow` (lit title, optional chevron) and a song a
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
-  search result swipes, marks the playing song and is felt as a list row is; every artwork edge is a
+  search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
   `@ScaledMetric`.
 - **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
@@ -404,7 +407,9 @@ every route change (a pair of headphones at the same rate included), not from th
   `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
   shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
   `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
-  reload, and `catalogEpoch`, which steps whenever a catalog read lands, keeping the last answer
+  reload, and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the
+  comparison, the index, the favourites and the letter runs are worked out on `Work.aside`, `CatalogChanges`,
+  so an unchanged refresh after a download, landing or enrichment pass redraws nothing), keeping the last answer
   meanwhile. The key or name is state: when an album or artist reads empty, the page looks up where
   a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
   for the song's artist and album artist) and follows it, or pops where the album is gone, so
@@ -573,7 +578,11 @@ every route change (a pair of headphones at the same rate included), not from th
 
 `BackdropView(track:moving:)` (`Backdrop.swift`) is the flowing field behind Now Playing, the
 lyrics, the visualizer and the album, artist and playlist pages. The collection pages pass
-`moving: false`: one still frame, as under Reduce Motion, and no hold on the visualizer tap.
+`moving: false`: one still frame, rendered once into a `CGImage` (`StillBackdrop`,
+`FieldPicture.rendered`, kept for the last eight palette, tone and size asked) and drawn as an
+`Image`, so a still page holds no Metal layer or display link. A still page with no palette yet
+draws nothing, so the app background behind it shows until the cover is sampled and its field fades
+in; it never opens on another colour first.
 
 - **The palette** (`Palette`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
   linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded by
@@ -581,7 +590,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   a third of the cover is vivid; a cover less than a sixteenth vivid (black, grey, white) is
   clustered whole and keeps its own greys, its lightness held from 0.16 (`Palette.darkestGrey`) so a
   black cover gives a near-black field; only a song without a cover takes the palette built around
-  the accent colour. A view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black. Each colour is held to
+  the accent colour. A moving view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black; the playing song's palette is sampled as soon as the song changes (`BackdropView.prepare`, from `Library.derive`), so Now Playing opens on its own field. Each colour is held to
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
   A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
@@ -598,7 +607,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   by a `CAMetalDisplayLink` on the main run loop, which hands each frame a drawable already acquired
   (two frames queued ahead) and its presentation time: an `MTKView` takes its drawable on the main
   thread and blocks there whenever the GPU is behind, which stalled every animation on the screen.
-  A view that appears (a tab switched to) would show black until the link's first tick, so once it is in a window with a size, while the application is active, it renders the field at 48 pixels across into a texture at the current time (`BackdropRenderer.placeholder`), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
+  A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it renders the field at 96 pixels across into a texture at the current time (`BackdropRenderer.placeholder`), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
   leaves its window. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
@@ -616,25 +625,37 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   the palette changes.
 - **Frame rate** follows what is moving (`BackdropView.rate`): 30 fps while playing, 15 paused (the glass
   over the field is composited again at every frame the field draws, so a faster field only costs Now Playing its smoothness), two thirds
-  of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline); the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
-  so a still page lets the display idle; an inactive or backgrounded scene, or a view out of its
-  window, draws nothing.
-- **The app background** is the same view with no track and an `ambience` strength
-  (`BackdropView(track: nil, moving:, ambience:)`), as the `containerBackground(for: .navigation)` of every page (a clear one is drawn as the system's own, so a single view behind the `TabView` never shows; only pages in a window draw, and the clock is the wall clock so a pushed page starts in phase): the palette
-  built around the accent colour, set synchronously in the view's `init` so a page or tab opens on
-  its colour with no fade (re-sampled when the accent changes), `BackdropTone.ambient`
-  (dark floor 0.05 with a range of 0.10 to 0.32, light floor 0.96 down to 0.80, chroma and range
-  scaled by the strength, so system labels keep their contrast), 20 fps, and no hold on the
-  visualizer tap or loudness. `ThemedPage` on each stack's root and every `DestinationView` hides
-  the scroll content background and sets that background; Now
-  Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
-  in the `appearance` defaults, edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of its own beside `AppearanceView`): `themedBackground`
-  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.4). A plain list's rows
-  draw their own opaque fill, so each one is `themedRows()` (a clear `listRowBackground` while the
-  background is on), keeping separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which
-  wrap `List` and `Form`) frosts its cards instead, `themedCards()` filling each with
-  `.regularMaterial` so the field shows through; sheets keep the plain `List` and `Form`. Pages with
-  their own backdrop cover it.
+  of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline);
+  an inactive or backgrounded scene, or a view out of its window, draws nothing.
+- **The app background is one field for the whole app** (`AppBackdrop`, the
+  `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
+  a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same
+  `CGImage`, rendered by the one `AmbientField` at scale 1 for the largest page in a window, so a
+  pushed page, a tab switched to and a page popped back to show exactly the frame the page before
+  showed, from their first frame: one picture is drawn per tick however many pages hold it, a page
+  joining a window takes the latest picture at once (rendering one synchronously only where none of
+  its size exists), and no page holds a Metal layer or display link of its own. It ticks on one
+  `CADisplayLink` at 10 fps (5 in Low Power Mode or a serious thermal state): the field drifts at
+  18 % speed, under two pixels a frame, so a faster tick only made every glass surface over it
+  composite again. It never reads the transport, so playing or pausing redraws no page's
+  background. The palette is built around the accent colour (re-sampled when the accent changes,
+  crossfaded at 30 fps for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
+  to 0.32, light floor 0.96 down to 0.80, chroma and range scaled by the strength, so system labels
+  keep their contrast); a change of tone (light and dark) renders at once. The field's clock
+  advances only while it flows: Now Playing's cover, an inactive scene and the background freeze it
+  where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
+  opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
+  `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
+  and sets that background. `AppearanceState` keeps three settings in the `appearance` defaults,
+  edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
+  its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
+  still frame), `backgroundStrength` (0.4). A plain list's rows draw their own opaque fill, so each
+  one is `themedRows()` (a clear `listRowBackground` while the background is on), keeping
+  separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which wrap
+  `List` and `Form`) tints its cards instead, `themedCards()` filling each with `Color.themedCard`
+  (white at 66 % in light, near-black at 62 % in dark), never a material: the field is already
+  blurred, so a blur over it showed nothing, and one blur per row was recomputed on every scroll
+  frame. Sheets keep the plain `List` and `Form`. Pages with their own backdrop cover it.
 - **Failure falls back to the gradient**: no Metal device, a failed compile or pipeline, or a
   uniform size the shader does not expect is logged in full at `.error` under subsystem
   `org.resonate.ios`, category `backdrop` (a successful compile logs its time at `.notice`), and the
@@ -650,8 +671,9 @@ where a paused timeline must wake) and turns each `TimelineView(.animation)` tic
 `LyricScene`; the timeline runs at the display's rate only while something moves: anything turning,
 or a word-synced sheet playing (its sweep); a line-synced sheet playing with nothing turning ticks
 at 10 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn
-(`nudge`), and back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two views swapped, so a drag in progress survives the change. Low Power Mode or a serious thermal state caps the rate at 30 fps
-(`LyricPace.frameCap`). The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
+(`nudge`), and back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two views swapped, so a drag in progress survives the change. The rate is capped at 60 fps, 30 in Low Power Mode or a serious thermal state
+(`LyricPace.frameCap`): a 120 Hz timeline rebuilt every line each frame. Everything that reads the
+snapshot, the clock or `beat` is `LyricFollowing`, so the pane around it is not rebuilt four times a second. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
 moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
 the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
@@ -687,11 +709,12 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **Pictures refresh by the changed-art revision**: every status poll, scan, landing and
   single-song lookup asks `art_changed_since` from the last revision (the first answer only sets
   the baseline, judged by whether a revision was held when the ask was made, so two overlapping
-  first asks both only set it); the named songs alone have their entry in
-  `Features.artGenerations` bumped, which `ArtworkView` and the backdrop key their `.task` on. A
-  rise in `portraits` bumps `portraitGeneration`. `Features.artGenerations` holds the songs whose
-  picture changed this session, and past 4096 of them it is emptied and `artEpoch` stepped, which
-  every song's generation includes.
+  first asks both only set it); the named songs alone have their `ArtStamp` bumped, which
+  `ArtworkView` and the backdrop key their `.task` on. Each song's stamp is an observed object of
+  its own (`Features.artGeneration(of:)` reads only that song's), so a cover found for one song
+  redraws that song's views, not every artwork on screen. A rise in `portraits` bumps
+  `portraitGeneration`. Past 4096 changes in a session, or 20 000 stamps, the stamps are dropped and
+  `artEpoch` stepped, which every song's generation includes.
 - **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself
   (`onGeometryChange`), multiplies by the display scale and rounds up to a bucket of 96, 192, 384,
   512, 768 or 1024 px; an entry is keyed by picture (or portrait) and bucket, so the twelve songs of an album decode one
@@ -699,8 +722,10 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   revision and generation in `PicturesOfSongs`, at most 20 000) and the bytes are read by picture id
   (`picture`) only when that picture is not decoded at the bucket. Nothing is tracked per subject:
   a changed picture is a new id and a changed song a new key, and `NSCache` evicts what is left.
-  `CGImageSourceCreateThumbnailAtIndex` decodes on `Work.aside` with the bucket as its largest
-  edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
+  The picture lookup runs at most 4 at once (its own `DecodeSlots`), so a fast scroll never piles
+  blocking catalog reads onto the aside queue, and `CGImageSourceCreateThumbnailAtIndex` decodes on
+  `Work.onScreen` (user-initiated, apart from `Work.aside`'s utility work) with the bucket as its
+  largest edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
   that disappears leaves its wait, and the last to leave cancels a decode still waiting for a
   slot. Pictures are decoded display-ready (`preparingForDisplay`), so nothing converts them on the
   main thread at first draw, and cost their bitmap bytes against 160 MiB (`DecodedPictures`; a 96 px
