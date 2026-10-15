@@ -87,7 +87,8 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
 - **Android**: Oboe, shared stereo float at 48 kHz (`android.md`).
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
   into it. Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
-  through `output_route_changed`; a moved rate announces `SinkChange::Reformatted` and rebinds with
+  through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s
+  `NowPlaying`); a moved rate announces `SinkChange::Reformatted` and rebinds with
   `SetSink(None)`, as does `rebind` (a media-services reset rebuilds the unit at an unchanged rate).
   The render callback writes the source's bytes straight into the system's buffer and zeroes a short
   fill; the stream clock is the reported latency. Drain waits that latency after the ring empties.

@@ -27,8 +27,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## iOS parity
 - [L] iOS lacks what Android lacks (tagging/organising, vault, convolution, per-route equaliser,
   favourite feedback sync, microphone recognition), plus CarPlay and a widget
-- [M] iOS output is RemoteIO at the session's rate; it never asks the session for the playing
-  song's rate, so an external DAC that could follow it stays on the system rate
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
 - [S] A download or a song from another device continues in the background only for the time iOS

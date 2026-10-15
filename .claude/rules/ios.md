@@ -99,7 +99,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
   the main actor). The category is set at start but the session is activated only on play
-  (`activate()`), so opening Resonate never stops another app's audio. Now-playing info is written
+  (`activate()`), so opening Resonate never stops another app's audio. **The session is asked for
+  the playing song's rate** (`preferRate`): on every song change and activation, while "Match the
+  song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
+  default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
+  reported again, so a rate the route took moves `route_changed` and reopens RemoteIO at it; a route
+  that keeps its own rate (the speaker, Bluetooth) changes nothing. Now-playing info is written
   only when the song, transport, artwork, favourite, queue place or count, shuffle or repeat change,
   or the position drifts more than 1.5 s from what the written rate predicts (a seek); between
   writes the system extrapolates elapsed time from the rate. Every command answers
