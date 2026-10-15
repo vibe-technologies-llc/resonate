@@ -840,7 +840,7 @@ is never named.
   rounded all round) or `OnACard` (foot square). `suggestion_art` draws covers in
   `Suggestion::pictured_by` (one whole, or two to four as a 2×2 mosaic) over a 135° gradient between two
   accents of the worn palette via `theme::hue` (the reason's colour where it has one; a genre's or
-  artist's from an FNV hash of the name). **The gradient is painted only where no cover is** (gpui
+  artist's from `resonate_core::Accent::named_pair`, an FNV hash of the name the phones share). **The gradient is painted only where no cover is** (gpui
   clips a child to its parent's rectangle, not its rounding). Side = whole pixel, near tile the floor of
   half, far tile the rest (`tile_span`); tile and cover round on the one corner they stand in
   (`Corner::of_tile`). **A frame standing alone draws its hairline over the art, never as its own

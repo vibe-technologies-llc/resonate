@@ -18,7 +18,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, Press, Tone},
         listing,
-        mosaic::{self, Framed, Mosaic},
+        mosaic::{Framed, Mosaic},
         reorder::{self, Listed, Shift},
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
@@ -526,7 +526,7 @@ fn accents_of(suggestion: &Suggestion) -> (Accent, Accent) {
         Reason::BackCatalogue => (Accent::Amber, Accent::Mauve),
         Reason::HiRes => (Accent::Green, Accent::Blue),
         Reason::LongPlayers => (Accent::Blue, Accent::Mauve),
-        Reason::Genre | Reason::Artist => mosaic::named_accents(&suggestion.name),
+        Reason::Genre | Reason::Artist => Accent::named_pair(&suggestion.name),
     }
 }
 

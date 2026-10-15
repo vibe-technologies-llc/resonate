@@ -35,6 +35,8 @@ const YEAR_DIGITS: usize = 4;
 
 const FIRST_DISC: u32 = 1;
 
+const PICTURED_BY_AT_MOST: usize = 4;
+
 static NOTHING_SUNG: Name = Name { words: Vec::new() };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -146,6 +148,10 @@ impl MobilePlayer {
         self.services.searching.artists(&self.catalog, order)
     }
 
+    pub fn pictured_by(&self, filter: TrackFilter) -> Result<Vec<u64>> {
+        self.services.searching.pictured_by(&self.catalog, &filter)
+    }
+
     pub fn album(&self, key: String) -> Result<Option<AlbumHit>> {
         self.services.searching.album(&self.catalog, &key)
     }
@@ -223,10 +229,50 @@ impl Searching {
         offset: u32,
         limit: u32,
     ) -> Result<Vec<Track>> {
+        let Some((index, found)) = self.admitted_in_order(catalog, filter)? else {
+            return Ok(Vec::new());
+        };
+
+        Ok(found
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit.min(LISTED_AT_MOST) as usize)
+            .map(|at| index.rows[at].track.clone())
+            .collect())
+    }
+
+    pub(crate) fn pictured_by(&self, catalog: &Catalog, filter: &TrackFilter) -> Result<Vec<u64>> {
+        let Some((index, found)) = self.admitted_in_order(catalog, filter)? else {
+            return Ok(Vec::new());
+        };
+
+        let mut pictured: Vec<usize> = Vec::new();
+        for at in found.into_iter().take(LISTED_AT_MOST as usize) {
+            if pictured.len() == PICTURED_BY_AT_MOST {
+                break;
+            }
+            let Some(album) = index.rows[at].album_group else {
+                continue;
+            };
+            if !pictured.contains(&album) && index.albums[album].has_a_picture(&index.rows) {
+                pictured.push(album);
+            }
+        }
+        Ok(pictured
+            .into_iter()
+            .map(|album| index.albums[album].artwork_track)
+            .collect())
+    }
+
+    fn admitted_in_order(
+        &self,
+        catalog: &Catalog,
+        filter: &TrackFilter,
+    ) -> Result<Option<(Arc<Index>, Vec<usize>)>> {
         let asking = (!filter.text.trim().is_empty())
             .then(|| Asking::of(&Search::read(&filter.text), now()));
         if asking.as_ref().is_some_and(Asking::asks_nothing) {
-            return Ok(Vec::new());
+            return Ok(None);
         }
 
         let index = self.index(catalog)?;
@@ -261,12 +307,7 @@ impl Searching {
             directed.then(one.track.id.cmp(&other.track.id))
         });
 
-        Ok(found
-            .into_iter()
-            .skip(offset as usize)
-            .take(limit.min(LISTED_AT_MOST) as usize)
-            .map(|at| index.rows[at].track.clone())
-            .collect())
+        Ok(Some((index, found)))
     }
 
     pub(crate) fn albums(
@@ -942,6 +983,10 @@ impl AlbumGroup {
         self.plays = held().map(Row::plays).sum();
         self.added = held().map(|row| row.track.id).max().unwrap_or_default();
         self.artwork_track = pictured_among(held());
+    }
+
+    fn has_a_picture(&self, rows: &[Row]) -> bool {
+        self.rows.iter().any(|at| rows[*at].track.art_revision > 0)
     }
 
     fn names(&self) -> [(Field, &Name); 2] {
@@ -1870,6 +1915,56 @@ mod tests {
         assert_eq!(
             album_key("Post".into(), "Bjork".into(), String::new()),
             Some(key)
+        );
+    }
+
+    #[test]
+    fn a_mix_is_pictured_by_the_albums_its_first_rows_fall_on_that_hold_a_picture() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        let mut pictured = Vec::new();
+        for (title, album, artwork) in [
+            ("One", "Bare", false),
+            ("Two", "First", true),
+            ("Three", "First", true),
+            ("Four", "Second", true),
+            ("Five", "Third", true),
+            ("Six", "Fourth", true),
+            ("Seven", "Fifth", true),
+        ] {
+            let track = song(
+                &catalog,
+                Tagged {
+                    title,
+                    album,
+                    artist: "Somebody",
+                    ..UNTAGGED
+                },
+            );
+            if artwork {
+                catalog
+                    .0
+                    .lock()
+                    .execute(
+                        "UPDATE documents SET art_revision = 1 WHERE id = ?1",
+                        [track.id as i64],
+                    )
+                    .expect("a picture");
+                pictured.push(track.id);
+            }
+        }
+        let added_first = TrackFilter {
+            order: TrackOrder::Added,
+            ..TrackFilter::default()
+        };
+
+        let covers = searching
+            .pictured_by(&catalog, &added_first)
+            .expect("the pictures");
+
+        assert_eq!(
+            covers,
+            vec![pictured[1], pictured[2], pictured[3], pictured[4]]
         );
     }
 

@@ -1,5 +1,9 @@
 use std::fmt;
 
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Theme {
     Resonate,
@@ -114,6 +118,20 @@ impl Accent {
         Self::Peach,
         Self::Red,
     ];
+
+    pub fn named_pair(name: &str) -> (Self, Self) {
+        let hashed = name.bytes().fold(FNV_OFFSET_BASIS, |hashed, byte| {
+            (hashed ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+        });
+        let accents = Self::ALL.len() as u64;
+        let first = (hashed % accents) as usize;
+        let apart = 1 + ((hashed / accents) % (accents - 1)) as usize;
+
+        (
+            Self::ALL[first],
+            Self::ALL[(first + apart) % Self::ALL.len()],
+        )
+    }
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -402,6 +420,20 @@ mod tests {
     fn every_theme_reads_back_from_the_name_it_is_written_under() {
         for theme in Theme::ALL {
             assert_eq!(Theme::parse(theme.as_str()), Some(theme));
+        }
+    }
+
+    #[test]
+    fn a_name_is_grounded_in_two_different_accents_and_the_same_two_every_time() {
+        for name in ["Progressive Rock", "The Orbiters", "", "Trip Hop", "Jazz"] {
+            let (from, to) = Accent::named_pair(name);
+
+            assert_ne!(from, to, "{name} was grounded in one accent");
+            assert_eq!(
+                Accent::named_pair(name),
+                (from, to),
+                "{name} moved between reads"
+            );
         }
     }
 

@@ -32,10 +32,6 @@ const MARK_ALPHA: u8 = 0x9c;
 
 const HAIRLINE_ALPHA: u8 = 0x0c;
 
-const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-
-const FNV_PRIME: u64 = 0x0100_0000_01b3;
-
 pub(crate) struct Mosaic<'a> {
     pub(crate) drawn: &'a [Picture],
     pub(crate) ground: (Accent, Accent),
@@ -95,20 +91,6 @@ fn hairline() -> Div {
         .rounded(px(ART_ROUNDING))
         .border_1()
         .border_color(theme::tinted(theme::text(), HAIRLINE_ALPHA))
-}
-
-pub(crate) fn named_accents(name: &str) -> (Accent, Accent) {
-    let hashed = name.bytes().fold(FNV_OFFSET_BASIS, |hashed, byte| {
-        (hashed ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
-    });
-    let accents = Accent::ALL.len() as u64;
-    let first = (hashed % accents) as usize;
-    let apart = 1 + ((hashed / accents) % (accents - 1)) as usize;
-
-    (
-        Accent::ALL[first],
-        Accent::ALL[(first + apart) % Accent::ALL.len()],
-    )
 }
 
 fn lettered(mark: Icon, name: &str, side: f32, ground: u32) -> Div {
@@ -211,7 +193,7 @@ impl Corner {
 
 #[cfg(test)]
 mod tests {
-    use super::{Corner, Framed, TILES, TILES_A_SIDE, named_accents, tile_span};
+    use super::{Corner, Framed, TILES, TILES_A_SIDE, tile_span};
 
     #[test]
     fn the_tiles_of_a_side_fill_it_to_the_pixel_whether_it_is_odd_or_even() {
@@ -219,20 +201,6 @@ mod tests {
             let filled: f32 = (0..TILES_A_SIDE).map(|place| tile_span(side, place)).sum();
 
             assert_eq!(filled, side, "a side of {side} was left short");
-        }
-    }
-
-    #[test]
-    fn a_name_is_grounded_in_two_different_accents_and_the_same_two_every_time() {
-        for name in ["Progressive Rock", "The Orbiters", "", "Trip Hop", "Jazz"] {
-            let (from, to) = named_accents(name);
-
-            assert_ne!(from, to, "{name} was grounded in one accent");
-            assert_eq!(
-                named_accents(name),
-                (from, to),
-                "{name} moved between reads"
-            );
         }
     }
 

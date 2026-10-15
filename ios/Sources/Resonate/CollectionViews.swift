@@ -216,12 +216,8 @@ struct SuggestionsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.title2)
-                .foregroundStyle(.tint)
+            MosaicArtwork(covers: [], accents: MixAccents(from: .teal, to: .blue), mark: "sparkles", name: "", corner: 10)
                 .frame(width: artworkEdge, height: artworkEdge)
-                .background(.quaternary, in: .rect(cornerRadius: 10))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Suggestions").font(.body.weight(.medium))
                 Text("Mixes from your library").font(.subheadline).foregroundStyle(.secondary)
@@ -270,38 +266,15 @@ struct PlaylistArtwork: View {
     @State private var covers: [Track] = []
 
     var body: some View {
-        Group {
-            if covers.count >= 4 {
-                Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-                    GridRow {
-                        ArtworkView(track: covers[0], corner: 0)
-                        ArtworkView(track: covers[1], corner: 0)
-                    }
-                    GridRow {
-                        ArtworkView(track: covers[2], corner: 0)
-                        ArtworkView(track: covers[3], corner: 0)
-                    }
-                }
-                .clipShape(.rect(cornerRadius: corner, style: .continuous))
-            } else if let first = covers.first {
-                ArtworkView(track: first, corner: corner)
-            } else {
-                Image(systemName: "music.note.list")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary, in: .rect(cornerRadius: corner, style: .continuous))
+        let name = playlist?.name ?? ""
+        MosaicArtwork(covers: covers, accents: namedAccents(name: name), mark: "music.note.list", name: name, corner: corner)
+            .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
+                guard let playlist, let native = try? await library.player() else { return }
+                let id = playlist.id
+                let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
+                var seen = Set<String>()
+                covers = Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(4))
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
-        .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
-            guard let playlist, let native = try? await library.player() else { return }
-            let id = playlist.id
-            let rows = (try? await Work.aside { try native.playlistTracks(id: id, offset: 0, limit: 32) }) ?? []
-            var seen = Set<String>()
-            covers = Array(rows.filter { seen.insert(albumKey(album: $0.album, artist: $0.artist, albumArtist: $0.albumArtist) ?? "").inserted }.prefix(4))
-        }
     }
 }
 

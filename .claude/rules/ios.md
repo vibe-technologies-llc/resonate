@@ -160,6 +160,26 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.
 
+## Suggestions and generated art
+
+- **A mix's art is drawn, never stored, as the desktop's** (`ui.md`'s mosaic): `MosaicArtwork`
+  (`Mosaic.swift`) draws no cover as a 135° gradient between two `MixAccent`s with the mark (an SF
+  Symbol, 22 % of the side) and, from 100 pt, the name lettered (bold, 11 %, at most three lines) in
+  the first accent's ink; one cover whole; two to four as a 2×2, a missing tile filled with the
+  accents in turn; continuous corners and a hairline. `MixAccent.color` is the system colour of the
+  accent's hue (mauve purple, amber yellow, peach orange). A name's accents are `named_accents(name)`,
+  core's `Accent::named_pair`, so a genre, artist or playlist wears the colours it wears on the
+  desktop. A playlist is drawn the same way from its first four albums.
+- **Suggestions is a grid of cards** (`SuggestionsView`, adaptive columns at least 160 pt): each
+  `SuggestedMix` is a `TrackFilter` with a title, a line saying what it holds, an accent pair and a
+  mark (Never heard teal/blue, Your favourites mauve/red, Most played red/peach, Recently added
+  green/teal, High-resolution green/blue, the top artist's mix its named accents). Covers are
+  `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
+  `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
+  holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
+  play button and the context menu (Play, Shuffle, Show songs) play its first page at once.
+  `SuggestionsRow` wears a teal and blue sparkles tile.
+
 ## Search
 
 - **The library is searched in Rust, never filtered in Swift.** `SearchModel` (`SearchModel.swift`;
