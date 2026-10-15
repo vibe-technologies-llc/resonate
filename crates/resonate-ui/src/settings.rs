@@ -232,6 +232,7 @@ pub enum SettingKey {
     DiscordProgress,
     DiscordPaused,
     Sync,
+    SyncNearbyOnly,
     SyncServer,
     SyncKey,
     SyncDevice,
@@ -239,7 +240,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 93] = [
+    pub const ALL: [Self; 94] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -329,6 +330,7 @@ impl SettingKey {
         Self::DiscordProgress,
         Self::DiscordPaused,
         Self::Sync,
+        Self::SyncNearbyOnly,
         Self::SyncServer,
         Self::SyncKey,
         Self::SyncDevice,
@@ -430,6 +432,7 @@ pub enum Setting {
     DiscordProgress(bool),
     DiscordPaused(bool),
     Sync(bool),
+    SyncNearbyOnly(bool),
     SyncServer(String),
     SyncKey(String),
     SyncDevice(String),
@@ -528,6 +531,7 @@ impl Setting {
             Self::DiscordProgress(_) => SettingKey::DiscordProgress,
             Self::DiscordPaused(_) => SettingKey::DiscordPaused,
             Self::Sync(_) => SettingKey::Sync,
+            Self::SyncNearbyOnly(_) => SettingKey::SyncNearbyOnly,
             Self::SyncServer(_) => SettingKey::SyncServer,
             Self::SyncKey(_) => SettingKey::SyncKey,
             Self::SyncDevice(_) => SettingKey::SyncDevice,
@@ -782,6 +786,7 @@ pub struct Stored {
     pub present: Arc<dyn Present>,
     pub synchronised: Synchronised,
     pub syncing: Option<Arc<dyn Syncing>>,
+    pub reads_as_a_code: Option<fn(&str) -> bool>,
     pub launcher: Arc<dyn Launcher>,
 }
 
@@ -827,6 +832,7 @@ pub trait Present: Send + Sync {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Synchronised {
     pub enabled: bool,
+    pub nearby_only: bool,
     pub server: String,
     pub device: String,
     pub songs: SyncedSongs,
@@ -836,6 +842,7 @@ impl Default for Synchronised {
     fn default() -> Self {
         Self {
             enabled: true,
+            nearby_only: false,
             server: String::new(),
             device: String::new(),
             songs: SyncedSongs::default(),
@@ -850,6 +857,7 @@ pub enum SyncStanding {
     Connected,
     Unreachable,
     Refused,
+    Nearby,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -877,8 +885,6 @@ pub struct HandedOff {
 
 pub trait Syncing: Send + Sync {
     fn shown(&self) -> SyncShown;
-
-    fn reads_as_a_code(&self, code: &str) -> bool;
 
     fn force(&self);
 

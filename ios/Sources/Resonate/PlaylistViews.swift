@@ -172,7 +172,7 @@ struct PlaylistOptions: View {
                 if sync.missing > 0 {
                     ForEach(devices, id: \.name) { device in
                         Button("Fetch \(counted(Int(sync.missing), "missing song")) from \(device.name)") {
-                            features.fetchMissing(id, from: device.name)
+                            features.fetchMissing(id, from: device)
                         }
                     }
                 }

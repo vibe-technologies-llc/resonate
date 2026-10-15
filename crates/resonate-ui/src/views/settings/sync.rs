@@ -13,13 +13,19 @@ use crate::{
 };
 
 pub(crate) const SYNC_SERVER_PLACEHOLDER: &str =
-    "resonate.tecnio.dev, or your own server's host:port";
+    "Blank for Resonate's server, or your own server's host:port";
 pub(crate) const SYNC_DEVICE_PLACEHOLDER: &str = "What your other devices call this one";
 pub(crate) const SYNC_CODE_PLACEHOLDER: &str = "Another device's pairing code, then press enter";
 
 const SYNCING_NOTE: &str = "A change here is taken up when Resonate next starts. Joining another \
-                            device's code leaves the devices this one synchronised with; the \
+                            device's code leaves the devices this one synchronised with; a \
                             server never learns the code, only a number made from it.";
+
+const NEARBY_ONLY_UNDER: &str = "No server: devices sync when they are on the same network, and \
+                                 nothing leaves it";
+
+const THROUGH_A_SERVER_UNDER: &str = "Devices sync through a server wherever they are, and \
+                                      straight to each other on the same network";
 
 const SONGS_NOTE: &str = "A song arrives in the music folder and is read into the library like \
                           one dropped on the window. Any playlist's menu fetches its missing \
@@ -27,12 +33,12 @@ const SONGS_NOTE: &str = "A song arrives in the music folder and is read into th
 
 const COPY_CODE_HINT: &str = "Put this device's pairing code on the clipboard";
 
-const FORCE_HINT: &str = "Reach the sync server and every device on this network again now, and \
-                          ask them for any song this device lacks";
+const FORCE_HINT: &str = "Reach your other devices again now, and ask them for any song this \
+                          device lacks";
 
 const CODE_COPIED: &str = "The pairing code is on the clipboard";
 
-const FORCED: &str = "Reaching the server and the devices on this network again";
+const FORCED: &str = "Reaching your other devices again";
 
 const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device and restart first";
 
@@ -60,6 +66,7 @@ impl RootView {
             .as_ref()
             .map(|syncing| syncing.shown());
         let on = synchronised.enabled;
+        let nearby_only = synchronised.nearby_only;
         let nearby = shown.as_ref().map_or(0, |shown| {
             shown
                 .devices
@@ -82,14 +89,36 @@ impl RootView {
                 "The sync server cannot be reached; in step with the devices on this network"
             }
             (true, Some(SyncStanding::Refused), _) => "The sync server refused this device",
+            (true, Some(SyncStanding::Nearby), 0) => {
+                "Looking for your devices on this network; no server is used"
+            }
+            (true, Some(SyncStanding::Nearby), _) => {
+                "In step with the devices on this network; no server is used"
+            }
         };
 
-        let mut body = kit::section_body().child(self.in_the_ring(
-            "sync-on",
-            switch_row("Synchronise this device", under, on, "sync-on"),
-            move |this, _, cx| this.set_sync(!on, cx),
-            cx,
-        ));
+        let mut body = kit::section_body()
+            .child(self.in_the_ring(
+                "sync-on",
+                switch_row("Synchronise this device", under, on, "sync-on"),
+                move |this, _, cx| this.set_sync(!on, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                "sync-nearby-only",
+                switch_row(
+                    "Only this network",
+                    if nearby_only {
+                        NEARBY_ONLY_UNDER
+                    } else {
+                        THROUGH_A_SERVER_UNDER
+                    },
+                    nearby_only,
+                    "sync-nearby-only",
+                ),
+                move |this, _, cx| this.set_sync_nearby_only(!nearby_only, cx),
+                cx,
+            ));
         if let Some(shown) = shown.filter(|shown| !shown.code.is_empty()) {
             let code = shown.code.clone();
             body = body.child(kit::field(
@@ -157,34 +186,37 @@ impl RootView {
                 )));
             }
         }
-        body.child(kit::field(
-            "Join with a code",
-            self.key_field(
-                "sync-code",
-                &self.sync_code,
-                |this, window, cx| this.leave_sync_field(window, cx),
-                cx,
-            ),
-        ))
-        .child(kit::field(
-            "Device name",
-            self.key_field(
-                "sync-device",
-                &self.sync_device,
-                |this, window, cx| this.leave_sync_field(window, cx),
-                cx,
-            ),
-        ))
-        .child(kit::field(
-            "Server",
-            self.key_field(
-                "sync-server",
-                &self.sync_server,
-                |this, window, cx| this.leave_sync_field(window, cx),
-                cx,
-            ),
-        ))
-        .child(note(SYNCING_NOTE))
+        body = body
+            .child(kit::field(
+                "Join with a code",
+                self.key_field(
+                    "sync-code",
+                    &self.sync_code,
+                    |this, window, cx| this.leave_sync_field(window, cx),
+                    cx,
+                ),
+            ))
+            .child(kit::field(
+                "Device name",
+                self.key_field(
+                    "sync-device",
+                    &self.sync_device,
+                    |this, window, cx| this.leave_sync_field(window, cx),
+                    cx,
+                ),
+            ));
+        if !nearby_only {
+            body = body.child(kit::field(
+                "Server",
+                self.key_field(
+                    "sync-server",
+                    &self.sync_server,
+                    |this, window, cx| this.leave_sync_field(window, cx),
+                    cx,
+                ),
+            ));
+        }
+        body.child(note(SYNCING_NOTE))
     }
 
     pub(super) fn synced_songs_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -355,6 +387,20 @@ impl RootView {
         );
     }
 
+    pub(crate) fn set_sync_nearby_only(&mut self, nearby_only: bool, cx: &mut Context<Self>) {
+        self.synchronise(
+            |synchronised| synchronised.nearby_only = nearby_only,
+            &Setting::SyncNearbyOnly(nearby_only),
+            cx,
+        );
+        let said = if nearby_only {
+            "Devices sync only on this network from the next start"
+        } else {
+            "Devices sync through the server again from the next start"
+        };
+        self.report(Notice::Done(said.to_owned()), cx);
+    }
+
     pub(crate) fn force_sync(&mut self, cx: &mut Context<Self>) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
             self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
@@ -378,7 +424,7 @@ impl RootView {
         self.sync_server
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         let said = if typed.is_empty() {
-            "Devices sync through resonate.tecnio.dev from the next start"
+            "Devices sync through Resonate's server from the next start"
         } else {
             "Devices sync through that server from the next start"
         };
@@ -414,9 +460,8 @@ impl RootView {
         }
         let reads = cx
             .global::<ResonateApp>()
-            .syncing
-            .as_ref()
-            .is_none_or(|syncing| syncing.reads_as_a_code(&typed));
+            .reads_as_a_code
+            .is_none_or(|reads| reads(&typed));
         if !reads {
             self.report(Notice::Trouble(NOT_A_CODE.to_owned()), cx);
             return;
@@ -449,8 +494,10 @@ impl RootView {
         self.sync_device
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.set_sync(built.enabled, cx);
+        self.store(&Setting::SyncNearbyOnly(built.nearby_only), cx);
         self.synchronise(
             |synchronised| {
+                synchronised.nearby_only = built.nearby_only;
                 synchronised.server = built.server;
                 synchronised.device = built.device;
             },

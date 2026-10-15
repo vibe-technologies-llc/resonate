@@ -2689,11 +2689,13 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
             synchronised: resonate_ui::Synchronised {
                 enabled: config.sync.unwrap_or(true),
+                nearby_only: config.syncs_nearby_only(),
                 server: config.sync_server.clone().unwrap_or_default(),
                 device: config.sync_device.clone().unwrap_or_default(),
                 songs: config.sync_songs.unwrap_or_default(),
             },
             syncing: syncing.for_the_window(),
+            reads_as_a_code: sync::code_reader(),
             launcher: Arc::new(launcher::Icons::start()),
         },
         config.appearance(),

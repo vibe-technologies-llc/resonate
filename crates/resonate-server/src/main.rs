@@ -2,6 +2,7 @@ use std::{net::SocketAddr, path::PathBuf, process::ExitCode, time::Duration};
 
 use clap::Parser;
 use resonate_server::{Error, Limits, Server, Store, listening, tls};
+use resonate_sync::wire::LARGEST_RECORD;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -38,7 +39,7 @@ struct Args {
     )]
     store: PathBuf,
 
-    #[arg(long, default_value_t = 256 * 1024, help = "The largest one record may be, in bytes")]
+    #[arg(long, default_value_t = LARGEST_RECORD, help = "The largest one record may be, in bytes")]
     record_bytes: usize,
 
     #[arg(long, default_value_t = 64 * 1024 * 1024, help = "The most one space may hold, in bytes")]

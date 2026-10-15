@@ -1,12 +1,49 @@
 mod shelf;
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use resonate_core::{Mbid, Recording};
 use resonate_sync::{Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId};
 
 use crate::shelf::{Shelf, song};
 
 const SPACE: SpaceId = SpaceId([5; 16]);
+const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const A_DAY_IN_NANOS: i64 = 24 * 60 * 60 * 1_000_000_000;
+
+fn days_ago(days: i64) -> i64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_nanos();
+    i64::try_from(now).expect("a stamp") - days * A_DAY_IN_NANOS
+}
+
+fn identified(title: &str) -> Recording {
+    Recording {
+        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+        ..song(title)
+    }
+}
+
+fn favourites_as_held(device: &Device) {
+    let mut inside = device.shelf.inside.lock();
+    let held = inside
+        .songs
+        .iter()
+        .map(|(recording, _)| recording.clone())
+        .collect::<Vec<_>>();
+    for favourite in &mut inside.favourites {
+        if let Some(own) = held
+            .iter()
+            .find(|own| own.names_the_same_song_as(favourite))
+        {
+            favourite.clone_from(own);
+        }
+    }
+    drop(inside);
+    device.shelf.moved();
+}
 
 trait EditedHere {
     fn edit_playlist(&self, id: i64, titles: &[&str]);
@@ -349,8 +386,8 @@ fn favourites_travel_both_ways_and_a_tombstone_never_takes_an_unmet_favourite() 
 fn listens_of_another_device_are_credited_once_their_song_is_here() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A"]);
-    desk.shelf.listen_here("A", 10);
-    desk.shelf.listen_here("B", 20);
+    desk.shelf.listen_here("A", days_ago(2));
+    desk.shelf.listen_here("B", days_ago(1));
     sync(&mut desk, &mut phone);
     assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
 
@@ -479,4 +516,65 @@ fn a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again() {
             .any(|change| matches!(change, Change::Device(note) if note.device == phone_id))
     );
     assert!(device_names(&desk).contains(&"Phone".to_owned()));
+}
+
+#[test]
+fn a_listen_past_what_the_ledger_keeps_is_never_credited_again() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.listen_here("A", days_ago(500));
+    desk.shelf.listen_here("A", days_ago(3));
+
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
+}
+
+#[test]
+fn a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favoured() {
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.add_song(identified("A"), b"A".repeat(1000));
+    desk.shelf.inside.lock().favourites.push(identified("A"));
+    desk.shelf.moved();
+
+    for _ in 0..3 {
+        sync(&mut desk, &mut phone);
+        favourites_as_held(&phone);
+        sync(&mut phone, &mut desk);
+        favourites_as_held(&desk);
+    }
+    let from_desk = desk.send();
+    let from_phone = phone.send();
+
+    assert_eq!(desk.shelf.favourite_titles(), ["A"]);
+    assert_eq!(phone.shelf.favourite_titles(), ["A"]);
+    assert!(
+        !from_desk
+            .iter()
+            .chain(&from_phone)
+            .any(|change| matches!(change, Change::Favourite(_))),
+        "{from_desk:?} {from_phone:?}"
+    );
+}
+
+#[test]
+fn a_ledger_kept_without_a_server_owes_everything_again_once_it_has_one() {
+    let mut desk = Device::new("Desk", &["A"]);
+    desk.shelf.make_playlist("Summer", &["A"]);
+
+    let while_serverless = desk.ledger.through_a_server(false).expect("serverless");
+    desk.send();
+    let owed_before = desk.ledger.owed_count().expect("owed");
+    let owed_again = desk.ledger.through_a_server(true).expect("a server");
+    let owed_after = desk.ledger.owed_count().expect("owed");
+    desk.send();
+    let once_more = desk.ledger.through_a_server(true).expect("a server still");
+
+    assert!(!while_serverless);
+    assert_eq!(owed_before, 0);
+    assert!(owed_again);
+    assert!(owed_after >= 2, "{owed_after}");
+    assert!(!once_more);
+    assert_eq!(desk.ledger.owed_count().expect("owed"), 0);
 }

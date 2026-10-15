@@ -1004,7 +1004,7 @@ struct HandoffRows: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        ForEach(library.features.syncHandoffs, id: \.device) { handoff in
+        ForEach(library.features.syncHandoffs, id: \.id) { handoff in
             Button {
                 library.features.continueFrom(handoff)
             } label: {

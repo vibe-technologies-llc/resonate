@@ -100,6 +100,7 @@ pub enum ConfigKey {
     DiscordProgress,
     DiscordPaused,
     Sync,
+    SyncNearbyOnly,
     SyncServer,
     SyncServerCertificate,
     SyncKey,
@@ -123,7 +124,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 95] = [
+    pub const ALL: [Self; 96] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -214,6 +215,7 @@ impl ConfigKey {
         Self::DiscordProgress,
         Self::DiscordPaused,
         Self::Sync,
+        Self::SyncNearbyOnly,
         Self::SyncServer,
         Self::SyncServerCertificate,
         Self::SyncKey,
@@ -313,6 +315,7 @@ impl ConfigKey {
             Self::DiscordProgress => "discord-progress",
             Self::DiscordPaused => "discord-paused",
             Self::Sync => "sync",
+            Self::SyncNearbyOnly => "sync-nearby-only",
             Self::SyncServer => "sync-server",
             Self::SyncServerCertificate => "sync-server-certificate",
             Self::SyncKey => "sync-key",

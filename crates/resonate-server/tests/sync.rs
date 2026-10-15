@@ -101,7 +101,7 @@ fn device(
     follow: Follow,
 ) -> Sync {
     let settings = Settings {
-        server: Some(format!("localhost:{}", hosted.address.port())),
+        server: resonate_sync::Server::At(format!("localhost:{}", hosted.address.port())),
         trusted: Some(hosted.trusted.clone()),
         key: key.clone(),
         me: Me {

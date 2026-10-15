@@ -20,7 +20,7 @@ use resonate_core::{
 use resonate_engine::Command;
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
-    Opened, Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice,
+    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, Standing, Sync, SyncDevice,
     SyncKey, TransferState,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -92,6 +92,7 @@ struct DocumentCatalog {
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SyncConfig {
     pub enabled: bool,
+    pub nearby_only: bool,
     pub server: String,
     pub key: String,
     pub device: String,
@@ -108,6 +109,7 @@ pub enum SyncStanding {
     Connected,
     Unreachable,
     Refused,
+    Nearby,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -168,6 +170,7 @@ pub struct ReceivedSong {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct HandedOff {
+    pub id: String,
     pub device: String,
     pub songs: u32,
     pub playing: bool,
@@ -197,13 +200,18 @@ pub fn sync_reads_as_a_code(code: String) -> bool {
 
 #[uniffi::export]
 impl MobilePlayer {
-    pub fn sync_start(&self, config: SyncConfig) -> Result<SyncStatus> {
+    pub fn sync_start(&self, mut config: SyncConfig) -> Result<SyncStatus> {
         let mut running = self.syncing.running.lock();
         if let Some(previous) = running.take() {
+            if config.key.trim().is_empty() {
+                config.key = previous.sync.code().to_owned();
+            }
             previous.sync.leave();
         }
         if config.enabled {
-            self.require_online()?;
+            if !config.nearby_only {
+                self.require_online()?;
+            }
             *running = Some(self.started(config)?);
         }
         drop(running);
@@ -261,6 +269,7 @@ impl MobilePlayer {
                 Standing::Connected => SyncStanding::Connected,
                 Standing::Unreachable => SyncStanding::Unreachable,
                 Standing::Refused(_) => SyncStanding::Refused,
+                Standing::Nearby => SyncStanding::Nearby,
             },
             code: running.sync.code().to_owned(),
             devices: shown
@@ -408,7 +417,7 @@ impl MobilePlayer {
         let at = self.synced_playlist(playlist)?;
         let running = self.syncing.running.lock();
         let running = running.as_ref().ok_or(Error::SyncOff)?;
-        let device = named(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
+        let device = the_device(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
         let missing = running
             .sync
             .missing_from(at)
@@ -475,6 +484,7 @@ impl MobilePlayer {
                 let device = devices.iter().find(|device| device.id == handoff.device)?;
                 let first = usize::try_from(handoff.at).unwrap_or_default();
                 Some(HandedOff {
+                    id: device.id.to_string(),
                     device: device.name.clone(),
                     songs: counted(handoff.rows.len().saturating_sub(first)),
                     playing: handoff.playing,
@@ -488,7 +498,7 @@ impl MobilePlayer {
         let handoff = {
             let running = self.syncing.running.lock();
             let running = running.as_ref().ok_or(Error::SyncOff)?;
-            let device = named(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
+            let device = the_device(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
             running
                 .sync
                 .handoffs()
@@ -525,7 +535,11 @@ impl MobilePlayer {
             indexed: Mutex::new(None),
         });
         let settings = Settings {
-            server: Some(config.server.trim().to_owned()).filter(|server| !server.is_empty()),
+            server: if config.nearby_only {
+                Server::Nowhere
+            } else {
+                Server::At(config.server.clone())
+            },
             trusted: None,
             key,
             me: Me {
@@ -1258,11 +1272,23 @@ fn recording_of(song: &SearchSong) -> Recording {
     }
 }
 
-fn named(sync: &Sync, name: &str) -> Option<SyncDevice> {
-    sync.shown()
+fn the_device(sync: &Sync, given: &str) -> Option<SyncDevice> {
+    let given = given.trim();
+    let others = sync
+        .shown()
         .devices
         .into_iter()
-        .find(|device| !device.this && device.name.eq_ignore_ascii_case(name.trim()))
+        .filter(|device| !device.this)
+        .collect::<Vec<_>>();
+    others
+        .iter()
+        .find(|device| device.id.to_string() == given)
+        .or_else(|| {
+            others
+                .iter()
+                .find(|device| device.name.eq_ignore_ascii_case(given))
+        })
+        .cloned()
 }
 
 fn copied(from: &Path, into: &mut File) -> Result<u64> {

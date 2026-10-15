@@ -93,21 +93,39 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   *syncing* from *Sync now* (`syncAskedAt`) until the status settles (a notice says with how many
   devices), the server is refused or unreachable with nobody nearby (the standing as a notice), or
   45 s pass; the poll runs every second meanwhile. `SyncProgress` is a glass card in the status
-  banner that opens the sync page; the page leads with `SyncStateRow` (spinner, *Up to date*
-  check or warning, then the standing), *Sync now* turning into *Syncing…*, and the active then the
-  ten latest finished transfers; the Settings row says the same.
+  banner that opens the sync page. `transferring` (the background hold, the 2 s poll) counts only
+  received songs that can land now (`landable`: a writable folder and no back-off), so a song with
+  nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
 - **Erase all data** (the last Settings section, confirmed) reads every song's URI (`song_uris`,
   hidden ones included), shuts the player down, deletes each of those files through `Folders.delete`
   (the songs in granted folders as well as the app's own; nothing else in those folders), then
   `Erasure.everything` empties Application Support, Caches, Documents and tmp, removes the
   `library-features`, `playback` and `provider-accounts` suites and the standard domain, and deletes
   every keychain class, then the app exits. With the pairing code gone, other devices hear nothing.
-- **The sync page regenerates the code and removes stale devices.** *Regenerate pairing code*
-  (confirmed) is `Features.newSyncGroup`: a minted code, sync started afresh at once. A device row
-  that is offline and not this iPhone swipes (or long-presses) to *Remove*, and *Remove offline
-  devices* takes every such row (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by
-  `SyncedDevice.id`, since a reinstalled phone keeps its name. Landing a received song backs off per
-  song (`landingRefused`), never pausing the rest (`android.md`).
+- **The sync page leads with what is happening; setup sits a step away** (`SyncView.swift`). The
+  page is the *Sync this iPhone* switch, then a status section (`SyncStateRow`: spinner, *Up to
+  date* check, warning or the network mark, a headline and `syncStanding`; *Sync now* turning into
+  *Syncing…*; with online off and a server in use, *Sync only on this network* in its place), then
+  *Devices* (this iPhone first, then the others online first, each with its platform and *On this
+  network*, *Online* or *Away*; *Add a device…* opens `PairingSheet`), *Continue listening*
+  (`HandoffRows`, keyed and asked by `HandedOff.id`), the active then ten latest finished
+  transfers, and *Options*: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
+  folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
+  Resonate's server, your own server with its address, or *This network only*, which is
+  `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy and Share,
+  joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
+  is `Features.newSyncGroup`. No page names the hosted server's domain. A device that is away and
+  not this iPhone swipes (or long-presses) to *Remove*; the section's menu removes every such one
+  (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by `SyncedDevice.id`, since a
+  reinstalled phone keeps its name. Landing a received song backs off per song
+  (`landingRefused`), never pausing the rest (`android.md`).
+- **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
+  assigns `syncConfig` on the main actor at once, then restarts on `Work.inOrder`, so a second switch
+  flipped straight after builds on the first; `applySync` puts a minted code into the *current*
+  config only where its key is still the one that start used. `syncNetwork` runs on `Work.inOrder`
+  after the start with the network as it is then, and `syncForce` on `Work.aside`, so nothing on
+  the main actor waits on `sync_start`'s lock. Sync runs while switched on and online, or with
+  *This network only* whatever online says (`Features.syncRuns`).
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop (which also asks `tell_loves`, so a favourite is loved on each saved
   account and taken back there when removed; the Scrobbling page says so instead of a send button), 2 s / 30 s sync polling, the sync-landing journal

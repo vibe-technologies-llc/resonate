@@ -13,6 +13,7 @@ use crate::{
         PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
+    seal::SEALED_AT_LEAST,
 };
 
 pub const PROTOCOL_VERSION: u16 = 1;
@@ -21,6 +22,8 @@ pub const PEER_ALPN: &[u8] = b"resonate-peer/1";
 pub const LARGEST_FRAME: usize = 32 * 1024 * 1024;
 pub const LONGEST_TEXT: usize = 4096;
 pub const LARGEST_BLOB: usize = LARGEST_FRAME;
+pub const LARGEST_RECORD: usize = 256 * 1024;
+const RECORD_AT_LEAST: usize = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
@@ -308,6 +311,18 @@ impl<'a> Reader<'a> {
         self.length(self.rest.len())
     }
 
+    pub fn count_of(&mut self, each_at_least: usize) -> Result<usize> {
+        self.length(self.rest.len() / each_at_least.max(1))
+    }
+
+    pub fn sealed(&mut self) -> Result<Vec<u8>> {
+        let blob = self.bytes(LARGEST_BLOB)?;
+        if blob.len() < SEALED_AT_LEAST {
+            return Err(Error::Malformed(Malformed::Short { length: blob.len() }));
+        }
+        Ok(blob.to_vec())
+    }
+
     pub fn fixed<const N: usize>(&mut self) -> Result<[u8; N]> {
         let Some((taken, rest)) = self.rest.split_first_chunk::<N>() else {
             return Err(Error::Malformed(Malformed::Ended));
@@ -384,10 +399,10 @@ impl<'a> Reader<'a> {
     }
 
     pub fn blobs(&mut self) -> Result<Vec<Vec<u8>>> {
-        let count = self.count()?;
+        let count = self.count_of(SEALED_AT_LEAST + 1)?;
         let mut blobs = Vec::with_capacity(count);
         for _ in 0..count {
-            blobs.push(self.bytes(LARGEST_BLOB)?.to_vec());
+            blobs.push(self.sealed()?);
         }
         Ok(blobs)
     }
@@ -578,12 +593,12 @@ impl FromServer {
                 parts: reader.blobs()?,
             },
             2 => {
-                let count = reader.count()?;
+                let count = reader.count_of(RECORD_AT_LEAST)?;
                 let mut entries = Vec::with_capacity(count);
                 for _ in 0..count {
                     let seq = reader.number()?;
                     let blob = if reader.flag()? {
-                        Some(reader.bytes(LARGEST_BLOB)?.to_vec())
+                        Some(reader.sealed()?)
                     } else {
                         None
                     };
@@ -1006,7 +1021,7 @@ mod tests {
                 after: 300,
             },
             ToServer::Append {
-                blobs: vec![vec![1, 2, 3], vec![]],
+                blobs: vec![vec![1; SEALED_AT_LEAST], vec![2; 300]],
             },
             ToServer::Compact {
                 through: u64::MAX,
@@ -1023,6 +1038,26 @@ mod tests {
     }
 
     #[test]
+    fn a_blob_too_short_to_be_sealed_or_a_count_past_what_could_follow_is_refused() {
+        let short = ToServer::Append {
+            blobs: vec![vec![1; SEALED_AT_LEAST - 1]],
+        };
+        let mut writer = Writer::new();
+        writer.byte(1);
+        writer.number(u64::try_from(LARGEST_FRAME).expect("a count"));
+        writer.0.extend(std::iter::repeat_n(0, 1024));
+
+        assert!(matches!(
+            ToServer::decoded(&short.encoded()),
+            Err(Error::Malformed(Malformed::Short { .. }))
+        ));
+        assert!(matches!(
+            ToServer::decoded(&writer.0),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+    }
+
+    #[test]
     fn every_frame_from_the_server_reads_back_as_written() {
         for frame in [
             FromServer::Welcome {
@@ -1032,13 +1067,13 @@ mod tests {
             },
             FromServer::Snapshot {
                 through: 3,
-                parts: vec![vec![1]],
+                parts: vec![vec![1; SEALED_AT_LEAST]],
             },
             FromServer::Records {
                 entries: vec![
                     Record {
                         seq: 4,
-                        blob: Some(vec![1, 2]),
+                        blob: Some(vec![1; 40]),
                     },
                     Record { seq: 5, blob: None },
                 ],

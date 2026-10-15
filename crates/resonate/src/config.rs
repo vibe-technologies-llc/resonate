@@ -189,6 +189,7 @@ pub struct Config {
     pub discord_progress: Option<bool>,
     pub discord_paused: Option<bool>,
     pub sync: Option<bool>,
+    pub sync_nearby_only: Option<bool>,
     pub sync_server: Option<String>,
     pub sync_server_certificate: Option<PathBuf>,
     pub sync_key: Option<String>,
@@ -301,6 +302,7 @@ impl fmt::Debug for Config {
             discord_progress,
             discord_paused,
             sync,
+            sync_nearby_only,
             sync_server,
             sync_server_certificate,
             sync_key,
@@ -405,6 +407,7 @@ impl fmt::Debug for Config {
             .field("discord_progress", discord_progress)
             .field("discord_paused", discord_paused)
             .field("sync", sync)
+            .field("sync_nearby_only", sync_nearby_only)
             .field("sync_server", sync_server)
             .field("sync_server_certificate", sync_server_certificate)
             .field("sync_key", &withheld(sync_key.as_ref()))
@@ -466,7 +469,12 @@ impl Config {
 
     #[cfg(any(feature = "sync", test))]
     pub fn syncs(&self) -> bool {
-        self.online.unwrap_or(true) && self.sync.unwrap_or(true)
+        self.sync.unwrap_or(true) && (self.online.unwrap_or(true) || self.syncs_nearby_only())
+    }
+
+    #[cfg(any(feature = "sync", feature = "ui", test))]
+    pub fn syncs_nearby_only(&self) -> bool {
+        self.sync_nearby_only.unwrap_or(false)
     }
 
     #[cfg(feature = "online")]
@@ -979,6 +987,7 @@ impl Config {
             ConfigKey::DiscordProgress => config.discord_progress = Some(at.boolean(value)?),
             ConfigKey::DiscordPaused => config.discord_paused = Some(at.boolean(value)?),
             ConfigKey::Sync => config.sync = Some(at.boolean(value)?),
+            ConfigKey::SyncNearbyOnly => config.sync_nearby_only = Some(at.boolean(value)?),
             ConfigKey::SyncServer => config.sync_server = given(at.string(value)?),
             ConfigKey::SyncServerCertificate => {
                 config.sync_server_certificate = a_path(at.string(value)?);
@@ -1513,6 +1522,14 @@ mod tests {
 
         assert!(!read("online = false\n").expect("read").syncs());
         assert!(!read("sync = false\n").expect("read").syncs());
+        assert!(!config.syncs_nearby_only());
+        let nearby = read("online = false\nsync-nearby-only = true\n").expect("read");
+        assert!(nearby.syncs() && nearby.syncs_nearby_only());
+        assert!(
+            !read("sync = false\nsync-nearby-only = true\n")
+                .expect("read")
+                .syncs()
+        );
         assert!(read("sync-songs = [\"all\"]\n").is_err());
     }
 

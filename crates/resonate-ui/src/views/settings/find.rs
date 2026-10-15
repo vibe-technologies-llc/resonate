@@ -522,7 +522,7 @@ impl Group {
             Self::Syncing => {
                 "sync synchronise synchronize devices phone android pair pairing code server \
                  account cloud playlists favourites history handoff regenerate new code remove \
-                 forget stale old device"
+                 forget stale old device nearby network lan local wifi offline"
             }
             Self::SyncedSongs => {
                 "sync copy transfer download songs files phone android peer playlists favourites \
@@ -625,6 +625,7 @@ impl Group {
             Self::Notifications => &[SettingKey::Notify],
             Self::Syncing => &[
                 SettingKey::Sync,
+                SettingKey::SyncNearbyOnly,
                 SettingKey::SyncServer,
                 SettingKey::SyncDevice,
             ],

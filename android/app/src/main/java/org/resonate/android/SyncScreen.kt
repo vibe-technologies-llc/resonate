@@ -49,14 +49,17 @@ import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.syncReadsAsACode
 
-private const val HOSTED_SYNC_SERVER = "resonate.tecnio.dev"
-
 fun syncStandingText(status: SyncStatus?, config: SyncConfig?, online: Boolean): String =
     when {
         config?.enabled != true -> "Off"
-        !online -> "Waiting for online features"
+        !online && config?.nearbyOnly != true -> "Waiting for online features"
         else ->
             when (status?.standing) {
+                SyncStanding.NEARBY -> {
+                    val nearby = status?.devices.orEmpty().count { !it.thisDevice && it.nearby }
+                    if (nearby == 0) "Looking for your devices on this network"
+                    else "$nearby ${if (nearby == 1) "device" else "devices"} on this network"
+                }
                 SyncStanding.CONNECTED -> {
                     val others = status?.devices.orEmpty().count { !it.thisDevice && it.online }
                     if (others == 0) "Connected · no other device online"
@@ -64,7 +67,7 @@ fun syncStandingText(status: SyncStatus?, config: SyncConfig?, online: Boolean):
                 }
                 SyncStanding.UNREACHABLE -> {
                     val nearby = status?.devices.orEmpty().count { !it.thisDevice && it.nearby }
-                    if (nearby == 0) "The sync server could not be reached"
+                    if (nearby == 0) "Can't reach the sync server"
                     else
                         "Server unreachable · $nearby ${if (nearby == 1) "device" else "devices"} on this network"
                 }
@@ -105,7 +108,16 @@ fun SyncScreen(library: LibraryRepository) {
         ) {
             features.saveSync(config.copy(enabled = it))
         }
-        if (!online)
+        SyncSwitch(
+            "Only this network",
+            if (config.nearbyOnly)
+                "No server: devices sync when they are on the same network, and nothing leaves it"
+            else "Devices sync through a server wherever they are",
+            config.nearbyOnly,
+        ) {
+            features.saveSync(config.copy(nearbyOnly = it))
+        }
+        if (!online && !config.nearbyOnly)
             Text(
                 "Turn on online features in Settings to sync.",
                 color = MaterialTheme.colorScheme.error,
@@ -173,15 +185,16 @@ fun SyncScreen(library: LibraryRepository) {
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            OutlinedTextField(
-                server,
-                { server = it },
-                label = { Text("Sync server") },
-                placeholder = { Text(HOSTED_SYNC_SERVER) },
-                supportingText = { Text("Leave blank to use $HOSTED_SYNC_SERVER") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            if (!config.nearbyOnly)
+                OutlinedTextField(
+                    server,
+                    { server = it },
+                    label = { Text("Sync server") },
+                    placeholder = { Text("host or host:port") },
+                    supportingText = { Text("Leave blank to use Resonate's server") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
             Button(
                 onClick = {
                     features.saveSync(config.copy(device = device.trim(), server = server.trim()))

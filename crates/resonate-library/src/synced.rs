@@ -154,7 +154,7 @@ pub(crate) fn write_playlist(
             Some((id, _)) => id,
             None => made(transaction, name)?,
         };
-        let name = a_free_name(transaction, name, id)?;
+        let name = a_free_name(transaction, name, Some(id))?;
         let modified: i64 = transaction
             .query_row(
                 "SELECT modified FROM playlists WHERE id = ?1",
@@ -208,10 +208,11 @@ pub(crate) fn write_playlist(
 
 fn made(transaction: &Transaction<'_>, name: &str) -> Result<PlaylistId> {
     let now = store::to_nanos(SystemTime::now());
+    let name = a_free_name(transaction, name, None)?;
     transaction
         .execute(
             "INSERT INTO playlists (name, folded, created, modified) VALUES (?1, ?2, ?3, ?3)",
-            params![name, playlist::folded(name), now],
+            params![name, playlist::folded(&name), now],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
     let id = PlaylistId::new(transaction.last_insert_rowid().cast_unsigned())?;
@@ -224,7 +225,11 @@ fn made(transaction: &Transaction<'_>, name: &str) -> Result<PlaylistId> {
     Ok(id)
 }
 
-fn a_free_name(transaction: &Transaction<'_>, name: &str, keeping: PlaylistId) -> Result<String> {
+fn a_free_name(
+    transaction: &Transaction<'_>,
+    name: &str,
+    keeping: Option<PlaylistId>,
+) -> Result<String> {
     let name = name.trim();
     let wanted = if name.is_empty() { "Synced" } else { name };
     let mut asked = FIRST_ALIAS - 1;
@@ -241,7 +246,9 @@ fn a_free_name(transaction: &Transaction<'_>, name: &str, keeping: PlaylistId) -
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?;
-        if holder.is_none_or(|holder| holder.cast_unsigned() == keeping.get()) {
+        if holder.is_none_or(|holder| {
+            keeping.is_some_and(|keeping| holder.cast_unsigned() == keeping.get())
+        }) {
             return Ok(candidate);
         }
         asked += 1;
@@ -367,7 +374,7 @@ pub(crate) fn favourites(inner: &Inner) -> Result<Vec<Recording>> {
         let mut statement = connection
             .prepare(&format!(
                 "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS}
-                  WHERE t.favourite IS NOT NULL AND t.hidden = 0 ORDER BY t.favourite"
+                  WHERE t.favourite IS NOT NULL ORDER BY t.favourite"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let favoured = statement

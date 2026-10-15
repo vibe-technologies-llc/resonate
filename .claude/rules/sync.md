@@ -38,8 +38,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 ## The wire
 
 - **Hand-encoded, no serde** (`wire.rs`): `Writer`/`Reader` with LEB128 lengths and zigzag signed
-  numbers; every length is weighed against what is left before anything is allocated; text is at
-  most `LONGEST_TEXT`; a frame ends exactly where it says (`Malformed::Trailing`). Frames are a
+  numbers; every length is weighed against what is left before anything is allocated, a count
+  against the least each item takes (`Reader::count_of`), so a frame read before the token is checked
+  cannot make the server hold many times its size; a sealed blob shorter than nonce and tag
+  (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; text is at most `LONGEST_TEXT`; a frame ends exactly
+  where it says (`Malformed::Trailing`). Frames are a
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
   `fuzz/fuzz_targets/sync.rs` decodes every frame and bundle and requires a decoded one to read back
   as itself.
@@ -84,12 +87,25 @@ platforms; the catalog seam stays thin.
   free alias (`Mix (2)`); the alias is never sent back as a rename.
 - **A tombstone never takes a favourite the ledger had not met**: the first word of a favourite on
   a device is its own.
+- **A favourite is one song however each device names it.** Rows are keyed by `Recording::key()`
+  (`mbid:` or `named:`), but a look matches the catalog's favourites to held rows by
+  `names_the_same_song_as` (the exact key first, then the named key): a copy with an MBID on one
+  device and without on another is one favourite, and a held row is tombstoned only where no
+  favourite here names its song
+  (`a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favoured`).
 - **Remote listens are credited where the song is held** (`Catalog::credit`), else kept and
   credited when it arrives; they are never sent on to a scrobbling service (the library's
-  `listens.elsewhere`, Android's likewise). The ledger ages listens past `LISTENS_KEPT_FOR`.
+  `listens.elsewhere`, Android's likewise). The ledger ages listens past `LISTENS_KEPT_FOR`, and a
+  listen older than that arriving again (an old snapshot) is passed over, never credited twice.
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count.
+- **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
+  server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
+  later is told the whole snapshot; V3's `state.serverless` remembers it, and the first start with a
+  server again owes everything (`Ledger::through_a_server`), so the server is given the whole state.
+  A `Welcome` whose head is below this device's cursor (a space swept and made anew) resets the
+  cursor and owes everything (`space_made_anew`, `Error::SpaceMadeAnew`), and the link is made again.
 - **Entering another space forgets the last one** (`enter_space`), so everything local is owed again.
   A new pairing code is therefore all *regenerate* is: each front end mints or clears the key and
   starts again; the old space ages out on the server.
@@ -129,8 +145,13 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   back a `Link`. The server connection keeps alive every 25 s, so presence and the NAT mapping hold
   for a few dozen bytes; nothing is polled: the server pushes what other devices append.
 - **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter, logged at debug;
-  a refusal waits the longest. `Shown` (standing, devices, transfers, owed) is a snapshot the
-  window and Android read without asking the thread.
+  a refusal waits the longest; a link made resets it, so a drop after a long outage retries in 5 s.
+  `Shown` (standing, devices, transfers, owed) is a snapshot the window and the phones read without
+  asking the thread; `owed` is read again after every `Appended`.
+- **A record the server would refuse is never sent to it.** A bundle sealed past `LARGEST_RECORD`
+  (256 KiB, the server's default `--record-bytes`) is marked sent with a warning and reaches devices
+  on the network in the snapshot; a `TooLarge` refusal from a server with a lower limit marks the
+  largest bundle of that append sent and pushes again, so one large playlist never holds up the rest.
 - **A look runs `LOOK_AFTER` (300 ms) after the catalog's revision moves, watched every
   `WATCH_EVERY` (500 ms), and every five minutes regardless**, and at once whenever one falls due (a
   neighbour's whole snapshot, a link caught up, *force*): the loop sleeps until the next look or
@@ -155,16 +176,21 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
   failed dropped first.
-- **Server**: `HOSTED_SERVER` (`resonate.tecnio.dev`, port 443) unless `sync-server` names
-  another; `sync-server-certificate` adds a PEM to the system and built-in roots (a private CA, the
-  tests' self-signed server).
+- **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `resonate.tecnio.dev`,
+  port 443), `At` another (`sync-server`; blank is the hosted one), or `Nowhere`, the listener's
+  *Only this network*: nothing is dialled, the standing is `Standing::Nearby` from the start, and
+  devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
+  roots (a private CA, the tests' self-signed server).
 
 ## Peers
 
 - **The server introduces, the devices connect.** `Punch` carries the asker's LAN candidates sealed;
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first
-  connection wins. A loopback candidate is offered only where the server itself is on loopback.
+  connection wins. A loopback candidate is offered only where the server itself is on loopback. A
+  punch is answered only where no live connection to that device stands and none was answered
+  within `PUNCH_ANSWERED_AT_MOST_EVERY` (10 s), so two devices never punch each other in a loop. A
+  punched connection is watched for closing as a met one is, so a dead one leaves `peers`.
 - **Every device of a space presents one certificate, and a handshake is verified against the
   space's key, never the certificate.** `PeerIdentity` builds a self-signed Ed25519 certificate
   from the `peer` seed (rcgen, `ring`); `SpaceVerifier` accepts any presented certificate but checks
@@ -182,7 +208,9 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked, and
   **asks `Catalog::holds` again once claimed**: follows overlap, each listing what was wanted when
   it began, so a song an earlier follow landed meanwhile is passed over (`held_already`), never
-  fetched twice (on a phone a second landing took `Name (1)` beside the first). Only whole-file, unvaulted songs are offered. A transfer is staged under
+  fetched twice (on a phone a second landing took `Name (1)` beside the first); the passed-over run's
+  `Waiting` row is taken off the list (`Running::unlisted_waiting`), the claiming one reporting the
+  song. Only whole-file, unvaulted songs are offered. A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
@@ -197,7 +225,9 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   (the songs it had not reached are not failed one by one) and sends `Event::CutShort`, which lets
   the next meeting with that device follow at once rather than after `FOLLOW_A_DEVICE_EVERY`.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
-  (`allow_transfers`); incoming peers are refused meanwhile.
+  (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
+  song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`
+  (`Answering::transfers_allowed`, the flag the service holds).
 
 ## Nearby
 
@@ -248,6 +278,7 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
 - `Settings::nearby`: `Nearby::on_the_network()` on Linux and Android (broadcast and Bonjour),
   `told_by_the_platform()` on iOS; `None` meets nobody here (the server's tests).
   `crates/resonate-sync/tests/nearby.rs` pairs two devices over loopback beacons with no server
-  (records both ways, a song fetched, a rename back), over records handed across as Swift hands them,
+  (records both ways, a song fetched, a rename back), and two told `Server::Nowhere` (standing
+  `Nearby`, owing nothing once told), over records handed across as Swift hands them,
   and over real Bonjour; a beacon or record of another code meets nobody. The last two skip on a
   machine with no IPv4 interface but loopback.

@@ -423,8 +423,10 @@ whole (`sync_start` leaves the previous one first; `shutdown` stops it before an
 ledger is `sync.sqlite` and its staging folder `sync-staging`, both beside `documents.sqlite`.
 A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encrypted beside the
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
-mobile data) in plain preferences. Sync is on unless switched off and runs only while online is.
-A setting change restarts it.
+mobile data, `sync-nearby-only`) in plain preferences. Sync is on unless switched off and runs
+only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
+dialled, which runs with online off). A setting change restarts it; `sync_start` with a blank key
+reuses the code of the sync it replaces, so two starts in a row never mint two codes.
 
 A song is found by recording id, else by folded artist, title words, album when named and a length
 within 2 s, the desktop rule; the lookup reads an in-memory index rebuilt whenever the catalog
@@ -449,7 +451,8 @@ minute before that song is tried again, the rest landing meanwhile; a song refus
 `LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`. A received song's
 file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it.
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
-`sync_forget_device` takes. `song_uris` lists every document's URI, hidden ones included.
+`sync_forget_device` takes; `HandedOff.id` likewise, and `sync_continue_from` and
+`sync_fetch_missing` take the id (a name is still read where no id matches). `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a

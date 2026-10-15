@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig};
 use resonate_sync::{
     DeviceId, SpaceId, read_frame, send_frame, transport,
-    wire::{FromServer, PROTOCOL_VERSION, Record, Refusal, SERVER_ALPN, ToServer},
+    wire::{FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Record, Refusal, SERVER_ALPN, ToServer},
 };
 use rustls::{crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
@@ -21,7 +21,7 @@ use tokio::{
 use crate::{
     Error, PemOp, Result,
     hub::{Hub, Joined, Notice},
-    store::{Appended, Claim, Compacted, Store},
+    store::{Appended, CaughtUp, Claim, Compacted, Store},
 };
 
 const HELLO_WITHIN: Duration = Duration::from_secs(10);
@@ -56,7 +56,7 @@ pub struct Server {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            record_bytes: 256 * 1024,
+            record_bytes: LARGEST_RECORD,
             space_bytes: 64 * 1024 * 1024,
             devices: 16,
             frames_per_minute: 240,
@@ -213,7 +213,7 @@ impl Server {
             ..
         } = joined;
         let store = Arc::clone(&self.store);
-        let (head, snapshot_through) = in_the_store(move || store.lock().head(space)).await?;
+        let (head, _) = in_the_store(move || store.lock().head(space)).await?;
         let welcome = FromServer::Welcome {
             online: others,
             seen_at: connection.remote_address(),
@@ -222,17 +222,6 @@ impl Server {
         send_frame(&mut send, &welcome.encoded()).await?;
 
         let mut sent_through = after;
-        if after < snapshot_through {
-            let store = Arc::clone(&self.store);
-            if let Some(snapshot) = in_the_store(move || store.lock().snapshot(space)).await? {
-                let frame = FromServer::Snapshot {
-                    through: snapshot.through,
-                    parts: snapshot.parts,
-                };
-                send_frame(&mut send, &frame.encoded()).await?;
-                sent_through = snapshot.through;
-            }
-        }
         self.send_records(&mut send, space, device, &mut sent_through)
             .await?;
 
@@ -279,7 +268,7 @@ impl Server {
                         send_frame(&mut send, &frame.encoded()).await?;
                     }
                     Some(Notice::Compacted(through)) => {
-                        sent_through = sent_through.max(through);
+                        self.send_records(&mut send, space, device, &mut sent_through).await?;
                         send_frame(&mut send, &FromServer::Compacted { through }.encoded()).await?;
                     }
                 },
@@ -349,24 +338,37 @@ impl Server {
         loop {
             let store = Arc::clone(&self.store);
             let after = *sent_through;
-            let stored = in_the_store(move || {
+            let caught = in_the_store(move || {
                 store
                     .lock()
-                    .records_after(space, after, RECORDS_PER_FRAME, RECORD_BYTES_PER_FRAME)
+                    .catch_up(space, after, RECORDS_PER_FRAME, RECORD_BYTES_PER_FRAME)
             })
             .await?;
-            let Some(last) = stored.last().map(|record| record.seq) else {
-                return Ok(());
-            };
-            let entries = stored
-                .into_iter()
-                .map(|record| Record {
-                    seq: record.seq,
-                    blob: (record.device != device).then_some(record.blob),
-                })
-                .collect();
-            send_frame(send, &FromServer::Records { entries }.encoded()).await?;
-            *sent_through = last;
+            match caught {
+                CaughtUp::Snapshot(snapshot) => {
+                    let through = snapshot.through;
+                    let frame = FromServer::Snapshot {
+                        through,
+                        parts: snapshot.parts,
+                    };
+                    send_frame(send, &frame.encoded()).await?;
+                    *sent_through = through;
+                }
+                CaughtUp::Records(stored) => {
+                    let Some(last) = stored.last().map(|record| record.seq) else {
+                        return Ok(());
+                    };
+                    let entries = stored
+                        .into_iter()
+                        .map(|record| Record {
+                            seq: record.seq,
+                            blob: (record.device != device).then_some(record.blob),
+                        })
+                        .collect();
+                    send_frame(send, &FromServer::Records { entries }.encoded()).await?;
+                    *sent_through = last;
+                }
+            }
         }
     }
 }

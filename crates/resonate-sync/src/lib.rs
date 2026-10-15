@@ -27,7 +27,7 @@ pub use crate::{
     quic::{read_frame, send_frame, transport},
     seal::{opened, sealed},
     service::{
-        HOSTED_SERVER, SERVER_PORT, Settings, Shown, Standing, Sync, SyncDevice, Transfer,
+        HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer,
         TransferState,
     },
 };

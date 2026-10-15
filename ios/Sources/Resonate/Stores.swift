@@ -399,6 +399,7 @@ struct AccountStore: Sendable {
         }
         return SyncConfig(
             enabled: flag("sync-enabled", true),
+            nearbyOnly: flag("sync-nearby-only", false),
             server: plain.string(forKey: "sync-server") ?? "",
             key: secrets.read("sync-key"),
             device: plain.string(forKey: "sync-device") ?? "",
@@ -412,6 +413,7 @@ struct AccountStore: Sendable {
     func writeSync(_ config: SyncConfig) throws {
         let plain = plain
         plain.set(config.enabled, forKey: "sync-enabled")
+        plain.set(config.nearbyOnly, forKey: "sync-nearby-only")
         plain.set(config.server, forKey: "sync-server")
         plain.set(config.device, forKey: "sync-device")
         plain.set(config.favourites, forKey: "sync-favourites")

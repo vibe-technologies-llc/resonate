@@ -165,7 +165,7 @@ fun PlaylistScreen(
                                     },
                                     onClick = {
                                         menu = false
-                                        library.features.fetchMissing(id, device.name)
+                                        library.features.fetchMissing(id, device)
                                     },
                                 )
                             }

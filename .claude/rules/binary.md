@@ -185,14 +185,15 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
   reaches it.
-- **`sync` (on) and the five `sync-*` keys** (`sync.md`): `sync-server` blank = the hosted
-  `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted beside the roots; `sync-key` the
+- **`sync` (on) and the six `sync-*` keys** (`sync.md`): `sync-nearby-only` (off) uses no server
+  at all (`Server::Nowhere`): devices sync only on the same network, and sync then runs with
+  `online` off too; `sync-server` blank = the hosted `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted beside the roots; `sync-key` the
   pairing code, minted and written back on the first start that syncs, withheld by `Debug`, joined
   by `resonate sync --join` or the pane, cleared by `--leave` or the pane's *Regenerate pairing code*
   (two presses; a new code is minted at the next start); `resonate sync --forget <device>` takes a
   device that is away off every list (`Error::SyncDeviceOnline` for one online); `sync-device` the name other devices
   see (default `Linux`); `sync-songs` an array of `favourites`, `playlists`, `everything` (empty =
-  only on request). Off whenever `online` is (`Config::syncs`). The pane writes them for the next
+  only on request). Off whenever `online` is, unless `sync-nearby-only` (`Config::syncs`). The pane writes them for the next
   start. **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window
   holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the latter).
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers; blank/absent uses the

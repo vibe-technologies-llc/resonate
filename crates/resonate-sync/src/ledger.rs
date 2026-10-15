@@ -94,7 +94,19 @@ const V2: &str = "
 ALTER TABLE devices ADD COLUMN gone INTEGER NOT NULL DEFAULT 0;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, V2];
+const V3: &str = "
+ALTER TABLE state ADD COLUMN serverless INTEGER NOT NULL DEFAULT 0;
+";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3];
+
+const OWE_EVERYTHING: &str = "
+UPDATE devices SET owed = 1;
+UPDATE playlists SET owed = 1;
+UPDATE favourites SET owed = 1;
+UPDATE listens SET owed = 1;
+UPDATE handoffs SET owed = 1;
+";
 
 const FORGET_THE_SPACE: &str = "
 DELETE FROM devices;
@@ -132,6 +144,17 @@ pub struct Ledger {
     connection: Connection,
     device: DeviceId,
     clock: Clock,
+}
+
+fn listens_kept_since() -> i64 {
+    wall_nanos().saturating_sub(i64::try_from(LISTENS_KEPT_FOR.as_nanos()).unwrap_or(i64::MAX))
+}
+
+struct HeldFavourite {
+    key: String,
+    recording: Option<Recording>,
+    favoured: bool,
+    here: bool,
 }
 
 struct StoredPlaylist {
@@ -245,6 +268,45 @@ impl Ledger {
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(true)
+    }
+
+    pub fn through_a_server(&mut self, through: bool) -> Result<bool> {
+        let serverless = self.state_number("serverless")? != 0;
+        if serverless != through {
+            return Ok(false);
+        }
+        let transaction = self.writing()?;
+        if through {
+            transaction
+                .execute_batch(OWE_EVERYTHING)
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        transaction
+            .execute(
+                "UPDATE state SET serverless = ?1 WHERE id = 1",
+                params![!through],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(through)
+    }
+
+    pub fn space_made_anew(&mut self) -> Result<()> {
+        let transaction = self.writing()?;
+        transaction
+            .execute_batch(OWE_EVERYTHING)
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .execute(
+                "UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0 WHERE id = 1",
+                [],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
     pub fn cursor(&self) -> Result<u64> {
@@ -517,73 +579,138 @@ impl Ledger {
 
     fn look_at_favourites(&mut self, catalog: &dyn Catalog) -> Result<()> {
         let favourites = catalog.favourites().map_err(Error::Catalog)?;
-        let mut favoured_here = BTreeMap::new();
-        for recording in favourites {
-            favoured_here.insert(recording.key().as_str().to_owned(), recording);
-        }
-
-        let mut held = BTreeMap::new();
-        {
-            let mut statement = self
-                .connection
-                .prepare("SELECT key, favoured, here FROM favourites")
-                .map_err(|source| Error::store(StoreOp::Read, source))?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, bool>(1)?,
-                        row.get::<_, bool>(2)?,
-                    ))
-                })
-                .map_err(|source| Error::store(StoreOp::Read, source))?;
-            for row in rows {
-                let (key, favoured, here) =
-                    row.map_err(|source| Error::store(StoreOp::Read, source))?;
-                held.insert(key, (favoured, here));
+        let held = self.held_favourites()?;
+        let mut held_by_key = BTreeMap::new();
+        let mut held_by_name: BTreeMap<RecordingKey, Vec<usize>> = BTreeMap::new();
+        for (at, row) in held.iter().enumerate() {
+            held_by_key.insert(row.key.as_str(), at);
+            if let Some(recording) = &row.recording {
+                held_by_name
+                    .entry(recording.named_key())
+                    .or_default()
+                    .push(at);
             }
+        }
+        let mut favoured_by_key = BTreeMap::new();
+        let mut favoured_by_name: BTreeMap<RecordingKey, Vec<&Recording>> = BTreeMap::new();
+        for recording in &favourites {
+            favoured_by_key.insert(recording.key().as_str().to_owned(), recording);
+            favoured_by_name
+                .entry(recording.named_key())
+                .or_default()
+                .push(recording);
         }
 
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        for (key, recording) in &favoured_here {
-            let known = held.get(key).copied();
-            if known.is_some_and(|(_, here)| here) {
+        for (key, recording) in &favoured_by_key {
+            let alike = held_by_key
+                .get(key.as_str())
+                .copied()
+                .into_iter()
+                .chain(
+                    held_by_name
+                        .get(&recording.named_key())
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                        .filter(|at| {
+                            held[*at]
+                                .recording
+                                .as_ref()
+                                .is_some_and(|held| held.names_the_same_song_as(recording))
+                        }),
+                )
+                .collect::<Vec<_>>();
+            if alike.iter().any(|at| held[*at].here) {
                 continue;
             }
-            let favoured_already = known.is_some_and(|(favoured, _)| favoured);
+            let stamp = self.clock.now(self.device);
+            match alike.first().map(|at| &held[*at]) {
+                Some(row) => {
+                    let newly = !row.favoured;
+                    transaction
+                        .execute(
+                            "UPDATE favourites SET favoured = 1, here = 1, nanos = CASE WHEN ?3 THEN ?2 ELSE nanos END,
+                                 stamped_by = CASE WHEN ?3 THEN ?4 ELSE stamped_by END, owed = max(owed, ?3)
+                              WHERE key = ?1",
+                            params![row.key, stamp.nanos, newly, self.device.0.as_slice()],
+                        )
+                        .map_err(|source| Error::store(StoreOp::Write, source))?;
+                }
+                None => {
+                    transaction
+                        .execute(
+                            "INSERT INTO favourites (key, recording, favoured, here, nanos, stamped_by, owed) VALUES (?1, ?2, 1, 1, ?3, ?4, 1)",
+                            params![
+                                key,
+                                encoded_recording(recording),
+                                stamp.nanos,
+                                self.device.0.as_slice()
+                            ],
+                        )
+                        .map_err(|source| Error::store(StoreOp::Write, source))?;
+                }
+            }
+        }
+        for row in &held {
+            if !row.here || favoured_by_key.contains_key(&row.key) {
+                continue;
+            }
+            let still_favoured = row.recording.as_ref().is_some_and(|recording| {
+                favoured_by_name
+                    .get(&recording.named_key())
+                    .is_some_and(|alike| {
+                        alike
+                            .iter()
+                            .any(|favoured| favoured.names_the_same_song_as(recording))
+                    })
+            });
+            if still_favoured {
+                continue;
+            }
             let stamp = self.clock.now(self.device);
             transaction
                 .execute(
-                    "INSERT INTO favourites (key, recording, favoured, here, nanos, stamped_by, owed) VALUES (?1, ?2, 1, 1, ?3, ?4, ?5)
-                     ON CONFLICT (key) DO UPDATE SET favoured = 1, here = 1, nanos = CASE WHEN ?5 THEN ?3 ELSE nanos END,
-                         stamped_by = CASE WHEN ?5 THEN ?4 ELSE stamped_by END, owed = max(owed, ?5)",
-                    params![
-                        key,
-                        encoded_recording(recording),
-                        stamp.nanos,
-                        self.device.0.as_slice(),
-                        !favoured_already
-                    ],
+                    "UPDATE favourites SET favoured = 0, here = 0, nanos = ?2, stamped_by = ?3, owed = 1 WHERE key = ?1",
+                    params![row.key.as_str(), stamp.nanos, self.device.0.as_slice()],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
-        }
-        for (key, (_, here)) in &held {
-            if *here && !favoured_here.contains_key(key) {
-                let stamp = self.clock.now(self.device);
-                transaction
-                    .execute(
-                        "UPDATE favourites SET favoured = 0, here = 0, nanos = ?2, stamped_by = ?3, owed = 1 WHERE key = ?1",
-                        params![key, stamp.nanos, self.device.0.as_slice()],
-                    )
-                    .map_err(|source| Error::store(StoreOp::Write, source))?;
-            }
         }
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    fn held_favourites(&self) -> Result<Vec<HeldFavourite>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT key, recording, favoured, here FROM favourites")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut held = Vec::new();
+        for row in rows {
+            let (key, recording, favoured, here) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            held.push(HeldFavourite {
+                key,
+                recording: decoded_recording(&recording).ok(),
+                favoured,
+                here,
+            });
+        }
+        Ok(held)
     }
 
     fn look_at_listens(&mut self, catalog: &dyn Catalog) -> Result<()> {
@@ -668,8 +795,7 @@ impl Ledger {
     }
 
     fn age_listens(&mut self) -> Result<()> {
-        let horizon = wall_nanos()
-            .saturating_sub(i64::try_from(LISTENS_KEPT_FOR.as_nanos()).unwrap_or(i64::MAX));
+        let horizon = listens_kept_since();
         self.connection
             .execute(
                 "DELETE FROM listens WHERE at < ?1 AND owed = 0",
@@ -679,7 +805,7 @@ impl Ledger {
         Ok(())
     }
 
-    fn owed_count(&self) -> Result<usize> {
+    pub fn owed_count(&self) -> Result<usize> {
         let owed: i64 = self
             .connection
             .query_row(
@@ -1071,7 +1197,7 @@ impl Ledger {
     }
 
     fn listen_arrived(&mut self, catalog: &dyn Catalog, listen: &Listen) -> Result<bool> {
-        if listen.device == self.device {
+        if listen.device == self.device || listen.at < listens_kept_since() {
             return Ok(false);
         }
         let inserted = self

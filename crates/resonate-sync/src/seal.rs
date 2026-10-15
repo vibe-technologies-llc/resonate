@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
 
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use ring::aead::{Aad, LessSafeKey, NONCE_LEN, Nonce};
+use ring::aead::{Aad, LessSafeKey, MAX_TAG_LEN, NONCE_LEN, Nonce};
 
 use crate::{DeflateOp, Error, Result, SpaceId, key::random_bytes};
 
 pub const LARGEST_OPENED: usize = 64 * 1024 * 1024;
+pub const SEALED_AT_LEAST: usize = NONCE_LEN + MAX_TAG_LEN;
 
 pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<u8>> {
     let mut packed = DeflateEncoder::new(Vec::with_capacity(plain.len() / 2), Compression::best());

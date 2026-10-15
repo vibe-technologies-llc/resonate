@@ -27,7 +27,11 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends.
 - **Catch-up is snapshot then records past the cursor**, in frames of at most 256 records or 4 MiB;
-  a device's own records go back as seqs with no blob. After it, every `Append` anywhere in the
+  a device's own records go back as seqs with no blob. Each frame is read through
+  `Store::catch_up`, which under one lock answers the snapshot wherever what was sent lies behind the
+  snapshot held, so a compaction landing between frames, or while a session is behind on its
+  notices, never skips the records it replaced; `Compacted` is told only after the session has
+  caught up (`a_reader_behind_a_compaction_is_handed_the_snapshot_rather_than_what_is_left`). After it, every `Append` anywhere in the
   space tells each session to send what lies past what it last sent, so ordering never depends on
   which notice arrived first.
 - **Presence is the connections themselves** (`hub.rs`): joining tells the others `Arrived`,
@@ -38,7 +42,7 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 ## Limits
 
-`--record-bytes` (256 KiB a blob, `TooLarge`), `--space-bytes` (64 MiB a space, `SpaceFull`),
+`--record-bytes` (`LARGEST_RECORD`, 256 KiB a blob, `TooLarge`; devices send nothing larger), `--space-bytes` (64 MiB a space, `SpaceFull`),
 `--frames-per-minute` (240 a connection, `TooFast` and the session ends). Errors are typed
 (`errors.md`); a session's failure is a debug line, never the server's.
 

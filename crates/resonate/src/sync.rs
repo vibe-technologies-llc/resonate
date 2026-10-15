@@ -1,6 +1,7 @@
 use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::{
+    collections::BTreeSet,
     fs::{self, File},
     path::Path,
     thread,
@@ -17,7 +18,7 @@ use resonate_library::{Error as LibraryError, PlaylistName, SongFiled, SyncedPla
 #[cfg(feature = "sync")]
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
-    Opened, Platform, Refused, RemoteListen, Resumed, Settings, Standing, Sync, SyncDevice,
+    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, Standing, Sync, SyncDevice,
     SyncKey, TransferState,
 };
 
@@ -133,7 +134,7 @@ fn started(
     let key = key_of(config, settings)?;
     let folder = config::data_dir()?;
     let settings = Settings {
-        server: config.sync_server.clone(),
+        server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
         key,
         me: Me {
@@ -161,6 +162,27 @@ fn started(
         handed_off: parking_lot::Mutex::new(None),
         _alone: alone,
     }))
+}
+
+#[cfg(feature = "sync")]
+fn server_of(config: &Config) -> Server {
+    if config.syncs_nearby_only() {
+        return Server::Nowhere;
+    }
+    config
+        .sync_server
+        .clone()
+        .map_or(Server::Hosted, Server::At)
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+pub(crate) fn code_reader() -> Option<fn(&str) -> bool> {
+    Some(|code| SyncKey::from_code(code).is_ok())
+}
+
+#[cfg(all(not(feature = "sync"), feature = "ui"))]
+pub(crate) fn code_reader() -> Option<fn(&str) -> bool> {
+    None
 }
 
 #[cfg(feature = "sync")]
@@ -454,13 +476,11 @@ pub(crate) fn asked(
             let running = running(config, settings, &library)?;
             let sync = &running.sync;
             said!("Pairing code\t{}", sync.code());
-            said!(
-                "Server\t{}",
-                config
-                    .sync_server
-                    .as_deref()
-                    .unwrap_or(resonate_sync::HOSTED_SERVER)
-            );
+            match server_of(config) {
+                Server::Nowhere => said!("Server\tnone, devices on this network only"),
+                Server::At(server) => said!("Server\t{server}"),
+                Server::Hosted => said!("Server\t{}", resonate_sync::HOSTED_SERVER),
+            }
             let standing = connected(sync);
             said!("Standing\t{}", standing_of(standing));
             for device in sync.shown().devices {
@@ -552,6 +572,7 @@ fn standing_of(standing: Standing) -> &'static str {
         Standing::Connected => "connected",
         Standing::Unreachable => "the server could not be reached",
         Standing::Refused(_) => "the server refused this device",
+        Standing::Nearby => "syncing with devices on this network",
     }
 }
 
@@ -576,22 +597,21 @@ fn device_named(sync: &Sync, name: &str) -> Result<SyncDevice> {
 
 #[cfg(feature = "sync")]
 fn transferred(sync: &Sync, asked: &[Recording]) -> usize {
+    let mut waiting = asked.iter().map(Recording::key).collect::<BTreeSet<_>>();
+    let mut landed = 0;
     loop {
-        let transfers = sync.shown().transfers;
-        let settled = asked.iter().all(|recording| {
-            transfers.iter().any(|transfer| {
-                transfer.recording == *recording
-                    && matches!(
-                        transfer.state,
-                        TransferState::Landed | TransferState::Failed
-                    )
-            })
-        });
-        if settled {
-            return transfers
-                .iter()
-                .filter(|transfer| transfer.state == TransferState::Landed)
-                .count();
+        for transfer in sync.shown().transfers {
+            let arrived = match transfer.state {
+                TransferState::Landed => true,
+                TransferState::Failed => false,
+                TransferState::Waiting | TransferState::Moving => continue,
+            };
+            if waiting.remove(&transfer.recording.key()) && arrived {
+                landed += 1;
+            }
+        }
+        if waiting.is_empty() {
+            return landed;
         }
         thread::sleep(TRANSFERS_LOOKED_AT_EVERY);
     }
@@ -673,6 +693,7 @@ impl resonate_ui::Syncing for Running {
                 Standing::Connected => resonate_ui::SyncStanding::Connected,
                 Standing::Unreachable => resonate_ui::SyncStanding::Unreachable,
                 Standing::Refused(_) => resonate_ui::SyncStanding::Refused,
+                Standing::Nearby => resonate_ui::SyncStanding::Nearby,
             },
             code: self.sync.code().to_owned(),
             devices: shown
@@ -697,10 +718,6 @@ impl resonate_ui::Syncing for Running {
                 })
                 .count(),
         }
-    }
-
-    fn reads_as_a_code(&self, code: &str) -> bool {
-        SyncKey::from_code(code).is_ok()
     }
 
     fn forget(&self, device: &str) -> bool {

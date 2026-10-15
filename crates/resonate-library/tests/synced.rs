@@ -213,6 +213,39 @@ fn writing_over_a_playlist_ends_its_undo_steps_and_never_takes_another_name() ->
 }
 
 #[test]
+fn a_playlist_from_elsewhere_under_a_name_taken_here_lands_under_a_free_one() -> Result<()> {
+    let tree = Tree::new();
+    tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+    library.create_playlist("Mix")?;
+
+    let written =
+        library.write_synced_playlist(None, "Mix", &[song("Echoes", "Pink Floyd", "Meddle")])?;
+
+    assert_eq!(written.name, "Mix (2)");
+    assert_eq!(titles(&written.entries), [Some("Echoes")]);
+    Ok(())
+}
+
+#[test]
+fn a_hidden_favourite_is_still_a_favourite_to_the_devices_it_syncs_with() -> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), true)?);
+    let held = library.track_at(&echoes, None)?.expect("held");
+
+    library.hide_track(held.id, true)?;
+
+    let favoured = library.favoured_recordings()?;
+    assert_eq!(favoured.len(), 1);
+    assert_eq!(favoured[0].title, "Echoes");
+    Ok(())
+}
+
+#[test]
 fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_sent_back()
 -> Result<()> {
     let tree = Tree::new();

@@ -36,8 +36,8 @@ use crate::{
     quic::{PeerIdentity, read_frame, send_frame, to_the_server, trusted_roots},
     seal::{opened, sealed},
     wire::{
-        Beacon, FromServer, LARGEST_FRAME, PROTOCOL_VERSION, Refusal, ToServer, decoded_bundle,
-        decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
+        Beacon, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, ToServer,
+        decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
     },
 };
 
@@ -64,9 +64,28 @@ const LAST_REDIAL: Duration = Duration::from_secs(30);
 const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
 const HEARD_FOR: Duration = Duration::from_secs(60);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
+const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Server {
+    #[default]
+    Hosted,
+    At(String),
+    Nowhere,
+}
+
+impl Server {
+    fn address(self) -> Option<String> {
+        match self {
+            Self::At(server) if !server.trim().is_empty() => Some(server.trim().to_owned()),
+            Self::Hosted | Self::At(_) => Some(HOSTED_SERVER.to_owned()),
+            Self::Nowhere => None,
+        }
+    }
+}
 
 pub struct Settings {
-    pub server: Option<String>,
+    pub server: Server,
     pub trusted: Option<PathBuf>,
     pub key: SyncKey,
     pub me: Me,
@@ -85,6 +104,7 @@ pub enum Standing {
     Connected,
     Unreachable,
     Refused(Refusal),
+    Nearby,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -154,12 +174,12 @@ struct Running {
     device: DeviceId,
     me: Me,
     follow: Follow,
-    server: String,
+    server: Option<String>,
     staging: PathBuf,
     endpoint: Endpoint,
     to_server: ClientConfig,
     to_peers: ClientConfig,
-    transfers_allowed: AtomicBool,
+    transfers_allowed: Arc<AtomicBool>,
     nearby: bool,
     bonjour: bool,
     beacons: Option<tokio::net::UdpSocket>,
@@ -187,6 +207,11 @@ enum Event {
     Dropped(usize, Error),
 }
 
+struct Pushed {
+    changes: Vec<Change>,
+    bytes: usize,
+}
+
 struct Link {
     connection: Connection,
     outgoing: UnboundedSender<Vec<u8>>,
@@ -197,7 +222,7 @@ struct Link {
     online: Vec<DeviceId>,
     head: u64,
     caught_up: bool,
-    in_flight: VecDeque<Vec<Change>>,
+    in_flight: VecDeque<Vec<Pushed>>,
     compacting: bool,
 }
 
@@ -245,6 +270,7 @@ struct Syncing {
     dialled_at: BTreeMap<DeviceId, Redial>,
     dialling_back: BTreeSet<DeviceId>,
     peers: BTreeMap<DeviceId, Connection>,
+    punched_back: BTreeMap<DeviceId, Instant>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
     follow_again_at: Option<Instant>,
@@ -264,8 +290,10 @@ impl Sync {
         let to_peers = identity.dialling()?;
         let serving = identity.serving()?;
 
+        let server = settings.server.address();
         let mut ledger = Ledger::open(&settings.ledger)?;
         ledger.enter_space(derived.space)?;
+        ledger.through_a_server(server.is_some())?;
         let device = ledger.device();
         let ledger = Arc::new(Mutex::new(ledger));
 
@@ -302,13 +330,22 @@ impl Sync {
 
         let (events, events_received) = mpsc::unbounded_channel();
         let (heard, heard_received) = mpsc::unbounded_channel();
+        let transfers_allowed = Arc::new(AtomicBool::new(settings.transfers_allowed));
         let answering = Arc::new(Answering {
             catalog: Arc::clone(&catalog),
             ledger: Arc::clone(&ledger),
             device,
             heard,
+            transfers_allowed: Arc::clone(&transfers_allowed),
         });
-        let shown = Arc::new(RwLock::new(Shown::default()));
+        let shown = Arc::new(RwLock::new(Shown {
+            standing: if server.is_some() {
+                Standing::Starting
+            } else {
+                Standing::Nearby
+            },
+            ..Shown::default()
+        }));
         let running = Arc::new(Running {
             catalog,
             ledger: Arc::clone(&ledger),
@@ -317,15 +354,12 @@ impl Sync {
             device,
             me: settings.me,
             follow: settings.follow,
-            server: settings
-                .server
-                .filter(|server| !server.trim().is_empty())
-                .unwrap_or_else(|| HOSTED_SERVER.to_owned()),
+            server,
             staging: settings.staging,
             endpoint,
             to_server,
             to_peers,
-            transfers_allowed: AtomicBool::new(settings.transfers_allowed),
+            transfers_allowed,
             nearby: settings.nearby.is_some(),
             bonjour: settings
                 .nearby
@@ -531,6 +565,14 @@ impl Running {
         }) {
             listed.state = state;
         }
+    }
+
+    fn unlisted_waiting(&self, recording: &Recording, from: DeviceId) {
+        self.shown.write().transfers.retain(|transfer| {
+            !(transfer.from == from
+                && transfer.recording == *recording
+                && transfer.state == TransferState::Waiting)
+        });
     }
 
     fn transfer(&self, recording: &Recording, from: DeviceId, change: impl FnOnce(&mut Transfer)) {
@@ -768,8 +810,8 @@ async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
         .unwrap_or(Err(Error::ServerSilent))
 }
 
-async fn linked(running: Arc<Running>) -> Result<Link> {
-    let (address, host) = within(resolve(&running.server)).await?;
+async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
+    let (address, host) = within(resolve(&server)).await?;
     let connecting = running
         .endpoint
         .connect_with(running.to_server.clone(), address, &host)
@@ -799,7 +841,14 @@ async fn linked(running: Arc<Running>) -> Result<Link> {
             return Err(error);
         }
     };
-    tracing::info!(server = %running.server, "syncing with the server");
+    if head < cursor {
+        reading.abort();
+        connection.close(0_u32.into(), b"leaving");
+        let ledger = Arc::clone(&running.ledger);
+        blocking(move || ledger.lock().space_made_anew()).await?;
+        return Err(Error::SpaceMadeAnew);
+    }
+    tracing::info!(%server, "syncing with the server");
     let (outgoing, queued) = mpsc::unbounded_channel();
     let writing = tokio::spawn(write_frames(
         send,
@@ -876,10 +925,11 @@ async fn read_frames(mut recv: quinn::RecvStream, frames: UnboundedSender<Result
 impl Syncing {
     fn new(running: Arc<Running>) -> Self {
         let now = Instant::now();
+        let retry_at = running.server.as_ref().map(|_| now);
         Self {
             running,
             server: None,
-            retry_at: Some(now),
+            retry_at,
             wait: FIRST_RETRY,
             server_online: BTreeSet::new(),
             caught_up_once: false,
@@ -889,6 +939,7 @@ impl Syncing {
             dialled_at: BTreeMap::new(),
             dialling_back: BTreeSet::new(),
             peers: BTreeMap::new(),
+            punched_back: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
             follow_again_at: None,
@@ -902,11 +953,14 @@ impl Syncing {
 
     fn connect(&mut self) {
         self.retry_at = None;
+        let Some(server) = self.running.server.clone() else {
+            return;
+        };
         self.running.stand(Standing::Connecting);
         self.publish_settled();
         let running = Arc::clone(&self.running);
         tokio::spawn(async move {
-            let link = linked(Arc::clone(&running)).await;
+            let link = linked(Arc::clone(&running), server).await;
             let _ = running.events.send(Event::Linked(link));
         });
     }
@@ -917,6 +971,7 @@ impl Syncing {
             self.caught_up_once = true;
         }
         self.server = Some(link);
+        self.wait = FIRST_RETRY;
         self.look_at = Some(Instant::now());
         self.running.stand(Standing::Connected);
         self.publish_devices();
@@ -937,13 +992,18 @@ impl Syncing {
                 self.running.stand(Standing::Unreachable);
                 self.wait = FIRST_RETRY;
             }
+            Some(Error::SpaceMadeAnew) => {
+                tracing::info!("the sync server holds this space afresh; everything is sent again");
+                self.running.stand(Standing::Connecting);
+                self.wait = FIRST_RETRY;
+            }
             Some(Error::Refused(refusal)) => {
                 tracing::warn!(?refusal, "the sync server refused this device");
                 self.running.stand(Standing::Refused(refusal));
                 self.wait = LAST_RETRY;
             }
             Some(error) => {
-                tracing::debug!(%error, server = %self.running.server, "the sync server could not be reached");
+                tracing::debug!(%error, server = ?self.running.server, "the sync server could not be reached");
                 self.running.stand(Standing::Unreachable);
             }
         }
@@ -985,6 +1045,7 @@ impl Syncing {
             Event::Linked(Ok(link)) => self.link(link).await?,
             Event::Linked(Err(error)) => self.unlinked(Some(error)),
             Event::Punched(device, Some(connection)) => {
+                self.watch_closing(device, &connection);
                 for work in self.waiting.remove(&device).unwrap_or_default() {
                     spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
                 }
@@ -1083,9 +1144,12 @@ impl Syncing {
                     .server
                     .as_mut()
                     .and_then(|link| link.in_flight.pop_front());
-                if let Some(changes) = sent {
-                    let ledger = Arc::clone(&self.running.ledger);
-                    blocking(move || ledger.lock().sent(&changes)).await?;
+                if let Some(pushed) = sent {
+                    let changes = pushed
+                        .into_iter()
+                        .flat_map(|pushed| pushed.changes)
+                        .collect::<Vec<_>>();
+                    self.sent(changes).await?;
                 }
                 self.push().await?;
                 self.publish_settled();
@@ -1120,10 +1184,22 @@ impl Syncing {
                 }
             }
             FromServer::Refused(Refusal::TooLarge) => {
-                tracing::warn!("the sync server refused a record as too large");
-                if let Some(link) = self.server.as_mut() {
-                    link.in_flight.pop_front();
+                let refused = self
+                    .server
+                    .as_mut()
+                    .and_then(|link| link.in_flight.pop_front());
+                let largest = refused
+                    .into_iter()
+                    .flatten()
+                    .max_by_key(|pushed| pushed.bytes);
+                if let Some(largest) = largest {
+                    tracing::warn!(
+                        bytes = largest.bytes,
+                        "the sync server refused a record as too large; it is kept for devices on this network"
+                    );
+                    self.sent(largest.changes).await?;
                 }
+                self.push().await?;
             }
             FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
             FromServer::Welcome { .. } => {}
@@ -1286,9 +1362,24 @@ impl Syncing {
         {
             self.follow_again_soon();
         }
-        self.tell_neighbours().await?;
+        let owed = self.tell_neighbours().await?;
         self.push().await?;
+        if self.running.server.is_none() {
+            self.sent(owed).await?;
+        }
         self.publish_settled();
+        Ok(())
+    }
+
+    async fn sent(&mut self, changes: Vec<Change>) -> Result<()> {
+        let ledger = Arc::clone(&self.running.ledger);
+        let owed = blocking(move || {
+            let mut ledger = ledger.lock();
+            ledger.sent(&changes)?;
+            ledger.owed_count()
+        })
+        .await?;
+        self.running.shown.write().owed = owed;
         Ok(())
     }
 
@@ -1310,14 +1401,26 @@ impl Syncing {
         }
         let running = Arc::clone(&self.running);
         let bundles = blocking(move || {
-            let owed = running.ledger.lock().owed()?;
+            let mut ledger = running.ledger.lock();
+            let owed = ledger.owed()?;
             let mut sealed_bundles = Vec::new();
-            for changes in owed.into_iter().take(BLOBS_PER_APPEND) {
+            for changes in owed {
+                if sealed_bundles.len() == BLOBS_PER_APPEND {
+                    break;
+                }
                 let blob = sealed(
                     &running.derived.sealer,
                     running.derived.space,
                     &encoded_bundle(&changes),
                 )?;
+                if blob.len() > LARGEST_RECORD {
+                    tracing::warn!(
+                        bytes = blob.len(),
+                        "a change too large for the sync server is kept for devices on this network"
+                    );
+                    ledger.sent(&changes)?;
+                    continue;
+                }
                 sealed_bundles.push((changes, blob));
             }
             Ok(sealed_bundles)
@@ -1329,15 +1432,25 @@ impl Syncing {
         if bundles.is_empty() {
             return Ok(());
         }
-        let (changes, blobs): (Vec<_>, Vec<_>) = bundles.into_iter().unzip();
-        link.in_flight
-            .push_back(changes.into_iter().flatten().collect());
+        let (pushed, blobs): (Vec<_>, Vec<_>) = bundles
+            .into_iter()
+            .map(|(changes, blob)| {
+                (
+                    Pushed {
+                        changes,
+                        bytes: blob.len(),
+                    },
+                    blob,
+                )
+            })
+            .unzip();
+        link.in_flight.push_back(pushed);
         link.say(&ToServer::Append { blobs })
     }
 
-    async fn tell_neighbours(&mut self) -> Result<()> {
-        if self.neighbours.is_empty() {
-            return Ok(());
+    async fn tell_neighbours(&mut self) -> Result<Vec<Change>> {
+        if self.neighbours.is_empty() && self.running.server.is_some() {
+            return Ok(Vec::new());
         }
         let ledger = Arc::clone(&self.running.ledger);
         let owed = blocking(move || ledger.lock().owed()).await?;
@@ -1352,7 +1465,7 @@ impl Syncing {
                 spawn_tell(*device, neighbour.connection.clone(), false, fresh);
             }
         }
-        Ok(())
+        Ok(owed)
     }
 
     async fn compact(&mut self) -> Result<()> {
@@ -1525,7 +1638,22 @@ impl Syncing {
         if !self.running.transfers_allowed() {
             return Ok(());
         }
+        let connected = self
+            .peers
+            .get(&device)
+            .is_some_and(|connection| connection.close_reason().is_none());
+        let answered_lately = self
+            .punched_back
+            .get(&device)
+            .is_some_and(|at| at.elapsed() < PUNCH_ANSWERED_AT_MOST_EVERY);
+        if connected {
+            return Ok(());
+        }
         if !self.waiting.contains_key(&device) {
+            if answered_lately {
+                return Ok(());
+            }
+            self.punched_back.insert(device, Instant::now());
             self.punch(device).await?;
         }
         let mut candidates = vec![address];
@@ -1684,6 +1812,15 @@ impl Syncing {
         });
     }
 
+    fn watch_closing(&self, device: DeviceId, connection: &Connection) {
+        let events = self.running.events.clone();
+        let closing = connection.clone();
+        tokio::spawn(async move {
+            closing.closed().await;
+            let _ = events.send(Event::Gone(device, closing.stable_id()));
+        });
+    }
+
     async fn whole(&self) -> Result<(Vec<Change>, AHashSet<ToldDigest>)> {
         let ledger = Arc::clone(&self.running.ledger);
         let snapshot = blocking(move || ledger.lock().snapshot()).await?;
@@ -1743,12 +1880,7 @@ impl Syncing {
         if device == self.running.device {
             return Ok(());
         }
-        let events = self.running.events.clone();
-        let closing = connection.clone();
-        tokio::spawn(async move {
-            closing.closed().await;
-            let _ = events.send(Event::Gone(device, closing.stable_id()));
-        });
+        self.watch_closing(device, &connection);
         for work in self.waiting.remove(&device).unwrap_or_default() {
             spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
         }
@@ -1810,7 +1942,7 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
         };
         let mut left = recordings.into_iter();
         while let Some(recording) = left.next() {
-            if connection.close_reason().is_some() {
+            if connection.close_reason().is_some() || !running.transfers_allowed() {
                 running.listed_waiting_as(&recording, device, TransferState::Failed);
                 for unasked in left.by_ref() {
                     running.listed_waiting_as(&unasked, device, TransferState::Failed);
@@ -1875,6 +2007,7 @@ async fn fetch_one(
 ) {
     let key = recording.key();
     if !running.fetching.lock().insert(key.clone()) {
+        running.unlisted_waiting(&recording, device);
         return;
     }
     if held_already(running, &recording).await {

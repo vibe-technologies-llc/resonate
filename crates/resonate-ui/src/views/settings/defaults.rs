@@ -181,6 +181,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Syncing => {
             let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
             worn.enabled != built.enabled
+                || worn.nearby_only != built.nearby_only
                 || worn.server != built.server
                 || worn.device != built.device
         }

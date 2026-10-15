@@ -9,7 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_sync::{Broadcast, Follow, Me, Nearby, Platform, Settings, Standing, Sync, SyncKey};
+use resonate_sync::{
+    Broadcast, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
+};
 
 use crate::shelf::{Shelf, song};
 
@@ -44,12 +46,32 @@ fn device_following(
     told: Option<&Sync>,
     follow: Follow,
 ) -> Sync {
+    device_through(
+        folder,
+        key,
+        name,
+        shelf,
+        told,
+        follow,
+        Server::At(NO_SERVER_HERE.into()),
+    )
+}
+
+fn device_through(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    told: Option<&Sync>,
+    follow: Follow,
+    server: Server,
+) -> Sync {
     let told = told
         .and_then(Sync::nearby_port)
         .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .into_iter()
         .collect();
-    started_following(
+    started_through(
         folder,
         key,
         name,
@@ -59,6 +81,7 @@ fn device_following(
             bonjour: false,
         },
         follow,
+        server,
     )
 }
 
@@ -74,8 +97,28 @@ fn started_following(
     nearby: Nearby,
     follow: Follow,
 ) -> Sync {
+    started_through(
+        folder,
+        key,
+        name,
+        shelf,
+        nearby,
+        follow,
+        Server::At(NO_SERVER_HERE.into()),
+    )
+}
+
+fn started_through(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    nearby: Nearby,
+    follow: Follow,
+    server: Server,
+) -> Sync {
     let settings = Settings {
-        server: Some(NO_SERVER_HERE.into()),
+        server,
         trusted: None,
         key: key.clone(),
         me: Me {
@@ -166,6 +209,58 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
     eventually("the favourite taking the song in", || {
         phone_shelf.favourite_titles() == ["B"]
     });
+
+    let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
+    phone_shelf.rename_playlist(on_phone, "Summer days");
+    eventually("the rename reaching the desk", || {
+        desk_shelf.playlist_named("Summer days").is_some()
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have_told_each_other() {
+    let folder = scratch("serverless");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    desk_shelf.make_playlist("Summer", &["A", "B"]);
+    phone_shelf.make_playlist("Commute", &["A"]);
+
+    let desk = device_through(
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        None,
+        Follow::default(),
+        Server::Nowhere,
+    );
+    let phone = device_through(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        Follow::default(),
+        Server::Nowhere,
+    );
+
+    assert_eq!(desk.shown().standing, Standing::Nearby);
+    assert_eq!(phone.shown().standing, Standing::Nearby);
+    eventually("the desk's playlist reaching the phone", || {
+        phone_shelf.playlist_named("Summer").is_some()
+    });
+    eventually("the phone's playlist reaching the desk", || {
+        desk_shelf.playlist_named("Commute").is_some()
+    });
+    eventually("both owing nothing once told", || {
+        desk.shown().owed == 0 && phone.shown().owed == 0 && desk.shown().settled
+    });
+    assert_eq!(desk.shown().standing, Standing::Nearby);
 
     let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
     phone_shelf.rename_playlist(on_phone, "Summer days");

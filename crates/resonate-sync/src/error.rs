@@ -53,6 +53,7 @@ pub enum Malformed {
     Ended,
     Trailing { left: usize },
     Overlong { length: usize },
+    Short { length: usize },
     Tag { tag: u8 },
     Number,
     NotText,
@@ -168,6 +169,9 @@ pub enum Error {
 
     #[error("the server did not answer in time")]
     ServerSilent,
+
+    #[error("the server holds this space afresh, behind what this device read")]
+    SpaceMadeAnew,
 
     #[error("{op:?} failed on {}", path.display())]
     File {

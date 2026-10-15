@@ -242,14 +242,21 @@ final class Features {
         }
     }
 
+    var syncRuns: Bool {
+        guard let config = syncConfig, config.enabled else { return false }
+        return online || config.nearbyOnly
+    }
+
     func saveSync(_ config: SyncConfig) {
+        do {
+            try accounts.writeSync(config)
+        } catch {
+            library.report(error)
+            return
+        }
+        syncConfig = config
         work { [weak self] native in
-            guard let self else { return }
-            try await MainActor.run {
-                try accounts.writeSync(config)
-                syncConfig = config
-            }
-            try await applySync(native)
+            try await self?.applySync(native)
         }
     }
 
@@ -298,11 +305,13 @@ final class Features {
         }
     }
 
-    func fetchMissing(_ id: UInt64, from device: String) {
+    func fetchMissing(_ id: UInt64, from device: SyncedDevice) {
+        let known = device.id
+        let name = device.name
         work { [weak self] native in
-            let asked = try await Work.aside { try native.syncFetchMissing(playlist: id, device: device) }
+            let asked = try await Work.aside { try native.syncFetchMissing(playlist: id, device: known) }
             self?.library.notice(
-                asked > 0 ? "Asking \(device) for \(counted(Int(asked), "song"))" : "\(device) has nothing this playlist lacks"
+                asked > 0 ? "Asking \(name) for \(counted(Int(asked), "song"))" : "\(name) has nothing this playlist lacks"
             )
         }
     }
@@ -318,9 +327,10 @@ final class Features {
     }
 
     func continueFrom(_ handoff: HandedOff) {
+        let known = handoff.id
         let device = handoff.device
         work { [weak self] native in
-            let loaded = try await Work.inOrder { try native.syncContinueFrom(device: device) }
+            let loaded = try await Work.inOrder { try native.syncContinueFrom(device: known) }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 library.notice("Continuing \(counted(Int(loaded), "song")) from \(device)")
@@ -366,7 +376,7 @@ final class Features {
         syncAskedAt = Date()
         work { [weak self] native in
             await self?.library.forgetMissing()
-            native.syncForce()
+            try await Work.aside { native.syncForce() }
         }
     }
 
@@ -386,7 +396,7 @@ final class Features {
     func cameForward() {
         let wasAway = leftAt != nil
         leftAt = nil
-        guard syncConfig?.enabled == true, online else {
+        guard syncRuns else {
             Task { [weak self] in await self?.library.forgetMissing() }
             return
         }
@@ -395,13 +405,13 @@ final class Features {
             work { [weak self] native in
                 try await self?.applySync(native)
                 guard let changed = await self?.library.forgetMissing(), changed.hidden > 0 else { return }
-                native.syncForce()
+                try await Work.aside { native.syncForce() }
             }
             return
         }
         work { [weak self] native in
             guard let changed = await self?.library.forgetMissing(), changed.hidden > 0 else { return }
-            native.syncForce()
+            try await Work.aside { native.syncForce() }
         }
     }
 
@@ -425,30 +435,26 @@ final class Features {
 
     private func applySync(_ native: MobilePlayer) async throws {
         guard let config = syncConfig else { return }
-        let enabled = config.enabled && online
-        let free = unmetered
+        let enabled = syncRuns
         do {
             let status = try await Work.inOrder {
-                let status: SyncStatus
-                if enabled {
-                    status = try native.syncStart(config: config)
-                } else {
+                guard enabled else {
                     native.syncStop()
-                    status = native.syncStatus()
+                    return native.syncStatus()
                 }
-                native.syncNetwork(unmetered: free)
-                return status
+                return try native.syncStart(config: config)
             }
-            if !status.code.isEmpty, status.code != config.key {
-                var kept = config
-                kept.key = status.code
-                try accounts.writeSync(kept)
-                syncConfig = kept
+            let free = unmetered
+            try await Work.inOrder { native.syncNetwork(unmetered: free) }
+            if !status.code.isEmpty, var latest = syncConfig, latest.key == config.key, latest.key != status.code {
+                latest.key = status.code
+                try accounts.writeSync(latest)
+                syncConfig = latest
             }
             syncStatus = status
             await announceNearby(native)
         } catch {
-            syncStatus = native.syncStatus()
+            syncStatus = try? await Work.aside { native.syncStatus() }
             throw error
         }
     }
@@ -477,7 +483,7 @@ final class Features {
         guard free != unmetered else { return }
         unmetered = free
         work { [weak self] native in
-            native.syncNetwork(unmetered: free)
+            try await Work.inOrder { native.syncNetwork(unmetered: free) }
             await self?.announceNearby(native)
         }
         enrichment.networkChanged(free: free)
@@ -499,7 +505,7 @@ final class Features {
                 if nearby == nil { nearby = NearbyDevices(native: native) }
                 nearby?.follow(record: record)
                 if syncStatus != status { syncStatus = status }
-                let moving = status.moving > 0 || !waiting.isEmpty
+                let moving = status.moving > 0 || !landable(waiting).isEmpty
                 if transferring != moving { transferring = moving }
                 transfers.hold(transferring)
                 if transferring { transfers.progress(Self.fetched(status)) }
@@ -526,6 +532,12 @@ final class Features {
         }
     }
 
+    private func landable(_ waiting: [ReceivedSong]) -> [ReceivedSong] {
+        guard writableFolder(syncFolder) != nil else { return [] }
+        let now = Date()
+        return waiting.filter { (landingRefused[$0.id]?.until ?? .distantPast) <= now }
+    }
+
     private func writableFolder(_ preferred: String?) -> MusicFolder? {
         let destinations = library.folderList.filter { $0.readable && $0.writable }
         return destinations.first { $0.id == preferred } ?? destinations.first
@@ -537,10 +549,9 @@ final class Features {
             return 0
         }
         let folders = library.folders
-        let now = Date()
         let still = Set(waiting.map(\.id))
         landingRefused = landingRefused.filter { still.contains($0.key) }
-        let due = waiting.filter { (landingRefused[$0.id]?.until ?? .distantPast) <= now }
+        let due = landable(waiting)
         var landed = 0
         syncLanding = due.count
         defer { syncLanding = 0 }

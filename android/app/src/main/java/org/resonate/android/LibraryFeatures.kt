@@ -50,6 +50,7 @@ import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
+import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.parseEqProfile
@@ -249,7 +250,17 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 accounts.readSync()
             } catch (failure: Exception) {
                 library.report(failure)
-                SyncConfig(true, "", "", "", false, false, false, false)
+                SyncConfig(
+                    enabled = true,
+                    nearbyOnly = false,
+                    server = "",
+                    key = "",
+                    device = "",
+                    favourites = false,
+                    playlists = false,
+                    everything = false,
+                    meteredAllowed = false,
+                )
             }
         watchNetwork()
         syncPolling?.cancel()
@@ -299,11 +310,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
             PlaylistSync(id, native.syncMissingFrom(id), native.syncKeepsSongs(id))
     }
 
-    fun fetchMissing(id: ULong, device: String) = work { native ->
-        val asked = native.syncFetchMissing(id, device)
+    fun fetchMissing(id: ULong, device: SyncedDevice) = work { native ->
+        val asked = native.syncFetchMissing(id, device.id)
         library.notice(
-            if (asked > 0u) "Asking $device for $asked ${if (asked == 1u) "song" else "songs"}"
-            else "$device has nothing this playlist lacks"
+            if (asked > 0u)
+                "Asking ${device.name} for $asked ${if (asked == 1u) "song" else "songs"}"
+            else "${device.name} has nothing this playlist lacks"
         )
     }
 
@@ -314,7 +326,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun continueFrom(handoff: HandedOff, play: () -> Unit) = work { native ->
-        val loaded = native.syncContinueFrom(handoff.device)
+        val loaded = native.syncContinueFrom(handoff.id)
         library.notice(
             "Continuing ${if (loaded == 1u) "1 song" else "$loaded songs"} from ${handoff.device}"
         )
@@ -329,7 +341,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val config = syncConfig.value ?: return
         try {
             val status =
-                if (config.enabled && online.value) native.syncStart(config)
+                if (config.enabled && (online.value || config.nearbyOnly)) native.syncStart(config)
                 else {
                     native.syncStop()
                     native.syncStatus()

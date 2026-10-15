@@ -2,7 +2,10 @@ use std::{
     io::{Read, Seek, SeekFrom},
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -64,6 +67,7 @@ pub struct Answering {
     pub ledger: Arc<Mutex<Ledger>>,
     pub device: DeviceId,
     pub heard: UnboundedSender<Heard>,
+    pub transfers_allowed: Arc<AtomicBool>,
 }
 
 pub enum Heard {
@@ -150,7 +154,11 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             send_frame(&mut send, &FromPeer::HeldEnd.encoded()).await?;
         }
         ToPeer::Fetch { recording, offset } => {
-            send_song(&mut send, catalog, recording, offset).await?;
+            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+                send_song(&mut send, catalog, recording, offset).await?;
+            } else {
+                send_frame(&mut send, &FromPeer::Missing.encoded()).await?;
+            }
         }
     }
     send.finish().map_err(|_| Error::StreamClosed)

@@ -67,6 +67,11 @@ pub struct Snapshot {
     pub parts: Vec<Vec<u8>>,
 }
 
+pub enum CaughtUp {
+    Snapshot(Snapshot),
+    Records(Vec<Stored>),
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let connection =
@@ -257,6 +262,23 @@ impl Store {
             }
         }
         Ok(stored)
+    }
+
+    pub fn catch_up(
+        &self,
+        space: SpaceId,
+        after: u64,
+        most: usize,
+        bytes: usize,
+    ) -> Result<CaughtUp> {
+        let (_, snapshot_through) = self.head(space)?;
+        if after < snapshot_through
+            && let Some(snapshot) = self.snapshot(space)?
+        {
+            return Ok(CaughtUp::Snapshot(snapshot));
+        }
+        self.records_after(space, after, most, bytes)
+            .map(CaughtUp::Records)
     }
 
     pub fn snapshot(&self, space: SpaceId) -> Result<Option<Snapshot>> {
@@ -464,6 +486,37 @@ mod tests {
         assert_eq!(
             left.iter().map(|record| record.seq).collect::<Vec<_>>(),
             [3]
+        );
+    }
+
+    #[test]
+    fn a_reader_behind_a_compaction_is_handed_the_snapshot_rather_than_what_is_left() {
+        let mut store = claimed();
+        store
+            .append(
+                SPACE,
+                DESK,
+                &(1..=10).map(|seq| vec![seq; 10]).collect::<Vec<_>>(),
+                1 << 20,
+            )
+            .expect("appended");
+        store
+            .compact(SPACE, 8, &[vec![9; 10]], 1 << 20)
+            .expect("compacted");
+
+        let behind = store.catch_up(SPACE, 3, 10, 1 << 20).expect("read");
+        let level = store.catch_up(SPACE, 8, 10, 1 << 20).expect("read");
+
+        assert!(matches!(
+            behind,
+            CaughtUp::Snapshot(Snapshot { through: 8, .. })
+        ));
+        let CaughtUp::Records(left) = level else {
+            panic!("records past the snapshot");
+        };
+        assert_eq!(
+            left.iter().map(|record| record.seq).collect::<Vec<_>>(),
+            [9, 10]
         );
     }
 

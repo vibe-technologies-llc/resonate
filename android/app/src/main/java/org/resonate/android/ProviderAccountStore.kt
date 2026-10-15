@@ -85,6 +85,7 @@ class ProviderAccountStore(context: Context) {
     fun readSync() =
         SyncConfig(
             enabled = storage.getBoolean("sync-enabled", true),
+            nearbyOnly = storage.getBoolean("sync-nearby-only", false),
             server = storage.getString("sync-server", "").orEmpty(),
             key = decrypt("sync-key"),
             device = storage.getString("sync-device", "").orEmpty(),
@@ -100,6 +101,7 @@ class ProviderAccountStore(context: Context) {
             storage
                 .edit()
                 .putBoolean("sync-enabled", config.enabled)
+                .putBoolean("sync-nearby-only", config.nearbyOnly)
                 .putString("sync-server", config.server)
                 .putString("sync-key", encrypt(config.key))
                 .putString("sync-device", config.device)

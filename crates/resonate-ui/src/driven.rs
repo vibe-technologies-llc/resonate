@@ -338,6 +338,7 @@ impl Driven {
                 present: unseen.clone(),
                 synchronised: crate::Synchronised::default(),
                 syncing: None,
+                reads_as_a_code: None,
                 launcher: unseen,
                 sourcing: Sourcing {
                     inbox: None,
