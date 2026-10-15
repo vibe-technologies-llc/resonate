@@ -18,6 +18,7 @@ final class AppearanceState {
 
     private(set) var accent: ResonateAccent?
     private(set) var iconRefused: String?
+    @ObservationIgnored private var iconChange: Task<Void, Never>?
 
     var themedBackground: Bool {
         didSet { settings.set(themedBackground, forKey: Self.backgroundKey) }
@@ -37,6 +38,10 @@ final class AppearanceState {
         themedBackground = settings.object(forKey: Self.backgroundKey) as? Bool ?? true
         movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? true
         backgroundStrength = settings.object(forKey: Self.strengthKey) as? Double ?? Self.defaultStrength
+        iconChange = Task { [weak self] in
+            guard let self else { return }
+            await showIcon(of: accent)
+        }
     }
 
     var tint: Color {
@@ -58,10 +63,16 @@ final class AppearanceState {
         } else {
             settings.removeObject(forKey: Self.accentKey)
         }
-        Task { await showIcon(of: chosen) }
+        let previous = iconChange
+        iconChange = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await showIcon(of: accent)
+        }
     }
 
     func resetIcon() async {
+        await iconChange?.value
         await showIcon(of: nil)
     }
 

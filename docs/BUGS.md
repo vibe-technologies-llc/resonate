@@ -164,10 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `AppearanceState.wear` starts an unordered task per swatch tap and `setAlternateIconName`
-  refuses a second request while one is pending: two quick taps show "Resource temporarily
-  unavailable" and can leave the Home Screen icon on the first accent and the tint on the second,
-  with nothing reconciling them later
 - [S] `Library.playOpened` indexes or copies every file of a batch before its one `play`: opening
   several large files from Files plays nothing, and shows nothing, until every copy is done, where
   `ios.md` says the first plays once indexed

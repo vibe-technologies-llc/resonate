@@ -481,7 +481,9 @@ every route change (a pair of headphones at the same rate included), not from th
   accent itself uses instead of `Color.accentColor` (that reads the asset catalog, never a tint set
   in code). An accent is drawn as its hex in dark mode and 28 % deeper in light, since the desktop's
   hexes are lit for dark grounds. Choosing one sets the alternate icon of its name
-  (`setAlternateIconName`, `nil` for Resonate); a refusal is said under the swatches.
+  (`setAlternateIconName`, `nil` for Resonate); the requests are chained, each asking for the accent
+  held when its turn comes (the system refuses a second while one is pending), and the icon is
+  reconciled with the kept accent at launch; a refusal is said under the swatches.
 
 ## Suggestions and generated art
 
