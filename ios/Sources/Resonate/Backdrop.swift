@@ -328,12 +328,15 @@ final class BackdropMetalView: UIView {
         let size = CGSize(width: bounds.width * Self.drawingScale, height: bounds.height * Self.drawingScale)
         guard let metal = metalLayer, size.width >= 1, size.height >= 1, metal.drawableSize != size else { return }
         metal.drawableSize = size
-        if !drewFirstFrame { drawFirstFrame(on: metal) }
+        drawFirstFrame()
         redrawIfStill()
     }
 
-    private func drawFirstFrame(on metal: CAMetalLayer) {
-        guard let drawable = metal.nextDrawable() else { return }
+    private func drawFirstFrame() {
+        guard !drewFirstFrame, window != nil, UIApplication.shared.applicationState == .active,
+            let metal = metalLayer, metal.drawableSize.width >= 1, metal.drawableSize.height >= 1,
+            let drawable = metal.nextDrawable()
+        else { return }
         drewFirstFrame = true
         metal.presentsWithTransaction = true
         renderer.draw(on: drawable, at: CACurrentMediaTime(), withTransaction: true)
@@ -344,6 +347,7 @@ final class BackdropMetalView: UIView {
         super.didMoveToWindow()
         contentScaleFactor = Self.drawingScale
         metalLayer?.contentsScale = Self.drawingScale
+        drawFirstFrame()
         applyMotion()
     }
 

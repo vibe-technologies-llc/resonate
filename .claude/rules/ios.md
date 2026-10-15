@@ -598,7 +598,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   by a `CAMetalDisplayLink` on the main run loop, which hands each frame a drawable already acquired
   (two frames queued ahead) and its presentation time: an `MTKView` takes its drawable on the main
   thread and blocks there whenever the GPU is behind, which stalled every animation on the screen.
-  The first frame is drawn at the view's first layout, synchronously and presented with the transaction, so a page that appears (a tab switched to) shows its field in the frame it appears, not black until the link's first tick. The link is paused when dormant, paused again after a still frame, and invalidated when the view
+  The first frame is drawn once the view is in a window with a size, only while the application is active (`nextDrawable` raises an exception when asked for in the background or while the scene is being snapshotted, which no `catch` reaches), synchronously and presented with the transaction, so a page that appears (a tab switched to) shows its field in the frame it appears, not black until the link's first tick. The link is paused when dormant, paused again after a still frame, and invalidated when the view
   leaves its window. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
