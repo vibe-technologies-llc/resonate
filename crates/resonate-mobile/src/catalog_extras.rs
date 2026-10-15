@@ -1,9 +1,9 @@
 use resonate_codec::MediaInfo;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::{
     Error, Result, StoreOp,
-    catalog::{Catalog, read},
+    catalog::{Catalog, picture_crc, read},
     features::{
         AnalysisReport, LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay,
         ListenedTo, ListeningDetail,
@@ -66,11 +66,12 @@ impl Catalog {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn artwork(&self, id: u64) -> Result<Option<Vec<u8>>> {
         self.0
             .lock()
             .query_row(
-                "SELECT bytes FROM artwork WHERE track = ?1",
+                "SELECT p.bytes FROM artwork a JOIN pictures p ON p.id = a.picture WHERE a.track = ?1",
                 [id as i64],
                 |row| row.get(0),
             )
@@ -85,22 +86,60 @@ impl Catalog {
         origin: &str,
         replace: bool,
     ) -> Result<()> {
+        self.keep_artwork_of(&[id], bytes, origin, replace)
+    }
+
+    pub(crate) fn keep_artwork_of(
+        &self,
+        ids: &[u64],
+        bytes: &[u8],
+        origin: &str,
+        replace: bool,
+    ) -> Result<()> {
         let mut connection = self.0.lock();
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        let changed = transaction.execute("INSERT INTO artwork(track, bytes, origin) VALUES (?1, ?2, ?3) ON CONFLICT(track) DO UPDATE SET bytes = excluded.bytes, origin = excluded.origin WHERE (?4 OR artwork.origin = excluded.origin) AND artwork.bytes != excluded.bytes", params![id as i64, bytes, origin, replace]).map_err(|source| Error::store(StoreOp::Write, source))?;
-        if changed > 0 {
-            transaction
-                .execute(
-                    "UPDATE documents SET art_revision = art_revision + 1 WHERE id = ?1",
-                    [id as i64],
+        let write_error = |source| Error::store(StoreOp::Write, source);
+        let picture = kept_picture(&transaction, bytes).map_err(write_error)?;
+        let mut replaced = Vec::new();
+        for id in ids {
+            let before: Option<i64> = transaction
+                .query_row(
+                    "SELECT picture FROM artwork WHERE track = ?1",
+                    [*id as i64],
+                    |row| row.get(0),
                 )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
+                .optional()
+                .map_err(write_error)?;
+            let changed = transaction.execute("INSERT INTO artwork(track, picture, origin) VALUES (?1, ?2, ?3) ON CONFLICT(track) DO UPDATE SET picture = excluded.picture, origin = excluded.origin WHERE (?4 OR artwork.origin = excluded.origin) AND artwork.picture != excluded.picture", params![*id as i64, picture, origin, replace]).map_err(write_error)?;
+            if changed > 0 {
+                transaction
+                    .execute(
+                        "UPDATE documents SET art_revision = art_revision + 1 WHERE id = ?1",
+                        [*id as i64],
+                    )
+                    .map_err(write_error)?;
+                replaced.extend(before);
+            }
         }
-        transaction
-            .commit()
-            .map_err(|source| Error::store(StoreOp::Write, source))
+        replaced.push(picture);
+        for picture in replaced {
+            unreferenced_picture_dropped(&transaction, picture).map_err(write_error)?;
+        }
+        transaction.commit().map_err(write_error)
+    }
+
+    pub(crate) fn picture(&self, picture: u64) -> Result<Option<Vec<u8>>> {
+        self.0
+            .lock()
+            .query_row(
+                "SELECT bytes FROM pictures WHERE id = ?1",
+                [picture as i64],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
     pub(crate) fn lyric_text(&self, id: u64) -> Result<Option<StoredLyrics>> {
@@ -250,6 +289,38 @@ impl Catalog {
         self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, report.verdict, report.peak, report.rms, report.true_peak, report.loudness_lufs, report.dynamic_range, report.clipped.min(i64::MAX as u64) as i64, report.bits_in_use]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
+}
+
+pub(crate) fn kept_picture(transaction: &Transaction<'_>, bytes: &[u8]) -> rusqlite::Result<i64> {
+    let crc = picture_crc(bytes);
+    let held = transaction
+        .query_row(
+            "SELECT id FROM pictures WHERE crc = ?1 AND bytes = ?2",
+            params![crc, bytes],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(held) = held {
+        return Ok(held);
+    }
+    transaction.execute(
+        "INSERT INTO pictures(crc, bytes) VALUES (?1, ?2)",
+        params![crc, bytes],
+    )?;
+    Ok(transaction.last_insert_rowid())
+}
+
+pub(crate) fn unreferenced_picture_dropped(
+    transaction: &Transaction<'_>,
+    picture: i64,
+) -> rusqlite::Result<()> {
+    transaction.execute(
+        "DELETE FROM pictures WHERE id = ?1
+           AND NOT EXISTS (SELECT 1 FROM artwork WHERE picture = ?1)
+           AND NOT EXISTS (SELECT 1 FROM album_art WHERE picture = ?1)",
+        [picture],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -467,6 +538,76 @@ mod tests {
         assert_eq!(saved.title, rescanned.title);
         assert_eq!(saved.artist, rescanned.artist);
         assert_eq!(saved.album, rescanned.album);
+    }
+
+    fn pictures_held(catalog: &Catalog) -> i64 {
+        catalog
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM pictures", [], |row| row.get(0))
+            .expect("a picture count")
+    }
+
+    fn songs(catalog: &Catalog, count: usize) -> Vec<u64> {
+        (0..count)
+            .map(|at| {
+                catalog
+                    .upsert(Track {
+                        uri: format!("content://test/{at}.flac"),
+                        album: "One Album".into(),
+                        ..Track::default()
+                    })
+                    .expect("a track")
+                    .id
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_cover_shared_by_every_song_of_a_folder_is_kept_once() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let ids = songs(&catalog, 12);
+
+        catalog
+            .keep_artwork_of(&ids, &[1, 2, 3], "folder", false)
+            .expect("a folder cover");
+        catalog
+            .keep_artwork_of(&ids, &[1, 2, 3], "folder", false)
+            .expect("the same cover again");
+
+        assert_eq!(pictures_held(&catalog), 1);
+        assert_eq!(
+            catalog.picture_of(ids[0]).expect("a picture"),
+            catalog.picture_of(ids[11]).expect("a picture")
+        );
+        assert_eq!(catalog.track(ids[5]).expect("a track").art_revision, 1);
+    }
+
+    #[test]
+    fn a_picture_nothing_shows_any_more_is_dropped() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let ids = songs(&catalog, 2);
+        catalog
+            .keep_artwork_of(&ids, &[1, 1, 1], "folder", false)
+            .expect("a cover");
+
+        catalog
+            .keep_artwork(ids[0], &[2, 2, 2], "folder", false)
+            .expect("one song's new cover");
+
+        assert_eq!(pictures_held(&catalog), 2);
+
+        catalog
+            .keep_artwork(ids[1], &[2, 2, 2], "folder", false)
+            .expect("the other song's new cover");
+
+        assert_eq!(pictures_held(&catalog), 1);
+
+        catalog
+            .keep_artwork(ids[0], &[9], "embedded", false)
+            .expect("a refused cover");
+
+        assert_eq!(pictures_held(&catalog), 1);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::{self, File},
     io,
     path::Path,
@@ -95,11 +96,27 @@ ALTER TABLE wanted ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE wanted ADD COLUMN disc INTEGER;
 ALTER TABLE wanted ADD COLUMN position INTEGER;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11];
+const V12: &str = "CREATE TABLE pictures (id INTEGER PRIMARY KEY, crc INTEGER NOT NULL, bytes BLOB NOT NULL) STRICT;
+CREATE INDEX pictures_crc ON pictures(crc);
+INSERT INTO pictures(crc, bytes) SELECT picture_crc(bytes), bytes FROM (SELECT bytes FROM artwork UNION SELECT bytes FROM album_art WHERE bytes IS NOT NULL);
+CREATE TABLE artwork_v12 (track INTEGER PRIMARY KEY REFERENCES documents(id), picture INTEGER NOT NULL REFERENCES pictures(id), origin TEXT NOT NULL) STRICT;
+INSERT INTO artwork_v12 SELECT a.track, (SELECT p.id FROM pictures p WHERE p.crc = picture_crc(a.bytes) AND p.bytes = a.bytes), a.origin FROM artwork a;
+DROP TABLE artwork;
+ALTER TABLE artwork_v12 RENAME TO artwork;
+CREATE INDEX artwork_picture ON artwork(picture);
+ALTER TABLE album_art ADD COLUMN picture INTEGER REFERENCES pictures(id);
+UPDATE album_art SET picture = (SELECT p.id FROM pictures p WHERE p.crc = picture_crc(album_art.bytes) AND p.bytes = album_art.bytes) WHERE bytes IS NOT NULL;
+ALTER TABLE album_art DROP COLUMN bytes;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 
-pub(crate) struct Catalog(pub(crate) Mutex<Connection>, Arc<AtomicU64>);
+pub(crate) struct Catalog(
+    pub(crate) Mutex<Connection>,
+    Arc<AtomicU64>,
+    pub(crate) Mutex<HashMap<(i64, i64), i64>>,
+);
 
 impl Catalog {
     pub(crate) fn open(path: &Path) -> Result<Self> {
@@ -114,6 +131,14 @@ impl Catalog {
                 1,
                 FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .create_scalar_function(
+                "picture_crc",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(picture_crc(context.get_raw(0).as_blob()?)),
             )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
         let version: u32 = connection
@@ -161,7 +186,11 @@ impl Catalog {
                 },
             ))
             .map_err(|source| Error::store(StoreOp::Open, source))?;
-        Ok(Self(Mutex::new(connection), revision))
+        Ok(Self(
+            Mutex::new(connection),
+            revision,
+            Mutex::new(HashMap::new()),
+        ))
     }
 
     pub(crate) fn revision(&self) -> u64 {
@@ -319,6 +348,10 @@ impl Catalog {
             .unwrap_or((0, 0));
         Ok((ids, at, position))
     }
+}
+
+pub(crate) fn picture_crc(bytes: &[u8]) -> i64 {
+    i64::from(crc32fast::hash(bytes))
 }
 
 fn keep_before_migrating(connection: &Connection, version: u32) -> Result<()> {
@@ -552,6 +585,64 @@ mod migration_tests {
         drop(reopened);
         fs::remove_file(path).expect("remove the test catalog");
         fs::remove_file(kept).expect("remove the test backup");
+    }
+
+    #[test]
+    fn an_eleventh_catalog_keeps_each_cover_once_however_many_songs_and_albums_hold_it() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-migration-v11-{unique}.sqlite"));
+        let old = Connection::open(&path).expect("an eleventh catalog");
+        old.create_scalar_function(
+            "folded",
+            1,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+        )
+        .expect("the fold");
+        for migration in &MIGRATIONS[..11] {
+            old.execute_batch(migration).expect("a shipped schema step");
+        }
+        old.execute_batch("PRAGMA user_version = 11; INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec) VALUES (1, 'content://test/a.flac', 'a.flac', 'A', 'X', 'One', 1000, 44100, 'FLAC'), (2, 'content://test/b.flac', 'b.flac', 'B', 'X', 'One', 1000, 44100, 'FLAC'), (3, 'content://test/c.flac', 'c.flac', 'C', 'Y', 'Two', 1000, 44100, 'FLAC'); INSERT INTO artwork VALUES (1, x'010203', 'folder'), (2, x'010203', 'folder'), (3, x'040506', 'embedded'); INSERT INTO album_art (album_key, bytes, origin) VALUES ('one', x'010203', 'archive'), ('two', x'070809', 'archive'), ('three', NULL, NULL);").expect("covers held by songs and albums");
+        drop(old);
+
+        let catalog = Catalog::open(&path).expect("a migrated catalog");
+        let held: i64 = catalog
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM pictures", [], |row| row.get(0))
+            .expect("a picture count");
+        let bare: i64 = catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM album_art WHERE picture IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("an album without a picture");
+
+        assert_eq!(held, 3);
+        assert_eq!(bare, 1);
+        assert_eq!(catalog.artwork(1).expect("a cover"), Some(vec![1, 2, 3]));
+        assert_eq!(catalog.artwork(2).expect("a cover"), Some(vec![1, 2, 3]));
+        assert_eq!(catalog.artwork(3).expect("a cover"), Some(vec![4, 5, 6]));
+
+        drop(catalog);
+        for suffix in ["", ".before-v11"] {
+            let name = if suffix.is_empty() {
+                path.clone()
+            } else {
+                path.with_file_name(named_within(
+                    "",
+                    path.file_name().expect("a filename"),
+                    suffix,
+                ))
+            };
+            fs::remove_file(name).expect("remove the test catalog");
+        }
     }
 
     #[test]

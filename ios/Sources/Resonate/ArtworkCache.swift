@@ -19,6 +19,7 @@ enum ArtworkBucket: Int, CaseIterable, Sendable {
 enum ArtworkSubject: Hashable, Sendable {
     case track(UInt64)
     case portrait(String)
+    case picture(UInt64)
 }
 
 struct ArtworkRequest: Hashable, Sendable {
@@ -31,7 +32,42 @@ struct ArtworkRequest: Hashable, Sendable {
         switch subject {
         case .track(let id): "track:\(id):\(revision):\(generation):\(bucket.rawValue)" as NSString
         case .portrait(let mbid): "portrait:\(mbid):\(generation):\(bucket.rawValue)" as NSString
+        case .picture(let id): "picture:\(id):\(bucket.rawValue)" as NSString
         }
+    }
+
+    var songName: NSString {
+        "song:\(revision):\(generation):\(subject)" as NSString
+    }
+
+    func of(picture: UInt64) -> ArtworkRequest {
+        ArtworkRequest(subject: .picture(picture), revision: 0, generation: 0, bucket: bucket)
+    }
+}
+
+final class PicturesOfSongs: @unchecked Sendable {
+    private static let songsAtMost = 20_000
+
+    private final class Held {
+        let picture: UInt64?
+
+        init(_ picture: UInt64?) {
+            self.picture = picture
+        }
+    }
+
+    private let cache: NSCache<NSString, Held> = {
+        let cache = NSCache<NSString, Held>()
+        cache.countLimit = songsAtMost
+        return cache
+    }()
+
+    func picture(of request: ArtworkRequest) -> UInt64?? {
+        cache.object(forKey: request.songName).map(\.picture)
+    }
+
+    func keep(_ picture: UInt64?, for request: ArtworkRequest) {
+        cache.setObject(Held(picture), forKey: request.songName)
     }
 }
 
@@ -116,12 +152,34 @@ actor ArtworkCache {
 
     private let pictures = DecodedPictures()
     private let missing = NSCache<NSString, NSNull>()
+    private let songs = PicturesOfSongs()
     private let slots = DecodeSlots(decodesAtOnce)
-    private var kept: [ArtworkSubject: Set<NSString>] = [:]
     private var flights: [ArtworkRequest: Flight] = [:]
 
     nonisolated func cached(_ request: ArtworkRequest) -> UIImage? {
-        pictures.object(forKey: request.name)
+        guard case .track = request.subject else { return pictures.object(forKey: request.name) }
+        guard let picture = songs.picture(of: request) ?? nil else { return nil }
+        return pictures.object(forKey: request.of(picture: picture).name)
+    }
+
+    func image(
+        _ request: ArtworkRequest,
+        identifying: @escaping @Sendable () throws -> UInt64?,
+        reading: @escaping @Sendable (UInt64) throws -> Data?
+    ) async -> UIImage? {
+        let picture: UInt64?
+        if let known = songs.picture(of: request) {
+            picture = known
+        } else {
+            do {
+                picture = try await Work.aside(identifying)
+            } catch {
+                return nil
+            }
+            songs.keep(picture, for: request)
+        }
+        guard let picture else { return nil }
+        return await image(request.of(picture: picture)) { try reading(picture) }
     }
 
     func image(
@@ -142,19 +200,6 @@ actor ArtworkCache {
         }
         settle(request, flight.task)
         return Task.isCancelled ? nil : image
-    }
-
-    func forget(_ subjects: [ArtworkSubject]) {
-        for subject in subjects {
-            for name in kept.removeValue(forKey: subject) ?? [] {
-                pictures.removeObject(forKey: name)
-                missing.removeObject(forKey: name)
-            }
-        }
-    }
-
-    func forgetPortraits() {
-        forget(kept.keys.filter { if case .portrait = $0 { true } else { false } })
     }
 
     private func decoding(
@@ -191,7 +236,6 @@ actor ArtworkCache {
         case .unread:
             return
         }
-        kept[request.subject, default: []].insert(name)
     }
 
     private func leave(_ request: ArtworkRequest, _ task: Task<UIImage?, Never>) {

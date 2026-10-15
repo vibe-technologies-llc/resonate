@@ -26,7 +26,10 @@ use resonate_online::{Client, Online};
 use rusqlite::{OptionalExtension, params, params_from_iter, types::Value};
 
 use crate::{
-    Error, MobilePlayer, Result, StoreOp, Track, catalog::Catalog, documents::location,
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::Catalog,
+    catalog_extras::{kept_picture, unreferenced_picture_dropped},
+    documents::location,
     features::ArtistInformation,
 };
 
@@ -1747,8 +1750,9 @@ impl Catalog {
             .lock()
             .query_row(
                 "SELECT coalesce(
-                    (SELECT bytes FROM album_art WHERE album_key = ?1 AND bytes IS NOT NULL),
-                    (SELECT w.bytes FROM artwork w JOIN documents d ON d.id = w.track
+                    (SELECT p.bytes FROM album_art a JOIN pictures p ON p.id = a.picture WHERE a.album_key = ?1),
+                    (SELECT p.bytes FROM artwork w JOIN pictures p ON p.id = w.picture
+                      JOIN documents d ON d.id = w.track
                       WHERE d.album_key = ?1 ORDER BY d.id LIMIT 1))",
                 [key],
                 |row| row.get(0),
@@ -1766,7 +1770,7 @@ impl Catalog {
         let mut query = connection
             .prepare(
                 "SELECT album_key, release, release_group FROM album_art
-                 WHERE bytes IS NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
+                 WHERE picture IS NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
                    AND (cover_asked IS NULL OR cover_asked < ?1)
                  ORDER BY album_key",
             )
@@ -1802,14 +1806,27 @@ impl Catalog {
         let now = nanos(SystemTime::now());
         match found {
             Some(found) => {
+                let picture = kept_picture(&transaction, &found.bytes).map_err(write_error)?;
+                let before: Option<i64> = transaction
+                    .query_row(
+                        "SELECT picture FROM album_art WHERE album_key = ?1",
+                        [key],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(write_error)?
+                    .flatten();
                 transaction
                     .execute(
-                        "INSERT INTO album_art (album_key, bytes, origin, cover_asked) VALUES (?1, ?2, ?3, ?4)
-                         ON CONFLICT(album_key) DO UPDATE SET bytes = excluded.bytes,
+                        "INSERT INTO album_art (album_key, picture, origin, cover_asked) VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(album_key) DO UPDATE SET picture = excluded.picture,
                          origin = excluded.origin, cover_asked = excluded.cover_asked",
-                        params![key, found.bytes, ARCHIVED_COVER, now],
+                        params![key, picture, ARCHIVED_COVER, now],
                     )
                     .map_err(write_error)?;
+                if let Some(before) = before.filter(|before| *before != picture) {
+                    unreferenced_picture_dropped(&transaction, before).map_err(write_error)?;
+                }
                 transaction
                     .execute(
                         "UPDATE documents SET art_revision = art_revision + 1 WHERE album_key = ?1",
@@ -1951,7 +1968,7 @@ impl Catalog {
             .0
             .lock()
             .execute(
-                "UPDATE album_art SET cover_asked = NULL WHERE bytes IS NULL AND cover_asked IS NOT NULL",
+                "UPDATE album_art SET cover_asked = NULL WHERE picture IS NULL AND cover_asked IS NOT NULL",
                 [],
             )
             .map_err(write_error)?;
@@ -1984,45 +2001,68 @@ impl Catalog {
     }
 
     pub(crate) fn pictured(&self, id: u64) -> Result<Option<Vec<u8>>> {
-        let own = self.artwork(id)?;
-        let album: Option<Vec<u8>> = self
+        match self.picture_of(id)? {
+            Some(picture) => self.picture(picture as u64),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn picture_of(&self, id: u64) -> Result<Option<i64>> {
+        let (own, album): (Option<i64>, Option<i64>) = self
             .0
             .lock()
             .query_row(
-                "SELECT a.bytes FROM documents d JOIN album_art a ON a.album_key = d.album_key
-                 WHERE d.id = ?1 AND a.bytes IS NOT NULL",
+                "SELECT (SELECT picture FROM artwork WHERE track = d.id),
+                        (SELECT a.picture FROM album_art a WHERE a.album_key = d.album_key)
+                 FROM documents d WHERE d.id = ?1",
                 [id as i64],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
-            .map_err(read_error)?;
+            .map_err(read_error)?
+            .unwrap_or((None, None));
 
-        Ok(match (own, album) {
-            (Some(own), Some(album)) => Some(the_better_picture(own, album)),
-            (own, album) => own.or(album),
-        })
+        match (own, album) {
+            (Some(own), Some(album)) if own != album => self.better_of(own, album).map(Some),
+            (own, album) => Ok(own.or(album)),
+        }
+    }
+
+    fn better_of(&self, own: i64, album: i64) -> Result<i64> {
+        if let Some(chosen) = self.2.lock().get(&(own, album)) {
+            return Ok(*chosen);
+        }
+        let (Some(held), Some(candidate)) =
+            (self.picture(own as u64)?, self.picture(album as u64)?)
+        else {
+            return Ok(own);
+        };
+        let chosen = if album_betters_own(held, candidate) {
+            album
+        } else {
+            own
+        };
+        self.2.lock().insert((own, album), chosen);
+        Ok(chosen)
     }
 }
 
-fn the_better_picture(own: Vec<u8>, album: Vec<u8>) -> Vec<u8> {
+fn album_betters_own(own: Vec<u8>, album: Vec<u8>) -> bool {
     let (Some(own_format), Some(album_format)) =
         (ImageFormat::sniff(&own), ImageFormat::sniff(&album))
     else {
-        return own;
+        return false;
     };
-    let held = CoverArt {
-        format: own_format,
-        bytes: own,
-    };
-    let candidate = CoverArt {
-        format: album_format,
-        bytes: album,
-    };
-    if betters(&candidate, &held) {
-        candidate.bytes
-    } else {
-        held.bytes
-    }
+    betters(
+        &CoverArt {
+            format: album_format,
+            bytes: album,
+        },
+        &CoverArt {
+            format: own_format,
+            bytes: own,
+        },
+    )
 }
 
 #[cfg(test)]

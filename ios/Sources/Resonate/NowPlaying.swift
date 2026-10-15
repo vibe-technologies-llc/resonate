@@ -360,7 +360,7 @@ final class NowPlaying {
         let id = track.id
         let revision = track.artRevision
         Task {
-            guard let image = await library.features.artwork(track) else { return }
+            guard let image = await library.features.artwork(track, bucket: .card) else { return }
             let thumbnail = await Task.detached(priority: .utility) { Self.thumbnail(of: image) }.value
             guard artworkFor?.track == id, artworkFor?.revision == revision else { return }
             artwork = Self.artwork(thumbnail)

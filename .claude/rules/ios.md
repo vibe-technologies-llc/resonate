@@ -187,8 +187,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **`Folders`** is the `Documents` callback. A chosen folder is a security-scoped bookmark kept in
   Application Support (`folders.plist`); the app's own Documents folder (`UIFileSharingEnabled`,
   `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits
-  `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB and a
-  same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL`. A file opened
+  `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB once for the
+  whole folder (`FolderCovers` gathers the songs sharing it and keeps it in one `keep_folder_cover`
+  call, stored once) and a same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL`. A file opened
   in Resonate from elsewhere is played where it already is when its resolved path lies in a granted
   folder (`Folders.granted`, the most specific root), else played from an identical copy already in
   `local` (`localCopy`: same name or `name (n)`, equal contents), else copied into `local` and
@@ -257,6 +258,11 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   active. `write` updates an item in place and adds it only where none exists, so a refused write
   keeps the old secret; plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
+
+- **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
+  player is open): `sync-received` and `sync-staging` (songs other devices send, fetched again) and
+  the catalog copy kept before a migration (`.before-v<N>`) are `isExcludedFromBackup`; the catalog
+  itself (favourites, playlists, listens) travels with the device's backup.
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
@@ -619,12 +625,18 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **Pictures refresh by the changed-art revision**: every status poll, scan, landing and
   single-song lookup asks `art_changed_since` from the last revision (the first answer only sets
   the baseline, judged by whether a revision was held when the ask was made, so two overlapping
-  first asks both only set it); the named songs alone are evicted from the cache and their entry in
+  first asks both only set it); the named songs alone have their entry in
   `Features.artGenerations` bumped, which `ArtworkView` and the backdrop key their `.task` on. A
-  rise in `portraits` bumps `portraitGeneration` and forgets the kept portraits.
+  rise in `portraits` bumps `portraitGeneration`. `Features.artGenerations` holds the songs whose
+  picture changed this session, and past 4096 of them it is emptied and `artEpoch` stepped, which
+  every song's generation includes.
 - **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself
   (`onGeometryChange`), multiplies by the display scale and rounds up to a bucket of 96, 192, 384,
-  512, 768 or 1024 px; an entry is keyed by song (or portrait), art revision, generation and bucket.
+  512, 768 or 1024 px; an entry is keyed by picture (or portrait) and bucket, so the twelve songs of an album decode one
+  image: a song is first mapped to its picture id (`artwork_picture`, one cheap query, remembered per song,
+  revision and generation in `PicturesOfSongs`, at most 20 000) and the bytes are read by picture id
+  (`picture`) only when that picture is not decoded at the bucket. Nothing is tracked per subject:
+  a changed picture is a new id and a changed song a new key, and `NSCache` evicts what is left.
   `CGImageSourceCreateThumbnailAtIndex` decodes on `Work.aside` with the bucket as its largest
   edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
   that disappears leaves its wait, and the last to leave cancels a decode still waiting for a
@@ -638,7 +650,9 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   smaller measure keeps the picture shown, a larger one already held swaps at once, and one that
   must be decoded waits 300 ms of steady size, so a cover zooming between Now Playing's layouts
   does not decode at every bucket it passes. `ShownArtwork` (the last picture per song, for a view's first
-  frame before it is measured) keeps 64 MiB. A circular `ArtworkView`
+  frame before it is measured) keeps 64 MiB. **Every ask names its bucket**: the
+  palette sample (32 by 32) reads the 192 px tile and the lock-screen artwork the 384 px card, never
+  the 1024 px full size, which cost about 4 MiB cached and evicted row thumbnails. A circular `ArtworkView`
   (`ArtworkView(track:corner:circle:)`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture.
 

@@ -123,7 +123,7 @@ struct BackdropView: View {
     private func loadPalette() async {
         let accentLinear = Self.accentLinear()
 
-        guard let track, let image = await library.features.artwork(track) else {
+        guard let track, let image = await library.features.artwork(track, bucket: .tile) else {
             palette = Palette.around(accent: accentLinear)
             return
         }

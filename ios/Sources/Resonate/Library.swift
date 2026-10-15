@@ -193,6 +193,8 @@ final class Library {
         guard polling == nil else { return }
         let folder = support.path
         let documents = folders
+        let support = support
+        Task.detached(priority: .utility) { Backup.leaveOutDerived(in: support) }
         Task { [weak self] in
             let measured = await documents.refreshed()
             self?.folderList = measured
@@ -209,6 +211,7 @@ final class Library {
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
                 native = opened
+                Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
                 waiting.forEach { $0.resume(returning: opened) }
                 waiting.removeAll()
                 nowPlaying.start(opened)
@@ -869,18 +872,14 @@ final class Library {
         var failure: (any Swift.Error)?
         do {
             try await Work.aside { [weak self] in
+                let covers = FolderCovers(folders: folders, native: native, tally: tally)
+                defer { covers.flush() }
                 try folders.scan(id) { document in
                     do {
                         let track = try native.indexDocument(uri: document.uri, name: document.name)
                         let read = tally.indexed()
                         Task { @MainActor in self?.reached(read) }
-                        if let cover = document.cover, let bytes = folders.companion(cover, sidecar: false) {
-                            do {
-                                try native.setArtwork(id: track.id, bytes: bytes)
-                            } catch {
-                                tally.lost(.cover, document.name, error)
-                            }
-                        }
+                        covers.add(track.id, cover: document.cover, named: document.name)
                         if let lyrics = document.lyrics, let bytes = folders.companion(lyrics, sidecar: true) {
                             do {
                                 try native.keepSidecarLyrics(id: track.id, bytes: bytes)
@@ -1136,6 +1135,40 @@ enum RepeatMode: CaseIterable {
         case .off: "Off"
         case .all: "All songs"
         case .one: "This song"
+        }
+    }
+}
+
+final class FolderCovers {
+    private let folders: Folders
+    private let native: MobilePlayer
+    private let tally: Tally
+    private var cover: String?
+    private var firstSong = ""
+    private var songs: [UInt64] = []
+
+    init(folders: Folders, native: MobilePlayer, tally: Tally) {
+        self.folders = folders
+        self.native = native
+        self.tally = tally
+    }
+
+    func add(_ song: UInt64, cover next: String?, named name: String) {
+        if next != cover {
+            flush()
+            cover = next
+            firstSong = name
+        }
+        if next != nil { songs.append(song) }
+    }
+
+    func flush() {
+        defer { songs = [] }
+        guard let cover, !songs.isEmpty, let bytes = folders.companion(cover, sidecar: false) else { return }
+        do {
+            try native.keepFolderCover(ids: songs, bytes: bytes)
+        } catch {
+            tally.lost(.cover, firstSong, error)
         }
     }
 }

@@ -42,6 +42,7 @@ final class Features {
     private static let landingTriesAtMost = 3
     private static let visualizerFrame: Duration = .milliseconds(33)
     private static let visualizerRetry: Duration = .seconds(2)
+    private static let artGenerationsAtMost = 4096
     nonisolated private static let wantedChunk = 500
 
     @ObservationIgnored private unowned let library: Library
@@ -97,6 +98,7 @@ final class Features {
     var enriching = false
     var samples: [Float] = []
     var artGenerations: [UInt64: Int] = [:]
+    var artEpoch = 0
     var portraitGeneration = 0
     var syncConfig: SyncConfig?
     @ObservationIgnored private var secretsUnread = false
@@ -668,7 +670,7 @@ final class Features {
     }
 
     func artGeneration(of id: UInt64) -> Int {
-        artGenerations[id] ?? 0
+        artEpoch * Self.artGenerationsAtMost + (artGenerations[id] ?? 0)
     }
 
     func cachedArtwork(_ track: Track, bucket: ArtworkBucket) -> UIImage? {
@@ -687,11 +689,11 @@ final class Features {
         ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration, bucket: bucket)
     }
 
-    func artwork(_ track: Track, bucket: ArtworkBucket = .full) async -> UIImage? {
+    func artwork(_ track: Track, bucket: ArtworkBucket) async -> UIImage? {
         let id = track.id
         let request = artworkRequest(track, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
-        return await artworks.image(request) { try native.artwork(id: id) }
+        return await artworks.image(request, identifying: { try native.artworkPicture(id: id) }, reading: { try native.picture(picture: $0) })
     }
 
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
@@ -702,7 +704,6 @@ final class Features {
 
     func portraitsChanged() {
         portraitGeneration += 1
-        Task { await artworks.forgetPortraits() }
     }
 
     func scanned() {
@@ -723,9 +724,12 @@ final class Features {
         artRevision = max(artRevision ?? 0, changed.revision)
         guard known, !changed.tracks.isEmpty else { return }
 
-        await artworks.forget(changed.tracks.map(ArtworkSubject.track))
         var generations = artGenerations
         for id in changed.tracks { generations[id, default: 0] += 1 }
+        if generations.count > Self.artGenerationsAtMost {
+            artEpoch += 1
+            generations = [:]
+        }
         artGenerations = generations
     }
 

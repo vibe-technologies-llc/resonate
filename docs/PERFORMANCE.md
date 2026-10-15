@@ -7,16 +7,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
 
 ## iOS
-- [S] The palette sample (32 by 32) and the lock-screen artwork (384 px) are decoded from the 1024 px
-  bucket (`artwork(_:)` defaults to `.full`), about 4 MiB cached each, evicting row thumbnails
-- [M] A scan stores the folder's cover once per track (`artwork` is `track INTEGER PRIMARY KEY`),
-  reading up to 8 MiB across FFI for each, and `VACUUM INTO` copies them all again before a
-  migration; nothing is excluded from backup (no `isExcludedFromBackup`), so the catalog, that
-  copy and `sync-received` travel in device and iCloud backups
-- [M] The artwork cache is keyed by song: a 12-track album decodes and reads two blobs under the
-  catalog lock twelve times (`the_better_picture`); an album key or content hash would share one
-- [S] `ArtworkCache.kept` and `Features.artGenerations` only grow (NSCache evictions never prune the
-  first; the second is copied whole on each refresh)
 - [M] Whole-catalog work in view bodies and on the main actor: `LibraryView` filters `allTracks` for
   favourites and folds playlist names each body; `AddSongsSheet` refolds every title, artist and
   album on each toggle; `Library` rebuilds two `Set`s from `allTracks` on every heart; the queue

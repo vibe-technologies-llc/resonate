@@ -5649,6 +5649,7 @@ dependencies = [
 name = "resonate-mobile"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "crossbeam-channel",
  "objc2-audio-toolbox",
  "objc2-core-audio-types",

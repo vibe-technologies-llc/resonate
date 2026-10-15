@@ -256,11 +256,23 @@ impl MobilePlayer {
         self.catalog.pictured(id)
     }
 
+    pub fn artwork_picture(&self, id: u64) -> Result<Option<u64>> {
+        Ok(self.catalog.picture_of(id)?.map(|picture| picture as u64))
+    }
+
+    pub fn picture(&self, picture: u64) -> Result<Option<Vec<u8>>> {
+        self.catalog.picture(picture)
+    }
+
     pub fn set_artwork(&self, id: u64, bytes: Vec<u8>) -> Result<()> {
+        self.keep_folder_cover(vec![id], bytes)
+    }
+
+    pub fn keep_folder_cover(&self, ids: Vec<u64>, bytes: Vec<u8>) -> Result<()> {
         if bytes.len() > 8 * 1024 * 1024 || ImageFormat::sniff(&bytes).is_none() {
             return Err(Error::InvalidPicture);
         }
-        self.catalog.keep_artwork(id, &bytes, "folder", false)
+        self.catalog.keep_artwork_of(&ids, &bytes, "folder", false)
     }
 
     pub fn inspector(&self, id: u64) -> Result<Inspector> {

@@ -190,6 +190,8 @@ pub(crate) struct Searching {
     ordered: Mutex<Option<Ordered>>,
 }
 
+type Admitted = (Arc<Index>, Arc<Vec<usize>>);
+
 struct Ordered {
     filter: TrackFilter,
     index: Arc<Index>,
@@ -304,7 +306,7 @@ impl Searching {
         &self,
         catalog: &Catalog,
         filter: &TrackFilter,
-    ) -> Result<Option<(Arc<Index>, Arc<Vec<usize>>)>> {
+    ) -> Result<Option<Admitted>> {
         let asking = (!filter.text.trim().is_empty())
             .then(|| Asking::of(&Search::read(&filter.text), now()));
         if asking.as_ref().is_some_and(Asking::asks_nothing) {

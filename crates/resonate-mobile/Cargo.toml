@@ -8,6 +8,7 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+crc32fast.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 resonate-analysis.workspace = true

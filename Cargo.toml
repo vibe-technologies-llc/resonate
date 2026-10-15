@@ -149,6 +149,7 @@ rusqlite = {
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
+crc32fast = { version = "1.5.2", default-features = false, features = ["std"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.1", default-features = false, features = ["std"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
