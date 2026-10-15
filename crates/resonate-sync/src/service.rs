@@ -46,7 +46,7 @@ pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const FIRST_RETRY: Duration = Duration::from_secs(5);
 const LAST_RETRY: Duration = Duration::from_secs(30 * 60);
-const LOOK_AFTER: Duration = Duration::from_secs(3);
+const LOOK_AFTER: Duration = Duration::from_secs(1);
 const LOOK_ANYWAY_EVERY: Duration = Duration::from_secs(5 * 60);
 const WATCH_EVERY: Duration = Duration::from_secs(1);
 const COMPACT_PAST_RECORDS: u64 = 512;
@@ -55,7 +55,9 @@ const BLOBS_PER_APPEND: usize = 32;
 const FOLLOW_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
-const DIAL_A_NEIGHBOUR_EVERY: Duration = Duration::from_secs(30);
+const FIRST_REDIAL: Duration = Duration::from_secs(1);
+const LAST_REDIAL: Duration = Duration::from_secs(30);
+const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
 const HEARD_FOR: Duration = Duration::from_secs(60);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 
@@ -172,6 +174,7 @@ enum Event {
     Punched(DeviceId, Option<Connection>),
     Met(DeviceId, Connection),
     Unmet(DeviceId),
+    Redial(DeviceId),
     Gone(DeviceId, usize),
     Dropped(usize, Error),
 }
@@ -215,6 +218,12 @@ struct Neighbour {
     told: AHashSet<ToldDigest>,
 }
 
+#[derive(Clone, Copy)]
+struct Redial {
+    at: Instant,
+    wait: Duration,
+}
+
 struct Syncing {
     running: Arc<Running>,
     server: Option<Link>,
@@ -225,7 +234,8 @@ struct Syncing {
     neighbour_caught_up: bool,
     neighbours: BTreeMap<DeviceId, Neighbour>,
     heard: BTreeMap<DeviceId, (Vec<SocketAddr>, Instant)>,
-    dialled_at: BTreeMap<DeviceId, Instant>,
+    dialled_at: BTreeMap<DeviceId, Redial>,
+    dialling_back: BTreeSet<DeviceId>,
     peers: BTreeMap<DeviceId, Connection>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
@@ -584,6 +594,11 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
         if let Err(error) = outcome {
             tracing::warn!(%error, "sync could not carry on with something");
         }
+        if syncing.look_is_due()
+            && let Err(error) = syncing.watched().await
+        {
+            tracing::warn!(%error, "sync could not look at the catalog");
+        }
     }
     syncing.bye().await;
     if let Some(bonjour) = bonjour {
@@ -804,6 +819,7 @@ impl Syncing {
             neighbours: BTreeMap::new(),
             heard: BTreeMap::new(),
             dialled_at: BTreeMap::new(),
+            dialling_back: BTreeSet::new(),
             peers: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
@@ -904,7 +920,17 @@ impl Syncing {
                 }
                 self.peers.insert(device, connection);
             }
-            Event::Punched(device, None) | Event::Unmet(device) => self.unreached(device),
+            Event::Punched(device, None) => self.unreached(device),
+            Event::Unmet(device) => {
+                self.unreached(device);
+                self.redial_later(device);
+            }
+            Event::Redial(device) => {
+                self.dialling_back.remove(&device);
+                if !self.neighbours.contains_key(&device) {
+                    self.dial_neighbour(device);
+                }
+            }
             Event::Met(device, connection) => self.met(device, connection, true).await?,
             Event::Dropped(id, error) => {
                 if self
@@ -929,7 +955,9 @@ impl Syncing {
                     .is_some_and(|neighbour| neighbour.connection.stable_id() == id)
                 {
                     self.neighbours.remove(&device);
+                    self.dialled_at.remove(&device);
                     self.publish_devices();
+                    self.meet_soon(device);
                 }
             }
         }
@@ -1102,6 +1130,10 @@ impl Syncing {
         .await?;
         self.publish_devices();
         Ok(())
+    }
+
+    fn look_is_due(&self) -> bool {
+        self.may_look() && self.look_at.is_some_and(|at| at <= Instant::now())
     }
 
     async fn watched(&mut self) -> Result<()> {
@@ -1474,9 +1506,32 @@ impl Syncing {
         {
             tracing::debug!(%error, %from, "a beacon could not be answered");
         }
-        if self.running.device < beacon.device {
-            self.dial_neighbour(beacon.device);
+        self.meet_soon(beacon.device);
+    }
+
+    fn meet_soon(&mut self, device: DeviceId) {
+        if self.running.device < device {
+            self.dial_neighbour(device);
+        } else if self.dialling_back.insert(device) {
+            self.send_later(DIAL_BACK_AFTER, Event::Redial(device));
         }
+    }
+
+    fn redial_later(&mut self, device: DeviceId) {
+        let Some(redial) = self.dialled_at.get(&device).copied() else {
+            return;
+        };
+        if self.dialling_back.insert(device) {
+            self.send_later(redial.wait, Event::Redial(device));
+        }
+    }
+
+    fn send_later(&self, after: Duration, event: Event) {
+        let events = self.running.events.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(after).await;
+            let _ = events.send(event);
+        });
     }
 
     fn dial_neighbour(&mut self, device: DeviceId) {
@@ -1489,14 +1544,12 @@ impl Syncing {
         else {
             return;
         };
-        if self
-            .dialled_at
-            .get(&device)
-            .is_some_and(|dialled| now.duration_since(*dialled) < DIAL_A_NEIGHBOUR_EVERY)
-        {
-            return;
-        }
-        self.dialled_at.insert(device, now);
+        let wait = match self.dialled_at.get(&device) {
+            Some(redial) if now.duration_since(redial.at) < redial.wait => return,
+            Some(redial) => (redial.wait * 2).min(LAST_REDIAL),
+            None => FIRST_REDIAL,
+        };
+        self.dialled_at.insert(device, Redial { at: now, wait });
         let running = Arc::clone(&self.running);
         tokio::spawn(async move {
             let event = match neighbour_dialled(&running, &at, device).await {

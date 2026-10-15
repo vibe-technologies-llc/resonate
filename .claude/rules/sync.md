@@ -116,8 +116,9 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 - **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter, logged at debug;
   a refusal waits the longest. `Shown` (standing, devices, transfers, owed) is a snapshot the
   window and Android read without asking the thread.
-- **A look runs a second after the catalog's revision moves, three seconds settled, and every five
-  minutes regardless**; it settles held entries first, then tells neighbours and pushes what is
+- **A look runs a second after the catalog's revision moves (`LOOK_AFTER`), and every five
+  minutes regardless**, and at once whenever one falls due (a neighbour's whole snapshot, a link
+  caught up, *force*): the loop checks after every event rather than waiting for the second's watch; it settles held entries first, then tells neighbours and pushes what is
   owed, one `Append` in flight. Catch-up comes before the first look, so a device joining adopts
   before it mints: caught up with the server (this link, or an earlier one while none stands) or
   with a whole snapshot from a neighbour. A device that has met nobody does not look; there is
@@ -186,12 +187,15 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   Network.framework does not (`NSBonjourServices` in `Info.plist` and the Local Network permission).
   iOS runs with `Nearby::told_by_the_platform()` (no broadcast, no `mdns-sd`); Swift's
   `NearbyDevices` advertises `Sync::nearby_record` with an `NWListener` and hands every record its
-  `NWBrowser` finds to `Sync::nearby_heard`, again every 15 s while it stands, so a dial that failed
-  is tried again.
-- **The lower `DeviceId` dials**, every address heard at once (where a datagram came from, where
-  Bonjour resolved it, what the beacon names), at most every `DIAL_A_NEIGHBOUR_EVERY` (30 s); a
-  want for a device heard within `HEARD_FOR` (60 s) dials it too. Nothing is sent, heard or dialled
-  while transfers are not allowed.
+  `NWBrowser` finds to `Sync::nearby_heard`, again every 5 s while it stands.
+- **The lower `DeviceId` dials at once, the higher after `DIAL_BACK_AFTER` (500 ms) if they have
+  not met by then**, so a device only one side can hear (Bonjour seen one way, an iPhone's record
+  handed to one device) is still met (`a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first`).
+  Every address heard is dialled at once (where a datagram came from, where Bonjour resolved it,
+  what the beacon names). A failed dial is tried again by itself after `FIRST_REDIAL` (1 s),
+  doubling to `LAST_REDIAL` (30 s), while the device was heard within `HEARD_FOR` (60 s); a
+  neighbour whose connection goes is dialled again at once. A want for a device heard within
+  `HEARD_FOR` dials it too. Nothing is sent, heard or dialled while transfers are not allowed.
 - **A dial is mutual TLS like any peer, then `Meet`**: the certificate is the space's, so it says
   nothing of which device is there. Both sides then serve the connection (fetch either way), call it
   nearby (`SyncDevice::nearby`, also `online`), and each sends its whole `Ledger::snapshot` as one

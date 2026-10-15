@@ -5,7 +5,7 @@ import ResonateNative
 final class NearbyDevices: @unchecked Sendable {
     private static let service = "_resonate-sync._udp"
     private static let recordKey = "b"
-    private static let toldAgainAfter: TimeInterval = 15
+    private static let toldAgainAfter: TimeInterval = 5
 
     private let native: MobilePlayer
     private let queue = DispatchQueue(label: "org.resonate.nearby")
@@ -26,6 +26,13 @@ final class NearbyDevices: @unchecked Sendable {
 
     func refresh() {
         queue.async { self.toldAt = .distantPast }
+    }
+
+    func restart() {
+        queue.async {
+            self.stopped()
+            self.toldAt = .distantPast
+        }
     }
 
     private func followed(_ record: String?) {

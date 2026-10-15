@@ -113,6 +113,7 @@ final class Features {
         }
     }
     @ObservationIgnored private var landingRefusedUntil = Date.distantPast
+    @ObservationIgnored private var leftAt: Date?
 
     init(library: Library) {
         self.library = library
@@ -325,9 +326,24 @@ final class Features {
         syncAskedAt = nil
     }
 
+    func wentToBackground() {
+        leftAt = Date()
+    }
+
     func cameForward() {
+        let wasAway = leftAt != nil
+        leftAt = nil
         guard syncConfig?.enabled == true, online else {
             Task { [weak self] in await self?.library.forgetMissing() }
+            return
+        }
+        if wasAway, !transferring {
+            nearby?.restart()
+            work { [weak self] native in
+                try await self?.applySync(native)
+                guard let changed = await self?.library.forgetMissing(), changed.hidden > 0 else { return }
+                native.syncForce()
+            }
             return
         }
         work { [weak self] native in
@@ -377,10 +393,20 @@ final class Features {
                 syncConfig = kept
             }
             syncStatus = status
+            await announceNearby(native)
         } catch {
             syncStatus = native.syncStatus()
             throw error
         }
+    }
+
+    private func announceNearby(_ native: MobilePlayer) async {
+        guard let record = try? await Work.aside({ native.syncNearbyRecord() }) else {
+            nearby?.follow(record: nil)
+            return
+        }
+        if nearby == nil { nearby = NearbyDevices(native: native) }
+        nearby?.follow(record: record)
     }
 
     private func watchNetwork() {
@@ -397,7 +423,10 @@ final class Features {
     private func networkChanged(_ free: Bool) {
         guard free != unmetered else { return }
         unmetered = free
-        work { native in native.syncNetwork(unmetered: free) }
+        work { [weak self] native in
+            native.syncNetwork(unmetered: free)
+            await self?.announceNearby(native)
+        }
         enrichment.networkChanged(free: free)
     }
 

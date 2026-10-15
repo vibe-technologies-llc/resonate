@@ -19,7 +19,13 @@ struct ResonateApp: App {
         }
         .onChange(of: phase) { _, now in
             library.features.foreground = now == .active
-            if now == .active { library.features.cameForward() } else { library.save() }
+            switch now {
+            case .active: library.features.cameForward()
+            case .background:
+                library.features.wentToBackground()
+                library.save()
+            default: library.save()
+            }
         }
     }
 }

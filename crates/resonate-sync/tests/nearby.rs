@@ -230,6 +230,47 @@ fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
 }
 
 #[test]
+fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
+    if !on_a_network() {
+        return;
+    }
+    let folder = scratch("one-way");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.make_playlist("Morning", &["A"]);
+
+    let desk = started(
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Nearby::told_by_the_platform(),
+    );
+    let phone = started(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Nearby::told_by_the_platform(),
+    );
+    let desk_record = desk.nearby_record().expect("a record of the desk");
+    phone.nearby_heard(&desk_record);
+
+    eventually(
+        "the playlist reaching the phone told of the desk alone",
+        || phone_shelf.playlist_named("Morning").is_some(),
+    );
+    eventually("the desk seeing the phone it was never told of", || {
+        nearby_of(&desk, "Phone")
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_record_of_another_code_is_passed_over() {
     let folder = scratch("stranger-record");
     let desk = started(
