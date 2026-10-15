@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum Erasure {
-    private static let suites = ["library-features", "playback", "provider-accounts"]
+    private static let suites = ["library-features", "playback", "provider-accounts", "appearance"]
     private static var keychainClasses: [CFString] {
         [
             kSecClassGenericPassword,

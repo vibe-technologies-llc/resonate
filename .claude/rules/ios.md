@@ -96,11 +96,15 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   banner that opens the sync page. `transferring` (the background hold, the 2 s poll) counts only
   received songs that can land now (`landable`: a writable folder and no back-off), so a song with
   nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
-- **Erase all data** (the last Settings section, confirmed) reads every song's URI (`song_uris`,
-  hidden ones included), shuts the player down, deletes each of those files through `Folders.delete`
-  (the songs in granted folders as well as the app's own; nothing else in those folders), then
-  `Erasure.everything` empties Application Support, Caches, Documents and tmp, removes the
-  `library-features`, `playback` and `provider-accounts` suites and the standard domain, and deletes
+- **Erase all data** (the last Settings section, confirmed) first reads every song's URI
+  (`song_uris`, hidden ones included): where that fails nothing is erased and the failure is shown.
+  It then stops what could write afterwards (the poll, the scan, sync, scrobbling, Listen,
+  enrichment, and downloads, which are cancelled and waited for so each deletes its half-written
+  document and journal entry), reads the URIs again, shuts the player down, returns the alternate
+  icon to the primary, deletes each of those files through `Folders.delete` (the songs in granted
+  folders as well as the app's own; nothing else in those folders), then `Erasure.everything`
+  empties Application Support, Caches, Documents and tmp, removes the `library-features`,
+  `playback`, `provider-accounts` and `appearance` suites and the standard domain, and deletes
   every keychain class, then the app exits. With the pairing code gone, other devices hear nothing.
 - **The sync page leads with what is happening; setup sits a step away** (`SyncView.swift`). The
   page is the *Sync this iPhone* switch, then a status section (`SyncStateRow`: spinner, *Up to

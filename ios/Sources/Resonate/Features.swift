@@ -411,13 +411,16 @@ final class Features {
         }
     }
 
-    func stopForErasing() {
+    func stopForErasing() async {
         syncPolling?.cancel()
         submitting?.cancel()
         visualization?.cancel()
         onlinePending?.cancel()
         nearby?.follow(record: nil)
         syncAskedAt = nil
+        listening.stop()
+        enrichment.stopForErasing()
+        await downloads.stopForErasing()
     }
 
     func wentToBackground() {

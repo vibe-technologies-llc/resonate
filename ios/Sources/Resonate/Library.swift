@@ -963,21 +963,36 @@ final class Library {
     func eraseEverything() {
         guard !erasing else { return }
         erasing = true
-        polling?.cancel()
-        scanTask?.cancel()
-        features.stopForErasing()
         let opened = native
         let documents = folders
         Task {
-            let songs: [String]
+            var songs: [String] = []
             if let opened {
-                songs = (try? await Work.inOrder { try opened.songUris() }) ?? []
-                _ = try? await Work.inOrder { try opened.shutdown() }
-            } else {
-                songs = []
+                do {
+                    songs = try await Work.inOrder { try opened.songUris() }
+                } catch {
+                    erasing = false
+                    report(error)
+                    return
+                }
             }
+            polling?.cancel()
+            queuedScans.removeAll()
+            scanTask?.cancel()
+            if let scanningFolder {
+                scanStopped = true
+                documents.stopScanning(scanningFolder)
+            }
+            await features.stopForErasing()
+            if let opened {
+                let latest = try? await Work.inOrder { try opened.songUris() }
+                songs = latest ?? songs
+                _ = try? await Work.inOrder { try opened.shutdown() }
+            }
+            await AppearanceState.shared.resetIcon()
+            let erased = songs
             _ = try? await Work.aside {
-                songs.forEach(documents.delete)
+                erased.forEach(documents.delete)
                 Erasure.everything()
             }
             exit(0)

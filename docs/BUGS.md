@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] Erase all data leaves the `appearance` suite and the alternate icon, stops no download,
-  enrichment or listening (a late handler rewrites `library-features` after it is removed), and
-  with `songUris` failing (`try?`) deletes no song in a granted folder yet exits as if erased
 - [M] The 250 ms poll joins `snapshot`, `queue` and `save` in one throwing `Work.inOrder`:
   `snapshot` has already taken the engine's `failure`, so a `queue` or `save` error discards it;
   one queue row with no catalog row fails every tick and freezes transport and position; a failing

@@ -31,6 +31,7 @@ final class Enrichment {
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
     @ObservationIgnored private var watching: Task<Void, Never>?
     @ObservationIgnored private var foreground = true
+    @ObservationIgnored private var erased = false
     @ObservationIgnored private var sought: UInt64?
     @ObservationIgnored private var portraits: UInt32 = 0
 
@@ -81,6 +82,13 @@ final class Enrichment {
                 library.report(error)
             }
         }
+    }
+
+    func stopForErasing() {
+        erased = true
+        watching?.cancel()
+        watching = nil
+        library.native?.stopEnrichment()
     }
 
     func stop() {
@@ -134,6 +142,7 @@ final class Enrichment {
     }
 
     private func start(_ options: EnrichmentOptions, stoppingFirst: Bool, seeking track: UInt64?) {
+        guard !erased else { return }
         Task {
             guard let native = try? await library.player(),
                 let read = try? await Work.aside({

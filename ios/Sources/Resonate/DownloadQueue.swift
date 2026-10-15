@@ -103,6 +103,7 @@ final class DownloadQueue {
     private static let wantsAskedAtLeast: Duration = .seconds(30)
     private static let wantsAskedEvery: Duration = .seconds(30 * 60)
     private static let progressSteps: Int64 = 1000
+    private static let erasureWaitTicks = 40
 
     var jobs: [DownloadJob] = []
     var awaitingFolder: [SearchSong] = []
@@ -198,6 +199,21 @@ final class DownloadQueue {
             guard let native = try? await library.player() else { return }
             _ = try? await Work.aside { native.cancelDownload(job: id) }
         }
+    }
+
+    func stopForErasing() async {
+        wantsPoll?.cancel()
+        wantsPoll = nil
+        paused = true
+        for job in jobs where job.state == .waiting { update(job.id) { $0.state = .cancelled } }
+        if let native = library.native {
+            for job in jobs where job.state.inFlight { native.cancelDownload(job: job.id) }
+        }
+        for _ in 0..<Self.erasureWaitTicks where jobs.contains(where: { $0.state.inFlight }) {
+            try? await Task.sleep(for: Self.pollEvery)
+        }
+        polling?.cancel()
+        polling = nil
     }
 
     func retry(_ id: UInt64) {

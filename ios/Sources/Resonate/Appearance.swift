@@ -54,6 +54,10 @@ final class AppearanceState {
         Task { await showIcon(of: chosen) }
     }
 
+    func resetIcon() async {
+        await showIcon(of: nil)
+    }
+
     private func showIcon(of chosen: ResonateAccent?) async {
         let application = UIApplication.shared
         guard application.supportsAlternateIcons else { return }
