@@ -306,6 +306,10 @@ every route change (a pair of headphones at the same rate included), not from th
   until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO, built `nonisolated`)
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
+  The driver is mounted 600 ms after the row appears (or at the first touch), so building an
+  `MPVolumeView` never lands in the zoom's first frames, and `SystemVolumeLevel` reads the session's
+  volume only in `watch()`: a `@State` initial value is built on every parent body, and
+  `outputVolume` is a call into the audio server.
   The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
   each shrinking the artwork into a 56 pt header row. **Both are one layout** (`NowPlayingView.layout`):
   only the titles, the pane, the sleep countdown and the volume row come and go, while the scrubber,
@@ -315,7 +319,9 @@ every route change (a pair of headphones at the same rate included), not from th
   `CoverSlot` (an anchor preference keyed by `CoverPlace`, so the slot followed is the one the mode
   names; while one layout fades out beside the other both report, and whichever came last in the
   tree won, which left the cover in the header until the fade ended and then jumped it back
-  unanimated), and `MovingCover`, an overlay above both, draws the artwork once
+  unanimated), and `MovingCover`, an overlay above both, draws the artwork once (its shadow is
+  `CoverShadow`, a shadow-only `Canvas` rasterised once at scale 1 behind it, never `.shadow` on the
+  artwork, which is blurred again on every frame the field behind it moves)
   at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
   re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
   re-measured a live image every frame). The pane or
@@ -559,18 +565,27 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   `metal` compiler in the SDK is an arm64 Mach-O that cannot run on the Linux host, so the package
   carries no `.metal` file and no `.metallib`, and SwiftUI's `ShaderLibrary` is unusable. One
   fullscreen triangle; the uniforms (`FieldUniforms`, 192 bytes, mirrored by the shader's `Field`,
-  checked before the pipeline is built) are passed with `setFragmentBytes`. Five Gaussian blobs
+  checked before the pipeline is built) are passed with `setFragmentBytes`; each palette colour goes
+  in already in Oklab (`FieldUniforms.packed`), never converted per pixel. Five Gaussian blobs
   drift on Lissajous paths, the domain warped by two octaves of value noise; colours mix in Oklab
   with their chroma partly kept, so complementary blobs do not meet in grey; then a lightness
   curve, a vignette and triangular dither on the sRGB-encoded output (`bgra8Unorm`). Every period divides 360 s, the
-  length after which the clock wraps without a seam. The view draws at scale 1; the compositor
+  length after which the clock wraps without a seam. `BackdropMetalView` is a `CAMetalLayer` driven
+  by a `CAMetalDisplayLink` on the main run loop, which hands each frame a drawable already acquired
+  (two frames queued ahead) and its presentation time: an `MTKView` takes its drawable on the main
+  thread and blocks there whenever the GPU is behind, which stalled every animation on the screen.
+  The link is paused when dormant, paused again after a still frame, and invalidated when the view
+  leaves its window. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
   a change mid-fade starts from the blend then on screen.
-- **Energy** is the RMS of the visualizer tap (`Features.samples`), with a 120 ms attack and a 600 ms
+- **Energy** is the RMS of the visualizer tap (`Features.heardRms`, worked out off the main thread
+  with the read, `HeardSignal`), with a 120 ms attack and a 600 ms
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
-  the drift slows to 18 %. `Features.visualize` is reference-counted, so a backdrop and the
-  visualizer page each hold the tap without switching off the other's; a backdrop holds it only
+  the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop) and
+  `visualize` (the visualizer page), so neither switches off the other's; the observed
+  `Features.samples` is assigned only while a visualizer page holds it, so thirty reads a second
+  invalidate nothing behind Now Playing. A backdrop holds it only
   while visible, active, moving and playing, so a paused page leaves the tap off; a tap that fails
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
@@ -676,7 +691,9 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   palette sample (32 by 32) reads the 192 px tile and the lock-screen artwork the 384 px card, never
   the 1024 px full size, which cost about 4 MiB cached and evicted row thumbnails. A circular `ArtworkView`
   (`ArtworkView(track:corner:circle:)`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
-  first and falls back to the album's picture.
+  first and falls back to the album's picture. It clips with the concrete shape
+  (`ArtworkClip`: `.circle` or `.rect(cornerRadius:style:)`), never an `AnyShape`, which hides the
+  rounded rectangle from SwiftUI and turns the clip into a mask drawn offscreen.
 
 ## Downloads
 

@@ -1394,12 +1394,24 @@ final class Features {
     }
 
     @ObservationIgnored private var visualizers = 0
+    @ObservationIgnored private var loudnessListeners = 0
+    @ObservationIgnored private(set) var heardRms: Float = 0
 
     func visualize(_ enabled: Bool) {
         visualizers = max(visualizers + (enabled ? 1 : -1), 0)
-        guard visualizers > 0 else {
+        tapHoldersChanged()
+    }
+
+    func hearLoudness(_ enabled: Bool) {
+        loudnessListeners = max(loudnessListeners + (enabled ? 1 : -1), 0)
+        tapHoldersChanged()
+    }
+
+    private func tapHoldersChanged() {
+        guard visualizers + loudnessListeners > 0 else {
             visualization?.cancel()
             visualization = nil
+            heardRms = 0
             return
         }
         guard visualization == nil else { return }
@@ -1408,7 +1420,8 @@ final class Features {
             while !Task.isCancelled {
                 var wait = Features.visualizerFrame
                 do {
-                    self?.samples = try await Work.aside { try native.visualizer(enabled: true) }
+                    let heard = try await Work.aside { HeardSignal(try native.visualizer(enabled: true)) }
+                    self?.heard(heard)
                 } catch {
                     wait = Features.visualizerRetry
                 }
@@ -1416,6 +1429,22 @@ final class Features {
             }
             _ = try? await Work.aside { try native.visualizer(enabled: false) }
         }
+    }
+
+    private func heard(_ signal: HeardSignal) {
+        heardRms = signal.rms
+        if visualizers > 0 { samples = signal.samples }
+    }
+}
+
+struct HeardSignal: Sendable {
+    let samples: [Float]
+    let rms: Float
+
+    init(_ samples: [Float]) {
+        self.samples = samples
+        let power = samples.isEmpty ? 0 : samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
+        rms = power.squareRoot()
     }
 }
 

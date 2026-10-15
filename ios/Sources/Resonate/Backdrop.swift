@@ -1,6 +1,5 @@
 import Combine
 import Metal
-import MetalKit
 import os
 import ResonateNative
 import Synchronization
@@ -33,7 +32,6 @@ struct BackdropView: View {
         ZStack {
             Color(.systemBackground)
             if let palette {
-                GradientBackdrop(palette: palette, weight: ambience ?? 1)
                 if case .metal(let gpu) = rendering {
                     MeshBackdrop(
                         gpu: gpu,
@@ -41,9 +39,12 @@ struct BackdropView: View {
                         palette: palette,
                         motion: motion,
                         tone: tone,
-                        reactive: ambience == nil
+                        reactive: ambience == nil,
+                        playing: sounding
                     )
                     .transition(.opacity)
+                } else {
+                    GradientBackdrop(palette: palette, weight: ambience ?? 1)
                 }
             }
         }
@@ -103,7 +104,7 @@ struct BackdropView: View {
     private func listen(_ wanted: Bool) {
         guard wanted != listening else { return }
         listening = wanted
-        library.features.visualize(wanted)
+        library.features.hearLoudness(wanted)
     }
 
     private func prepareRendering() async {
@@ -237,23 +238,14 @@ private struct MeshBackdrop: UIViewRepresentable {
     let motion: BackdropMotion
     let tone: BackdropTone
     let reactive: Bool
+    let playing: Bool
 
     func makeCoordinator() -> BackdropRenderer {
         BackdropRenderer(gpu: gpu, palette: palette)
     }
 
     func makeUIView(context: Context) -> BackdropMetalView {
-        let view = BackdropMetalView(frame: .zero, device: gpu.device)
-        view.colorPixelFormat = BackdropPipeline.pixelFormat
-        view.framebufferOnly = true
-        view.autoResizeDrawable = true
-        view.isOpaque = false
-        view.backgroundColor = .clear
-        view.isUserInteractionEnabled = false
-        view.isPaused = true
-        view.enableSetNeedsDisplay = false
-        view.delegate = context.coordinator
-        return view
+        BackdropMetalView(device: gpu.device, renderer: context.coordinator)
     }
 
     func updateUIView(_ view: BackdropMetalView, context: Context) {
@@ -262,6 +254,7 @@ private struct MeshBackdrop: UIViewRepresentable {
         renderer.library = library
         renderer.tone = tone
         renderer.reactive = reactive
+        renderer.playing = playing
         renderer.still = motion == .still
         renderer.show(palette)
         view.motion = motion
@@ -269,13 +262,15 @@ private struct MeshBackdrop: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ view: BackdropMetalView, coordinator: BackdropRenderer) {
-        view.motion = .dormant
-        view.delegate = nil
+        view.stop()
     }
 }
 
-final class BackdropMetalView: MTKView {
+final class BackdropMetalView: UIView {
     private static let drawingScale: CGFloat = 1
+    private static let framesQueuedAhead: Float = 2
+
+    override static var layerClass: AnyClass { CAMetalLayer.self }
 
     var motion = BackdropMotion.dormant {
         didSet {
@@ -283,35 +278,99 @@ final class BackdropMetalView: MTKView {
         }
     }
 
+    private let renderer: BackdropRenderer
+    private var link: CAMetalDisplayLink?
+
+    init(device: any MTLDevice, renderer: BackdropRenderer) {
+        self.renderer = renderer
+        super.init(frame: .zero)
+        isOpaque = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        contentScaleFactor = Self.drawingScale
+        guard let metal = metalLayer else { return }
+        metal.device = device
+        metal.pixelFormat = BackdropPipeline.pixelFormat
+        metal.framebufferOnly = true
+        metal.isOpaque = false
+        metal.contentsScale = Self.drawingScale
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    private var metalLayer: CAMetalLayer? {
+        layer as? CAMetalLayer
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let size = CGSize(width: bounds.width * Self.drawingScale, height: bounds.height * Self.drawingScale)
+        guard let metal = metalLayer, size.width >= 1, size.height >= 1, metal.drawableSize != size else { return }
+        metal.drawableSize = size
+        redrawIfStill()
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
         contentScaleFactor = Self.drawingScale
+        metalLayer?.contentsScale = Self.drawingScale
         applyMotion()
     }
 
     func redrawIfStill() {
-        if window != nil, motion == .still { setNeedsDisplay() }
+        if window != nil, motion == .still { link?.isPaused = false }
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
     }
 
     private func applyMotion() {
-        switch window == nil ? .dormant : motion {
-        case .flowing(let framesPerSecond):
-            preferredFramesPerSecond = framesPerSecond
-            enableSetNeedsDisplay = false
-            isPaused = false
-        case .still:
-            isPaused = true
-            enableSetNeedsDisplay = true
-            setNeedsDisplay()
-        case .dormant:
-            isPaused = true
-            enableSetNeedsDisplay = false
+        guard window != nil else {
+            stop()
+            return
         }
+        switch motion {
+        case .flowing(let framesPerSecond):
+            let rate = Float(framesPerSecond)
+            let link = running()
+            link?.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+            link?.isPaused = false
+        case .still:
+            running()?.isPaused = false
+        case .dormant:
+            link?.isPaused = true
+        }
+    }
+
+    private func running() -> CAMetalDisplayLink? {
+        if let link { return link }
+        guard let metal = metalLayer else { return nil }
+        let started = CAMetalDisplayLink(metalLayer: metal)
+        started.preferredFrameLatency = Self.framesQueuedAhead
+        started.delegate = self
+        started.add(to: .main, forMode: .common)
+        link = started
+        return started
+    }
+
+    private func draw(on drawable: any CAMetalDrawable, presentedAt moment: CFTimeInterval) {
+        renderer.draw(on: drawable, at: moment)
+        if motion == .still { link?.isPaused = true }
+    }
+}
+
+extension BackdropMetalView: @preconcurrency CAMetalDisplayLinkDelegate {
+    func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
+        draw(on: update.drawable, presentedAt: update.targetPresentationTimestamp)
     }
 }
 
 @MainActor
-final class BackdropRenderer: NSObject, MTKViewDelegate {
+final class BackdropRenderer {
     private static let crossfadeSeconds: CFTimeInterval = 1.2
     private static let attackSeconds: Float = 0.12
     private static let releaseSeconds: Float = 0.6
@@ -326,11 +385,14 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
     weak var library: Library?
     var tone = BackdropTone.dark
     var reactive = true
+    var playing = false
     var still = false
 
     private let gpu: BackdropGPU
     private var shown: Palette
     private var leaving: Palette
+    private var shownPacked: FieldUniforms.Five
+    private var leavingPacked: FieldUniforms.Five
     private var crossfadeBegan = -CFTimeInterval.infinity
     private var flow: Double = 0
     private var speed = BackdropRenderer.restingSpeed
@@ -341,6 +403,8 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
         self.gpu = gpu
         shown = palette
         leaving = palette
+        shownPacked = FieldUniforms.packed(palette)
+        leavingPacked = shownPacked
     }
 
     func show(_ palette: Palette) {
@@ -350,25 +414,26 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
 
         leaving = leaving.blended(toward: shown, by: reached)
         shown = palette
+        leavingPacked = FieldUniforms.packed(leaving)
+        shownPacked = FieldUniforms.packed(shown)
         crossfadeBegan = now
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+    func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
+        let step = Float(min(max(moment - (lastFrame ?? moment), 0), Self.longestStep))
 
-    func draw(in view: MTKView) {
-        let now = CACurrentMediaTime()
-        let step = Float(min(now - (lastFrame ?? now), Self.longestStep))
+        lastFrame = moment
+        advance(by: step, at: moment)
 
-        lastFrame = now
-        advance(by: step)
-
-        guard let pass = view.currentRenderPassDescriptor,
-            let drawable = view.currentDrawable,
-            let commands = gpu.queue.makeCommandBuffer()
-        else { return }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .dontCare
-        guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let uniforms = self.uniforms(at: now, drawable: view.drawableSize)
+        pass.colorAttachments[0].storeAction = .store
+        guard let commands = gpu.queue.makeCommandBuffer(),
+            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
+        else { return }
+        let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        let uniforms = self.uniforms(at: moment, drawable: size)
 
         encoder.setRenderPipelineState(gpu.pipeline)
         withUnsafeBytes(of: uniforms) { bytes in
@@ -382,8 +447,7 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
         commands.commit()
     }
 
-    private func advance(by step: Float) {
-        let playing = library?.snapshot?.transport == .playing
+    private func advance(by step: Float, at moment: CFTimeInterval) {
         let heard = playing && !still && reactive ? loudness() : 0
         let reaction = heard > energy ? Self.attackSeconds : Self.releaseSeconds
         let wantedSpeed = playing ? 1 + Self.energyReach * energy : Self.restingSpeed
@@ -393,15 +457,13 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
         if reactive {
             flow = (flow + Double(step * speed)).truncatingRemainder(dividingBy: Self.loopSeconds)
         } else {
-            flow = (CACurrentMediaTime() * Double(Self.restingSpeed)).truncatingRemainder(dividingBy: Self.loopSeconds)
+            flow = (moment * Double(Self.restingSpeed)).truncatingRemainder(dividingBy: Self.loopSeconds)
         }
     }
 
     private func loudness() -> Float {
-        guard let samples = library?.features.samples, !samples.isEmpty else { return 0 }
-        let power = samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
-
-        return min(power.squareRoot() / Self.fullEnergyLoudness, 1)
+        guard let rms = library?.features.heardRms else { return 0 }
+        return min(rms / Self.fullEnergyLoudness, 1)
     }
 
     private func crossfade(at now: CFTimeInterval) -> Float {
@@ -412,8 +474,8 @@ final class BackdropRenderer: NSObject, MTKViewDelegate {
         let aspect = size.width > 0 && size.height > 0 ? Float(size.width / size.height) : 1
 
         return FieldUniforms(
-            colours: FieldUniforms.packed(shown),
-            previous: FieldUniforms.packed(leaving),
+            colours: shownPacked,
+            previous: leavingPacked,
             time: still ? Self.stillMoment : Float(flow),
             energy: still ? 0 : energy,
             progress: still ? 1 : crossfade(at: now),
@@ -450,7 +512,8 @@ struct FieldUniforms {
 
     static func packed(_ palette: Palette) -> Five {
         let packed = zip(palette.colours, palette.weights).map { colour, weight in
-            SIMD4<Float>(colour.x, colour.y, colour.z, weight)
+            let lab = Oklab.lab(fromLinear: pointwiseMax(colour, .zero))
+            return SIMD4<Float>(lab.x, lab.y, lab.z, weight)
         }
         return (packed[0], packed[1], packed[2], packed[3], packed[4])
     }
@@ -607,18 +670,6 @@ enum BackdropShader {
             return mix(mix(a, b, eased.x), mix(c, d, eased.x), eased.y);
         }
 
-        float3 oklabFromLinear(float3 rgb) {
-            float3 lms = float3(
-                dot(rgb, float3(0.4122214708, 0.5363325363, 0.0514459929)),
-                dot(rgb, float3(0.2119034982, 0.6806995451, 0.1073969566)),
-                dot(rgb, float3(0.0883024619, 0.2817188376, 0.6299787005)));
-            float3 root = powr(max(lms, float3(0.0000001)), float3(1.0 / 3.0));
-            return float3(
-                dot(root, float3(0.2104542553, 0.7936177850, -0.0040720468)),
-                dot(root, float3(1.9779984951, -2.4285922050, 0.4505937099)),
-                dot(root, float3(0.0259040371, 0.7827717662, -0.8086757660)));
-        }
-
         float3 linearFromOklab(float3 lab) {
             float3 root = float3(
                 dot(lab, float3(1.0, 0.3963377774, 0.2158037573)),
@@ -637,7 +688,7 @@ enum BackdropShader {
             return (blobAnchors[index] + wander - 0.5) * frame;
         }
 
-        float3 fieldOf(constant float4 *colours, float2 place, float time, float energy, float2 frame) {
+        float3 fieldOf(constant float4 *labs, float2 place, float time, float energy, float2 frame) {
             float growth = 1.0 + energyGrowth * energy;
             float3 blended = float3(0.0);
             float3 ground = float3(0.0);
@@ -646,8 +697,8 @@ enum BackdropShader {
             float total = 0.0;
             float weights = 0.0;
             for (int index = 0; index < blobCount; index++) {
-                float4 colour = colours[index];
-                float3 lab = oklabFromLinear(colour.rgb);
+                float4 colour = labs[index];
+                float3 lab = colour.xyz;
                 float chroma = length(lab.yz);
                 float2 offset = place - blobCentre(index, time, frame);
                 float radius = (blobBaseRadius + blobWeightRadius * sqrt(colour.w)) * growth;

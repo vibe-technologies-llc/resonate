@@ -45,7 +45,7 @@ struct ArtworkView: View {
                     .transition(.opacity)
             }
         }
-        .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous)))
+        .modifier(ArtworkClip(circle: circle, corner: corner))
         .onGeometryChange(for: CGFloat.self) { proxy in
             max(proxy.size.width, proxy.size.height)
         } action: { edge in
@@ -133,6 +133,19 @@ struct ArtworkView: View {
             image = shown
         }
         if let shown, !portrayed { ShownArtwork.keep(shown, for: track) }
+    }
+}
+
+private struct ArtworkClip: ViewModifier {
+    let circle: Bool
+    let corner: CGFloat
+
+    func body(content: Content) -> some View {
+        if circle {
+            content.clipShape(.circle)
+        } else {
+            content.clipShape(.rect(cornerRadius: corner, style: .continuous))
+        }
     }
 }
 

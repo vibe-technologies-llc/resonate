@@ -277,6 +277,7 @@ struct LargeArtwork: View {
 
 struct MovingCover: View {
     private static let pausedScale: CGFloat = 0.84
+    private static let corner: CGFloat = 24
 
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -289,9 +290,9 @@ struct MovingCover: View {
         let playing = library.transport == .playing || library.transport == .loading
         let drawn = edge > 0 ? edge : max(slot.width, 1)
         let resting = large && !playing && !reduceMotion ? Self.pausedScale : 1
-        ArtworkView(track: track, corner: 24)
+        ArtworkView(track: track, corner: Self.corner)
             .frame(width: drawn, height: drawn)
-            .shadow(color: .black.opacity(0.3), radius: 28, y: 16)
+            .background { CoverShadow(corner: Self.corner) }
             .scaleEffect(resting)
             .motion(.spring(duration: 0.5, bounce: 0.25), value: playing)
             .scaleEffect(slot.width / drawn)
@@ -300,6 +301,30 @@ struct MovingCover: View {
             .onChange(of: slot, initial: true) { _, now in
                 if large, now.width > 0, now.width != edge { edge = now.width }
             }
+    }
+}
+
+struct CoverShadow: View {
+    private static let blur: CGFloat = 28
+    private static let drop: CGFloat = 16
+    private static let darkness = 0.3
+    private static let reach = blur * 2 + drop
+    private static let drawnAtScale: CGFloat = 1
+
+    let corner: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            let cover = CGRect(origin: .zero, size: size).insetBy(dx: Self.reach, dy: Self.reach)
+            guard cover.width > 0, cover.height > 0 else { return }
+
+            context.addFilter(.shadow(color: .black.opacity(Self.darkness), radius: Self.blur, y: Self.drop, options: .shadowOnly))
+            context.fill(RoundedRectangle(cornerRadius: corner, style: .continuous).path(in: cover), with: .color(.black))
+        }
+        .environment(\.displayScale, Self.drawnAtScale)
+        .padding(-Self.reach)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -612,10 +637,12 @@ struct VolumeRow: View {
     private static let grabbedHeight: CGFloat = 14
     private static let touchHeight: CGFloat = 34
     private static let step: Float = 1 / 16
+    private static let driverMountsAfter: Duration = .milliseconds(600)
 
     @State private var volume = SystemVolumeLevel()
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
+    @State private var driven = false
 
     var body: some View {
         let shown = dragging ?? volume.level
@@ -639,7 +666,9 @@ struct VolumeRow: View {
                     .gesture(drag(across: width, from: shown))
             }
             .frame(height: Self.touchHeight)
-            .background { VolumeDriver(volume: volume).allowsHitTesting(false) }
+            .background {
+                if driven { VolumeDriver(volume: volume).allowsHitTesting(false) }
+            }
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
         }
@@ -648,10 +677,15 @@ struct VolumeRow: View {
         .accessibilityValue(Text(Double(shown), format: .percent.precision(.fractionLength(0))))
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? Self.step : -Self.step
+            driven = true
             volume.set(min(max(shown + step, 0), 1))
         }
         .onAppear { volume.watch() }
         .onDisappear { volume.stopWatching() }
+        .task {
+            try? await Task.sleep(for: Self.driverMountsAfter)
+            driven = true
+        }
     }
 
     private func drag(across width: CGFloat, from shown: Float) -> some Gesture {
@@ -659,6 +693,7 @@ struct VolumeRow: View {
             .onChanged { change in
                 let start = grabbedAt ?? shown
                 if grabbedAt == nil { grabbedAt = start }
+                driven = true
                 let moved = Float(change.translation.width / width)
                 let wanted = min(max(start + moved, 0), 1)
 
@@ -675,7 +710,7 @@ struct VolumeRow: View {
 @MainActor
 @Observable
 final class SystemVolumeLevel {
-    private(set) var level: Float = AVAudioSession.sharedInstance().outputVolume
+    private(set) var level: Float = 0
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
 
