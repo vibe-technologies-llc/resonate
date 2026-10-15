@@ -1025,7 +1025,7 @@ final class Library {
             await AppearanceState.shared.resetIcon()
             let erased = songs
             _ = try? await Work.aside {
-                erased.forEach(documents.delete)
+                erased.forEach { documents.delete($0) }
                 Erasure.everything()
             }
             exit(0)

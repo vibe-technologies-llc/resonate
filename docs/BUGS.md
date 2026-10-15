@@ -39,11 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] `DownloadQueue.holds` reads `jobs`, appended only after `begin_download` answers, and
-  `begin_download` does not dedupe: a double tap, or *Download all missing* beside the wants loop,
-  makes two jobs and two files. `discard` ignores `Folders.delete`'s failure and drops the journal
-  entry anyway, so a partial file stays and a later scan indexes it; a kill between `index_download`
-  and the journal's removal has `recover` delete an indexed song
 - [M] Pause shares `Work.inOrder` with `queue()`, `playlists()`, `documentsMoved` and `sync_start`
   (which joins the sync thread): `.oldDeviceUnavailable` pauses through that lane, so the speaker
   can play on after the headphones go until a queue read or a sync restart finishes

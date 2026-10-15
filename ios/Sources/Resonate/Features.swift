@@ -168,7 +168,7 @@ final class Features {
         room.restore(native)
         readSecrets()
         native.configureOnline(enabled: online)
-        downloads.recover()
+        downloads.recover(native)
         downloads.wantsChanged()
         if let left = settings.string(forKey: "unfinished-sync-landing") {
             library.folders.delete(left)

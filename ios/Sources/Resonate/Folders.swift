@@ -347,10 +347,24 @@ final class Folders: Documents, @unchecked Sendable {
         }
     }
 
-    func delete(_ uri: String) {
-        guard let (url, scoped) = try? resolved(uri) else { return }
+    @discardableResult
+    func delete(_ uri: String) -> Bool {
+        let resolution: (URL, Bool)
+        do {
+            resolution = try resolved(uri)
+        } catch is FolderFailure {
+            return true
+        } catch {
+            return false
+        }
+        let (url, scoped) = resolution
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        try? FileManager.default.removeItem(at: url)
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch {
+            return !FileManager.default.fileExists(atPath: url.path)
+        }
     }
 
     private func folder(_ id: String, _ name: String, _ found: FolderAccess) -> MusicFolder {

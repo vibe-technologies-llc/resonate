@@ -125,6 +125,7 @@ final class DownloadQueue {
     @ObservationIgnored private var wantsGeneration = 0
     @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var batch: Set<UInt64> = []
+    @ObservationIgnored private var beginning: Set<String> = []
     @ObservationIgnored private lazy var background = BackgroundHold(
         name: "Downloading songs",
         continued: BackgroundHold.downloads
@@ -153,13 +154,20 @@ final class DownloadQueue {
     }
 
     func holds(_ song: SearchSong) -> Bool {
-        active.contains { $0.song.id == song.id }
+        beginning.contains(song.id) || active.contains { $0.song.id == song.id }
     }
 
-    func recover() {
+    func recover(_ native: MobilePlayer) {
         let left = settings.stringArray(forKey: Self.journalKey) ?? settings.string(forKey: Self.journalKey).map { [$0] } ?? []
-        for uri in left { library.folders.delete(uri) }
-        settings.removeObject(forKey: Self.journalKey)
+        guard !left.isEmpty else { return }
+        guard let indexed = (try? native.songUris()).map(Set.init) else { return }
+        let folders = library.folders
+        let kept = left.filter { !indexed.contains($0) && !folders.delete($0) }
+        if kept.isEmpty {
+            settings.removeObject(forKey: Self.journalKey)
+        } else {
+            settings.set(kept, forKey: Self.journalKey)
+        }
     }
 
     func enqueue(_ songs: [SearchSong]) {
@@ -295,9 +303,13 @@ final class DownloadQueue {
         begin(songs, into: folder)
     }
 
-    private func begin(_ songs: [SearchSong], into folder: MusicFolder) {
+    private func begin(_ asked: [SearchSong], into folder: MusicFolder) {
+        var seen: Set<String> = []
+        let songs = asked.filter { !holds($0) && seen.insert($0.id).inserted }
         guard !songs.isEmpty else { return }
+        beginning.formUnion(songs.map(\.id))
         Task {
+            defer { beginning.subtract(songs.map(\.id)) }
             do {
                 let native = try await library.player()
                 let ids = try await Work.aside { songs.map { native.beginDownload(song: $0) } }
@@ -382,8 +394,8 @@ final class DownloadQueue {
 
     private func discard(_ id: UInt64, _ folders: Folders) async {
         guard let uri = created.removeValue(forKey: id) else { return }
-        _ = try? await Work.aside { folders.delete(uri) }
-        journal { $0.removeAll { $0 == uri } }
+        let gone = (try? await Work.aside { folders.delete(uri) }) ?? false
+        if gone { journal { $0.removeAll { $0 == uri } } }
     }
 
     private func landed(_ track: Track) {

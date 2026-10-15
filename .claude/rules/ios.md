@@ -623,8 +623,13 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   finishes after a restart never clears the loop that replaced it. "Download saved songs automatically" on Saved for later
   (`download-wants-automatically` in `library-features`, on by default) is the switch.
 - **The journal is a list**: `unfinished-download` holds the URIs of every job's document still
-  being written, removed one by one as each lands or is deleted; on the next start each is deleted,
-  and a single string left by an older build is read as a list of one.
+  being written, removed one by one as each lands or is deleted (`Folders.delete` answers whether
+  the file is gone, and an entry whose file could not be deleted stays); on the next start each is
+  deleted unless the catalog already indexes it (a kill between `index_download` and the journal's
+  removal left a song, not a fragment), and where the catalog cannot be read nothing is deleted.
+  A single string left by an older build is read as a list of one. A song is held from the moment
+  it is asked (`beginning`, before `begin_download` answers), so a double tap or *Download all
+  missing* beside the wants loop makes one job.
 - **The destination is remembered**: `download-folder` in `library-features`; the folder sheet
   appears only when none is kept or it is no longer readable and writable, with "Remember this
   folder" on by default; Downloads offers "Ask for a folder each time".
