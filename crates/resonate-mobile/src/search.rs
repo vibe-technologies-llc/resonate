@@ -1384,6 +1384,7 @@ struct Narrowing {
     minimum_bits: u32,
     favourites: bool,
     unplayed: bool,
+    played: bool,
 }
 
 impl Narrowing {
@@ -1396,6 +1397,7 @@ impl Narrowing {
             minimum_bits: filter.minimum_bits,
             favourites: filter.favourites,
             unplayed: filter.unplayed,
+            played: filter.played,
         }
     }
 
@@ -1407,6 +1409,7 @@ impl Narrowing {
             && row.track.bits.unwrap_or(0) >= self.minimum_bits
             && (!self.favourites || row.track.favourite)
             && (!self.unplayed || row.heard.is_empty())
+            && (!self.played || !row.heard.is_empty())
     }
 }
 
@@ -2535,6 +2538,20 @@ mod tests {
             .expect("the recently played");
 
         assert_eq!(titles(&found), vec!["Late", "Early", "Never"]);
+
+        let heard = searching
+            .filtered(
+                &catalog,
+                &TrackFilter {
+                    played: true,
+                    ..recent
+                },
+                0,
+                100,
+            )
+            .expect("only the songs heard");
+
+        assert_eq!(titles(&heard), vec!["Late", "Early"]);
     }
 
     #[test]

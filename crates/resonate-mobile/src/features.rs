@@ -71,6 +71,8 @@ pub struct TrackFilter {
     pub minimum_bits: u32,
     pub favourites: bool,
     pub unplayed: bool,
+    #[uniffi(default = false)]
+    pub played: bool,
     pub order: TrackOrder,
     pub descending: bool,
 }

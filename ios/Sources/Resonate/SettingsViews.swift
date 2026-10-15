@@ -689,8 +689,8 @@ struct ProcessingView: View {
                 Section("Player volume") {
                     Slider(
                         value: Binding(
-                            get: { Double(library.snapshot?.volume ?? 1) },
-                            set: { value in library.request { try $0.setVolume(volume: Float(value)) } }
+                            get: { Double(library.volume) },
+                            set: { library.setVolume(Float($0)) }
                         ),
                         in: 0...1
                     )

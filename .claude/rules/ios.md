@@ -259,6 +259,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   writes the system extrapolates elapsed time from the rate. Every command answers
   `.noSuchContent` with nothing loaded; next is enabled only before the last row or while the
   queue repeats; shuffle, repeat (`.one` is the engine's 1, `.all` its 2) and stop are offered.
+- **The Processing page's *Player volume* is the engine's own trim, kept by `Library.setVolume` (`player-volume` in the `playback` suite) and sent again when the player opens; the slider reads `Library.volume`, which moves with the finger, not the polled snapshot.
 - **Reduce Motion is honoured by every animation, not by the three motion-heavy views alone.** An
   implicit animation goes through `.motion(_:calm:value:)` (`Appearance.swift`: none, or the calm
   fade given, under Reduce Motion), an explicit one is `withAnimation(reduceMotion ? nil : …)`, a
@@ -495,7 +496,7 @@ every route change (a pair of headphones at the same rate included), not from th
 - **Suggestions is a grid of cards** (`SuggestionsView`, adaptive columns at least 160 pt): each
   `SuggestedMix` is a `TrackFilter` with a title, a line saying what it holds, an accent pair and a
   mark (Never heard teal/blue, Your favourites mauve/red, Most played red/peach, Recently added
-  green/teal, High-resolution green/blue, the most listened artist's mix, `listening_detail`'s first artist, its named accents). Covers are
+  green/teal, High-resolution green/blue, the most listened artist's mix, `listening_detail`'s first artist, its named accents). *Most played* and *Recently played* set `TrackFilter.played`, so they hold the songs heard and never run on into unheard ones. Covers are
   `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
   `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
   holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round

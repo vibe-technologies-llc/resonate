@@ -164,13 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] The *Player volume* slider (`ProcessingView`) sends `set_volume` and nothing keeps it
-  (`PlaybackPreferences` and `Resumption` carry no volume; the engine starts at `Volume::MAX`): a
-  trimmed volume is back at full after a relaunch, and the thumb lags the finger since it reads
-  `snapshot.volume`
-- [S] `SuggestedMix.offered` builds *Most played* and *Recently played* from an order alone
-  (`TrackFilter` has no played-only switch): past the played songs both run on into every unplayed
-  one, so Play queues unheard music under a "what you listened to" card
 - [S] `StatisticsView` hands the newly picked `days` to the tiles and chart while
   `features.statistics` and `listeningDetail` still hold the previous period, until
   `loadStatistics`' three calls land, and for good if one fails: the old total is divided by the new

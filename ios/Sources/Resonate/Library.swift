@@ -158,6 +158,7 @@ final class Library {
     private(set) var erasedLeaving: Int?
     var scanned = 0
     var preferences: PlaybackPreferences?
+    private(set) var volume: Float = 1
     var route: OutputRoute?
     var routeReading = RouteReading.current
     var boundRoutes: [OutputRoute] = []
@@ -240,6 +241,11 @@ final class Library {
                 let stored = preferencesStore.read(for: route)
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
+                volume = preferencesStore.volume
+                if volume < 1 {
+                    let kept = volume
+                    try await Work.inOrder { try opened.setVolume(volume: kept) }
+                }
                 native = opened
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
                 waiting.forEach { $0.resume(returning: opened) }
@@ -707,6 +713,12 @@ final class Library {
         if let top = features.statistics?.topTracks { features.statistics?.topTracks = marked(top) }
         if features.inspector?.track.id == id { features.inspector?.track.favourite = favourite }
         nowPlaying.favouriteChanged()
+    }
+
+    func setVolume(_ level: Float) {
+        volume = level
+        preferencesStore.volume = level
+        request { try $0.setVolume(volume: level) }
     }
 
     func updatePreferences(_ change: @escaping @Sendable (PlaybackPreferences) -> PlaybackPreferences) {

@@ -206,10 +206,11 @@ struct SuggestedMix: Identifiable {
         var played = base
         played.order = .plays
         played.descending = true
+        played.played = true
         var recent = base
         recent.order = .played
         recent.descending = true
-        recent.unplayed = false
+        recent.played = true
         var added = base
         added.order = .added
         added.descending = true

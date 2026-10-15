@@ -263,6 +263,7 @@ struct FilterButton: View {
 enum FilterChip: Identifiable {
     case favourites
     case unplayed
+    case played
     case hiRes
     case depth(UInt32)
     case genre(String)
@@ -278,6 +279,7 @@ enum FilterChip: Identifiable {
         var chips: [FilterChip] = []
         if filter.favourites { chips.append(.favourites) }
         if filter.unplayed { chips.append(.unplayed) }
+        if filter.played { chips.append(.played) }
         if filter.minimumRate > 0 { chips.append(.hiRes) }
         if filter.minimumBits > 0 { chips.append(.depth(filter.minimumBits)) }
         if !filter.genre.isEmpty { chips.append(.genre(filter.genre)) }
@@ -293,6 +295,7 @@ enum FilterChip: Identifiable {
         switch self {
         case .favourites: "Favourites"
         case .unplayed: "Unplayed"
+        case .played: "Played"
         case .hiRes: "Hi-res"
         case .depth(let bits): "\(bits)-bit or more"
         case .genre(let genre): "Genre: \(genre)"
@@ -308,6 +311,7 @@ enum FilterChip: Identifiable {
         switch self {
         case .favourites: cleared.favourites = false
         case .unplayed: cleared.unplayed = false
+        case .played: cleared.played = false
         case .hiRes: cleared.minimumRate = 0
         case .depth: cleared.minimumBits = 0
         case .genre: cleared.genre = ""
