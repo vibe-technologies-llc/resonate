@@ -39,8 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] The Online song row leaves *Download* enabled on a song marked *In your library*
-  (`holds` asks active jobs only), where the Wanted list hides it
 - [S] The Output page reads `AVAudioSession.currentRoute`, `sampleRate` and `outputLatency` in a
   body without observing them, so headphones plugged in at the same rate leave the old route shown
 - [S] `EqualiserGraph` keeps `touch` and `holding` in `@State`, so a drag the system cancels (a

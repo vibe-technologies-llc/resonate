@@ -452,7 +452,7 @@ struct OnlineSongRow: View {
             Spacer(minLength: 0)
             Menu {
                 Button("Download", systemImage: "arrow.down.circle", action: download)
-                    .disabled(features.downloads.holds(song))
+                    .disabled(song.held || features.downloads.holds(song))
                 Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
