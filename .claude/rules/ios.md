@@ -149,12 +149,25 @@ bottom ran through the title and artist, since the system fixes the accessory's 
   buttons no wider than 440 pt; nothing else sits in that row. An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's.
+- **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a
+  `CollectionSource`): a context menu with Play, Shuffle, Play next, Add to queue, Add to playlist
+  and an album's Go to artist, and the song row's leading Play next / Add to queue swipe, its songs
+  read on `Work.aside` when the action is chosen (`album_tracks`, `artist_tracks`, the playlist's
+  first page). Lists, search results, shelves and the artist page's albums all carry it.
+- **One row per kind**: a collection is a `CollectionRow` (lit title, optional chevron) and a song a
+  `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
+  search result swipes, marks the playing song and is felt as a list row is; every artwork edge is a
+  `@ScaledMetric`.
+- **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
+  `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
+  the full list is rows.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
   never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
   the index's own arithmetic, `nil` without an album, which hides *Go to album*). `AlbumView` reads
-  `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions)
-  and `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page), each on `Work.aside` in a
+  `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions),
+  `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
+  shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
   `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
   reload, keeping the last answer meanwhile. A playlist's rows are keyed by song and occurrence, move and remove at once, and
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a

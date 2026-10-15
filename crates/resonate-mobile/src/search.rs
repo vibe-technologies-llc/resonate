@@ -160,6 +160,12 @@ impl MobilePlayer {
         self.services.searching.album_tracks(&self.catalog, &key)
     }
 
+    pub fn most_played_by(&self, name: String, limit: u32) -> Result<Vec<Track>> {
+        self.services
+            .searching
+            .most_played_by(&self.catalog, &name, limit)
+    }
+
     pub fn albums_by(&self, name: String) -> Result<Vec<AlbumHit>> {
         self.services.searching.albums_by(&self.catalog, &name)
     }
@@ -341,6 +347,23 @@ impl Searching {
             .album_at
             .get(key)
             .map(|group| index.albums[*group].hit()))
+    }
+
+    pub(crate) fn most_played_by(
+        &self,
+        catalog: &Catalog,
+        name: &str,
+        limit: u32,
+    ) -> Result<Vec<Track>> {
+        let index = self.index(catalog)?;
+        let Some(artist) = index.artist_at.get(&folded_letters(name.trim())) else {
+            return Ok(Vec::new());
+        };
+
+        let mut rows = index.artists[*artist].rows.clone();
+        rows.sort_by_key(|at| Reverse(index.rows[*at].plays()));
+        rows.truncate(limit.min(LISTED_AT_MOST) as usize);
+        Ok(index.tracks_at(&rows))
     }
 
     pub(crate) fn albums_by(&self, catalog: &Catalog, name: &str) -> Result<Vec<AlbumHit>> {
@@ -1877,7 +1900,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
-        song(
+        let joga = song(
             &catalog,
             Tagged {
                 title: "Joga",
@@ -1887,6 +1910,14 @@ mod tests {
                 ..UNTAGGED
             },
         );
+        catalog
+            .0
+            .lock()
+            .execute(
+                "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, 1700000000, 30000, 1), (?1, 1700000600, 30000, 1)",
+                [joga.id as i64],
+            )
+            .expect("two plays");
 
         let key = album_key(
             first.album.clone(),
@@ -1910,6 +1941,14 @@ mod tests {
                 .map(|album| album.title.as_str())
                 .collect::<Vec<_>>(),
             vec!["Homogenic", "Post"]
+        );
+        assert_eq!(
+            titles(
+                &searching
+                    .most_played_by(&catalog, "Björk", 2)
+                    .expect("the most played")
+            ),
+            vec!["Joga", "Army of Me"]
         );
         assert_eq!(album_key(" ".into(), "Björk".into(), String::new()), None);
         assert_eq!(

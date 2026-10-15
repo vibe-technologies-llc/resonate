@@ -97,13 +97,15 @@ struct SearchResults: View {
         }
         ForEach(found.albums, id: \.key) { album in
             Button { open(album.destination) } label: {
-                FoundCollectionRow(
+                CollectionRow(
                     track: library.artworkTrack(album.artworkTrack),
                     title: lit(album.shownTitle, by: query, in: .album),
-                    detail: album.detail
+                    detail: album.detail,
+                    disclosed: true
                 )
             }
             .buttonStyle(.plain)
+            .collectionActions(.album(album.key), artist: album.artist)
         }
     }
 
@@ -114,19 +116,21 @@ struct SearchResults: View {
         }
         ForEach(found.artists, id: \.name) { artist in
             Button { open(artist.destination) } label: {
-                FoundCollectionRow(
+                CollectionRow(
                     track: library.artworkTrack(artist.artworkTrack),
                     title: lit(artist.shownName, by: query, in: .artist),
                     detail: artist.detail,
-                    circle: true
+                    circle: true,
+                    disclosed: true
                 )
             }
             .buttonStyle(.plain)
+            .collectionActions(.artist(artist.name))
         }
     }
 
     private func songRow(_ track: Track, among tracks: [Track], _ query: String) -> some View {
-        FoundTrackRow(track: track, query: query, current: library.snapshot?.current?.id == track.id) {
+        TrackRow(track: track, current: library.snapshot?.current?.id == track.id, query: query) {
             search.remember()
             library.play(tracks, selected: track)
         }
@@ -238,79 +242,9 @@ struct SearchSuggestions: View {
     }
 }
 
-struct FoundTrackRow: View {
-    @Environment(Navigation.self) private var navigation
-    let track: Track
-    let query: String
-    var current = false
-    let play: () -> Void
-    @State private var choosingPlaylist = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: play) {
-                HStack(spacing: 12) {
-                    ArtworkView(track: track, corner: 8).frame(width: 48, height: 48)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(lit(track.shownTitle, by: query, in: .title))
-                            .font(.body.weight(current ? .semibold : .regular))
-                            .foregroundStyle(current ? Color.accentColor : Color.primary)
-                            .lineLimit(1)
-                        Text(detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            FavouriteButton(track: track)
-        }
-        .contextMenu { TrackMenu(track: track, choosingPlaylist: $choosingPlaylist) }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
-        .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
-    }
-
-    private var detail: AttributedString {
-        var shown = lit(track.shownArtist, by: query, in: .artist)
-        if !track.album.isEmpty {
-            shown.append(AttributedString(" · "))
-            shown.append(lit(track.album, by: query, in: .album))
-        }
-        return shown
-    }
-}
-
-struct FoundCollectionRow: View {
-    let track: Track?
-    let title: AttributedString
-    let detail: String
-    var circle = false
-    var disclosed = true
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ArtworkView(track: track, corner: 10, circle: circle)
-                .frame(width: 56, height: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium)).lineLimit(1)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if disclosed {
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .contentShape(.rect)
-    }
-}
-
 struct AlbumShelf: View {
     @Environment(Library.self) private var library
+    @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 140
     let albums: [AlbumHit]
     let query: String
     let open: (AlbumHit) -> Void
@@ -321,8 +255,8 @@ struct AlbumShelf: View {
                 ForEach(albums, id: \.key) { album in
                     Button { open(album) } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 12)
-                                .frame(width: 140, height: 140)
+                            ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
+                                .frame(width: edge, height: edge)
                             Text(lit(album.shownTitle, by: query, in: .album))
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
@@ -331,10 +265,11 @@ struct AlbumShelf: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                        .frame(width: 140, alignment: .leading)
+                        .frame(width: edge, alignment: .leading)
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .collectionActions(.album(album.key), artist: album.artist)
                 }
             }
             .padding(.horizontal, 16)
@@ -346,6 +281,7 @@ struct AlbumShelf: View {
 
 struct ArtistShelf: View {
     @Environment(Library.self) private var library
+    @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 96
     let artists: [ArtistHit]
     let query: String
     let open: (ArtistHit) -> Void
@@ -357,7 +293,7 @@ struct ArtistShelf: View {
                     Button { open(artist) } label: {
                         VStack(spacing: 6) {
                             ArtworkView(track: library.artworkTrack(artist.artworkTrack), circle: true)
-                                .frame(width: 96, height: 96)
+                                .frame(width: edge, height: edge)
                             Text(lit(artist.shownName, by: query, in: .artist))
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
@@ -365,10 +301,11 @@ struct ArtistShelf: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .frame(width: 104)
+                        .frame(width: edge + 8)
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .collectionActions(.artist(artist.name))
                 }
             }
             .padding(.horizontal, 16)

@@ -152,6 +152,7 @@ struct BrowsedAlbums: View {
         NavigationLink(value: album.destination) {
             CollectionRow(track: library.artworkTrack(album.artworkTrack), title: album.shownTitle, detail: album.detail)
         }
+        .collectionActions(.album(album.key), artist: album.artist)
     }
 }
 
@@ -178,6 +179,7 @@ struct BrowsedArtists: View {
         NavigationLink(value: artist.destination) {
             CollectionRow(track: library.artworkTrack(artist.artworkTrack), title: artist.shownName, detail: artist.detail, circle: true)
         }
+        .collectionActions(.artist(artist.name))
     }
 }
 
@@ -341,9 +343,22 @@ struct EmptyLibrary: View {
 struct CollectionRow: View {
     @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
     let track: Track?
-    let title: String
+    let title: AttributedString
     let detail: String
-    var circle = false
+    let circle: Bool
+    let disclosed: Bool
+
+    init(track: Track?, title: AttributedString, detail: String, circle: Bool = false, disclosed: Bool = false) {
+        self.track = track
+        self.title = title
+        self.detail = detail
+        self.circle = circle
+        self.disclosed = disclosed
+    }
+
+    init(track: Track?, title: String, detail: String, circle: Bool = false, disclosed: Bool = false) {
+        self.init(track: track, title: AttributedString(title), detail: detail, circle: circle, disclosed: disclosed)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -353,7 +368,14 @@ struct CollectionRow: View {
                 Text(title).font(.body.weight(.medium)).lineLimit(1)
                 Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
+            Spacer(minLength: 0)
+            if disclosed {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }
@@ -367,6 +389,8 @@ struct TrackRow: View {
     var current: Bool?
     var numbered: UInt32?
     var albumArtist: String?
+    var showsAlbum = false
+    var query: String?
     var ownsMenus = true
     let play: () -> Void
     @State private var choosingPlaylist = false
@@ -379,7 +403,7 @@ struct TrackRow: View {
                 HStack(spacing: 12) {
                     leading(playingHere)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(track.shownTitle)
+                        Text(query.map { lit(track.shownTitle, by: $0, in: .title) } ?? AttributedString(track.shownTitle))
                             .font(.body.weight(playingHere ? .semibold : .regular))
                             .foregroundStyle(playingHere ? Color.accentColor : Color.primary)
                             .lineLimit(1)
@@ -421,11 +445,22 @@ struct TrackRow: View {
         .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
     }
 
-    private var detail: String? {
-        guard let albumArtist else { return "\(track.shownArtist) · \(clock(track.durationMs))" }
+    private var detail: AttributedString? {
+        if let query {
+            var shown = lit(track.shownArtist, by: query, in: .artist)
+            if !track.album.isEmpty {
+                shown.append(AttributedString(" · "))
+                shown.append(lit(track.album, by: query, in: .album))
+            }
+            return shown
+        }
+        if showsAlbum {
+            return AttributedString(track.album.isEmpty ? clock(track.durationMs) : "\(track.album) · \(clock(track.durationMs))")
+        }
+        guard let albumArtist else { return AttributedString("\(track.shownArtist) · \(clock(track.durationMs))") }
         let credited = track.artist.trimmingCharacters(in: .whitespaces)
         guard !credited.isEmpty, credited.searchFolded != albumArtist.trimmingCharacters(in: .whitespaces).searchFolded else { return nil }
-        return credited
+        return AttributedString(credited)
     }
 
     @ViewBuilder
