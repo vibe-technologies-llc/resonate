@@ -24,6 +24,10 @@ final class NearbyDevices: @unchecked Sendable {
         queue.async { self.followed(record) }
     }
 
+    func refresh() {
+        queue.async { self.toldAt = .distantPast }
+    }
+
     private func followed(_ record: String?) {
         guard let record else {
             stopped()

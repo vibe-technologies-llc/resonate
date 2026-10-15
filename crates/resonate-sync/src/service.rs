@@ -1,7 +1,7 @@
 use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, VecDeque},
-    future::pending,
+    future::{Future, pending},
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     path::PathBuf,
     sync::{
@@ -56,6 +56,7 @@ const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
 const DIAL_A_NEIGHBOUR_EVERY: Duration = Duration::from_secs(30);
 const HEARD_FOR: Duration = Duration::from_secs(60);
+const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 
 pub struct Settings {
     pub server: Option<String>,
@@ -122,6 +123,7 @@ enum Command {
     },
     Transfers(bool),
     Heard(Beacon),
+    Force,
     Stop,
 }
 
@@ -170,11 +172,13 @@ enum Event {
     Met(DeviceId, Connection),
     Unmet(DeviceId),
     Gone(DeviceId, usize),
+    Dropped(usize, Error),
 }
 
 struct Link {
     connection: Connection,
-    send: SendStream,
+    outgoing: UnboundedSender<Vec<u8>>,
+    writing: JoinHandle<()>,
     frames: UnboundedReceiver<Result<FromServer>>,
     reading: JoinHandle<()>,
     address: SocketAddr,
@@ -183,6 +187,24 @@ struct Link {
     caught_up: bool,
     in_flight: VecDeque<Vec<Change>>,
     compacting: bool,
+}
+
+impl Link {
+    fn say(&self, message: &ToServer) -> Result<()> {
+        let payload = message.encoded();
+        if payload.len() > LARGEST_FRAME {
+            return Err(Error::Oversized {
+                length: payload.len(),
+            });
+        }
+        self.outgoing.send(payload).map_err(|_| Error::Stopped)
+    }
+
+    fn hang_up(self) {
+        self.reading.abort();
+        self.writing.abort();
+        self.connection.close(0_u32.into(), b"leaving");
+    }
 }
 
 type ToldDigest = [u8; SHA256_OUTPUT_LEN];
@@ -363,6 +385,10 @@ impl Sync {
         let _ = self.commands.send(Command::Transfers(allowed));
     }
 
+    pub fn force(&self) {
+        let _ = self.commands.send(Command::Force);
+    }
+
     pub fn keep_songs_of(&self, at: LocalPlaylistId, keep: bool) -> Result<bool> {
         self.ledger.lock().keep_songs_of(at, keep)
     }
@@ -512,6 +538,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     syncing.heard_nearby(beacon, &[], None).await;
                     Ok(())
                 }
+                Some(Command::Force) => syncing.forced().await,
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch(recordings)).await,
             },
             Some(event) = inbound.events.recv() => syncing.event(event).await,
@@ -640,22 +667,35 @@ fn host_and_port(server: &str) -> (String, u16) {
     }
 }
 
+async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
+    timeout(SERVER_ANSWERS_WITHIN, waiting)
+        .await
+        .unwrap_or(Err(Error::ServerSilent))
+}
+
 async fn linked(running: Arc<Running>) -> Result<Link> {
-    let (address, host) = resolve(&running.server).await?;
-    let connection = running
+    let (address, host) = within(resolve(&running.server)).await?;
+    let connecting = running
         .endpoint
         .connect_with(running.to_server.clone(), address, &host)
-        .map_err(|source| Error::Connect(Box::new(source)))?
-        .await
-        .map_err(|source| Error::Connection(Box::new(source)))?;
-    let (mut send, recv) = connection
-        .open_bi()
-        .await
-        .map_err(|source| Error::Connection(Box::new(source)))?;
+        .map_err(|source| Error::Connect(Box::new(source)))?;
+    let connection = within(async {
+        connecting
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    let (mut send, recv) = within(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
 
     let (frames_in, mut frames) = mpsc::unbounded_channel();
     let reading = tokio::spawn(read_frames(recv, frames_in));
-    let welcomed = welcomed(&running, &mut send, &mut frames).await;
+    let welcomed = within(welcomed(&running, &mut send, &mut frames)).await;
     let (online, head, cursor) = match welcomed {
         Ok(welcomed) => welcomed,
         Err(error) => {
@@ -665,9 +705,17 @@ async fn linked(running: Arc<Running>) -> Result<Link> {
         }
     };
     tracing::info!(server = %running.server, "syncing with the server");
+    let (outgoing, queued) = mpsc::unbounded_channel();
+    let writing = tokio::spawn(write_frames(
+        send,
+        queued,
+        running.events.clone(),
+        connection.stable_id(),
+    ));
     Ok(Link {
         connection,
-        send,
+        outgoing,
+        writing,
         frames,
         reading,
         address,
@@ -699,6 +747,21 @@ async fn welcomed(
         Some(Err(error)) => Err(error),
         Some(Ok(_)) | None => Err(Error::Unwelcome),
     }
+}
+
+async fn write_frames(
+    mut send: SendStream,
+    mut queued: UnboundedReceiver<Vec<u8>>,
+    events: UnboundedSender<Event>,
+    connection: usize,
+) {
+    while let Some(payload) = queued.recv().await {
+        if let Err(error) = send_frame(&mut send, &payload).await {
+            let _ = events.send(Event::Dropped(connection, error));
+            return;
+        }
+    }
+    let _ = send.finish();
 }
 
 async fn read_frames(mut recv: quinn::RecvStream, frames: UnboundedSender<Result<FromServer>>) {
@@ -768,8 +831,7 @@ impl Syncing {
 
     fn unlinked(&mut self, error: Option<Error>) {
         if let Some(link) = self.server.take() {
-            link.reading.abort();
-            link.connection.close(0_u32.into(), b"leaving");
+            link.hang_up();
         }
         self.server_online.clear();
         match error {
@@ -794,11 +856,19 @@ impl Syncing {
     }
 
     async fn bye(&mut self) {
-        if let Some(mut link) = self.server.take() {
-            let _ = send_frame(&mut link.send, &ToServer::Bye.encoded()).await;
-            let _ = link.send.finish();
-            link.reading.abort();
-            link.connection.close(0_u32.into(), b"leaving");
+        if let Some(link) = self.server.take() {
+            let _ = link.say(&ToServer::Bye);
+            let Link {
+                outgoing,
+                writing,
+                reading,
+                connection,
+                ..
+            } = link;
+            drop(outgoing);
+            let _ = timeout(LEAVE_WITHIN, writing).await;
+            reading.abort();
+            connection.close(0_u32.into(), b"leaving");
         }
     }
 
@@ -824,6 +894,15 @@ impl Syncing {
             }
             Event::Punched(device, None) | Event::Unmet(device) => self.unreached(device),
             Event::Met(device, connection) => self.met(device, connection, true).await?,
+            Event::Dropped(id, error) => {
+                if self
+                    .server
+                    .as_ref()
+                    .is_some_and(|link| link.connection.stable_id() == id)
+                {
+                    self.unlinked(Some(error));
+                }
+            }
             Event::Gone(device, id) => {
                 if self
                     .peers
@@ -1088,7 +1167,7 @@ impl Syncing {
         let (changes, blobs): (Vec<_>, Vec<_>) = bundles.into_iter().unzip();
         link.in_flight
             .push_back(changes.into_iter().flatten().collect());
-        send_frame(&mut link.send, &ToServer::Append { blobs }.encoded()).await
+        link.say(&ToServer::Append { blobs })
     }
 
     async fn tell_neighbours(&mut self) -> Result<()> {
@@ -1152,11 +1231,7 @@ impl Syncing {
             && let Some(link) = self.server.as_mut()
         {
             link.compacting = true;
-            send_frame(
-                &mut link.send,
-                &ToServer::Compact { through, parts }.encoded(),
-            )
-            .await?;
+            link.say(&ToServer::Compact { through, parts })?;
         }
         Ok(())
     }
@@ -1240,7 +1315,7 @@ impl Syncing {
 
     async fn punch(&mut self, device: DeviceId) -> Result<()> {
         let candidates = self.candidates();
-        let Some(link) = self.server.as_mut() else {
+        let Some(link) = self.server.as_ref() else {
             return Ok(());
         };
         let sealed = sealed(
@@ -1248,11 +1323,7 @@ impl Syncing {
             self.running.derived.space,
             &encoded_candidates(&candidates),
         )?;
-        send_frame(
-            &mut link.send,
-            &ToServer::Punch { to: device, sealed }.encoded(),
-        )
-        .await
+        link.say(&ToServer::Punch { to: device, sealed })
     }
 
     fn candidates(&self) -> Vec<SocketAddr> {
@@ -1427,6 +1498,55 @@ impl Syncing {
         });
     }
 
+    async fn whole(&self) -> Result<(Vec<Change>, AHashSet<ToldDigest>)> {
+        let ledger = Arc::clone(&self.running.ledger);
+        let snapshot = blocking(move || ledger.lock().snapshot()).await?;
+        let changes = snapshot.into_iter().flatten().collect::<Vec<_>>();
+        let told = changes.iter().map(told_digest).collect();
+        Ok((changes, told))
+    }
+
+    async fn forced(&mut self) -> Result<()> {
+        self.wait = FIRST_RETRY;
+        self.followed.clear();
+        self.dialled_at.clear();
+        match self.server.take() {
+            Some(link) => {
+                link.hang_up();
+                self.server_online.clear();
+                self.connect();
+            }
+            None if self.retry_at.is_some() => self.retry_at = Some(Instant::now()),
+            None => {}
+        }
+        self.look_at = Some(Instant::now());
+        self.beacon().await;
+
+        let unmet = self
+            .heard
+            .keys()
+            .copied()
+            .filter(|device| !self.neighbours.contains_key(device))
+            .collect::<Vec<_>>();
+        for device in unmet {
+            self.dial_neighbour(device);
+        }
+
+        if !self.neighbours.is_empty() {
+            let (changes, told) = self.whole().await?;
+            for (device, neighbour) in &mut self.neighbours {
+                neighbour.told.clone_from(&told);
+                spawn_tell(*device, neighbour.connection.clone(), true, changes.clone());
+            }
+        }
+        for device in self.neighbours.keys().copied().collect::<Vec<_>>() {
+            self.follow(device).await?;
+        }
+        self.publish_devices();
+        self.publish_settled();
+        Ok(())
+    }
+
     async fn met(&mut self, device: DeviceId, connection: Connection, records: bool) -> Result<()> {
         if device == self.running.device {
             return Ok(());
@@ -1442,10 +1562,7 @@ impl Syncing {
         }
         self.peers.insert(device, connection.clone());
         if records {
-            let ledger = Arc::clone(&self.running.ledger);
-            let snapshot = blocking(move || ledger.lock().snapshot()).await?;
-            let changes = snapshot.into_iter().flatten().collect::<Vec<_>>();
-            let told = changes.iter().map(told_digest).collect();
+            let (changes, told) = self.whole().await?;
             self.neighbours.insert(
                 device,
                 Neighbour {

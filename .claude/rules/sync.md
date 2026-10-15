@@ -122,6 +122,18 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   before it mints: caught up with the server (this link, or an earlier one while none stands) or
   with a whole snapshot from a neighbour. A device that has met nobody does not look; there is
   nobody to tell. `Shown.settled` asks the same, and nothing in flight to the server.
+- **The server never holds the loop.** Its connection is bounded: resolving, connecting, opening the
+  stream and the `Welcome` each get `SERVER_ANSWERS_WITHIN` (15 s, else `ServerSilent`), and every
+  frame to it goes through a writer task fed by a channel (`Link::say`), so a server that stops
+  reading stalls nothing: neighbours, beacons and looks carry on, and a failed write comes back as
+  `Event::Dropped` and unlinks.
+- **Force** (`Sync::force`, *Sync now* on the desktop pane and the iPhone's sync page, `sync_force`
+  on the boundary) resets the backoff, drops and redials the server, clears the throttles on
+  dialling and on following a device, dials every device heard, tells each neighbour the whole
+  snapshot again and looks at once.
+- **A song deleted by hand is not held.** `Catalog::holds` is false for a row whose file is gone
+  (the desktop stats the path; the phones open the document), so the next follow or force fetches
+  it again and the landing upserts under the same document.
 - **Server**: `HOSTED_SERVER` (`resonate.tecnio.dev`, port 443) unless `sync-server` names
   another; `sync-server-certificate` adds a PEM to the system and built-in roots (a private CA, the
   tests' self-signed server).

@@ -278,6 +278,11 @@ final class Features {
         }
     }
 
+    func forceSync() {
+        nearby?.refresh()
+        work { native in native.syncForce() }
+    }
+
     private func applySync(_ native: MobilePlayer) async throws {
         guard let config = syncConfig else { return }
         let enabled = config.enabled && online
@@ -327,6 +332,8 @@ final class Features {
 
     private func pollSync(_ native: MobilePlayer) async {
         var arrivals: UInt64 = 0
+        var kept = 0
+        var failing = false
         while !Task.isCancelled {
             try? await Task.sleep(for: foreground || transferring ? Self.syncForeground : Self.syncBackground)
             do {
@@ -341,7 +348,11 @@ final class Features {
                 syncStatus = status
                 transferring = status.moving > 0 || !waiting.isEmpty
                 transfers.hold(transferring)
-                if !waiting.isEmpty { await landReceived(native, waiting) }
+                if !waiting.isEmpty { kept += await landReceived(native, waiting) }
+                if kept > 0, !transferring {
+                    library.notice("Kept \(counted(kept, "song")) from your devices")
+                    kept = 0
+                }
                 syncHandoffs = handoffs
                 if arrivals != status.arrivals {
                     arrivals = status.arrivals
@@ -351,8 +362,10 @@ final class Features {
                         await reloadPlaylist(native, open)
                     }
                 }
+                failing = false
             } catch {
-                library.report(error)
+                if !failing { library.report(error) }
+                failing = true
             }
         }
     }
@@ -362,16 +375,16 @@ final class Features {
         return destinations.first { $0.id == preferred } ?? destinations.first
     }
 
-    private func landReceived(_ native: MobilePlayer, _ waiting: [ReceivedSong]) async {
-        guard Date() >= landingRefusedUntil else { return }
+    private func landReceived(_ native: MobilePlayer, _ waiting: [ReceivedSong]) async -> Int {
+        guard Date() >= landingRefusedUntil else { return 0 }
         guard let folder = writableFolder(syncFolder) else {
             syncNotice = "Add a music folder with write access to keep songs from your devices"
-            return
+            return 0
         }
         let folders = library.folders
         var landed = 0
         for received in waiting {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return landed }
             let name = received.name
             var created: String?
             do {
@@ -388,8 +401,9 @@ final class Features {
                     settings.removeObject(forKey: "unfinished-sync-landing")
                 }
                 landingRefusedUntil = Date().addingTimeInterval(Self.landingPause)
-                syncNotice = explained(error)
-                library.report(error)
+                let explanation = explained(error)
+                if explanation != syncNotice { library.report(error) }
+                syncNotice = explanation
                 break
             }
         }
@@ -399,8 +413,8 @@ final class Features {
             await refreshWanted(native)
             await refreshChangedArt(native)
             enrichment.begin()
-            library.notice("Kept \(counted(landed, "song")) from your devices")
         }
+        return landed
     }
 
     func artGeneration(of id: UInt64) -> Int {

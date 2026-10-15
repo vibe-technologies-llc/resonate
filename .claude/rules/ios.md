@@ -60,6 +60,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   song, and a poll failure once until polling recovers, so a dismissal holds. A scan shows its own
   live line ("Reading music folder… N songs") with Stop (`stopScanning`, `Folders.stopScanning`);
   its error is reported, never replaced by the tally, and removing a folder drops its queued scan.
+  Sync reports once as well: songs landing from other devices are counted and told in one notice
+  when the transfers stop, a landing failure is told once per distinct text, and a failing sync
+  poll once until it recovers.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
   (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`

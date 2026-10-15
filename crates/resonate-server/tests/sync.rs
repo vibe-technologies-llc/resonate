@@ -236,6 +236,50 @@ fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
 }
 
 #[test]
+fn a_forced_sync_reconnects_to_the_server_and_carries_on() {
+    let folder = scratch("forced");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+    eventually("both connecting", || {
+        desk.shown().standing == Standing::Connected
+            && phone.shown().standing == Standing::Connected
+    });
+
+    desk.force();
+    desk_shelf.make_playlist("After", &["A"]);
+
+    eventually("the desk connected again", || {
+        desk.shown().standing == Standing::Connected
+    });
+    eventually("the playlist made after the force arriving", || {
+        phone_shelf.playlist_named("After").is_some()
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_device_of_another_key_sees_nothing_of_the_first() {
     let folder = scratch("strangers");
     let hosted = hosted(&folder);

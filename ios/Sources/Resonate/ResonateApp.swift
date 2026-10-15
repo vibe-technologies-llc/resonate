@@ -301,9 +301,12 @@ struct StatusCard: View {
             Spacer(minLength: 0)
             Button("Dismiss") { library.dismissStatus() }
                 .font(.footnote.weight(.semibold))
+                .buttonStyle(.borderless)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 2)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
         .padding(.horizontal, 12)
     }

@@ -2,9 +2,11 @@ use gpui::{Context, Div, Window, div, prelude::*, px, rgb};
 use resonate_core::SyncedSongs;
 
 use crate::{
-    Notice, ResonateApp, Setting, SyncStanding, Synchronised, theme,
+    Notice, ResonateApp, Setting, SyncStanding, Synchronised, clipboard,
+    icons::Icon,
+    theme,
     views::{
-        kit,
+        kit::{self, Tone},
         root::RootView,
         settings::{note, switch_row},
     },
@@ -22,6 +24,17 @@ const SYNCING_NOTE: &str = "A change here is taken up when Resonate next starts.
 const SONGS_NOTE: &str = "A song arrives in the music folder and is read into the library like \
                           one dropped on the window. Any playlist's menu fetches its missing \
                           songs from a device on request, whatever is chosen here.";
+
+const COPY_CODE_HINT: &str = "Put this device's pairing code on the clipboard";
+
+const FORCE_HINT: &str = "Reach the sync server and every device on this network again now, and \
+                          ask them for any song this device lacks";
+
+const CODE_COPIED: &str = "The pairing code is on the clipboard";
+
+const FORCED: &str = "Reaching the server and the devices on this network again";
+
+const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device and restart first";
 
 const NOT_A_CODE: &str = "That is not a pairing code: it is 35 letters and digits, as another \
                           device's Device sync group shows it";
@@ -45,7 +58,10 @@ impl RootView {
         let under = match (on, shown.as_ref().map(|shown| shown.standing), nearby) {
             (false, _, _) => "Off, nothing leaves this device",
             (true, None, _) => "On from the next start",
-            (true, Some(SyncStanding::Connecting), _) => "Reaching the sync server",
+            (true, Some(SyncStanding::Connecting), 0) => "Reaching the sync server",
+            (true, Some(SyncStanding::Connecting), _) => {
+                "Reaching the sync server; in step with the devices on this network"
+            }
             (true, Some(SyncStanding::Connected), _) => "In step with your other devices",
             (true, Some(SyncStanding::Unreachable), 0) => {
                 "The sync server cannot be reached; changes wait here until it can"
@@ -63,6 +79,7 @@ impl RootView {
             cx,
         ));
         if let Some(shown) = shown.filter(|shown| !shown.code.is_empty()) {
+            let code = shown.code.clone();
             body = body.child(kit::field(
                 "Pairing code",
                 div()
@@ -71,6 +88,36 @@ impl RootView {
                     .text_color(rgb(theme::text()))
                     .child(shown.code.clone()),
             ));
+            body = body.child(
+                kit::actions()
+                    .child(self.in_the_ring(
+                        "sync-copy-code",
+                        kit::button(
+                            "sync-copy-code",
+                            Some(Icon::Export),
+                            "Copy pairing code",
+                            COPY_CODE_HINT,
+                            Tone::Outlined,
+                        ),
+                        move |this, _, cx| {
+                            clipboard::copy(code.clone(), cx);
+                            this.report(Notice::Done(CODE_COPIED.to_owned()), cx);
+                        },
+                        cx,
+                    ))
+                    .child(self.in_the_ring(
+                        "sync-force",
+                        kit::button(
+                            "sync-force",
+                            Some(Icon::Redo),
+                            "Sync now",
+                            FORCE_HINT,
+                            Tone::Outlined,
+                        ),
+                        move |this, _, cx| this.force_sync(cx),
+                        cx,
+                    )),
+            );
             let others = shown
                 .devices
                 .iter()
@@ -212,6 +259,16 @@ impl RootView {
             &Setting::Sync(on),
             cx,
         );
+    }
+
+    pub(crate) fn force_sync(&mut self, cx: &mut Context<Self>) {
+        let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
+            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            return;
+        };
+        syncing.force();
+        self.report(Notice::Done(FORCED.to_owned()), cx);
+        cx.notify();
     }
 
     pub(crate) fn follow_songs(&mut self, songs: SyncedSongs, cx: &mut Context<Self>) {

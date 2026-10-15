@@ -13,7 +13,9 @@ func syncStanding(_ status: SyncStatus?, config: SyncConfig?, online: Bool) -> S
         let nearby = status?.devices.filter { $0.nearby && !$0.thisDevice }.count ?? 0
         return nearby == 0 ? "The sync server could not be reached" : "Server unreachable · \(counted(nearby, "device")) on this network"
     case .refused: return "The sync server refused this device"
-    case .connecting: return "Connecting…"
+    case .connecting:
+        let nearby = status?.devices.filter { $0.nearby && !$0.thisDevice }.count ?? 0
+        return nearby == 0 ? "Connecting…" : "Connecting… · \(counted(nearby, "device")) on this network"
     default: return "Starting…"
     }
 }
@@ -58,6 +60,8 @@ struct SyncView: View {
                     if !joining.isEmpty, !syncReadsAsACode(code: joining) {
                         Text("This is not a pairing code").foregroundStyle(.red)
                     }
+                    Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { features.forceSync() }
+                        .disabled(!config.enabled || !features.online)
                     Button("Join") {
                         if code == nil { join() } else { confirmingJoin = true }
                     }

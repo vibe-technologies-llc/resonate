@@ -336,7 +336,9 @@ impl Catalog for Catalogued {
     fn holds(&self, recording: &Recording) -> Answered<bool> {
         self.library
             .resolve_recording(recording)
-            .map(|cut| cut.is_some())
+            .map(|cut| {
+                cut.is_some_and(|cut| cut.location.as_path().is_none_or(|path| path.exists()))
+            })
             .map_err(|error| refused(&error))
     }
 
@@ -644,6 +646,10 @@ impl Running {
 
 #[cfg(all(feature = "sync", feature = "ui"))]
 impl resonate_ui::Syncing for Running {
+    fn force(&self) {
+        self.sync.force();
+    }
+
     fn shown(&self) -> resonate_ui::SyncShown {
         let shown = self.sync.shown();
         resonate_ui::SyncShown {

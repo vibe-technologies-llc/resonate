@@ -250,6 +250,12 @@ impl MobilePlayer {
         }
     }
 
+    pub fn sync_force(&self) {
+        if let Some(running) = self.syncing.running.lock().as_ref() {
+            running.sync.force();
+        }
+    }
+
     pub fn sync_network(&self, unmetered: bool) {
         self.syncing.unmetered.store(unmetered, Ordering::Release);
         if let Some(running) = self.syncing.running.lock().as_ref() {
@@ -577,6 +583,24 @@ impl DocumentCatalog {
         Ok(indexed)
     }
 
+    fn readable(&self, id: u64) -> Answered<bool> {
+        let uri = self
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT uri FROM documents WHERE id = ?1",
+                [id as i64],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(unavailable)?;
+        let Some(at) = uri.and_then(|uri| location(&uri).ok()) else {
+            return Ok(false);
+        };
+        Ok(self.sources.open(&at).is_ok())
+    }
+
     fn waiting(&self, connection: &Connection) -> rusqlite::Result<Vec<Recording>> {
         let mut query = connection.prepare_cached(
             "SELECT title, artist, album, recording, duration_ms FROM received ORDER BY id",
@@ -853,15 +877,18 @@ impl Catalog for DocumentCatalog {
     }
 
     fn holds(&self, recording: &Recording) -> Answered<bool> {
-        let connection = self.catalog.0.lock();
-        if self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(recording)
-            .is_some()
+        let resolved = {
+            let connection = self.catalog.0.lock();
+            self.indexed(&connection)
+                .map_err(unavailable)?
+                .resolved(recording)
+        };
+        if let Some(id) = resolved
+            && self.readable(id)?
         {
             return Ok(true);
         }
+        let connection = self.catalog.0.lock();
         Ok(self
             .waiting(&connection)
             .map_err(unavailable)?

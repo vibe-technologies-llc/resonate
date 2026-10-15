@@ -166,6 +166,9 @@ pub enum Error {
     #[error("the server ended the session before welcoming this device")]
     Unwelcome,
 
+    #[error("the server did not answer in time")]
+    ServerSilent,
+
     #[error("{op:?} failed on {}", path.display())]
     File {
         op: FileOp,

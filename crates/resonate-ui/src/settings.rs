@@ -879,6 +879,8 @@ pub trait Syncing: Send + Sync {
 
     fn reads_as_a_code(&self, code: &str) -> bool;
 
+    fn force(&self);
+
     fn missing_from(&self, playlist: PlaylistId) -> usize;
 
     fn fetch_missing(&self, playlist: PlaylistId, from: &str);
