@@ -149,7 +149,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   never touches the camera, so it asks for no camera permission. No page names the hosted server's domain. A device that is away and
   not this iPhone swipes (or long-presses) to *Remove*; the section's menu removes every such one
   (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by `SyncedDevice.id`, since a
-  reinstalled phone keeps its name. Landing a received song backs off per song
+  reinstalled phone keeps its name, and a transfer's row by the sending device, artist and title
+  (`SyncTransfers.keyed`, a repeat numbered), so one landing never re-binds the rows below it to other songs.
+  The Inspector's artist portrait is decoded once off the main thread, at the 768 px page bucket, when it arrives. Landing a received song backs off per song
   (`landingRefused`), never pausing the rest (`android.md`).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inOrder`, so a second switch

@@ -387,12 +387,15 @@ struct InspectorArtist: View {
 }
 
 struct ArtistInformationSection: View {
+    private static let portraitEdge = ArtworkBucket.page.rawValue
+
     let artist: ArtistInformation
+    @State private var portrait: UIImage?
 
     var body: some View {
         Section(artist.name) {
-            if let picture = artist.picture, let image = UIImage(data: picture) {
-                Image(uiImage: image)
+            if let portrait {
+                Image(uiImage: portrait)
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 220)
@@ -407,6 +410,14 @@ struct ArtistInformationSection: View {
                     Link(url.host() ?? link, destination: url)
                 }
             }
+        }
+        .task(id: artist.picture) {
+            guard let bytes = artist.picture else {
+                portrait = nil
+                return
+            }
+            let edge = Self.portraitEdge
+            portrait = try? await Work.aside { ArtworkDecoder.thumbnail(bytes, edge: edge) }
         }
     }
 }

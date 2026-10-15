@@ -611,16 +611,33 @@ struct SyncTransfers: View {
         let active = transfers.filter { $0.state == .waiting || $0.state == .moving }
         let finished = transfers.filter { $0.state == .landed || $0.state == .failed }.suffix(Self.finishedShown).reversed()
         Section {
-            ForEach(Array(active.enumerated()), id: \.offset) { _, transfer in
-                SyncTransferRow(transfer: transfer)
+            ForEach(Self.keyed(active, as: "active"), id: \.key) { keyed in
+                SyncTransferRow(transfer: keyed.transfer)
             }
-            ForEach(Array(finished.enumerated()), id: \.offset) { _, transfer in
-                SyncTransferRow(transfer: transfer)
+            ForEach(Self.keyed(Array(finished), as: "finished"), id: \.key) { keyed in
+                SyncTransferRow(transfer: keyed.transfer)
             }
         } header: {
             Text(active.isEmpty ? "Recently fetched" : "Fetching")
         }
     }
+}
+
+extension SyncTransfers {
+    static func keyed(_ transfers: [SyncTransfer], as group: String) -> [KeyedTransfer] {
+        var seen: [String: Int] = [:]
+        return transfers.map { transfer in
+            let identity = "\(group)\u{1f}\(transfer.from)\u{1f}\(transfer.artist)\u{1f}\(transfer.title)"
+            let occurrence = seen[identity, default: 0]
+            seen[identity] = occurrence + 1
+            return KeyedTransfer(key: "\(identity)\u{1f}\(occurrence)", transfer: transfer)
+        }
+    }
+}
+
+struct KeyedTransfer {
+    let key: String
+    let transfer: SyncTransfer
 }
 
 struct SyncTransferRow: View {

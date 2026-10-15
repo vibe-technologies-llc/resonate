@@ -14,8 +14,6 @@ are in [ROADMAP.md](ROADMAP.md).
   `tags_writable` once per song per keystroke; `addFolder`, `removeFolder` and `folders()` measure
   and resolve bookmarks on the main actor (a hung File Provider hangs the UI), as do about eight
   keychain reads at launch
-- [S] `SyncTransferRow`s are keyed by `\.offset`, so a transfer landing re-binds the rows below it to
-  other songs; the Inspector decodes an artist portrait with `UIImage(data:)` on every body
 
 ## Tagging
 - [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
