@@ -175,7 +175,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
   as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves
   only a bookmark it has not measured, `refreshed()` re-measures every one on `Work.aside` (the
-  folder and sync pages call it), and a scan re-measures its own root. A folder whose resolved,
+  folder and sync pages call it, and so does every hiding of missing songs, since a drive unplugged
+  while the app was away still reads as readable from the cache), and a scan re-measures its own root. A folder whose resolved,
   symlink-free path is already granted, or is the app's Documents, is refused
   (`FolderFailure.alreadyAdded`). A scan runs on a GCD queue where `Task` cancellation cannot reach,
   so it walks under a `ScanStop` flag; removing a folder stops its walk.

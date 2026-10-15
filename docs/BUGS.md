@@ -39,10 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `forgetMissing` hides by the cached `FolderAccess` (`Folders.folders()` measures a folder once;
-  `refreshed()` runs only at launch and when the folders or sync pages open): a drive or share
-  unplugged while the app is away still reads as readable, so on return every song on it is hidden,
-  its queue rows (the playing one too) leave, and `syncForce` fetches them from other devices
 - [M] Removing a music folder hides nothing (`hide_missing_songs` examines only readable known
   roots) and adding it again mints a new root id, so a rescan indexes every file under another URI:
   each song twice, the old rows unplayable and holding the favourites, playlist rows and listens

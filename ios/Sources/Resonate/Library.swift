@@ -904,7 +904,7 @@ final class Library {
     @discardableResult
     func forgetMissing() async -> MissingSongs? {
         guard let native = try? await player() else { return nil }
-        let prefixes = folders.folders()
+        let prefixes = await folders.refreshed()
             .filter(\.readable)
             .map { "\(Folders.scheme)://\($0.id)/" }
         guard let changed = try? await Work.aside({ try native.hideMissingSongs(prefixes: prefixes) }) else { return nil }
