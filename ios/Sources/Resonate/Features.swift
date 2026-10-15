@@ -154,6 +154,7 @@ final class Features {
         syncPolling = Task { [weak self] in await self?.pollSync(native) }
         work { [weak self] native in try await self?.applySync(native) }
         Task { [weak self] in
+            await self?.library.forgetMissing()
             await self?.refreshChangedArt(native)
             self?.enrichment.begin()
         }
@@ -280,7 +281,10 @@ final class Features {
 
     func forceSync() {
         nearby?.refresh()
-        work { native in native.syncForce() }
+        work { [weak self] native in
+            await self?.library.forgetMissing()
+            native.syncForce()
+        }
     }
 
     private func applySync(_ native: MobilePlayer) async throws {

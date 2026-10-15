@@ -63,6 +63,10 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   Sync reports once as well: songs landing from other devices are counted and told in one notice
   when the transfers stop, a landing failure is told once per distinct text, and a failing sync
   poll once until it recovers.
+  A song whose file has gone is forgotten (`forget_missing_songs`, given the readable folders'
+  prefixes) at launch, after a completed scan and on *Sync now*: only a song that is neither a
+  favourite nor in a playlist, so no removal reaches the ledger as the listener's edit; those that
+  are stay listed and are fetched again from the device that holds them.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
   (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`

@@ -16,6 +16,7 @@ mod playlists;
 mod queue_edit;
 mod search;
 mod sync;
+mod vanished;
 
 use std::{
     fs,
