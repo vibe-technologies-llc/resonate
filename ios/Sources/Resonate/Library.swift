@@ -112,6 +112,8 @@ final class Library {
     private(set) var erasing = false
     var scanned = 0
     var preferences: PlaybackPreferences?
+    var route: OutputRoute?
+    var boundRoutes: [OutputRoute] = []
     var filter: TrackFilter = defaultTrackFilter()
     var folderList: [MusicFolder] = []
     private(set) var currentId: UInt64?
@@ -169,7 +171,9 @@ final class Library {
                     try MobilePlayer(folder: folder, documents: documents)
                 }
                 guard let self else { return }
-                let stored = preferencesStore.read()
+                route = OutputRoute.current
+                boundRoutes = preferencesStore.boundRoutes()
+                let stored = preferencesStore.read(for: route)
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
                 native = opened
@@ -532,12 +536,48 @@ final class Library {
 
     func updatePreferences(_ change: @escaping @Sendable (PlaybackPreferences) -> PlaybackPreferences) {
         let store = preferencesStore
+        let route = route
         request({ native in
             let next = change(native.playbackPreferences())
             try native.configurePlayback(preferences: next)
-            store.write(next)
+            store.write(next, for: route)
             return next
         }) { [self] next in preferences = next }
+    }
+
+    var equaliserBound: Bool {
+        guard let route else { return false }
+        return boundRoutes.contains { $0.id == route.id }
+    }
+
+    func outputRouteChanged(_ now: OutputRoute?) {
+        guard now != route else { return }
+        route = now
+        followRoute()
+    }
+
+    func bindEqualiser(_ bound: Bool) {
+        guard let route else { return }
+        if bound {
+            preferencesStore.bind(route, to: preferences?.equaliser ?? .flat)
+        } else {
+            preferencesStore.unbind(route)
+        }
+        boundRoutes = preferencesStore.boundRoutes()
+        if !bound { followRoute() }
+    }
+
+    func forgetEqualiser(for forgotten: OutputRoute) {
+        preferencesStore.unbind(forgotten)
+        boundRoutes = preferencesStore.boundRoutes()
+        if forgotten.id == route?.id { followRoute() }
+    }
+
+    private func followRoute() {
+        guard native != nil else { return }
+        let curve = preferencesStore.read(for: route).equaliser
+        guard curve != preferences?.equaliser else { return }
+        updatePreferences { var next = $0; next.equaliser = curve; return next }
     }
 
     var catalogEmpty: Bool { catalogRead && allTracks.isEmpty && !scanning }

@@ -366,8 +366,16 @@ struct SoundSettingsView: View {
                         set: { enabled in library.updatePreferences { var next = $0; next.equaliserEnabled = enabled; return next } }
                     ))
                     LabeledContent("Preset", value: curve.summary)
+                    if let route = library.route {
+                        Toggle("Only for \(route.name)", isOn: Binding(
+                            get: { library.equaliserBound },
+                            set: { library.bindEqualiser($0) }
+                        ))
+                    }
                 } footer: {
-                    Text("This curve applies to every iOS audio route.")
+                    Text(library.equaliserBound
+                        ? "This curve is kept for this output and comes back whenever it plays. Other outputs use their own curve or the shared one."
+                        : "This curve is shared by every output without a curve of its own.")
                 }
                 Section {
                     EqualiserGraph(
@@ -414,6 +422,26 @@ struct SoundSettingsView: View {
                 Section {
                     NavigationLink(value: Destination.autoEq) {
                         Label("Headphone correction and profile import", systemImage: "headphones")
+                    }
+                }
+                let others = library.boundRoutes.filter { $0.id != library.route?.id }
+                if !others.isEmpty {
+                    Section {
+                        ForEach(others, id: \.id) { route in
+                            Label(route.name, systemImage: "hifispeaker")
+                                .swipeActions {
+                                    Button("Forget", role: .destructive) { library.forgetEqualiser(for: route) }
+                                }
+                                .contextMenu {
+                                    Button("Forget its curve", systemImage: "trash", role: .destructive) {
+                                        library.forgetEqualiser(for: route)
+                                    }
+                                }
+                        }
+                    } header: {
+                        Text("Curves kept for other outputs")
+                    } footer: {
+                        Text("Each comes back when that output plays. Forgetting one lets it use the shared curve.")
                     }
                 }
             }

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import ResonateNative
 import Security
@@ -13,9 +14,70 @@ struct PlaybackPreferencesStore: Sendable {
     private static let tenBands = 10
     private static let tenBandGainKeys = (0..<tenBands).map { "equaliser-gain-\($0)" }
 
+    private static let routeCurvesKey = "equaliser-curve-for"
+    private static let routeCurveNamesKey = "equaliser-curve-name-for"
+    private static let routeNamesKey = "equaliser-route-names"
+
     private var storage: UserDefaults { UserDefaults(suiteName: Self.suite) ?? .standard }
 
-    func read() -> PlaybackPreferences {
+    func read(for route: OutputRoute?) -> PlaybackPreferences {
+        var preferences = read()
+        if let curve = curve(boundTo: route) { preferences.equaliser = curve }
+        return preferences
+    }
+
+    func write(_ preferences: PlaybackPreferences, for route: OutputRoute?) {
+        if let route, isBound(route) {
+            writeChoices(preferences)
+            keepCurve(preferences.equaliser, for: route)
+        } else {
+            write(preferences)
+        }
+    }
+
+    func boundRoutes() -> [OutputRoute] {
+        let names = storage.dictionary(forKey: Self.routeNamesKey) as? [String: String] ?? [:]
+        return names.map { OutputRoute(id: $0.key, name: $0.value) }.sorted { $0.name < $1.name }
+    }
+
+    func isBound(_ route: OutputRoute) -> Bool {
+        (storage.dictionary(forKey: Self.routeCurvesKey) as? [String: String])?[route.id] != nil
+    }
+
+    func bind(_ route: OutputRoute, to curve: EqualiserCurve) {
+        var names = storage.dictionary(forKey: Self.routeNamesKey) as? [String: String] ?? [:]
+        names[route.id] = route.name
+        storage.set(names, forKey: Self.routeNamesKey)
+        keepCurve(curve, for: route)
+    }
+
+    func unbind(_ route: OutputRoute) {
+        for key in [Self.routeCurvesKey, Self.routeCurveNamesKey, Self.routeNamesKey] {
+            var kept = storage.dictionary(forKey: key) as? [String: String] ?? [:]
+            kept[route.id] = nil
+            storage.set(kept, forKey: key)
+        }
+    }
+
+    private func curve(boundTo route: OutputRoute?) -> EqualiserCurve? {
+        guard let route,
+            let text = (storage.dictionary(forKey: Self.routeCurvesKey) as? [String: String])?[route.id]
+        else { return nil }
+        let name = (storage.dictionary(forKey: Self.routeCurveNamesKey) as? [String: String])?[route.id] ?? ""
+        return try? parseEqProfile(bytes: Data(text.utf8), name: name).curve
+    }
+
+    private func keepCurve(_ curve: EqualiserCurve, for route: OutputRoute) {
+        guard let text = try? equaliserText(curve: curve) else { return }
+        var texts = storage.dictionary(forKey: Self.routeCurvesKey) as? [String: String] ?? [:]
+        var names = storage.dictionary(forKey: Self.routeCurveNamesKey) as? [String: String] ?? [:]
+        texts[route.id] = text
+        names[route.id] = curve.name
+        storage.set(texts, forKey: Self.routeCurvesKey)
+        storage.set(names, forKey: Self.routeCurveNamesKey)
+    }
+
+    private func read() -> PlaybackPreferences {
         var preferences = defaultPlaybackPreferences()
         let storage = storage
         if storage.object(forKey: "equaliser-enabled") != nil {
@@ -48,7 +110,12 @@ struct PlaybackPreferencesStore: Sendable {
         return preferences
     }
 
-    func write(_ preferences: PlaybackPreferences) {
+    private func write(_ preferences: PlaybackPreferences) {
+        writeChoices(preferences)
+        keepCurve(preferences.equaliser, in: storage)
+    }
+
+    private func writeChoices(_ preferences: PlaybackPreferences) {
         let storage = storage
         storage.set(preferences.equaliserEnabled, forKey: "equaliser-enabled")
         storage.set(preferences.replayGain.name, forKey: "replay-gain")
@@ -58,7 +125,6 @@ struct PlaybackPreferencesStore: Sendable {
         storage.set(preferences.dsdLikePcm, forKey: "dsd-like-pcm")
         storage.set(preferences.truePeak, forKey: "true-peak")
         storage.set(preferences.restoration.name, forKey: "restoration")
-        keepCurve(preferences.equaliser, in: storage)
     }
 
     private func keepCurve(_ curve: EqualiserCurve, in storage: UserDefaults) {
@@ -88,6 +154,15 @@ struct PlaybackPreferencesStore: Sendable {
     private func level(_ key: String, in storage: UserDefaults) -> Float {
         guard storage.object(forKey: key) != nil else { return 0 }
         return storage.float(forKey: key)
+    }
+}
+
+struct OutputRoute: Equatable, Sendable {
+    let id: String
+    let name: String
+
+    static var current: OutputRoute? {
+        AVAudioSession.sharedInstance().currentRoute.outputs.first.map { OutputRoute(id: $0.uid, name: $0.portName) }
     }
 }
 

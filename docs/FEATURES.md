@@ -28,8 +28,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   channels is passed over (and counted), where the desktop keeps it on those channels
 
 ## iOS parity
-- [L] iOS lacks what Android lacks (tagging/organising, vault, convolution, per-route equaliser),
-  plus CarPlay and a widget
+- [L] iOS lacks what Android lacks (tagging/organising, vault, convolution), plus CarPlay and a
+  widget
 - [M] Pointer authentication (an `arm64e` slice) is not adopted: the Rust library builds for
   `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly `build-std`
 

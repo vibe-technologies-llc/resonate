@@ -123,6 +123,7 @@ final class NowPlaying {
 
     private func reportRoute(rebind: Bool) {
         guard native != nil else { return }
+        library.outputRouteChanged(OutputRoute.current)
         let session = AVAudioSession.sharedInstance()
         let rate = UInt32(session.sampleRate.rounded())
         let latency = (session.outputLatency + session.ioBufferDuration) * 1000

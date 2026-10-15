@@ -531,6 +531,16 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **Stored as text**: `PlaybackPreferencesStore` keeps the curve as `equaliser_text` output under
   `equaliser-curve` (`eq.md`'s *The phones*), migrating the older keys once and writing the result
   back at once.
+- **A curve may be kept for one output** (`OutputRoute`: the session route's first output, by port
+  `uid`, named by `portName`). *Only for <output>* on the equaliser page binds the curve playing to
+  that output (`Library.bindEqualiser`): `equaliser-curve-for` and `equaliser-curve-name-for` map a
+  port to its text and name, `equaliser-route-names` to its name, all in the `playback` suite. While
+  the output in use is bound, every edit (graph, inspector, AutoEq, import) is written to its curve,
+  else to the shared `equaliser-curve`. `NowPlaying.reportRoute` hands each route to
+  `Library.outputRouteChanged`, which sends the bound or shared curve where it differs from the one
+  playing (`followRoute`); unbinding, or forgetting the output in use under *Curves kept for other
+  outputs*, falls back to the shared curve at once. The switch stays one for every output, as on the
+  desktop. The engine still gets one curve as its `Equalisation` fallback.
 
 ## Checks
 
