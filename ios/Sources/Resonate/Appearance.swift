@@ -12,7 +12,7 @@ final class AppearanceState {
     private static let backgroundKey = "themedBackground"
     private static let movingKey = "movingBackground"
     private static let strengthKey = "backgroundStrength"
-    static let defaultStrength = 0.6
+    static let defaultStrength = 0.4
     private static let deepenedInLight: CGFloat = 0.28
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard

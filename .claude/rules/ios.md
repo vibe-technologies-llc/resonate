@@ -443,7 +443,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   the scroll content background and sets that background; Now
   Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
   in the `appearance` defaults, edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of its own beside `AppearanceView`): `themedBackground`
-  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). A plain list's rows
+  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.4). A plain list's rows
   draw their own opaque fill, so each one is `themedRows()` (a clear `listRowBackground` while the
   background is on), keeping separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which
   wrap `List` and `Form`) frosts its cards instead, `themedCards()` filling each with
