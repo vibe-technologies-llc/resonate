@@ -41,6 +41,7 @@ final class Features {
     private static let landingPause: TimeInterval = 60
     private static let landingTriesAtMost = 3
     private static let visualizerFrame: Duration = .milliseconds(33)
+    private static let visualizerRetry: Duration = .seconds(2)
     nonisolated private static let wantedChunk = 500
 
     @ObservationIgnored private unowned let library: Library
@@ -443,11 +444,12 @@ final class Features {
             readSecrets()
             if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
         }
+        guard wasAway else { return }
         guard syncRuns else {
             Task { [weak self] in await self?.library.forgetMissing() }
             return
         }
-        if wasAway, !transferring {
+        if !transferring {
             nearby?.restart()
             work { [weak self] native in
                 try await self?.applySync(native)
@@ -1362,10 +1364,13 @@ final class Features {
         visualization = Task { [weak self] in
             guard let native = try? await self?.library.player() else { return }
             while !Task.isCancelled {
-                if let frame = try? await Work.aside({ try native.visualizer(enabled: true) }) {
-                    self?.samples = frame
+                var wait = Features.visualizerFrame
+                do {
+                    self?.samples = try await Work.aside { try native.visualizer(enabled: true) }
+                } catch {
+                    wait = Features.visualizerRetry
                 }
-                try? await Task.sleep(for: Features.visualizerFrame)
+                try? await Task.sleep(for: wait)
             }
             _ = try? await Work.aside { try native.visualizer(enabled: false) }
         }

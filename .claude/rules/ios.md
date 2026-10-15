@@ -90,7 +90,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   when the transfers stop, a landing failure is told once per distinct text, and a failing sync
   poll once until it recovers.
   A song whose file has gone is hidden, never deleted (`hide_missing_songs`, given the readable
-  folders' prefixes; `documents.missing`) at launch, whenever the scene becomes active again, after a
+  folders' prefixes; `documents.missing`) at launch, whenever the scene comes forward again after
+  `.background` (an `.inactive` blip of Control Centre, a permission prompt or a call banner opens
+  nothing: each pass opens every document and measures every folder), after a
   completed scan and on *Sync now*: song lists, search, albums, artists, statistics, top songs, a
   playlist's rows and the wants' *In your library* skip it, and its rows leave the queue
   (`left_the_queue`; the playing row too, which moves on), while its playlist rows and favourite
@@ -100,7 +102,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   (`Recording::names_the_same_song_as`: a song fetched back from a device or a download) takes the
   hidden row's place (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
   artwork and studies move over, the playlists' revisions step, and the hidden row is deleted.
-  Becoming active with songs newly hidden while sync runs forces a sync, so they are fetched back.
+  Coming forward with songs newly hidden while sync runs forces a sync, so they are fetched back.
 - **Sync shows what it is doing.** `SyncStatus` carries `settled` (the service's `Shown.settled`)
   and `transfers` (title, artist, the sending device's name, bytes and `SyncTransferState`).
   `Features.syncActivity` is *fetching* while a transfer waits or moves or a received song is being
@@ -544,16 +546,20 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
   the drift slows to 18 %. `Features.visualize` is reference-counted, so a backdrop and the
   visualizer page each hold the tap without switching off the other's; a backdrop holds it only
-  while visible, active and moving.
+  while visible, active, moving and playing, so a paused page leaves the tap off; a tap that fails
+  is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
-  the palette changes; **Low Power Mode** caps at 30 fps (the app field at 15); an inactive or backgrounded scene, or a
-  view out of its window, draws nothing.
+  the palette changes.
+- **Frame rate** follows what is moving (`BackdropView.rate`): 60 fps while playing, 30 paused, half
+  that in Low Power Mode; the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
+  so a still page lets the display idle; an inactive or backgrounded scene, or a view out of its
+  window, draws nothing.
 - **The app background** is the same view with no track and an `ambience` strength
   (`BackdropView(track: nil, moving:, ambience:)`), as the `containerBackground(for: .navigation)` of every page (a clear one is drawn as the system's own, so a single view behind the `TabView` never shows; only pages in a window draw, and the clock is the wall clock so a pushed page starts in phase): the palette
   built around the accent colour, set synchronously in the view's `init` so a page or tab opens on
   its colour with no fade (re-sampled when the accent changes), `BackdropTone.ambient`
   (dark floor 0.05 with a range of 0.10 to 0.32, light floor 0.96 down to 0.80, chroma and range
-  scaled by the strength, so system labels keep their contrast), 30 fps, and no hold on the
+  scaled by the strength, so system labels keep their contrast), 20 fps, and no hold on the
   visualizer tap or loudness. `ThemedPage` on each stack's root and every `DestinationView` hides
   the scroll content background and sets that background; Now
   Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings

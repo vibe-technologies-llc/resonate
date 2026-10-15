@@ -79,12 +79,25 @@ struct BackdropView: View {
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
         if reduceMotion || !moving { return .still }
-        if ambience != nil { return .flowing(framesPerSecond: lowPower ? 15 : 30) }
-        return .flowing(framesPerSecond: lowPower ? 30 : 60)
+        return .flowing(framesPerSecond: Self.rate(sounding: sounding, ambient: ambience != nil, lowPower: lowPower))
+    }
+
+    private var sounding: Bool {
+        library.snapshot?.transport == .playing
+    }
+
+    private static func rate(sounding: Bool, ambient: Bool, lowPower: Bool) -> Int {
+        switch (ambient, sounding, lowPower) {
+        case (true, true, false): 20
+        case (true, _, _): 10
+        case (false, true, false): 60
+        case (false, true, true), (false, false, false): 30
+        case (false, false, true): 15
+        }
     }
 
     private var wantsEnergy: Bool {
-        visible && moving && ambience == nil && phase == .active && !reduceMotion && rendering.drawsMesh
+        visible && moving && ambience == nil && phase == .active && !reduceMotion && rendering.drawsMesh && sounding
     }
 
     private func listen(_ wanted: Bool) {

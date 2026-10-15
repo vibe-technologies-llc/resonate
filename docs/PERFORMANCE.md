@@ -7,12 +7,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
 
 ## iOS
-- [S] `forgetMissing` opens every document on every foregrounding (the `.inactive` to `.active`
-  blips of Control Centre, a permission prompt or a call banner included), each open resolving its
-  folder's security-scoped bookmark again; it needs only `.background` (`leftAt`) and a cached root
-- [S] A paused Now Playing, lyrics or album page keeps the backdrop at 60 fps and the visualizer tap
-  polled every 33 ms (`wantsEnergy` ignores the transport; a failing `visualizer` retries at once),
-  and the app field draws at 30 fps on every page, which keeps the display from idling
 - [S] The palette sample (32 by 32) and the lock-screen artwork (384 px) are decoded from the 1024 px
   bucket (`artwork(_:)` defaults to `.full`), about 4 MiB cached each, evicting row thumbnails
 - [M] A scan stores the folder's cover once per track (`artwork` is `track INTEGER PRIMARY KEY`),
