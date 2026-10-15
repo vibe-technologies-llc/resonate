@@ -137,6 +137,7 @@ final class Features {
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
         didSet {
+            library.nudgePoll()
             enrichment.foregroundChanged(foreground)
             downloads.foregroundChanged(foreground)
         }

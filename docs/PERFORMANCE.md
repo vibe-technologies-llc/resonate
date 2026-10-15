@@ -14,8 +14,6 @@ are in [ROADMAP.md](ROADMAP.md).
   `tags_writable` once per song per keystroke; `addFolder`, `removeFolder` and `folders()` measure
   and resolve bookmarks on the main actor (a hung File Provider hangs the UI), as do about eight
   keychain reads at launch
-- [S] The poll runs at 4 Hz paused, locked and in the background, each tick a `snapshot()`, a
-  `track_uri` query and a `nowPlaying.update`
 - [M] The synced lyrics timeline runs at display rate while a sheet plays, building a `LyricRowLook`
   for every line and asking Rust for a frame whose position moved by milliseconds, with no throttle
   for a line-synced sheet where nothing turns and no Low Power Mode or thermal check

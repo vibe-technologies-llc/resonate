@@ -98,8 +98,12 @@ struct Settling {
 final class Library {
     nonisolated static let page: UInt32 = 500
     nonisolated private static let playlistFileBytesAtMost = 8 * 1024 * 1024
-    private static let tick: Duration = .milliseconds(250)
-    private static let ticksBetweenSaves = 20
+    private static let savedEvery: Duration = .seconds(5)
+    private static let busyAfterAsking: Duration = .seconds(2)
+    private static let pollBusy: Duration = .milliseconds(250)
+    private static let pollIdle: Duration = .seconds(1)
+    private static let pollBackgroundPlaying: Duration = .milliseconds(500)
+    private static let pollBackgroundIdle: Duration = .seconds(2)
     private static let noticeLasts: Duration = .seconds(6)
 
     let folders: Folders
@@ -175,6 +179,8 @@ final class Library {
     @ObservationIgnored private var steered = Steered()
     @ObservationIgnored private var queueSettling = Settling()
     @ObservationIgnored let support: URL
+    @ObservationIgnored private var pollSleep: Task<Void, Never>?
+    @ObservationIgnored private var busyUntil = ContinuousClock.now
     @ObservationIgnored lazy var features = Features(library: self)
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
     @ObservationIgnored lazy var songSearch = SearchModel(library: self, remembering: true)
@@ -242,13 +248,13 @@ final class Library {
     }
 
     private func poll(_ native: MobilePlayer) async {
-        var ticks = 0
+        var lastSaved = ContinuousClock.now
         var listed: QueueListed?
         var unreadable: QueueListed?
         var readAt = ContinuousClock.now
         while !Task.isCancelled {
-            ticks += 1
-            let saving = ticks % Self.ticksBetweenSaves == 0
+            var wait = Self.pollBusy
+            let saving = lastSaved.duration(to: .now) >= Self.savedEvery
             let steeringAsked = steering.asked
             let steeringSettled = steering.settled
             let queueAsked = queueSettling.asked
@@ -261,6 +267,8 @@ final class Library {
                     let saved: Result<Void, any Swift.Error>? = saving ? Result { try native.save() } : nil
                     return (state, saved)
                 }
+                if saving { lastSaved = .now }
+                wait = pollInterval(foreground: features.foreground, state: state, analysing: features.analysisBusy)
                 let wanted = QueueListed(state)
                 let rows = wanted.isDue(after: refused ?? known, since: readAt) ? await Self.read(queueOf: native) : nil
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
@@ -297,7 +305,33 @@ final class Library {
             } catch {
                 reportPolling(.snapshot, error)
             }
-            try? await Task.sleep(for: Self.tick)
+            await sleepBetweenPolls(wait)
+        }
+    }
+
+    func nudgePoll() {
+        busyUntil = ContinuousClock.now + Self.busyAfterAsking
+        pollSleep?.cancel()
+    }
+
+    private func sleepBetweenPolls(_ wait: Duration) async {
+        let sleeper = Task<Void, Never> { try? await Task.sleep(for: wait) }
+        pollSleep = sleeper
+        await withTaskCancellationHandler {
+            await sleeper.value
+        } onCancel: {
+            sleeper.cancel()
+        }
+    }
+
+    private func pollInterval(foreground: Bool, state: Snapshot, analysing: Bool) -> Duration {
+        if ContinuousClock.now < busyUntil { return Self.pollBusy }
+        let moving = state.transport == .playing || state.transport == .loading
+        switch (foreground, moving) {
+        case (true, true): return Self.pollBusy
+        case (true, false): return analysing ? Self.pollBusy : Self.pollIdle
+        case (false, true): return Self.pollBackgroundPlaying
+        case (false, false): return Self.pollBackgroundIdle
         }
     }
 
@@ -344,6 +378,7 @@ final class Library {
     }
 
     func request(_ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
+        nudgePoll()
         enqueue.yield { native in
             do {
                 try await Work.inOrder { try action(native) }

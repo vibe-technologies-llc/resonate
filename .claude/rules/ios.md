@@ -52,7 +52,10 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), and
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
   correction (decoding up to 64 MiB).
-  A 250 ms poll reads the snapshot and saves every 20th tick, as Android does; the queue is read
+  The poll reads the snapshot every 250 ms while the scene is active and
+  playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
+  500 ms playing in the background, 1 s paused in the foreground and 2 s paused in the background,
+  and saves every 5 s, as Android does; the queue is read
   only when the snapshot's `queue_revision` moved since the queue last shown (`QueueListed`), or
   its `catalog_revision` moved and 3 s have passed since the last read (`catalogRereadAfter`), since
   every enrichment step, scan upsert, favourite and landing moves the catalog and a whole-library
@@ -310,8 +313,10 @@ every route change (a pair of headphones at the same rate included), not from th
 - **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
   with History above it, reached by scrolling up and drawn faded, then *Playing next* (the rows the
   engine's `Queued::next` holds, `Snapshot.next_first`/`next_count`) and *Continue playing* (*Up
-  next* where nothing was asked to play next), as the desktop's four parts (`QueueParts`); it scrolls
-  back to the playing row whenever the song changes. In the player the list takes the full width
+  next* where nothing was asked to play next), as the desktop's four parts (`QueueParts`), each headed by a row of its own
+  (`QueueHeading`), never a `Section` header, which a plain list pins under a square blur that
+  banded the player's list as it scrolled; it scrolls back to the playing row whenever the song
+  changes. In the player the list takes the full width
   (the player's gutter undone), since its rows carry their own insets;
   empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
