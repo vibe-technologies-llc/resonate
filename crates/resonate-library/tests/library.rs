@@ -17724,6 +17724,11 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
             .expect("the file's mode changes");
     };
     mode(0o444);
+    if fs::OpenOptions::new().write(true).open(&shut).is_ok() {
+        mode(0o644);
+        eprintln!("skipping: this user writes a file whatever its mode");
+        return Ok(());
+    }
     let cut_short = walked_back(&library, true)?;
     mode(0o644);
     assert_eq!(cut_short.stats.written, 1);
