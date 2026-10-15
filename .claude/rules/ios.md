@@ -334,7 +334,7 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
   for the song's artist and album artist) and follows it, or pops where the album is gone, so
   *Edit album tags* leaves the page on the album, not on "No songs from this album". A playlist's rows are keyed by song and occurrence, move and remove at once, and
-  every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
+  every edit reads the playlist's latest revision inside the library's ordered lane; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
   playlist of hidden songs reads as empty and offers *Your playlist starts here*. The playlist
