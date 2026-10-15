@@ -7,6 +7,7 @@ struct MiniPlayer: View {
     private static let swipeDistance: CGFloat = 40
     private static let titledFrom: CGFloat = 150
     private static let skipsFrom: CGFloat = 230
+    private static let artistOpacity = 0.6
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -32,7 +33,10 @@ struct MiniPlayer: View {
                         .font(expanded ? .subheadline.weight(.semibold) : .footnote.weight(.semibold))
                         .lineLimit(1)
                     if expanded {
-                        Text(track?.shownArtist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(track?.shownArtist ?? "")
+                            .font(.caption)
+                            .foregroundStyle(Color.primary.opacity(Self.artistOpacity))
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -154,6 +158,7 @@ struct NowPlayingView: View {
     private static let gutter: CGFloat = 24
     private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
     private static let arriving: Animation = .easeOut(duration: 0.2)
+    private static let leaving: Animation = .easeOut(duration: 0.12)
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -168,17 +173,16 @@ struct NowPlayingView: View {
         NavigationStack {
             Group {
                 if mode == .artwork, typeSize.isAccessibilitySize {
-                    ScrollView { artworkLayout(track) }
-                } else if mode == .artwork {
-                    artworkLayout(track)
+                    ScrollView { layout(track) }
                 } else {
-                    focusedLayout(track)
+                    layout(track)
                 }
             }
-            .overlayPreferenceValue(CoverSlot.self) { slot in
+            .overlayPreferenceValue(CoverSlot.self) { slots in
                 GeometryReader { proxy in
-                    if let slot {
-                        MovingCover(track: track, slot: proxy[slot], large: mode == .artwork)
+                    let place = CoverPlace(mode)
+                    if let slot = slots[place] {
+                        MovingCover(track: track, slot: proxy[slot], large: place == .large)
                     }
                 }
                 .allowsHitTesting(false)
@@ -200,35 +204,35 @@ struct NowPlayingView: View {
         }
     }
 
-    private func artworkLayout(_ track: Track?) -> some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 0)
-            LargeArtwork()
-            PlayerTitles(track: track)
-            PlayerScrubber()
-            TransportRow()
-            SleepCountdown()
-            VolumeRow()
-            PlayerModes(mode: mode, choose: choose)
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func focusedLayout(_ track: Track?) -> some View {
-        VStack(spacing: 16) {
-            CompactTitles(track: track)
-                .padding(.top, 8)
-            ZStack {
-                if settled == mode {
-                    focusedContent(track).transition(.opacity)
+    private func layout(_ track: Track?) -> some View {
+        let large = mode == .artwork
+        return VStack(spacing: large ? 20 : 16) {
+            if large {
+                Spacer(minLength: 0)
+                LargeArtwork()
+                PlayerTitles(track: track)
+            } else {
+                CompactTitles(track: track)
+                    .padding(.top, 8)
+                ZStack {
+                    if settled == mode {
+                        focusedContent(track).transition(.opacity)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             PlayerScrubber()
             TransportRow()
+            if large {
+                SleepCountdown()
+                VolumeRow()
+            }
             PlayerModes(mode: mode, choose: choose)
+            if large {
+                Spacer(minLength: 0)
+            }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, large ? 0 : 8)
     }
 
     @ViewBuilder
@@ -248,7 +252,7 @@ struct NowPlayingView: View {
             }
             return
         }
-        settled = nil
+        withAnimation(Self.leaving) { settled = nil }
         withAnimation(Self.reshaping, completionCriteria: .logicallyComplete) {
             mode = target
         } completion: {
@@ -258,11 +262,20 @@ struct NowPlayingView: View {
     }
 }
 
-struct CoverSlot: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? { nil }
+enum CoverPlace {
+    case large
+    case compact
 
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = nextValue() ?? value
+    init(_ mode: PlayerMode) {
+        self = mode == .artwork ? .large : .compact
+    }
+}
+
+struct CoverSlot: PreferenceKey {
+    static var defaultValue: [CoverPlace: Anchor<CGRect>] { [:] }
+
+    static func reduce(value: inout [CoverPlace: Anchor<CGRect>], nextValue: () -> [CoverPlace: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
@@ -270,7 +283,7 @@ struct LargeArtwork: View {
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
-            .anchorPreference(key: CoverSlot.self, value: .bounds) { $0 }
+            .anchorPreference(key: CoverSlot.self, value: .bounds) { [.large: $0] }
             .padding(.horizontal, 8)
     }
 }
@@ -384,7 +397,7 @@ struct CompactTitles: View {
         HStack(spacing: 12) {
             Color.clear
                 .frame(width: artworkEdge, height: artworkEdge)
-                .anchorPreference(key: CoverSlot.self, value: .bounds) { $0 }
+                .anchorPreference(key: CoverSlot.self, value: .bounds) { [.compact: $0] }
             if let track {
                 SongMenu(track: track) {
                     VStack(alignment: .leading, spacing: 2) {

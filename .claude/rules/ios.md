@@ -185,7 +185,9 @@ skip; its progress is a ring around the play button in either placement (a bar a
 bottom ran through the title and artist, since the system fixes the accessory's height). Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
 button always, the title from 150 pt, next from 230 pt, tighter spacing; the title stays the
-accessibility label. The output page holds `AVRoutePickerView`, since iOS owns the route.
+accessibility label. Expanded, the artist line is `Color.primary` at 60 % opacity, never the
+hierarchical `.secondary`: that is drawn vibrant against the accessory's glass, which is not drawn
+while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on
@@ -197,15 +199,21 @@ accessibility label. The output page holds `AVRoutePickerView`, since iOS owns t
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
   The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
-  each shrinking the artwork into a 56 pt header row. **The cover is one view moved by a transform**:
+  each shrinking the artwork into a 56 pt header row. **Both are one layout** (`NowPlayingView.layout`):
+  only the titles, the pane, the sleep countdown and the volume row come and go, while the scrubber,
+  transport and glass mode row keep their identity and move, so no glass control crossfades with a
+  copy of itself. **The cover is one view moved by a transform**:
   each layout holds an empty slot (`LargeArtwork`, `CompactTitles`) reporting its bounds through
-  `CoverSlot` (an anchor preference), and `MovingCover`, an overlay above both, draws the artwork once
+  `CoverSlot` (an anchor preference keyed by `CoverPlace`, so the slot followed is the one the mode
+  names; while one layout fades out beside the other both report, and whichever came last in the
+  tree won, which left the cover in the header until the fade ended and then jumped it back
+  unanimated), and `MovingCover`, an overlay above both, draws the artwork once
   at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
   re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
   re-measured a live image every frame). The pane or
   list is mounted only once that spring is logically complete (`NowPlayingView.settled`) and
-  dropped before the cover grows back, so building a `List` or the lyric timeline never competes
-  with the cover's frames; Lyrics to Up next crossfades at once, the cover staying put. Sleep,
+  faded out in 0.12 s as the cover starts to grow back, so building or drawing a `List` or the lyric
+  timeline barely overlaps the cover's frames; Lyrics to Up next crossfades at once, the cover staying put. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the artwork layout scrolls.
 - **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
@@ -579,9 +587,10 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each
   handle as an adjustable element, labelled with its number, kind and frequency, valued with its
   gain and Q: swiping steps the gain 0.5 dB (Q, for a gainless kind), activating selects it.
-- **Headphone correction** (`AutoEqView`) searches AutoEq as the listener types (350 ms settle,
-  `Features.correctionRequest` refusing a stale answer), shows the current preset, and loads a tapped
-  headphone's correction as bands, confirming first where the curve has bands; EqualizerAPO or
+- **Headphone correction is a section of the equaliser page** (`HeadphoneCorrectionSection`, then
+  `ProfileImportSection`), not a page of its own: it searches AutoEq as the listener types (350 ms
+  settle, `Features.correctionRequest` refusing a stale answer), marks the current preset, and loads a
+  tapped headphone's correction as bands, confirming first where the curve has bands; EqualizerAPO or
   GraphicEQ text comes from the clipboard or a file (`fileImporter`, read on `Work.aside`, at most
   64 KiB and one byte, so the boundary's `TooLarge` speaks for a larger one). The notice after a
   load counts the bands and says what was fitted, passed over or held to the limits.

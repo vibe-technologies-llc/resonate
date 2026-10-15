@@ -53,7 +53,6 @@ enum Destination: Hashable {
     case providers
     case scrobbling
     case sync
-    case autoEq
     case output
     case sound
     case processing
@@ -126,7 +125,7 @@ final class Navigation {
 extension Destination {
     var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .autoEq, .scrobbling, .providers, .sync, .folders, .appearance: true
+        case .sound, .processing, .output, .scrobbling, .providers, .sync, .folders, .appearance: true
         default: false
         }
     }
@@ -233,7 +232,6 @@ struct DestinationView: View {
         case .providers: ProviderView()
         case .scrobbling: ScrobblingView()
         case .sync: SyncView()
-        case .autoEq: AutoEqView()
         case .output: OutputView()
         case .sound: SoundSettingsView()
         case .processing: ProcessingView()

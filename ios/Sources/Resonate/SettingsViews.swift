@@ -133,7 +133,7 @@ struct SettingsView: View {
                 title: "Equaliser",
                 detail: Self.equaliserSummary(preferences),
                 symbol: "slider.vertical.3",
-                keywords: "sound playback curve preamp bands profile",
+                keywords: "sound playback curve preamp bands profile headphone correction AutoEq EqualizerAPO GraphicEQ import room",
                 opening: .page(.sound)
             ),
             SettingsEntry(
@@ -149,13 +149,6 @@ struct SettingsView: View {
                 symbol: "hifispeaker",
                 keywords: "sound playback route bluetooth AirPlay buffer DSD",
                 opening: .page(.output)
-            ),
-            SettingsEntry(
-                title: "Headphone correction",
-                detail: "Find and apply an AutoEq profile",
-                symbol: "headphones",
-                keywords: "sound playback AutoEq equaliser correction",
-                opening: .page(.autoEq)
             ),
             SettingsEntry(
                 title: "Sleep timer",
@@ -359,9 +352,14 @@ struct SoundSettingsView: View {
     @State private var response = EqualiserResponse()
     @State private var confirmingReset = false
     @State private var settling: Task<Void, Never>?
+    @State private var model = ""
+    @State private var pending: PendingProfile?
+    @State private var choosingFile = false
     private static let limits = equaliserLimits()
     private static let addedHz: Float = 1000
     private static let settle: Duration = .seconds(1)
+    private static let searchSettles: Duration = .milliseconds(350)
+    private static let largestProfile = 64 * 1024
 
     private struct Drawn: Equatable {
         let curve: EqualiserCurve?
@@ -431,11 +429,8 @@ struct SoundSettingsView: View {
                     Button("Reset curve", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
                         .disabled(curve == .flat)
                 }
-                Section {
-                    NavigationLink(value: Destination.autoEq) {
-                        Label("Headphone correction and profile import", systemImage: "headphones")
-                    }
-                }
+                HeadphoneCorrectionSection(model: $model, current: curve, choose: { ask(.device($0)) }, search: search)
+                ProfileImportSection(paste: paste, choose: { choosingFile = true })
                 RoomCorrectionSection()
                 let others = library.boundRoutes.filter { $0.id != library.route?.id }
                 if !others.isEmpty {
@@ -473,6 +468,32 @@ struct SoundSettingsView: View {
             Button("Start from ten flat bands", role: .destructive) { replace(with: tenBandCurve(preampDb: 0, gainsDb: [])) }
         } message: {
             Text("The preamp returns to 0 dB and the current preset is cleared.")
+        }
+        .task(id: model) {
+            let text = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                library.features.clearCorrections()
+                return
+            }
+            try? await Task.sleep(for: Self.searchSettles)
+            guard !Task.isCancelled else { return }
+            search(text)
+        }
+        .confirmationDialog(
+            "Replace the current curve?",
+            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+            titleVisibility: .visible,
+            presenting: pending
+        ) { chosen in
+            Button("Load \(chosen.name)") { load(chosen) }
+        } message: { chosen in
+            Text("\(chosen.name) replaces the \(counted(library.preferences?.equaliser.bands.count ?? 0, "band")) you have now.")
+        }
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.plainText, .text, .data]) { result in
+            switch result {
+            case .success(let url): read(url)
+            case .failure(let failure): library.report(failure)
+            }
         }
     }
 
@@ -516,7 +537,137 @@ struct SoundSettingsView: View {
         selected = nil
         commit(curve)
     }
+
+    private func search(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard library.features.online, !text.isEmpty else { return }
+        library.features.searchCorrections(text)
+    }
+
+    private func ask(_ chosen: PendingProfile) {
+        if library.preferences?.equaliser.bands.isEmpty ?? true {
+            load(chosen)
+        } else {
+            pending = chosen
+        }
+    }
+
+    private func load(_ chosen: PendingProfile) {
+        pending = nil
+        selected = nil
+        switch chosen {
+        case .device(let device): library.features.applyCorrection(device)
+        case .text(let name, let bytes): library.features.applyProfile(name: name, bytes: bytes)
+        }
+    }
+
+    private func paste() {
+        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            library.notice("The clipboard holds no text")
+            return
+        }
+        ask(.text(name: "Pasted profile", bytes: Data(text.utf8)))
+    }
+
+    private func read(_ url: URL) {
+        let name = url.deletingPathExtension().lastPathComponent
+        let largest = Self.largestProfile
+        Task {
+            do {
+                let bytes = try await Work.aside { try Self.contents(of: url, atMost: largest) }
+                ask(.text(name: name, bytes: bytes))
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    nonisolated private static func contents(of url: URL, atMost largest: Int) throws -> Data {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: largest + 1) ?? Data()
+    }
 }
+
+enum PendingProfile {
+    case device(AutoEqDevice)
+    case text(name: String, bytes: Data)
+
+    var name: String {
+        switch self {
+        case .device(let device): device.name
+        case .text(let name, _): name
+        }
+    }
+}
+
+struct HeadphoneCorrectionSection: View {
+    @Environment(Library.self) private var library
+    @Binding var model: String
+    let current: EqualiserCurve
+    let choose: (AutoEqDevice) -> Void
+    let search: (String) -> Void
+
+    var body: some View {
+        let features = library.features
+        Section {
+            TextField("Search headphone models", text: $model)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .onSubmit { search(model) }
+            if !features.online {
+                Text("Turn on online features in Settings to find corrections.").foregroundStyle(.secondary)
+            } else if features.searchingCorrections {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Searching the AutoEq catalogue…").foregroundStyle(.secondary)
+                }
+            } else if let searched = features.correctionsFor, features.corrections.isEmpty {
+                Text("No headphones match “\(searched)”. Try the model name as printed on them.").foregroundStyle(.secondary)
+            }
+            ForEach(features.corrections, id: \.id) { device in
+                Button {
+                    choose(device)
+                } label: {
+                    HStack {
+                        Label(device.name, systemImage: "headphones").foregroundStyle(Color.primary)
+                        Spacer()
+                        if current.name == device.name {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                                .accessibilityLabel("Current preset")
+                        }
+                    }
+                }
+                .disabled(features.applyingCorrection)
+            }
+        } header: {
+            Text("Headphone correction")
+        } footer: {
+            Text("An AutoEq correction loads as the bands above, ready to adjust on the graph.")
+        }
+    }
+}
+
+struct ProfileImportSection: View {
+    let paste: () -> Void
+    let choose: () -> Void
+
+    var body: some View {
+        Section {
+            Button("Paste from the clipboard", systemImage: "doc.on.clipboard", action: paste)
+            Button("Import a text file", systemImage: "doc.text", action: choose)
+        } header: {
+            Text("Import a profile")
+        } footer: {
+            Text("EqualizerAPO or GraphicEQ text. Parametric filters load as bands; a GraphicEQ line is fitted onto bands.")
+        }
+    }
+}
+
 
 struct ProcessingView: View {
     @Environment(Library.self) private var library
@@ -643,170 +794,6 @@ struct OutputView: View {
             }
         }
         .navigationTitle("Audio output")
-    }
-}
-
-struct AutoEqView: View {
-    @Environment(Library.self) private var library
-    @State private var model = ""
-    @State private var pending: PendingCurve?
-    @State private var choosingFile = false
-    private static let settle: Duration = .milliseconds(350)
-    private static let largestProfile = 64 * 1024
-
-    private enum PendingCurve {
-        case device(AutoEqDevice)
-        case text(name: String, bytes: Data)
-
-        var name: String {
-            switch self {
-            case .device(let device): device.name
-            case .text(let name, _): name
-            }
-        }
-    }
-
-    var body: some View {
-        let features = library.features
-        let current = library.preferences?.equaliser
-        Form {
-            Section {
-                LabeledContent("Current preset", value: current?.summary ?? EqualiserCurve.flat.summary)
-            } footer: {
-                Text("A loaded correction becomes the equaliser's bands, which you can then edit on the graph. It applies to every route.")
-            }
-            Section {
-                TextField("Headphone model", text: $model)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .onSubmit { search(model) }
-                if !features.online {
-                    Text("Enable online features in Settings to fetch corrections.").foregroundStyle(.secondary)
-                }
-                if features.searchingCorrections {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Searching the AutoEq catalogue…").foregroundStyle(.secondary)
-                    }
-                }
-            } header: {
-                Text("AutoEq")
-            }
-            if !features.searchingCorrections, let searched = features.correctionsFor, features.corrections.isEmpty {
-                ContentUnavailableView(
-                    "No headphones match “\(searched)”",
-                    systemImage: "headphones",
-                    description: Text("Try the model name as printed on the headphones.")
-                )
-            }
-            if !features.corrections.isEmpty {
-                Section("Headphones") {
-                    ForEach(features.corrections, id: \.id) { device in
-                        Button {
-                            ask(.device(device))
-                        } label: {
-                            HStack {
-                                Text(device.name).foregroundStyle(Color.primary)
-                                Spacer()
-                                if current?.name == device.name {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                        .accessibilityLabel("Current preset")
-                                }
-                            }
-                        }
-                        .disabled(features.applyingCorrection)
-                    }
-                }
-            }
-            Section {
-                Button("Paste from the clipboard", systemImage: "doc.on.clipboard") { paste() }
-                Button("Import a text file", systemImage: "doc.text") { choosingFile = true }
-            } header: {
-                Text("EqualizerAPO or GraphicEQ text")
-            } footer: {
-                Text("Parametric filters load as bands; a GraphicEQ line is fitted onto bands.")
-            }
-        }
-        .navigationTitle("Headphone correction")
-        .task(id: model) {
-            let text = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
-                features.clearCorrections()
-                return
-            }
-            try? await Task.sleep(for: Self.settle)
-            guard !Task.isCancelled else { return }
-            search(text)
-        }
-        .confirmationDialog(
-            "Replace the current curve?",
-            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-            titleVisibility: .visible,
-            presenting: pending
-        ) { chosen in
-            Button("Load \(chosen.name)") { load(chosen) }
-        } message: { chosen in
-            Text("\(chosen.name) replaces the \(counted(current?.bands.count ?? 0, "band")) you have now.")
-        }
-        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.plainText, .text, .data]) { result in
-            switch result {
-            case .success(let url): read(url)
-            case .failure(let failure): library.report(failure)
-            }
-        }
-    }
-
-    private func search(_ text: String) {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard library.features.online, !text.isEmpty else { return }
-        library.features.searchCorrections(text)
-    }
-
-    private func ask(_ chosen: PendingCurve) {
-        if library.preferences?.equaliser.bands.isEmpty ?? true {
-            load(chosen)
-        } else {
-            pending = chosen
-        }
-    }
-
-    private func load(_ chosen: PendingCurve) {
-        pending = nil
-        switch chosen {
-        case .device(let device): library.features.applyCorrection(device)
-        case .text(let name, let bytes): library.features.applyProfile(name: name, bytes: bytes)
-        }
-    }
-
-    private func paste() {
-        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            library.notice("The clipboard holds no text")
-            return
-        }
-        ask(.text(name: "Pasted profile", bytes: Data(text.utf8)))
-    }
-
-    private func read(_ url: URL) {
-        let name = url.deletingPathExtension().lastPathComponent
-        let largest = Self.largestProfile
-        Task {
-            do {
-                let bytes = try await Work.aside { try Self.contents(of: url, atMost: largest) }
-                ask(.text(name: name, bytes: bytes))
-            } catch {
-                library.report(error)
-            }
-        }
-    }
-
-    nonisolated private static func contents(of url: URL, atMost largest: Int) throws -> Data {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        return try handle.read(upToCount: largest + 1) ?? Data()
     }
 }
 
