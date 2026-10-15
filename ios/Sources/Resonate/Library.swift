@@ -1074,7 +1074,7 @@ final class Library {
 
     private func playOpened(_ urls: [URL]) async {
         let folders = folders
-        var tracks: [Track] = []
+        var playing = false
         var failure: (any Swift.Error)?
         do {
             let native = try await player()
@@ -1082,7 +1082,13 @@ final class Library {
                 do {
                     let kept = try await Work.aside { try Library.kept(url, in: folders) }
                     let indexed = try await Work.aside { try native.indexDocument(uri: kept.uri, name: kept.name) }
-                    tracks.append(indexed)
+                    if playing {
+                        let id = indexed.id
+                        editQueue { try $0.addToQueue(ids: [id]) }
+                    } else {
+                        playing = true
+                        play([indexed], at: 0)
+                    }
                 } catch {
                     failure = error
                 }
@@ -1090,7 +1096,6 @@ final class Library {
         } catch {
             failure = error
         }
-        if !tracks.isEmpty { play(tracks, at: 0) }
         if let failure { report(failure) }
         await refresh()
     }

@@ -164,15 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `Library.playOpened` indexes or copies every file of a batch before its one `play`: opening
-  several large files from Files plays nothing, and shows nothing, until every copy is done, where
-  `ios.md` says the first plays once indexed
-- [S] `AddSongsSheet` opens with `keyed = .empty` and its overlay reads "Add a music folder in
-  Settings to start your library." until `SongKeys.of` has folded every song: a large library is
-  told it is empty while it loads
-- [S] `SettingsView` always emits `Section("Connected services")` while its rows are gated by the
-  search: a search for *equaliser* leaves an empty Connected services header between the matching
-  sections
 - [M] Now Playing's secondary labels (artist, album at 0.8 opacity, the times) sit on a field the
   shader lifts to Oklab lightness 0.55 dark and 0.63–0.78 light, roughly 2.3–3.6:1 against the 4.5:1
   small text needs, and nothing reads Increase Contrast, Reduce Transparency or

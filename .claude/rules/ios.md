@@ -95,7 +95,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   and the Library tab and Favourites read `favouriteTracks` instead of filtering; `playingQueueRow`
   is found when the queue or the playing row changes; the queue's sections iterate slices, never
   copies; `Features.foldedName(of:)` holds each playlist name folded; the add-songs sheet folds
-  every song once off the main thread (`SongKeys`, keyed by `catalogEpoch`) and filters there 150 ms
+  every song once off the main thread (showing a spinner, not the empty-library message, until it has) (`SongKeys`, keyed by `catalogEpoch`) and filters there 150 ms
   after the last keystroke; the tag editor asks `tags_writable` once per song when it opens.
   Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
   hang) and the keychain reads at launch (`Features.readSecrets`) run on `Work.aside`, never the main actor.
@@ -219,7 +219,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   folder (`Folders.granted`, the most specific root), else played from an identical copy already in
   `local` (`localCopy`: same name or `name (n)`, equal contents), else copied into `local` and
   played; files arriving together (`onOpenURL` fires once each; 250 ms settles a batch) are indexed
-  in turn and queued in order, the first playing as soon as it is indexed (the catalog refreshes
+  in turn and queued in order, the first playing as soon as it is indexed and the rest appended to the queue as each is indexed, none waiting for the copies after it (the catalog refreshes
   after, never before). A folder's access is measured, not
   assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered

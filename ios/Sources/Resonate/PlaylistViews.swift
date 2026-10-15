@@ -343,6 +343,7 @@ struct AddSongsSheet: View {
     @State private var chosenSet: Set<UInt64> = []
     @State private var keyed = SongKeys.empty
     @State private var listed: [Track] = []
+    @State private var keying = true
 
     var body: some View {
         NavigationStack {
@@ -368,7 +369,9 @@ struct AddSongsSheet: View {
                 .accessibilityAddTraits(isChosen ? .isSelected : [])
             }
             .overlay {
-                if keyed.tracks.isEmpty {
+                if keying || !library.catalogRead {
+                    ProgressView()
+                } else if keyed.tracks.isEmpty {
                     ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
                 } else if listed.isEmpty {
                     NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
@@ -380,6 +383,7 @@ struct AddSongsSheet: View {
             .task(id: library.catalogEpoch) {
                 let tracks = library.allTracks
                 keyed = (try? await Work.aside { SongKeys.of(tracks) }) ?? keyed
+                keying = false
                 listed = keyed.matching(Self.folded(search))
             }
             .task(id: search) {

@@ -68,24 +68,26 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section("Connected services") {
-                if shown("Online features", "internet") {
-                    Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
-                        ToolRow(title: "Online features", detail: "MusicBrainz, artwork, lyrics, AutoEq and recognition", symbol: "globe")
+            if connectedShown(syncEntry) {
+                Section("Connected services") {
+                    if shown("Online features", "internet") {
+                        Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
+                            ToolRow(title: "Online features", detail: "MusicBrainz, artwork, lyrics, AutoEq and recognition", symbol: "globe")
+                        }
                     }
-                }
-                if shown("Download providers", "TIDAL", "Subsonic", "Monochrome") {
-                    NavigationLink(value: Destination.providers) {
-                        ToolRow(title: "Download providers", detail: providersDetail(features.downloadAccounts), symbol: "arrow.down.circle")
+                    if shown("Download providers", "TIDAL", "Subsonic", "Monochrome") {
+                        NavigationLink(value: Destination.providers) {
+                            ToolRow(title: "Download providers", detail: providersDetail(features.downloadAccounts), symbol: "arrow.down.circle")
+                        }
                     }
-                }
-                if shown("Scrobbling", "ListenBrainz", "Last.fm") {
-                    NavigationLink(value: Destination.scrobbling) {
-                        ToolRow(title: "Scrobbling", detail: scrobblingDetail(features.scrobbleAccount), symbol: "dot.radiowaves.left.and.right")
+                    if shown("Scrobbling", "ListenBrainz", "Last.fm") {
+                        NavigationLink(value: Destination.scrobbling) {
+                            ToolRow(title: "Scrobbling", detail: scrobblingDetail(features.scrobbleAccount), symbol: "dot.radiowaves.left.and.right")
+                        }
                     }
-                }
-                if matches(syncEntry.searched) {
-                    entryRow(syncEntry)
+                    if matches(syncEntry.searched) {
+                        entryRow(syncEntry)
+                    }
                 }
             }
             if features.online, shown("Artwork and details automatically portraits Wi-Fi missing covers") {
@@ -231,6 +233,11 @@ struct SettingsView: View {
     private var nothingMatches: Bool {
         let listed = (soundEntries + sourceEntries + [syncEntry]).map(\.searched)
         return !terms.isEmpty && !(listed + Self.unlistedWords).contains(where: matches)
+    }
+
+    private func connectedShown(_ syncEntry: SettingsEntry) -> Bool {
+        shown("Online features", "internet") || shown("Download providers", "TIDAL", "Subsonic", "Monochrome")
+            || shown("Scrobbling", "ListenBrainz", "Last.fm") || matches(syncEntry.searched)
     }
 
     private func matches(_ searched: String) -> Bool {
