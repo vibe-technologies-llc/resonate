@@ -685,6 +685,7 @@ struct FavouritesView: View {
                     library.play(shown, selected: track)
                 }
             }
+            .themedRows()
         }
         .listStyle(.plain)
         .searchable(text: $search, prompt: "Search favourites")

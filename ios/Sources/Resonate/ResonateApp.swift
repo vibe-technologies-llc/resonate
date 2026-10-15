@@ -218,6 +218,13 @@ struct RootView: View {
     }
 }
 
+extension View {
+    @MainActor
+    func themedRows() -> some View {
+        listRowBackground(AppearanceState.shared.themedBackground ? Color.clear : nil)
+    }
+}
+
 struct ThemedPage: ViewModifier {
     @Environment(Navigation.self) private var navigation
 

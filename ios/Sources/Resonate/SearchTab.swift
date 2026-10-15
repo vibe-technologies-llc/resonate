@@ -20,18 +20,21 @@ struct SearchTab: View {
         let place = navigation.searchPlace
 
         List {
-            if place == .online, !library.features.online {
-                OnlineOff()
-            } else if search.query.isEmpty {
-                SearchStart(search: search, choose: enter)
-            } else {
-                switch place {
-                case .library:
-                    LibraryFindings(search: search, seeAll: $seeAll) { navigation.searchPlace = .online }
-                case .online:
-                    OnlineSearchContent(actions: $actions)
+            Group {
+                if place == .online, !library.features.online {
+                    OnlineOff()
+                } else if search.query.isEmpty {
+                    SearchStart(search: search, choose: enter)
+                } else {
+                    switch place {
+                    case .library:
+                        LibraryFindings(search: search, seeAll: $seeAll) { navigation.searchPlace = .online }
+                    case .online:
+                        OnlineSearchContent(actions: $actions)
+                    }
                 }
             }
+            .themedRows()
         }
         .listStyle(.plain)
         .searchable(text: Binding(get: { search.text }, set: enter), prompt: place == .online ? OnlineAsked.prompt : "Search your library")
@@ -138,7 +141,7 @@ struct LibrarySearchPage: View {
 
     var body: some View {
         List {
-            SearchResults(search: library.tabSearch, scope: .constant(scope))
+            SearchResults(search: library.tabSearch, scope: .constant(scope)).themedRows()
         }
         .listStyle(.plain)
         .navigationTitle(scope.rawValue)

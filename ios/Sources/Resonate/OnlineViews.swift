@@ -117,7 +117,7 @@ struct OnlineView: View {
     var body: some View {
         @Bindable var features = library.features
         List {
-            OnlineSearchContent(actions: $actions)
+            OnlineSearchContent(actions: $actions).themedRows()
         }
         .listStyle(.plain)
         .navigationTitle("Online music search")
@@ -243,6 +243,7 @@ struct OnlineTopSections: View {
             Section {
                 ForEach(albums.prefix(Self.topCollections), id: \.id) { album in
                     NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
+                    .themedRows()
                 }
             } header: {
                 SeeAllLink(title: "Albums", more: albums.count > Self.topCollections) { OnlineAlbumsPage(albums: albums) }
@@ -252,6 +253,7 @@ struct OnlineTopSections: View {
             Section {
                 ForEach(artists.prefix(Self.topCollections), id: \.id) { artist in
                     NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
+                    .themedRows()
                 }
             } header: {
                 SeeAllLink(title: "Artists", more: artists.count > Self.topCollections) { OnlineArtistsPage(artists: artists) }
@@ -284,8 +286,8 @@ struct OnlineSongsPage: View {
 
     var body: some View {
         List {
-            DownloadProgress()
-            OnlineSongsSection(songs: songs, actions: $actions)
+            DownloadProgress().themedRows()
+            OnlineSongsSection(songs: songs, actions: $actions).themedRows()
         }
         .listStyle(.plain)
         .navigationTitle("Songs")
@@ -299,6 +301,7 @@ struct OnlineAlbumsPage: View {
     var body: some View {
         List(albums, id: \.id) { album in
             NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
+                .themedRows()
         }
         .listStyle(.plain)
         .navigationTitle("Albums")
@@ -311,6 +314,7 @@ struct OnlineArtistsPage: View {
     var body: some View {
         List(artists, id: \.id) { artist in
             NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
+                .themedRows()
         }
         .listStyle(.plain)
         .navigationTitle("Artists")
@@ -327,6 +331,7 @@ struct OnlineLinkSections: View {
             Section(heading) {
                 ForEach(collection.artists, id: \.id) { artist in
                     NavigationLink { OnlineArtistPage(artist: artist) } label: { OnlineArtistRow(artist: artist) }
+                    .themedRows()
                 }
             }
         }
@@ -524,6 +529,7 @@ struct OnlineArtistPage: View {
             Section("Albums") {
                 ForEach(albums, id: \.id) { album in
                     NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
+                    .themedRows()
                 }
                 if let next {
                     Button(readingMore ? "Reading more releases…" : "More releases") {

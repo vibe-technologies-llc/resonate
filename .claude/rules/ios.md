@@ -443,7 +443,9 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   the scroll content background and sets that background; Now
   Playing's cover freezes the app field to a still frame. `AppearanceState` keeps three settings
   in the `appearance` defaults, edited in Settings › Appearance › Background: `themedBackground`
-  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). Pages with
+  (on), `movingBackground` (on; off draws the still frame), `backgroundStrength` (0.6). A plain list's rows
+  draw their own opaque fill, so each one is `themedRows()` (a clear `listRowBackground` while the
+  background is on), keeping separators; a new plain list does the same. Pages with
   their own backdrop cover it.
 - **Failure falls back to the gradient**: no Metal device, a failed compile or pipeline, or a
   uniform size the shader does not expect is logged in full at `.error` under subsystem

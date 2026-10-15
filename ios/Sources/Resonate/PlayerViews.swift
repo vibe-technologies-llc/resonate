@@ -876,9 +876,9 @@ struct QueueList: View {
     var body: some View {
         ScrollViewReader { scroller in
             List {
-                if !inPlayer { HandoffRows() }
+                if !inPlayer { HandoffRows().themedRows() }
                 QueueSections(inPlayer: inPlayer, playingRowId: Self.playingRow)
-                    .listRowBackground(inPlayer ? Color.clear : nil)
+                    .listRowBackground(inPlayer || AppearanceState.shared.themedBackground ? Color.clear : nil)
             }
             .listStyle(.plain)
             .scrollContentBackground(inPlayer ? .hidden : .automatic)

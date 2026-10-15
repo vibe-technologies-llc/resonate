@@ -35,7 +35,7 @@ struct SongsView: View {
         @Bindable var search = library.songSearch
         List {
             if search.isAsked {
-                SearchResults(search: search, scope: $scope)
+                SearchResults(search: search, scope: $scope).themedRows()
             } else {
                 Section {
                     Picker("Show", selection: $navigation.songsGrouping) {
@@ -51,7 +51,8 @@ struct SongsView: View {
                     }
                 }
                 .listRowSeparator(.hidden)
-                BrowsedMusic(grouping: grouping)
+                .themedRows()
+                BrowsedMusic(grouping: grouping).themedRows()
             }
         }
         .listStyle(.plain)
