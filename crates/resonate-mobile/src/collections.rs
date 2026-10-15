@@ -253,6 +253,7 @@ impl MobilePlayer {
             )
             .map_err(write_error)?;
         drop(connection);
+        self.take_the_place_of_missing(track.id)?;
         self.catalog.track(track.id)
     }
 }
@@ -467,7 +468,7 @@ impl Catalog {
 }
 
 fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>> {
-    let mut query = connection.prepare("SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE (?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000)) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2").map_err(read_error)?;
+    let mut query = connection.prepare("SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE missing = 0 AND ((?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000))) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2").map_err(read_error)?;
     let matches = query
         .query_map(
             params![

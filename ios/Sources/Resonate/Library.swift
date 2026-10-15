@@ -99,6 +99,7 @@ final class Library {
     var snapshot: Snapshot?
     var status: StatusMessage?
     var scanning = false
+    private(set) var erasing = false
     var scanned = 0
     var preferences: PlaybackPreferences?
     var filter: TrackFilter = defaultTrackFilter()
@@ -786,17 +787,22 @@ final class Library {
         return (uri, name)
     }
 
-    func forgetMissing() async {
-        guard let native = try? await player() else { return }
+    @discardableResult
+    func forgetMissing() async -> MissingSongs? {
+        guard let native = try? await player() else { return nil }
         let prefixes = folders.folders()
             .filter(\.readable)
             .map { "\(Folders.scheme)://\($0.id)/" }
-        guard let changed = try? await Work.aside({ try native.hideMissingSongs(prefixes: prefixes) }),
-              changed.hidden > 0 || changed.restored > 0 else { return }
+        guard let changed = try? await Work.aside({ try native.hideMissingSongs(prefixes: prefixes) }) else { return nil }
+        if changed.leftTheQueue > 0 { await rereadQueue() }
+        guard changed.hidden > 0 || changed.restored > 0 else { return changed }
         await refresh()
         if changed.hidden > 0 {
-            notice("Hid \(counted(Int(changed.hidden), "song")) whose files are gone")
+            let fetching = features.syncConfig.map { $0.enabled && ($0.everything || $0.favourites || $0.playlists) } ?? false
+            let gone = changed.hidden == 1 ? "1 song whose file is gone was hidden" : "\(changed.hidden) songs whose files are gone were hidden"
+            notice(gone + (fetching ? " · fetching from your devices" : ""))
         }
+        return changed
     }
 
     func notice(_ message: String) {
@@ -829,6 +835,20 @@ final class Library {
 
     func save() {
         request { try $0.save() }
+    }
+
+    func eraseEverything() {
+        guard !erasing else { return }
+        erasing = true
+        polling?.cancel()
+        scanTask?.cancel()
+        features.stopForErasing()
+        let opened = native
+        Task {
+            if let opened { _ = try? await Work.inOrder { try opened.shutdown() } }
+            _ = try? await Work.aside { Erasure.everything() }
+            exit(0)
+        }
     }
 }
 

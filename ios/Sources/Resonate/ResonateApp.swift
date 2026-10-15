@@ -19,7 +19,7 @@ struct ResonateApp: App {
         }
         .onChange(of: phase) { _, now in
             library.features.foreground = now == .active
-            if now != .active { library.save() }
+            if now == .active { library.features.cameForward() } else { library.save() }
         }
     }
 }
@@ -253,6 +253,10 @@ struct StatusBanner: View {
                 ScanProgress()
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            if let activity = library.features.syncActivity {
+                SyncProgress(activity: activity)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if let message = library.status {
                 StatusCard(message: message)
                     .id(message.serial)
@@ -261,6 +265,66 @@ struct StatusBanner: View {
         }
         .animation(.smooth, value: library.status)
         .animation(.smooth, value: library.scanning)
+        .animation(.smooth, value: library.features.syncActivity == nil)
+    }
+}
+
+struct SyncProgress: View {
+    @Environment(Navigation.self) private var navigation
+    let activity: SyncActivity
+
+    var body: some View {
+        Button {
+            navigation.tab = .settings
+            if navigation.paths[.settings]?.last != .sync {
+                navigation.paths[.settings, default: []].append(.sync)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                switch activity {
+                case .fetching(_, let fraction?):
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.circular)
+                case .fetching, .syncing:
+                    ProgressView()
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.footnote.weight(.semibold))
+                    if let detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens device sync")
+    }
+
+    private var title: String {
+        switch activity {
+        case .syncing: "Syncing with your devices…"
+        case .fetching(let songs, _): "Fetching \(counted(songs, "song")) from your devices"
+        }
+    }
+
+    private var detail: String? {
+        guard case .fetching(_, let fraction?) = activity else { return nil }
+        return "\(Int((fraction * 100).rounded()))%"
     }
 }
 

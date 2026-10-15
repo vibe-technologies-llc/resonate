@@ -52,7 +52,7 @@ const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 const PLAYLIST_NAME_BYTES_AT_MOST: usize = 255;
 const UNNAMED_PLAYLIST: &str = "Synced";
 const NANOS_A_SECOND: i64 = 1_000_000_000;
-const RECORDING_COLUMNS: &str = "d.title, d.artist, d.album, d.recording, d.duration_ms";
+pub(crate) const RECORDING_COLUMNS: &str = "d.title, d.artist, d.album, d.recording, d.duration_ms";
 
 type Answered<T> = std::result::Result<T, Refused>;
 
@@ -126,6 +126,24 @@ pub struct SyncedDevice {
     pub this_device: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SyncTransferState {
+    Waiting,
+    Moving,
+    Landed,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SyncTransfer {
+    pub title: String,
+    pub artist: String,
+    pub from: String,
+    pub received: u64,
+    pub size: u64,
+    pub state: SyncTransferState,
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SyncStatus {
     pub standing: SyncStanding,
@@ -134,6 +152,8 @@ pub struct SyncStatus {
     pub moving: u32,
     pub owed: u32,
     pub arrivals: u64,
+    pub settled: bool,
+    pub transfers: Vec<SyncTransfer>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -206,9 +226,33 @@ impl MobilePlayer {
                 moving: 0,
                 owed: 0,
                 arrivals,
+                settled: true,
+                transfers: Vec::new(),
             };
         };
         let shown = running.sync.shown();
+        let transfers = shown
+            .transfers
+            .iter()
+            .map(|transfer| SyncTransfer {
+                title: transfer.recording.title.clone(),
+                artist: transfer.recording.artist.clone(),
+                from: shown
+                    .devices
+                    .iter()
+                    .find(|device| device.id == transfer.from)
+                    .map(|device| device.name.clone())
+                    .unwrap_or_default(),
+                received: transfer.received,
+                size: transfer.size,
+                state: match transfer.state {
+                    TransferState::Waiting => SyncTransferState::Waiting,
+                    TransferState::Moving => SyncTransferState::Moving,
+                    TransferState::Landed => SyncTransferState::Landed,
+                    TransferState::Failed => SyncTransferState::Failed,
+                },
+            })
+            .collect::<Vec<_>>();
         SyncStatus {
             standing: match shown.standing {
                 Standing::Starting | Standing::Connecting => SyncStanding::Connecting,
@@ -247,6 +291,8 @@ impl MobilePlayer {
             ),
             owed: counted(shown.owed),
             arrivals,
+            settled: shown.settled,
+            transfers,
         }
     }
 
@@ -1066,7 +1112,7 @@ fn length_of(duration_ms: i64) -> Option<Duration> {
     (duration_ms > 0).then(|| Duration::from_millis(duration_ms as u64))
 }
 
-fn recording_at(row: &Row<'_>, first: usize) -> rusqlite::Result<Recording> {
+pub(crate) fn recording_at(row: &Row<'_>, first: usize) -> rusqlite::Result<Recording> {
     Ok(Recording {
         title: row.get(first)?,
         artist: row.get(first + 1)?,

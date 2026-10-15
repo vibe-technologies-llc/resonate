@@ -28,6 +28,7 @@ pub struct Inside {
     pub listens: Vec<LocalListen>,
     pub credited: Vec<RemoteListen>,
     pub resumed: Option<Resumed>,
+    pub deleted_by_hand: Vec<String>,
     next_id: i64,
 }
 
@@ -244,7 +245,9 @@ impl Catalog for Shelf {
     }
 
     fn holds(&self, recording: &Recording) -> Result<bool, Refused> {
-        Ok(Self::holds_song(&self.inside.lock(), recording))
+        let inside = self.inside.lock();
+        Ok(Self::holds_song(&inside, recording)
+            && !inside.deleted_by_hand.contains(&recording.title))
     }
 
     fn holdings(&self) -> Result<Vec<Held>, Refused> {

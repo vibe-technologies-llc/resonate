@@ -192,6 +192,64 @@ fn a_song_arriving_later_takes_its_place_in_the_playlist() {
 }
 
 #[test]
+fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    desk.shelf.favour_here("B", true);
+    sync(&mut desk, &mut phone);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    let at = LocalPlaylistId {
+        id: on_phone,
+        created: on_phone * 1000,
+    };
+    phone.ledger.keep_songs_of(at, true).expect("kept");
+    let playlists = Follow {
+        playlists: true,
+        ..Follow::default()
+    };
+    let favourites = Follow {
+        favourites: true,
+        ..Follow::default()
+    };
+
+    assert!(
+        phone
+            .ledger
+            .wanted(playlists, &phone.shelf)
+            .expect("wanted")
+            .is_empty()
+    );
+    assert!(
+        phone
+            .ledger
+            .wanted(favourites, &phone.shelf)
+            .expect("wanted")
+            .is_empty()
+    );
+
+    phone.shelf.inside.lock().deleted_by_hand = vec!["A".into(), "B".into()];
+    phone.shelf.moved();
+    phone.send();
+
+    let wanted_titles = |follow| {
+        let mut titles = phone
+            .ledger
+            .wanted(follow, &phone.shelf)
+            .expect("wanted")
+            .into_iter()
+            .map(|recording| recording.title)
+            .collect::<Vec<_>>();
+        titles.sort();
+        titles
+    };
+    assert_eq!(wanted_titles(playlists), ["A", "B"]);
+    assert_eq!(wanted_titles(favourites), ["B"]);
+    assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
+    assert_eq!(phone.shelf.favourite_titles(), ["B"]);
+}
+
+#[test]
 fn a_playlist_removed_on_one_device_is_removed_on_the_other() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);

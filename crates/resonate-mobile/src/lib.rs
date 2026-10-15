@@ -223,6 +223,7 @@ impl MobilePlayer {
         {
             tracing::debug!(%error, "embedded lyrics could not be read");
         }
+        self.take_the_place_of_missing(track.id)?;
         self.catalog.track(track.id)
     }
 

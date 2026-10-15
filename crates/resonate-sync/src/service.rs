@@ -43,6 +43,7 @@ use crate::{
 
 pub const HOSTED_SERVER: &str = "resonate.tecnio.dev";
 pub const SERVER_PORT: u16 = 443;
+const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const FIRST_RETRY: Duration = Duration::from_secs(5);
 const LAST_RETRY: Duration = Duration::from_secs(30 * 60);
 const LOOK_AFTER: Duration = Duration::from_secs(3);
@@ -482,6 +483,17 @@ impl Running {
             shown.transfers.len() - 1
         });
         change(&mut shown.transfers[at]);
+        while shown.transfers.len() > TRANSFERS_SHOWN_AT_MOST {
+            let Some(oldest) = shown.transfers.iter().position(|transfer| {
+                matches!(
+                    transfer.state,
+                    TransferState::Landed | TransferState::Failed
+                )
+            }) else {
+                break;
+            };
+            shown.transfers.remove(oldest);
+        }
     }
 }
 

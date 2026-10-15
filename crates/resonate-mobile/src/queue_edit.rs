@@ -81,7 +81,7 @@ impl MobilePlayer {
             .collect()
     }
 
-    fn edit_queue(
+    pub(crate) fn edit_queue(
         &self,
         edit: impl FnOnce(&Queued, &PlayerState) -> Result<Option<Command>>,
     ) -> Result<()> {
@@ -504,6 +504,25 @@ mod tests {
             harness.player.remove_from_queue(ids[0]),
             Err(Error::UnknownQueueRow { queue_id }) if queue_id == ids[0]
         ));
+    }
+
+    #[test]
+    fn songs_whose_files_are_gone_leave_the_queue_and_the_playing_one_stays() {
+        let harness = Harness::new();
+        harness.resumed("abcd", 2, 400);
+        for name in ["b", "d"] {
+            fs::remove_file(harness.folder.join(format!("{name}.wav"))).expect("a deletion");
+        }
+
+        let changed = harness
+            .player
+            .hide_missing_songs(vec![FOLDER.into()])
+            .expect("hidden");
+
+        assert_eq!(changed.hidden, 2);
+        assert_eq!(changed.left_the_queue, 2);
+        assert_eq!(harness.queued(), "ac");
+        assert_eq!(harness.playing(), ('c', 1, 400));
     }
 
     #[test]

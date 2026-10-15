@@ -45,7 +45,16 @@ struct SyncView: View {
                             features.saveSync(next)
                         }
                     ))
-                    Text(syncStanding(status, config: config, online: features.online)).foregroundStyle(.secondary)
+                    if config.enabled {
+                        SyncStateRow()
+                        Button {
+                            features.forceSync()
+                        } label: {
+                            Label(features.syncAskedAt == nil ? "Sync now" : "Syncing…", systemImage: "arrow.triangle.2.circlepath")
+                                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: features.syncAskedAt != nil)
+                        }
+                        .disabled(!features.online || features.syncAskedAt != nil)
+                    }
                     if !features.online {
                         Text("Turn on online features in Settings to sync.").foregroundStyle(.secondary)
                     }
@@ -60,8 +69,6 @@ struct SyncView: View {
                     if !joining.isEmpty, !syncReadsAsACode(code: joining) {
                         Text("This is not a pairing code").foregroundStyle(.red)
                     }
-                    Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { features.forceSync() }
-                        .disabled(!config.enabled || !features.online)
                     Button("Join") {
                         if code == nil { join() } else { confirmingJoin = true }
                     }
@@ -91,18 +98,18 @@ struct SyncView: View {
                     follow("Everything", "Fetch every song your other devices hold", config.everything) { $0.everything = $1 }
                     follow("Allow mobile data for songs", "Without it, songs move only on unmetered networks", config.meteredAllowed) { $0.meteredAllowed = $1 }
                 }
-                SyncDestinations()
+                if let status, !status.transfers.isEmpty {
+                    SyncTransfers(transfers: status.transfers)
+                }
                 if let status, !status.devices.isEmpty {
                     Section("Devices") {
                         ForEach(status.devices, id: \.name) { known in
                             KnownDeviceRow(known: known)
                         }
-                        if status.moving > 0 {
-                            Text("Moving \(counted(Int(status.moving), "song")) between your devices")
-                        }
                         HandoffRows()
                     }
                 }
+                SyncDestinations()
             }
         }
         .navigationTitle("Device sync")
@@ -151,6 +158,135 @@ struct SyncView: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+struct SyncStateRow: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let features = library.features
+        let status = features.syncStatus
+        HStack(spacing: 12) {
+            Group {
+                if features.syncActivity != nil || status?.standing == .connecting {
+                    ProgressView()
+                } else if features.syncUpToDate {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                } else if status?.standing == .unreachable || status?.standing == .refused {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                } else {
+                    Image(systemName: "clock").foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 24)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline(features))
+                Text(syncStanding(status, config: features.syncConfig, online: features.online))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .animation(.smooth, value: headline(features))
+    }
+
+    private func headline(_ features: Features) -> String {
+        switch features.syncActivity {
+        case .fetching(let songs, _): return "Fetching \(counted(songs, "song"))"
+        case .syncing: return "Syncing…"
+        case nil: break
+        }
+        guard let status = features.syncStatus else { return "Starting…" }
+        if features.syncUpToDate { return "Up to date" }
+        switch status.standing {
+        case .connecting: return "Connecting…"
+        case .refused: return "Refused"
+        case .unreachable: return status.devices.contains { $0.nearby && !$0.thisDevice } ? "Catching up" : "Not syncing"
+        case .connected: return status.owed > 0 ? "Sending \(counted(Int(status.owed), "change"))" : "Catching up"
+        case .off: return "Off"
+        }
+    }
+}
+
+struct SyncTransfers: View {
+    let transfers: [SyncTransfer]
+    private static let finishedShown = 10
+
+    var body: some View {
+        let active = transfers.filter { $0.state == .waiting || $0.state == .moving }
+        let finished = transfers.filter { $0.state == .landed || $0.state == .failed }.suffix(Self.finishedShown).reversed()
+        Section {
+            ForEach(Array(active.enumerated()), id: \.offset) { _, transfer in
+                SyncTransferRow(transfer: transfer)
+            }
+            ForEach(Array(finished.enumerated()), id: \.offset) { _, transfer in
+                SyncTransferRow(transfer: transfer)
+            }
+        } header: {
+            Text(active.isEmpty ? "Recently fetched" : "Fetching")
+        }
+    }
+}
+
+struct SyncTransferRow: View {
+    let transfer: SyncTransfer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .foregroundStyle(tint)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(transfer.title.isEmpty ? "Unknown song" : transfer.title).lineLimit(1)
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .monospacedDigit()
+                }
+            }
+            if transfer.state == .moving, transfer.size > 0 {
+                ProgressView(value: Double(min(transfer.received, transfer.size)), total: Double(transfer.size))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch transfer.state {
+        case .waiting: "clock"
+        case .moving: "arrow.down.circle"
+        case .landed: "checkmark.circle.fill"
+        case .failed: "exclamationmark.circle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch transfer.state {
+        case .waiting: .secondary
+        case .moving: .accentColor
+        case .landed: .green
+        case .failed: .orange
+        }
+    }
+
+    private var caption: String {
+        let source = [transfer.artist, transfer.from.isEmpty ? nil : "from \(transfer.from)"]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: " · ")
+        let state: String = switch transfer.state {
+        case .waiting: "Waiting"
+        case .moving where transfer.size > 0:
+            "\(ByteCountFormatter.string(fromByteCount: Int64(transfer.received), countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: Int64(transfer.size), countStyle: .file))"
+        case .moving: "Fetching"
+        case .landed: "Fetched"
+        case .failed: "Could not be fetched"
+        }
+        return source.isEmpty ? state : "\(state) · \(source)"
     }
 }
 

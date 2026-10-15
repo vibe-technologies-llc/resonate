@@ -133,7 +133,11 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   snapshot again and looks at once.
 - **A song deleted by hand is not held.** `Catalog::holds` is false for a row whose file is gone
   (the desktop stats the path; the phones open the document), so the next follow or force fetches
-  it again and the landing upserts under the same document.
+  it again. `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
+  favoured song, never trusting `here`, which only says the catalog listed the song at the last look
+  (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
+- **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
+  failed dropped first.
 - **Server**: `HOSTED_SERVER` (`resonate.tecnio.dev`, port 443) unless `sync-server` names
   another; `sync-server-certificate` adds a PEM to the system and built-in roots (a private CA, the
   tests' self-signed server).

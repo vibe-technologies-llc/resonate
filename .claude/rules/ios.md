@@ -64,11 +64,32 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   when the transfers stop, a landing failure is told once per distinct text, and a failing sync
   poll once until it recovers.
   A song whose file has gone is hidden, never deleted (`hide_missing_songs`, given the readable
-  folders' prefixes; `documents.missing`) at launch, after a completed scan and on *Sync now*: song
-  lists, search, albums, artists, statistics and a playlist's rows skip it, while its playlist rows
-  and favourite stay so no removal reaches the sync ledger as the listener's edit. A playlist edit
-  by shown index is mapped to the stored row (`shown_positions`). Indexing the file again (a
-  rescan, a song fetched back under the same name) or finding it readable restores it.
+  folders' prefixes; `documents.missing`) at launch, whenever the scene becomes active again, after a
+  completed scan and on *Sync now*: song lists, search, albums, artists, statistics, top songs, a
+  playlist's rows and the wants' *In your library* skip it, and its rows leave the queue
+  (`left_the_queue`; the playing row too, which moves on), while its playlist rows and favourite
+  stay so no removal reaches the sync ledger as the listener's edit. A playlist edit by shown index
+  is mapped to the stored row (`shown_positions`). Indexing the file again or finding it readable
+  restores it; a document indexed under another name that names the same song
+  (`Recording::names_the_same_song_as`: a song fetched back from a device or a download) takes the
+  hidden row's place (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
+  artwork and studies move over, the playlists' revisions step, and the hidden row is deleted.
+  Becoming active with songs newly hidden while sync runs forces a sync, so they are fetched back.
+- **Sync shows what it is doing.** `SyncStatus` carries `settled` (the service's `Shown.settled`)
+  and `transfers` (title, artist, the sending device's name, bytes and `SyncTransferState`).
+  `Features.syncActivity` is *fetching* while a transfer waits or moves or a received song is being
+  written into the folder (`syncLanding`), with a fraction where every size is known, else
+  *syncing* from *Sync now* (`syncAskedAt`) until the status settles (a notice says with how many
+  devices), the server is refused or unreachable with nobody nearby (the standing as a notice), or
+  45 s pass; the poll runs every second meanwhile. `SyncProgress` is a glass card in the status
+  banner that opens the sync page; the page leads with `SyncStateRow` (spinner, *Up to date*
+  check or warning, then the standing), *Sync now* turning into *Syncing…*, and the active then the
+  ten latest finished transfers; the Settings row says the same.
+- **Erase all data** (the last Settings section, confirmed) shuts the player down, then
+  `Erasure.everything` empties Application Support, Caches, Documents (the songs kept in the app's
+  own folder) and tmp, removes the `library-features`, `playback` and `provider-accounts` suites and
+  the standard domain, and deletes every keychain class, then the app exits. Granted folders
+  elsewhere keep their music; with the pairing code gone, other devices hear nothing.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
   (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`

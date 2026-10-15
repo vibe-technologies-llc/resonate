@@ -25,11 +25,13 @@ struct SettingsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
+    @State private var confirmingErase = false
     private static let unlistedWords = [
         "Online features internet network artwork covers lyrics enrichment music search",
         "Artwork and details automatically portraits Wi-Fi missing covers",
         "Download providers TIDAL Subsonic Monochrome",
         "Scrobbling ListenBrainz Last.fm",
+        "Erase all data reset everything delete start over",
     ]
 
     var body: some View {
@@ -69,6 +71,31 @@ struct SettingsView: View {
             }
             if features.online, shown("Artwork and details automatically portraits Wi-Fi missing covers") {
                 EnrichmentSection()
+            }
+            if shown("Erase all data reset everything delete start over") {
+                Section {
+                    Button(role: .destructive) {
+                        confirmingErase = true
+                    } label: {
+                        Label("Erase all data", systemImage: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(library.erasing)
+                } footer: {
+                    Text("Removes your library, playlists, favourites, listening history, settings, accounts and pairing code from this iPhone, and the songs kept in Resonate’s own folder. Folders you added from elsewhere keep their music. Your other devices are not touched.")
+                }
+            }
+        }
+        .confirmationDialog("Erase all data?", isPresented: $confirmingErase, titleVisibility: .visible) {
+            Button("Erase everything", role: .destructive) { library.eraseEverything() }
+        } message: {
+            Text("This cannot be undone. Resonate closes once it is done; open it again to start fresh.")
+        }
+        .overlay {
+            if library.erasing {
+                ProgressView("Erasing…")
+                    .padding(24)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 20))
             }
         }
         .buttonStyle(.plain)
@@ -159,11 +186,21 @@ struct SettingsView: View {
         let features = library.features
         return SettingsEntry(
             title: "Device sync",
-            detail: syncStanding(features.syncStatus, config: features.syncConfig, online: features.online),
+            detail: syncDetail(features),
             symbol: "arrow.triangle.2.circlepath",
             keywords: "connected services devices pairing code phone computer playlists favourites listening history handoff",
             opening: .page(.sync)
         )
+    }
+
+    private func syncDetail(_ features: Features) -> String {
+        switch features.syncActivity {
+        case .fetching(let songs, _): return "Fetching \(counted(songs, "song")) from your devices"
+        case .syncing: return "Syncing…"
+        case nil: break
+        }
+        let standing = syncStanding(features.syncStatus, config: features.syncConfig, online: features.online)
+        return features.syncUpToDate ? "Up to date · " + standing : standing
     }
 
     @ViewBuilder

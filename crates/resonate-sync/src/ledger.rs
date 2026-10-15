@@ -1099,10 +1099,24 @@ impl Ledger {
         Ok(settled)
     }
 
+    fn favoured(&self) -> Result<Vec<Recording>> {
+        Ok(self
+            .favourites_where("favoured = 1")?
+            .into_iter()
+            .map(|(_, recording)| recording)
+            .collect())
+    }
+
     fn favourites_not_here(&self) -> Result<Vec<(String, Recording)>> {
+        self.favourites_where("favoured = 1 AND here = 0")
+    }
+
+    fn favourites_where(&self, condition: &str) -> Result<Vec<(String, Recording)>> {
         let mut statement = self
             .connection
-            .prepare("SELECT key, recording FROM favourites WHERE favoured = 1 AND here = 0")
+            .prepare(&format!(
+                "SELECT key, recording FROM favourites WHERE {condition}"
+            ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let rows = statement
             .query_map([], |row| {
@@ -1157,15 +1171,13 @@ impl Ledger {
                 if stored.gone || !(follow.everything || self.keeps_songs(stored.key)?) {
                     continue;
                 }
-                for (recording, here) in stored.entries.iter().zip(&stored.here) {
-                    if !here {
-                        wanted.insert(recording.key(), recording.clone());
-                    }
+                for recording in &stored.entries {
+                    wanted.insert(recording.key(), recording.clone());
                 }
             }
         }
         if follow.favourites || follow.everything {
-            for (_, recording) in self.favourites_not_here()? {
+            for recording in self.favoured()? {
                 wanted.insert(recording.key(), recording);
             }
         }

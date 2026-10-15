@@ -92,7 +92,7 @@ impl Catalog {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let (plays, listened_ms) = connection.query_row("SELECT coalesce(sum(counted), 0), coalesce(sum(heard_ms), 0) FROM listens WHERE ?1 = 0 OR began >= unixepoch() - ?1 * 86400", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
-        let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 20").map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 20").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
             .query_map([days], read)
             .map_err(|source| Error::store(StoreOp::Read, source))?

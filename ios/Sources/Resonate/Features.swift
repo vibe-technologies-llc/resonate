@@ -10,6 +10,11 @@ struct PlaylistSync: Equatable {
     let kept: Bool
 }
 
+enum SyncActivity: Equatable {
+    case syncing
+    case fetching(songs: Int, fraction: Double?)
+}
+
 enum ArtistLookup {
     case idle
     case looking
@@ -23,6 +28,9 @@ final class Features {
     private static let scrobbleEvery: Duration = .seconds(30)
     private static let syncForeground: Duration = .seconds(2)
     private static let syncBackground: Duration = .seconds(30)
+    private static let syncAsked: Duration = .seconds(1)
+    private static let syncAnswersAfter: TimeInterval = 1.5
+    private static let syncGivesUpAfter: TimeInterval = 45
     private static let landingPause: TimeInterval = 60
     private static let visualizerFrame: Duration = .milliseconds(33)
     nonisolated private static let wantedChunk = 500
@@ -78,6 +86,8 @@ final class Features {
     var syncNotice: String?
     var playlistSync: PlaylistSync?
     var transferring = false
+    var syncAskedAt: Date?
+    var syncLanding = 0
 
     @ObservationIgnored private var inspectorRequest = 0
     @ObservationIgnored private var inspectorArtistRequest = 0
@@ -279,11 +289,68 @@ final class Features {
         }
     }
 
+    var syncActivity: SyncActivity? {
+        guard let status = syncStatus, status.standing != .off else { return nil }
+        let active = status.transfers.filter { $0.state == .waiting || $0.state == .moving }
+        if !active.isEmpty || syncLanding > 0 {
+            let sized = active.filter { $0.size > 0 }
+            let size = sized.reduce(UInt64(0)) { $0 + $1.size }
+            let received = sized.reduce(UInt64(0)) { $0 + min($1.received, $1.size) }
+            let fraction = size == 0 || sized.count != active.count ? nil : Double(received) / Double(size)
+            return .fetching(songs: active.count + syncLanding, fraction: fraction)
+        }
+        return syncAskedAt == nil ? nil : .syncing
+    }
+
+    var syncUpToDate: Bool {
+        guard let status = syncStatus, status.standing != .off else { return false }
+        return syncActivity == nil && status.settled
+    }
+
     func forceSync() {
         nearby?.refresh()
+        syncAskedAt = Date()
         work { [weak self] native in
             await self?.library.forgetMissing()
             native.syncForce()
+        }
+    }
+
+    func stopForErasing() {
+        syncPolling?.cancel()
+        submitting?.cancel()
+        visualization?.cancel()
+        onlinePending?.cancel()
+        nearby?.follow(record: nil)
+        syncAskedAt = nil
+    }
+
+    func cameForward() {
+        guard syncConfig?.enabled == true, online else {
+            Task { [weak self] in await self?.library.forgetMissing() }
+            return
+        }
+        work { [weak self] native in
+            guard let changed = await self?.library.forgetMissing(), changed.hidden > 0 else { return }
+            native.syncForce()
+        }
+    }
+
+    private func answerSyncAsked(_ status: SyncStatus) {
+        guard let asked = syncAskedAt else { return }
+        let waited = Date().timeIntervalSince(asked)
+        guard waited >= Self.syncAnswersAfter else { return }
+        let others = status.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) }
+        if status.standing == .off {
+            syncAskedAt = nil
+        } else if syncActivity == .syncing, status.settled {
+            syncAskedAt = nil
+            library.notice(others.isEmpty ? "Synced · no other device is online" : "Synced with \(counted(others.count, "device"))")
+        } else if status.standing == .refused || (status.standing == .unreachable && others.isEmpty) {
+            syncAskedAt = nil
+            library.notice(syncStanding(status, config: syncConfig, online: online))
+        } else if waited >= Self.syncGivesUpAfter {
+            syncAskedAt = nil
         }
     }
 
@@ -339,7 +406,7 @@ final class Features {
         var kept = 0
         var failing = false
         while !Task.isCancelled {
-            try? await Task.sleep(for: foreground || transferring ? Self.syncForeground : Self.syncBackground)
+            try? await Task.sleep(for: syncAskedAt != nil ? Self.syncAsked : foreground || transferring ? Self.syncForeground : Self.syncBackground)
             do {
                 let (status, waiting, handoffs, record) = try await Work.aside {
                     let status = native.syncStatus()
@@ -352,6 +419,7 @@ final class Features {
                 syncStatus = status
                 transferring = status.moving > 0 || !waiting.isEmpty
                 transfers.hold(transferring)
+                answerSyncAsked(status)
                 if !waiting.isEmpty { kept += await landReceived(native, waiting) }
                 if kept > 0, !transferring {
                     library.notice("Kept \(counted(kept, "song")) from your devices")
@@ -387,6 +455,8 @@ final class Features {
         }
         let folders = library.folders
         var landed = 0
+        syncLanding = waiting.count
+        defer { syncLanding = 0 }
         for received in waiting {
             guard !Task.isCancelled else { return landed }
             let name = received.name
@@ -399,6 +469,7 @@ final class Features {
                 created = nil
                 settings.removeObject(forKey: "unfinished-sync-landing")
                 landed += 1
+                syncLanding = waiting.count - landed
             } catch {
                 if let created {
                     folders.delete(created)
