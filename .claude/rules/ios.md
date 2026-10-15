@@ -581,7 +581,7 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   a third of the cover is vivid; a cover less than a sixteenth vivid (black, grey, white) is
   clustered whole and keeps its own greys, its lightness held from 0.16 (`Palette.darkestGrey`) so a
   black cover gives a near-black field; only a song without a cover takes the palette built around
-  the accent colour. Each colour is held to
+  the accent colour. A view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black. Each colour is held to
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
   A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
@@ -614,8 +614,9 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
-- **Frame rate** follows what is moving (`BackdropView.rate`): 60 fps while playing, 30 paused, half
-  that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline); the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
+- **Frame rate** follows what is moving (`BackdropView.rate`): 30 fps while playing, 15 paused (the glass
+  over the field is composited again at every frame the field draws, so a faster field only costs Now Playing its smoothness), two thirds
+  of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline); the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
   so a still page lets the display idle; an inactive or backgrounded scene, or a view out of its
   window, draws nothing.
 - **The app background** is the same view with no track and an `ambience` strength

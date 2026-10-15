@@ -42,6 +42,7 @@ final class Features {
     private static let landingPause: TimeInterval = 60
     private static let landingTriesAtMost = 3
     private static let visualizerFrame: Duration = .milliseconds(33)
+    private static let loudnessFrame: Duration = .milliseconds(50)
     private static let visualizerRetry: Duration = .seconds(2)
     private static let artGenerationsAtMost = 4096
     nonisolated private static let wantedChunk = 500
@@ -1517,7 +1518,7 @@ final class Features {
         visualization = Task { [weak self] in
             guard let native = try? await self?.library.player() else { return }
             while !Task.isCancelled {
-                var wait = Features.visualizerFrame
+                var wait = self?.visualizersWatching == true ? Features.visualizerFrame : Features.loudnessFrame
                 do {
                     let heard = try await Work.aside { HeardSignal(try native.visualizer(enabled: true)) }
                     self?.heard(heard)

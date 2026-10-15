@@ -24,7 +24,7 @@ struct BackdropView: View {
         self.track = track
         self.moving = moving
         self.ambience = ambience
-        _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) } ?? (track == nil ? Self.accentPalette() : nil))
+        _palette = State(initialValue: track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) } ?? Self.accentPalette())
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
     }
 
@@ -92,9 +92,10 @@ struct BackdropView: View {
         switch (ambient, sounding, lowPower) {
         case (true, true, false): 20
         case (true, _, _): 10
-        case (false, true, false): 60
-        case (false, true, true), (false, false, false): 30
-        case (false, false, true): 15
+        case (false, true, false): 30
+        case (false, true, true): 20
+        case (false, false, false): 15
+        case (false, false, true): 10
         }
     }
 
