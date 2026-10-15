@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'library.dart';
 import 'model.dart';
 import 'player.dart';
+import 'search.dart';
 import 'settings.dart';
 import 'tools.dart';
 import 'visuals.dart';
@@ -89,6 +90,7 @@ class ResonateApp extends StatelessWidget {
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.model});
   final PlayerModel model;
+  static final ValueNotifier<int> currentTab = ValueNotifier(1);
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -101,45 +103,30 @@ class _AppShellState extends State<AppShell>
   @override
   void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
     registerForRestoration(_tab, 'tab');
+    AppShell.currentTab.value = _tab.value;
   }
 
   @override
   void initState() {
     super.initState();
+    AppShell.currentTab.addListener(_syncTab);
     WidgetsBinding.instance.addObserver(this);
-    widget.model.addListener(_showNotice);
     widget.model.call('loadPlaylists');
     widget.model.call('refreshFolders');
   }
 
+  void _syncTab() {
+    if (_tab.value != AppShell.currentTab.value) {
+      setState(() => _tab.value = AppShell.currentTab.value);
+    }
+  }
+
   @override
   void dispose() {
-    widget.model.removeListener(_showNotice);
+    AppShell.currentTab.removeListener(_syncTab);
     _tab.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  String? _shownNotice;
-  void _showNotice() {
-    final message = widget.model.notice;
-    if (message == _shownNotice) return;
-    _shownNotice = message;
-    if (message == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _messenger.currentState?.removeCurrentSnackBar();
-      _messenger.currentState?.showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          action: SnackBarAction(
-            label: 'Dismiss',
-            onPressed: widget.model.dismissNotice,
-          ),
-        ),
-      );
-    });
   }
 
   void open(String page, [RowData data = const {}]) {
@@ -154,89 +141,149 @@ class _AppShellState extends State<AppShell>
     listenable: widget.model,
     builder: (context, _) {
       final model = widget.model;
+      final hasBanner =
+          model.state['scanning'] == true ||
+          model.syncActivity != null ||
+          model.notice != null;
       return ArtworkAtmosphere(
         model: model,
         track: model.current,
         child: Scaffold(
           backgroundColor: Colors.transparent,
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                if (model.state['scanning'] == true)
-                  const LinearProgressIndicator(minHeight: 2),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: motion(context, 260),
-                    child: KeyedSubtree(
-                      key: ValueKey(_tab.value),
-                      child: switch (_tab.value) {
-                        0 => SongsPage(model: model, open: open),
-                        1 => LibraryPage(model: model, open: open),
-                        2 => QueuePage(model: model, open: open),
-                        _ => SettingsPage(model: model, open: open),
-                      },
+          extendBody: true,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              SafeArea(
+                top: _tab.value != 1 || hasBanner,
+                bottom: false,
+                child: Column(
+                  children: [
+                    StatusBanner(model: model, open: open),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: motion(context, 260),
+                        child: KeyedSubtree(
+                          key: ValueKey(_tab.value),
+                          child: switch (_tab.value) {
+                            0 => SongsPage(model: model, open: open),
+                            1 => LibraryPage(model: model, open: open),
+                            2 => QueuePage(model: model, open: open),
+                            3 => SettingsPage(model: model, open: open),
+                            _ => SearchPage(model: model, open: open),
+                          },
+                        ),
+                      ),
                     ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: MediaQuery.paddingOf(context).top + 28,
+                child: const IgnorePointer(
+                  child: ProgressiveBlurBackdrop(
+                    top: true,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          bottomNavigationBar: AppBottomBar(
+            model: model,
+            open: open,
+            isRoot: true,
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class AppBottomBar extends StatelessWidget {
+  const AppBottomBar({
+    super.key,
+    required this.model,
+    required this.open,
+    this.isRoot = false,
+  });
+  final PlayerModel model;
+  final OpenPage open;
+  final bool isRoot;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: model,
+    builder: (context, _) => ValueListenableBuilder<int>(
+      valueListenable: AppShell.currentTab,
+      builder: (context, currentTab, _) => ProgressiveBlurBackdrop(
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (model.current.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: MiniPlayer(
+                      model: model,
+                      onOpen: () => open('player'),
+                    ),
+                  ),
+                Glass(
+                  radius: 30,
+                  child: NavigationBar(
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    height: 72,
+                    selectedIndex: currentTab,
+                    onDestinationSelected: (index) {
+                      AppShell.currentTab.value = index;
+                      if (!isRoot) {
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                      }
+                    },
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.music_note_outlined),
+                        selectedIcon: Icon(Icons.music_note_rounded),
+                        label: 'Songs',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.library_music_outlined),
+                        selectedIcon:
+                            Icon(Icons.library_music_rounded),
+                        label: 'Library',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.queue_music_outlined),
+                        selectedIcon: Icon(Icons.queue_music_rounded),
+                        label: 'Queue',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.settings_outlined),
+                        selectedIcon: Icon(Icons.settings_rounded),
+                        label: 'Settings',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.search_rounded),
+                        selectedIcon: Icon(Icons.search_rounded),
+                        label: 'Search',
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          bottomNavigationBar: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (model.current.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: MiniPlayer(
-                        model: model,
-                        onOpen: () => open('player'),
-                      ),
-                    ),
-                  Glass(
-                    radius: 30,
-                    child: NavigationBar(
-                      backgroundColor: Colors.transparent,
-                      elevation: 0,
-                      height: 72,
-                      selectedIndex: _tab.value,
-                      onDestinationSelected: (index) =>
-                          setState(() => _tab.value = index),
-                      destinations: const [
-                        NavigationDestination(
-                          icon: Icon(Icons.music_note_outlined),
-                          selectedIcon: Icon(Icons.music_note_rounded),
-                          label: 'Songs',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.library_music_outlined),
-                          selectedIcon: Icon(Icons.library_music_rounded),
-                          label: 'Library',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.queue_music_outlined),
-                          selectedIcon: Icon(Icons.queue_music_rounded),
-                          label: 'Queue',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.settings_outlined),
-                          selectedIcon: Icon(Icons.settings_rounded),
-                          label: 'Settings',
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
-      );
-    },
+      ),
+    ),
   );
 }
 
@@ -265,7 +312,7 @@ Route<void> resonatePageRoute(BuildContext context, Object? arguments) {
   final Widget child = switch (page) {
     'player' => NowPlaying(model: model, open: open),
     'collection' => CollectionPage(model: model, data: data, open: open),
-    'online' => OnlinePage(model: model, open: open),
+    'online' || 'search' => SearchPage(model: model, open: open),
     'lyrics' => LyricsPage(
       model: model,
       track: data.isEmpty ? model.current : data,
@@ -280,15 +327,10 @@ Route<void> resonatePageRoute(BuildContext context, Object? arguments) {
   };
   if (page != 'player') return MaterialPageRoute<void>(builder: (_) => child);
   return PageRouteBuilder<void>(
-    transitionDuration: motion(context, 500),
-    reverseTransitionDuration: motion(context, 350),
+    opaque: false,
+    allowSnapshotting: false,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
     pageBuilder: (_, _, _) => child,
-    transitionsBuilder: (_, animation, _, child) => SlideTransition(
-      position: Tween(
-        begin: const Offset(0, 1),
-        end: Offset.zero,
-      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-      child: child,
-    ),
   );
 }

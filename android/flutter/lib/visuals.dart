@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'main.dart' show OpenPage;
 import 'model.dart';
 
 const accent = Color(0xFFB9AAFF);
@@ -51,6 +52,218 @@ class Glass extends StatelessWidget {
   }
 }
 
+class EdgeFade extends StatelessWidget {
+  const EdgeFade({
+    super.key,
+    required this.child,
+    this.top = true,
+    this.bottom = false,
+    this.topExtent = 28,
+    this.bottomExtent = 28,
+  });
+  final Widget child;
+  final bool top;
+  final bool bottom;
+  final double topExtent;
+  final double bottomExtent;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!top && !bottom) return child;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) {
+        final colors = <Color>[];
+        final stops = <double>[];
+        if (top && bounds.height > topExtent) {
+          final topFraction = (topExtent / bounds.height).clamp(0.0, 0.5);
+          colors.addAll([Colors.transparent, Colors.white]);
+          stops.addAll([0.0, topFraction]);
+        } else {
+          colors.add(Colors.white);
+          stops.add(0.0);
+        }
+        if (bottom && bounds.height > bottomExtent) {
+          final bottomFraction =
+              1.0 - (bottomExtent / bounds.height).clamp(0.0, 0.5);
+          colors.addAll([Colors.white, Colors.transparent]);
+          stops.addAll([bottomFraction, 1.0]);
+        } else {
+          colors.add(Colors.white);
+          stops.add(1.0);
+        }
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: colors,
+          stops: stops,
+        ).createShader(bounds);
+      },
+      child: child,
+    );
+  }
+}
+
+class ProgressiveBlurBackdrop extends StatelessWidget {
+  const ProgressiveBlurBackdrop({
+    super.key,
+    required this.child,
+    this.top = false,
+    this.strength = 1,
+    this.tintStrength = 1,
+  });
+
+  final Widget child;
+  final bool top;
+  final double strength;
+  final double tintStrength;
+
+  Widget _blurBands() => Positioned.fill(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        const bands = 16;
+        final height = constraints.maxHeight / bands;
+        return Stack(
+          children: [
+            for (var index = 0; index < bands; index++)
+              Positioned(
+                top: height * index,
+                left: 0,
+                right: 0,
+                height: height,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    enabled: strength > 0,
+                    filter: ui.ImageFilter.blur(
+                      sigmaX: _sigma(index, bands),
+                      sigmaY: _sigma(index, bands),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    ),
+  );
+
+  double _sigma(int index, int bands) {
+    final fraction = (index + .5) / bands;
+    final distance = top ? 1 - fraction : fraction;
+    return 26 * strength * distance * distance;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final tint = dark ? const Color(0xFF101017) : const Color(0xFFF8F7FC);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Stack(
+              children: [
+                _blurBands(),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: top
+                            ? Alignment.bottomCenter
+                            : Alignment.topCenter,
+                        end: top ? Alignment.topCenter : Alignment.bottomCenter,
+                        stops: const [0.0, 0.28, 0.60, 0.88, 1.0],
+                        colors: [
+                          Colors.transparent,
+                          tint.withValues(
+                            alpha: 0.04 * strength * tintStrength,
+                          ),
+                          tint.withValues(
+                            alpha: 0.22 * strength * tintStrength,
+                          ),
+                          tint.withValues(
+                            alpha: 0.65 * strength * tintStrength,
+                          ),
+                          tint.withValues(
+                            alpha: 0.90 * strength * tintStrength,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+final Map<String, List<Color>> _artworkColorsCache = {};
+final Map<String, Uint8List> _artworkBytesCache = {};
+
+Future<List<Color>> extractArtworkColors(
+  Uint8List? bytes, [
+  String cacheKey = '',
+]) async {
+  if (bytes == null || bytes.isEmpty) return const [accent, mint];
+  if (cacheKey.isNotEmpty && _artworkColorsCache.containsKey(cacheKey)) {
+    return _artworkColorsCache[cacheKey]!;
+  }
+  try {
+    final codec = await ui.instantiateImageCodec(
+      bytes,
+      targetWidth: 16,
+      targetHeight: 16,
+    );
+    final frame = await codec.getNextFrame();
+    final data = await frame.image.toByteData();
+    frame.image.dispose();
+    codec.dispose();
+    if (data == null) return const [accent, mint];
+    final colors = <Color>[];
+    for (var half = 0; half < 2; half++) {
+      var r = 0, g = 0, b = 0, weight = 0;
+      for (var pixel = half * 128; pixel < (half + 1) * 128; pixel++) {
+        final at = pixel * 4;
+        final red = data.getUint8(at);
+        final green = data.getUint8(at + 1);
+        final blue = data.getUint8(at + 2);
+        final high = math.max(red, math.max(green, blue));
+        final saturation = high - math.min(red, math.min(green, blue));
+        if (data.getUint8(at + 3) < 220 || high < 32 || saturation < 20) {
+          continue;
+        }
+        final w = (saturation + 16).toInt();
+        r += red * w;
+        g += green * w;
+        b += blue * w;
+        weight += w;
+      }
+      colors.add(
+        weight == 0
+            ? (half == 0 ? accent : mint)
+            : Color.fromARGB(
+                255,
+                r ~/ weight,
+                g ~/ weight,
+                b ~/ weight,
+              ),
+      );
+    }
+    if (cacheKey.isNotEmpty) {
+      _artworkColorsCache[cacheKey] = colors;
+    }
+    return colors;
+  } catch (_) {
+    return const [accent, mint];
+  }
+}
+
 class Artwork extends StatefulWidget {
   const Artwork({
     super.key,
@@ -71,13 +284,18 @@ class Artwork extends StatefulWidget {
 }
 
 class _ArtworkState extends State<Artwork> {
-  Future<Uint8List?>? _future;
+  Uint8List? _bytes;
   String _key = '';
 
   @override
   void didUpdateWidget(Artwork oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _load();
+    if (oldWidget.track['id'] != widget.track['id'] ||
+        oldWidget.track['artRevision'] != widget.track['artRevision'] ||
+        oldWidget.model.state['artworkGeneration'] !=
+            widget.model.state['artworkGeneration']) {
+      _load();
+    }
   }
 
   @override
@@ -91,60 +309,52 @@ class _ArtworkState extends State<Artwork> {
         '${widget.track['id']}:${widget.track['artRevision']}:${widget.model.state['artworkGeneration']}';
     if (_key == key) return;
     _key = key;
-    _future = widget.track.isEmpty ? null : widget.model.artwork(widget.track);
-    if (widget.onColors != null) {
-      _future
-          ?.then((bytes) async {
-            if (bytes == null) {
-              if (mounted && _key == key) widget.onColors?.call([accent, mint]);
-              return;
-            }
-            final codec = await ui.instantiateImageCodec(
-              bytes,
-              targetWidth: 16,
-              targetHeight: 16,
-            );
-            final frame = await codec.getNextFrame();
-            final data = await frame.image.toByteData();
-            frame.image.dispose();
-            codec.dispose();
-            if (data == null || !mounted || _key != key) return;
-            final colors = <Color>[];
-            for (var half = 0; half < 2; half++) {
-              var r = 0, g = 0, b = 0, weight = 0;
-              for (var pixel = half * 128; pixel < (half + 1) * 128; pixel++) {
-                final at = pixel * 4;
-                final red = data.getUint8(at),
-                    green = data.getUint8(at + 1),
-                    blue = data.getUint8(at + 2);
-                final high = math.max(red, math.max(green, blue));
-                final saturation = high - math.min(red, math.min(green, blue));
-                if (data.getUint8(at + 3) < 220 ||
-                    high < 32 ||
-                    saturation < 20) {
-                  continue;
-                }
-                final w = (saturation + 16).toInt();
-                r += red * w;
-                g += green * w;
-                b += blue * w;
-                weight += w;
-              }
-              colors.add(
-                weight == 0
-                    ? (half == 0 ? accent : mint)
-                    : Color.fromARGB(
-                        255,
-                        r ~/ weight,
-                        g ~/ weight,
-                        b ~/ weight,
-                      ),
-              );
-            }
-            widget.onColors?.call(colors);
-          })
-          .catchError((Object _) {});
+    if (widget.track.isEmpty) {
+      if (_bytes != null) setState(() => _bytes = null);
+      return;
     }
+    final cached = _artworkBytesCache[key];
+    if (cached != null) {
+      _bytes = cached;
+      if (widget.onColors != null) {
+        if (_artworkColorsCache.containsKey(key)) {
+          _publishColors(key, _artworkColorsCache[key]!);
+        } else {
+          extractArtworkColors(cached, key).then((colors) {
+            _publishColors(key, colors);
+          });
+        }
+      }
+    } else {
+      _bytes = null;
+    }
+    widget.model.artwork(widget.track).then((bytes) async {
+      if (bytes != null) {
+        _artworkBytesCache[key] = bytes;
+        while (_artworkBytesCache.length > 96) {
+          final oldest = _artworkBytesCache.keys.first;
+          _artworkBytesCache.remove(oldest);
+          _artworkColorsCache.remove(oldest);
+        }
+      }
+      if (!mounted || _key != key) return;
+      if (_bytes != bytes) {
+        setState(() => _bytes = bytes);
+      }
+      if (widget.onColors != null) {
+        final colors = bytes == null
+            ? const [accent, mint]
+            : await extractArtworkColors(bytes, key);
+        _publishColors(key, colors);
+      }
+    }).catchError((Object _) {});
+  }
+
+  void _publishColors(String key, List<Color> colors) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _key == key) widget.onColors?.call(colors);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -153,27 +363,24 @@ class _ArtworkState extends State<Artwork> {
     height: widget.size,
     child: ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
-      child: FutureBuilder<Uint8List?>(
-        future: _future,
-        builder: (context, snapshot) => AnimatedSwitcher(
-          duration: motion(context, 220),
-          child: snapshot.hasData
-              ? Image.memory(
-                  snapshot.data!,
-                  key: ValueKey(_key),
-                  fit: BoxFit.cover,
-                  width: widget.size,
-                  height: widget.size,
-                  gaplessPlayback: true,
-                  cacheWidth: widget.size == null
-                      ? 768
-                      : (widget.size! * MediaQuery.devicePixelRatioOf(context))
-                            .ceil()
-                            .clamp(96, 1024),
-                  errorBuilder: (_, _, _) => const CoverFallback(),
-                )
-              : const CoverFallback(),
-        ),
+      child: AnimatedSwitcher(
+        duration: motion(context, 220),
+        child: _bytes != null
+            ? Image.memory(
+                _bytes!,
+                key: ValueKey(_key),
+                fit: BoxFit.cover,
+                width: widget.size,
+                height: widget.size,
+                gaplessPlayback: true,
+                cacheWidth: widget.size == null
+                    ? 768
+                    : (widget.size! * MediaQuery.devicePixelRatioOf(context))
+                          .ceil()
+                          .clamp(96, 1024),
+                errorBuilder: (_, _, _) => const CoverFallback(),
+              )
+            : const CoverFallback(key: ValueKey('fallback')),
       ),
     ),
   );
@@ -204,34 +411,97 @@ class CoverFallback extends StatelessWidget {
   );
 }
 
-class ArtworkAtmosphere extends StatelessWidget {
+class ArtworkAtmosphere extends StatefulWidget {
   const ArtworkAtmosphere({
     super.key,
     required this.model,
     required this.track,
     required this.child,
-    this.colors = const [accent, mint],
+    this.colors,
     this.immersive = false,
   });
   final PlayerModel model;
   final RowData track;
   final Widget child;
-  final List<Color> colors;
+  final List<Color>? colors;
   final bool immersive;
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
-    future: track.isEmpty ? null : model.artwork(track),
-    builder: (context, image) => Ambient(
-      animated: model.playing,
-      colors: colors,
-      artwork: track.isNotEmpty && image.connectionState == ConnectionState.done
-          ? image.data
-          : null,
-      immersive: immersive,
-      child: child,
-    ),
-  );
+  State<ArtworkAtmosphere> createState() => _ArtworkAtmosphereState();
+}
+
+class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
+  Uint8List? _artwork;
+  List<Color> _extractedColors = const [accent, mint];
+  String _key = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(ArtworkAtmosphere oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.track['id'] != widget.track['id'] ||
+        oldWidget.track['artRevision'] != widget.track['artRevision'] ||
+        oldWidget.model.state['artworkGeneration'] !=
+            widget.model.state['artworkGeneration']) {
+      _load();
+    }
+  }
+
+  void _load() {
+    final key =
+        '${widget.track['id']}:${widget.track['artRevision']}:${widget.model.state['artworkGeneration']}';
+    if (_key == key) return;
+    _key = key;
+    if (widget.track.isEmpty) {
+      setState(() {
+        _artwork = null;
+        _extractedColors = const [accent, mint];
+      });
+      return;
+    }
+    if (_artworkColorsCache.containsKey(key)) {
+      _extractedColors = _artworkColorsCache[key]!;
+    }
+    if (_artworkBytesCache.containsKey(key)) {
+      _artwork = _artworkBytesCache[key];
+    }
+    widget.model.artwork(widget.track).then((bytes) async {
+      if (bytes != null) {
+        _artworkBytesCache[key] = bytes;
+      }
+      if (!mounted || _key != key) return;
+      if (bytes == null) {
+        setState(() {
+          _artwork = null;
+          _extractedColors = const [accent, mint];
+        });
+        return;
+      }
+      final colors = await extractArtworkColors(bytes, key);
+      if (!mounted || _key != key) return;
+      setState(() {
+        _artwork = bytes;
+        _extractedColors = colors;
+      });
+    }).catchError((Object _) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColors = widget.colors ?? _extractedColors;
+    return Ambient(
+      animated: widget.model.playing,
+      colors: activeColors,
+      artwork: _artwork,
+      immersive: widget.immersive,
+      child: widget.child,
+    );
+  }
 }
 
 class Ambient extends StatefulWidget {
@@ -295,52 +565,75 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
         RepaintBoundary(
           child: TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: widget.colors.first),
-            duration: motion(context, 900),
-            builder: (context, color, _) => CustomPaint(
-              painter: _AmbientPainter(
-                _drift,
-                color ?? accent,
-                widget.colors.last,
-                dark,
+            duration: motion(context, 750),
+            builder: (context, color1, _) => TweenAnimationBuilder<Color?>(
+              tween: ColorTween(
+                end: widget.colors.length > 1
+                    ? widget.colors[1]
+                    : widget.colors.first,
+              ),
+              duration: motion(context, 750),
+              builder: (context, color2, _) => CustomPaint(
+                painter: _AmbientPainter(
+                  _drift,
+                  color1 ?? accent,
+                  color2 ?? mint,
+                  dark,
+                ),
               ),
             ),
           ),
         ),
-        if (widget.artwork != null)
-          Positioned.fill(
-            child: ClipRect(
-              child: AnimatedBuilder(
-                animation: _drift,
-                child: RepaintBoundary(
-                  child: Opacity(
-                    opacity: widget.immersive
-                        ? (dark ? .58 : .38)
-                        : (dark ? .22 : .15),
-                    child: ImageFiltered(
-                      imageFilter: ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                      child: Image.memory(
-                        widget.artwork!,
-                        fit: BoxFit.cover,
-                        cacheWidth: 128,
-                        gaplessPlayback: true,
-                        excludeFromSemantics: true,
+        Positioned.fill(
+          child: AnimatedSwitcher(
+            duration: motion(context, 650),
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              fit: StackFit.expand,
+              children: [
+                ...previousChildren,
+                ?currentChild,
+              ],
+            ),
+            child: widget.artwork != null
+                ? ClipRect(
+                    key: ValueKey(identityHashCode(widget.artwork)),
+                    child: AnimatedBuilder(
+                      animation: _drift,
+                      child: RepaintBoundary(
+                        child: Opacity(
+                          opacity: widget.immersive
+                              ? (dark ? .58 : .38)
+                              : (dark ? .22 : .15),
+                          child: ImageFiltered(
+                            imageFilter:
+                                ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                            child: Image.memory(
+                              widget.artwork!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              cacheWidth: 128,
+                              gaplessPlayback: true,
+                              excludeFromSemantics: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(
+                          24 * math.sin(_drift.value * math.pi * 2),
+                          32 * math.cos(_drift.value * math.pi * 2),
+                        ),
+                        child: Transform.rotate(
+                          angle: (_drift.value - .5) * .16,
+                          child: Transform.scale(scale: 1.4, child: child),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(
-                    24 * math.sin(_drift.value * math.pi * 2),
-                    32 * math.cos(_drift.value * math.pi * 2),
-                  ),
-                  child: Transform.rotate(
-                    angle: (_drift.value - .5) * .16,
-                    child: Transform.scale(scale: 1.4, child: child),
-                  ),
-                ),
-              ),
-            ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('empty')),
           ),
+        ),
         IgnorePointer(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -572,4 +865,215 @@ class _SignalPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SignalPainter old) =>
       values != old.values || color != old.color;
+}
+
+class StatusBanner extends StatelessWidget {
+  const StatusBanner({super.key, required this.model, required this.open});
+  final PlayerModel model;
+  final OpenPage open;
+
+  @override
+  Widget build(BuildContext context) {
+    final scanning = model.state['scanning'] == true;
+    final activity = model.syncActivity;
+    final notice = model.notice;
+
+    if (!scanning && activity == null && notice == null) {
+      return const SizedBox.shrink();
+    }
+
+    return AnimatedSize(
+      duration: motion(context, 240),
+      curve: Curves.fastOutSlowIn,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (scanning) ScanProgress(model: model),
+          if (activity != null)
+            SyncProgressBanner(activity: activity, open: open),
+          if (notice != null && !scanning) StatusCard(model: model),
+        ],
+      ),
+    );
+  }
+}
+
+class ScanProgress extends StatelessWidget {
+  const ScanProgress({super.key, required this.model});
+  final PlayerModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final scanned = model.allTracks.length;
+    final text = model.state['status'] as String? ??
+        (scanned > 0
+            ? 'Reading music folder… $scanned ${scanned == 1 ? 'song' : 'songs'}'
+            : 'Reading music folder…');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Glass(
+        radius: 16,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SyncProgressBanner extends StatelessWidget {
+  const SyncProgressBanner({
+    super.key,
+    required this.activity,
+    required this.open,
+  });
+  final SyncActivity activity;
+  final OpenPage open;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = activity.isFetching
+        ? 'Fetching ${activity.songs} ${activity.songs == 1 ? 'song' : 'songs'} from your devices'
+        : 'Syncing with your devices…';
+    final detail = activity.fraction != null
+        ? '${(activity.fraction! * 100).round()}%'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Glass(
+        radius: 16,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => open('sync'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    value: activity.fraction,
+                    strokeWidth: 2.2,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (detail != null)
+                        Text(
+                          detail,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontFeatures: const [
+                              ui.FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StatusCard extends StatelessWidget {
+  const StatusCard({super.key, required this.model});
+  final PlayerModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = model.notice;
+    if (message == null) return const SizedBox.shrink();
+    final isFailure = model.failure != null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Glass(
+        radius: 16,
+        padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+        child: Row(
+          children: [
+            if (isFailure) ...[
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              ),
+              onPressed: model.dismissNotice,
+              child: const Text(
+                'Dismiss',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

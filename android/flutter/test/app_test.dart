@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate_android/library.dart';
 import 'package:resonate_android/main.dart';
@@ -17,6 +19,7 @@ void main() {
   late StreamController<dynamic> events;
   late PlayerModel model;
   late List<MethodCall> calls;
+  Uint8List? artwork;
   final first = <String, dynamic>{
     'id': '18446744073709551614',
     'queueId': '81',
@@ -36,10 +39,12 @@ void main() {
   setUp(() {
     events = StreamController<dynamic>.broadcast(sync: true);
     calls = [];
+    artwork = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
           return switch (call.method) {
+            'artwork' => artwork,
             'collections' => {'albums': [], 'artists': []},
             'collectionTracks' => [first],
             'equaliserInfo' => {
@@ -225,6 +230,12 @@ void main() {
       'playlistRows': [first, first],
       'playlists': [playlist],
     });
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Echoes').last,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Echoes').last);
     await tester.pump();
@@ -413,6 +424,493 @@ void main() {
       await tester.tap(find.text('Hide pairing code'));
       await tester.pumpAndSettle();
       expect(find.text(code), findsNothing);
+    },
+  );
+  testWidgets(
+    'player reveals the library through blur while dragging and snapping back',
+    (tester) async {
+      await mount(tester, populated: true);
+      await tester.tap(find.text('Echoes').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Your library'), findsOneWidget);
+      expect(
+        ModalRoute.of(tester.element(find.byType(NowPlaying)))!.opaque,
+        isFalse,
+      );
+      final backdrop = find.descendant(
+        of: find.byType(NowPlaying),
+        matching: find.byType(ProgressiveBlurBackdrop),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('NOW PLAYING')),
+      );
+      await gesture.moveBy(const Offset(0, 70));
+      await tester.pump();
+      expect(
+        tester.widget<ProgressiveBlurBackdrop>(backdrop).strength,
+        inExclusiveRange(0, 1),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('NOW PLAYING'), findsOneWidget);
+      expect(tester.widget<ProgressiveBlurBackdrop>(backdrop).strength, 1);
+      await tester.drag(find.text('NOW PLAYING'), const Offset(0, 320));
+      await tester.pumpAndSettle();
+      expect(find.text('NOW PLAYING'), findsNothing);
+      expect(find.text('Your library'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('closing the player respects reduced motion', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await mount(tester, populated: true);
+    await tester.tap(find.text('Echoes').first);
+    await tester.pumpAndSettle();
+    expect(find.text('NOW PLAYING'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close player'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('NOW PLAYING'), findsNothing);
+    expect(find.text('Your library'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('sync activity banner displays progress and opens sync pane', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+    events.add({
+      'syncConfig': {'key': 'code', 'enabled': true},
+      'syncStatus': {
+        'standing': 'CONNECTED',
+        'transfers': [
+          {
+            'title': 'Solaris',
+            'artist': 'Artist',
+            'size': 1000,
+            'received': 640,
+            'state': 'MOVING',
+          },
+        ],
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Fetching 1 song from your devices'), findsOneWidget);
+    expect(find.text('64%'), findsOneWidget);
+    await tester.tap(find.text('Fetching 1 song from your devices'));
+    await tester.pumpAndSettle();
+    expect(find.text('Device sync'), findsWidgets);
+  });
+  testWidgets('dismissing status banner clears notice', (tester) async {
+    await mount(tester, populated: true);
+    events.add({'status': 'Kept 4 songs from your devices'});
+    await tester.pumpAndSettle();
+    expect(find.text('Kept 4 songs from your devices'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+    await tester.tap(find.text('Dismiss'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kept 4 songs from your devices'), findsNothing);
+    expect(calls.any((call) => call.method == 'dismissStatus'), isTrue);
+  });
+  testWidgets(
+    'collection pages retain bottom navigation and show song thumbnails',
+    (tester) async {
+      events.add({
+        'allTracks': [first],
+        'snapshot': {
+          'current': first,
+          'transport': 'PAUSED',
+          'durationMs': '60000',
+          'positionMs': '10000',
+          'volume': 1.0,
+        },
+      });
+      final playlist = {
+        'id': '7',
+        'name': 'Favourites',
+        'kind': 'favourites',
+        'title': 'Favourites',
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CollectionPage(
+            model: model,
+            data: playlist,
+            open: (_, [data = const {}]) {},
+          ),
+        ),
+      );
+      events.add({
+        'playlistRows': [first],
+        'allTracks': [
+          {...first, 'favourite': true},
+        ],
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(AppBottomBar), findsOneWidget);
+      expect(find.byType(MiniPlayer), findsOneWidget);
+      final tile = find.byType(SongTile);
+      expect(tile, findsOneWidget);
+      expect(
+        find.descendant(of: tile, matching: find.byType(Artwork)),
+        findsOneWidget,
+      );
+    },
+  );
+  testWidgets('album songs show track numbers instead of thumbnails', (
+    tester,
+  ) async {
+    events.add({
+      'allTracks': [first],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CollectionPage(
+          model: model,
+          data: {'kind': 'album', 'key': 'album-key', 'title': 'A record'},
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final tile = find.byType(SongTile);
+    expect(tile, findsOneWidget);
+    expect(find.descendant(of: tile, matching: find.text('1')), findsOneWidget);
+  });
+  testWidgets('playback pill and now playing do not use Hero animations', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+    expect(find.byType(Hero), findsNothing);
+    await tester.tap(find.text('Echoes').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(Hero), findsNothing);
+  });
+  testWidgets('songs page falls back to allTracks and resets filter', (
+    tester,
+  ) async {
+    events.add({
+      'allTracks': [first],
+      'tracks': <Map<String, dynamic>>[],
+    });
+    await mount(tester, populated: true);
+    await tester.tap(find.text('Songs'));
+    await tester.pumpAndSettle();
+    expect(find.text('No songs found'), findsNothing);
+    expect(find.byType(SongTile), findsOneWidget);
+    events.add({
+      'filter': {'favourites': true},
+      'tracks': <Map<String, dynamic>>[],
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('No songs found'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(calls.any((c) => c.method == 'filter'), isTrue);
+  });
+
+  testWidgets(
+    'cached artwork survives lyrics transitions and timed following',
+    (tester) async {
+      artwork = await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder).drawColor(Colors.purple, BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(16, 16);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        picture.dispose();
+        return bytes!.buffer.asUint8List();
+      });
+      final track = {...first, 'id': 'cached-lyrics-artwork'};
+      await tester.runAsync(
+        () => extractArtworkColors(
+          artwork,
+          "${track['id']}:${track['artRevision']}:null",
+        ),
+      );
+      events.add({
+        'snapshot': {
+          'current': track,
+          'transport': 'PAUSED',
+          'durationMs': '60000',
+        },
+        'lyrics': {
+          'trackId': track['id'],
+          'detail': 'LINES',
+          'lines': List.generate(
+            30,
+            (i) => {'text': 'A line sung in time $i', 'atMs': i * 1000},
+          ),
+        },
+        'lyricFrame': {
+          'readAt': 12,
+          'active': [12],
+        },
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NowPlaying(model: model, open: (_, [data = const {}]) {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final mode in ['Lyrics', 'Art', 'Lyrics', 'Queue', 'Lyrics']) {
+        await tester.tap(find.text(mode));
+        await tester.pump();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+      events.add({
+        'lyricFrame': {
+          'readAt': 22,
+          'active': [22],
+        },
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('A line sung in time 22').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('lyrics and queue fit a short viewport with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(700, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    events.add({
+      'snapshot': {
+        'current': first,
+        'transport': 'PAUSED',
+        'durationMs': '60000',
+      },
+      'queue': [first],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(700, 420),
+            textScaler: TextScaler.linear(2),
+          ),
+          child: NowPlaying(model: model, open: (_, [data = const {}]) {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final mode in ['Lyrics', 'Queue']) {
+      await tester.tap(find.byTooltip(mode));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+  });
+  testWidgets('progressive blur samples the screen behind it', (tester) async {
+    const key = ValueKey('blur-sample');
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: RepaintBoundary(
+            key: key,
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: Stack(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ColoredBox(
+                          color: Colors.black,
+                          child: SizedBox.expand(),
+                        ),
+                      ),
+                      Expanded(
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: SizedBox.expand(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ProgressiveBlurBackdrop(
+                    top: true,
+                    tintStrength: 0,
+                    child: SizedBox.expand(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byKey(key),
+    );
+    final pixels = await tester.runAsync(() async {
+      final image = await boundary.toImage();
+      final bytes = await image.toByteData();
+      image.dispose();
+      return bytes!;
+    });
+    final blurred = pixels!.getUint8((8 * 64 + 24) * 4);
+    final clear = pixels.getUint8((60 * 64 + 24) * 4);
+    expect(blurred, inExclusiveRange(20, 235));
+    expect(blurred, greaterThan(clear + 20));
+  });
+  testWidgets('playlist naming keeps its text field alive through dismissal', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => namePlaylist(context, model),
+              child: const Text('New playlist'),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (final action in ['Save', 'Cancel', 'keyboard', 'back', 'barrier']) {
+      await tester.tap(find.text('New playlist'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Evening music');
+      switch (action) {
+        case 'keyboard':
+          await tester.testTextInput.receiveAction(TextInputAction.done);
+        case 'back':
+          await tester.binding.handlePopRoute();
+        case 'barrier':
+          await tester.tapAt(const Offset(10, 10));
+        default:
+          await tester.tap(find.text(action));
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+    final created = calls
+        .where((call) => call.method == 'createPlaylist')
+        .toList();
+    expect(created, hasLength(2));
+    expect(
+      created.map((call) => call.arguments),
+      everyElement({'name': 'Evening music'}),
+    );
+  });
+
+  testWidgets(
+    'playlist rename closes safely and preserves the native identity',
+    (tester) async {
+      const playlist = {'id': '7', 'revision': '3', 'name': 'Old name'};
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => namePlaylist(context, model, playlist),
+                child: const Text('Rename'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Old name',
+      );
+      await tester.enterText(find.byType(TextField), ' New name ');
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      final renamed = calls.singleWhere(
+        (call) => call.method == 'renamePlaylist',
+      );
+      expect(renamed.arguments, {...playlist, 'name': 'New name'});
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('creating a playlist keeps the live picker intact', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => playlistPicker(context, model, [first]),
+              child: const Text('Choose playlist'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Choose playlist'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create playlist'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Evening music');
+    await tester.tap(find.text('Save'));
+    events.add({
+      'playlists': [
+        {'id': '7', 'name': 'Evening music', 'songs': 0},
+      ],
+    });
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('Add to playlist'), findsOneWidget);
+    expect(find.text('Evening music'), findsOneWidget);
+    await tester.tap(find.text('Evening music'));
+    await tester.pumpAndSettle();
+    final added = calls.singleWhere((call) => call.method == 'addToPlaylist');
+    expect(added.arguments, {
+      'id': '7',
+      'ids': [first['id']],
+    });
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'saving the queue keeps its naming field alive through dismissal',
+    (tester) async {
+      events.add({
+        'queue': [first],
+        'snapshot': {'current': first},
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: QueuePage(model: model, open: (_, [data = const {}]) {}),
+          ),
+        ),
+      );
+      for (final action in ['Save', 'Cancel']) {
+        await tester.tap(find.byTooltip('Save queue as playlist'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), ' Queue saved ');
+        await tester.tap(find.text(action));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+      final saved = calls
+          .where((call) => call.method == 'saveQueueAsPlaylist')
+          .toList();
+      expect(saved, hasLength(1));
+      expect(saved.single.arguments, {'name': 'Queue saved'});
     },
   );
 }

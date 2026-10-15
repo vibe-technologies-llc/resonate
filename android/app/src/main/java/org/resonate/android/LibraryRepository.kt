@@ -30,6 +30,7 @@ import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
+import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.defaultTrackFilter
 
 class ResonateApplication : Application() {
@@ -97,9 +98,20 @@ class LibraryRepository(private val context: Context) {
         mutableStatus.value = message
     }
 
-    fun setFilter(value: TrackFilter) {
-        filter.value = value
+    fun clearFilter() {
+        filter.value = null
+        search = ""
         scope.launch { reload() }
+    }
+
+    fun setFilter(value: TrackFilter) {
+        if (isDefaultFilter(value)) {
+            clearFilter()
+        } else {
+            filter.value = value
+            search = value.text
+            scope.launch { reload() }
+        }
     }
 
     init {
@@ -240,9 +252,27 @@ class LibraryRepository(private val context: Context) {
         scope.launch { reload() }
     }
 
+    private fun isDefaultFilter(target: TrackFilter): Boolean =
+        target.text.isEmpty() &&
+            target.genre.isEmpty() &&
+            target.artist.isEmpty() &&
+            target.album.isEmpty() &&
+            target.minimumRate == 0u &&
+            target.minimumBits == 0u &&
+            !target.favourites &&
+            !target.unplayed &&
+            target.order == TrackOrder.TITLE &&
+            !target.descending
+
     private suspend fun reload() {
         val request = queryRequest.incrementAndGet()
-        val query = (filter.value ?: defaultTrackFilter()).copy(text = search)
+        val currentFilter = filter.value
+        val isDefault = currentFilter == null || isDefaultFilter(currentFilter)
+        if (isDefault && search.isEmpty()) {
+            mutableTracks.value = mutableAllTracks.value
+            return
+        }
+        val query = (currentFilter ?: defaultTrackFilter()).copy(text = search)
         val native = engine.await()
         access.withLock {
             val found = ArrayList<Track>()

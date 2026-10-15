@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,19 @@ String clock(Object? milliseconds) {
 }
 
 String humanize(String value) => value.toLowerCase().split('_').join(' ');
+
+class SyncActivity {
+  const SyncActivity.syncing()
+    : songs = 0,
+      fraction = null,
+      isFetching = false;
+  const SyncActivity.fetching({required this.songs, this.fraction})
+    : isFetching = true;
+
+  final int songs;
+  final double? fraction;
+  final bool isFetching;
+}
 
 class PlayerModel extends ChangeNotifier {
   PlayerModel({MethodChannel? methods, Stream<dynamic>? events})
@@ -53,7 +67,38 @@ class PlayerModel extends ChangeNotifier {
   int _collectionsRequest = 0;
 
   List<RowData> _tracks = [];
-  List<RowData> get tracks => _tracks;
+  bool get hasActiveFilter {
+    final filter = row(state['filter']);
+    if (filter.isEmpty) return false;
+    final text = '${filter['text'] ?? ''}'.trim();
+    final genre = '${filter['genre'] ?? ''}'.trim();
+    final artist = '${filter['artist'] ?? ''}'.trim();
+    final album = '${filter['album'] ?? ''}'.trim();
+    final minRate = integer(filter['minimumRate']);
+    final minBits = integer(filter['minimumBits']);
+    final favourites = filter['favourites'] == true;
+    final unplayed = filter['unplayed'] == true;
+    final descending = filter['descending'] == true;
+    final order = '${filter['order'] ?? ''}'.toUpperCase();
+    final nonDefaultOrder = order.isNotEmpty && order != 'TITLE';
+    return text.isNotEmpty ||
+        genre.isNotEmpty ||
+        artist.isNotEmpty ||
+        album.isNotEmpty ||
+        minRate > 0 ||
+        minBits > 0 ||
+        favourites ||
+        unplayed ||
+        descending ||
+        nonDefaultOrder;
+  }
+
+  List<RowData> get tracks {
+    if (_tracks.isNotEmpty) return _tracks;
+    if (!hasActiveFilter && _allTracks.isNotEmpty) return _allTracks;
+    return _tracks;
+  }
+
   List<RowData> _allTracks = [];
   Map<String, RowData> _byId = {};
   List<RowData> get allTracks => _allTracks;
@@ -65,6 +110,43 @@ class PlayerModel extends ChangeNotifier {
   bool get playing => ['PLAYING', 'LOADING'].contains(snapshot['transport']);
   bool get online => state['online'] == true;
   String? get notice => failure ?? state['status'] as String?;
+  DateTime? _syncAskedAt;
+  DateTime? get syncAskedAt => _syncAskedAt;
+
+  SyncActivity? get syncActivity {
+    final status = row(state['syncStatus']);
+    final standing = '${status['standing'] ?? ''}'.toLowerCase();
+    if (standing.isEmpty || standing == 'off') return null;
+
+    final transfers = rows(status['transfers']);
+    final active = transfers.where((t) {
+      final s = '${t['state'] ?? ''}'.toLowerCase();
+      return s == 'waiting' || s == 'moving';
+    }).toList();
+
+    if (active.isNotEmpty) {
+      final sized = active.where((t) => integer(t['size']) > 0).toList();
+      final totalSize = sized.fold<int>(0, (sum, t) => sum + integer(t['size']));
+      final received = sized.fold<int>(
+        0,
+        (sum, t) => sum + math.min(integer(t['received']), integer(t['size'])),
+      );
+      final fraction = (totalSize == 0 || sized.length != active.length)
+          ? null
+          : (received / totalSize).clamp(0.0, 1.0);
+      return SyncActivity.fetching(songs: active.length, fraction: fraction);
+    }
+
+    final asked = _syncAskedAt;
+    final recentlyAsked =
+        asked != null && DateTime.now().difference(asked).inSeconds < 30;
+    if ((recentlyAsked && status['settled'] != true) ||
+        standing == 'connecting' ||
+        integer(status['moving']) > 0) {
+      return const SyncActivity.syncing();
+    }
+    return null;
+  }
 
   void _receive(dynamic event) {
     final patch = row(event);
@@ -84,6 +166,14 @@ class PlayerModel extends ChangeNotifier {
         (patch.containsKey('snapshot') && revision != _collectionRevision)) {
       _collectionRevision = revision;
       unawaited(refreshCollections());
+    }
+    if (patch.containsKey('syncStatus')) {
+      final status = row(patch['syncStatus']);
+      if (status['settled'] == true && _syncAskedAt != null) {
+        if (DateTime.now().difference(_syncAskedAt!).inMilliseconds > 800) {
+          _syncAskedAt = null;
+        }
+      }
     }
     notifyListeners();
   }
@@ -145,8 +235,35 @@ class PlayerModel extends ChangeNotifier {
 
   Future<void> dismissNotice() async {
     failure = null;
+    state['status'] = null;
     await call('dismissStatus');
     notifyListeners();
+  }
+
+  Future<RowData> searchLibrary(String text, [int limit = 500]) async {
+    final result = await call('searchLibrary', {'text': text, 'limit': limit});
+    return row(result);
+  }
+
+  Future<void> forceSync() async {
+    _syncAskedAt = DateTime.now();
+    notifyListeners();
+    await call('forceSync');
+  }
+
+  Future<void> forgetSyncDevice(String id) async {
+    await call('forgetSyncDevice', {'id': id});
+  }
+
+  Future<void> saveQueueAsPlaylist(String name) async {
+    await call('saveQueueAsPlaylist', {'name': name});
+  }
+
+  Future<void> clearFilters() async {
+    state['filter'] = null;
+    notifyListeners();
+    await call('filter');
+    await call('search', {'text': ''});
   }
 
   @override

@@ -5,6 +5,7 @@ import org.resonate.android.nativecore.*
 internal fun flutterValue(value: Any?): Any? =
     when (value) {
         null -> null
+        is Unit -> null
         is String,
         is Boolean,
         is Int,

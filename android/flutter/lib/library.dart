@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'main.dart' show OpenPage;
+import 'main.dart' show AppBottomBar, OpenPage;
 import 'model.dart';
 import 'visuals.dart';
 
@@ -16,30 +16,15 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   String _shelf = 'All';
-  String _search = '';
   @override
   Widget build(BuildContext context) {
     final model = widget.model;
     final favourites = model.allTracks
         .where((t) => t['favourite'] == true)
         .toList();
-    final albums = model.albums
-        .where(
-          (a) => '${a['title']} ${a['artist']}'.toLowerCase().contains(
-            _search.toLowerCase(),
-          ),
-        )
-        .toList();
-    final artists = model.artists
-        .where(
-          (a) => '${a['name']}'.toLowerCase().contains(_search.toLowerCase()),
-        )
-        .toList();
-    final playlists = rows(model.state['playlists'])
-        .where(
-          (p) => '${p['name']}'.toLowerCase().contains(_search.toLowerCase()),
-        )
-        .toList();
+    final albums = model.albums;
+    final artists = model.artists;
+    final playlists = rows(model.state['playlists']);
     return RefreshIndicator(
       onRefresh: () async {
         await model.call('rescan');
@@ -48,6 +33,9 @@ class _LibraryPageState extends State<LibraryPage> {
       child: CustomScrollView(
         key: const PageStorageKey('library'),
         slivers: [
+          SliverToBoxAdapter(
+            child: SizedBox(height: MediaQuery.paddingOf(context).top),
+          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -96,14 +84,6 @@ class _LibraryPageState extends State<LibraryPage> {
                         label: const Text('Add music folder'),
                       ),
                     ),
-                  const SizedBox(height: 22),
-                  TextField(
-                    onChanged: (value) => setState(() => _search = value),
-                    decoration: const InputDecoration(
-                      hintText: 'Search your library',
-                      prefixIcon: Icon(Icons.search_rounded),
-                    ),
-                  ),
                   const SizedBox(height: 18),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -124,8 +104,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           .toList(),
                     ),
                   ),
-                  if (_search.isEmpty &&
-                      (_shelf == 'All' || _shelf == 'Playlists'))
+                  if (_shelf == 'All' || _shelf == 'Playlists')
                     Padding(
                       padding: const EdgeInsets.only(top: 20),
                       child: InkWell(
@@ -180,7 +159,7 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                       ),
                     ),
-                  if (_shelf == 'All' && _search.isEmpty)
+                  if (_shelf == 'All')
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: Row(
@@ -231,9 +210,16 @@ class _LibraryPageState extends State<LibraryPage> {
                     ...playlists.map(
                       (p) => ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.queue_music_rounded),
-                        ),
+                        leading: p['artworkTrack'] != null
+                            ? Artwork(
+                                model: model,
+                                track: model.trackById(p['artworkTrack']),
+                                size: 48,
+                                radius: 12,
+                              )
+                            : const CircleAvatar(
+                                child: Icon(Icons.queue_music_rounded),
+                              ),
                         title: Text('${p['name']}'),
                         subtitle: Text('${p['songs']} songs'),
                         trailing: const Icon(Icons.chevron_right_rounded),
@@ -330,7 +316,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 detail: 'Add a music folder to bring your albums, artists and favourites together.',
               ),
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          const SliverToBoxAdapter(child: SizedBox(height: 180)),
         ],
       ),
     );
@@ -413,29 +399,18 @@ class _AlbumTile extends StatelessWidget {
   );
 }
 
-class SongsPage extends StatefulWidget {
+class SongsPage extends StatelessWidget {
   const SongsPage({super.key, required this.model, required this.open});
   final PlayerModel model;
   final OpenPage open;
-  @override
-  State<SongsPage> createState() => _SongsPageState();
-}
-
-class _SongsPageState extends State<SongsPage> {
-  Timer? _search;
-  @override
-  void dispose() {
-    _search?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final tracks = widget.model.tracks;
+    final tracks = model.tracks;
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+          padding: const EdgeInsets.fromLTRB(24, 20, 16, 12),
           child: Column(
             children: [
               Row(
@@ -450,29 +425,15 @@ class _SongsPageState extends State<SongsPage> {
                   ActionIcon(
                     icon: Icons.filter_list_rounded,
                     label: 'Filter songs',
-                    onPressed: () => songFilters(context, widget.model),
+                    selected: model.hasActiveFilter,
+                    onPressed: () => songFilters(context, model),
                   ),
                   ActionIcon(
                     icon: Icons.tune_rounded,
                     label: 'Library tools',
-                    onPressed: () => widget.open('tools'),
+                    onPressed: () => open('tools'),
                   ),
                 ],
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                restorationId: 'song_search',
-                onChanged: (text) {
-                  _search?.cancel();
-                  _search = Timer(
-                    const Duration(milliseconds: 250),
-                    () => widget.model.call('search', {'text': text}),
-                  );
-                },
-                decoration: const InputDecoration(
-                  hintText: 'Songs, artists, albums…',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -484,7 +445,7 @@ class _SongsPageState extends State<SongsPage> {
                   TextButton.icon(
                     onPressed: tracks.isEmpty
                         ? null
-                        : () => widget.model.play(tracks),
+                        : () => model.play(tracks),
                     icon: const Icon(Icons.play_arrow_rounded),
                     label: const Text('Play all'),
                   ),
@@ -495,35 +456,43 @@ class _SongsPageState extends State<SongsPage> {
         ),
         Expanded(
           child: tracks.isEmpty
-              ? EmptyState(
-                  icon: Icons.music_note_rounded,
-                  title: widget.model.allTracks.isEmpty
-                      ? 'Your next favourite awaits'
-                      : 'No songs found',
-                  detail: widget.model.allTracks.isEmpty
-                      ? 'Choose a music folder to start listening.'
-                      : 'Try a different search or clear your filters.',
-                  action: FilledButton(
-                    onPressed: () => widget.model.call(
-                      widget.model.allTracks.isEmpty
-                          ? 'chooseFolder'
-                          : 'filter',
-                    ),
-                    child: Text(
-                      widget.model.allTracks.isEmpty
-                          ? 'Add music folder'
-                          : 'Clear filters',
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 110),
+                  child: EmptyState(
+                    icon: Icons.music_note_rounded,
+                    title: model.allTracks.isEmpty
+                        ? 'Your next favourite awaits'
+                        : 'No songs found',
+                    detail: model.allTracks.isEmpty
+                        ? 'Choose a music folder to start listening.'
+                        : 'Try a different search or clear your filters.',
+                    action: FilledButton(
+                      onPressed: () => model.allTracks.isEmpty
+                          ? model.call('chooseFolder')
+                          : model.clearFilters(),
+                      child: Text(
+                        model.allTracks.isEmpty
+                            ? 'Add music folder'
+                            : 'Clear filters',
+                      ),
                     ),
                   ),
                 )
-              : ListView.builder(
-                  key: const PageStorageKey('songs'),
-                  itemCount: tracks.length,
-                  itemBuilder: (_, index) => SongTile(
-                    model: widget.model,
-                    track: tracks[index],
-                    onTap: () => widget.model.play(tracks, index),
-                    open: widget.open,
+              : EdgeFade(
+                  top: true,
+                  bottom: true,
+                  topExtent: 32,
+                  bottomExtent: 32,
+                  child: ListView.builder(
+                    key: const PageStorageKey('songs'),
+                    padding: const EdgeInsets.only(bottom: 180),
+                    itemCount: tracks.length,
+                    itemBuilder: (_, index) => SongTile(
+                      model: model,
+                      track: tracks[index],
+                      onTap: () => model.play(tracks, index),
+                      open: open,
+                    ),
                   ),
                 ),
         ),
@@ -541,6 +510,7 @@ class SongTile extends StatelessWidget {
     required this.open,
     this.trailing,
     this.number,
+    this.semanticNumber,
   });
   final PlayerModel model;
   final RowData track;
@@ -548,13 +518,15 @@ class SongTile extends StatelessWidget {
   final OpenPage open;
   final Widget? trailing;
   final int? number;
+  final int? semanticNumber;
   @override
   Widget build(BuildContext context) {
     final playing = '${model.current['id']}' == '${track['id']}';
+    final spokenNumber = semanticNumber ?? number;
     return Semantics(
-      label: number == null
+      label: spokenNumber == null
           ? 'Play ${title(track)}'
-          : 'Play song $number: ${title(track)}',
+          : 'Play song $spokenNumber: ${title(track)}',
       child: ListTile(
         onTap: onTap,
         leading: number == null
@@ -714,17 +686,18 @@ Future<void> namePlaylist(
   PlayerModel model, [
   RowData? playlist,
 ]) async {
-  final controller = TextEditingController(text: playlist?['name'] as String?);
+  var draft = playlist?['name'] as String? ?? '';
   final name = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(playlist == null ? 'Create playlist' : 'Rename playlist'),
-      content: TextField(
-        controller: controller,
+      content: TextFormField(
+        initialValue: draft,
+        onChanged: (value) => draft = value,
         autofocus: true,
         maxLength: 200,
         decoration: const InputDecoration(labelText: 'Playlist name'),
-        onSubmitted: (value) {
+        onFieldSubmitted: (value) {
           if (value.trim().isNotEmpty) Navigator.pop(context, value.trim());
         },
       ),
@@ -735,8 +708,8 @@ Future<void> namePlaylist(
         ),
         TextButton(
           onPressed: () {
-            if (controller.text.trim().isNotEmpty) {
-              Navigator.pop(context, controller.text.trim());
+            if (draft.trim().isNotEmpty) {
+              Navigator.pop(context, draft.trim());
             }
           },
           child: const Text('Save'),
@@ -750,7 +723,6 @@ Future<void> namePlaylist(
       'name': name,
     });
   }
-  controller.dispose();
 }
 
 Future<void> playlistPicker(
@@ -893,7 +865,7 @@ Future<void> songFilters(BuildContext context, PlayerModel model) async {
                   children: [
                     TextButton(
                       onPressed: () {
-                        model.call('filter');
+                        model.clearFilters();
                         Navigator.pop(sheet);
                       },
                       child: const Text('Reset'),
@@ -975,73 +947,94 @@ class _CollectionPageState extends State<CollectionPage> {
               return latest.isEmpty ? track : latest;
             }).toList();
       final cover = model.trackById(widget.data['artworkTrack']);
-      return Scaffold(
-        appBar: AppBar(
-          title: Text('${widget.data['title']}'),
-          actions: [
-            if (playlist)
-              PopupMenuButton<String>(
-                tooltip: 'Playlist options',
-                onSelected: (action) async {
-                  switch (action) {
-                    case 'sync':
-                      _syncSongs(context);
-                    case 'rename':
-                      namePlaylist(context, model, data);
-                    case 'add':
-                      _addSongs(context);
-                    case 'undo':
-                      model.call('undoPlaylist');
-                    case 'delete':
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete playlist?'),
-                          content: const Text(
-                            'Your music files will stay in your library.',
+      return ArtworkAtmosphere(
+        model: model,
+        track: cover.isNotEmpty ? cover : tracks?.firstOrNull ?? model.current,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            flexibleSpace: const ProgressiveBlurBackdrop(
+              top: true,
+              child: SizedBox.expand(),
+            ),
+            title: Text(
+              '${data['name'] ?? widget.data['title']}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            actions: [
+              if (playlist)
+                PopupMenuButton<String>(
+                  tooltip: 'Playlist options',
+                  onSelected: (action) async {
+                    switch (action) {
+                      case 'sync':
+                        _syncSongs(context);
+                      case 'rename':
+                        namePlaylist(context, model, data);
+                      case 'add':
+                        _addSongs(context);
+                      case 'undo':
+                        model.call('undoPlaylist');
+                      case 'delete':
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Delete playlist?'),
+                            content: const Text(
+                              'Your music files will stay in your library.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Delete'),
+                              ),
+                            ],
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed == true) {
-                        await model.call('deletePlaylist', data);
-                        if (context.mounted) Navigator.pop(context);
-                      }
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'sync',
-                    child: Text('Songs on your devices'),
-                  ),
-                  const PopupMenuItem(value: 'add', child: Text('Add songs')),
-                  const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                  const PopupMenuItem(
-                    value: 'undo',
-                    child: Text('Undo last edit'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete playlist'),
-                  ),
-                ],
-              ),
-          ],
-        ),
-        body: Ambient(
-          child: tracks == null
+                        );
+                        if (confirmed == true) {
+                          await model.call('deletePlaylist', data);
+                          if (context.mounted) Navigator.pop(context);
+                        }
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'sync',
+                      child: Text('Songs on your devices'),
+                    ),
+                    const PopupMenuItem(value: 'add', child: Text('Add songs')),
+                    const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    const PopupMenuItem(
+                      value: 'undo',
+                      child: Text('Undo last edit'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete playlist'),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          body: tracks == null
               ? const Center(child: CircularProgressIndicator())
               : CustomScrollView(
                   slivers: [
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height:
+                            MediaQuery.paddingOf(context).top + kToolbarHeight,
+                      ),
+                    ),
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
@@ -1177,7 +1170,10 @@ class _CollectionPageState extends State<CollectionPage> {
                       itemBuilder: (_, index) => SongTile(
                         model: model,
                         track: tracks[index],
-                        number: index + 1,
+                        semanticNumber: index + 1,
+                        number: widget.data['kind'] == 'album'
+                            ? index + 1
+                            : null,
                         onTap: () => model.play(tracks, index),
                         open: widget.open,
                         trailing: playlist
@@ -1225,9 +1221,10 @@ class _CollectionPageState extends State<CollectionPage> {
                             : null,
                       ),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 180)),
                   ],
                 ),
+          bottomNavigationBar: AppBottomBar(model: model, open: widget.open),
         ),
       );
     },

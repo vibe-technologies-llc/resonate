@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'library.dart';
-import 'main.dart' show OpenPage;
+import 'main.dart' show AppBottomBar, OpenPage;
 import 'model.dart';
 import 'player.dart';
 import 'tools.dart' show WantedPane;
@@ -107,7 +107,7 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
         .where((e) => '${e.title} ${e.detail}'.toLowerCase().contains(query))
         .toList();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 180),
       children: [
         Text(
           'Settings',
@@ -238,30 +238,79 @@ class _SettingsDetailState extends State<SettingsDetail> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.model,
-    builder: (context, _) => Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Ambient(
-        child: switch (widget.page) {
-          'equaliser' => EqualiserPane(model: widget.model),
-          'processing' => _processing(),
-          'folders' => _folders(),
-          'output' => _output(),
-          'tools' => _tools(),
-          'statistics' => _statistics(),
-          'suggestions' => _suggestions(),
-          'providers' => AccountPane(model: widget.model, kind: 'provider'),
-          'scrobbling' => AccountPane(model: widget.model, kind: 'scrobbling'),
-          'sync' => AccountPane(model: widget.model, kind: 'sync'),
-          'correction' => CorrectionPane(model: widget.model),
-          'wanted' => WantedPane(model: widget.model),
-          _ => const SizedBox.shrink(),
-        },
-      ),
-    ),
+    builder: (context, _) {
+      final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
+      return ArtworkAtmosphere(
+        model: widget.model,
+        track: widget.model.current,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            flexibleSpace: const ProgressiveBlurBackdrop(
+              top: true,
+              child: SizedBox.expand(),
+            ),
+            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          body: switch (widget.page) {
+            'equaliser' => EqualiserPane(
+              model: widget.model,
+              topInset: topInset,
+            ),
+            'processing' => _processing(),
+            'folders' => _folders(),
+            'output' => _output(),
+            'tools' => _tools(),
+            'statistics' => _statistics(),
+            'suggestions' => _suggestions(),
+            'providers' => AccountPane(
+              model: widget.model,
+              kind: 'provider',
+              topInset: topInset,
+            ),
+            'scrobbling' => AccountPane(
+              model: widget.model,
+              kind: 'scrobbling',
+              topInset: topInset,
+            ),
+            'sync' => AccountPane(
+              model: widget.model,
+              kind: 'sync',
+              topInset: topInset,
+            ),
+            'correction' => CorrectionPane(
+              model: widget.model,
+              topInset: topInset,
+            ),
+            'wanted' => Padding(
+              padding: EdgeInsets.only(top: topInset),
+              child: WantedPane(model: widget.model),
+            ),
+            _ => const SizedBox.shrink(),
+          },
+          bottomNavigationBar: AppBottomBar(
+            model: widget.model,
+            open: widget.open,
+          ),
+        ),
+      );
+    },
   );
 
-  Widget _list(List<Widget> children) =>
-      ListView(padding: const EdgeInsets.all(24), children: children);
+  Widget _list(List<Widget> children) => ListView(
+    padding: EdgeInsets.fromLTRB(
+      24,
+      MediaQuery.paddingOf(context).top + kToolbarHeight + 24,
+      24,
+      180,
+    ),
+    children: children,
+  );
+
   Widget _processing() {
     final model = widget.model;
     final prefs = model.preferences;
@@ -585,8 +634,9 @@ class _SettingsDetailState extends State<SettingsDetail> {
 }
 
 class EqualiserPane extends StatefulWidget {
-  const EqualiserPane({super.key, required this.model});
+  const EqualiserPane({super.key, required this.model, this.topInset = 0});
   final PlayerModel model;
+  final double topInset;
   @override
   State<EqualiserPane> createState() => _EqualiserPaneState();
 }
@@ -641,7 +691,7 @@ class _EqualiserPaneState extends State<EqualiserPane> {
     final preampLimit = decimal(_limits['preampAtMostDb']);
     final gainLimit = decimal(_limits['gainAtMostDb']);
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 180),
       children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -743,8 +793,9 @@ class _EqualiserPaneState extends State<EqualiserPane> {
 }
 
 class CorrectionPane extends StatefulWidget {
-  const CorrectionPane({super.key, required this.model});
+  const CorrectionPane({super.key, required this.model, this.topInset = 0});
   final PlayerModel model;
+  final double topInset;
   @override
   State<CorrectionPane> createState() => _CorrectionPaneState();
 }
@@ -761,7 +812,7 @@ class _CorrectionPaneState extends State<CorrectionPane> {
   Widget build(BuildContext context) => Column(
     children: [
       Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 24),
         child: TextField(
           decoration: const InputDecoration(
             labelText: 'AutoEq headphone correction',
@@ -780,6 +831,7 @@ class _CorrectionPaneState extends State<CorrectionPane> {
         const LinearProgressIndicator(),
       Expanded(
         child: ListView(
+          padding: const EdgeInsets.only(bottom: 180),
           children: rows(widget.model.state['corrections']).indexed
               .map(
                 (entry) => ListTile(
@@ -817,8 +869,14 @@ class _CorrectionPaneState extends State<CorrectionPane> {
 }
 
 class AccountPane extends StatefulWidget {
-  const AccountPane({super.key, required this.model, required this.kind});
+  const AccountPane({
+    super.key,
+    required this.model,
+    required this.kind,
+    this.topInset = 0,
+  });
   final PlayerModel model;
+  final double topInset;
   final String kind;
   @override
   State<AccountPane> createState() => _AccountPaneState();
@@ -852,6 +910,76 @@ class _AccountPaneState extends State<AccountPane> {
         onChanged: (value) => _draft[key] = value,
       ),
     );
+  }
+
+  String _syncStanding(
+    Map<String, dynamic> status,
+    Map<String, dynamic> config,
+    bool online,
+  ) {
+    if (config['enabled'] != true) return 'Off';
+    if (!online && config['nearbyOnly'] != true) {
+      return 'Waiting for online features';
+    }
+    final devices = rows(status['devices']);
+    final others = devices.where((d) => d['thisDevice'] != true).toList();
+    final nearby = others.where((d) => d['nearby'] == true).length;
+    final reached = others.where((d) => d['online'] == true).length;
+    final standing = '${status['standing'] ?? ''}'.toLowerCase();
+    switch (standing) {
+      case 'connected':
+        return reached == 0
+            ? 'No other device online'
+            : '$reached ${reached == 1 ? 'device' : 'devices'} online';
+      case 'nearby':
+        return nearby == 0
+            ? 'Looking on this network'
+            : '$nearby ${nearby == 1 ? 'device' : 'devices'} on this network';
+      case 'unreachable':
+        return nearby == 0
+            ? "Can't reach the server"
+            : 'Server unreachable · $nearby on this network';
+      case 'refused':
+        return 'The server refused this device';
+      case 'connecting':
+        return nearby == 0
+            ? 'Connecting…'
+            : 'Connecting · $nearby on this network';
+      default:
+        return 'Starting…';
+    }
+  }
+
+  String _syncHeadline(
+    Map<String, dynamic> status,
+    Map<String, dynamic> config,
+  ) {
+    final standing = '${status['standing'] ?? ''}'.toLowerCase();
+    final devices = rows(status['devices']);
+    final hasNearby = devices.any(
+      (d) => d['nearby'] == true && d['thisDevice'] != true,
+    );
+    switch (standing) {
+      case 'connecting':
+        return 'Connecting…';
+      case 'refused':
+        return 'Refused';
+      case 'unreachable':
+        return hasNearby ? 'Catching up' : 'Not syncing';
+      case 'nearby':
+        return hasNearby ? 'Catching up' : 'Looking for devices';
+      case 'connected':
+        final owed = integer(status['owed']);
+        return owed > 0
+            ? 'Sending $owed ${owed == 1 ? 'change' : 'changes'}'
+            : 'Up to date';
+      case 'off':
+        return 'Off';
+      default:
+        return status['standing'] != null
+            ? humanize('${status['standing']}')
+            : 'Starting…';
+    }
   }
 
   @override
@@ -889,7 +1017,7 @@ class _AccountPaneState extends State<AccountPane> {
       }
     }
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 180),
       children: [
         if (kind == 'provider') ...[
           const Text(
@@ -1027,100 +1155,435 @@ class _AccountPaneState extends State<AccountPane> {
             Text('${model.state['scrobbleStatus']}'),
         ],
         if (kind == 'sync') ...[
-          for (final entry in {
-            'enabled': 'Device sync',
-            'nearbyOnly': 'Only this network',
-            'favourites': 'Sync favourites',
-            'playlists': 'Sync playlists',
-            'everything': 'Keep all music here',
-            'meteredAllowed': 'Transfer over mobile data',
-          }.entries)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(entry.value),
-              value: _draft[entry.key] == true,
-              onChanged: (v) => setState(() => _draft[entry.key] = v),
+          Card.filled(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Device sync'),
+                  subtitle: Text(
+                    _draft['enabled'] == true
+                        ? '${_syncHeadline(row(model.state['syncStatus']), _draft)} · ${_syncStanding(row(model.state['syncStatus']), _draft, model.online)}'
+                        : 'Playlists, favourites and history follow you across devices.',
+                  ),
+                  value: _draft['enabled'] == true,
+                  onChanged: (v) => setState(() => _draft['enabled'] = v),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Row(
+                    children: [
+                      if (!model.online && _draft['nearbyOnly'] != true)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() => _draft['nearbyOnly'] = true);
+                            model.call('sync', _draft);
+                          },
+                          icon: const Icon(Icons.wifi_rounded),
+                          label: const Text('Sync only on this network'),
+                        )
+                      else
+                        FilledButton.tonalIcon(
+                          onPressed: () => model.forceSync(),
+                          icon: const Icon(Icons.sync_rounded),
+                          label: const Text('Sync now'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(height: 20),
-          _field('device', 'Device name', initial: stored['device']),
-          if (_draft['nearbyOnly'] == true)
-            const Text('Devices sync on the same network without a server.')
-          else ...[
-            if (!model.online)
-              const Text('Turn on online features in Settings to sync.'),
-            _field('server', 'Sync server', initial: stored['server']),
-          ],
-          FilledButton(
-            onPressed: () => model.call('sync', _draft),
-            child: const Text('Save sync settings'),
           ),
+          const SizedBox(height: 16),
+          Card.outlined(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Only this network'),
+                    subtitle: const Text(
+                      'Devices sync on the same network without a server',
+                    ),
+                    value: _draft['nearbyOnly'] == true,
+                    onChanged: (v) => setState(() => _draft['nearbyOnly'] = v),
+                  ),
+                  _field('device', 'Device name', initial: stored['device']),
+                  if (_draft['nearbyOnly'] == true)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Devices sync on the same network without a server.',
+                      ),
+                    )
+                  else ...[
+                    if (!model.online)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Turn on online features in Settings to sync.',
+                        ),
+                      ),
+                    _field('server', 'Sync server', initial: stored['server']),
+                  ],
+                  FilledButton(
+                    onPressed: () => model.call('sync', _draft),
+                    child: const Text('Save sync settings'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SectionTitle('Your devices'),
+          Card.outlined(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => setState(
+                          () => _showSyncCode = !_showSyncCode,
+                        ),
+                        icon: Icon(
+                          _showSyncCode
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        label: Text(
+                          _showSyncCode
+                              ? 'Hide pairing code'
+                              : 'Show pairing code',
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(
+                            text:
+                                '${row(model.state['syncStatus'])['code'] ?? ''}',
+                          ),
+                        ),
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        label: const Text('Copy pairing code'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_showSyncCode) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: .6),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: .5),
+                        ),
+                      ),
+                      child: SelectableText(
+                        '${row(model.state['syncStatus'])['code'] ?? ''}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      _field('code', 'Pairing code', lines: 1),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => model.call('joinSync', {
+                                'code': _fields['code']?.text ?? '',
+                              }),
+                              child: const Text('Join a group'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => model.call('newSyncGroup'),
+                              child: const Text('Start a new group'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                ...() {
+                  final devList = rows(
+                    row(model.state['syncStatus'])['devices'],
+                  );
+                  final thisDev =
+                      devList.where((d) => d['thisDevice'] == true).toList();
+                  final others =
+                      devList.where((d) => d['thisDevice'] != true).toList()
+                        ..sort((a, b) {
+                          final aOn = a['online'] == true ? 1 : 0;
+                          final bOn = b['online'] == true ? 1 : 0;
+                          if (aOn != bOn) return bOn.compareTo(aOn);
+                          return '${a['name']}'.compareTo('${b['name']}');
+                        });
+                  final allDevices = [...thisDev, ...others];
+                  if (allDevices.isEmpty) {
+                    return [
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                          'No devices registered yet. Connect your devices using your pairing code.',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ];
+                  }
+                  return allDevices.map((device) {
+                    final isThis = device['thisDevice'] == true;
+                    final isOnline = device['online'] == true;
+                    final isNearby = device['nearby'] == true;
+                    final platform =
+                        '${device['platform'] ?? ''}'.toLowerCase();
+                    final icon = isThis
+                        ? Icons.phone_android_rounded
+                        : platform.contains('iphone') ||
+                                platform.contains('ios')
+                        ? Icons.phone_iphone_rounded
+                        : platform.contains('mac') ||
+                                platform.contains('linux') ||
+                                platform.contains('windows') ||
+                                platform.contains('desktop')
+                        ? Icons.computer_rounded
+                        : Icons.devices_rounded;
+                    final stateLabel = isThis
+                        ? 'This device'
+                        : isOnline
+                        ? 'Online'
+                        : isNearby
+                        ? 'Nearby'
+                        : 'Offline';
+                    return ListTile(
+                      leading: Icon(
+                        icon,
+                        color: isOnline || isThis
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      title: Text('${device['name']}'),
+                      subtitle: Text(stateLabel),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!isThis)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isOnline
+                                    ? Colors.green
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: .5),
+                              ),
+                            ),
+                          if (!isThis && !isOnline)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 20,
+                              ),
+                              tooltip: 'Remove device',
+                              onPressed: () => model.forgetSyncDevice(
+                                '${device['id']}',
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList();
+                }(),
+              ],
+            ),
+          ),
+          const SectionTitle('Sync options'),
+          Card.outlined(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Sync favourites'),
+                  subtitle: const Text('Songs favoured on another device'),
+                  value: _draft['favourites'] == true,
+                  onChanged: (v) => setState(() => _draft['favourites'] = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Sync playlists'),
+                  subtitle: const Text('Playlists set to keep their songs here'),
+                  value: _draft['playlists'] == true,
+                  onChanged: (v) => setState(() => _draft['playlists'] = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Keep all music here'),
+                  subtitle: const Text('Every song your other devices hold'),
+                  value: _draft['everything'] == true,
+                  onChanged: (v) => setState(() => _draft['everything'] = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Transfer over mobile data'),
+                  subtitle: const Text('Without it, songs move only on Wi-Fi'),
+                  value: _draft['meteredAllowed'] == true,
+                  onChanged: (v) =>
+                      setState(() => _draft['meteredAllowed'] = v),
+                ),
+              ],
+            ),
+          ),
+          if (rows(row(model.state['syncStatus'])['transfers']).isNotEmpty) ...[
+            const SectionTitle('Transfers'),
+            Card.outlined(
+              margin: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  for (final transfer
+                      in rows(row(model.state['syncStatus'])['transfers'])) ...[
+                    () {
+                      final artistName = '${transfer['artist'] ?? ''}';
+                      final fromDevice = '${transfer['from'] ?? ''}';
+                      final size = integer(transfer['size']);
+                      final received = integer(transfer['received']);
+                      final progress = size > 0
+                          ? (received / size).clamp(0.0, 1.0)
+                          : null;
+                      final subtitleText = [
+                        if (artistName.isNotEmpty) artistName,
+                        if (fromDevice.isNotEmpty) 'from $fromDevice',
+                        if (size > 0)
+                          '${(received / 1048576).toStringAsFixed(1)} / ${(size / 1048576).toStringAsFixed(1)} MB',
+                      ].join(' · ');
+                      return ListTile(
+                        leading: const Icon(Icons.download_rounded),
+                        title: Text(
+                          '${transfer['title'] ?? 'Transferring song'}',
+                        ),
+                        subtitle: subtitleText.isNotEmpty
+                            ? Text(subtitleText)
+                            : null,
+                        trailing: progress != null
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  value: progress,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                      );
+                    }(),
+                  ],
+                ],
+              ),
+            ),
+          ],
           const SectionTitle('Songs received from your devices'),
-          ...rows(model.state['folders'])
-              .where(
-                (folder) =>
-                    folder['readable'] == true && folder['writable'] == true,
-              )
-              .map(
-                (folder) => ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text('${folder['name']}'),
-                  trailing: model.state['syncFolder'] == folder['uri']
-                      ? const Icon(Icons.check_rounded)
-                      : null,
-                  onTap: () => model.call('syncFolder', {'uri': folder['uri']}),
+          Card.outlined(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Songs from your other devices are saved in this folder and added to your library.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+                ...rows(model.state['folders'])
+                    .where(
+                      (folder) =>
+                          folder['readable'] == true &&
+                          folder['writable'] == true,
+                    )
+                    .map(
+                      (folder) => ListTile(
+                        leading: const Icon(Icons.folder_outlined),
+                        title: Text('${folder['name']}'),
+                        trailing: model.state['syncFolder'] == folder['uri']
+                            ? const Icon(
+                                Icons.check_rounded,
+                                color: Colors.green,
+                              )
+                            : null,
+                        onTap: () => model.call('syncFolder', {
+                          'uri': folder['uri'],
+                        }),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+          if (model.state['syncNotice'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Card.filled(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_rounded,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${model.state['syncNotice']}',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-          const SectionTitle('Your devices'),
-          Text(
-            humanize(
-              '${row(model.state['syncStatus'])['standing'] ?? 'Connecting'}',
             ),
-          ),
-          if (_showSyncCode)
-            SelectableText('${row(model.state['syncStatus'])['code'] ?? ''}'),
-          TextButton.icon(
-            onPressed: () => setState(() => _showSyncCode = !_showSyncCode),
-            icon: Icon(
-              _showSyncCode
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-            ),
-            label: Text(
-              _showSyncCode ? 'Hide pairing code' : 'Show pairing code',
-            ),
-          ),
-          TextButton(
-            onPressed: () => Clipboard.setData(
-              ClipboardData(
-                text: '${row(model.state['syncStatus'])['code'] ?? ''}',
-              ),
-            ),
-            child: const Text('Copy pairing code'),
-          ),
-          _field('code', 'Pairing code', lines: 3),
-          TextButton(
-            onPressed: () =>
-                model.call('joinSync', {'code': _fields['code']?.text ?? ''}),
-            child: const Text('Join a group'),
-          ),
-          TextButton(
-            onPressed: () => model.call('newSyncGroup'),
-            child: const Text('Start a new group'),
-          ),
-          for (final device in rows(row(model.state['syncStatus'])['devices']))
-            ListTile(
-              leading: const Icon(Icons.devices_rounded),
-              title: Text('${device['name']}'),
-              subtitle: Text(
-                device['online'] == true
-                    ? 'Online'
-                    : device['nearby'] == true
-                    ? 'Nearby'
-                    : 'Offline',
-              ),
-            ),
-          if (model.state['syncNotice'] != null)
-            Text('${model.state['syncNotice']}'),
         ],
         const SizedBox(height: 24),
         const Text(

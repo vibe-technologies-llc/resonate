@@ -139,23 +139,40 @@ class FlutterBridge(
             "chooseFolder" -> activity.chooseFolder()
             "notifications" -> activity.allowNotifications()
             "search" -> library.search(text("text"))
-            "filter" ->
-                library.setFilter(
-                    defaultTrackFilter()
-                        .copy(
-                            favourites = flag("favourites"),
-                            unplayed = flag("unplayed"),
-                            artist = text("artist"),
-                            album = text("album"),
-                            genre = text("genre"),
-                            minimumRate = number("minimumRate").toUInt(),
-                            minimumBits = number("minimumBits").toUInt(),
-                            order =
-                                TrackOrder.entries.firstOrNull { it.name == text("order") }
-                                    ?: TrackOrder.TITLE,
-                            descending = flag("descending"),
-                        )
-                )
+            "filter" -> {
+                val orderName = text("order")
+                val isReset =
+                    args.isEmpty() ||
+                        (!flag("favourites") &&
+                            !flag("unplayed") &&
+                            text("artist").isEmpty() &&
+                            text("album").isEmpty() &&
+                            text("genre").isEmpty() &&
+                            number("minimumRate") == 0L &&
+                            number("minimumBits") == 0L &&
+                            (orderName.isEmpty() || orderName == TrackOrder.TITLE.name) &&
+                            !flag("descending"))
+                if (isReset) {
+                    library.clearFilter()
+                } else {
+                    library.setFilter(
+                        defaultTrackFilter()
+                            .copy(
+                                favourites = flag("favourites"),
+                                unplayed = flag("unplayed"),
+                                artist = text("artist"),
+                                album = text("album"),
+                                genre = text("genre"),
+                                minimumRate = number("minimumRate").toUInt(),
+                                minimumBits = number("minimumBits").toUInt(),
+                                order =
+                                    TrackOrder.entries.firstOrNull { it.name == orderName }
+                                        ?: TrackOrder.TITLE,
+                                descending = flag("descending"),
+                            )
+                    )
+                }
+            }
             "play" -> {
                 val media =
                     ids().map { value ->
@@ -384,8 +401,34 @@ class FlutterBridge(
             "newSyncGroup" -> features.newSyncGroup()
             "syncFolder" ->
                 features.chooseSyncFolder(
-                    features.folders.value.first { it.uri.toString() == text("uri") }
+                    features.folders.value.first { it.uri.toString() == text("uri") },
                 )
+            "forceSync" ->
+                withContext(Dispatchers.IO) {
+                    library.native().syncForce()
+                }
+            "forgetSyncDevice" ->
+                withContext(Dispatchers.IO) {
+                    library.native().syncForgetDevice(text("id"))
+                }
+            "searchLibrary" ->
+                return withContext(Dispatchers.IO) {
+                    library.native().searchLibrary(
+                        text("text"),
+                        number("limit").toUInt().takeIf { it > 0u } ?: 500u,
+                    )
+                }
+            "saveQueueAsPlaylist" ->
+                return withContext(Dispatchers.IO) {
+                    val native = library.native()
+                    val id = native.createPlaylist(text("name"))
+                    val rows = library.queue.value.map { it.id }
+                    if (rows.isNotEmpty()) {
+                        native.addToPlaylist(id, rows)
+                    }
+                    features.loadPlaylists()
+                    id.toString()
+                }
             "fetchMissing" ->
                 features.fetchMissing(
                     id(),

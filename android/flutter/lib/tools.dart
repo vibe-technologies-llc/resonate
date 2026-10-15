@@ -343,7 +343,7 @@ class _InspectorPageState extends State<InspectorPage> {
       return Scaffold(
         appBar: AppBar(title: const Text('Song details')),
         body: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 180),
           children: [
             Center(
               child: Artwork(
@@ -471,7 +471,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                   detail: 'Choose a song to inspect its audio quality.',
                 )
               : ListView(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 180),
                   children: [
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -803,6 +803,7 @@ class _OnlinePageState extends State<OnlinePage> {
                               detail: 'Search for a song, explore an artist, or open a shared music link.',
                             )
                           : ListView(
+                              padding: const EdgeInsets.only(bottom: 180),
                               children: [
                                 if (_type == 'Songs' || songs.isNotEmpty)
                                   ...songs.map(
@@ -962,6 +963,7 @@ class WantedPane extends StatelessWidget {
               await model.call('loadWanted');
             },
             child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 180),
               itemCount: wanted.length,
               itemBuilder: (_, index) {
                 final want = wanted[index];

@@ -183,21 +183,47 @@ The expanded player links the tagged album and artist to their collection pages;
 are URI-encoded and carried in saved navigation history, so punctuation and nested Back preserve
 which collection was opened.
 
-The navigation roots are Songs, Library, Queue and Settings. Library pins Favourites above playlists,
+The navigation roots are Songs, Library, Queue, Settings and Search. Search switches between the
+native library search (songs, albums and artists) and online results; recent queries remain local.
+Songs without an active search or filter use the full catalog already held by the repository,
+so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
+Queue separates history, the playing row and Up next, and saves its current order through the
+existing playlist seam. Library pins Favourites above playlists,
 albums and artists, with collection search and category chips. Favourites and collection counts
 read the full catalog separately from the song browser's search and filters. A completed favourite
 write updates catalog, browser, queue, snapshot and open playlist state together, then refreshes
 the active browser query. The native catalog remains the persisted source of truth. Liking a song
 presents a non-blocking floating banner with an "Add to playlist" button that opens the playlist
-picker without obstructing navigation or accessibility.
+picker without obstructing navigation or accessibility. Playlist naming fields own their text
+controllers through `TextFormField`, including Save queue as playlist: a dialog's result arrives before its exit animation removes
+the field, so disposing a caller-owned controller on that result leaves a live field using a
+disposed controller and causes widget-tree teardown assertions. Creation and rename keep the
+same native calls; cancellation never writes.
 
+
+The shell's top edge and bottom navigation use mirrored progressive backdrop blur, strongest
+at the system bars and fading into the scrolling content. Sixteen disjoint clipped backdrop
+bands increase Gaussian sigma toward the edge; a shader mask around a backdrop filter isolates
+it in an empty layer and cannot blur the underlying screen. The library scrolls beneath the status
+bar. Collection backgrounds enclose the whole scaffold, including the transparent toolbar; the
+cover and rows scroll beneath its fading blur rather than meeting a separate opaque header.
+Settings details use that same continuous artwork background and fading toolbar. Their scrolling
+content includes the system and toolbar insets at the start, so controls begin below the title
+and pass beneath the blur as they scroll. Fixed search controls retain those insets outside the
+results viewport.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
 keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
 four existing track covers loaded off the main thread. Playlist detail adds a searchable multi-song
 picker through the existing batched add seam; rename, revision-checked moves/removal, delete and
 undo retain their existing native behavior. Row playback passes the explicit position, so repeated
-songs select the row that was tapped.
+songs select the row that was tapped. Collection row semantics name that position independently
+of visible track numbers, so rows with thumbnails still identify repeated songs accessibly.
+
+The expanded player is a transparent route that keeps its parent painted. One panel animation
+owns entrance, dismissal and drag cancellation; sliding, scale, corner rounding and progressive
+backdrop blur share its progress. The exposed parent remains visible through a light tint, and
+blur clears as dismissal completes, preventing a black gap or a second route exit animation.
 
 Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions and
 stops decorative drift. Artwork is loaded through the existing native cache as JPEG bytes,
@@ -209,6 +235,10 @@ glass surfaces; the expanded player uses a stronger wash. Blur sits inside a rep
 while transforms drift, and decorative movement stops when paused, offstage or reduced
 motion is requested. Paused artwork settles smaller. Artwork, lyrics, queue and the sleep timer
 share one glass pill; narrow widths and large text use icon-only buttons with named tooltips.
+Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
+hits: creating a cover while switching player modes must not rebuild its parent during build.
+The compact lyrics/queue layout keeps a bounded reading viewport and scrolls as a whole when
+short screens or large text leave too little room for its titles and transport controls.
 Lyrics fade at the viewport edges, enlarge the active line and soften distant lines. Native
 UTF-16 wipe ranges and letter blend fractions color word timing without a Dart clock. Manual
 scroll pauses following for five seconds and offers an immediate Follow lyrics button. Restorable
