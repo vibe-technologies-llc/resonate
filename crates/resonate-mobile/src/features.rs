@@ -49,7 +49,7 @@ impl Default for Services {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum TrackOrder {
     #[default]
     Title,
@@ -61,7 +61,7 @@ pub enum TrackOrder {
     Played,
 }
 
-#[derive(Clone, Debug, Default, uniffi::Record)]
+#[derive(Clone, Debug, Default, PartialEq, uniffi::Record)]
 pub struct TrackFilter {
     pub text: String,
     pub genre: String,

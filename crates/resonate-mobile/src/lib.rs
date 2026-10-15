@@ -225,21 +225,20 @@ impl MobilePlayer {
     }
 
     pub fn queue(&self) -> Result<Vec<Track>> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
-        player
-            .queued()
-            .rows
+        let rows = {
+            let held = self.player.lock();
+            held.as_ref().ok_or(Error::Closed)?.queued().rows
+        };
+
+        let uris = rows
             .iter()
-            .map(|item| {
-                self.catalog
-                    .track_uri(&document_uri(&item.location)?)
-                    .map(|mut track| {
-                        track.queue_id = Some(item.id.get());
-                        track
-                    })
-            })
-            .collect()
+            .map(|item| document_uri(&item.location))
+            .collect::<Result<Vec<_>>>()?;
+        let mut tracks = self.catalog.tracks_at(&uris)?;
+        for (track, item) in tracks.iter_mut().zip(rows.iter()) {
+            track.queue_id = Some(item.id.get());
+        }
+        Ok(tracks)
     }
 
     pub fn load(&self, ids: Vec<u64>, start_at: u32, autoplay: bool) -> Result<()> {
@@ -347,8 +346,8 @@ impl MobilePlayer {
             }
         }
         let state = player.state();
-        self.count_listening(&state, &player.queued().rows)?;
         let queue = player.queued();
+        self.count_listening(&state, &queue.rows)?;
         let current = state.current.and_then(|track| {
             queue
                 .rows

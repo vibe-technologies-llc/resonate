@@ -2,7 +2,7 @@ use std::{
     cmp::{Ordering, Reverse},
     collections::HashMap,
     sync::{Arc, OnceLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
@@ -20,6 +20,8 @@ use crate::{
 };
 
 const LISTED_AT_MOST: u32 = 500;
+
+const AN_ORDER_STANDS_FOR: Duration = Duration::from_secs(30);
 
 const COMPLETIONS_AT_MOST: usize = 6;
 
@@ -183,7 +185,30 @@ impl MobilePlayer {
 #[derive(Default)]
 pub(crate) struct Searching {
     held: Mutex<Option<Arc<Index>>>,
+    building: Mutex<()>,
     sung: Mutex<Option<Arc<Sung>>>,
+    ordered: Mutex<Option<Ordered>>,
+}
+
+struct Ordered {
+    filter: TrackFilter,
+    index: Arc<Index>,
+    sung: Option<Arc<Sung>>,
+    made: Instant,
+    found: Arc<Vec<usize>>,
+}
+
+impl Ordered {
+    fn answers(&self, filter: &TrackFilter, index: &Arc<Index>, sung: &Option<Arc<Sung>>) -> bool {
+        self.filter == *filter
+            && Arc::ptr_eq(&self.index, index)
+            && match (&self.sung, sung) {
+                (None, None) => true,
+                (Some(held), Some(asked)) => Arc::ptr_eq(held, asked),
+                _ => false,
+            }
+            && self.made.elapsed() < AN_ORDER_STANDS_FOR
+    }
 }
 
 impl Searching {
@@ -245,10 +270,10 @@ impl Searching {
         };
 
         Ok(found
-            .into_iter()
+            .iter()
             .skip(offset as usize)
             .take(limit.min(LISTED_AT_MOST) as usize)
-            .map(|at| index.rows[at].track.clone())
+            .map(|at| index.rows[*at].track.clone())
             .collect())
     }
 
@@ -258,7 +283,7 @@ impl Searching {
         };
 
         let mut pictured: Vec<usize> = Vec::new();
-        for at in found.into_iter().take(LISTED_AT_MOST as usize) {
+        for at in found.iter().copied().take(LISTED_AT_MOST as usize) {
             if pictured.len() == PICTURED_BY_AT_MOST {
                 break;
             }
@@ -279,7 +304,7 @@ impl Searching {
         &self,
         catalog: &Catalog,
         filter: &TrackFilter,
-    ) -> Result<Option<(Arc<Index>, Vec<usize>)>> {
+    ) -> Result<Option<(Arc<Index>, Arc<Vec<usize>>)>> {
         let asking = (!filter.text.trim().is_empty())
             .then(|| Asking::of(&Search::read(&filter.text), now()));
         if asking.as_ref().is_some_and(Asking::asks_nothing) {
@@ -291,6 +316,35 @@ impl Searching {
             Some(asking) => self.sung_for(catalog, asking)?,
             None => None,
         };
+        if let Some(ordered) = self.ordered.lock().as_ref()
+            && ordered.answers(filter, &index, &sung)
+        {
+            return Ok(Some((index, Arc::clone(&ordered.found))));
+        }
+
+        let found = Arc::new(Self::admitted_sorted(
+            &index,
+            filter,
+            asking.as_ref(),
+            sung.as_deref(),
+        ));
+        *self.ordered.lock() = Some(Ordered {
+            filter: filter.clone(),
+            index: Arc::clone(&index),
+            sung,
+            made: Instant::now(),
+            found: Arc::clone(&found),
+        });
+
+        Ok(Some((index, found)))
+    }
+
+    fn admitted_sorted(
+        index: &Index,
+        filter: &TrackFilter,
+        asking: Option<&Asking>,
+        sung: Option<&Sung>,
+    ) -> Vec<usize> {
         let narrowing = Narrowing::of(filter);
 
         let mut found: Vec<usize> = index
@@ -299,9 +353,9 @@ impl Searching {
             .enumerate()
             .filter(|(_, row)| narrowing.admits(row))
             .filter(|(_, row)| {
-                asking.as_ref().is_none_or(|asking| {
+                asking.is_none_or(|asking| {
                     asking
-                        .standing(row, sung.as_deref().and_then(|sung| sung.of(row)))
+                        .standing(row, sung.and_then(|sung| sung.of(row)))
                         .is_some()
                 })
             })
@@ -318,7 +372,7 @@ impl Searching {
             directed.then(one.track.id.cmp(&other.track.id))
         });
 
-        Ok(Some((index, found)))
+        found
     }
 
     pub(crate) fn albums(
@@ -411,21 +465,34 @@ impl Searching {
     }
 
     fn index(&self, catalog: &Catalog) -> Result<Arc<Index>> {
-        if let Some(index) = self.held.lock().as_ref()
-            && index.revision == catalog.revision()
-        {
-            return Ok(Arc::clone(index));
+        if let Some(index) = self.current(catalog) {
+            return Ok(index);
         }
 
-        let connection = catalog.0.lock();
-        let revision = catalog.revision();
-        let index = Arc::new(
-            Index::read(&connection, revision)
-                .map_err(|source| Error::store(StoreOp::Read, source))?,
-        );
+        let _building = self.building.lock();
+        if let Some(index) = self.current(catalog) {
+            return Ok(index);
+        }
+
+        let (revision, stored) = {
+            let connection = catalog.0.lock();
+            let revision = catalog.revision();
+            let stored =
+                Index::stored(&connection).map_err(|source| Error::store(StoreOp::Read, source))?;
+            (revision, stored)
+        };
+        let index = Arc::new(Index::gathered(Index::rows_of(stored), revision));
         *self.held.lock() = Some(Arc::clone(&index));
 
         Ok(index)
+    }
+
+    fn current(&self, catalog: &Catalog) -> Option<Arc<Index>> {
+        self.held
+            .lock()
+            .as_ref()
+            .filter(|index| index.revision == catalog.revision())
+            .map(Arc::clone)
     }
 
     fn sung_for(&self, catalog: &Catalog, asking: &Asking) -> Result<Option<Arc<Sung>>> {
@@ -1128,7 +1195,7 @@ struct Index {
 }
 
 impl Index {
-    fn read(connection: &Connection, revision: u64) -> rusqlite::Result<Self> {
+    fn stored(connection: &Connection) -> rusqlite::Result<Vec<(Track, Vec<i64>)>> {
         let mut heard: HashMap<u64, Vec<i64>> = HashMap::new();
         let mut listens = connection
             .prepare("SELECT track, began FROM listens WHERE counted = 1 AND track IS NOT NULL")?;
@@ -1141,17 +1208,22 @@ impl Index {
 
         let mut documents =
             connection.prepare("SELECT * FROM documents WHERE missing = 0 ORDER BY id")?;
-        let rows = documents
+        documents
             .query_map([], read)?
             .map(|track| {
                 track.map(|track| {
                     let listened = heard.remove(&track.id).unwrap_or_default();
-                    Row::of(track, listened)
+                    (track, listened)
                 })
             })
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+            .collect()
+    }
 
-        Ok(Self::gathered(rows, revision))
+    fn rows_of(stored: Vec<(Track, Vec<i64>)>) -> Vec<Row> {
+        stored
+            .into_iter()
+            .map(|(track, listened)| Row::of(track, listened))
+            .collect()
     }
 
     fn gathered(mut rows: Vec<Row>, revision: u64) -> Self {
@@ -2516,6 +2588,63 @@ mod tests {
         assert_eq!(everything.len(), 9);
         assert_eq!(paged.len(), 1);
         assert!(nothing_read.is_empty());
+    }
+
+    #[test]
+    fn pages_of_one_filter_share_an_order_that_a_catalog_change_ends() {
+        let catalog = library();
+        let searching = Searching::default();
+        let filter = TrackFilter::default();
+
+        let first = searching
+            .filtered(&catalog, &filter, 0, 3)
+            .expect("a first page");
+        let kept = Arc::clone(
+            &searching
+                .ordered
+                .lock()
+                .as_ref()
+                .expect("an order kept")
+                .found,
+        );
+        let second = searching
+            .filtered(&catalog, &filter, 3, 3)
+            .expect("a second page");
+        let reused = Arc::clone(
+            &searching
+                .ordered
+                .lock()
+                .as_ref()
+                .expect("an order kept")
+                .found,
+        );
+
+        assert!(Arc::ptr_eq(&kept, &reused));
+        assert_eq!(first.len() + second.len(), 6);
+
+        song(
+            &catalog,
+            Tagged {
+                title: "Added Later",
+                artist: "Someone",
+                album: "Elsewhere",
+                ..UNTAGGED
+            },
+        );
+        let everything = searching
+            .filtered(&catalog, &filter, 0, 100)
+            .expect("every song");
+        let rebuilt = Arc::clone(
+            &searching
+                .ordered
+                .lock()
+                .as_ref()
+                .expect("an order kept")
+                .found,
+        );
+
+        assert!(!Arc::ptr_eq(&kept, &rebuilt));
+        assert_eq!(everything.len(), 10);
     }
 
     #[test]

@@ -53,9 +53,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
   correction (decoding up to 64 MiB).
   A 250 ms poll reads the snapshot and saves every 20th tick, as Android does; the queue is read
-  only when the snapshot's `queue_revision` or `catalog_revision` moved since the queue last shown
-  (`QueueListed`), since reading it costs a catalog lookup and a record per row and a whole-library
+  only when the snapshot's `queue_revision` moved since the queue last shown (`QueueListed`), or
+  its `catalog_revision` moved and 3 s have passed since the last read (`catalogRereadAfter`), since
+  every enrichment step, scan upsert, favourite and landing moves the catalog and a whole-library
   queue read four times a second kept the CPU busy and the main thread comparing thousands of rows.
+  `queue()` copies the rows under the player lock and reads their documents afterwards in one
+  catalog lock (`tracks_at`).
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
   only when it changed, so an unchanged answer redraws nothing.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
@@ -485,7 +488,10 @@ every route change (a pair of headphones at the same rate included), not from th
   in Online (`Navigation.searchOnline`); there is no destination of its own.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
   page published at once where nothing is shown yet and the rest after; albums and artists through
-  `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. A list of 40
+  `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. The ordered
+  match of a filter is kept for the pages that follow it (`Ordered`: one filter, one index, 30 s),
+  so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock
+  and by one caller at a time (`Searching::index`). A list of 40
   rows or more ordered by name gets a section per letter run and the section index. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
   The Library tab's search uses the same model for albums and artists and folds playlist names

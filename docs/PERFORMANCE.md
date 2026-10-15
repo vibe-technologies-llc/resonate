@@ -7,12 +7,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
 
 ## iOS
-- [S] The poll re-reads the queue on every tick while `catalog_revision` moves, and every enrichment
-  step, scan upsert, favourite and landing moves it: `queue()` is a query per row under the player
-  lock, then the main actor compares the arrays, on the ordered lane that carries Pause and Next
-- [S] Each 500-row page of `filtered_tracks` filters and sorts all N rows again, and `Index::read`
-  rebuilds the index under the catalog mutex whenever the revision moved: a `refresh()` at 100 000
-  songs is seconds of CPU, stalling `snapshot()`, which needs the mutex for `track_uri`
 - [S] `forgetMissing` opens every document on every foregrounding (the `.inactive` to `.active`
   blips of Control Centre, a permission prompt or a call banner included), each open resolving its
   folder's security-scoped bookmark again; it needs only `.background` (`leftAt`) and a cached root

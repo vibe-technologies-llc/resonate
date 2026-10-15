@@ -54,6 +54,14 @@ struct QueueListed: Equatable {
         queue = state.queueRevision
         catalog = state.catalogRevision
     }
+
+    func isDue(after read: QueueListed?, since readAt: ContinuousClock.Instant) -> Bool {
+        guard let read else { return true }
+        if queue != read.queue { return true }
+        return catalog != read.catalog && readAt.duration(to: .now) >= Self.catalogRereadAfter
+    }
+
+    static let catalogRereadAfter = Duration.seconds(3)
 }
 
 struct Steered {
@@ -234,6 +242,7 @@ final class Library {
         var ticks = 0
         var listed: QueueListed?
         var unreadable: QueueListed?
+        var readAt = ContinuousClock.now
         while !Task.isCancelled {
             ticks += 1
             let saving = ticks % Self.ticksBetweenSaves == 0
@@ -250,7 +259,7 @@ final class Library {
                     return (state, saved)
                 }
                 let wanted = QueueListed(state)
-                let rows = wanted == known || wanted == refused ? nil : await Self.read(queueOf: native)
+                let rows = wanted.isDue(after: refused ?? known, since: readAt) ? await Self.read(queueOf: native) : nil
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
                 let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
@@ -263,10 +272,12 @@ final class Library {
                     if queueFresh {
                         if queue != read { queue = read }
                         listed = QueueListed(state)
+                        readAt = .now
                     }
                 case .failure(let error):
                     reportPolling(.queue, error)
                     unreadable = QueueListed(state)
+                    readAt = .now
                 case nil:
                     break
                 }

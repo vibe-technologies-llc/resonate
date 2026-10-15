@@ -242,6 +242,22 @@ impl Catalog {
             .ok_or(Error::UnknownTrack)
     }
 
+    pub(crate) fn tracks_at(&self, uris: &[String]) -> Result<Vec<Track>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare_cached("SELECT * FROM documents WHERE uri = ?1")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        uris.iter()
+            .map(|uri| {
+                query
+                    .query_row([uri], read)
+                    .optional()
+                    .map_err(|source| Error::store(StoreOp::Read, source))?
+                    .ok_or(Error::UnknownTrack)
+            })
+            .collect()
+    }
+
     pub(crate) fn favourite(&self, id: u64, favourite: bool) -> Result<()> {
         self.0
             .lock()
