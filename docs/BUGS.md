@@ -39,12 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [M] A failed read is drawn as empty: `AlbumView.load`, `ArtistView.load`, the context-menu Play,
-  Shuffle, Play next, Add to queue and Add to playlist (`CollectionActions.act`) and the tag
-  editor's read (`songTags` answers `[]`, so the editor opens blank and Save can overwrite) all
-  `try?`; the online artist, album and release pages show "were found" after a failure and, with
-  `read` set, cannot be retried until popped; `saveWanted` counts a failed chunk as 0 and announces
-  "Saved N"; `SuggestedMixCard.play` says "Nothing in X yet" for a thrown error
 - [S] A playlist's count includes rows the page hides (`playlists.rs` counts `playlist_rows`,
   `playlist_tracks` skips `missing`), and a playlist of hidden songs shows an empty list without
   "Your playlist starts here"; the picker says "Added to X" and dismisses before `editPlaylist`

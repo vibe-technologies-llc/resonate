@@ -22,6 +22,11 @@ enum ArtistLookup {
     case missing
 }
 
+struct WantedSaving: Sendable {
+    let saved: UInt64
+    let failure: (any Swift.Error)?
+}
+
 @MainActor
 @Observable
 final class Features {
@@ -870,9 +875,9 @@ final class Features {
         }
     }
 
-    func songTags(_ ids: [UInt64]) async -> [SongTags] {
-        guard let native = try? await library.player() else { return [] }
-        return (try? await Work.aside { try ids.map { try native.songTags(id: $0) } }) ?? []
+    func songTags(_ ids: [UInt64]) async throws -> [SongTags] {
+        let native = try await library.player()
+        return try await Work.aside { try ids.map { try native.songTags(id: $0) } }
     }
 
     func tagsWritable(_ track: Track) -> Bool {
@@ -1214,13 +1219,24 @@ final class Features {
 
     func saveWanted(_ songs: [SearchSong]) {
         work { [weak self] native in
-            let count = try await Work.aside {
-                stride(from: 0, to: songs.count, by: Features.wantedChunk).reduce(UInt64(0)) { total, start in
-                    total + ((try? native.saveWanted(songs: Array(songs[start..<min(start + Features.wantedChunk, songs.count)]))) ?? 0)
+            let outcome = try await Work.aside { () -> WantedSaving in
+                var saved: UInt64 = 0
+                for start in stride(from: 0, to: songs.count, by: Features.wantedChunk) {
+                    do {
+                        saved += try native.saveWanted(songs: Array(songs[start..<min(start + Features.wantedChunk, songs.count)]))
+                    } catch {
+                        return WantedSaving(saved: saved, failure: error)
+                    }
                 }
+                return WantedSaving(saved: saved, failure: nil)
             }
+            let (count, failure) = (outcome.saved, outcome.failure)
             await self?.refreshWanted(native)
-            self?.library.notice("Saved \(count) recordings for later")
+            if let failure {
+                self?.library.report(failure, after: "Saved \(count) of \(songs.count) recordings for later")
+            } else {
+                self?.library.notice("Saved \(count) recordings for later")
+            }
         }
     }
 

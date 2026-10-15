@@ -526,6 +526,19 @@ func sharedQuality(_ tracks: [Track]) -> String? {
     return quality
 }
 
+struct ReadFailure: View {
+    let text: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(text, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+            Button("Try again", action: retry)
+        }
+    }
+}
+
 struct AlbumView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -534,6 +547,7 @@ struct AlbumView: View {
     @State private var album: AlbumHit?
     @State private var tracks: [Track] = []
     @State private var read = false
+    @State private var failure: String?
 
     init(key: String) {
         _key = State(initialValue: key)
@@ -552,7 +566,9 @@ struct AlbumView: View {
                 badge: sharedQuality(tracks),
                 openSubtitle: artist.isEmpty || album?.variousArtists == true ? nil : { navigation.open(.artist(artist)) }
             )
-            if read, tracks.isEmpty {
+            if let failure {
+                ReadFailure(text: failure) { Task { await load() } }
+            } else if read, tracks.isEmpty {
                 Text("No songs from this album are in your library yet.").foregroundStyle(.secondary)
             }
             ForEach(discs) { disc in
@@ -582,9 +598,15 @@ struct AlbumView: View {
     private func load() async {
         guard let native = try? await library.player() else { return }
         let key = key
-        guard let (found, rows) = try? await Work.aside({ (try native.album(key: key), try native.albumTracks(key: key)) }) else {
+        let found: AlbumHit?
+        let rows: [Track]
+        do {
+            (found, rows) = try await Work.aside { (try native.album(key: key), try native.albumTracks(key: key)) }
+        } catch {
+            failure = explained(error)
             return
         }
+        failure = nil
         if rows.isEmpty, let shown = tracks.compactMap({ library.artworkTracks[$0.id] }).first {
             let moved = albumKey(album: shown.album, artist: shown.artist, albumArtist: shown.albumArtist)
             guard let moved else { return dismiss() }
@@ -610,6 +632,7 @@ struct ArtistView: View {
     @State private var top: [Track] = []
     @State private var seeingAll = false
     @State private var read = false
+    @State private var failure: String?
 
     init(name: String) {
         _name = State(initialValue: name)
@@ -625,7 +648,9 @@ struct ArtistView: View {
                 summary: "\(counted(albums.count, "album")) · \(counted(tracks.count, "song"))",
                 circle: true
             )
-            if read, tracks.isEmpty {
+            if let failure {
+                ReadFailure(text: failure) { Task { await load() } }
+            } else if read, tracks.isEmpty {
                 Text("No music by this artist is in your library yet.").foregroundStyle(.secondary)
             }
             if !albums.isEmpty {
@@ -687,11 +712,18 @@ struct ArtistView: View {
         guard let native = try? await library.player() else { return }
         let name = name
         let most = Self.topSongs
-        guard let (found, rows, played) = try? await Work.aside({
-            (try native.albumsBy(name: name), try native.artistTracks(name: name), try native.mostPlayedBy(name: name, limit: most))
-        }) else {
+        let found: [AlbumHit]
+        let rows: [Track]
+        let played: [Track]
+        do {
+            (found, rows, played) = try await Work.aside {
+                (try native.albumsBy(name: name), try native.artistTracks(name: name), try native.mostPlayedBy(name: name, limit: most))
+            }
+        } catch {
+            failure = explained(error)
             return
         }
+        failure = nil
         if rows.isEmpty, let shown = tracks.compactMap({ library.artworkTracks[$0.id] }).first {
             let followed = await Self.artist(holding: shown, native)
             if let followed, followed != name {
@@ -814,12 +846,15 @@ struct CollectionActions: ViewModifier {
     private func act(_ action: @escaping @MainActor ([Track]) -> Void) {
         let source = source
         Task {
-            guard let native = try? await library.player(),
-                let tracks = try? await Work.aside({ try source.tracks(native) }),
-                !tracks.isEmpty
-            else { return }
-            acted += 1
-            action(tracks)
+            do {
+                let native = try await library.player()
+                let tracks = try await Work.aside { try source.tracks(native) }
+                guard !tracks.isEmpty else { return }
+                acted += 1
+                action(tracks)
+            } catch {
+                library.report(error)
+            }
         }
     }
 }

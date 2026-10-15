@@ -1006,6 +1006,10 @@ final class Library {
         show(explained(failure), as: .failure)
     }
 
+    func report(_ failure: any Swift.Error, after done: String) {
+        show("\(done); \(explained(failure))", as: .failure)
+    }
+
     func dismissStatus() {
         fading?.cancel()
         status = nil

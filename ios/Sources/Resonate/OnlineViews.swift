@@ -521,6 +521,7 @@ struct OnlineArtistPage: View {
     @State private var albums: [SearchAlbum] = []
     @State private var next: UInt32?
     @State private var read = false
+    @State private var failed = false
     @State private var readingMore = false
 
     var body: some View {
@@ -537,12 +538,14 @@ struct OnlineArtistPage: View {
                     }
                     .disabled(readingMore)
                 }
-                if read, albums.isEmpty {
+                if failed {
+                    ReadFailure(text: "The albums could not be read.") { Task { await readArtist() } }
+                } else if read, albums.isEmpty {
                     Text("No albums by this artist were found.").foregroundStyle(.secondary)
                 }
             }
         }
-        .overlay { if !read { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView() } }
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await readArtist() }
@@ -550,16 +553,22 @@ struct OnlineArtistPage: View {
 
     private func readArtist() async {
         guard !read else { return }
+        failed = false
         let id = artist.id
         let features = library.features
 
         async let discography = features.onlineAnswer { try $0.artistAlbums(id: id, from: 0) }
         async let information = features.onlineAnswer { try $0.onlineArtist(id: id) }
         let page = await discography
-        albums = page?.albums ?? []
-        next = page?.next
-        read = true
         details = await information ?? nil
+        guard let page else {
+            failed = true
+            return
+        }
+        failed = false
+        albums = page.albums
+        next = page.next
+        read = true
     }
 
     private func readMore(from offset: UInt32) async {
@@ -579,6 +588,7 @@ struct OnlineAlbumPage: View {
     let album: SearchAlbum
     @State private var releases: [SearchRelease] = []
     @State private var read = false
+    @State private var failed = false
 
     var body: some View {
         ThemedList {
@@ -593,12 +603,14 @@ struct OnlineAlbumPage: View {
                 ForEach(releases, id: \.id) { release in
                     NavigationLink { OnlineReleasePage(release: release) } label: { OnlineReleaseRow(release: release) }
                 }
-                if read, releases.isEmpty {
+                if failed {
+                    ReadFailure(text: "The releases could not be read.") { Task { await readReleases() } }
+                } else if read, releases.isEmpty {
                     Text("No releases of this album were found.").foregroundStyle(.secondary)
                 }
             }
         }
-        .overlay { if !read { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView() } }
         .navigationTitle("Album")
         .navigationBarTitleDisplayMode(.inline)
         .task { await readReleases() }
@@ -607,7 +619,12 @@ struct OnlineAlbumPage: View {
     private func readReleases() async {
         guard !read else { return }
         let group = album.id
-        releases = await library.features.onlineAnswer { try $0.onlineReleases(group: group) } ?? []
+        failed = false
+        guard let found = await library.features.onlineAnswer({ try $0.onlineReleases(group: group) }) else {
+            failed = true
+            return
+        }
+        releases = found
         read = true
     }
 }
@@ -617,17 +634,20 @@ struct OnlineReleasePage: View {
     let release: SearchRelease
     @State private var songs: [SearchSong] = []
     @State private var read = false
+    @State private var failed = false
     @State private var actions = OnlineSongActions()
 
     var body: some View {
         ThemedList {
             DownloadProgress()
             OnlineSongsSection(songs: songs, heading: release.title, collected: true, actions: $actions)
-            if read, songs.isEmpty {
+            if failed {
+                ReadFailure(text: "The songs could not be read.") { Task { await readSongs() } }
+            } else if read, songs.isEmpty {
                 Text("No songs on this release were found.").foregroundStyle(.secondary)
             }
         }
-        .overlay { if !read { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView() } }
         .navigationTitle(release.title)
         .navigationBarTitleDisplayMode(.inline)
         .onlineSongActions($actions)
@@ -637,7 +657,12 @@ struct OnlineReleasePage: View {
     private func readSongs() async {
         guard !read else { return }
         let id = release.id
-        songs = await library.features.onlineAnswer { try $0.releaseSongs(id: id) } ?? []
+        failed = false
+        guard let found = await library.features.onlineAnswer({ try $0.releaseSongs(id: id) }) else {
+            failed = true
+            return
+        }
+        songs = found
         read = true
     }
 }

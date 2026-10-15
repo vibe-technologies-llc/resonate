@@ -301,6 +301,12 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   its symbol and title as separate views, each given its colour, never a `Label`. An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's.
+- **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
+  and release pages and the tag editor show the read's failure with *Try again* (`ReadFailure`)
+  instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags); a
+  collection's context-menu action or a mix's Play reports a thrown read rather than saying
+  "Nothing in X yet"; *Save all for later* stops at the first chunk that fails and says how many
+  were saved.
 - **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a
   `CollectionSource`): a context menu with Play, Shuffle, Play next, Add to queue, Add to playlist
   and an album's Go to artist, and the song row's leading Play next / Add to queue swipe, its songs

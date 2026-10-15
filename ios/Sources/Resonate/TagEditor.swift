@@ -69,6 +69,7 @@ struct TagEditorSheet: View {
     @State private var read: [TagName: String] = [:]
     @State private var mixed: Set<TagName> = []
     @State private var loaded = false
+    @State private var failure: String?
 
     var body: some View {
         let features = library.features
@@ -80,6 +81,8 @@ struct TagEditorSheet: View {
                     Section {
                         Text("Tags of this kind of file cannot be written.").foregroundStyle(.secondary)
                     }
+                } else if let failure {
+                    Section { ReadFailure(text: failure) { Task { await load(writable) } } }
                 } else if !loaded {
                     Section { ProgressView().frame(maxWidth: .infinity) }
                 } else {
@@ -152,7 +155,14 @@ struct TagEditorSheet: View {
 
     private func load(_ writable: [Track]) async {
         guard !writable.isEmpty else { return }
-        let all = await library.features.songTags(writable.prefix(Self.readAtMost).map(\.id))
+        let all: [SongTags]
+        do {
+            all = try await library.features.songTags(writable.prefix(Self.readAtMost).map(\.id))
+        } catch {
+            failure = explained(error)
+            return
+        }
+        failure = nil
         var common: [TagName: String] = [:]
         var differing: Set<TagName> = []
         for name in TagName.allCases {

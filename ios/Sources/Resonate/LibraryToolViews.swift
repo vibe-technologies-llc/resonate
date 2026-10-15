@@ -316,15 +316,18 @@ struct SuggestedMixCard: View {
     private func play(shuffled: Bool) {
         let filter = mix.filter
         Task {
-            guard let native = try? await library.player(),
-                let tracks = try? await Work.aside({ try native.filteredTracks(filter: filter, offset: 0, limit: Library.page) }),
-                !tracks.isEmpty
-            else {
-                library.notice("Nothing in \(mix.title) yet")
-                return
+            do {
+                let native = try await library.player()
+                let tracks = try await Work.aside { try native.filteredTracks(filter: filter, offset: 0, limit: Library.page) }
+                guard !tracks.isEmpty else {
+                    library.notice("Nothing in \(mix.title) yet")
+                    return
+                }
+                played += 1
+                if shuffled { library.shuffle(tracks) } else { library.play(tracks, at: 0) }
+            } catch {
+                library.report(error)
             }
-            played += 1
-            if shuffled { library.shuffle(tracks) } else { library.play(tracks, at: 0) }
         }
     }
 }
