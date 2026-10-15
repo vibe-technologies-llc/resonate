@@ -2910,6 +2910,37 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
 }
 
 #[test]
+fn clearing_keeps_the_playing_row_whichever_row_that_is_when_the_command_lands() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let rows: Vec<QueueItem> = (1..=4)
+        .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
+        .collect();
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: rows,
+        start_at: 2,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the third row to play");
+
+    player.request(Command::Clear)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.queue().len() == 1,
+        "the clearing to publish",
+    );
+
+    assert_eq!(player.queue().first().map(|item| item.id.get()), Some(3));
+    assert!(playing(&player), "the playing row stopped");
+
+    player.request(Command::Clear)?.wait_for(PATIENCE)?;
+    assert_eq!(player.queue().len(), 1, "a lone row was cleared");
+    Ok(())
+}
+
+#[test]
 fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeating() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

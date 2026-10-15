@@ -1247,6 +1247,7 @@ impl Engine {
                 _ => Ok(()),
             },
             Command::Remove(rows) => self.remove(rows),
+            Command::Clear => self.clear(),
             Command::Move { rows, to } => self.queue.move_rows(rows, to).ok_or(Error::NoSuchRow {
                 rows: Span::between(rows.last(), to),
                 len: self.queue.len(),
@@ -1699,6 +1700,22 @@ impl Engine {
         self.unbound = None;
         self.heard_at_least = None;
         self.transport = TransportState::Stopped;
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        let Some(last) = self.queue.len().checked_sub(1) else {
+            return Ok(());
+        };
+        let Some(playing) = self.queue.cursor() else {
+            return self.remove(Span::between(0, last));
+        };
+        if playing < last {
+            self.remove(Span::between(playing + 1, last))?;
+        }
+        match playing.checked_sub(1) {
+            Some(before) => self.remove(Span::between(0, before)),
+            None => Ok(()),
+        }
     }
 
     fn remove(&mut self, rows: Span) -> Result<()> {

@@ -44,12 +44,7 @@ impl MobilePlayer {
     }
 
     pub fn clear_queue(&self) -> Result<()> {
-        self.edit_queue(|queued, state| {
-            Ok(after_the_playing(queued.rows.len(), state.queue_position).map(Command::Remove))
-        })?;
-        self.edit_queue(
-            |_, state| Ok(before_the_playing(state.queue_position).map(Command::Remove)),
-        )
+        self.edit_queue(|queued, _| Ok((!queued.rows.is_empty()).then_some(Command::Clear)))
     }
 }
 
@@ -126,17 +121,6 @@ fn row_within(row: u32, bound: usize, rows: usize) -> Result<usize> {
 
 const fn landing_before(moved: usize, before: usize) -> usize {
     if before > moved { before - 1 } else { before }
-}
-
-fn after_the_playing(rows: usize, playing: Option<usize>) -> Option<Span> {
-    let first = playing.map_or(0, |row| row + 1);
-    let last = rows.checked_sub(1)?;
-
-    (first <= last).then(|| Span::between(first, last))
-}
-
-fn before_the_playing(playing: Option<usize>) -> Option<Span> {
-    playing?.checked_sub(1).map(|last| Span::between(0, last))
 }
 
 #[cfg(test)]

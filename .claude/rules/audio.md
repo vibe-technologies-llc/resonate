@@ -390,6 +390,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Command::JumpTo`, `Command::Insert`, `Command::Remove`'s `Span` = rows a queue pane draws (right
   under shuffle). `Queue::position` = load-order index (`None` while a queued row is heard),
   published as `PlayerState::loaded_position`.
+- **`Command::Clear` removes every row but the playing one in one step** (every row where nothing
+  is current): a clear made by position in two removals could land after the song had ended and
+  take the row that had just begun, since advancing playback does not move the queue's revision.
+  The phones' Clear is this command.
 - **An edit by position names its queue.** `Player::send_if_the_queue_is_still` /
   `request_if_the_queue_is_still` carry the `Queued::revision` the gesture saw; `dispatch` answers
   `Error::QueueChanged` (`Cause::QueueMoved`) if it moved, so another client's edit between draw and
