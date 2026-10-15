@@ -262,7 +262,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   makes a non-`@Sendable` closure written inside a `@MainActor` type main-isolated and asserts the
   queue when it runs: `MPMediaItemArtwork`'s image handler, called on a MediaPlayer queue, trapped in
   `_dispatch_assert_queue_fail`. Such a closure is built in a `nonisolated` function or marked
-  `@Sendable` (`NowPlaying.artwork`, `Features.watchNetwork`, `BackgroundHold.expiry`);
+  `@Sendable` (`NowPlaying.artwork`, `Features.watchNetwork`, `BackgroundHold.expiry`, and the dynamic
+  `UIColor`s of `AccentColours`, resolved by SwiftUI's render thread: formed inside the main-actor
+  `AppearanceState` they trapped in the queue list);
   `MainActor.assumeIsolated` only where the framework delivers on the main thread (remote commands,
   notifications on `.main`, an expiration handler that finds itself on the main thread).
 - Secrets (provider credentials, scrobbling, AcoustID key, sync key) live in the keychain,
