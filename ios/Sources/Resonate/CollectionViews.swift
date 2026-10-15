@@ -27,8 +27,8 @@ struct LibraryView: View {
         let folded = asked.searchFolded
         let answered = !asked.isEmpty && shelfSearch.hasAnswer
         let tracks = library.allTracks
-        let favourites = tracks.filter(\.favourite)
-        let playlists = library.features.playlists.filter { folded.isEmpty || $0.name.searchFolded.contains(folded) }
+        let favourites = library.favouriteTracks
+        let playlists = library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) }
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
         let matchedNothing = !playlistsOnly && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
@@ -755,7 +755,7 @@ struct FavouritesView: View {
 
     var body: some View {
         let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
-        let favourites = library.allTracks.filter(\.favourite)
+        let favourites = library.favouriteTracks
         let shown = favourites.filter { $0.matches(folded: folded) }
         List {
             CollectionHeader(title: "Favourites", subtitle: "", tracks: favourites) {

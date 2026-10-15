@@ -70,14 +70,17 @@ struct TagEditorSheet: View {
     @State private var mixed: Set<TagName> = []
     @State private var loaded = false
     @State private var failure: String?
+    @State private var writableTracks: [Track]?
 
     var body: some View {
         let features = library.features
-        let writable = tracks.filter(features.tagsWritable)
+        let writable = writableTracks ?? []
         let names = TagName.allCases.filter { tracks.count == 1 || !$0.eachSongsOwn }
         NavigationStack {
             Form {
-                if writable.isEmpty {
+                if writableTracks == nil {
+                    Section { ProgressView().frame(maxWidth: .infinity) }
+                } else if writable.isEmpty {
                     Section {
                         Text("Tags of this kind of file cannot be written.").foregroundStyle(.secondary)
                     }
@@ -126,7 +129,11 @@ struct TagEditorSheet: View {
                 }
             }
         }
-        .task { await load(writable) }
+        .task {
+            let asked = tracks.filter(features.tagsWritable)
+            writableTracks = asked
+            await load(asked)
+        }
     }
 
     private func field(_ name: TagName) -> some View {

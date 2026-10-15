@@ -80,6 +80,16 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   write laid over it (`favouriteWrites`, dropped once a read begun after the answer exists), so a
   heart tapped during a long refresh does not snap back. `Destination` carries song ids, never `Track` values, and `LiveSong` looks the song up
   when the page draws (`.lyrics(nil)` still means the playing song).
+- **A view body does no whole-catalog work.** `Library` keeps what views derive from `allTracks`:
+  `catalogIndex` (id to place), `favouriteIds` and `favouriteTracks` (in catalog order), so a heart
+  changes one row in place and inserts or removes one favourite (`markFavourite`, `keepFavourite`)
+  and the Library tab and Favourites read `favouriteTracks` instead of filtering; `playingQueueRow`
+  is found when the queue or the playing row changes; the queue's sections iterate slices, never
+  copies; `Features.foldedName(of:)` holds each playlist name folded; the add-songs sheet folds
+  every song once off the main thread (`SongKeys`, keyed by `catalogEpoch`) and filters there 150 ms
+  after the last keystroke; the tag editor asks `tags_writable` once per song when it opens.
+  Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
+  hang) and the keychain reads at launch (`Features.readSecrets`) run on `Work.aside`, never the main actor.
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
   6 s; a failure stays until dismissed. The engine's `failure` is shown once per distinct text per
   song, and a poll failure once until that part of polling recovers, so a dismissal holds. The

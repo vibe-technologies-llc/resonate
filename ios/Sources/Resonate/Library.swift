@@ -109,10 +109,13 @@ final class Library {
     let folders: Folders
     let clock = PlayClock()
     var allTracks: [Track] = [] {
-        didSet { indexCatalog() }
+        didSet { if !marking { indexCatalog() } }
     }
     var tracks: [Track] = [] {
-        didSet { trackRuns = filter.order == .title ? LetterRun.runs(of: tracks, named: \.shownTitle) : [] }
+        didSet {
+            guard !marking else { return }
+            trackRuns = filter.order == .title ? LetterRun.runs(of: tracks, named: \.shownTitle) : []
+        }
     }
     private(set) var trackRuns: [LetterRun] = []
     private(set) var tracksRead = false
@@ -131,7 +134,10 @@ final class Library {
     var collectionOrder = CollectionOrder.alphabetical {
         didSet { if collectionOrder != oldValue { reloadCollections() } }
     }
-    var queue: [Track] = []
+    var queue: [Track] = [] {
+        didSet { findPlayingRow() }
+    }
+    private(set) var playingQueueRow: Int?
     var snapshot: Snapshot?
     var status: StatusMessage?
     var scanning = false
@@ -149,8 +155,11 @@ final class Library {
         }
     }
     private(set) var currentId: UInt64?
-    private(set) var currentQueueId: UInt64?
+    private(set) var currentQueueId: UInt64? {
+        didSet { findPlayingRow() }
+    }
     private(set) var favouriteIds: Set<UInt64> = []
+    private(set) var favouriteTracks: [Track] = []
     @ObservationIgnored private var favouriteWrites: [UInt64: FavouriteWrite] = [:]
     @ObservationIgnored private var favouriteSerial = 0
 
@@ -170,7 +179,8 @@ final class Library {
     @ObservationIgnored private var catalogRequest = 0
     @ObservationIgnored private var collectionRequest = 0
     @ObservationIgnored private let preferencesStore = PlaybackPreferencesStore()
-    @ObservationIgnored private var catalogIds: Set<UInt64> = []
+    @ObservationIgnored private var catalogIndex: [UInt64: Int] = [:]
+    @ObservationIgnored private var marking = false
     @ObservationIgnored private var shownFailure: String?
     @ObservationIgnored private var pollFailures: [PollPart: String] = [:]
     @ObservationIgnored private var statusSerial = 0
@@ -429,13 +439,13 @@ final class Library {
         return Int(first)..<Int(first) + Int(count)
     }
 
-    var playingQueueRow: Int? {
-        guard let currentQueueId else { return nil }
-        return queue.firstIndex { $0.queueId == currentQueueId }
+    private func findPlayingRow() {
+        let found = currentQueueId.flatMap { current in queue.firstIndex { $0.queueId == current } }
+        if found != playingQueueRow { playingQueueRow = found }
     }
 
     func isFavourite(_ track: Track) -> Bool {
-        catalogIds.contains(track.id) ? favouriteIds.contains(track.id) : track.favourite
+        catalogIndex[track.id] != nil ? favouriteIds.contains(track.id) : track.favourite
     }
 
     func track(_ id: UInt64) -> Track? {
@@ -447,8 +457,25 @@ final class Library {
     }
 
     private func indexCatalog() {
-        catalogIds = Set(allTracks.map(\.id))
-        favouriteIds = Set(allTracks.lazy.filter(\.favourite).map(\.id))
+        catalogIndex = Dictionary(allTracks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+        favouriteTracks = allTracks.filter(\.favourite)
+        favouriteIds = Set(favouriteTracks.map(\.id))
+    }
+
+    private func keepFavourite(_ track: Track, at place: Int) {
+        guard track.favourite else {
+            favouriteIds.remove(track.id)
+            if let at = favouriteTracks.firstIndex(where: { $0.id == track.id }) { favouriteTracks.remove(at: at) }
+            return
+        }
+        favouriteIds.insert(track.id)
+        var low = 0
+        var high = favouriteTracks.count
+        while low < high {
+            let middle = (low + high) / 2
+            if (catalogIndex[favouriteTracks[middle].id] ?? 0) < place { low = middle + 1 } else { high = middle }
+        }
+        favouriteTracks.insert(track, at: low)
     }
 
     func play(_ rows: [Track], at index: Int, shuffle: Bool = false) {
@@ -639,8 +666,16 @@ final class Library {
             }
         }
 
-        allTracks = marked(allTracks)
-        tracks = marked(tracks).filter { !filter.favourites || $0.favourite }
+        marking = true
+        if let at = catalogIndex[id], allTracks[at].favourite != favourite {
+            allTracks[at].favourite = favourite
+            keepFavourite(allTracks[at], at: at)
+        }
+        if let at = tracks.firstIndex(where: { $0.id == id }), tracks[at].favourite != favourite {
+            tracks[at].favourite = favourite
+        }
+        marking = false
+        if filter.favourites, !favourite { tracks = tracks.filter { $0.id != id } }
         queue = marked(queue)
         if snapshot?.current?.id == id { snapshot?.current?.favourite = favourite }
         features.playlistRows = marked(features.playlistRows)
@@ -836,25 +871,36 @@ final class Library {
     }
 
     func addFolder(_ url: URL) {
-        do {
-            let id = try folders.add(url)
-            folderList = folders.folders()
-            scan(id)
-        } catch {
-            report(error)
+        let folders = folders
+        Task { [weak self] in
+            do {
+                let id = try await Work.aside { try folders.add(url) }
+                await self?.remeasureFolders()
+                self?.scan(id)
+            } catch {
+                self?.report(error)
+            }
         }
     }
 
     func removeFolder(_ folder: MusicFolder) {
         queuedScans.removeAll { $0 == folder.id }
         if scanningFolder == folder.id { scanStopped = true }
-        do {
-            try folders.remove(folder.id)
-            folderList = folders.folders()
-            Task { [weak self] in await self?.hideSongs(under: folder.id) }
-        } catch {
-            report(error)
+        let folders = folders
+        Task { [weak self] in
+            do {
+                try await Work.aside { try folders.remove(folder.id) }
+                await self?.remeasureFolders()
+                await self?.hideSongs(under: folder.id)
+            } catch {
+                self?.report(error)
+            }
         }
+    }
+
+    func remeasureFolders() async {
+        let folders = folders
+        if let measured = try? await Work.aside({ folders.folders() }) { folderList = measured }
     }
 
     private func hideSongs(under folder: String) async {
@@ -866,9 +912,12 @@ final class Library {
     }
 
     func rescan() {
-        folderList = folders.folders()
-        for folder in folderList where folder.readable {
-            scan(folder.id)
+        Task { [weak self] in
+            await self?.remeasureFolders()
+            guard let self else { return }
+            for folder in folderList where folder.readable {
+                scan(folder.id)
+            }
         }
     }
 
@@ -933,7 +982,7 @@ final class Library {
         await refresh()
         if !scanStopped { await forgetMissing() }
         features.scanned()
-        folderList = folders.folders()
+        await remeasureFolders()
         if let failure {
             report(failure)
         } else {

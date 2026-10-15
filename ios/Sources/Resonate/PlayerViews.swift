@@ -947,7 +947,7 @@ struct QueueSections: View {
     }
 
     private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {
-        ForEach(Array(rows[range]), id: \.queueId) { row in
+        ForEach(rows[range], id: \.queueId) { row in
             QueueRow(row: row, edited: $edited)
         }
         .onMove { offsets, destination in

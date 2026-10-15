@@ -85,7 +85,10 @@ final class Features {
     @ObservationIgnored private var shareRequest = 0
     var inspectorTrack: UInt64?
     var inspectorArtist: ArtistLookup = .idle
-    var playlists: [MusicPlaylist] = []
+    var playlists: [MusicPlaylist] = [] {
+        didSet { foldedNames = Dictionary(playlists.map { ($0.id, $0.name.searchFolded) }, uniquingKeysWith: { kept, _ in kept }) }
+    }
+    @ObservationIgnored private var foldedNames: [UInt64: String] = [:]
     var playlistRows: [Track] = []
     var openPlaylist: UInt64?
     var playlistToShow: UInt64?
@@ -178,8 +181,14 @@ final class Features {
 
     func initialize(_ native: MobilePlayer) {
         room.restore(native)
-        readSecrets()
         native.configureOnline(enabled: online)
+        Task { [weak self] in
+            await self?.readSecrets()
+            self?.begin(native)
+        }
+    }
+
+    private func begin(_ native: MobilePlayer) {
         downloads.recover(native)
         downloads.wantsChanged()
         if let left = settings.string(forKey: "unfinished-sync-landing") {
@@ -199,12 +208,33 @@ final class Features {
         }
     }
 
-    private func readSecrets() {
+    private func readSecrets() async {
+        let store = accounts
+        guard let read = try? await Work.aside({
+            SecretsRead(
+                providers: Result { try store.readProviders() },
+                scrobbling: Result { try store.readScrobbling() },
+                recognition: Result { try store.readRecognitionKey() },
+                sync: Result { try store.readSync() }
+            )
+        }) else { return }
         var failure: (any Swift.Error)?
-        do { providers = try accounts.readProviders() } catch { failure = error }
-        do { scrobbleAccount = try accounts.readScrobbling() } catch { failure = error }
-        do { recognitionKey = try accounts.readRecognitionKey() } catch { failure = error }
-        do { syncConfig = try accounts.readSync() } catch { failure = error }
+        switch read.providers {
+        case .success(let value): providers = value
+        case .failure(let error): failure = error
+        }
+        switch read.scrobbling {
+        case .success(let value): scrobbleAccount = value
+        case .failure(let error): failure = error
+        }
+        switch read.recognition {
+        case .success(let value): recognitionKey = value
+        case .failure(let error): failure = error
+        }
+        switch read.sync {
+        case .success(let value): syncConfig = value
+        case .failure(let error): failure = error
+        }
         secretsUnread = failure != nil
         if let failure, !unreadReported {
             unreadReported = true
@@ -444,8 +474,11 @@ final class Features {
         let wasAway = leftAt != nil
         leftAt = nil
         if secretsUnread {
-            readSecrets()
-            if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
+            Task { [weak self] in
+                guard let self else { return }
+                await readSecrets()
+                if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
+            }
         }
         guard wasAway else { return }
         guard syncRuns else {
@@ -668,6 +701,10 @@ final class Features {
         }
         landingRefused[id] = nil
         _ = try? await Work.aside { try native.syncRefuseReceived(id: id) }
+    }
+
+    func foldedName(of playlist: MusicPlaylist) -> String {
+        foldedNames[playlist.id] ?? playlist.name.searchFolded
     }
 
     func artGeneration(of id: UInt64) -> Int {
@@ -1380,6 +1417,13 @@ final class Features {
             _ = try? await Work.aside { try native.visualizer(enabled: false) }
         }
     }
+}
+
+private struct SecretsRead: Sendable {
+    let providers: Result<ProviderAccounts, any Swift.Error>
+    let scrobbling: Result<ScrobbleAccount, any Swift.Error>
+    let recognition: Result<String, any Swift.Error>
+    let sync: Result<SyncConfig, any Swift.Error>
 }
 
 struct RefusedLanding {

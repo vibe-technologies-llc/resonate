@@ -6,15 +6,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 - [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
 
-## iOS
-- [M] Whole-catalog work in view bodies and on the main actor: `LibraryView` filters `allTracks` for
-  favourites and folds playlist names each body; `AddSongsSheet` refolds every title, artist and
-  album on each toggle; `Library` rebuilds two `Set`s from `allTracks` on every heart; the queue
-  list copies `rows[range]` and scans for the playing row each body; the tag editor asks
-  `tags_writable` once per song per keystroke; `addFolder`, `removeFolder` and `folders()` measure
-  and resolve bookmarks on the main actor (a hung File Provider hangs the UI), as do about eight
-  keychain reads at launch
-
 ## Tagging
 - [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write

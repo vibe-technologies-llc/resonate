@@ -316,50 +316,87 @@ struct PlaylistRow: View {
     }
 }
 
+struct SongKeys: Sendable {
+    let tracks: [Track]
+    let keys: [String]
+
+    static let empty = SongKeys(tracks: [], keys: [])
+
+    static func of(_ tracks: [Track]) -> SongKeys {
+        SongKeys(tracks: tracks, keys: tracks.map { "\($0.shownTitle)\u{1f}\($0.artist)\u{1f}\($0.album)".searchFolded })
+    }
+
+    func matching(_ folded: String) -> [Track] {
+        guard !folded.isEmpty else { return tracks }
+        return zip(tracks, keys).filter { $0.1.contains(folded) }.map(\.0)
+    }
+}
+
 struct AddSongsSheet: View {
+    private static let settles: Duration = .milliseconds(150)
+
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     let id: UInt64
     @State private var search = ""
     @State private var chosen: [UInt64] = []
+    @State private var chosenSet: Set<UInt64> = []
+    @State private var keyed = SongKeys.empty
+    @State private var listed: [Track] = []
 
     var body: some View {
-        let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
-        let tracks = library.allTracks.filter { $0.matches(folded: folded) }
         NavigationStack {
-            List(tracks, id: \.id) { track in
+            List(listed, id: \.id) { track in
+                let isChosen = chosenSet.contains(track.id)
                 Button {
                     if let at = chosen.firstIndex(of: track.id) {
                         chosen.remove(at: at)
+                        chosenSet.remove(track.id)
                     } else {
                         chosen.append(track.id)
+                        chosenSet.insert(track.id)
                     }
                 } label: {
                     HStack {
                         CollectionRow(track: track, title: track.shownTitle, detail: track.shownArtist)
                         Spacer()
-                        Image(systemName: chosen.contains(track.id) ? "checkmark.circle.fill" : "circle")
+                        Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(.tint)
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityAddTraits(chosen.contains(track.id) ? .isSelected : [])
+                .accessibilityAddTraits(isChosen ? .isSelected : [])
             }
             .overlay {
-                if library.allTracks.isEmpty {
+                if keyed.tracks.isEmpty {
                     ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
-                } else if tracks.isEmpty {
+                } else if listed.isEmpty {
                     NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
                 }
             }
             .searchable(text: $search, prompt: "Find songs to add")
             .navigationTitle("Add songs")
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: library.catalogEpoch) {
+                let tracks = library.allTracks
+                keyed = (try? await Work.aside { SongKeys.of(tracks) }) ?? keyed
+                listed = keyed.matching(Self.folded(search))
+            }
+            .task(id: search) {
+                if !search.isEmpty { try? await Task.sleep(for: Self.settles) }
+                guard !Task.isCancelled else { return }
+                let keys = keyed
+                let folded = Self.folded(search)
+                let found = (try? await Work.aside { keys.matching(folded) }) ?? []
+                guard !Task.isCancelled else { return }
+                listed = found
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(chosen.count == 1 ? "Add 1 song" : "Add \(chosen.count) songs", role: .confirm) {
-                        let picked = chosen.compactMap { wanted in library.allTracks.first { $0.id == wanted } }
+                        let byId = Dictionary(keyed.tracks.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+                        let picked = chosen.compactMap { byId[$0] }
                         library.features.addToPlaylist(id, picked)
                         dismiss()
                     }
@@ -367,6 +404,10 @@ struct AddSongsSheet: View {
                 }
             }
         }
+    }
+
+    private static func folded(_ search: String) -> String {
+        search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
     }
 }
 
