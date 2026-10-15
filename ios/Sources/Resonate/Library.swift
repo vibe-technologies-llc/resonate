@@ -34,6 +34,12 @@ final class PlayClock {
     }
 }
 
+struct FavouriteWrite {
+    let value: Bool
+    let serial: Int
+    var answeredAfter: Int?
+}
+
 enum PollPart: Hashable {
     case snapshot
     case queue
@@ -130,6 +136,8 @@ final class Library {
     private(set) var currentId: UInt64?
     private(set) var currentQueueId: UInt64?
     private(set) var favouriteIds: Set<UInt64> = []
+    @ObservationIgnored private var favouriteWrites: [UInt64: FavouriteWrite] = [:]
+    @ObservationIgnored private var favouriteSerial = 0
 
     @ObservationIgnored private(set) var native: MobilePlayer?
     @ObservationIgnored private var waiting: [CheckedContinuation<MobilePlayer, Swift.Error>] = []
@@ -548,10 +556,18 @@ final class Library {
 
     func setFavourite(_ track: Track, _ favourite: Bool) {
         let id = track.id
+        favouriteSerial += 1
+        let serial = favouriteSerial
 
         markFavourite(id, favourite)
+        favouriteWrites[id] = FavouriteWrite(value: favourite, serial: serial, answeredAfter: nil)
         attempt({ native in try native.favourite(id: id, favourite: favourite) }) { [self] failure in
-            guard let failure else { return }
+            guard favouriteWrites[id]?.serial == serial else { return }
+            guard let failure else {
+                favouriteWrites[id]?.answeredAfter = catalogRequest
+                return
+            }
+            favouriteWrites[id] = nil
             markFavourite(id, !favourite)
             show(
                 (favourite ? "Could not add this song to favourites: " : "Could not remove this song from favourites: ")
@@ -659,19 +675,31 @@ final class Library {
             let first = try await Work.aside { try native.filteredTracks(filter: everything, offset: 0, limit: Library.page) }
             guard request == catalogRequest else { return }
             if !catalogRead || first.count < Library.page {
-                publishCatalog(first)
+                publishCatalog(first, request: request)
             }
             guard first.count == Library.page else { return }
 
             let rest = try await Work.aside { try Library.pages(native, everything, from: Library.page) }
             guard request == catalogRequest else { return }
-            publishCatalog(first + rest)
+            publishCatalog(first + rest, request: request)
         } catch {
             report(error)
         }
     }
 
-    private func publishCatalog(_ rows: [Track]) {
+    private func settled(_ rows: [Track], request: Int) -> [Track] {
+        favouriteWrites = favouriteWrites.filter { ($0.value.answeredAfter ?? .max) >= request }
+        guard !favouriteWrites.isEmpty else { return rows }
+        return rows.map { row in
+            guard let write = favouriteWrites[row.id], write.value != row.favourite else { return row }
+            var row = row
+            row.favourite = write.value
+            return row
+        }
+    }
+
+    private func publishCatalog(_ read: [Track], request: Int) {
+        let rows = settled(read, request: request)
         allTracks = rows
         artworkTracks = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
         catalogRead = true

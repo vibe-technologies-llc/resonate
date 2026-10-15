@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `Library.refresh` reads pages on `Work.aside` beside the ordered favourite write and then
-  rebuilds `favouriteIds` from rows that may predate it: a heart tapped during a long refresh
-  snaps back although the write held
 - [S] `AlbumView` and `ArtistView` keep the key or name they were opened with: *Edit album tags*
   can change the album key, and after Save the page reads nil and says "No songs from this album
   are in your library yet" instead of following the album or popping

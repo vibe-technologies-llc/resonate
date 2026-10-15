@@ -70,7 +70,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   A favourite flips everywhere at once (catalog, browser, queue, snapshot, open playlist, top
   tracks, Inspector) and flips back with a notice if the write fails; hearts read
   `isFavourite(_:)`, the catalog's live answer by id, so a stale `Track` value never shows a stale
-  heart. `Destination` carries song ids, never `Track` values, and `LiveSong` looks the song up
+  heart. A catalog read that began before a favourite write was answered is published with that
+  write laid over it (`favouriteWrites`, dropped once a read begun after the answer exists), so a
+  heart tapped during a long refresh does not snap back. `Destination` carries song ids, never `Track` values, and `LiveSong` looks the song up
   when the page draws (`.lyrics(nil)` still means the playing song).
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
   6 s; a failure stays until dismissed. The engine's `failure` is shown once per distinct text per
