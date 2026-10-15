@@ -129,6 +129,11 @@ icons! {
     WindowRestore => "window-restore",
     Listen => "listen",
     More => "more",
+    Sync => "sync",
+    Computer => "computer",
+    Phone => "phone",
+    Reveal => "reveal",
+    Conceal => "conceal",
 }
 
 pub(crate) struct Embedded;

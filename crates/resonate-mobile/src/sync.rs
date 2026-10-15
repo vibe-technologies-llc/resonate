@@ -199,6 +199,11 @@ pub fn sync_reads_as_a_code(code: String) -> bool {
 }
 
 #[uniffi::export]
+pub fn sync_code_in_link(link: String) -> Option<String> {
+    SyncKey::from_link(&link).ok().map(|key| key.code())
+}
+
+#[uniffi::export]
 impl MobilePlayer {
     pub fn sync_start(&self, mut config: SyncConfig) -> Result<SyncStatus> {
         let mut running = self.syncing.running.lock();

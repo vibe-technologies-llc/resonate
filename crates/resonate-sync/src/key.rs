@@ -22,6 +22,7 @@ const KEY_SYMBOLS: usize = SYNC_KEY_BYTES * 8 / BITS_PER_SYMBOL;
 const CHECK_SYMBOLS: usize = 3;
 const CODE_SYMBOLS: usize = KEY_SYMBOLS + CHECK_SYMBOLS;
 const GROUP_SYMBOLS: usize = 5;
+pub const PAIRING_LINK: &str = "resonate://pair/";
 const DERIVATION_SALT: &[u8] = b"resonate-sync/1";
 const SPACE_INFO: &[u8] = b"space";
 const TOKEN_INFO: &[u8] = b"token";
@@ -98,6 +99,19 @@ impl SyncKey {
             return Err(Error::Code(CodeRefused::Check));
         }
         Ok(key)
+    }
+
+    pub fn from_link(link: &str) -> Result<Self> {
+        let link = link.trim();
+        let code = link
+            .get(..PAIRING_LINK.len())
+            .filter(|scheme| scheme.eq_ignore_ascii_case(PAIRING_LINK))
+            .map_or(link, |_| &link[PAIRING_LINK.len()..]);
+        Self::from_code(code.trim_end_matches('/'))
+    }
+
+    pub fn link(&self) -> String {
+        format!("{PAIRING_LINK}{}", self.code())
     }
 
     pub fn code(&self) -> String {
@@ -292,6 +306,26 @@ mod tests {
             SyncKey::from_code(&code.to_ascii_lowercase().replace('-', " ")).expect("lowered"),
             key
         );
+    }
+
+    #[test]
+    fn a_pairing_link_reads_back_as_its_key_and_a_bare_code_reads_too() {
+        let key = SyncKey::minted().expect("randomness");
+
+        let link = key.link();
+        let shouting = link.to_uppercase();
+
+        assert!(link.starts_with(PAIRING_LINK));
+        assert_eq!(SyncKey::from_link(&link).expect("read").code(), key.code());
+        assert_eq!(
+            SyncKey::from_link(&shouting).expect("read").code(),
+            key.code()
+        );
+        assert_eq!(
+            SyncKey::from_link(&key.code()).expect("read").code(),
+            key.code()
+        );
+        assert!(SyncKey::from_link("resonate://pair/NOT-A-CODE").is_err());
     }
 
     #[test]

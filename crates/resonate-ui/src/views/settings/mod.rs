@@ -35,7 +35,7 @@ pub(crate) use crate::views::settings::{
     tidal::{SigningIn, TidalAccount},
 };
 use crate::{
-    AppIcon, ResonateApp, Setting,
+    AppIcon, ResonateApp, Setting, Synchronised,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     motion, theme,
@@ -438,6 +438,9 @@ impl RootView {
             Group::Lastfm => self.lastfm_group(cx),
             Group::LookUpNow => self.look_up_group(cx),
             Group::Syncing => self.syncing_group(cx),
+            Group::Pairing => self.pairing_group(cx),
+            Group::SyncDevices => self.sync_devices_group(cx),
+            Group::SyncConnection => self.sync_connection_group(cx),
             Group::SyncedSongs => self.synced_songs_group(cx),
             Group::Notifications => self.notifications_group(cx),
             Group::Discord => self.discord_group(cx),
@@ -557,7 +560,8 @@ impl RootView {
             Group::MinimumLength => self.set_minimum_length(Default::default(), cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Discord => self.put_discord_back(cx),
-            Group::Syncing => self.put_syncing_back(cx),
+            Group::Syncing => self.set_sync(Synchronised::default().enabled, cx),
+            Group::SyncConnection => self.put_the_connection_back(cx),
             Group::SyncedSongs => self.follow_songs(resonate_core::SyncedSongs::default(), cx),
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),
@@ -724,6 +728,7 @@ impl RootView {
     pub(super) fn lower_every_armed_press(&mut self) {
         self.resetting_everything = false;
         self.regenerating_the_code = false;
+        self.pairing_shown = false;
         self.moving_the_files = false;
         self.walking_the_filing_back = false;
         self.walking_the_tags_back = false;

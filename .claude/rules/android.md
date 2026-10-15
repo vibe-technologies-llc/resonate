@@ -452,7 +452,8 @@ minute before that song is tried again, the rest landing meanwhile; a song refus
 file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it.
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
 `sync_forget_device` takes; `HandedOff.id` likewise, and `sync_continue_from` and
-`sync_fetch_missing` take the id (a name is still read where no id matches). `song_uris` lists every document's URI, hidden ones included.
+`sync_fetch_missing` take the id (a name is still read where no id matches). The sync screen's
+pairing code is blurred under *Tap to show* until tapped. `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a

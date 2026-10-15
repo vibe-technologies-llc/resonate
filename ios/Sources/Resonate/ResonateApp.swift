@@ -174,6 +174,27 @@ struct RootView: View {
         .sheet(item: $navigation.tagging) { editing in
             TagEditorSheet(tracks: editing.tracks)
         }
+        .alert(
+            "Join these devices?",
+            isPresented: Binding(
+                get: { library.features.pairingOffered != nil },
+                set: { shown in if !shown { library.features.pairingOffered = nil } }
+            ),
+            presenting: library.features.pairingOffered
+        ) { code in
+            Button("Join") {
+                library.features.joinSync(code)
+                library.features.pairingOffered = nil
+                navigation.nowPlaying = false
+                navigation.tab = .settings
+                navigation.paths[.settings] = [.sync]
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(library.features.syncConfig?.key.isEmpty == false
+                ? "This iPhone leaves the devices it syncs with now and syncs with the devices of the code you scanned."
+                : "This iPhone syncs its playlists, favourites and history with the devices of the code you scanned.")
+        }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()
                 .presentationDetents([.medium, .large])

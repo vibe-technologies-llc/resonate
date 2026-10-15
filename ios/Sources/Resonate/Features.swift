@@ -94,6 +94,7 @@ final class Features {
     var transferring = false
     var syncAskedAt: Date?
     var syncLanding = 0
+    var pairingOffered: String?
     var tagsUndoable = false
     var organising = false
     var organiseUndo: (folder: String, back: [FiledSong])?
@@ -263,7 +264,20 @@ final class Features {
     func joinSync(_ code: String) {
         guard var config = syncConfig else { return }
         config.key = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.enabled = true
         saveSync(config)
+    }
+
+    func offerPairing(_ link: String) {
+        guard let code = syncCodeInLink(link: link) else {
+            library.notice("That link holds no pairing code")
+            return
+        }
+        guard code != syncStatus?.code, code != syncConfig?.key else {
+            library.notice("This iPhone already syncs with those devices")
+            return
+        }
+        pairingOffered = code
     }
 
     func newSyncGroup() {

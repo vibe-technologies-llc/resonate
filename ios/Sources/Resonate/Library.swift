@@ -810,6 +810,10 @@ final class Library {
     }
 
     func open(_ url: URL) {
+        if url.scheme?.lowercased() == "resonate" {
+            features.offerPairing(url.absoluteString)
+            return
+        }
         let folders = folders
         Task {
             do {

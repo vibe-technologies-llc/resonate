@@ -12,6 +12,7 @@ gpui.workspace = true
 image.workspace = true
 libc.workspace = true
 parking_lot.workspace = true
+qrcode.workspace = true
 resonate-core.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true

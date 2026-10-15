@@ -2,8 +2,10 @@ package org.resonate.android
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -39,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -125,13 +128,27 @@ fun SyncScreen(library: LibraryRepository) {
         notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         SyncSection("Pairing code") {
             val code = status?.code?.ifBlank { null } ?: config.key.ifBlank { null }
+            var revealed by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SelectionContainer(Modifier.weight(1f)) {
-                    Text(
-                        code ?: "Made when sync first starts",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontFamily = FontFamily.Monospace,
-                    )
+                Box(
+                    Modifier.weight(1f).clickable(enabled = code != null) { revealed = !revealed },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    SelectionContainer(
+                        Modifier.blur(if (revealed || code == null) 0.dp else 10.dp)
+                    ) {
+                        Text(
+                            code ?: "Made when sync first starts",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                    if (code != null && !revealed)
+                        Text(
+                            "Tap to show",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                 }
                 if (code != null)
                     IconButton(

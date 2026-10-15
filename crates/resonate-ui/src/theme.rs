@@ -787,6 +787,13 @@ const ROW_CONTROL: Control = Control::of(26.0, 14.0);
 const PICKER_WIDTH: f32 = 400.0;
 const LISTEN_WIDTH: f32 = 460.0;
 const LISTEN_COVER: f32 = 112.0;
+const PAIRING_TILE: f32 = 176.0;
+const STANDING_MARK: f32 = 40.0;
+const STANDING_MARK_ICON: f32 = 20.0;
+const DEVICE_MARK: f32 = 32.0;
+const DEVICE_MARK_ICON: f32 = 16.0;
+const SCANNED_PAPER: u32 = 0xffffff;
+const SCANNED_INK: u32 = 0x000000;
 const CONFIRM_WIDTH: f32 = 420.0;
 const DOWNLOADS_HEIGHT: f32 = 420.0;
 const DOWNLOADS_WIDTH: f32 = 440.0;
@@ -931,6 +938,11 @@ measures! {
     picker_width => PICKER_WIDTH,
     listen_width => LISTEN_WIDTH,
     listen_cover => LISTEN_COVER,
+    pairing_tile => PAIRING_TILE,
+    standing_mark => STANDING_MARK,
+    standing_mark_icon => STANDING_MARK_ICON,
+    device_mark => DEVICE_MARK,
+    device_mark_icon => DEVICE_MARK_ICON,
     confirm_width => CONFIRM_WIDTH,
     downloads_height => DOWNLOADS_HEIGHT,
     downloads_width => DOWNLOADS_WIDTH,
@@ -998,6 +1010,14 @@ measures! {
 
 pub fn width(value: f32) -> Pixels {
     px(value)
+}
+
+pub(crate) const fn scanned_paper() -> u32 {
+    SCANNED_PAPER
+}
+
+pub(crate) const fn scanned_ink() -> u32 {
+    SCANNED_INK
 }
 
 pub fn tinted(colour: u32, alpha: u8) -> Rgba {

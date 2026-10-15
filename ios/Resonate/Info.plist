@@ -92,6 +92,17 @@
 	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Resonate listens for a few seconds when you ask it to name the song playing around you.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.resonate.ios.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>resonate</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_resonate-sync._udp</string>

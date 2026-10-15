@@ -309,6 +309,7 @@ struct PairingSheet: View {
     @State private var confirmingJoin = false
     @State private var confirmingNew = false
     @State private var copies = 0
+    @State private var revealed = false
 
     var body: some View {
         let code = shownCode
@@ -317,12 +318,33 @@ struct PairingSheet: View {
             Form {
                 Section {
                     VStack(spacing: 16) {
-                        Text(code ?? "Made when sync first starts")
-                            .font(code == nil ? .body : .title3.monospaced().weight(.semibold))
-                            .foregroundStyle(code == nil ? .secondary : .primary)
-                            .multilineTextAlignment(.center)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity)
+                        if let code {
+                            Text(code)
+                                .font(.title3.monospaced().weight(.semibold))
+                                .multilineTextAlignment(.center)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity)
+                                .blur(radius: revealed ? 0 : 9)
+                                .privacySensitive()
+                                .overlay {
+                                    if !revealed {
+                                        Label("Tap to show", systemImage: "eye")
+                                            .font(.subheadline.weight(.semibold))
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 8)
+                                            .glassEffect(.regular, in: .capsule)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture { withAnimation(.smooth) { revealed.toggle() } }
+                                .accessibilityLabel(revealed ? code : "Pairing code, hidden")
+                                .accessibilityHint(revealed ? "Hides the code" : "Shows the code")
+                                .accessibilityAddTraits(.isButton)
+                        } else {
+                            Text("Made when sync first starts")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                        }
                         if let code {
                             HStack(spacing: 12) {
                                 Button {
@@ -342,7 +364,7 @@ struct PairingSheet: View {
                 } header: {
                     Text("This iPhone's code")
                 } footer: {
-                    Text("On your other device, open Device sync and enter this code.")
+                    Text("On your other device, open Device sync and enter this code. To pair with a computer, scan the QR code under its Settings › Sync with the Camera app.")
                 }
                 Section {
                     TextField("Pairing code", text: $joining)

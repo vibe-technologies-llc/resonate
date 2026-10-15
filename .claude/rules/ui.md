@@ -1304,19 +1304,31 @@ is never named.
   (`library.md`'s *Taking files in*). The handle lives in `ResonateApp::copying`; at event-loop end
   `run` winds it down (`wound_down`: cancel, wait up to `WIND_DOWN_WITHIN` 10 s) before the library's
   own pass. A file being copied is `.<name>.<pid>.resonate-part` until renamed into place whole.
-- **Device sync = two Online groups and three gestures** (`views/settings/sync.rs`, `sync.md`).
-  *Device sync*: switch, the pairing code, *Copy*, *Sync now* and *Regenerate pairing code* (armed
-  by the first press, `regenerating_the_code`; the second clears `sync-key` for the next start and
-  leaves a note until then), *Only this network* (`sync-nearby-only`; the server field is drawn only
-  while it is off), a row per other device (`reading` of its name and standing) with
-  *Remove* on one that is away (`Syncing::forget` by `SyncedDevice::id`), *Join with a code* (read
-  by `Stored::reads_as_a_code`, the binary's `SyncKey::from_code`, whether or not sync runs; blank
-  does nothing), device name, server; *Songs between devices*: the
-  three `sync-songs` switches. Each writes `ResonateApp::synchronised` and the file for the next
-  start; a reset never forgets the code. The `Syncing` seam on `Stored` (absent without the `sync`
-  feature) answers the rest: a playlist's menu offers *Fetch N missing songs from* each online
-  device and *Keep its songs here*; the queue heading offers *Continue from* up to two devices whose
-  last queue holds songs.
+- **Sync is a category of its own** (`Category::Sync`, `Icon::Sync`; `views/settings/sync.rs`,
+  `sync.md`), five groups:
+  - *Device sync*: the switch and a standing card (a tinted mark, `done`, accent, `failure` or
+    muted by `Mood`, a headline and a line under it read off `SyncShown`; *Sync now* while syncing),
+    and how many songs are on their way.
+  - *Pairing* (keyless): a `pairing_tile()` square that stays a cover (*Click to show*) until the
+    listener shows it, then the QR code of `SyncShown::link` (`resonate://pair/<code>`, the `qrcode`
+    crate, level M, painted as quads in runs of dark modules on `scanned_paper` with `scanned_ink`,
+    the one place a colour is not the palette's: a scanner wants black on white); beside it the code,
+    covered by `•` until shown, with *Show*/*Hide*, *Copy* and *New code* (armed by the first press,
+    `regenerating_the_code`; the second clears `sync-key` for the next start), then *Join another
+    device's code* (read by `Stored::reads_as_a_code`, the binary's `SyncKey::from_code`, whether or
+    not sync runs). `RootView::pairing_shown` falls back to covered with every armed press lowered
+    (leaving the category or the pane, or the pointer leaving the body) and after a new code.
+  - *Your devices* (keyless): this device first, then online before away, each a raised row with
+    its platform's mark (`Icon::Computer` or `Icon::Phone`, `SyncedPlatform`) and *On this network*,
+    *Online* or *Away*; one that is away has *Remove* (`Syncing::forget` by `SyncedDevice::id`).
+  - *Connection*: a `kit::segmented` of *Resonate's server*, *Your own server* (shows the server
+    field; `own_server_asked` holds the choice until an address is given) and *This network only*
+    (`sync-nearby-only`), the chosen one's meaning under it, then the device name.
+  - *Songs between devices*: the three `sync-songs` switches.
+  Each writes `ResonateApp::synchronised` and the file for the next start; a reset never forgets the
+  code. The `Syncing` seam on `Stored` (absent without the `sync` feature) answers the rest: a
+  playlist's menu offers *Fetch N missing songs from* each online device and *Keep its songs here*;
+  the queue heading offers *Continue from* up to two devices whose last queue holds songs.
 - **Discord = two Desktop groups; they write a global before a file.** *Discord* (switch, application
   id) and *What Discord shows* (text, picture, icon, bar, pause). Each control changes
   `ResonateApp::presence`, stores its `Setting`, hands the whole `Presence` to `Present::follow`. Id and

@@ -41,8 +41,8 @@ pub use crate::{
     settings::{
         Asking, Bindings, CaretBlink, Ephemeral, HandedOff, Online, Places, Present, Registering,
         Setting, SettingChange, SettingKey, Settings, SettingsCategory, Sourcing, Stored,
-        Supplying, SyncShown, SyncStanding, SyncedDevice, Synchronised, Syncing, Tabs,
-        WindowButtons, WindowSize,
+        Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
+        Tabs, WindowButtons, WindowSize,
     },
     views::{Pane, RootView},
 };

@@ -114,7 +114,13 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   Resonate's server, your own server with its address, or *This network only*, which is
   `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
-  is `Features.newSyncGroup`. No page names the hosted server's domain. A device that is away and
+  is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
+  tapped, and covered again whenever the sheet opens. **A computer is paired by the system
+  camera**: `Info.plist` registers the `resonate` URL scheme, so the Camera app or the Control
+  Centre scanner opens the desktop's QR code (`resonate://pair/<code>`) in Resonate; `Library.open`
+  hands it to `Features.offerPairing` (`sync_code_in_link`), and the root view asks *Join these
+  devices?* before `joinSync` (which also turns sync on) and opens the sync page. Resonate itself
+  never touches the camera, so it asks for no camera permission. No page names the hosted server's domain. A device that is away and
   not this iPhone swipes (or long-presses) to *Remove*; the section's menu removes every such one
   (`forgetSyncDevices`, `sync_forget_device` by id); rows are keyed by `SyncedDevice.id`, since a
   reinstalled phone keeps its name. Landing a received song backs off per song

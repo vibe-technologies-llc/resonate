@@ -26,7 +26,7 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
-    key::{Derived, hex, random_bytes},
+    key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me},
     nearby::{
         BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here, beacon_bytes,
@@ -407,6 +407,10 @@ impl Sync {
 
     pub fn code(&self) -> &str {
         &self.code
+    }
+
+    pub fn link(&self) -> String {
+        format!("{PAIRING_LINK}{}", self.code)
     }
 
     pub const fn device(&self) -> DeviceId {

@@ -37,19 +37,21 @@ pub enum SettingsCategory {
     Library,
     Filters,
     Online,
+    Sync,
     Desktop,
     Appearance,
     About,
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Output,
         Self::Processing,
         Self::Equaliser,
         Self::Library,
         Self::Filters,
         Self::Online,
+        Self::Sync,
         Self::Desktop,
         Self::Appearance,
         Self::About,
@@ -63,6 +65,7 @@ impl SettingsCategory {
             Self::Library => "library",
             Self::Filters => "filters",
             Self::Online => "online",
+            Self::Sync => "sync",
             Self::Desktop => "desktop",
             Self::Appearance => "appearance",
             Self::About => "about",
@@ -860,10 +863,19 @@ pub enum SyncStanding {
     Nearby,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncedPlatform {
+    Linux,
+    Android,
+    Ios,
+    Other,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncedDevice {
     pub id: String,
     pub name: String,
+    pub platform: SyncedPlatform,
     pub online: bool,
     pub nearby: bool,
     pub this: bool,
@@ -873,6 +885,7 @@ pub struct SyncedDevice {
 pub struct SyncShown {
     pub standing: SyncStanding,
     pub code: String,
+    pub link: String,
     pub devices: Vec<SyncedDevice>,
     pub moving: usize,
 }

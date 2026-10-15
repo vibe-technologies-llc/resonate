@@ -24,7 +24,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   `PairingCode` is Crockford base32 (32 symbols) plus 3 check symbols (low five bits of the first
   three SHA-256 bytes), written in groups of five. Parsing drops dashes and spaces, ignores case and
   reads `I`/`L` as `1`, `O` as `0`; a wrong length, symbol or check is a typed `CodeRefused`.
-  `Debug` prints `<withheld>`; `config.rs` withholds `sync-key`.
+  `Debug` prints `<withheld>`; `config.rs` withholds `sync-key`. **The code travels as a link
+  too**: `SyncKey::link` is `PAIRING_LINK` (`resonate://pair/`) and the code, `from_link` reads it
+  back or a bare code (`a_pairing_link_reads_back_as_its_key_and_a_bare_code_reads_too`). The
+  desktop draws it as a QR code (`ui.md`); the iPhone opens it from the system camera through its
+  `resonate` URL scheme (`ios.md`), so no app of ours asks for the camera.
 - **HKDF-SHA256 (salt `resonate-sync/1`) derives everything, one `info` each**: `space` (16 bytes,
   the `SpaceId` the server files records under), `token` (32 bytes, the bearer the server keeps
   the SHA-256 of), `seal` (ChaCha20-Poly1305 key), `peer` (an Ed25519 seed). The server sees a

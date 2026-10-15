@@ -1413,6 +1413,7 @@ fn settings_category(text: &str) -> Option<&'static str> {
         "library" => Some("library"),
         "filters" => Some("filters"),
         "online" => Some("online"),
+        "sync" => Some("sync"),
         "desktop" => Some("desktop"),
         "appearance" => Some("appearance"),
         "about" => Some("about"),

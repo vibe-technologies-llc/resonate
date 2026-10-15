@@ -12,6 +12,7 @@ impl Category {
             Self::Library => "Library",
             Self::Filters => "Filters",
             Self::Online => "Online",
+            Self::Sync => "Sync",
             Self::Desktop => "Desktop",
             Self::Appearance => "Appearance",
             Self::About => "About",
@@ -34,6 +35,10 @@ impl Category {
             Self::Online => {
                 "What is looked up about the library, and what a request says about you"
             }
+            Self::Sync => {
+                "Your other devices kept in step: pairing them, who is there, how they meet and \
+                 which songs travel"
+            }
             Self::Desktop => "What this player tells the rest of the session about itself",
             Self::Appearance => {
                 "The palette the window is painted in, how large it is drawn, what its titlebar \
@@ -52,6 +57,7 @@ impl Category {
             Self::Library => Icon::Folder,
             Self::Filters => Icon::Search,
             Self::Online => Icon::Globe,
+            Self::Sync => Icon::Sync,
             Self::Desktop => Icon::Info,
             Self::Appearance => Icon::Appearance,
             Self::About => Icon::Info,
@@ -112,6 +118,9 @@ pub(crate) enum Group {
     Lastfm,
     LookUpNow,
     Syncing,
+    Pairing,
+    SyncDevices,
+    SyncConnection,
     SyncedSongs,
     Notifications,
     Discord,
@@ -131,7 +140,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 61] = [
+    pub(crate) const ALL: [Self; 64] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -177,6 +186,9 @@ impl Group {
         Self::Lastfm,
         Self::LookUpNow,
         Self::Syncing,
+        Self::Pairing,
+        Self::SyncDevices,
+        Self::SyncConnection,
         Self::SyncedSongs,
         Self::Notifications,
         Self::Discord,
@@ -239,9 +251,12 @@ impl Group {
             | Self::Listening
             | Self::Submitting
             | Self::Lastfm
-            | Self::LookUpNow
-            | Self::Syncing
-            | Self::SyncedSongs => Category::Online,
+            | Self::LookUpNow => Category::Online,
+            Self::Syncing
+            | Self::Pairing
+            | Self::SyncDevices
+            | Self::SyncConnection
+            | Self::SyncedSongs => Category::Sync,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
             | Self::Layout
@@ -308,6 +323,9 @@ impl Group {
             Self::LookUpNow => "Look up now",
             Self::Notifications => "Notifications",
             Self::Syncing => "Device sync",
+            Self::Pairing => "Pairing",
+            Self::SyncDevices => "Your devices",
+            Self::SyncConnection => "Connection",
             Self::SyncedSongs => "Songs between devices",
             Self::Discord => "Discord",
             Self::DiscordShows => "What Discord shows",
@@ -378,6 +396,9 @@ impl Group {
             Self::LookUpNow => LOOKUP_HINT,
             Self::Notifications => NOTIFICATIONS_HINT,
             Self::Syncing => SYNCING_HINT,
+            Self::Pairing => PAIRING_HINT,
+            Self::SyncDevices => SYNC_DEVICES_HINT,
+            Self::SyncConnection => SYNC_CONNECTION_HINT,
             Self::SyncedSongs => SYNCED_SONGS_HINT,
             Self::Discord => DISCORD_HINT,
             Self::DiscordShows => DISCORD_SHOWS_HINT,
@@ -520,9 +541,16 @@ impl Group {
                 "rich presence status activity listening profile application id client"
             }
             Self::Syncing => {
-                "sync synchronise synchronize devices phone android pair pairing code server \
-                 account cloud playlists favourites history handoff regenerate new code remove \
-                 forget stale old device nearby network lan local wifi offline"
+                "sync synchronise synchronize devices playlists favourites history handoff now \
+                 status"
+            }
+            Self::Pairing => {
+                "pair pairing code qr scan camera join regenerate new code phone iphone android \
+                 link"
+            }
+            Self::SyncDevices => "devices phone iphone android computer remove forget stale old",
+            Self::SyncConnection => {
+                "server self hosted own nearby network lan local wifi offline name device"
             }
             Self::SyncedSongs => {
                 "sync copy transfer download songs files phone android peer playlists favourites \
@@ -623,8 +651,9 @@ impl Group {
                 SettingKey::LastfmSession,
             ],
             Self::Notifications => &[SettingKey::Notify],
-            Self::Syncing => &[
-                SettingKey::Sync,
+            Self::Syncing => &[SettingKey::Sync],
+            Self::Pairing | Self::SyncDevices => &[],
+            Self::SyncConnection => &[
                 SettingKey::SyncNearbyOnly,
                 SettingKey::SyncServer,
                 SettingKey::SyncDevice,
@@ -1088,6 +1117,20 @@ pub(crate) const SYNCING_HINT: &str = "Keeps your playlists, favourites, listeni
                                        what each device was playing the same on every device that \
                                        shares this pairing code. What travels is sealed on this \
                                        device first; the server holds only what it cannot read.";
+
+pub(crate) const PAIRING_HINT: &str = "A device joins this one by its pairing code: scan the \
+                                       code with a phone's camera, or type it in. The code is \
+                                       the key to everything your devices share, so it stays \
+                                       covered until you show it.";
+
+pub(crate) const SYNC_DEVICES_HINT: &str = "Every device that shares the pairing code, whether it \
+                                            is online, on this network or away. One that is away \
+                                            can be taken off every device's list.";
+
+pub(crate) const SYNC_CONNECTION_HINT: &str = "How your devices meet: through Resonate's server, \
+                                               a server of your own, or only on this network \
+                                               with no server at all. Devices on one network \
+                                               always meet directly.";
 
 pub(crate) const SYNCED_SONGS_HINT: &str = "Songs never pass through the server: while two of \
                                             your devices are online they are sent from one to the \

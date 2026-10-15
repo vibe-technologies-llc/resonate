@@ -178,10 +178,10 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || worn.progress != off.progress
                 || worn.while_paused != off.while_paused
         }
-        Group::Syncing => {
+        Group::Syncing => standing.synchronised.enabled != AS_BUILT.synchronised.enabled,
+        Group::SyncConnection => {
             let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
-            worn.enabled != built.enabled
-                || worn.nearby_only != built.nearby_only
+            worn.nearby_only != built.nearby_only
                 || worn.server != built.server
                 || worn.device != built.device
         }
@@ -217,6 +217,8 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || standing.remember_settings_category != REMEMBER_SETTINGS_CATEGORY
         }
         Group::Bands
+        | Group::Pairing
+        | Group::SyncDevices
         | Group::Measured
         | Group::Folders
         | Group::Scanning
@@ -302,6 +304,9 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Discord
         | Group::DiscordShows
         | Group::Syncing
+        | Group::Pairing
+        | Group::SyncDevices
+        | Group::SyncConnection
         | Group::SyncedSongs
         | Group::LookUpNow
         | Group::Build

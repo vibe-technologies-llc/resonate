@@ -21,7 +21,7 @@ pub use crate::{
         PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
-    key::{Derived, DeviceId, SpaceId, SyncKey, Token},
+    key::{Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me},
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
     quic::{read_frame, send_frame, transport},

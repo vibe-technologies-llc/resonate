@@ -696,12 +696,19 @@ impl resonate_ui::Syncing for Running {
                 Standing::Nearby => resonate_ui::SyncStanding::Nearby,
             },
             code: self.sync.code().to_owned(),
+            link: self.sync.link(),
             devices: shown
                 .devices
                 .into_iter()
                 .map(|device| resonate_ui::SyncedDevice {
                     id: device.id.to_string(),
                     name: device.name,
+                    platform: match device.platform {
+                        Platform::Linux => resonate_ui::SyncedPlatform::Linux,
+                        Platform::Android => resonate_ui::SyncedPlatform::Android,
+                        Platform::Ios => resonate_ui::SyncedPlatform::Ios,
+                        Platform::Other => resonate_ui::SyncedPlatform::Other,
+                    },
                     online: device.online,
                     nearby: device.nearby,
                     this: device.this,
