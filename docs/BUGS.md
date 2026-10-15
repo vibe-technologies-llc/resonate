@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] "All time" in Statistics is the last 366 days (`DAYS_SHOWN_AT_MOST`): the chart, its total and
-  *Busiest day* cover a year while the *Listened* tile covers all; the chart's end labels carry no
-  year
 - [S] `FilterSheet` puts *Reset* in the cancel position and applies it at once, with no Cancel; its
   Album field is folded equality (`Dark Side` matches nothing) and its Artist picker lists album
   artists the track-artist filter does not match; *More from <artist>* is the artist of the single

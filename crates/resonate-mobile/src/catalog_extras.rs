@@ -18,6 +18,16 @@ const DAYS_SHOWN_AT_MOST: u32 = 366;
 
 const SECONDS_A_DAY: i64 = 86_400;
 
+const EVERY_DAY: i64 = -1;
+
+fn days_shown(days: u32) -> i64 {
+    if days == 0 {
+        EVERY_DAY
+    } else {
+        i64::from(DAYS_SHOWN_AT_MOST)
+    }
+}
+
 const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min(coalesce(nullif(d.album_artist, ''), d.artist)), count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.album_key != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY d.album_key ORDER BY listened DESC, count(*) DESC, min(d.album) COLLATE NOCASE LIMIT ?2";
 
 const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
@@ -178,7 +188,7 @@ impl Catalog {
         let mut query = connection.prepare(LISTENING_BY_DAY).map_err(read_error)?;
         let mut by_day = query
             .query_map(
-                params![days, i64::from(utc_offset_seconds), DAYS_SHOWN_AT_MOST],
+                params![days, i64::from(utc_offset_seconds), days_shown(days)],
                 |row| {
                     let day = row.get::<_, i64>(0)?;
                     Ok(ListenedOnDay {
@@ -328,6 +338,41 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn all_time_lists_every_day_heard_and_a_year_lists_at_most_a_year_of_them() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = catalog
+            .upsert(Track {
+                uri: "content://test/song.flac".into(),
+                name: "song.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song")
+            .id as i64;
+        let now: i64 = catalog
+            .0
+            .lock()
+            .query_row("SELECT unixepoch()", [], |row| row.get(0))
+            .expect("the time");
+        for back in 0..500 {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, 1000, 1)",
+                    params![song, now - back * SECONDS_A_DAY],
+                )
+                .expect("a listen");
+        }
+
+        let everything = catalog.listening_detail(0, 10, 0).expect("all time");
+        let year = catalog.listening_detail(365, 10, 0).expect("a year");
+
+        assert!(everything.days.len() >= 500);
+        assert!(year.days.len() <= usize::try_from(DAYS_SHOWN_AT_MOST).expect("a small count"));
+        assert!(year.days.len() >= 365);
     }
 
     #[test]

@@ -359,7 +359,8 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
-  weeks for a year, months for all time, the day cut at the phone's offset) that a tap or a drag
+  weeks for a year, months for all time, the day cut at the phone's offset; all time reads every day
+  heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
   selects a bar of to read its time and plays; most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
   `Destination.artist(name)`); and the library in shares (`library_breakdown`: formats, sample

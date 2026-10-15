@@ -202,7 +202,7 @@ struct StatisticsTiles: View {
             StatTile(
                 title: "Busiest day",
                 value: busiest.map { StatisticsView.brief($0.listenedMs) } ?? "None",
-                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(.dateTime.day().month(.abbreviated)) },
+                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(span == 0 || span == 365 ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated)) },
                 symbol: "flame"
             )
             StatTile(
@@ -286,6 +286,14 @@ struct ListeningBar: Identifiable, Equatable {
         return bars.values.sorted { $0.starts < $1.starts }
     }
 
+    static func edgeFormat(for span: UInt32) -> Date.FormatStyle {
+        switch span {
+        case 0: .dateTime.month(.abbreviated).year()
+        case 365: .dateTime.day().month(.abbreviated).year()
+        default: .dateTime.day().month(.abbreviated)
+        }
+    }
+
     func caption(span: UInt32) -> String {
         switch span {
         case 0: starts.formatted(.dateTime.month(.wide).year())
@@ -326,9 +334,9 @@ struct ListeningChart: View {
             }
             .frame(height: height)
             HStack {
-                Text(bars.first?.starts ?? .now, format: .dateTime.day().month(.abbreviated))
+                Text(bars.first?.starts ?? .now, format: ListeningBar.edgeFormat(for: span))
                 Spacer()
-                Text(bars.last?.starts ?? .now, format: .dateTime.day().month(.abbreviated))
+                Text(bars.last?.starts ?? .now, format: ListeningBar.edgeFormat(for: span))
             }
             .font(.caption)
             .foregroundStyle(.secondary)

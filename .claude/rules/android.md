@@ -262,7 +262,7 @@ position edits, and have bounded in-session undo; they never invent Linux paths.
 the albums (by the catalog's `album_key`) and artists (by folded name) heard most in the window,
 ranked by heard time then plays, at most `MOST_LISTENED_AT_MOST` (100), and the listening per day
 (counted listens, a day cut at the caller's UTC offset, the latest `DAYS_SHOWN_AT_MOST` days oldest
-first, `ListenedOnDay.starts` the unix second that day began). Hidden songs and uncounted listens
+first, every day heard for all time (`days` 0), `ListenedOnDay.starts` the unix second that day began). Hidden songs and uncounted listens
 are left out, as in `statistics(days)`; `songs_heard` counts the distinct songs and `first_heard`
 is the earliest counted listen in the window. `library_breakdown()` is what the library holds
 regardless of listening: the eight most common formats (codec), sample rates (`44.1 kHz`), genres
