@@ -298,6 +298,7 @@ final class BackdropMetalView: UIView {
 
     private let renderer: BackdropRenderer
     private var link: CAMetalDisplayLink?
+    private var drewFirstFrame = false
 
     init(device: any MTLDevice, renderer: BackdropRenderer) {
         self.renderer = renderer
@@ -327,7 +328,16 @@ final class BackdropMetalView: UIView {
         let size = CGSize(width: bounds.width * Self.drawingScale, height: bounds.height * Self.drawingScale)
         guard let metal = metalLayer, size.width >= 1, size.height >= 1, metal.drawableSize != size else { return }
         metal.drawableSize = size
+        if !drewFirstFrame { drawFirstFrame(on: metal) }
         redrawIfStill()
+    }
+
+    private func drawFirstFrame(on metal: CAMetalLayer) {
+        guard let drawable = metal.nextDrawable() else { return }
+        drewFirstFrame = true
+        metal.presentsWithTransaction = true
+        renderer.draw(on: drawable, at: CACurrentMediaTime(), withTransaction: true)
+        metal.presentsWithTransaction = false
     }
 
     override func didMoveToWindow() {
@@ -437,7 +447,7 @@ final class BackdropRenderer {
         crossfadeBegan = now
     }
 
-    func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
+    func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval, withTransaction: Bool = false) {
         let step = Float(min(max(moment - (lastFrame ?? moment), 0), Self.longestStep))
 
         lastFrame = moment
@@ -461,8 +471,14 @@ final class BackdropRenderer {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         BackdropPipeline.reportFailures(of: commands)
-        commands.present(drawable)
-        commands.commit()
+        if withTransaction {
+            commands.commit()
+            commands.waitUntilScheduled()
+            drawable.present()
+        } else {
+            commands.present(drawable)
+            commands.commit()
+        }
     }
 
     private func advance(by step: Float, at moment: CFTimeInterval) {
