@@ -196,6 +196,7 @@ final class Library {
     @ObservationIgnored private var catalogIndex: [UInt64: Int] = [:]
     @ObservationIgnored private var marking = false
     @ObservationIgnored private var shownFailure: String?
+    @ObservationIgnored private var hidingFailure: String?
     @ObservationIgnored private var pollFailures: [PollPart: String] = [:]
     @ObservationIgnored private var statusSerial = 0
     @ObservationIgnored private var fading: Task<Void, Never>?
@@ -298,6 +299,7 @@ final class Library {
                 let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
                 pollFailures[.snapshot] = nil
+                if steeringFresh { steered = Steered() }
                 publish(steeringFresh ? state : steered.applied(to: state))
                 switch rows {
                 case .success(let read):
@@ -587,6 +589,7 @@ final class Library {
 
     private func steer(_ change: (inout Steered) -> Void, _ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
         steering.ask()
+        nudgePoll()
         change(&steered)
         if let shown = snapshot {
             let expected = steered.applied(to: shown)
@@ -594,7 +597,6 @@ final class Library {
         }
         attempt(action) { [self] failure in
             steering.answer()
-            if steering.settled { steered = Steered() }
             if let failure { report(failure) }
         }
     }
@@ -929,7 +931,13 @@ final class Library {
     private func hideSongs(under folder: String) async {
         guard let native = try? await player() else { return }
         let prefix = "\(Folders.scheme)://\(folder)/"
-        guard let changed = try? await Work.aside({ try native.hideSongsUnder(prefix: prefix) }) else { return }
+        let changed: MissingSongs
+        do {
+            changed = try await Work.aside { try native.hideSongsUnder(prefix: prefix) }
+        } catch {
+            report(error)
+            return
+        }
         if changed.leftTheQueue > 0 { await rereadQueue() }
         if changed.hidden > 0 {
             await refresh()
@@ -1130,7 +1138,16 @@ final class Library {
         let prefixes = await folders.refreshed()
             .filter(\.readable)
             .map { "\(Folders.scheme)://\($0.id)/" }
-        guard let changed = try? await Work.aside({ try native.hideMissingSongs(prefixes: prefixes) }) else { return nil }
+        let changed: MissingSongs
+        do {
+            changed = try await Work.aside { try native.hideMissingSongs(prefixes: prefixes) }
+            hidingFailure = nil
+        } catch {
+            let text = explained(error)
+            if text != hidingFailure { report(error) }
+            hidingFailure = text
+            return nil
+        }
         if changed.leftTheQueue > 0 { await rereadQueue() }
         guard changed.hidden > 0 || changed.restored > 0 else { return changed }
         await refresh()
@@ -1161,6 +1178,7 @@ final class Library {
     }
 
     private func show(_ text: String, as kind: StatusMessage.Kind) {
+        if kind == .notice, status?.kind == .failure { return }
         statusSerial += 1
         let shown = StatusMessage(text: text, kind: kind, serial: statusSerial)
 

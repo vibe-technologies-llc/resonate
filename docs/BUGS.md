@@ -164,19 +164,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## iOS
-- [S] `Library.steer` never calls `nudgePoll` (only `request` does): after Play, Pause, Shuffle,
-  Repeat or a tapped song the next poll waits the interval of the old snapshot, 1 s paused in front
-  and 2 s behind, so the title, clock and lock-screen rate and elapsed time lag the tap
-- [S] `Library.poll` applies `steered` after `await read(queueOf:)`, which is due after every
-  `play`: a command answered during the queue read has already reset `steered`, so the snapshot
-  taken before it is published raw and Now Playing flips back to the old song or transport until the
-  next poll
-- [S] `Library.show` lets any later notice replace an undismissed failure, and the failure is
-  already marked shown (`shownFailure`, `pollFailures`): a scan tally or "Added to queue" wipes an
-  engine or poll failure that is then never raised again
-- [S] `Library.hideSongs(under:)` and `forgetMissing` drop a failing `hide_songs_under` or
-  `hide_missing_songs` with `try?`: a removed folder's songs stay listed, and a failing pass repeats
-  at every foregrounding, silently
 - [S] The *Player volume* slider (`ProcessingView`) sends `set_volume` and nothing keeps it
   (`PlaybackPreferences` and `Resumption` carry no volume; the engine starts at `Volume::MAX`): a
   trimmed volume is back at full after a relaunch, and the thumb lags the finger since it reads

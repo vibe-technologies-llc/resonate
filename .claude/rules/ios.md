@@ -81,7 +81,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
-  keeps the steered values and leaves `queue` alone (`Settling` counts asked against answered).
+  keeps the steered values and leaves `queue` alone (`Settling` counts asked against answered); the steered values outlive their command's answer and are dropped only by a poll that began after it, so an answer landing during that poll's queue read never publishes the older snapshot raw. Every steer wakes the poll (`nudgePoll`).
   A favourite flips everywhere at once (catalog, browser, queue, snapshot, open playlist, top
   tracks, Inspector) and flips back with a notice if the write fails; hearts read
   `isFavourite(_:)`, the catalog's live answer by id, so a stale `Track` value never shows a stale
@@ -100,7 +100,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
   hang) and the keychain reads at launch (`Features.readSecrets`) run on `Work.aside`, never the main actor.
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
-  6 s; a failure stays until dismissed. The engine's `failure` is shown once per distinct text per
+  6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` is shown once per distinct text per
   song, and a poll failure once until that part of polling recovers, so a dismissal holds. The
   snapshot, the queue read and the save are three parts of a tick, each failing and recovering on
   its own: a queue or save that fails never discards the snapshot already taken (which holds the
@@ -111,7 +111,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   Sync reports once as well: songs landing from other devices are counted and told in one notice
   when the transfers stop, a landing failure is told once per distinct text, and a failing sync
   poll once until it recovers.
-  A song whose file has gone is hidden, never deleted (`hide_missing_songs`, given the readable
+  A pass that fails (`hide_songs_under`, `hide_missing_songs`) is reported, once per distinct text for the pass that repeats at every foregrounding. A song whose file has gone is hidden, never deleted (`hide_missing_songs`, given the readable
   folders' prefixes; `documents.missing`) at launch, whenever the scene comes forward again after
   `.background` (an `.inactive` blip of Control Centre, a permission prompt or a call banner opens
   nothing: each pass opens every document and measures every folder), after a
