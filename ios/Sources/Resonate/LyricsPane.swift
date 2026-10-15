@@ -418,9 +418,7 @@ enum LyricPace {
     static let sparingFrame: TimeInterval = 1.0 / 30
 
     static var frameCap: TimeInterval? {
-        let info = ProcessInfo.processInfo
-        let hot = info.thermalState == .serious || info.thermalState == .critical
-        return info.isLowPowerModeEnabled || hot ? sparingFrame : nil
+        ProcessInfo.processInfo.sparesFrames ? sparingFrame : nil
     }
 
     static let turn: TimeInterval = 0.42

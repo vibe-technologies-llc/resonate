@@ -18,6 +18,7 @@ final class RoomCorrectionState {
     private(set) var name: String?
     private(set) var kept: RoomCorrection?
     private(set) var reading = false
+    @ObservationIgnored private var changing: Task<Void, Never>?
 
     init(library: Library) {
         self.library = library
@@ -27,7 +28,7 @@ final class RoomCorrectionState {
 
     func restore(_ native: MobilePlayer) {
         let on = on
-        Task {
+        queue { [self] in
             do {
                 kept = try await Work.aside { try native.keptRoomCorrection() }
                 if on {
@@ -42,18 +43,14 @@ final class RoomCorrectionState {
     }
 
     func turn(_ wanted: Bool) {
-        library.request({ native in try native.applyRoomCorrection(on: wanted) }) { [weak self] applied in
-            self?.kept = applied ?? self?.kept
-            self?.remember(on: wanted && applied != nil)
-            if wanted, applied == nil { self?.gone() }
-        }
+        queue { [self] in await apply(wanted) }
     }
 
     func choose(_ url: URL) {
         let named = url.deletingPathExtension().lastPathComponent
         let extensionName = url.pathExtension
         reading = true
-        Task {
+        queue { [self] in
             defer { reading = false }
             do {
                 let native = try await library.player()
@@ -65,7 +62,7 @@ final class RoomCorrectionState {
                 self.kept = kept
                 name = named
                 settings.set(named, forKey: Self.nameKey)
-                turn(true)
+                await apply(true)
             } catch {
                 library.report(error)
             }
@@ -73,11 +70,37 @@ final class RoomCorrectionState {
     }
 
     func forget() {
-        library.request({ native in try native.forgetRoomCorrection() }) { [weak self] in
-            self?.kept = nil
-            self?.name = nil
-            self?.settings.removeObject(forKey: Self.nameKey)
-            self?.remember(on: false)
+        queue { [self] in
+            do {
+                let native = try await library.player()
+                try await Work.aside { try native.forgetRoomCorrection() }
+                kept = nil
+                name = nil
+                settings.removeObject(forKey: Self.nameKey)
+                remember(on: false)
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    private func queue(_ step: @escaping @MainActor () async -> Void) {
+        let previous = changing
+        changing = Task {
+            await previous?.value
+            await step()
+        }
+    }
+
+    private func apply(_ wanted: Bool) async {
+        do {
+            let native = try await library.player()
+            let applied = try await Work.aside { try native.applyRoomCorrection(on: wanted) }
+            kept = applied ?? kept
+            remember(on: wanted && applied != nil)
+            if wanted, applied == nil { gone() }
+        } catch {
+            library.report(error)
         }
     }
 

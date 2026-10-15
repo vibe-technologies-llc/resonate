@@ -160,7 +160,7 @@ final class Library {
     var preferences: PlaybackPreferences?
     private(set) var volume: Float = 1
     var route: OutputRoute?
-    var routeReading = RouteReading.current
+    var routeReading = RouteReading.unread
     var boundRoutes: [OutputRoute] = []
     var filter: TrackFilter = defaultTrackFilter()
     var folderList: [MusicFolder] = [] {
@@ -174,7 +174,10 @@ final class Library {
         didSet { findPlayingRow() }
     }
     private(set) var favouriteIds: Set<UInt64> = []
-    private(set) var favouriteTracks: [Track] = []
+    private(set) var favouriteTracks: [Track] = [] {
+        didSet { favouriteEpoch &+= 1 }
+    }
+    private(set) var favouriteEpoch = 0
     @ObservationIgnored private var favouriteWrites: [UInt64: FavouriteWrite] = [:]
     @ObservationIgnored private var favouriteSerial = 0
 
@@ -236,7 +239,7 @@ final class Library {
                     try MobilePlayer(folder: folder, documents: documents)
                 }
                 guard let self else { return }
-                route = OutputRoute.current
+                route = await Work.inSession { OutputRoute.current }
                 boundRoutes = preferencesStore.boundRoutes()
                 let stored = preferencesStore.read(for: route)
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
@@ -252,7 +255,7 @@ final class Library {
                 waiting.removeAll()
                 nowPlaying.start(opened)
                 features.initialize(opened)
-                await refresh()
+                Task { await refresh() }
                 await poll(opened)
             } catch {
                 guard let self else { return }
@@ -460,7 +463,10 @@ final class Library {
         let shownTransport = state?.transport ?? .stopped
         let next = state.flatMap(Self.askedNext(in:))
 
-        if transport != shownTransport { transport = shownTransport }
+        if transport != shownTransport {
+            transport = shownTransport
+            features.tapHoldersChanged()
+        }
         if playingTrack != state?.current { playingTrack = state?.current }
         if playingNext != next { playingNext = next }
     }

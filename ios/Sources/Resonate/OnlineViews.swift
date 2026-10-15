@@ -400,7 +400,7 @@ struct OnlinePlaceholder: View {
             Image(systemName: symbol).foregroundStyle(.secondary)
         }
         .frame(width: edge, height: edge)
-        .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8, style: .continuous)))
+        .modifier(ArtworkClip(circle: circle, corner: 8))
         .accessibilityHidden(true)
     }
 }

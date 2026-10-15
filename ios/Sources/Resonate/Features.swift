@@ -32,6 +32,7 @@ struct WantedSaving: Sendable {
 @MainActor
 @Observable
 final class Features {
+    private static let landingJournalKey = "unfinished-sync-landing"
     private static let scrobbleEvery: Duration = .seconds(30)
     private static let syncForeground: Duration = .seconds(2)
     private static let syncBackground: Duration = .seconds(30)
@@ -141,6 +142,8 @@ final class Features {
     @ObservationIgnored private var network: NWPathMonitor?
     @ObservationIgnored private var power: (any NSObjectProtocol)?
     @ObservationIgnored private var arriving: Task<Void, Never>?
+    @ObservationIgnored private var landing: Task<Void, Never>?
+    @ObservationIgnored private var landedSongs = 0
     @ObservationIgnored private(set) var unmetered = false
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
@@ -148,6 +151,7 @@ final class Features {
             library.nudgePoll()
             enrichment.foregroundChanged(foreground)
             downloads.foregroundChanged(foreground)
+            tapHoldersChanged()
         }
     }
     @ObservationIgnored private var landingRefused: [UInt64: RefusedLanding] = [:]
@@ -196,9 +200,13 @@ final class Features {
     private func begin(_ native: MobilePlayer) {
         downloads.recover(native)
         downloads.wantsChanged()
-        if let left = settings.string(forKey: "unfinished-sync-landing") {
-            library.folders.delete(left)
-            settings.removeObject(forKey: "unfinished-sync-landing")
+        if let left = settings.string(forKey: Self.landingJournalKey) {
+            let folders = library.folders
+            Task { [weak self] in
+                _ = try? await Work.aside { folders.delete(left) }
+                guard let self, settings.string(forKey: Self.landingJournalKey) == left else { return }
+                settings.removeObject(forKey: Self.landingJournalKey)
+            }
         }
         submitting?.cancel()
         submitting = Task { [weak self] in await self?.submitScrobbles(native) }
@@ -315,14 +323,16 @@ final class Features {
     }
 
     func saveSync(_ config: SyncConfig) {
-        do {
-            try accounts.writeSync(config)
-        } catch {
-            library.report(error)
-            return
-        }
+        let previous = syncConfig
+        let store = accounts
         syncConfig = config
         work { [weak self] native in
+            do {
+                try await Work.inSecrets { try store.writeSync(config) }
+            } catch {
+                if self?.syncConfig == config { self?.syncConfig = previous }
+                throw error
+            }
             try await self?.applySync(native)
         }
     }
@@ -468,19 +478,23 @@ final class Features {
     func stopForErasing() async {
         let polling = syncPolling
         let arrivals = arriving
+        let landed = landing
         syncPolling = nil
         arriving = nil
+        landing = nil
         polling?.cancel()
         arrivals?.cancel()
+        landed?.cancel()
         submitting?.cancel()
         visualization?.cancel()
         onlinePending?.cancel()
         await polling?.value
         await arrivals?.value
+        await landed?.value
         nearby?.follow(record: nil)
         syncAskedAt = nil
         listening.stop()
-        enrichment.stopForErasing()
+        await enrichment.stopForErasing()
         await downloads.stopForErasing()
     }
 
@@ -557,10 +571,15 @@ final class Features {
             }
             let free = unmetered
             try await Work.inSync { native.syncNetwork(unmetered: free) }
-            if !status.code.isEmpty, var latest = syncConfig, latest.key == config.key, latest.key != status.code {
-                latest.key = status.code
-                try accounts.writeSync(latest)
-                syncConfig = latest
+            if !status.code.isEmpty, var minted = syncConfig, minted.key == config.key, minted.key != status.code {
+                minted.key = status.code
+                let written = minted
+                let store = accounts
+                try await Work.inSecrets { try store.writeSync(written) }
+                if var latest = syncConfig, latest.key == config.key {
+                    latest.key = status.code
+                    syncConfig = latest
+                }
             }
             syncStatus = status
             await announceNearby(native)
@@ -610,7 +629,6 @@ final class Features {
 
     private func pollSync(_ native: MobilePlayer) async {
         var arrivals: UInt64 = 0
-        var kept = 0
         var failing = false
         while !Task.isCancelled {
             try? await Task.sleep(for: syncAskedAt != nil ? Self.syncAsked : foreground || transferring ? Self.syncForeground : Self.syncBackground)
@@ -629,10 +647,16 @@ final class Features {
                 transfers.hold(transferring)
                 if transferring { transfers.progress(Self.fetched(status)) }
                 answerSyncAsked(status)
-                if !waiting.isEmpty { kept += await landReceived(native, waiting) }
-                if kept > 0, !transferring {
-                    library.notice("Kept \(counted(kept, "song")) from your devices")
-                    kept = 0
+                if !waiting.isEmpty, landing == nil {
+                    landing = Task { [weak self] in
+                        guard let self else { return }
+                        landedSongs += await landReceived(native, waiting)
+                        landing = nil
+                    }
+                }
+                if landedSongs > 0, !transferring, landing == nil {
+                    library.notice("Kept \(counted(landedSongs, "song")) from your devices")
+                    landedSongs = 0
                 }
                 if syncHandoffs != handoffs { syncHandoffs = handoffs }
                 if arrivals != status.arrivals {
@@ -689,19 +713,19 @@ final class Features {
             let name = received.name
             var created: String?
             do {
-                let (uri, descriptor) = try folders.fresh(in: folder.id, named: name)
+                let (uri, descriptor) = try await Work.aside { try folders.fresh(in: folder.id, named: name) }
                 created = uri
-                settings.set(uri, forKey: "unfinished-sync-landing")
+                settings.set(uri, forKey: Self.landingJournalKey)
                 _ = try await Work.aside { try native.syncReceive(id: received.id, descriptor: descriptor, uri: uri) }
                 created = nil
                 folders.written(uri)
-                settings.removeObject(forKey: "unfinished-sync-landing")
+                settings.removeObject(forKey: Self.landingJournalKey)
                 landed += 1
                 landingRefused[received.id] = nil
             } catch {
                 if let created {
-                    folders.delete(created)
-                    settings.removeObject(forKey: "unfinished-sync-landing")
+                    _ = try? await Work.aside { folders.delete(created) }
+                    settings.removeObject(forKey: Self.landingJournalKey)
                 }
                 await refuseLanding(native, received.id)
                 let explanation = explained(error)
@@ -1066,11 +1090,14 @@ final class Features {
     }
 
     func saveRecognitionKey(_ value: String) {
-        do {
-            try accounts.writeRecognitionKey(value)
-            recognitionKey = value
-        } catch {
-            library.report(error)
+        let store = accounts
+        Task {
+            do {
+                try await Work.inSecrets { try store.writeRecognitionKey(value) }
+                recognitionKey = value
+            } catch {
+                library.report(error)
+            }
         }
     }
 
@@ -1207,12 +1234,19 @@ final class Features {
 
     func saveScrobbling(_ account: ScrobbleAccount, includeHistory: Bool) {
         let previous = scrobbleAccount
-        do {
-            try accounts.writeScrobbling(account)
-        } catch {
-            library.report(error)
-            return
+        let store = accounts
+        Task {
+            do {
+                try await Work.inSecrets { try store.writeScrobbling(account) }
+            } catch {
+                library.report(error)
+                return
+            }
+            scrobblingSaved(account, replacing: previous, includeHistory: includeHistory)
         }
+    }
+
+    private func scrobblingSaved(_ account: ScrobbleAccount, replacing previous: ScrobbleAccount?, includeHistory: Bool) {
         scrobbleAccount = account
         scrobbleStatus = "Scrobbling accounts saved"
 
@@ -1249,12 +1283,11 @@ final class Features {
             }
             var signedIn = account
             signedIn.lastfmSession = session
-            try await MainActor.run { [weak self] in
-                guard let self else { return }
-                try accounts.writeScrobbling(signedIn)
-                scrobbleAccount = signedIn
-                scrobbleStatus = "Signed in to Last.fm"
-            }
+            let store = self?.accounts
+            let kept = signedIn
+            try await Work.inSecrets { try store?.writeScrobbling(kept) }
+            self?.scrobbleAccount = signedIn
+            self?.scrobbleStatus = "Signed in to Last.fm"
             try await Work.aside { try native.startScrobbling(service: .lastFm, includeHistory: false) }
         }
     }
@@ -1273,7 +1306,7 @@ final class Features {
             updated.refreshToken = token
 
             guard let self else { return }
-            try keepProviderAccount(updated)
+            try await keepProviderAccount(updated)
             library.notice("Signed in to TIDAL")
         }, finally: { [weak self] in
             self?.tidalBusy = false
@@ -1282,11 +1315,13 @@ final class Features {
     }
 
     func saveProviderAccount(_ account: DownloadAccount) {
-        do {
-            try keepProviderAccount(account)
-            library.notice("\(account.provider.title) saved")
-        } catch {
-            library.report(error)
+        Task {
+            do {
+                try await keepProviderAccount(account)
+                library.notice("\(account.provider.title) saved")
+            } catch {
+                library.report(error)
+            }
         }
     }
 
@@ -1302,19 +1337,30 @@ final class Features {
         var renewed = providers.account(.tidal)
         guard renewed.refreshToken != token else { return }
         renewed.refreshToken = token
-        do {
-            try keepProviderAccount(renewed)
-        } catch {
-            library.report(error)
+        Task {
+            do {
+                try await keepProviderAccount(renewed)
+            } catch {
+                library.report(error)
+            }
         }
     }
 
-    private func keepProviderAccount(_ account: DownloadAccount) throws {
-        var kept = providers
-        kept.keep(account)
-        try accounts.writeProviderAccounts(kept.accounts)
-        providers = kept
+    private func keepProviderAccount(_ account: DownloadAccount) async throws {
+        let before = providers
+        providers.keep(account)
+        let accounts = providers.accounts
+        let store = self.accounts
         downloads.wantsChanged()
+        do {
+            try await Work.inSecrets { try store.writeProviderAccounts(accounts) }
+        } catch {
+            if providers.account(account.provider) == account {
+                providers.keep(before.account(account.provider))
+                downloads.wantsChanged()
+            }
+            throw error
+        }
     }
 
     func saveWanted(_ songs: [SearchSong]) {
@@ -1455,8 +1501,13 @@ final class Features {
         tapHoldersChanged()
     }
 
-    private func tapHoldersChanged() {
-        guard visualizers + loudnessListeners > 0 else {
+    private var visualizersWatching: Bool {
+        visualizers > 0 && foreground && library.transport == .playing
+    }
+
+    func tapHoldersChanged() {
+        if !visualizersWatching, !samples.isEmpty { samples = [] }
+        guard visualizersWatching || loudnessListeners > 0 else {
             visualization?.cancel()
             visualization = nil
             heardRms = 0
@@ -1481,7 +1532,7 @@ final class Features {
 
     private func heard(_ signal: HeardSignal) {
         heardRms = signal.rms
-        if visualizers > 0 { samples = signal.samples }
+        if visualizersWatching { samples = signal.samples }
     }
 }
 

@@ -124,12 +124,15 @@ final class Listening {
 
     func saveAuddToken(_ value: String) {
         let token = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            try accounts.writeAuddToken(token)
-            auddToken = token
-            library.notice(token.isEmpty ? "AudD will no longer be asked" : "AudD will be asked when Shazam does not know a song")
-        } catch {
-            library.report(error)
+        let store = accounts
+        Task {
+            do {
+                try await Work.inSecrets { try store.writeAuddToken(token) }
+                auddToken = token
+                library.notice(token.isEmpty ? "AudD will no longer be asked" : "AudD will be asked when Shazam does not know a song")
+            } catch {
+                library.report(error)
+            }
         }
     }
 
@@ -326,7 +329,7 @@ enum Microphone {
     }
 
     static func record(for seconds: TimeInterval, through session: NowPlaying) async throws -> HeardClip {
-        try session.beginListening()
+        try await session.beginListening()
         defer { session.endListening() }
 
         let engine = AVAudioEngine()

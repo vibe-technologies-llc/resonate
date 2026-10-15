@@ -752,11 +752,20 @@ struct FavouritesView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
+    @State private var keyed = SongKeys.empty
+    @State private var keyedAt = -1
+    @State private var found: [Track] = []
+    @State private var foundFor = ""
+
+    private struct Asked: Equatable {
+        let epoch: Int
+        let folded: String
+    }
 
     var body: some View {
         let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
         let favourites = library.favouriteTracks
-        let shown = favourites.filter { $0.matches(folded: folded) }
+        let shown = folded.isEmpty ? favourites : found
         List {
             CollectionHeader(title: "Favourites", subtitle: "", tracks: favourites) {
                 FavouritesArtwork()
@@ -770,7 +779,7 @@ struct FavouritesView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
-            } else if shown.isEmpty {
+            } else if shown.isEmpty, folded.isEmpty || foundFor == folded {
                 NoneMatch(kind: "favourites", query: search, symbol: "magnifyingglass")
             }
             ForEach(shown, id: \.id) { track in
@@ -782,6 +791,23 @@ struct FavouritesView: View {
         }
         .listStyle(.plain)
         .searchable(text: $search, prompt: "Search favourites")
+        .task(id: Asked(epoch: library.favouriteEpoch, folded: folded)) {
+            guard !folded.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            let epoch = library.favouriteEpoch
+            if keyedAt != epoch {
+                let tracks = library.favouriteTracks
+                keyed = (try? await Work.aside { SongKeys.of(tracks) }) ?? keyed
+                guard !Task.isCancelled else { return }
+                keyedAt = epoch
+            }
+            let keys = keyed
+            let matching = (try? await Work.aside { keys.matching(folded) }) ?? []
+            guard !Task.isCancelled else { return }
+            found = matching
+            foundFor = folded
+        }
         .navigationTitle("Favourites")
         .toolbar { CollectionMenu(tracks: favourites) }
         .navigationBarTitleDisplayMode(.inline)

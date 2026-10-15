@@ -157,16 +157,26 @@ final class DownloadQueue {
         beginning.contains(song.id) || active.contains { $0.song.id == song.id }
     }
 
+    private var journaled: [String] {
+        settings.stringArray(forKey: Self.journalKey) ?? settings.string(forKey: Self.journalKey).map { [$0] } ?? []
+    }
+
     func recover(_ native: MobilePlayer) {
-        let left = settings.stringArray(forKey: Self.journalKey) ?? settings.string(forKey: Self.journalKey).map { [$0] } ?? []
+        let left = journaled
         guard !left.isEmpty else { return }
-        guard let indexed = (try? native.songUris()).map(Set.init) else { return }
         let folders = library.folders
-        let kept = left.filter { !indexed.contains($0) && !folders.delete($0) }
-        if kept.isEmpty {
-            settings.removeObject(forKey: Self.journalKey)
-        } else {
-            settings.set(kept, forKey: Self.journalKey)
+        Task { [weak self] in
+            let kept = try? await Work.aside {
+                let indexed = Set(try native.songUris())
+                return left.filter { !indexed.contains($0) && !folders.delete($0) }
+            }
+            guard let self, let kept else { return }
+            let remaining = journaled.filter { !left.contains($0) || kept.contains($0) }
+            if remaining.isEmpty {
+                settings.removeObject(forKey: Self.journalKey)
+            } else {
+                settings.set(remaining, forKey: Self.journalKey)
+            }
         }
     }
 
@@ -217,7 +227,8 @@ final class DownloadQueue {
         paused = true
         for job in jobs where job.state == .waiting { update(job.id) { $0.state = .cancelled } }
         if let native = library.native {
-            for job in jobs where job.state.inFlight { native.cancelDownload(job: job.id) }
+            let running = jobs.filter { $0.state.inFlight }.map(\.id)
+            _ = try? await Work.aside { running.forEach { native.cancelDownload(job: $0) } }
         }
         for _ in 0..<Self.erasureWaitTicks where jobs.contains(where: { $0.state.inFlight }) {
             try? await Task.sleep(for: Self.pollEvery)
@@ -439,7 +450,10 @@ final class DownloadQueue {
 
     private func update(_ id: UInt64, _ change: (inout DownloadJob) -> Void) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        change(&jobs[index])
+        var changed = jobs[index]
+        change(&changed)
+        guard changed != jobs[index] else { return }
+        jobs[index] = changed
     }
 
     private func journal(_ change: (inout [String]) -> Void) {

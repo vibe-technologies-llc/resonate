@@ -94,11 +94,12 @@ final class Enrichment {
         }
     }
 
-    func stopForErasing() {
+    func stopForErasing() async {
         erased = true
         watching?.cancel()
         watching = nil
-        library.native?.stopEnrichment()
+        guard let native = library.native else { return }
+        _ = try? await Work.aside { native.stopEnrichment() }
     }
 
     func stop() {

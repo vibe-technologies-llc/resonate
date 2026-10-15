@@ -18,6 +18,10 @@ enum Work {
         label: "org.resonate.session",
         qos: .userInitiated
     )
+    private static let secretsQueue = DispatchQueue(
+        label: "org.resonate.secrets",
+        qos: .userInitiated
+    )
     private static let asideQueue = DispatchQueue(
         label: "org.resonate.aside",
         qos: .utility,
@@ -57,6 +61,14 @@ enum Work {
     ) async throws -> Value {
         try await withCheckedThrowingContinuation { continuation in
             syncQueue.async { continuation.resume(with: Result { try body() }) }
+        }
+    }
+
+    static func inSecrets<Value: Sendable>(
+        _ body: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            secretsQueue.async { continuation.resume(with: Result { try body() }) }
         }
     }
 

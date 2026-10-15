@@ -51,11 +51,16 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   run on their own ordered lane (`Work.inLibrary`), `sync_start`, `sync_network` and
   `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), and
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
-  correction (decoding up to 64 MiB). **No `AVAudioSession` call runs on the main actor**: each is
+  correction (decoding up to 64 MiB; choosing, applying, forgetting and restoring one response run
+  one after another in a chain of their own, `RoomCorrectionState.queue`). **No `AVAudioSession` call runs on the main actor**: each is
   a call into the audio server that can take tens of milliseconds. Activation is queued straight
-  onto the transport's lane (`Work.enqueueInOrder`, so it precedes the `play()` steered after it),
+  onto the transport's lane (`Work.enqueueInOrder`, so it precedes the `play()` steered after it), as
+  are the category (at launch, after a media-services reset and for Listen, whose begin awaits it)
+  and the activation Listen's end gives up,
   and the preferred rate, the route, rate and latency readings and the volume are read on their own
   serial lane (`Work.inSession`); the main actor only applies the answer.
+  The catalog is read in a task of its own beside the poll, so the restored mini player and the lock
+  screen's info and commands never wait on a large library.
   The poll reads the snapshot every 250 ms while the scene is active and
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
   500 ms playing in the background (100 ms in the last 1.5 s of a playing song, so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s paused in the background,
@@ -77,7 +82,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   never reads `snapshot` in the body that builds its rows (a row marks itself by `currentId`): the
   Songs list doing so re-diffed the whole library on every play and pause, in the frame Now
   Playing's cover began its spring; only the views that show the position (Now Playing
-  slider and times, sleep countdowns, the output page) read the clock, each in a view of its own.
+  slider and times, sleep countdowns, the output page) read the clock, each in a view of its own (Settings' sleep row is `SleepTimerRow`, so the list and its search filter are not rebuilt each tick).
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
@@ -96,9 +101,10 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   is found when the queue or the playing row changes; the queue's sections iterate slices, never
   copies; `Features.foldedName(of:)` holds each playlist name folded; the add-songs sheet folds
   every song once off the main thread (showing a spinner, not the empty-library message, until it has) (`SongKeys`, keyed by `catalogEpoch`) and filters there 150 ms
-  after the last keystroke; the tag editor asks `tags_writable` once per song when it opens.
+  after the last keystroke, as Favourites does with its own songs (keyed by `favouriteEpoch`, so a heart refolds nothing while no text is typed); the tag editor asks `tags_writable` once per song when it opens.
   Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
-  hang) and the keychain reads at launch (`Features.readSecrets`) run on `Work.aside`, never the main actor.
+  hang), the keychain reads at launch (`Features.readSecrets`), a landing's `Folders.fresh` and `delete`,
+  the journals' recovery at launch and the joining of an enrichment pass or a download on erasing run on `Work.aside`, never the main actor.
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
   6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` is shown once per distinct text per
   song, and a poll failure once until that part of polling recovers, so a dismissal holds. The
@@ -132,8 +138,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   *syncing* from *Sync now* (`syncAskedAt`) until the status settles (a notice says with how many
   devices), the server is refused or unreachable with nobody nearby (the standing as a notice), or
   45 s pass; the poll runs every second meanwhile. Songs arriving refresh the library and the
-  playlists in a task of their own (`adoptArrivals`), so a long refresh never holds the poll, the
-  progress or `answerSyncAsked`. `SyncProgress` is a glass card in the status
+  playlists in a task of their own (`adoptArrivals`), and received songs are copied in another
+  (`landing`, awaited on erasing), so neither a long refresh nor a large song holds the poll, the
+  progress, `syncHandoffs` or `answerSyncAsked`. `SyncProgress` is a glass card in the status
   banner that opens the sync page. `transferring` (the background hold, the 2 s poll) counts only
   received songs that can land now (`landable`: a writable folder and no back-off), so a song with
   nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
@@ -223,7 +230,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   after, never before). A folder's access is measured, not
   assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
-  as a destination for downloads or synced songs. Access is cached per folder: `folders()` resolves
+  as a destination for downloads or synced songs. A bookmark is resolved once per folder and the URL kept (`resolvedRoots`; each use opens and closes its own scope), so a missing-song pass or a scan pays no `URL(resolvingBookmarkData:)` per song; measuring a folder (`refreshed()`, a scan) resolves it again, which is how a moved or stale folder is noticed. Access is cached per folder: `folders()` resolves
   only a bookmark it has not measured, `refreshed()` re-measures every one on `Work.aside` (the
   folder and sync pages call it, and so does every hiding of missing songs, since a drive unplugged
   while the app was away still reads as readable from the cache), and a scan re-measures its own root. A folder removed hides its songs at once
@@ -288,7 +295,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   never becomes a blank sync key that mints a new pairing code over the real one: `Features`
   keeps what it could not read unset, says so once, and reads again when the scene next becomes
   active. `write` updates an item in place and adds it only where none exists, so a refused write
-  keeps the old secret; plain choices in `UserDefaults` suites named as Android's
+  keeps the old secret. Every write runs on `Work.inSecrets`, a serial lane, never the main actor: a sync setting and a provider account are shown at once and put back if the write is refused, while a scrobbling account, the AcoustID key and the AudD token show only once written. Plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
@@ -601,14 +608,14 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
   the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop) and
   `visualize` (the visualizer page), so neither switches off the other's; the observed
-  `Features.samples` is assigned only while a visualizer page holds it, so thirty reads a second
+  `Features.samples` is assigned only while a visualizer page holds it, the scene is in the foreground and a song is playing (`visualizersWatching`; otherwise it is emptied and the page says to play a song), so thirty reads a second
   invalidate nothing behind Now Playing. A backdrop holds it only
   while visible, active, moving and playing, so a paused page leaves the tap off; a tap that fails
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
 - **Frame rate** follows what is moving (`BackdropView.rate`): 60 fps while playing, 30 paused, half
-  that in Low Power Mode; the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
+  that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline); the app field 20 fps while playing and 10 otherwise or in Low Power Mode,
   so a still page lets the display idle; an inactive or backgrounded scene, or a view out of its
   window, draws nothing.
 - **The app background** is the same view with no track and an `ambience` strength
@@ -710,7 +717,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   (`ArtworkView(track:corner:circle:)`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture. It clips with the concrete shape
   (`ArtworkClip`: `.circle` or `.rect(cornerRadius:style:)`), never an `AnyShape`, which hides the
-  rounded rectangle from SwiftUI and turns the clip into a mask drawn offscreen.
+  rounded rectangle from SwiftUI and turns the clip into a mask drawn offscreen (the online placeholder tile wears the same clip).
 
 ## Downloads
 
@@ -737,7 +744,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   `client-secret`, `refresh-token` in the keychain) is read once by `AccountStore.readProviders`
   while `download-accounts` is absent, written as the list, and only then deleted.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
-  provider gave a length, else the bytes received. Cancel calls `cancel_download` for that job
+  provider gave a length, else the bytes received. A job is assigned only when the poll changed it (`update`), so a job finding, validating or stalled redraws nothing. Cancel calls `cancel_download` for that job
   alone; a failed or cancelled job deletes only the document it created and shows the boundary's
   sentence (`explained`) on its row, never in the banner, with "Try again"; a finished one offers
   Play and Go to album.

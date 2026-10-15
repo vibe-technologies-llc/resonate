@@ -154,7 +154,7 @@ struct SettingsView: View {
             ),
             SettingsEntry(
                 title: "Sleep timer",
-                detail: Self.sleepSummary(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs),
+                detail: Self.sleepSummary(library.snapshot?.sleep, remaining: nil),
                 symbol: "moon",
                 keywords: "sound playback pause minutes end song queue",
                 opening: .sleepTimer,
@@ -218,7 +218,7 @@ struct SettingsView: View {
             NavigationLink(value: destination) { row }
                 .disabled(!entry.available)
         case .sleepTimer:
-            Button { navigation.sleepTimer = true } label: { row }
+            Button { navigation.sleepTimer = true } label: { SleepTimerRow(entry: entry) }
                 .disabled(!entry.available)
         case .rescan:
             Button { library.rescan() } label: { row }
@@ -261,9 +261,9 @@ struct SettingsView: View {
         }
     }
 
-    private static func sleepSummary(_ timer: SleepTimer?, remaining: UInt64?) -> String {
+    static func sleepSummary(_ timer: SleepTimer?, remaining: UInt64?) -> String {
         switch timer {
-        case .after: "Pauses in \(clock((remaining ?? 0) + 999))"
+        case .after: remaining.map { "Pauses in \(clock($0 + 999))" } ?? "Pauses after the set time"
         case .endOfTrack: "Pauses at the end of this song"
         case .endOfQueue: "Pauses at the end of the queue"
         case nil: "No timer set"
@@ -276,6 +276,19 @@ struct SettingsView: View {
             account?.lastfmSession.isEmpty == false ? "Last.fm" : nil,
         ].compactMap { $0 }
         return services.isEmpty ? "Share your listening with ListenBrainz or Last.fm" : services.joined(separator: " · ")
+    }
+}
+
+private struct SleepTimerRow: View {
+    @Environment(Library.self) private var library
+    let entry: SettingsEntry
+
+    var body: some View {
+        ToolRow(
+            title: entry.title,
+            detail: SettingsView.sleepSummary(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs),
+            symbol: entry.symbol
+        )
     }
 }
 

@@ -175,7 +175,9 @@ struct RouteReading: Equatable, Sendable {
     let sampleRate: Double
     let latencyMs: Double
 
-    static var current: RouteReading {
+    static let unread = RouteReading(outputs: [], sampleRate: 0, latencyMs: 0)
+
+    nonisolated static var current: RouteReading {
         let session = AVAudioSession.sharedInstance()
         return RouteReading(
             outputs: session.currentRoute.outputs.map { Output(id: $0.uid, name: $0.portName, channels: $0.channels?.count ?? 2) },

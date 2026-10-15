@@ -87,6 +87,7 @@ final class Folders: Documents, @unchecked Sendable {
     private let bookmarks: URL
     private let forgottenFile: URL
     private var roots: [String: Data] = [:]
+    private var resolvedRoots: [String: URL] = [:]
     private var names: [String: String] = [:]
     private var access: [String: FolderAccess] = [:]
     private var forgotten: [String: String] = [:]
@@ -138,7 +139,7 @@ final class Folders: Documents, @unchecked Sendable {
     func refreshed() async -> [MusicFolder] {
         let known = lock.withLock { Array(names.keys) }
         try? await Work.aside { [self] in
-            for id in known { recordAccess(id) }
+            for id in known { recordAccess(id, fresh: true) }
         }
         return folders()
     }
@@ -177,6 +178,7 @@ final class Folders: Documents, @unchecked Sendable {
             scans[id]?.stop()
             if let path = access[id]?.path, !path.isEmpty { forgotten[path] = id }
             roots[id] = nil
+            resolvedRoots[id] = nil
             names[id] = nil
             access[id] = nil
         }
@@ -417,8 +419,8 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     @discardableResult
-    private func recordAccess(_ id: String) -> FolderAccess {
-        guard let (url, scoped) = try? root(id) else {
+    private func recordAccess(_ id: String, fresh: Bool = false) -> FolderAccess {
+        guard let (url, scoped) = try? root(id, fresh: fresh) else {
             remember(.unreachable, for: id)
             return .unreachable
         }
@@ -431,7 +433,7 @@ final class Folders: Documents, @unchecked Sendable {
 
     private func reachedRoot(_ id: String) throws -> (URL, Bool) {
         do {
-            let (url, scoped) = try root(id)
+            let (url, scoped) = try root(id, fresh: true)
             remember(FolderAccess.of(url), for: id)
             return (url, scoped)
         } catch {
@@ -446,12 +448,21 @@ final class Folders: Documents, @unchecked Sendable {
         }
     }
 
-    private func root(_ id: String) throws -> (URL, Bool) {
+    private func root(_ id: String, fresh: Bool = false) throws -> (URL, Bool) {
         if id == Self.local { return (Self.documentsFolder, false) }
-        guard let bookmark = lock.withLock({ roots[id] }) else { throw FolderFailure.unknownFolder(id) }
+        let (bookmark, kept) = lock.withLock { (roots[id], resolvedRoots[id]) }
+        guard let bookmark else { throw FolderFailure.unknownFolder(id) }
+        if !fresh, let kept { return (kept, kept.startAccessingSecurityScopedResource()) }
         var stale = false
-        let url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+        let url: URL
+        do {
+            url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+        } catch {
+            lock.withLock { resolvedRoots[id] = nil }
+            throw error
+        }
         let scoped = url.startAccessingSecurityScopedResource()
+        lock.withLock { if roots[id] != nil { resolvedRoots[id] = url } }
         if stale, let renewed = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
             lock.withLock { roots[id] = renewed }
             try? persist()

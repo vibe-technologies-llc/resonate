@@ -16,7 +16,7 @@ struct BackdropView: View {
     let ambience: Float?
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
-    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    @State private var lowPower = ProcessInfo.processInfo.sparesFrames
     @State private var visible = false
     @State private var listening = false
 
@@ -59,12 +59,13 @@ struct BackdropView: View {
             listen(false)
         }
         .onChange(of: wantsEnergy) { _, wanted in listen(wanted) }
-        .onReceive(Self.powerStateChanges) { _ in lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled }
+        .onReceive(Self.powerStateChanges) { _ in lowPower = ProcessInfo.processInfo.sparesFrames }
     }
 
     private static var powerStateChanges: some Publisher<Notification, Never> {
         NotificationCenter.default
             .publisher(for: .NSProcessInfoPowerStateDidChange)
+            .merge(with: NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification))
             .receive(on: DispatchQueue.main)
     }
 
@@ -783,4 +784,10 @@ enum BackdropShader {
             return float4(srgbEncoded(rgb) + dither, 1.0);
         }
         """
+}
+
+extension ProcessInfo {
+    var sparesFrames: Bool {
+        isLowPowerModeEnabled || thermalState == .serious || thermalState == .critical
+    }
 }

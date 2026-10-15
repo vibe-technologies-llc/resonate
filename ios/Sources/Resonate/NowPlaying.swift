@@ -68,8 +68,7 @@ final class NowPlaying {
 
     func start(_ native: MobilePlayer) {
         self.native = native
-        configureSession()
-        reportRoute(rebind: false)
+        configureThenReport(rebind: false)
         let center = NotificationCenter.default
         let session = AVAudioSession.sharedInstance()
         observers = [
@@ -89,10 +88,7 @@ final class NowPlaying {
             },
             center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: .main) {
                 [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.configureSession()
-                    self?.reportRoute(rebind: true)
-                }
+                MainActor.assumeIsolated { self?.configureThenReport(rebind: true) }
             },
         ]
         registerCommands()
@@ -134,25 +130,35 @@ final class NowPlaying {
         followsSongRate ? Double(track?.rate ?? 0) : 0
     }
 
-    func beginListening() throws {
-        let session = AVAudioSession.sharedInstance()
+    func beginListening() async throws {
+        listening = true
         do {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
-            try session.setActive(true)
+            try await Work.inOrder {
+                let session = AVAudioSession.sharedInstance()
+                do {
+                    try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
+                    try session.setActive(true)
+                } catch {
+                    Self.configureSession()
+                    throw error
+                }
+            }
         } catch {
-            configureSession()
+            listening = false
             throw error
         }
-        listening = true
     }
 
     func endListening() {
         listening = false
-        configureSession()
-        if library.transport != .playing {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        guard let native else { return }
+        Work.enqueueInOrder { [weak self] in
+            Self.configureSession()
+            if let now = try? native.snapshot(), now.transport != .playing, now.transport != .loading {
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
+            Task { @MainActor in self?.reportRoute(rebind: false) }
         }
-        reportRoute(rebind: false)
     }
 
     func songRateFollowingChanged() {
@@ -180,7 +186,14 @@ final class NowPlaying {
         }
     }
 
-    private func configureSession() {
+    private func configureThenReport(rebind: Bool) {
+        Work.enqueueInOrder { [weak self] in
+            Self.configureSession()
+            Task { @MainActor in self?.reportRoute(rebind: rebind) }
+        }
+    }
+
+    nonisolated private static func configureSession() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
     }
 

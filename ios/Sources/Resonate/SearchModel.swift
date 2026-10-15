@@ -127,12 +127,6 @@ extension String {
     }
 }
 
-extension Track {
-    func matches(folded query: String) -> Bool {
-        query.isEmpty || [shownTitle, artist, album].contains { $0.searchFolded.contains(query) }
-    }
-}
-
 func lit(_ text: String, by query: String, in column: SearchColumn) -> AttributedString {
     var shown = AttributedString(text)
     let ranges = query.isEmpty ? [] : highlights(query: query, text: text, column: column)

@@ -136,7 +136,7 @@ struct ArtworkView: View {
     }
 }
 
-private struct ArtworkClip: ViewModifier {
+struct ArtworkClip: ViewModifier {
     let circle: Bool
     let corner: CGFloat
 
