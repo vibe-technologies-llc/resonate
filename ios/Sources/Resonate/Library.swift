@@ -104,6 +104,7 @@ final class Library {
     private(set) var trackRuns: [LetterRun] = []
     private(set) var tracksRead = false
     private(set) var catalogRead = false
+    private(set) var catalogEpoch = 0
     private(set) var artworkTracks: [UInt64: Track] = [:]
     private(set) var albums: [AlbumHit] = [] {
         didSet { albumRuns = Self.runs(of: albums, in: collectionOrder) }
@@ -700,6 +701,7 @@ final class Library {
 
     private func publishCatalog(_ read: [Track], request: Int) {
         let rows = settled(read, request: request)
+        catalogEpoch += 1
         allTracks = rows
         artworkTracks = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
         catalogRead = true

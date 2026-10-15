@@ -529,10 +529,15 @@ func sharedQuality(_ tracks: [Track]) -> String? {
 struct AlbumView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let key: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var key: String
     @State private var album: AlbumHit?
     @State private var tracks: [Track] = []
     @State private var read = false
+
+    init(key: String) {
+        _key = State(initialValue: key)
+    }
 
     var body: some View {
         let shownTitle = album?.shownTitle ?? ""
@@ -571,7 +576,7 @@ struct AlbumView: View {
         .navigationTitle(shownTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist, editsTags: true) }
-        .task(id: "\(key):\(library.collectionGeneration)") { await load() }
+        .task(id: "\(key):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
     }
 
     private func load() async {
@@ -579,6 +584,14 @@ struct AlbumView: View {
         let key = key
         guard let (found, rows) = try? await Work.aside({ (try native.album(key: key), try native.albumTracks(key: key)) }) else {
             return
+        }
+        if rows.isEmpty, let shown = tracks.compactMap({ library.artworkTracks[$0.id] }).first {
+            let moved = albumKey(album: shown.album, artist: shown.artist, albumArtist: shown.albumArtist)
+            guard let moved else { return dismiss() }
+            guard moved == key else {
+                self.key = moved
+                return
+            }
         }
         album = found
         tracks = rows
@@ -591,12 +604,16 @@ struct ArtistView: View {
 
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .subheadline) private var albumEdge: CGFloat = 140
-    let name: String
+    @State private var name: String
     @State private var albums: [AlbumHit] = []
     @State private var tracks: [Track] = []
     @State private var top: [Track] = []
     @State private var seeingAll = false
     @State private var read = false
+
+    init(name: String) {
+        _name = State(initialValue: name)
+    }
 
     var body: some View {
         let shownName = name.isEmpty ? "Unknown artist" : name
@@ -663,7 +680,7 @@ struct ArtistView: View {
         .navigationTitle(shownName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { CollectionMenu(tracks: tracks) }
-        .task(id: "\(name):\(library.collectionGeneration)") { await load() }
+        .task(id: "\(name):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
     }
 
     private func load() async {
@@ -675,10 +692,27 @@ struct ArtistView: View {
         }) else {
             return
         }
+        if rows.isEmpty, let shown = tracks.compactMap({ library.artworkTracks[$0.id] }).first {
+            let followed = await Self.artist(holding: shown, native)
+            if let followed, followed != name {
+                self.name = followed
+                return
+            }
+        }
         albums = found
         tracks = rows
         top = played
         read = true
+    }
+}
+
+extension ArtistView {
+    fileprivate static func artist(holding shown: Track, _ native: MobilePlayer) async -> String? {
+        for candidate in [shown.artist, shown.albumArtist] {
+            let holding = try? await Work.aside { try native.artistTracks(name: candidate) }
+            if holding?.contains(where: { $0.id == shown.id }) == true { return candidate }
+        }
+        return nil
     }
 }
 

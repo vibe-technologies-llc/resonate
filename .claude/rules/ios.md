@@ -323,7 +323,11 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
   `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
   shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
   `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
-  reload, keeping the last answer meanwhile. A playlist's rows are keyed by song and occurrence, move and remove at once, and
+  reload, and `catalogEpoch`, which steps whenever a catalog read lands, keeping the last answer
+  meanwhile. The key or name is state: when an album or artist reads empty, the page looks up where
+  a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
+  for the song's artist and album artist) and follows it, or pops where the album is gone, so
+  *Edit album tags* leaves the page on the album, not on "No songs from this album". A playlist's rows are keyed by song and occurrence, move and remove at once, and
   every edit reads the playlist's latest revision inside the ordered queue; its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears.

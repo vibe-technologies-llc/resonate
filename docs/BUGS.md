@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `AlbumView` and `ArtistView` keep the key or name they were opened with: *Edit album tags*
-  can change the album key, and after Save the page reads nil and says "No songs from this album
-  are in your library yet" instead of following the album or popping
 - [M] A failed read is drawn as empty: `AlbumView.load`, `ArtistView.load`, the context-menu Play,
   Shuffle, Play next, Add to queue and Add to playlist (`CollectionActions.act`) and the tag
   editor's read (`songTags` answers `[]`, so the editor opens blank and Save can overwrite) all
