@@ -39,8 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] `OrganiseView` leaves `plan` standing for the 300 ms after a keystroke, so *Organise* runs the
-  previous layout's plan and its confirmation counts the old moves
 - [M] Reduce Motion is read only by `MovingCover`, the backdrop and the lyrics pane: Now Playing's
   reshape spring, the mini player's title change and the symbol effects ignore it; the
   *Background* footer says Low Power Mode slows the app field, which already draws at 30 fps

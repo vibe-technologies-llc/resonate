@@ -11,11 +11,15 @@ struct OrganiseSheet: View {
     let folder: MusicFolder
     @State private var layout = OrganiseSheet.settings.string(forKey: OrganiseSheet.layoutKey) ?? defaultOrganiseLayout()
     @State private var plan: OrganisePlan?
+    @State private var plannedFor: String?
+    @State private var failedFor: String?
     @State private var planning = false
     @State private var confirming = false
 
     var body: some View {
         let problem = organiseLayoutProblem(layout: layout)
+        let current = plannedFor == layout ? plan : nil
+        let waiting = problem == nil && current == nil && failedFor != layout
         NavigationStack {
             Form {
                 Section {
@@ -35,9 +39,9 @@ struct OrganiseSheet: View {
                         Text("Fields: {albumartist} {artist} {album} {title} {year} {disc} {track} {ext}. Slashes make folders; {disc} is written only for albums of more than one disc.")
                     }
                 }
-                if planning {
+                if planning || waiting {
                     Section { ProgressView().frame(maxWidth: .infinity) }
-                } else if let plan {
+                } else if let plan = current {
                     Section {
                         LabeledContent("To move", value: counted(plan.moves.count, "song"))
                         LabeledContent("Already in place", value: counted(Int(plan.unchanged), "song"))
@@ -78,16 +82,16 @@ struct OrganiseSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Organise") { confirming = true }
-                        .disabled(problem != nil || planning || (plan?.moves.isEmpty ?? true) || library.features.organising)
+                        .disabled(problem != nil || planning || (current?.moves.isEmpty ?? true) || library.features.organising)
                 }
             }
             .confirmationDialog(
-                "Move \(counted(plan?.moves.count ?? 0, "song"))?",
+                "Move \(counted(current?.moves.count ?? 0, "song"))?",
                 isPresented: $confirming,
                 titleVisibility: .visible
             ) {
                 Button("Organise") {
-                    guard let plan else { return }
+                    guard let plan = current else { return }
                     Self.settings.set(layout, forKey: Self.layoutKey)
                     library.features.organise(folder, plan.moves)
                     dismiss()
@@ -102,16 +106,22 @@ struct OrganiseSheet: View {
     private func preview(_ readable: Bool) async {
         guard readable else {
             plan = nil
+            plannedFor = nil
             return
         }
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else { return }
+        let asked = layout
         planning = true
         defer { planning = false }
         do {
-            let found = try await library.features.organisePlan(folder, layout: layout)
-            if !Task.isCancelled { plan = found }
+            let found = try await library.features.organisePlan(folder, layout: asked)
+            guard !Task.isCancelled else { return }
+            plan = found
+            plannedFor = asked
+            failedFor = nil
         } catch {
+            if !Task.isCancelled { failedFor = asked }
             library.report(error)
         }
     }

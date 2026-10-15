@@ -395,7 +395,9 @@ every route change (a pair of headphones at the same rate included), not from th
 - **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout
   field (`organise-layout` in `library-features`, the desktop's `DEFAULT_LAYOUT` until changed)
   checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`
-  on `Work.aside`: counts and the first fifty moves), and *Organise*, confirmed. `Folders.file` moves
+  on `Work.aside`: counts and the first fifty moves; a plan stands only for the layout it was made for, so
+  *Organise* waits for the preview of what is typed and never runs, or counts, the previous
+  layout's), and *Organise*, confirmed. `Folders.file` moves
   inside the root's security scope: a destination that exists, or a source outside the root, is
   counted failed; a same-stem `.lrc` moves along where its place is free; folders the moves left
   empty (a `.DS_Store` aside) are removed up to the root. The new URIs are `uri(root:relative:)`'s,
