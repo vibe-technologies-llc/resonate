@@ -39,9 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] Scanning drops its reasons: `unreadable` carries none, and `setArtwork` and
-  `keepSidecarLyrics` failures are `try?`; `importPlaylistFile` reads the whole file with
-  `Data(contentsOf:)` before the boundary's 8 MiB refusal, so a multi-gigabyte pick risks jetsam
 
 ## Formats
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second

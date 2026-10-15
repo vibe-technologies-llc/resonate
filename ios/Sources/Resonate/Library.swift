@@ -89,6 +89,7 @@ struct Settling {
 @Observable
 final class Library {
     nonisolated static let page: UInt32 = 500
+    nonisolated private static let playlistFileBytesAtMost = 8 * 1024 * 1024
     private static let tick: Duration = .milliseconds(250)
     private static let ticksBetweenSaves = 20
     private static let noticeLasts: Duration = .seconds(6)
@@ -863,13 +864,21 @@ final class Library {
                         let read = tally.indexed()
                         Task { @MainActor in self?.reached(read) }
                         if let cover = document.cover, let bytes = folders.companion(cover, sidecar: false) {
-                            try? native.setArtwork(id: track.id, bytes: bytes)
+                            do {
+                                try native.setArtwork(id: track.id, bytes: bytes)
+                            } catch {
+                                tally.lost(.cover, document.name, error)
+                            }
                         }
                         if let lyrics = document.lyrics, let bytes = folders.companion(lyrics, sidecar: true) {
-                            try? native.keepSidecarLyrics(id: track.id, bytes: bytes)
+                            do {
+                                try native.keepSidecarLyrics(id: track.id, bytes: bytes)
+                            } catch {
+                                tally.lost(.lyrics, document.name, error)
+                            }
                         }
                     } catch {
-                        tally.failed()
+                        tally.failed(document.name, error)
                     }
                 }
             }
@@ -944,7 +953,10 @@ final class Library {
                 let imported = try await Work.aside {
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    return try native.importPlaylistFile(bytes: try Data(contentsOf: url), fileName: name)
+                    let file = try FileHandle(forReadingFrom: url)
+                    defer { try? file.close() }
+                    let bytes = try file.read(upToCount: Library.playlistFileBytesAtMost + 1) ?? Data()
+                    return try native.importPlaylistFile(bytes: bytes, fileName: name)
                 }
                 features.loadPlaylists()
                 features.playlistToShow = imported.id
@@ -1118,9 +1130,17 @@ enum RepeatMode: CaseIterable {
 }
 
 final class Tally: @unchecked Sendable {
+    enum Companion {
+        case cover
+        case lyrics
+    }
+
     private let lock = NSLock()
     private var read = 0
     private var unreadable = 0
+    private var firstUnreadable: String?
+    private var companions: [Companion: Int] = [:]
+    private var firstCompanion: String?
 
     func indexed() -> Int {
         lock.withLock {
@@ -1129,17 +1149,41 @@ final class Tally: @unchecked Sendable {
         }
     }
 
-    func failed() { lock.withLock { unreadable += 1 } }
-
-    var summary: String {
+    func failed(_ name: String, _ reason: any Swift.Error) {
         lock.withLock {
-            "Read \(counted(read, "song"))" + (unreadable > 0 ? "; \(unreadable) unreadable" : "")
+            unreadable += 1
+            if firstUnreadable == nil { firstUnreadable = "\(name): \(explained(reason))" }
         }
     }
 
-    var stoppedSummary: String {
+    func lost(_ kind: Companion, _ name: String, _ reason: any Swift.Error) {
         lock.withLock {
-            "Stopped reading after \(counted(read, "song"))" + (unreadable > 0 ? "; \(unreadable) unreadable" : "")
+            companions[kind, default: 0] += 1
+            if firstCompanion == nil { firstCompanion = "\(name): \(explained(reason))" }
         }
+    }
+
+    var summary: String {
+        lock.withLock { "Read \(counted(read, "song"))" + trouble }
+    }
+
+    var stoppedSummary: String {
+        lock.withLock { "Stopped reading after \(counted(read, "song"))" + trouble }
+    }
+
+    private var trouble: String {
+        var told = ""
+        if unreadable > 0 {
+            told += "; \(unreadable) unreadable" + (firstUnreadable.map { " (\($0))" } ?? "")
+        }
+        let covers = companions[.cover] ?? 0
+        let sheets = companions[.lyrics] ?? 0
+        if covers + sheets > 0 {
+            let lost = [covers > 0 ? counted(covers, "cover") : nil, sheets > 0 ? counted(sheets, "lyrics sheet") : nil]
+                .compactMap { $0 }
+                .joined(separator: " and ")
+            told += "; \(lost) could not be kept" + (firstCompanion.map { " (\($0))" } ?? "")
+        }
+        return told
     }
 }

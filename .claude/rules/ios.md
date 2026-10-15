@@ -202,7 +202,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   playlist rows and listens, instead of minting a second copy of every song. A folder whose resolved,
   symlink-free path is already granted, or is the app's Documents, is refused
   (`FolderFailure.alreadyAdded`). A scan runs on a GCD queue where `Task` cancellation cannot reach,
-  so it walks under a `ScanStop` flag; removing a folder stops its walk.
+  so it walks under a `ScanStop` flag; removing a folder stops its walk. The scan's notice
+  gives its reasons: the first unreadable song and why, and the covers and lyrics sheets that
+  could not be kept, with the first of those.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), reports the route to Rust,
   pauses on an interruption (resuming when the system says so) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
@@ -363,7 +365,8 @@ every route change (a pair of headphones at the same rate included), not from th
 - **A playlist file is read, never kept**: M3U, M3U8, PLS and XSPF
   (`playlist_file_extensions()`, declared in `Info.plist` as `org.resonate.playlist`) opened in
   Resonate or chosen from the playlists section's *Import playlist file* go to
-  `import_playlist_file` (`android.md`'s *playlist file*), a notice counts the songs found
+  `import_playlist_file` (`android.md`'s *playlist file*), read at most one byte past the boundary's
+  8 MiB so a huge pick is refused rather than loaded, a notice counts the songs found
   in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
   options menu exports M3U8, PLS or XSPF through `export_playlist` into a `fileExporter`
   (`PlaylistFile`).
