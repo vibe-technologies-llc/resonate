@@ -33,12 +33,23 @@ fn device(
     shelf: Arc<Shelf>,
     told: Option<&Sync>,
 ) -> Sync {
+    device_following(folder, key, name, shelf, told, Follow::default())
+}
+
+fn device_following(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    told: Option<&Sync>,
+    follow: Follow,
+) -> Sync {
     let told = told
         .and_then(Sync::nearby_port)
         .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .into_iter()
         .collect();
-    started(
+    started_following(
         folder,
         key,
         name,
@@ -47,10 +58,22 @@ fn device(
             broadcast: Some(Broadcast { port: 0, told }),
             bonjour: false,
         },
+        follow,
     )
 }
 
 fn started(folder: &Path, key: &SyncKey, name: &str, shelf: Arc<Shelf>, nearby: Nearby) -> Sync {
+    started_following(folder, key, name, shelf, nearby, Follow::default())
+}
+
+fn started_following(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    nearby: Nearby,
+    follow: Follow,
+) -> Sync {
     let settings = Settings {
         server: Some(NO_SERVER_HERE.into()),
         trusted: None,
@@ -59,7 +82,7 @@ fn started(folder: &Path, key: &SyncKey, name: &str, shelf: Arc<Shelf>, nearby: 
             name: name.into(),
             platform: Platform::Linux,
         },
-        follow: Follow::default(),
+        follow,
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
@@ -263,6 +286,40 @@ fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
     );
     eventually("the desk seeing the phone it was never told of", || {
         nearby_of(&desk, "Phone")
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_favourite_learned_after_meeting_is_fetched_without_a_restart() {
+    let folder = scratch("favourite-after");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        Follow {
+            favourites: true,
+            ..Follow::default()
+        },
+    );
+
+    eventually("the favoured song reaching the phone", || {
+        holds_title(&phone_shelf, "A")
+    });
+    desk_shelf.favour_here("B", true);
+    eventually("a song favoured later reaching the phone", || {
+        holds_title(&phone_shelf, "B")
     });
 
     drop(phone);

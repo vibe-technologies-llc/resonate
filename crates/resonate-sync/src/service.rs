@@ -15,7 +15,7 @@ use std::{
 use ahash::AHashSet;
 use parking_lot::{Mutex, RwLock};
 use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, SendStream, TokioRuntime};
-use resonate_core::Recording;
+use resonate_core::{Recording, RecordingKey};
 use ring::digest::{SHA256, SHA256_OUTPUT_LEN, digest};
 use tokio::{
     runtime::Runtime,
@@ -46,9 +46,12 @@ pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const FIRST_RETRY: Duration = Duration::from_secs(5);
 const LAST_RETRY: Duration = Duration::from_secs(30 * 60);
-const LOOK_AFTER: Duration = Duration::from_secs(1);
+const LOOK_AFTER: Duration = Duration::from_millis(300);
+const FOLLOW_AGAIN_AFTER: Duration = Duration::from_millis(250);
+const EVERYTHING_FOLLOWED_AGAIN_AT_MOST_EVERY: Duration = Duration::from_secs(10);
+const FOLLOWED_AGAIN_AFTER_A_LOOK_EVERY: Duration = Duration::from_secs(60);
 const LOOK_ANYWAY_EVERY: Duration = Duration::from_secs(5 * 60);
-const WATCH_EVERY: Duration = Duration::from_secs(1);
+const WATCH_EVERY: Duration = Duration::from_millis(500);
 const COMPACT_PAST_RECORDS: u64 = 512;
 const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 const BLOBS_PER_APPEND: usize = 32;
@@ -162,6 +165,7 @@ struct Running {
     record: Mutex<Option<(Beacon, String)>>,
     events: UnboundedSender<Event>,
     answering: Arc<Answering>,
+    fetching: Mutex<AHashSet<RecordingKey>>,
 }
 
 enum Work {
@@ -239,6 +243,8 @@ struct Syncing {
     peers: BTreeMap<DeviceId, Connection>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
+    follow_again_at: Option<Instant>,
+    followed_again_at: Option<Instant>,
     look_at: Option<Instant>,
     looked_at: Instant,
     looked_once: bool,
@@ -328,6 +334,7 @@ impl Sync {
             record: Mutex::new(None),
             events,
             answering,
+            fetching: Mutex::new(AHashSet::new()),
         });
 
         let (commands, received) = mpsc::unbounded_channel();
@@ -526,6 +533,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
     let mut beacon_at = Instant::now();
     let mut beacon = vec![0; LARGEST_BEACON];
     loop {
+        let due = syncing.next_due();
         let outcome = tokio::select! {
             frame = next_frame(&mut syncing.server) => match frame {
                 None => {
@@ -590,6 +598,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                 Ok(())
             }
             _ = watch.tick() => syncing.watched().await,
+            () = until(due) => Ok(()),
         };
         if let Err(error) = outcome {
             tracing::warn!(%error, "sync could not carry on with something");
@@ -598,6 +607,11 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
             && let Err(error) = syncing.watched().await
         {
             tracing::warn!(%error, "sync could not look at the catalog");
+        }
+        if syncing.follow_again_is_due()
+            && let Err(error) = syncing.follow_again().await
+        {
+            tracing::warn!(%error, "sync could not follow its devices again");
         }
     }
     syncing.bye().await;
@@ -823,6 +837,8 @@ impl Syncing {
             peers: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
+            follow_again_at: None,
+            followed_again_at: None,
             look_at: None,
             looked_at: now,
             looked_once: false,
@@ -976,6 +992,7 @@ impl Syncing {
                     self.neighbour_caught_up = true;
                     self.look_at = Some(Instant::now());
                 }
+                self.follow_again_soon();
                 self.publish_devices();
                 Ok(())
             }
@@ -1128,7 +1145,47 @@ impl Syncing {
             Ok(())
         })
         .await?;
+        self.follow_again_soon();
         self.publish_devices();
+        Ok(())
+    }
+
+    fn follow_again_soon(&mut self) {
+        if self.follow_again_at.is_none() {
+            let soon = Instant::now() + FOLLOW_AGAIN_AFTER;
+            let soonest = self
+                .followed_again_at
+                .filter(|_| self.running.follow.everything)
+                .map(|at| at + EVERYTHING_FOLLOWED_AGAIN_AT_MOST_EVERY);
+            self.follow_again_at = Some(soonest.map_or(soon, |soonest| soon.max(soonest)));
+        }
+    }
+
+    fn next_due(&self) -> Option<Instant> {
+        let look = self.look_at.filter(|_| self.may_look());
+        match (look, self.follow_again_at) {
+            (Some(look), Some(follow)) => Some(look.min(follow)),
+            (look, follow) => look.or(follow),
+        }
+    }
+
+    fn follow_again_is_due(&self) -> bool {
+        self.follow_again_at.is_some_and(|at| at <= Instant::now())
+    }
+
+    async fn follow_again(&mut self) -> Result<()> {
+        self.follow_again_at = None;
+        self.followed_again_at = Some(Instant::now());
+        let connected = self
+            .neighbours
+            .keys()
+            .chain(self.peers.keys())
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for device in connected {
+            self.followed.remove(&device);
+            self.follow(device).await?;
+        }
         Ok(())
     }
 
@@ -1165,6 +1222,13 @@ impl Syncing {
         self.running.shown.write().owed = looked.owed;
         self.publish_devices();
         self.looked_once = true;
+        if !self.running.follow.everything
+            && self
+                .followed_again_at
+                .is_none_or(|at| at.elapsed() >= FOLLOWED_AGAIN_AFTER_A_LOOK_EVERY)
+        {
+            self.follow_again_soon();
+        }
         self.tell_neighbours().await?;
         self.push().await?;
         self.publish_settled();
@@ -1685,6 +1749,22 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
 }
 
 async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Result<Vec<Recording>> {
+    let wanted = if running.follow.everything {
+        Vec::new()
+    } else {
+        let asking = Arc::clone(running);
+        let wanted = blocking(move || {
+            asking
+                .ledger
+                .lock()
+                .wanted(asking.follow, asking.catalog.as_ref())
+        })
+        .await?;
+        if wanted.is_empty() {
+            return Ok(Vec::new());
+        }
+        wanted
+    };
     let holdings = holdings_of(connection).await?;
     let held_running = Arc::clone(running);
     let wanted = blocking(move || {
@@ -1699,7 +1779,6 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
             }
             return Ok(missing);
         }
-        let wanted = held_running.ledger.lock().wanted(follow, catalog)?;
         Ok(wanted
             .into_iter()
             .filter(|recording| {
@@ -1714,6 +1793,20 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
 }
 
 async fn fetch_one(
+    running: &Arc<Running>,
+    device: DeviceId,
+    connection: &Connection,
+    recording: Recording,
+) {
+    let key = recording.key();
+    if !running.fetching.lock().insert(key.clone()) {
+        return;
+    }
+    fetch_claimed(running, device, connection, recording).await;
+    running.fetching.lock().remove(&key);
+}
+
+async fn fetch_claimed(
     running: &Arc<Running>,
     device: DeviceId,
     connection: &Connection,

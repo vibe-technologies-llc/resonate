@@ -116,9 +116,10 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 - **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter, logged at debug;
   a refusal waits the longest. `Shown` (standing, devices, transfers, owed) is a snapshot the
   window and Android read without asking the thread.
-- **A look runs a second after the catalog's revision moves (`LOOK_AFTER`), and every five
-  minutes regardless**, and at once whenever one falls due (a neighbour's whole snapshot, a link
-  caught up, *force*): the loop checks after every event rather than waiting for the second's watch; it settles held entries first, then tells neighbours and pushes what is
+- **A look runs `LOOK_AFTER` (300 ms) after the catalog's revision moves, watched every
+  `WATCH_EVERY` (500 ms), and every five minutes regardless**, and at once whenever one falls due (a
+  neighbour's whole snapshot, a link caught up, *force*): the loop sleeps until the next look or
+  follow falls due (`next_due`) and checks after every event; it settles held entries first, then tells neighbours and pushes what is
   owed, one `Append` in flight. Catch-up comes before the first look, so a device joining adopts
   before it mints: caught up with the server (this link, or an earlier one while none stands) or
   with a whole snapshot from a neighbour. A device that has met nobody does not look; there is
@@ -157,7 +158,13 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
 - **Songs move only when asked or as chosen**: `fetch` (a playlist's missing songs from one device,
   from the CLI, the playlist menu or a phone), or `sync-songs` (`favourites`, `playlists` the
   listener marked *Keep its songs here*, `everything`) when a device arrives, at most every 30
-  minutes per device. Only whole-file, unvaulted songs are offered. A transfer is staged under
+  minutes per device, **and again `FOLLOW_AGAIN_AFTER` (250 ms) after records arrive** from the
+  server or a neighbour, since a device meeting another asks before that one's favourites and
+  playlists have reached it (`a_favourite_learned_after_meeting_is_fetched_without_a_restart`). A
+  look follows again too, at most every 60 s. Following again asks only connected devices, works out
+  what is wanted here before listing the other's holdings (nothing wanted, nothing asked), and under
+  `everything` runs at most every 10 s, since that lists the whole of the other's holdings. A song is
+  fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked. Only whole-file, unvaulted songs are offered. A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile.
