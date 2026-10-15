@@ -250,7 +250,9 @@ button is about 220 pt, and without next the title trailed into empty glass), ti
 12 pt inset each side, so the square cover clears the capsule's rounded end; the title stays the
 accessibility label. Expanded, the artist line is `Color.primary` at 60 % opacity, never the
 hierarchical `.secondary`: that is drawn vibrant against the accessory's glass, which is not drawn
-while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route.
+while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route, and draws the session's route,
+hardware rate and latency from `Library.routeReading`, which `NowPlaying.reportRoute` reads again on
+every route change (a pair of headphones at the same rate included), not from the session in its body.
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider commits one seek on

@@ -749,14 +749,13 @@ struct OutputView: View {
     @AppStorage(NowPlaying.followsSongRateKey, store: NowPlaying.playbackSettings) private var followsSongRate = true
 
     var body: some View {
-        let session = AVAudioSession.sharedInstance()
-        let route = session.currentRoute.outputs
+        let reading = library.routeReading
         ThemedForm {
             Section("Route") {
-                ForEach(route, id: \.uid) { output in
+                ForEach(reading.outputs, id: \.id) { output in
                     VStack(alignment: .leading) {
-                        Text(output.portName)
-                        Text("Active route · \(output.channels?.count ?? 2) channels").font(.caption).foregroundStyle(.tint)
+                        Text(output.name)
+                        Text("Active route · \(output.channels) channels").font(.caption).foregroundStyle(.tint)
                     }
                 }
                 HStack {
@@ -766,9 +765,9 @@ struct OutputView: View {
                 }
             }
             Section {
-                LabeledContent("Stream", value: "Stereo float · \(library.clock.outputRate > 0 ? library.clock.outputRate : UInt32(session.sampleRate)) Hz")
-                LabeledContent("Hardware rate", value: "\(Int(session.sampleRate)) Hz")
-                LabeledContent("Output latency", value: String(format: "%.1f ms", (session.outputLatency + session.ioBufferDuration) * 1000))
+                LabeledContent("Stream", value: "Stereo float · \(library.clock.outputRate > 0 ? library.clock.outputRate : UInt32(reading.sampleRate)) Hz")
+                LabeledContent("Hardware rate", value: "\(Int(reading.sampleRate)) Hz")
+                LabeledContent("Output latency", value: String(format: "%.1f ms", reading.latencyMs))
                 LabeledContent("Underruns", value: "\(library.clock.underruns)")
             } header: {
                 Text("Current stream")

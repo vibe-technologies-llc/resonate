@@ -126,6 +126,7 @@ final class Library {
     var scanned = 0
     var preferences: PlaybackPreferences?
     var route: OutputRoute?
+    var routeReading = RouteReading.current
     var boundRoutes: [OutputRoute] = []
     var filter: TrackFilter = defaultTrackFilter()
     var folderList: [MusicFolder] = [] {

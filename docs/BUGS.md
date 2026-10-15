@@ -39,8 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   loses the row that had just begun. The engine has no removal by row identity to guard it
 
 ## iOS
-- [S] The Output page reads `AVAudioSession.currentRoute`, `sampleRate` and `outputLatency` in a
-  body without observing them, so headphones plugged in at the same rate leave the old route shown
 - [S] `EqualiserGraph` keeps `touch` and `holding` in `@State`, so a drag the system cancels (a
   call, an alert) never reaches `onEnded` and the next touch reuses the held band
 - [S] `OrganiseView` leaves `plan` standing for the 300 ms after a keystroke, so *Organise* runs the

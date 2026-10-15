@@ -157,6 +157,27 @@ struct PlaybackPreferencesStore: Sendable {
     }
 }
 
+struct RouteReading: Equatable, Sendable {
+    struct Output: Equatable, Sendable {
+        let id: String
+        let name: String
+        let channels: Int
+    }
+
+    let outputs: [Output]
+    let sampleRate: Double
+    let latencyMs: Double
+
+    static var current: RouteReading {
+        let session = AVAudioSession.sharedInstance()
+        return RouteReading(
+            outputs: session.currentRoute.outputs.map { Output(id: $0.uid, name: $0.portName, channels: $0.channels?.count ?? 2) },
+            sampleRate: session.sampleRate,
+            latencyMs: (session.outputLatency + session.ioBufferDuration) * 1000
+        )
+    }
+}
+
 struct OutputRoute: Equatable, Sendable {
     let id: String
     let name: String

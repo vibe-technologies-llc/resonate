@@ -147,6 +147,8 @@ final class NowPlaying {
 
     private func reportRoute(rebind: Bool) {
         guard native != nil else { return }
+        let reading = RouteReading.current
+        if reading != library.routeReading { library.routeReading = reading }
         library.outputRouteChanged(OutputRoute.current)
         let session = AVAudioSession.sharedInstance()
         let rate = UInt32(session.sampleRate.rounded())
