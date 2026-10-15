@@ -6,7 +6,8 @@ import SwiftUI
 struct MiniPlayer: View {
     private static let swipeDistance: CGFloat = 40
     private static let titledFrom: CGFloat = 150
-    private static let skipsFrom: CGFloat = 230
+    private static let skipsFrom: CGFloat = 200
+    private static let inlineInset: CGFloat = 12
     private static let artistOpacity = 0.6
 
     @Environment(Library.self) private var library
@@ -24,7 +25,7 @@ struct MiniPlayer: View {
         let titled = expanded || width == 0 || width >= Self.titledFrom
         let skips = expanded || width >= Self.skipsFrom
         HStack(spacing: expanded ? 12 : 8) {
-            ArtworkView(track: track, corner: expanded ? 8 : 6)
+            ArtworkView(track: track, corner: expanded ? 8 : 7)
                 .frame(width: expanded ? artworkEdge : inlineArtworkEdge, height: expanded ? artworkEdge : inlineArtworkEdge)
                 .matchedTransitionSource(id: PlayerTransition.source, in: zoom)
             if titled {
@@ -60,7 +61,7 @@ struct MiniPlayer: View {
             }
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, expanded ? 14 : 8)
+        .padding(.horizontal, expanded ? 14 : Self.inlineInset)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .contentShape(.rect)

@@ -184,7 +184,9 @@ so no empty capsule shows with nothing loaded), with previous/play/next and a ho
 skip; its progress is a ring around the play button in either placement (a bar along the accessory's
 bottom ran through the title and artist, since the system fixes the accessory's height). Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
-button always, the title from 150 pt, next from 230 pt, tighter spacing; the title stays the
+button always, the title from 150 pt, next from 200 pt (a minimised capsule beside the search
+button is about 220 pt, and without next the title trailed into empty glass), tighter spacing and a
+12 pt inset each side, so the square cover clears the capsule's rounded end; the title stays the
 accessibility label. Expanded, the artist line is `Color.primary` at 60 % opacity, never the
 hierarchical `.secondary`: that is drawn vibrant against the accessory's glass, which is not drawn
 while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route.
