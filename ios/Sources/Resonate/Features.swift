@@ -186,11 +186,28 @@ final class Features {
             do {
                 let count = try await aside(native) { try $0.submitScrobbles(account: account, playing: fresh) }
                 lastPlaying = playing
-                if count > 0 { scrobbleStatus = "Submitted \(count) listens" }
+                if count > 0 { scrobbleStatus = "Submitted \(counted(Int(count), "listen"))" }
+            } catch {
+                scrobbleStatus = explained(error)
+            }
+            do {
+                let told = try await aside(native) { try $0.tellLoves(account: account) }
+                if let said = Self.said(told) { scrobbleStatus = said }
             } catch {
                 scrobbleStatus = explained(error)
             }
         }
+    }
+
+    private static func said(_ told: FavouritesTold) -> String? {
+        let parts = [
+            told.loved > 0 ? "loved \(counted(Int(told.loved), "favourite"))" : nil,
+            told.takenBack > 0 ? "took back \(counted(Int(told.takenBack), "love"))" : nil,
+            told.refused > 0 ? "\(counted(Int(told.refused), "love")) refused" : nil,
+        ].compactMap { $0 }
+        guard let first = parts.first else { return nil }
+        let sentence = parts.joined(separator: ", ")
+        return first.prefix(1).uppercased() + sentence.dropFirst()
     }
 
     func tick(_ native: MobilePlayer, _ snapshot: Snapshot) async {
@@ -919,17 +936,6 @@ final class Features {
                 self?.scrobbleStatus = "Accounts saved, but scrobbling could not start: \(explained(error))"
                 throw error
             }
-        }
-    }
-
-    func sendFavourites() {
-        guard let account = scrobbleAccount, !account.listenbrainzToken.isEmpty || !account.lastfmSession.isEmpty else {
-            scrobbleStatus = "Save a ListenBrainz token or sign in to Last.fm first"
-            return
-        }
-        work { [weak self] native in
-            let count = try await Work.aside { try native.sendFavourites(account: account) }
-            self?.scrobbleStatus = "Sent \(count) favourite updates"
         }
     }
 

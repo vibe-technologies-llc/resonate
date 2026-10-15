@@ -802,11 +802,8 @@ struct ScrobblingView: View {
                 Toggle("Include existing listening history", isOn: $history)
                 Button("Save scrobbling accounts") { features.saveScrobbling(account, includeHistory: history) }
                 Button("Validate accounts") { features.validateScrobbling(account) }
-            }
-            Section {
-                Button("Send current favourites to saved accounts") { features.sendFavourites() }
             } footer: {
-                Text("Sends favourites with identified recordings. Removing a favourite locally does not remove it from your online accounts.")
+                Text("Favourites with an identified recording are loved on each saved account, and taken back there when you remove them.")
             }
             if let status = features.scrobbleStatus {
                 Text(status).foregroundStyle(.secondary)

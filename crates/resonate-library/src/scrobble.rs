@@ -456,7 +456,7 @@ const fn refused_as_malformed(error: &Error) -> bool {
     )
 }
 
-fn refused_for_good(error: &Error) -> bool {
+pub fn refused_for_good(error: &Error) -> bool {
     match error {
         Error::Refused { status, .. } => {
             *status >= 400

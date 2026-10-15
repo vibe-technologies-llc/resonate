@@ -103,7 +103,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `SyncedDevice.id`, since a reinstalled phone keeps its name. Landing a received song backs off per
   song (`landingRefused`), never pausing the rest (`android.md`).
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
-  same 30 s scrobbling loop, 2 s / 30 s sync polling, the sync-landing journal
+  same 30 s scrobbling loop (which also asks `tell_loves`, so a favourite is loved on each saved
+  account and taken back there when removed; the Scrobbling page says so instead of a send button), 2 s / 30 s sync polling, the sync-landing journal
   (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`
   (below), each `@MainActor @Observable` and created lazily. Every busy flag
   is cleared in `work`'s `finally`, which runs on every path, a failed `library.player()` included;

@@ -337,7 +337,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    fn scrobblers(&self, account: ScrobbleAccount) -> Vec<Box<dyn Scrobbler>> {
+    pub(crate) fn scrobblers(&self, account: ScrobbleAccount) -> Vec<Box<dyn Scrobbler>> {
         let mut clients: Vec<Box<dyn Scrobbler>> = Vec::new();
         if !account.listenbrainz_token.is_empty() {
             clients.push(Box::new(resonate_online::ListenBrainz::new(

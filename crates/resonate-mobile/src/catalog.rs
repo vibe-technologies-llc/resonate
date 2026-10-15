@@ -87,7 +87,9 @@ const V8: &str = "CREATE TABLE refused_offers (identity TEXT NOT NULL, taken_fro
 
 const V9: &str = "ALTER TABLE documents ADD COLUMN missing INTEGER NOT NULL DEFAULT 0;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
+const V10: &str = "CREATE TABLE loves_told (service TEXT NOT NULL, recording TEXT NOT NULL, PRIMARY KEY (service, recording)) STRICT, WITHOUT ROWID;";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 

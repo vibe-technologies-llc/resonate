@@ -145,7 +145,7 @@ pub use crate::{
     scrobble::{
         Billed, LOVES_TOLD_AT_ONCE, LastfmSession, LastfmSignIn, ListeningService, Love, Loved,
         LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers, Submitted,
-        TokenHeld,
+        TokenHeld, refused_for_good,
     },
     search::{
         Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,
