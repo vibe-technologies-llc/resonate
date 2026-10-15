@@ -567,7 +567,8 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
   banner per song.
 - **Pictures refresh by the changed-art revision**: every status poll, scan, landing and
   single-song lookup asks `art_changed_since` from the last revision (the first answer only sets
-  the baseline); the named songs alone are evicted from the cache and their entry in
+  the baseline, judged by whether a revision was held when the ask was made, so two overlapping
+  first asks both only set it); the named songs alone are evicted from the cache and their entry in
   `Features.artGenerations` bumped, which `ArtworkView` and the backdrop key their `.task` on. A
   rise in `portraits` bumps `portraitGeneration` and forgets the kept portraits.
 - **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself

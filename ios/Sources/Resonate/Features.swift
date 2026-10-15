@@ -707,9 +707,10 @@ final class Features {
     }
 
     func refreshChangedArt(_ native: MobilePlayer) async {
-        let since = artRevision ?? 0
+        let asked = artRevision
+        let since = asked ?? 0
         guard let changed = try? await Work.aside({ try native.artChangedSince(revision: since) }) else { return }
-        let known = artRevision != nil
+        let known = asked != nil
         artRevision = max(artRevision ?? 0, changed.revision)
         guard known, !changed.tracks.isEmpty else { return }
 
