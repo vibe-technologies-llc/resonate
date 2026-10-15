@@ -1049,6 +1049,10 @@ impl Catalog for DocumentCatalog {
         if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
             return Err(Refused::Unwritable);
         }
+        if self.holds(recording)? {
+            let _ = fs::remove_file(staged);
+            return Ok(true);
+        }
         fs::create_dir_all(&self.received).map_err(|_| Refused::Unwritable)?;
         let path = self.landed_name(&extension);
         let text = path.to_str().ok_or(Refused::Unwritable)?.to_owned();
@@ -1526,6 +1530,16 @@ mod tests {
             player.sync_receive(waiting[0].id + 1, -1, "content://test/x.flac".into()),
             Err(Error::InvalidDescriptor)
         ));
+
+        fs::write(&staged, b"fLaC").expect("the same song again");
+        assert!(
+            documents
+                .land(&hunter, "flac", &staged)
+                .expect("a second landing")
+        );
+
+        assert!(!staged.exists());
+        assert_eq!(player.sync_received().expect("the waiting songs").len(), 1);
         let _ = fs::remove_dir_all(folder);
     }
 

@@ -386,7 +386,8 @@ A holding's size is reported as 0, since a document row carries none; a song is 
 
 A song from another device cannot be written through SAF from Rust: `land` moves the staged file into
 app-private `sync-received`, notes it in `received` and answers that it landed, and `holds` counts a
-waiting song as held so it is not asked for twice. Kotlin polls `sync_received`, creates a document in
+waiting song as held so it is not asked for twice; a song `land` finds already held (indexed or
+waiting) is answered landed and its staged copy dropped, never queued a second time. Kotlin polls `sync_received`, creates a document in
 the chosen writable music folder (the first one unless chosen), journals its URI as
 `unfinished-sync-landing`, and hands the fresh descriptor to `sync_receive`, which copies the bytes,
 validates and indexes the document as a download is, and forgets the waiting song whether or not that

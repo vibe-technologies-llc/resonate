@@ -521,6 +521,17 @@ impl Running {
         Some(record)
     }
 
+    fn listed_as_landed(&self, recording: &Recording, from: DeviceId) {
+        let mut shown = self.shown.write();
+        if let Some(listed) = shown.transfers.iter_mut().find(|transfer| {
+            transfer.from == from
+                && transfer.recording == *recording
+                && transfer.state == TransferState::Waiting
+        }) {
+            listed.state = TransferState::Landed;
+        }
+    }
+
     fn transfer(&self, recording: &Recording, from: DeviceId, change: impl FnOnce(&mut Transfer)) {
         let mut shown = self.shown.write();
         let at = shown
@@ -1852,8 +1863,23 @@ async fn fetch_one(
     if !running.fetching.lock().insert(key.clone()) {
         return;
     }
-    fetch_claimed(running, device, connection, recording).await;
+    if held_already(running, &recording).await {
+        running.listed_as_landed(&recording, device);
+    } else {
+        fetch_claimed(running, device, connection, recording).await;
+    }
     running.fetching.lock().remove(&key);
+}
+
+async fn held_already(running: &Arc<Running>, recording: &Recording) -> bool {
+    let catalog = Arc::clone(&running.catalog);
+    let asked = recording.clone();
+    blocking(move || catalog.holds(&asked).map_err(Error::Catalog))
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(%error, "whether a song is held here could not be read");
+            false
+        })
 }
 
 async fn fetch_claimed(

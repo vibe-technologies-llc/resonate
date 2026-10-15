@@ -179,7 +179,10 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   look follows again too, at most every 60 s. Following again asks only connected devices, works out
   what is wanted here before listing the other's holdings (nothing wanted, nothing asked), and under
   `everything` runs at most every 10 s, since that lists the whole of the other's holdings. A song is
-  fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked. Only whole-file, unvaulted songs are offered. A transfer is staged under
+  fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked, and
+  **asks `Catalog::holds` again once claimed**: follows overlap, each listing what was wanted when
+  it began, so a song an earlier follow landed meanwhile is passed over (`held_already`), never
+  fetched twice (on a phone a second landing took `Name (1)` beside the first). Only whole-file, unvaulted songs are offered. A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
