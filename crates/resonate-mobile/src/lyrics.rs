@@ -8,6 +8,7 @@ use resonate_lyrics::{Detail, LyricLine, Lyrics, Timing, Voice, read_lyrics, rea
 use crate::{Error, MobilePlayer, Result, documents::location, features::milliseconds};
 
 const SHEETS_KEPT: usize = 16;
+const LYRICS_AT_MOST: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum LyricDetail {
@@ -119,6 +120,7 @@ impl KeptSheets {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn keep_lyric_text(&self, id: u64, text: String) -> Result<()> {
+        refuse_oversized_lyrics(text.len())?;
         let parsed = read_lyrics(SourceId::new("embedded")?, &text)?;
         if let Some(parsed) = parsed {
             let previous = self.cached_lyrics(id)?;
@@ -135,6 +137,7 @@ impl MobilePlayer {
     }
 
     pub fn keep_sidecar_lyrics(&self, id: u64, bytes: Vec<u8>) -> Result<()> {
+        refuse_oversized_lyrics(bytes.len())?;
         let track = self.catalog.track(id)?;
         let mut wanted = resonate_lyrics::Wanted::for_media(location(&track.uri)?);
         wanted.title = Some(track.title);
@@ -252,6 +255,15 @@ impl MobilePlayer {
 
         lyrics
     }
+}
+
+fn refuse_oversized_lyrics(bytes: usize) -> Result<()> {
+    if bytes > LYRICS_AT_MOST {
+        return Err(Error::LyricsTooLarge {
+            bytes: bytes as u64,
+        });
+    }
+    Ok(())
 }
 
 fn parse_lyrics(text: &str, document: Option<&str>, origin: &str) -> Result<Option<Lyrics>> {
@@ -449,6 +461,26 @@ mod tests {
             })
             .expect("a song")
             .id
+    }
+
+    #[test]
+    fn lyrics_past_a_mebibyte_are_refused_whichever_way_they_arrive() {
+        let player = player();
+        let id = song(&player, "long");
+        let sheet = "[00:01.00]la\n".repeat(LYRICS_AT_MOST / 13 + 1);
+
+        let embedded = player.keep_lyric_text(id, sheet.clone());
+        let sidecar = player.keep_sidecar_lyrics(id, sheet.into_bytes());
+
+        assert!(matches!(embedded, Err(Error::LyricsTooLarge { .. })));
+        assert!(matches!(sidecar, Err(Error::LyricsTooLarge { .. })));
+        assert!(player.cached_lyrics(id).expect("a read").is_none());
+    }
+
+    #[test]
+    fn lyrics_of_exactly_a_mebibyte_are_not_refused() {
+        assert!(refuse_oversized_lyrics(LYRICS_AT_MOST).is_ok());
+        assert!(refuse_oversized_lyrics(LYRICS_AT_MOST + 1).is_err());
     }
 
     fn sung(player: &MobilePlayer, sheet: &str) -> u64 {

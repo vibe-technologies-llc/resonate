@@ -88,15 +88,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] `snapshot` consumes state (drains events, `take`s `failure`, counts listening), so the two
   `snapshot()` calls `NowPlaying.swift` makes only to read the transport on releasing the session
   can swallow a playback failure the poll never shows
-- [S] A found download whose destination cannot be created leaks its job: `find_download` parks the
-  provider's reader in `Standing.opened`, neither phone calls `cancel_download` on that path, and
-  `begin` evicts settled jobs only, so the job and its connection stay open
 - [S] The phones show Rust debug prints as report text: `analyse_track` builds `findings` with
   `{finding:?}` and `inspector` builds `container` with `{:?}` (`IsoMp4`), where `Finding::told`
   and `Container`'s `Display` are the sentences the desktop shows
-- [S] Rust caps what a phone hands it unevenly: `keep_sidecar_lyrics`, `keep_lyric_text` and
-  `recognise_heard` take any size where `import_playlist_file`, `keep_folder_cover` and
-  `keep_room_correction` refuse past a bound (both phones cap at the source today)
 
 ## Android
 - [S] `RustMediaPlayer`'s available commands omit `COMMAND_RELEASE`, so `SimpleBasePlayer.release()`
@@ -114,9 +108,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] `MainActivity`'s controller listener calls `pending.get()` uncaught, so a session connection
   that fails is an `ExecutionException` on the main thread at launch (`ResonateWidgets.control`
   catches it)
-- [S] `oboe.rs` `Opener::open` waits on the stream thread with `started.recv()` and no bound, so a
-  stalled `open_stream` on a Bluetooth or USB route change blocks the engine thread; `remote_io`
-  bounds the same wait with `UNIT_WITHIN`
 - [S] `RustMediaPlayer` pauses on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`, though the platform ducks a
   request without `setWillPauseWhenDucked`, and resumes only if the transport was Playing, so a
   loss during Loading never resumes

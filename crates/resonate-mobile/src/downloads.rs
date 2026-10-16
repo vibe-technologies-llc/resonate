@@ -5,7 +5,7 @@ use std::{
     io::{self, Read, Write},
     os::fd::FromRawFd,
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
@@ -27,12 +27,24 @@ const JOBS_SETTLED_KEPT: usize = 16;
 const CHUNK_BYTES: usize = 64 * 1024;
 const LARGEST_DOWNLOAD: u64 = 8 * 1024 * 1024 * 1024;
 const HEEDED_EVERY: Duration = Duration::from_millis(50);
+const OFFER_HELD_FOR: Duration = Duration::from_secs(120);
 const EXTENSION_UNNAMED: &str = "flac";
+
+#[derive(Clone, Copy)]
+struct OfferHeldFor(Duration);
+
+impl Default for OfferHeldFor {
+    fn default() -> Self {
+        Self(OFFER_HELD_FOR)
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct Downloads {
     jobs: Mutex<BTreeMap<u64, Arc<Job>>>,
     next: AtomicU64,
+    parkings: AtomicU64,
+    offer_held_for: OfferHeldFor,
     authorizing: Mutex<Option<(Client, Authorizing)>>,
     refreshed: Arc<Mutex<Option<String>>>,
 }
@@ -119,7 +131,13 @@ struct Standing {
     total: Option<u64>,
     provider: Option<MusicProvider>,
     taken_from: Option<String>,
-    opened: Option<Box<dyn Read + Send>>,
+    opened: Option<Parked>,
+}
+
+struct Parked {
+    reader: Box<dyn Read + Send>,
+    parking: u64,
+    _watched: mpsc::Sender<()>,
 }
 
 impl Job {
@@ -179,6 +197,20 @@ impl Job {
 
     pub(crate) fn done(&self) {
         self.standing.lock().phase = DownloadPhase::Done;
+    }
+
+    fn expire(&self, parking: u64) {
+        let mut standing = self.standing.lock();
+        if standing
+            .opened
+            .as_ref()
+            .is_some_and(|parked| parked.parking == parking)
+        {
+            standing.opened = None;
+            if !standing.phase.is_settled() {
+                standing.phase = DownloadPhase::Failed;
+            }
+        }
     }
 
     pub(crate) fn taken_from(&self) -> Option<String> {
@@ -400,7 +432,7 @@ impl Downloads {
 
     pub(crate) fn find(
         &self,
-        job: &Job,
+        job: &Arc<Job>,
         accounts: Vec<DownloadAccount>,
         refused: &BTreeSet<String>,
         reaching: &(dyn Fn() -> bool + Sync),
@@ -480,7 +512,7 @@ impl Downloads {
 
     fn first_opened(
         &self,
-        job: &Job,
+        job: &Arc<Job>,
         offers: Vec<Delivered>,
         kind_of: &dyn Fn(&SourceId) -> Option<MusicProvider>,
         reaching: &(dyn Fn() -> bool + Sync),
@@ -501,7 +533,7 @@ impl Downloads {
         Err(failure.unwrap_or(Error::NotFound))
     }
 
-    fn held_for_a_destination(&self, job: &Job, taken: Taken) -> DownloadOffer {
+    fn held_for_a_destination(&self, job: &Arc<Job>, taken: Taken) -> DownloadOffer {
         let name = resonate_core::naming::named_within(
             "",
             std::ffi::OsStr::new(&file_stem_of(&job.song)),
@@ -513,13 +545,31 @@ impl Downloads {
         standing.total = taken.length;
         standing.provider = Some(taken.provider);
         standing.taken_from = Some(taken.taken_from);
-        standing.opened = Some(taken.reader);
+        standing.opened = Some(self.parked(job, taken.reader));
         DownloadOffer {
             job: job.id,
             extension: taken.extension,
             name,
             provider: taken.provider,
             total: taken.length,
+        }
+    }
+
+    fn parked(&self, job: &Arc<Job>, reader: Box<dyn Read + Send>) -> Parked {
+        let parking = self.parkings.fetch_add(1, Ordering::Relaxed);
+        let (watched, released) = mpsc::channel::<()>();
+        let held_for = self.offer_held_for.0;
+        let job = Arc::downgrade(job);
+        let watchdog = thread::Builder::new()
+            .name("resonate-download-offer".into())
+            .spawn(move || expire_unless_taken(&released, &job, parking, held_for));
+        if let Err(error) = watchdog {
+            tracing::warn!(%error, "an offered download is not watched for being left");
+        }
+        Parked {
+            reader,
+            parking,
+            _watched: watched,
         }
     }
 
@@ -534,7 +584,8 @@ impl Downloads {
             .lock()
             .opened
             .take()
-            .ok_or(Error::DownloadExpired)?;
+            .ok_or(Error::DownloadExpired)?
+            .reader;
         job.moved_to(DownloadPhase::Downloading)?;
         job.received.store(0, Ordering::Release);
         let mut bytes = 0_u64;
@@ -580,6 +631,21 @@ impl Downloads {
                 })
         });
         job.settled(finished)
+    }
+}
+
+fn expire_unless_taken(
+    released: &mpsc::Receiver<()>,
+    job: &Weak<Job>,
+    parking: u64,
+    held_for: Duration,
+) {
+    if matches!(
+        released.recv_timeout(held_for),
+        Err(RecvTimeoutError::Timeout)
+    ) && let Some(job) = job.upgrade()
+    {
+        job.expire(parking);
     }
 }
 
@@ -1119,6 +1185,84 @@ mod tests {
         for (refusal, told) in cases {
             assert_eq!(failure_of(MusicProvider::Tidal, &refusal).to_string(), told);
         }
+    }
+
+    fn briefly_holding(held_for: Duration) -> Downloads {
+        Downloads {
+            offer_held_for: OfferHeldFor(held_for),
+            ..Downloads::default()
+        }
+    }
+
+    fn phase_of(downloads: &Downloads, job: u64) -> DownloadPhase {
+        downloads.progress(job).expect("the job").phase
+    }
+
+    #[test]
+    fn an_offer_nobody_takes_is_let_go_and_its_job_fails() {
+        const HELD_FOR: Duration = Duration::from_millis(100);
+        const LET_GO_WITHIN: Duration = Duration::from_secs(5);
+        let downloads = briefly_holding(HELD_FOR);
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(b"fLaC", Duration::ZERO);
+
+        found(
+            &downloads,
+            job,
+            vec![account(MusicProvider::Monochrome, &server)],
+        )
+        .offer
+        .expect("an offer");
+        let waited = Instant::now();
+        while phase_of(&downloads, job) != DownloadPhase::Failed {
+            assert!(
+                waited.elapsed() < LET_GO_WITHIN,
+                "the offer was never let go"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        let (path, file) = destination("let-go");
+        let refused = downloads.download(&downloads.job(job).expect("the job"), file, &reaching);
+
+        assert!(matches!(refused, Err(Error::DownloadExpired)));
+        assert!(
+            downloads
+                .job(job)
+                .expect("the job")
+                .standing
+                .lock()
+                .opened
+                .is_none()
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_offer_taken_in_time_is_not_let_go_afterwards() {
+        const AUDIO: &[u8] = b"fLaC taken at once";
+        const HELD_FOR: Duration = Duration::from_millis(100);
+        let downloads = briefly_holding(HELD_FOR);
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(AUDIO, Duration::ZERO);
+
+        found(
+            &downloads,
+            job,
+            vec![account(MusicProvider::Monochrome, &server)],
+        )
+        .offer
+        .expect("an offer");
+        let (path, file) = destination("taken");
+        let copied = downloads
+            .download(&downloads.job(job).expect("the job"), file, &reaching)
+            .expect("the song downloads");
+        thread::sleep(HELD_FOR * 4);
+
+        assert_eq!(copied, AUDIO.len() as u64);
+        assert_eq!(phase_of(&downloads, job), DownloadPhase::Downloading);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

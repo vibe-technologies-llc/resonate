@@ -11,7 +11,7 @@ use std::{
 use crossbeam_channel::{Receiver, bounded, unbounded};
 use oboe::{
     AudioOutputStream, AudioStream, AudioStreamBase, AudioStreamBuilder, AudioStreamSafe,
-    PerformanceMode, SharingMode, Stereo, Usage,
+    ContentType, PerformanceMode, SharingMode, Stereo, Usage,
 };
 use resonate_audio::{
     AudioSource, Backend, Error, HardwareVolume, NodeName, Opener, Operation, Result, SinkChange,
@@ -20,7 +20,10 @@ use resonate_audio::{
 };
 use resonate_core::{ChannelLayout, Frames, Gain, SampleFormat, SampleRate, StreamSpec};
 
-use super::oboe_render::{RENDER_BYTES, Rendering};
+use super::{
+    oboe_render::{RENDER_BYTES, Rendering},
+    waits::{OPEN_WITHIN, between_commands, opened_within},
+};
 
 const OUTPUT: SinkId = SinkId::new(1);
 const RATE: SampleRate = SampleRate::HZ_48000;
@@ -126,9 +129,10 @@ impl Opener for Device {
                     .set_channel_count::<Stereo>()
                     .set_sample_rate(RATE.hz() as i32)
                     .set_device_id(requested_device)
-                    .set_performance_mode(PerformanceMode::LowLatency)
+                    .set_performance_mode(PerformanceMode::PowerSaving)
                     .set_sharing_mode(SharingMode::Shared)
                     .set_usage(Usage::Media)
+                    .set_content_type(ContentType::Music)
                     .set_callback(callback)
                     .open_stream();
                 let mut stream = match opened {
@@ -195,7 +199,7 @@ impl Opener for Device {
                     } else {
                         drain_after = None;
                     }
-                    match asked.recv_timeout(Duration::from_millis(10)) {
+                    match asked.recv_timeout(between_commands(state, draining)) {
                         Ok(StreamCommand::Close)
                         | Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                             let _ = stream.close();
@@ -229,7 +233,7 @@ impl Opener for Device {
                 op: Operation::Open,
                 source,
             })?;
-        started.recv().map_err(|_| Error::LoopStopped)??;
+        opened_within(&started, OPEN_WITHIN)?;
         Ok(SinkStream::new(
             events,
             clock,

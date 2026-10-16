@@ -127,6 +127,10 @@ pub enum Error {
     Analysis(#[from] resonate_analysis::Error),
     #[error("lyrics could not be read")]
     Lyrics(#[from] resonate_lyrics::Error),
+    #[error("The lyrics are larger than one MiB ({bytes} bytes)")]
+    LyricsTooLarge { bytes: u64 },
+    #[error("The clip is longer than thirty seconds ({samples} samples)")]
+    ClipTooLong { samples: u64 },
     #[error("none of these recordings could be matched to the local library")]
     NoLocalMatches,
     #[error("The playlist file is larger than eight MiB ({bytes} bytes)")]

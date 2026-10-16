@@ -93,7 +93,14 @@ waits for that cleanup before opening another. Native shutdown stops sync, then 
 playback. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
 
-Oboe opens a shared stereo float stream at 48 kHz; the existing Rust engine converts into it.
+Oboe opens a shared stereo float stream at 48 kHz in `PerformanceMode::PowerSaving` with
+`ContentType::Music` (the engine's ring is the buffer, so low latency buys nothing and costs
+power); the existing Rust engine converts into it. The output thread waits on its commands as
+`output/waits.rs` says: 10 ms while draining, 100 ms while streaming (the latency is read again
+each time) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
+`OPEN_WITHIN` (3 s) for the stream thread, so a stalled `open_stream` on a route change is a
+timed-out open the engine parks, not a blocked engine thread, and the late stream closes itself
+(`an_open_that_never_answers_times_out_instead_of_blocking`).
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
 rebinding; system default is id zero. Device type distinguishes outputs that share a product name.
 The pane shows the actual route in a status card and names a different requested route when one
@@ -322,7 +329,10 @@ restored into a later engine session.
 
 Scanning keeps album artist, genre, date, track/disc numbers, depth, channel count and tagged
 MusicBrainz ids. Embedded pictures precede the folder's cover/folder/front JPEG or PNG, bounded at
-8 MiB; a matching-basename LRC is bounded at 1 MiB and decoded through core's text reader. A bad
+8 MiB; a matching-basename LRC is bounded at 1 MiB and decoded through core's text reader.
+The boundary refuses past the same bound itself (`keep_sidecar_lyrics`, `keep_lyric_text`:
+`LyricsTooLarge`), as `keep_folder_cover` does past 8 MiB and `recognise_heard` past 30 s of
+samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one. A bad
 companion does not refuse playable audio. Bitmap caches use 32 MiB and decode to at most 1024
 pixels per side after checking dimensions. Albums group by title and album artist, falling back
 to the tagged artist. Folder names and grants are listed independently of the catalog, including
@@ -556,7 +566,11 @@ Finding, Downloading, Validating, Done, Failed, Cancelled; bytes received; the t
 provider said one; the provider); `cancel_download(job)` is heard between provider answers, while an
 offer opens (on its own thread, looked at every 50 ms) and between 64 KiB chunks, and a cancel
 pressed before the find stays (nothing resets it). Shutdown cancels every job; at most 16 settled
-jobs are kept. A failure is a typed error whose message is the sentence the app shows, naming the
+jobs are kept. **A found offer waits for its destination at most `OFFER_HELD_FOR` (2 min)**: a
+watchdog thread per offer drops the provider's reader (and its connection) and fails the job if
+`download_offer` has not taken it, so a front end that cannot create a document leaks neither
+(`download_offer` then answers `DownloadExpired`; `an_offer_nobody_takes_is_let_go_and_its_job_fails`).
+Taking the offer, a cancel or a settled job ends the watchdog at once. A failure is a typed error whose message is the sentence the app shows, naming the
 provider and cause (`NoProvider`, `NotFound`, `Unreachable`, `ProviderAway` (also a provider left
 behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the code,
 `ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,

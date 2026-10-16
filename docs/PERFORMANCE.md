@@ -53,9 +53,6 @@ are in [ROADMAP.md](ROADMAP.md).
   up to 1024 px once per track of an album (the 32 MiB cache holds about 8), and
   `ArtworkEnrichment.update` evicts every cover and bumps `artworkGeneration` on any change where
   `art_changed_since` names the changed songs
-- [S] The Oboe stream asks `PerformanceMode::LowLatency` with no `ContentType::Music`, and its
-  output thread wakes every 10 ms (`calculate_latency_millis` included) while a stream is open,
-  paused too; iOS sleeps until a command or a moved latency
 
 ## iOS
 - [S] Each finished download runs `Library.refresh` (collections, three searches, every catalog

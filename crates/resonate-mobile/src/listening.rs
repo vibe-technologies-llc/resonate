@@ -4,9 +4,10 @@ use resonate_core::{SampleRate, SourceId, folded_letters};
 use resonate_listen::{Clip, Error as ListenError, Heard, Recognisers, Recognition};
 use resonate_online::{Audd, Shazam};
 
-use crate::{MobilePlayer, Result};
+use crate::{Error, MobilePlayer, Result};
 
 const HEARD_IN_MONO: u16 = 1;
+const CLIP_SAMPLES_AT_MOST: usize = 30 * 192_000;
 const TITLE_APART_FROM_ARTIST: char = '\u{1f}';
 const SERVICE_NAMES: [(&str, &str); 2] = [("shazam", "Shazam"), ("audd", "AudD")];
 
@@ -40,6 +41,7 @@ impl MobilePlayer {
         rate: u32,
         audd_token: String,
     ) -> Result<HeardAnswer> {
+        refuse_a_long_clip(samples.len())?;
         self.require_online()?;
         let clip = Clip {
             rate: SampleRate::new(rate)?,
@@ -60,6 +62,15 @@ impl MobilePlayer {
             shazam.and(Arc::new(Audd::new(Arc::clone(client), audd_token)))
         }
     }
+}
+
+fn refuse_a_long_clip(samples: usize) -> Result<()> {
+    if samples > CLIP_SAMPLES_AT_MOST {
+        return Err(Error::ClipTooLong {
+            samples: samples as u64,
+        });
+    }
+    Ok(())
 }
 
 fn answer_of(recognition: resonate_listen::Result<Recognition>) -> Result<HeardAnswer> {
@@ -147,6 +158,15 @@ mod tests {
                 by: self.service.clone(),
             }))
         }
+    }
+
+    #[test]
+    fn a_clip_past_thirty_seconds_at_the_highest_rate_is_refused() {
+        assert!(refuse_a_long_clip(CLIP_SAMPLES_AT_MOST).is_ok());
+        assert!(matches!(
+            refuse_a_long_clip(CLIP_SAMPLES_AT_MOST + 1),
+            Err(Error::ClipTooLong { .. })
+        ));
     }
 
     fn asking(answer: Option<(&'static str, &'static str)>, fails: bool) -> Recognisers {
