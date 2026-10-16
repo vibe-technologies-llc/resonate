@@ -68,6 +68,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 - **Transparency is structural, one predicate for stage and plan**: `Profile::is_transparent` = no
   bands and unity preamp (ten bands at 0 dB is *not*). `ChainBuilder::build` drops a transparent
   stage; a numerical rule would rebuild the chain twice per drag as a slider crosses 0 dB.
+- **A retune that moves more than one band replaces the filter set and starts its history over**
+  (`bands_apart` against `BANDS_A_RETUNE_MOVES_AT_MOST`): a drag, a typed cell, an added band move
+  one and carry history; selecting another profile does not, else the old filters ring on in the
+  new ones. `state.fill` allocates nothing
+  (`a_profile_selected_in_place_of_another_leaves_the_old_filters_ringing_nowhere`). A profile of one
+  band swapped for another of one band is indistinguishable from a drag and carries.
 - **`MAX_BANDS` (32) of state in `prepare`**, `[group][section][channel]`: adding a band allocates
   nothing; lanes a shrink vacates are silenced (else a thump on regrowth).
 - **`Equaliser::prepare` refuses a spec off its build rate** (`InputRateMismatch`): a stage pushed
