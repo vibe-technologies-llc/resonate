@@ -478,58 +478,151 @@ class _CompactNavigationBar extends StatelessWidget {
                       message: _navigationRoots[index].$3,
                       child: InkWell(
                         onTap: () => onDestinationSelected(index),
+                        splashFactory: NoSplash.splashFactory,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
                         child: Padding(
                           padding: const EdgeInsets.all(8),
                           child: SizedBox(
                             height: 56,
-                            child: index == selectedIndex
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      SizedBox(
-                                        height: 32,
-                                        child: DecoratedBox(
-                                          decoration: ShapeDecoration(
-                                            color: scheme.primary.withValues(
-                                              alpha: .16,
-                                            ),
-                                            shape: const StadiumBorder(),
-                                          ),
-                                          child: Center(
-                                            child: Icon(
-                                              _navigationRoots[index].$2,
-                                              color: scheme.onSurface,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      SizedBox(
-                                        height: 20,
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            _navigationRoots[index].$3,
-                                            maxLines: 1,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelMedium
-                                                ?.copyWith(
-                                                  color: scheme.onSurface,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Center(
-                                    child: Icon(
-                                      _navigationRoots[index].$1,
-                                      color: scheme.onSurfaceVariant,
+                            child: AnimatedSwitcher(
+                              duration: motion(context, 300),
+                              reverseDuration: motion(context, 180),
+                              transitionBuilder: (child, animation) {
+                                final curved = animation.drive(
+                                  CurveTween(curve: Curves.easeOutCubic),
+                                );
+                                final scale = curved.drive(
+                                  Tween<double>(begin: .9, end: 1),
+                                );
+                                final offset = curved.drive(
+                                  Tween<Offset>(
+                                    begin: const Offset(0, .12),
+                                    end: Offset.zero,
+                                  ),
+                                );
+                                return FadeTransition(
+                                  opacity: curved,
+                                  child: SlideTransition(
+                                    position: offset,
+                                    child: ScaleTransition(
+                                      scale: scale,
+                                      child: child,
                                     ),
                                   ),
+                                );
+                              },
+                              child: index == selectedIndex
+                                  ? Column(
+                                      key: ValueKey(
+                                        'selected:$index',
+                                      ),
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        SizedBox(
+                                          height: 32,
+                                          child: DecoratedBox(
+                                            decoration: ShapeDecoration(
+                                              color: scheme.primary.withValues(
+                                                alpha: .16,
+                                              ),
+                                              shape: const StadiumBorder(),
+                                            ),
+                                            child: Center(
+                                              child: AnimatedSwitcher(
+                                                duration: motion(context, 220),
+                                                transitionBuilder:
+                                                    (child, animation) {
+                                                  final curved =
+                                                      animation.drive(
+                                                        CurveTween(
+                                                          curve: Curves
+                                                              .easeOutCubic,
+                                                        ),
+                                                      );
+                                                  return FadeTransition(
+                                                    opacity: curved,
+                                                    child: ScaleTransition(
+                                                      scale: curved.drive(
+                                                        Tween<double>(
+                                                          begin: .7,
+                                                          end: 1,
+                                                        ),
+                                                      ),
+                                                      child: child,
+                                                    ),
+                                                  );
+                                                },
+                                                child: Icon(
+                                                  _navigationRoots[index].$2,
+                                                  key: ValueKey(
+                                                    _navigationRoots[index].$2,
+                                                  ),
+                                                  color: scheme.onSurface,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        SizedBox(
+                                          height: 20,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              _navigationRoots[index].$3,
+                                              maxLines: 1,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelMedium
+                                                  ?.copyWith(
+                                                    color: scheme.onSurface,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Center(
+                                      key: ValueKey(
+                                        'unselected:$index',
+                                      ),
+                                      child: AnimatedSwitcher(
+                                        duration: motion(context, 220),
+                                        transitionBuilder:
+                                            (child, animation) {
+                                          final curved = animation.drive(
+                                            CurveTween(
+                                              curve: Curves.easeOutCubic,
+                                            ),
+                                          );
+                                          return FadeTransition(
+                                            opacity: curved,
+                                            child: ScaleTransition(
+                                              scale: curved.drive(
+                                                Tween<double>(
+                                                  begin: .7,
+                                                  end: 1,
+                                                ),
+                                              ),
+                                              child: child,
+                                            ),
+                                          );
+                                        },
+                                        child: Icon(
+                                          _navigationRoots[index].$1,
+                                          key: ValueKey(
+                                            _navigationRoots[index].$1,
+                                          ),
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                            ),
                           ),
                         ),
                       ),

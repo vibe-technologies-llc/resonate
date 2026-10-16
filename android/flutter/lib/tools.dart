@@ -12,26 +12,37 @@ class LyricsPage extends StatelessWidget {
   final PlayerModel model;
   final RowData track;
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Lyrics'),
-      actions: [
-        ActionIcon(
-          icon: Icons.refresh_rounded,
-          label: 'Refresh lyrics',
-          onPressed: track.isEmpty
-              ? null
-              : () =>
-                    model.call('lyrics', {'id': track['id'], 'refresh': true}),
+  Widget build(BuildContext context) => ArtworkAtmosphere(
+    model: model,
+    track: track,
+    immersive: true,
+    child: Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
+        title: const Text('Lyrics'),
+        actions: [
+          ActionIcon(
+            icon: Icons.refresh_rounded,
+            label: 'Refresh lyrics',
+            onPressed: track.isEmpty
+                ? null
+                : () =>
+                      model.call('lyrics', {'id': track['id'], 'refresh': true}),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          MediaQuery.paddingOf(context).top + kToolbarHeight,
+          24,
+          0,
         ),
-      ],
-    ),
-    body: ArtworkAtmosphere(
-      model: model,
-      track: track,
-      immersive: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: LyricsPane(model: model, track: track),
       ),
     ),
@@ -461,17 +472,26 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final model = widget.model;
       final report = row(model.state['analysis']);
       final valid = report['trackId'] == widget.track['id'];
-      return Scaffold(
-        appBar: AppBar(title: const Text('Analysis')),
-        body: Ambient(
-          child: widget.track.isEmpty
+      final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
+      return Ambient(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
+            title: const Text('Analysis'),
+          ),
+          body: widget.track.isEmpty
               ? const EmptyState(
                   icon: Icons.insights_rounded,
                   title: 'Look closer',
                   detail: 'Choose a song to inspect its audio quality.',
                 )
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 180),
+                  padding: EdgeInsets.fromLTRB(24, topInset + 24, 24, 180),
                   children: [
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -613,38 +633,49 @@ class _VisualizerPageState extends State<VisualizerPage>
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.model,
-    builder: (_, _) => Scaffold(
-      appBar: AppBar(title: const Text('Visualizer')),
-      body: Ambient(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SignalPlot(
-                  values: (widget.model.state['samples'] as List? ?? [])
-                      .map(decimal)
-                      .toList(),
-                  height: 280,
-                  bars: true,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  widget.model.current.isEmpty
-                      ? 'Play a song to see it move'
-                      : title(widget.model.current),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                const Text('Live audio from the Resonate engine'),
-              ],
+    builder: (_, _) {
+      final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
+      return Ambient(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
+            title: const Text('Visualizer'),
+          ),
+          body: Center(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(32, topInset + 32, 32, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SignalPlot(
+                    values: (widget.model.state['samples'] as List? ?? [])
+                        .map(decimal)
+                        .toList(),
+                    height: 280,
+                    bars: true,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    widget.model.current.isEmpty
+                        ? 'Play a song to see it move'
+                        : title(widget.model.current),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Live audio from the Resonate engine'),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
