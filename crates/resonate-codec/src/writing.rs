@@ -1066,6 +1066,12 @@ fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -
         }
     }
 
+    if !saving.taken.still_stands(path) {
+        return Err(Error::ChangedWhileWritten {
+            location: location.clone(),
+        });
+    }
+
     Ok(match overlay.land(path).map_err(unread)? {
         Landing::InPlace | Landing::Unchanged => true,
         Landing::TooWide => false,
@@ -1382,6 +1388,7 @@ mod tests {
         path::PathBuf,
         process,
         sync::atomic::{AtomicU64, Ordering},
+        time::{Duration, SystemTime},
     };
 
     use lofty::ogg::tag::VorbisComments;
@@ -1783,6 +1790,20 @@ mod tests {
     }
 
     fn retitled(path: &Path, location: &MediaLocation, title: &str) -> Result<bool> {
+        retitled_after(
+            path,
+            location,
+            title,
+            Taken::of(path).expect("a writable file"),
+        )
+    }
+
+    fn retitled_after(
+        path: &Path,
+        location: &MediaLocation,
+        title: &str,
+        taken: Taken,
+    ) -> Result<bool> {
         let mut tagged = opened(path, location)?;
         let kind = tagged.file_type();
         if tagged.primary_tag().is_none() {
@@ -1799,7 +1820,7 @@ mod tests {
                 counting: None,
                 unkeyed: &[],
                 others: &[],
-                taken: Taken::of(path).expect("a writable file"),
+                taken,
                 options: WriteOptions::default(),
             },
         )
@@ -1880,6 +1901,33 @@ mod tests {
             !taken.still_stands(&path),
             "an edit made meanwhile went unseen"
         );
+    }
+
+    #[test]
+    fn an_edit_in_place_is_refused_where_another_program_changed_the_file_meanwhile() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        FileTags::default()
+            .write(&location, just(&named_and_identified()))
+            .expect("a written FLAC");
+        let taken = Taken::of(&path).expect("a writable file");
+
+        let later = SystemTime::now() + Duration::from_secs(3_600);
+        File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(later))
+            .expect("a file touched by another program");
+        let before = fs::read(&path).expect("the file");
+
+        let landed = retitled_after(&path, &location, "Echoes (Live)", taken);
+
+        assert!(
+            matches!(landed, Err(Error::ChangedWhileWritten { .. })),
+            "an edit landed over a file changed meanwhile: {landed:?}"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), before);
     }
 
     #[test]
