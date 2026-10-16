@@ -353,7 +353,12 @@ every route change (a pair of headphones at the same rate included), not from th
   re-measured a live image every frame). The pane or
   list is mounted only once that spring is logically complete (`NowPlayingView.settled`) and
   faded out in 0.12 s as the cover starts to grow back, so building or drawing a `List` or the lyric
-  timeline barely overlaps the cover's frames; Lyrics to Up next crossfades at once, the cover staying put. Sleep,
+  timeline barely overlaps the cover's frames; Lyrics to Up next crossfades at once, the cover staying put.
+  **A mode change asks 120 Hz for its 0.8 s** (`FrameRateBoost`, a `CADisplayLink` that lets go once
+  the time is up), and the field rests on the frame it shows while the cover moves
+  (`BackdropView(resting:)`, `.dormant`, so the renderer's capped step carries on without a jump):
+  left to the system, the spring ran at its default rate, and the field redrawing under the moving
+  glass took the frames it needed. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the artwork layout scrolls.
 - **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
@@ -675,36 +680,46 @@ in; it never opens on another colour first.
 entries, `mobile.md`'s *Lyrics*): the same `TURN`, `Glide`/`Leg`, falloffs, cascade, arrival,
 breath dots, word sweep and *END OF LYRICS* mark, with the same constants, arithmetic drawn from
 `lyric_frame`. `LyricStage` holds the motion outside observation (only `beat` is observed, bumped
-where a paused timeline must wake) and turns each `TimelineView(.animation)` tick into a
-`LyricScene`; the timeline runs at the display's rate only while something moves: anything turning,
-or a word-synced sheet playing (its sweep); a line-synced sheet playing with nothing turning ticks
-at 20 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn, and
-back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two
-views swapped, so a drag in progress survives the change. **The wake is the landed frame, not the
-next tick**: `LyricStage.land` bumps `beat` whenever the landed frame's reading or lit voices differ
-from what the turns aim at (`unfollowed`, which `isMoving` includes) and no frame is animating, so
-the switch to the display rate happens within a run-loop turn of the frame arriving instead of
-after a further tick, which started every line change 100 to 200 ms late and with its fastest first
-frames missing. **The display-rate schedule has no interval of its own**
-(`AnimationTimelineSchedule(minimumInterval: nil)`, so 120 Hz on a ProMotion iPhone with
-`CADisableMinimumFrameDurationOnPhone`): a minimum interval equal to the refresh period (the old
-`1/60`) discards every frame whose timestamp lands a hair early, so the timeline ran at an uneven
-30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. **Nothing holds the display at 120
-Hz**: Now Playing's field redraws and every glass control over it is composited again, which fits a
-60 Hz frame and not a 120 Hz one, so a held 120 Hz (tried, for Now Playing and the moving lyrics)
-dropped a frame at each of the field's redraws, 30 stutters a second. **A frame costs the rows in and near the pane, not the sheet**: once
-the sheet is placed, a row whose measured frame lies more than a pane (at least 320 pt) beyond the
-pane's edges is left out of the sheet, each run of them standing as one clear spacer of their
-measured heights and the spacing between (`LyricPiece.gathered`), which keeps the sheet's layout and
-`landing()`'s arithmetic unchanged (a culled row keeps its last measurement) while leaving SwiftUI a
-dozen or so rows to update each frame instead of the whole sheet: with every row in the `ForEach`,
-updating their geometry, tap and accessibility modifiers cost about 5 ms a frame on the main thread,
-over half of a 120 Hz frame, though only two or three rows' bodies changed; a row is culled
-only against a measurement made at the current column width and measures (`LyricColumn`), and never
-while VoiceOver runs, so every line stays reachable. Everything that reads the
-snapshot, the clock or `beat` is `LyricFollowing`, so the pane around it is not rebuilt four times a second. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
-moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
-the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.
+where a resting pane must wake) and turns a moment into a `LyricScene` of plain values (a row's
+standing, inset, inks and wipe; the sheet's offset), about 0.1 ms a frame.
+
+**The pane is drawn by Core Animation, never by SwiftUI views per frame** (`LyricLayers.swift`).
+`LyricLayers` is a `UIViewRepresentable` over `LyricLayerView`, whose own `CADisplayLink` asks the
+stage for each frame's scene and sets layer properties inside one action-free transaction: each
+line's text is typeset once (`LyricTypeset`, TextKit 1 at the column's width, bold at the pane's
+size and leading) and drawn once into a glyph mask over an ink layer, so a turn changes the ink
+layer's colour, the row's opacity and translation and the sheet layer's position, and the word sweep
+is two `CAShapeLayer`s (sung, and the blending letter) covering `enumerateEnclosingRects` of the
+wipe's UTF-16 range, rebuilt only when the range moves; the breath dots and the end mark are layers
+of their own. Nothing is laid out, diffed or drawn again in a frame: as SwiftUI views (a
+`TimelineView` rebuilding every row) the pane cost about 5 ms of a 120 Hz frame's 8 on the main
+thread, though two or three rows' bodies changed. `LyricLayout` places the rows once per sheet,
+width, height and measures (a row's breath room, padding, its side's column and the end mark), and
+hands every row's frame to the stage as its measurement (`measured`, `measuredSheet`), so
+`landing()` and the scroll bounds read the layer layout. A row more than a pane (at least 320 pt)
+beyond the pane's edges is hidden, and twice that far its glyphs are released, so a long sheet
+holds a few dozen masks at most. The edges dissolve through a `CAGradientLayer` mask; the
+arrival fades the pane layer.
+
+**The link's cadence follows the stage** (`LyricCadence`): while anything turns, a word-synced sheet
+plays (its sweep) or a hand holds or flings the sheet, it asks 120 Hz (80 at least); a line-synced
+sheet playing with nothing turning ticks at 20 Hz (`lineSyncedTick`) until a landed frame differs
+from what the turns aim at (`unfollowed`, which `isMoving` includes), so a line change starts within
+a tick; with nothing moving it pauses, and a `beat` bump (a frame landing, a drag beginning,
+*Follow*) wakes it through `updateUIView`. The lyrics alone ask 120 Hz, only while they move: a whole
+Now Playing held at 120 Hz (tried) dropped a frame at each of the field's redraws, since the field
+and every glass control over it composited again fit a 60 Hz frame and not a 120 Hz one.
+
+**Touch stays in SwiftUI**: a `DragGesture` (at least 10 pt, simultaneous with the cover's own
+dismissal) and a `SpatialTapGesture` on the representable feed the stage; a tap is resolved to a
+line by the layer layout through `LyricHits`. A `UIPanGestureRecognizer` on the layer view (tried)
+never received the drag inside the full-screen cover. The sheet's offset is the stage's, not a
+`ScrollView`'s: a vertical drag moves it (rubber-banded past the ends, released into a `Leg`
+launched at the finger's pace), opens the falloff out, offers *Follow* (a glass button present only
+while offered), and following returns `HANDS_OFF` after the last touch. VoiceOver reads one
+`LyricLineElement` per line (its text, its time, selected while lit, activating it seeks), framed
+where the line is drawn, and three-finger scrolling turns a page.
+
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
 track change, pause or drift past 250 ms takes the position as is): the position is extrapolated
 per display frame from the 250 ms poll's reading, never held between polls, and never read from
@@ -713,13 +728,14 @@ from the sheet Rust already holds (a lock and the arithmetic, no SQLite) on the 
 tick, so the word sweep moves every display frame; only a sheet not yet held is asked on its own
 serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, landing on
 the main actor through a closure built `nonisolated`, since that ask may read the catalog. An
-asynchronous frame was one or two display frames old and landed on alternate frames at 120 Hz. Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
+asynchronous frame was one or two display frames old and landed on alternate frames at 120 Hz.
+Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
 cascade but keeps the brightening. `compact` is the pane embedded in Now Playing: smaller words,
 tighter gutters, no chrome. Ink follows the system's legibility settings (`LyricLegibility`): under
 Increase Contrast or Reduce Transparency the unlit ink is the lit ink, unsung words sit at 70 % and
 no line stands below 85 %; otherwise a sheet with nothing lit (unsynced, or the song not playing)
-stands at `ADRIFT` 0.8 over the 0.5 muted ink, since 0.45 over it read at 22 %. `LyricsView` adds the backdrop, the toolbar's refresh and the
-`LyricAttribution` badge.
+stands at `ADRIFT` 0.8 over the 0.5 muted ink, since 0.45 over it read at 22 %. `LyricsView` adds
+the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
 
 ## Artwork and details
 

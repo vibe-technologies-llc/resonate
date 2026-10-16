@@ -137,6 +137,7 @@ struct NowPlayingView: View {
     private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
     private static let arriving: Animation = .easeOut(duration: 0.2)
     private static let leaving: Animation = .easeOut(duration: 0.12)
+    private static let reshapedWithin: CFTimeInterval = 0.8
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -145,6 +146,7 @@ struct NowPlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
+    @State private var reshaping = false
     @State private var picked: PickedTracks?
 
     var body: some View {
@@ -167,7 +169,7 @@ struct NowPlayingView: View {
                 .allowsHitTesting(false)
             }
             .padding(.horizontal, Self.gutter)
-            .background(BackdropView(track: track))
+            .background(BackdropView(track: track, resting: reshaping))
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -227,6 +229,7 @@ struct NowPlayingView: View {
             return
         }
         let coverMoves = (mode == .artwork) != (target == .artwork)
+        FrameRateBoost.shared.boost(for: Self.reshapedWithin)
         guard coverMoves else {
             withAnimation(Self.arriving) {
                 mode = target
@@ -234,10 +237,12 @@ struct NowPlayingView: View {
             }
             return
         }
+        reshaping = true
         withAnimation(Self.leaving) { settled = nil }
         withAnimation(Self.reshaping, completionCriteria: .logicallyComplete) {
             mode = target
         } completion: {
+            reshaping = false
             guard mode == target, target != .artwork else { return }
             withAnimation(Self.arriving) { settled = target }
         }

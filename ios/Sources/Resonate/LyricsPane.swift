@@ -75,12 +75,13 @@ private struct LyricFollowing: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
-    @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var phase
     @Environment(\.self) private var environment
     @ScaledMetric(relativeTo: .title) private var fullWords: CGFloat = 32
     @ScaledMetric(relativeTo: .title2) private var compactWords: CGFloat = 28
+    @State private var offersFollow = false
+    @State private var hits = LyricHits()
+    @GestureState private var held = false
 
     let sheet: LyricSheet
     let track: Track?
@@ -98,64 +99,61 @@ private struct LyricFollowing: View {
         )
         let awake = visible && phase == .active
         let sounding = playback?.playing == true && sheet.detail != .unsynced
-        let turning = awake && stage.isMoving(at: Date.now.timeIntervalSinceReferenceDate)
-        let animating = turning || (awake && sounding && sheet.detail == .words)
-        let ticking = !animating && awake && sounding
-        let native = library.native
-        let still = reduceMotion
-        let scale = displayScale
-        let compact = compact
-        _ = stage.beat
+        let setting = LyricSetting(
+            sheet: sheet,
+            playback: playback,
+            native: library.native,
+            measures: measures,
+            inks: inks,
+            still: reduceMotion,
+            awake: awake,
+            sweeps: awake && sounding && sheet.detail == .words,
+            ticks: awake && sounding
+        )
 
-        return GeometryReader { proxy in
-            let content = { (date: Date, running: Bool) -> LyricSheetView in
-                let now = (running ? date : Date.now).timeIntervalSinceReferenceDate
-                let scene = stage.scene(
-                    of: LyricCue(
-                        sheet: sheet,
-                        playback: playback,
-                        native: native,
-                        pane: proxy.size,
-                        now: now,
-                        measures: measures,
-                        inks: inks,
-                        still: still,
-                        scale: scale,
-                        awake: awake,
-                        animating: animating,
-                        culls: !voiceOver
-                    )
-                )
-                return LyricSheetView(
-                    scene: scene,
-                    stage: stage,
-                    measures: measures,
-                    pane: proxy.size,
-                    compact: compact,
-                    seek: seek
-                )
+        return LyricLayers(setting: setting, stage: stage, beat: stage.beat, hits: hits, seek: seek) { offersFollow = $0 }
+            .contentShape(.rect)
+            .simultaneousGesture(hand)
+            .simultaneousGesture(SpatialTapGesture().onEnded { tap in
+                if let moment = hits.moment(tap.location) { seek(to: moment) }
+            })
+            .onChange(of: held) { _, holding in
+                guard !holding else { return }
+                Task { stage.letGo(at: Date.now.timeIntervalSinceReferenceDate) }
             }
-            TimelineView(LyricSchedule(ticking: ticking, paused: !animating)) { timeline in
-                content(timeline.date, ticking || animating)
+            .overlay(alignment: .bottom) { follow }
+            .animation(.easeInOut(duration: LyricPace.turn), value: offersFollow)
+    }
+
+    private var hand: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .updating($held) { _, holding, _ in holding = true }
+            .onChanged { value in
+                stage.dragged(by: value.translation, at: Date.now.timeIntervalSinceReferenceDate)
             }
+            .onEnded { value in
+                stage.released(velocity: value.velocity.height, at: Date.now.timeIntervalSinceReferenceDate)
+            }
+    }
+
+    @ViewBuilder private var follow: some View {
+        if offersFollow {
+            Button {
+                stage.followAgain(at: Date.now.timeIntervalSinceReferenceDate)
+            } label: {
+                Label("Follow", systemImage: "quote.bubble")
+            }
+            .buttonStyle(.glass)
+            .controlSize(compact ? .small : .regular)
+            .padding(.bottom, compact ? 6 : 12)
+            .transition(.opacity)
+            .accessibilityHint("Scrolls back to the words being sung")
         }
     }
 
     private func seek(to moment: UInt64) {
         stage.followAgain(at: Date.now.timeIntervalSinceReferenceDate)
         library.request { try $0.seek(positionMs: moment) }
-    }
-}
-
-struct LyricSchedule: TimelineSchedule {
-    let ticking: Bool
-    let paused: Bool
-
-    func entries(from start: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
-        if ticking {
-            return AnySequence(PeriodicTimelineSchedule(from: start, by: LyricPace.lineSyncedTick).entries(from: start, mode: mode))
-        }
-        return AnySequence(AnimationTimelineSchedule(minimumInterval: nil, paused: paused).entries(from: start, mode: mode))
     }
 }
 
@@ -197,250 +195,12 @@ struct LyricAttribution: View {
     }
 }
 
-private struct LyricSheetView: View {
-    @GestureState private var held = false
-
-    let scene: LyricScene
-    let stage: LyricStage
-    let measures: LyricMeasures
-    let pane: CGSize
-    let compact: Bool
-    let seek: (UInt64) -> Void
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            sheet
-            follow
-        }
-        .frame(width: pane.width, height: pane.height)
-        .contentShape(.rect)
-        .simultaneousGesture(hand)
-        .onChange(of: held) { _, holding in
-            guard !holding else { return }
-            Task { stage.letGo(at: Date.now.timeIntervalSinceReferenceDate) }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityScrollAction { edge in
-            stage.turnPage(towards: edge, at: Date.now.timeIntervalSinceReferenceDate)
-        }
-    }
-
-    private var sheet: some View {
-        let generation = scene.generation
-        return VStack(spacing: measures.spacing) {
-            ForEach(LyricPiece.gathered(scene.rows, spacing: measures.spacing)) { piece in
-                switch piece {
-                case .row(let row):
-                    LyricRowView(look: row.look, measures: measures)
-                        .equatable()
-                        .onGeometryChange(for: CGRect.self) { proxy in
-                            proxy.frame(in: .named(LyricSpace.sheet))
-                        } action: { frame in
-                            stage.measured(row: row.id, frame, generation: generation)
-                        }
-                        .offset(y: row.inset)
-                        .onTapGesture {
-                            if let moment = row.moment { seek(moment) }
-                        }
-                        .allowsHitTesting(row.moment != nil)
-                        .modifier(LyricRowAccessibility(row: row, seek: seek))
-                case .gap(_, let width, let height):
-                    Color.clear
-                        .frame(width: width, height: height)
-                        .accessibilityHidden(true)
-                }
-            }
-            if let end = scene.end {
-                LyricEndMark(look: end.look, measures: measures)
-                    .equatable()
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .named(LyricSpace.sheet))
-                    } action: { frame in
-                        stage.measured(row: end.id, frame, generation: generation)
-                    }
-                    .offset(y: end.inset)
-            }
-        }
-        .padding(.top, scene.head)
-        .padding(.bottom, scene.tail)
-        .frame(width: pane.width)
-        .fixedSize(horizontal: false, vertical: true)
-        .coordinateSpace(.named(LyricSpace.sheet))
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            stage.measuredSheet(height, generation: generation)
-        }
-        .id(generation)
-        .offset(y: scene.offset)
-        .frame(width: pane.width, height: pane.height, alignment: .top)
-        .mask(dissolving)
-        .clipped()
-        .contentShape(.rect)
-        .opacity(scene.shown)
-    }
-
-    private var dissolving: some View {
-        let edge = pane.height > 0 ? min(measures.dissolve / pane.height, 0.25) : 0
-        return LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .black, location: edge),
-                .init(color: .black, location: 1 - edge),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private var follow: some View {
-        Button {
-            stage.followAgain(at: Date.now.timeIntervalSinceReferenceDate)
-        } label: {
-            Label("Follow", systemImage: "quote.bubble")
-        }
-        .buttonStyle(.glass)
-        .controlSize(compact ? .small : .regular)
-        .padding(.bottom, compact ? 6 : 12)
-        .opacity(scene.offersFollow ? 1 : 0)
-        .allowsHitTesting(scene.offersFollow)
-        .accessibilityHidden(!scene.offersFollow)
-        .accessibilityHint("Scrolls back to the words being sung")
-        .animation(.easeInOut(duration: LyricPace.turn), value: scene.offersFollow)
-    }
-
-    private var hand: some Gesture {
-        DragGesture(minimumDistance: 10)
-            .updating($held) { _, holding, _ in holding = true }
-            .onChanged { value in
-                stage.dragged(by: value.translation, at: Date.now.timeIntervalSinceReferenceDate)
-            }
-            .onEnded { value in
-                stage.released(velocity: value.velocity.height, at: Date.now.timeIntervalSinceReferenceDate)
-            }
-    }
-}
-
-private struct LyricRowAccessibility: ViewModifier {
-    let row: LyricSceneRow
-    let seek: (UInt64) -> Void
-
-    func body(content: Content) -> some View {
-        if row.look.blank {
-            content.accessibilityHidden(true)
-        } else if let moment = row.moment {
-            content
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(row.look.text)
-                .accessibilityValue(clock(moment))
-                .accessibilityAddTraits(row.lit ? [.isButton, .isSelected] : .isButton)
-                .accessibilityAction { seek(moment) }
-        } else {
-            content
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(row.look.text)
-                .accessibilityAddTraits(row.lit ? .isSelected : [])
-        }
-    }
-}
-
-private struct LyricRowView: View, Equatable {
-    let look: LyricRowLook
-    let measures: LyricMeasures
-
-    var body: some View {
-        if look.blank {
-            Color.clear.frame(width: look.width, height: measures.pause)
-        } else {
-            VStack(spacing: 0) {
-                if look.breathes {
-                    ZStack {
-                        if let breath = look.breath {
-                            LyricBreather(breath: breath, measures: measures)
-                        }
-                    }
-                    .padding(.horizontal, measures.pad)
-                    .frame(width: look.width, height: measures.breath, alignment: look.side.alignment)
-                }
-                words
-                    .font(.system(size: measures.words, weight: .bold))
-                    .lineSpacing(measures.lineSpacing)
-                    .multilineTextAlignment(look.side.textAlignment)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(width: look.textWidth, alignment: look.side.alignment)
-                    .padding(.horizontal, measures.pad)
-                    .padding(.vertical, measures.padding)
-                    .frame(width: look.width, alignment: look.side.alignment)
-                    .opacity(look.standing)
-            }
-        }
-    }
-
-    @ViewBuilder private var words: some View {
-        switch look.words {
-        case .plain(let text, let ink): Text(text).foregroundStyle(Color(ink))
-        case .swept(let text): Text(text)
-        }
-    }
-}
-
-private struct LyricBreather: View {
-    let breath: LyricBreathLook
-    let measures: LyricMeasures
-
-    var body: some View {
-        let widest = measures.dot * (1 + LyricPace.dotSwellsBy)
-        HStack(spacing: measures.dotGap) {
-            ForEach(0..<LyricPace.breathDots, id: \.self) { dot in
-                let lit = min(max(breath.through * Double(LyricPace.breathDots) - Double(dot), 0), 1)
-                let side = measures.dot * (1 + LyricPace.dotSwellsBy * breath.swell * (0.5 + 0.5 * lit))
-                Circle()
-                    .fill(Color(breath.ink).opacity(LyricPace.dimDot + (1 - LyricPace.dimDot) * lit))
-                    .frame(width: side, height: side)
-                    .frame(width: widest, height: widest)
-            }
-        }
-        .opacity(breath.opacity)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct LyricEndMark: View, Equatable {
-    let look: LyricEndLook
-    let measures: LyricMeasures
-
-    var body: some View {
-        HStack(spacing: measures.endGap) {
-            rule
-            Text("END OF LYRICS")
-                .font(.caption.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(Color(look.muted))
-            rule
-        }
-        .padding(.vertical, measures.endPadding)
-        .opacity(look.standing)
-        .frame(width: look.width)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("End of lyrics")
-    }
-
-    private var rule: some View {
-        Rectangle()
-            .fill(Color(look.faint))
-            .frame(width: measures.endRule, height: 1)
-    }
-}
-
-enum LyricSpace {
-    static let sheet = "lyric-sheet"
-}
-
 enum LyricPace {
     static let lineSyncedTick: TimeInterval = 0.05
-    static let cullsBeyondPanes = 1.0
-    static let cullsWithin: CGFloat = 320
+    static let drawsBeyondPanes: CGFloat = 1
+    static let drawsWithin: CGFloat = 320
+    static let endOfLyrics = "END OF LYRICS"
+    static let endTracking: CGFloat = 1.4
 
     static let turn: TimeInterval = 0.42
     static let glide: TimeInterval = 0.6
@@ -855,68 +615,11 @@ enum LyricSide: Equatable {
     case centre
     case leading
     case trailing
-
-    var alignment: Alignment {
-        switch self {
-        case .centre: .center
-        case .leading: .leading
-        case .trailing: .trailing
-        }
-    }
-
-    var textAlignment: TextAlignment {
-        switch self {
-        case .centre: .center
-        case .leading: .leading
-        case .trailing: .trailing
-        }
-    }
 }
 
 enum LyricWords: Equatable {
-    case plain(String, Color.Resolved)
-    case swept(AttributedString)
-
-    static func swept(_ text: String, by wipe: LyricWipe, unsung: Color.Resolved, sung: Color.Resolved) -> LyricWords {
-        let units = text.utf16.count
-        let sungTo = min(Int(wipe.sungUtf16), units)
-        let blendFrom = min(max(Int(wipe.blend?.startUtf16 ?? wipe.sungUtf16), sungTo), units)
-        let blendTo = min(max(Int(wipe.blend?.endUtf16 ?? wipe.sungUtf16), blendFrom), units)
-        let blending = LyricInks.mixed(unsung, sung, by: Double(wipe.blend?.share ?? 0))
-        let pieces = cut(text, atUTF16: [sungTo, blendFrom, blendTo])
-
-        var whole = AttributedString()
-        for (piece, ink) in zip(pieces, [sung, unsung, blending, unsung]) where !piece.isEmpty {
-            var part = AttributedString(piece)
-            part.foregroundColor = Color(ink)
-            whole.append(part)
-        }
-        return .swept(whole)
-    }
-
-    static func cut(_ text: String, atUTF16 cuts: [Int]) -> [String] {
-        var pieces: [String] = []
-        var piece = String.UnicodeScalarView()
-        var units = 0
-        var next = 0
-
-        for scalar in text.unicodeScalars {
-            while next < cuts.count, units >= cuts[next] {
-                pieces.append(String(piece))
-                piece = String.UnicodeScalarView()
-                next += 1
-            }
-            piece.append(scalar)
-            units += scalar.utf16.count
-        }
-        while next < cuts.count {
-            pieces.append(String(piece))
-            piece = String.UnicodeScalarView()
-            next += 1
-        }
-        pieces.append(String(piece))
-        return pieces
-    }
+    case plain(Color.Resolved)
+    case swept(LyricWipe, unsung: Color.Resolved, sung: Color.Resolved)
 }
 
 struct LyricBreathLook: Equatable {
@@ -927,49 +630,12 @@ struct LyricBreathLook: Equatable {
 }
 
 struct LyricRowLook: Equatable {
-    let culled: CGFloat?
     let blank: Bool
     let text: String
     let words: LyricWords
-    let side: LyricSide
-    let width: CGFloat
-    let textWidth: CGFloat
     let standing: Double
     let breathes: Bool
     let breath: LyricBreathLook?
-}
-
-enum LyricPiece: Identifiable {
-    case row(LyricSceneRow)
-    case gap(first: Int, width: CGFloat, height: CGFloat)
-
-    var id: Int {
-        switch self {
-        case .row(let row): row.id
-        case .gap(let first, _, _): -1 - first
-        }
-    }
-
-    static func gathered(_ rows: [LyricSceneRow], spacing: CGFloat) -> [LyricPiece] {
-        var pieces: [LyricPiece] = []
-        var open: (first: Int, width: CGFloat, height: CGFloat)?
-
-        for row in rows {
-            if let height = row.look.culled {
-                open = open.map { ($0.first, $0.width, $0.height + spacing + height) } ?? (row.id, row.look.width, height)
-                continue
-            }
-            if let gap = open {
-                pieces.append(.gap(first: gap.first, width: gap.width, height: gap.height))
-                open = nil
-            }
-            pieces.append(.row(row))
-        }
-        if let gap = open {
-            pieces.append(.gap(first: gap.first, width: gap.width, height: gap.height))
-        }
-        return pieces
-    }
 }
 
 struct LyricSceneRow: Identifiable {
@@ -982,7 +648,6 @@ struct LyricSceneRow: Identifiable {
 
 struct LyricEndLook: Equatable {
     let standing: Double
-    let width: CGFloat
     let muted: Color.Resolved
     let faint: Color.Resolved
 }
@@ -999,8 +664,6 @@ struct LyricScene {
     let end: LyricSceneEnd?
     let offset: CGFloat
     let shown: Double
-    let head: CGFloat
-    let tail: CGFloat
     let offersFollow: Bool
 }
 
@@ -1016,12 +679,6 @@ struct LyricCue {
     let scale: CGFloat
     let awake: Bool
     let animating: Bool
-    let culls: Bool
-}
-
-struct LyricColumn: Equatable {
-    let width: CGFloat
-    let measures: LyricMeasures
 }
 
 struct LyricBreathing {
@@ -1087,7 +744,6 @@ final class LyricStage {
     @ObservationIgnored private var canAsk = false
     @ObservationIgnored private var animating = false
     @ObservationIgnored private var rows: [Int: CGRect] = [:]
-    @ObservationIgnored private var columns: [Int: LyricColumn] = [:]
     @ObservationIgnored private var sheetHeight: CGFloat = 0
     @ObservationIgnored private var pane: CGSize = .zero
     @ObservationIgnored private var measures = LyricMeasures.at(words: 32, compact: false)
@@ -1177,7 +833,6 @@ final class LyricStage {
     func measured(row: Int, _ frame: CGRect, generation: Int) {
         guard generation == self.generation else { return }
         rows[row] = frame
-        columns[row] = LyricColumn(width: pane.width, measures: measures)
     }
 
     func measuredSheet(_ height: CGFloat, generation: Int) {
@@ -1285,7 +940,6 @@ final class LyricStage {
         wipes = [:]
         asked = nil
         rows = [:]
-        columns = [:]
         sheetHeight = 0
         placed = false
         arrived = nil
@@ -1529,23 +1183,12 @@ final class LyricStage {
     }
 
     private func drawn(at now: TimeInterval, cue: LyricCue) -> LyricScene {
-        let inks = cue.inks
-        let column = min(max(pane.width - 2 * measures.gutter, 0), measures.column)
-        let inside = max(column - 2 * measures.pad, 0)
-        let twoVoices = cue.sheet.twoVoices
         let swell = swell(at: now)
         let seekable = playingHere && synced
-
-        let window = cue.culls && placed ? visibleWindow : nil
-        let measured = LyricColumn(width: pane.width, measures: measures)
-        let rows = cue.sheet.lines.enumerated().map { index, line -> LyricSceneRow in
-            if let window, let height = culledHeight(index, in: window, measured: measured) {
-                return culledRow(index, height: height, column: column)
-            }
-            return row(index, line, now: now, cue: cue, column: column, inside: inside, twoVoices: twoVoices, swell: swell, seekable: seekable)
+        let rows = cue.sheet.lines.enumerated().map { index, line in
+            row(index, line, now: now, cue: cue, swell: swell, seekable: seekable)
         }
-        let end = synced ? ending(at: now, still: cue.still, column: column, inks: inks) : nil
-        let edge = synced ? pane.height / 2 : measures.margin
+        let end = synced ? ending(at: now, still: cue.still, inks: cue.inks) : nil
 
         return LyricScene(
             generation: generation,
@@ -1553,86 +1196,28 @@ final class LyricStage {
             end: end,
             offset: CGFloat(snapped(offset)),
             shown: arrival(at: now),
-            head: edge,
-            tail: edge,
             offersFollow: synced && playingHere && placed && !following(at: now)
         )
     }
 
-    private var visibleWindow: ClosedRange<Double> {
-        let beyond = max(Double(pane.height) * LyricPace.cullsBeyondPanes, Double(LyricPace.cullsWithin))
-        return -beyond...(Double(pane.height) + beyond)
-    }
-
-    private func culledHeight(_ index: Int, in window: ClosedRange<Double>, measured: LyricColumn) -> CGFloat? {
-        guard let frame = rows[index], columns[index] == measured else { return nil }
-        let top = Double(frame.minY) + offset
-        let bottom = Double(frame.maxY) + offset
-        return bottom < window.lowerBound || top > window.upperBound ? frame.height : nil
-    }
-
-    private func culledRow(_ index: Int, height: CGFloat, column: CGFloat) -> LyricSceneRow {
-        let look = LyricRowLook(
-            culled: height,
-            blank: true,
-            text: "",
-            words: .plain("", .init(red: 0, green: 0, blue: 0, opacity: 0)),
-            side: .centre,
-            width: column,
-            textWidth: 0,
-            standing: 0,
-            breathes: false,
-            breath: nil
-        )
-        return LyricSceneRow(id: index, look: look, inset: 0, moment: nil, lit: false)
-    }
-
-    private func row(
-        _ index: Int,
-        _ line: LyricRow,
-        now: TimeInterval,
-        cue: LyricCue,
-        column: CGFloat,
-        inside: CGFloat,
-        twoVoices: Bool,
-        swell: Double,
-        seekable: Bool
-    ) -> LyricSceneRow {
+    private func row(_ index: Int, _ line: LyricRow, now: TimeInterval, cue: LyricCue, swell: Double, seekable: Bool) -> LyricSceneRow {
         guard !line.blank else {
-            let look = LyricRowLook(
-                culled: nil,
-                blank: true,
-                text: "",
-                words: .plain("", cue.inks.muted),
-                side: .centre,
-                width: column,
-                textWidth: 0,
-                standing: 0,
-                breathes: false,
-                breath: nil
-            )
+            let look = LyricRowLook(blank: true, text: "", words: .plain(cue.inks.muted), standing: 0, breathes: false, breath: nil)
             return LyricSceneRow(id: index, look: look, inset: 0, moment: nil, lit: false)
         }
 
-        let second = line.voice == 1
-        let side: LyricSide = twoVoices ? (second ? .trailing : .leading) : .centre
-        let lit = second ? cue.inks.second : cue.inks.lit
+        let lit = line.voice == 1 ? cue.inks.second : cue.inks.lit
         let lead = lead(index, at: now)
         let sung = LyricInks.mixed(cue.inks.muted, lit, by: lead)
         let waiting = LyricInks.mixed(LyricInks.thinned(lit, to: 0), lit, by: cue.inks.unsungShare)
         let unsung = LyricInks.mixed(cue.inks.muted, waiting, by: lead)
-        let words = wipes[index].map { LyricWords.swept(line.text, by: $0, unsung: unsung, sung: sung) }
-            ?? .plain(line.text, sung)
+        let words = wipes[index].map { LyricWords.swept($0, unsung: unsung, sung: sung) } ?? .plain(sung)
         let breath = breath(at: index, now: now)
         let standing = max(standing(index, at: now), cue.inks.standingFloor)
         let look = LyricRowLook(
-            culled: nil,
             blank: false,
             text: line.text,
             words: words,
-            side: side,
-            width: column,
-            textWidth: inside * (twoVoices ? LyricPace.voiceOfTwoSpans : 1),
             standing: breath.map { standing + (LyricPace.lit - standing) * $0.through } ?? standing,
             breathes: line.breathes,
             breath: breath.map { LyricBreathLook(through: $0.through, swell: swell, opacity: $0.opacity, ink: cue.inks.accent) }
@@ -1647,10 +1232,10 @@ final class LyricStage {
         )
     }
 
-    private func ending(at now: TimeInterval, still: Bool, column: CGFloat, inks: LyricInks) -> LyricSceneEnd? {
+    private func ending(at now: TimeInterval, still: Bool, inks: LyricInks) -> LyricSceneEnd? {
         guard let sheet else { return nil }
         let end = Int(sheet.end)
-        let look = LyricEndLook(standing: max(standing(end, at: now), inks.standingFloor), width: column, muted: inks.muted, faint: inks.faint)
+        let look = LyricEndLook(standing: max(standing(end, at: now), inks.standingFloor), muted: inks.muted, faint: inks.faint)
         return LyricSceneEnd(id: end, look: look, inset: inset(end, at: now, still: still))
     }
 }

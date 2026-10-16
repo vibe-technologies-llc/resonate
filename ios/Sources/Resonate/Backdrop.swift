@@ -13,15 +13,17 @@ struct BackdropView: View {
     @Environment(\.colorScheme) private var scheme
     let track: Track?
     let moving: Bool
+    let resting: Bool
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?, moving: Bool = true) {
+    init(track: Track?, moving: Bool = true, resting: Bool = false) {
         self.track = track
         self.moving = moving
+        self.resting = resting
         let recalled = track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) }
         _palette = State(initialValue: recalled ?? (moving ? Self.accentPalette() : nil))
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
@@ -84,7 +86,7 @@ struct BackdropView: View {
     }
 
     private var motion: BackdropMotion {
-        guard phase == .active else { return .dormant }
+        guard phase == .active, !resting else { return .dormant }
         if reduceMotion { return .still }
         return .flowing(framesPerSecond: Self.rate(sounding: sounding, lowPower: lowPower))
     }
