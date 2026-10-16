@@ -267,6 +267,7 @@ internal fun flutterValue(value: Any?): Any? =
                 "name" to flutterValue(value.`name`),
                 "songs" to flutterValue(value.`songs`),
                 "revision" to flutterValue(value.`revision`),
+                "covers" to flutterValue(value.`covers`),
             )
         is OnlineCollection ->
             mapOf(

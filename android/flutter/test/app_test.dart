@@ -9,6 +9,7 @@ import 'package:resonate_android/library.dart';
 import 'package:resonate_android/main.dart';
 import 'package:resonate_android/model.dart';
 import 'package:resonate_android/player.dart';
+import 'package:resonate_android/search.dart';
 import 'package:resonate_android/tools.dart';
 import 'package:resonate_android/settings.dart';
 import 'package:resonate_android/visuals.dart';
@@ -20,6 +21,9 @@ void main() {
   late PlayerModel model;
   late List<MethodCall> calls;
   Uint8List? artwork;
+  Object? collectionAnswer;
+  Object? searchAnswer;
+  Object? albumKeyAnswer;
   final first = <String, dynamic>{
     'id': '18446744073709551614',
     'queueId': '81',
@@ -40,13 +44,22 @@ void main() {
     events = StreamController<dynamic>.broadcast(sync: true);
     calls = [];
     artwork = null;
+    collectionAnswer = [first];
+    searchAnswer = null;
+    albumKeyAnswer = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
           return switch (call.method) {
             'artwork' => artwork,
             'collections' => {'albums': [], 'artists': []},
-            'collectionTracks' => [first],
+            'collectionTracks' => collectionAnswer,
+            'searchLibrary' => searchAnswer,
+            'albumKey' => albumKeyAnswer,
+            'fails' => throw PlatformException(
+              code: 'native',
+              message: 'The disk is full',
+            ),
             'equaliserInfo' => {
               'limits': {'preampAtMostDb': 24.0, 'gainAtMostDb': 24.0},
               'frequencies': [31.25, 62.5],
@@ -505,15 +518,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(code), findsNothing);
       expect(find.widgetWithText(TextField, 'Sync server'), findsNothing);
-      await tester.ensureVisible(find.text('Save sync settings'));
-      await tester.tap(find.text('Save sync settings'));
-      await tester.pump();
-      expect(
-        calls
-            .lastWhere((call) => call.method == 'sync')
-            .arguments['nearbyOnly'],
-        isTrue,
+      expect(find.text('Device name and server saved'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Device name'),
+        'Kitchen phone',
       );
+      await tester.pump();
+      await tester.ensureVisible(find.text('Save device name and server'));
+      await tester.tap(find.text('Save device name and server'));
+      await tester.pump();
+      final saved = calls.lastWhere((call) => call.method == 'sync').arguments;
+      expect(saved['device'], 'Kitchen phone');
+      expect(saved.containsKey('nearbyOnly'), isFalse);
       await tester.ensureVisible(find.text('Show pairing code'));
       await tester.tap(find.text('Show pairing code'));
       await tester.pumpAndSettle();
@@ -521,6 +537,12 @@ void main() {
       await tester.tap(find.text('Hide pairing code'));
       await tester.pumpAndSettle();
       expect(find.text(code), findsNothing);
+      await tester.ensureVisible(find.text('Sync favourites'));
+      await tester.tap(find.text('Sync favourites'));
+      await tester.pump();
+      expect(calls.lastWhere((call) => call.method == 'sync').arguments, {
+        'favourites': true,
+      });
     },
   );
   testWidgets('player reveals the library while dragging and snapping back', (
@@ -763,7 +785,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         calls.where((call) => call.method == 'artwork'),
-        hasLength(pictureRequests + 1),
+        hasLength(pictureRequests + 2),
       );
       events.add({
         'lyricFrame': {
@@ -1477,4 +1499,556 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('a queue drag is sent as the row it lands before, counted before', () {
+    expect(queueLanding(0, 1), 2);
+    expect(queueLanding(0, 4), 5);
+    expect(queueLanding(3, 1), 1);
+    expect(queueLanding(2, 2), 2);
+  });
+
+  test('artwork is asked at the smallest bucket that holds the drawn size', () {
+    expect(artworkBucket(50, 3), 192);
+    expect(artworkBucket(32, 3), 96);
+    expect(artworkBucket(400, 3), 1024);
+    expect(artworkBucket(null, 3), defaultArtworkBucket);
+  });
+
+  testWidgets('dragging a queue row to the end lands after the last row', (
+    tester,
+  ) async {
+    final rows = [
+      for (final id in ['81', '82', '83']) {...first, 'queueId': id},
+    ];
+    events.add({
+      'queue': rows,
+      'snapshot': {'current': rows.first},
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: QueuePage(model: model, open: (_, [data = const {}]) {}),
+        ),
+      ),
+    );
+    await tester.drag(
+      find.byIcon(Icons.drag_handle_rounded).first,
+      const Offset(0, 600),
+    );
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'moveInQueue').arguments, {
+      'from': 0,
+      'to': 3,
+    });
+  });
+
+  test(
+    'a failure stays until it is dismissed, whatever succeeds after it',
+    () async {
+      await model.call('fails');
+      expect(model.failure, 'The disk is full');
+
+      await model.call('collections');
+      expect(model.failure, 'The disk is full');
+
+      await model.dismissNotice();
+      expect(model.failure, isNull);
+    },
+  );
+
+  test(
+    'streams that move many times a second never notify the whole model',
+    () {
+      var changes = 0;
+      var frames = 0;
+      model.addListener(() => changes++);
+      model.hot('lyricFrame').addListener(() => frames++);
+
+      events.add({
+        'lyricFrame': {'readAt': 3},
+      });
+      events.add({
+        'samples': [0.5],
+      });
+      events.add({'downloadedBytes': '1024'});
+      events.add({'analysisProgress': 0.5});
+
+      expect(changes, 0);
+      expect(frames, 1);
+      expect(row(model.hot('lyricFrame').value)['readAt'], 3);
+      expect(model.state['downloadedBytes'], '1024');
+
+      events.add({'status': 'Read 1 song'});
+      expect(changes, 1);
+    },
+  );
+
+  test('a favourite changes in place without a new catalog', () {
+    events.add({
+      'allTracks': [first],
+      'tracks': [first],
+      'queue': [first],
+    });
+    var changes = 0;
+    model.addListener(() => changes++);
+
+    events.add({
+      'favourite': {'id': first['id'], 'enabled': true},
+    });
+
+    expect(model.allTracks.single['favourite'], isTrue);
+    expect(model.tracks.single['favourite'], isTrue);
+    expect(model.queue.single['favourite'], isTrue);
+    expect(model.favouriteTracks, hasLength(1));
+    expect(model.isFavourite(first), isTrue);
+    expect(changes, 1);
+
+    events.add({
+      'favourite': {'id': first['id'], 'enabled': false},
+    });
+    expect(model.favouriteTracks, isEmpty);
+  });
+
+  testWidgets(
+    'a playlist is a spinner until its rows arrive, then empty or full',
+    (tester) async {
+      final playlist = {
+        'id': '7',
+        'revision': '3',
+        'name': 'Later',
+        'kind': 'playlist',
+        'title': 'Later',
+      };
+      events.add({
+        'playlistRows': [first],
+        'playlists': [playlist],
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CollectionPage(
+            model: model,
+            data: playlist,
+            open: (_, [data = const {}]) {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Echoes'), findsNothing);
+      expect(find.text('A little quiet here'), findsNothing);
+
+      events.add({'playlistRows': <dynamic>[]});
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('A little quiet here'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a collection that cannot load says so and tries again', (
+    tester,
+  ) async {
+    collectionAnswer = null;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CollectionPage(
+          model: model,
+          data: {'kind': 'album', 'key': 'a-key', 'title': 'A record'},
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
+
+    collectionAnswer = [first];
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('Echoes'), findsWidgets);
+  });
+
+  testWidgets('the empty queue browses every song, not the unknown artist', (
+    tester,
+  ) async {
+    events.add({
+      'allTracks': [first],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CollectionPage(
+          model: model,
+          data: {'kind': 'all', 'title': 'Songs'},
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Echoes'), findsWidgets);
+    expect(calls.where((call) => call.method == 'collectionTracks'), isEmpty);
+  });
+
+  testWidgets('a song links to its album by the native album key', (
+    tester,
+  ) async {
+    albumKeyAnswer = 'a record\u001fan artist';
+    RowData? opened;
+
+    await openAlbumOf(model, first, (page, [data = const {}]) => opened = data);
+
+    final asked = calls.lastWhere((call) => call.method == 'albumKey');
+    expect(asked.arguments['album'], 'A record');
+    expect(asked.arguments['artist'], first['artist']);
+    expect(asked.arguments['albumArtist'], first['albumArtist']);
+    expect(opened?['kind'], 'album');
+    expect(opened?['key'], 'a record\u001fan artist');
+
+    albumKeyAnswer = null;
+    opened = null;
+    await openAlbumOf(model, first, (page, [data = const {}]) => opened = data);
+    expect(opened, isNull);
+  });
+
+  testWidgets('most played rows play from the row tapped', (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final second = {...first, 'id': '2', 'title': 'Another song'};
+    events.add({
+      'statistics': {
+        'topTracks': [first, second],
+      },
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsDetail(
+          model: model,
+          page: 'statistics',
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Another song'));
+    await tester.tap(find.text('Another song'));
+    await tester.pump();
+
+    final play = calls.lastWhere((call) => call.method == 'play');
+    expect(play.arguments['ids'], [first['id'], '2']);
+    expect(play.arguments['index'], 1);
+  });
+
+  testWidgets('a mix opens as its own page and never sets the global filter', (
+    tester,
+  ) async {
+    String? page;
+    RowData? details;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsDetail(
+          model: model,
+          page: 'suggestions',
+          open: (opened, [data = const {}]) {
+            page = opened;
+            details = data;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Never heard'));
+    await tester.pump();
+
+    expect(page, 'collection');
+    expect(details?['kind'], 'mix');
+    expect(details?['unplayed'], isTrue);
+    expect(calls.where((call) => call.method == 'filter'), isEmpty);
+  });
+
+  testWidgets('a notice shows on pushed pages whether or not they have a bar', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Library tools'));
+    await tester.pumpAndSettle();
+
+    events.add({'status': 'The folder could not be removed'});
+    await tester.pumpAndSettle();
+    expect(find.text('The folder could not be removed'), findsOneWidget);
+
+    await tester.tap(find.text('Analysis'));
+    await tester.pumpAndSettle();
+    expect(find.text('The folder could not be removed'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+  });
+
+  testWidgets('a playlist wears its covers, or an icon with none', (
+    tester,
+  ) async {
+    final second = {...first, 'id': '2'};
+    await mount(tester);
+    events.add({
+      'allTracks': [first, second],
+      'playlists': [
+        {
+          'id': '7',
+          'name': 'Covered',
+          'songs': '2',
+          'revision': '1',
+          'covers': [first['id'], '2'],
+        },
+        {
+          'id': '8',
+          'name': 'Bare',
+          'songs': '0',
+          'revision': '1',
+          'covers': <dynamic>[],
+        },
+      ],
+    });
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+
+    final covers = find.byType(PlaylistCover);
+    expect(covers, findsNWidgets(2));
+    expect(
+      find.descendant(of: covers.first, matching: find.byType(Artwork)),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: covers.last, matching: find.byType(Artwork)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: covers.last,
+        matching: find.byIcon(Icons.queue_music_rounded),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a recognition belongs to the song it was asked of', (
+    tester,
+  ) async {
+    final candidate = {
+      'score': 90,
+      'song': {'title': 'Another song', 'artist': 'Someone'},
+    };
+    events.add({
+      'recognition': {
+        'trackId': '999',
+        'candidates': [candidate],
+      },
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AnalysisPage(model: model, track: first),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Another song'), findsNothing);
+
+    events.add({
+      'recognition': {
+        'trackId': first['id'],
+        'candidates': [candidate],
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Another song'), findsOneWidget);
+  });
+
+  testWidgets('a library search that is cut says how many it shows', (
+    tester,
+  ) async {
+    searchAnswer = {
+      'tracks': [first],
+      'trackCount': 700,
+      'albums': <dynamic>[],
+      'artists': <dynamic>[],
+      'reads': <dynamic>[],
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(model: model, open: (_, [data = const {}]) {}),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'echo');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Songs (1 of 700)'), findsOneWidget);
+    await tester.tap(find.text('Songs (1 of 700)'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Showing the first 1 of 700 songs'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an online album opens its editions and an edition its songs', (
+    tester,
+  ) async {
+    events.add({'online': true});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(model: model, open: (_, [data = const {}]) {}),
+      ),
+    );
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'meddle');
+    await tester.tap(find.text('Albums'));
+    await tester.pump();
+    events.add({
+      'onlineAlbums': [
+        {
+          'id': 'group-1',
+          'title': 'Meddle',
+          'artist': 'Pink Floyd',
+          'date': '1971',
+        },
+      ],
+    });
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Meddle'));
+    await tester.pumpAndSettle();
+    expect(
+      calls.lastWhere((call) => call.method == 'onlineReleases').arguments,
+      {'id': 'group-1'},
+    );
+    events.add({
+      'onlineReleases': [
+        {
+          'id': 'release-1',
+          'title': 'Meddle',
+          'date': '1971-10-30',
+          'country': 'GB',
+        },
+      ],
+    });
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('1971-10-30 · GB'));
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'releaseSongs').arguments, {
+      'id': 'release-1',
+    });
+    events.add({
+      'onlineSongs': [
+        {
+          'recording': 'rec-1',
+          'title': 'Echoes',
+          'artist': 'Pink Floyd',
+          'album': 'Meddle',
+        },
+      ],
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Echoes'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to editions'));
+    await tester.pumpAndSettle();
+    expect(find.text('1971-10-30 · GB'), findsOneWidget);
+  });
+
+  testWidgets('an online artist lists its albums a page at a time', (
+    tester,
+  ) async {
+    events.add({'online': true});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(model: model, open: (_, [data = const {}]) {}),
+      ),
+    );
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'floyd');
+    await tester.tap(find.text('Artists'));
+    await tester.pump();
+    events.add({
+      'onlineArtists': [
+        {'id': 'artist-1', 'name': 'Pink Floyd', 'kind': 'Group'},
+      ],
+    });
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Pink Floyd'));
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'artistAlbums').arguments, {
+      'id': 'artist-1',
+    });
+    events.add({
+      'onlineAlbums': [
+        {'id': 'g1', 'title': 'Meddle', 'artist': 'Pink Floyd', 'date': '1971'},
+      ],
+      'artistAlbumsNext': 25,
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Albums by Pink Floyd'), findsOneWidget);
+    await tester.tap(find.text('More albums'));
+    await tester.pump();
+    expect(calls.lastWhere((call) => call.method == 'artistAlbums').arguments, {
+      'id': 'artist-1',
+      'from': 25,
+    });
+  });
+
+  testWidgets('a pasted link shows its songs while the field is empty', (
+    tester,
+  ) async {
+    events.add({'online': true});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(model: model, open: (_, [data = const {}]) {}),
+      ),
+    );
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField).last,
+      'https://example.test/x',
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'openLink').arguments, {
+      'text': 'https://example.test/x',
+    });
+
+    events.add({
+      'onlineCollection': {
+        'name': 'Shared record',
+        'songs': [
+          {
+            'recording': 'rec-1',
+            'title': 'Echoes',
+            'artist': 'Pink Floyd',
+            'album': 'Meddle',
+          },
+        ],
+        'releases': <dynamic>[],
+        'artists': <dynamic>[],
+      },
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shared record'), findsOneWidget);
+    expect(find.text('Echoes'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close link'));
+    await tester.pump();
+    expect(calls.any((call) => call.method == 'clearCollection'), isTrue);
+  });
 }

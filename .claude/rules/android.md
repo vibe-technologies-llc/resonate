@@ -230,7 +230,11 @@ native library search (songs, albums and artists) and online results; recent que
 Songs without an active search or filter use the full catalog already held by the repository,
 so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
 Queue separates history, the playing row and Up next, and saves its current order through the
-existing playlist seam. Available device handoffs appear as one Queue entry; opening it lists the
+existing playlist seam. A drag is sent as `queueLanding(from, to)`: Flutter's `onReorderItem` gives
+the index after the row is removed, `move_in_queue` the row it lands before counted before the move,
+so a downward drag adds one and the end of the queue is its length. Search's *Songs* chip names how
+many of the matches it lists (`search_library` answers at most 500 and says so), and the empty
+queue's *Browse songs* is the whole catalog (`kind` `all`, read from the repository's list). Available device handoffs appear as one Queue entry; opening it lists the
 devices and resumes the selected queue through its original handoff index. Library pins Favourites
 above playlists, albums and artists, with collection search and category chips. Favourites and collection counts
 read the full catalog separately from the song browser's search and filters. A completed favourite
@@ -272,12 +276,21 @@ layout keeps these gaps equal as display scale changes; the Material bar's fixed
 into neighboring tabs and centers variable
 label heights differently.
 Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
-push the page heading down. Scrolling lists take their bottom inset from the scaffold rather than
+push the page heading down. A notice (a failure or a status) shows on every pushed page too: the
+bottom bar a collection or settings page carries shows the notice card alone, and a page with no bar
+(lyrics, analysis, details, the visualiser, search) is wrapped in `NoticeFooter`. A failure stays
+until dismissed, whatever call succeeds after it, as on iOS. A collection that cannot be read says
+so with *Try again* instead of spinning, and a playlist is a spinner until its rows arrive (the
+bridge sends `playlistRows` as `null` while `playlistLoading`, and `beginPlaylist` clears the
+model's copy at once, so the previous playlist's rows never flash); a *Made for you* mix is a
+collection page of its own (`kind` `mix`, read through `filtered_tracks`), never the Songs tab's
+filter. Scrolling lists take their bottom inset from the scaffold rather than
 reserving a fixed 180 pixels, keeping the final row clear without leaving an empty tail.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
-keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
-four existing track covers loaded off the main thread. Playlist detail adds a searchable multi-song
+keep disc/track ordering; artist pages expose their albums and songs. Playlist covers are
+`MusicPlaylist.covers`, up to four songs with a picture, one an album, in row order, drawn as one
+cover or a 2 by 2 (`PlaylistCover`); a playlist with none shows an icon. Playlist detail adds a searchable multi-song
 picker through the existing batched add seam; rename, revision-checked moves/removal, delete and
 undo retain their existing native behavior. Row playback passes the explicit position, so repeated
 songs select the row that was tapped. Collection row semantics name that position independently
@@ -296,16 +309,30 @@ with a short trailing-edge slide over a static parent, keeping the system predic
 the compact tab keeps one fixed layout where the pill fades, the icon glides between the pill and
 the tab center, and the label swaps instantly with no opacity or transform of its own, so text
 never renders mid-animation. Artwork
-is loaded through the existing native cache as JPEG bytes,
-keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
-on updates; comparing two references to the mutable model misses a newly published generation.
-The decoded Flutter cache is bounded at 64 MiB and encoded/in-flight requests at 48 entries.
+is loaded through the native cache as JPEG bytes at the size drawn: Dart asks for the bucket (96,
+192, 384, 512, 768 or 1024 px, `artworkBucket`) that holds its logical size at the display's
+density, the colour sample asks for 96, and Kotlin keeps decoded bitmaps and encoded bytes by
+*picture* and bucket (`artwork_picture`, `picture`), so the twelve songs of an album decode and
+encode one image and a picture never goes stale. Dart keys a request by song, artwork revision,
+generation, a per-song stamp and the bucket; the stamp moves for the songs `art_changed_since`
+names (the `artChanged` event), so an enrichment finding one cover refetches that song's cover
+alone, and the generation moves only where everything may have changed (a scan, an explicit
+refresh). Widgets compare their stored request key on updates; comparing two references to the
+mutable model misses a newly published generation. The colour cache is keyed without the bucket,
+since colours come from any size. The decoded Flutter cache is bounded at 64 MiB and
+encoded/in-flight requests at 48 entries.
 The expanded player samples two tones from a 16 by 16 cover decode and falls back for
 neutral/dark/transparent art. The shell and expanded player paint one static color gradient,
 stronger in the expanded player, and animate it only when the artwork changes. Continuous drift
 and full-screen blurred cover layers made playback scrolling miss the frame budget on the W-P311.
 Position-only snapshots update the progress controls without notifying the whole screen every
-250 ms; transport, metadata and queue changes still notify it. Artwork, lyrics, queue and the
+250 ms; transport, metadata and queue changes still notify it. So do the streams that move many
+times a second (`samples`, `lyricFrame`, `analysisProgress`, `downloadedBytes`): they are
+`PlayerModel.hot(key)` notifiers the one widget reading each listens to, and a patch of nothing else
+never notifies the model; Kotlin computes lyric frames only while a lyrics pane is open
+(`lyricFrames`, counted) and the Activity is visible. A favourite is a `favourite` delta applied in
+place to Dart's lists (the bridge skips re-sending a catalog that differs only in favourites,
+`sameSongs`), and Dart keeps `favouriteTracks` rather than filtering the catalog in a build. Artwork, lyrics, queue and the
 sleep timer share one opaque pill; narrow widths and large text use icon-only buttons with named
 tooltips.
 Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
@@ -355,7 +382,10 @@ The boundary refuses past the same bound itself (`keep_sidecar_lyrics`, `keep_ly
 samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one. A bad
 companion does not refuse playable audio. Bitmap caches use 32 MiB and decode to at most 1024
 pixels per side after checking dimensions. Albums group by title and album artist, falling back
-to the tagged artist. Folder names and grants are listed independently of the catalog, including
+to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
+request. A song's album page opens by `album_key` (`albumKey` through the bridge), so a song with
+another spelling, no album artist or a shared title opens its own album, and the song sheet's
+heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music untouched.
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,

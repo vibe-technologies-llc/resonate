@@ -8,6 +8,8 @@ import 'model.dart';
 import 'tools.dart' show chooseDownload;
 import 'visuals.dart';
 
+enum _OnlineView { results, releases, release, link }
+
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key, required this.model, required this.open});
   final PlayerModel model;
@@ -25,6 +27,11 @@ class _SearchPageState extends State<SearchPage> {
   String _onlineType = 'Songs';
   RowData _libraryResult = {};
   bool _searching = false;
+  _OnlineView _view = _OnlineView.results;
+  String? _artistId;
+  String _artistName = '';
+  String _albumTitle = '';
+  String _releaseTitle = '';
 
   @override
   void initState() {
@@ -93,6 +100,12 @@ class _SearchPageState extends State<SearchPage> {
 
   void _performOnlineSearch(String query) {
     if (query.length < 2) return;
+    if (_view != _OnlineView.results || _artistId != null) {
+      setState(() {
+        _view = _OnlineView.results;
+        _artistId = null;
+      });
+    }
     widget.model.call(
       switch (_onlineType) {
         'Albums' => 'searchAlbums',
@@ -116,13 +129,20 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.model,
+    builder: (context, _) => _page(context),
+  );
+
+  Widget _page(BuildContext context) {
     final model = widget.model;
     final query = _controller.text.trim();
     final tracks = rows(_libraryResult['tracks']);
     final albums = rows(_libraryResult['albums']);
     final artists = rows(_libraryResult['artists']);
-    final reads = (_libraryResult['reads'] as List? ?? []).map((e) => '$e').toList();
+    final reads = (_libraryResult['reads'] as List? ?? [])
+        .map((e) => '$e')
+        .toList();
     final didYouMean = _libraryResult['didYouMean'] as String?;
     final trackCount = integer(_libraryResult['trackCount'] ?? tracks.length);
 
@@ -142,20 +162,9 @@ class _SearchPageState extends State<SearchPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Search',
-                          style: Theme.of(context).textTheme.headlineLarge,
-                        ),
-                      ),
-                      ActionIcon(
-                        icon: Icons.hearing_rounded,
-                        label: 'Listen & recognise',
-                        onPressed: () => _openListening(context),
-                      ),
-                    ],
+                  Text(
+                    'Search',
+                    style: Theme.of(context).textTheme.headlineLarge,
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -295,7 +304,8 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    final matchedNothing = tracks.isEmpty && albums.isEmpty && artists.isEmpty && !_searching;
+    final matchedNothing =
+        tracks.isEmpty && albums.isEmpty && artists.isEmpty && !_searching;
 
     return CustomScrollView(
       slivers: [
@@ -375,24 +385,33 @@ class _SearchPageState extends State<SearchPage> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
               child: Row(
-                children: [
-                  'Top',
-                  'Songs ($trackCount)',
-                  if (albums.isNotEmpty) 'Albums (${albums.length})',
-                  if (artists.isNotEmpty) 'Artists (${artists.length})',
-                ].map((scope) {
-                  final key = scope.split(' ').first;
-                  final selected = _libraryScope == key;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(scope),
-                      selected: selected,
-                      showCheckmark: false,
-                      onSelected: (_) => setState(() => _libraryScope = key),
-                    ),
-                  );
-                }).toList(),
+                children:
+                    [
+                      ('Top', 'Top'),
+                      (
+                        'Songs',
+                        trackCount > tracks.length
+                            ? 'Songs (${tracks.length} of $trackCount)'
+                            : 'Songs ($trackCount)',
+                      ),
+                      if (albums.isNotEmpty)
+                        ('Albums', 'Albums (${albums.length})'),
+                      if (artists.isNotEmpty)
+                        ('Artists', 'Artists (${artists.length})'),
+                    ].map((scope) {
+                      final (key, label) = scope;
+                      final selected = _libraryScope == key;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: selected,
+                          showCheckmark: false,
+                          onSelected: (_) =>
+                              setState(() => _libraryScope = key),
+                        ),
+                      );
+                    }).toList(),
               ),
             ),
           ),
@@ -430,7 +449,8 @@ class _SearchPageState extends State<SearchPage> {
                     const Spacer(),
                     if (_libraryScope == 'Top' && trackCount > 5)
                       TextButton(
-                        onPressed: () => setState(() => _libraryScope = 'Songs'),
+                        onPressed: () =>
+                            setState(() => _libraryScope = 'Songs'),
                         child: const Text('See all'),
                       ),
                   ],
@@ -438,7 +458,9 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
             SliverList.builder(
-              itemCount: _libraryScope == 'Top' ? tracks.length.clamp(0, 5) : tracks.length,
+              itemCount: _libraryScope == 'Top'
+                  ? tracks.length.clamp(0, 5)
+                  : tracks.length,
               itemBuilder: (context, i) => SongTile(
                 model: widget.model,
                 track: tracks[i],
@@ -449,8 +471,19 @@ class _SearchPageState extends State<SearchPage> {
                 open: widget.open,
               ),
             ),
+            if (_libraryScope == 'Songs' && trackCount > tracks.length)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                  child: Text(
+                    'Showing the first ${tracks.length} of $trackCount songs. Narrow the search to see the rest.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
           ],
-          if ((_libraryScope == 'Top' || _libraryScope == 'Albums') && albums.isNotEmpty) ...[
+          if ((_libraryScope == 'Top' || _libraryScope == 'Albums') &&
+              albums.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
@@ -464,7 +497,8 @@ class _SearchPageState extends State<SearchPage> {
                     const Spacer(),
                     if (_libraryScope == 'Top' && albums.length > 6)
                       TextButton(
-                        onPressed: () => setState(() => _libraryScope = 'Albums'),
+                        onPressed: () =>
+                            setState(() => _libraryScope = 'Albums'),
                         child: const Text('See all'),
                       ),
                   ],
@@ -579,7 +613,8 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ),
           ],
-          if ((_libraryScope == 'Top' || _libraryScope == 'Artists') && artists.isNotEmpty) ...[
+          if ((_libraryScope == 'Top' || _libraryScope == 'Artists') &&
+              artists.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
@@ -593,7 +628,8 @@ class _SearchPageState extends State<SearchPage> {
                     const Spacer(),
                     if (_libraryScope == 'Top' && artists.length > 6)
                       TextButton(
-                        onPressed: () => setState(() => _libraryScope = 'Artists'),
+                        onPressed: () =>
+                            setState(() => _libraryScope = 'Artists'),
                         child: const Text('See all'),
                       ),
                   ],
@@ -601,7 +637,9 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
             SliverList.builder(
-              itemCount: _libraryScope == 'Top' ? artists.length.clamp(0, 6) : artists.length,
+              itemCount: _libraryScope == 'Top'
+                  ? artists.length.clamp(0, 6)
+                  : artists.length,
               itemBuilder: (context, i) => ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                 leading: Artwork(
@@ -655,11 +693,13 @@ class _SearchPageState extends State<SearchPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 'Find releases, songs and downloads online',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.white70,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -697,36 +737,35 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    final songs = rows(model.state['onlineSongs']);
-    final albums = rows(model.state['onlineAlbums']);
-    final artists = rows(model.state['onlineArtists']);
-    final collection = row(model.state['onlineCollection']);
-
     return ListView(
       padding: pageInsets(context, top: 8),
       children: [
-        Row(
-          children: [
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'Songs', label: Text('Songs')),
-                ButtonSegment(value: 'Albums', label: Text('Albums')),
-                ButtonSegment(value: 'Artists', label: Text('Artists')),
-              ],
-              selected: {_onlineType},
-              onSelectionChanged: (set) {
-                setState(() => _onlineType = set.first);
-                if (query.isNotEmpty) _performOnlineSearch(query);
-              },
-            ),
-            const Spacer(),
-            TextButton.icon(
-              icon: const Icon(Icons.link_rounded),
-              label: const Text('Link'),
-              onPressed: () => _openMusicLink(context),
-            ),
-          ],
-        ),
+        if (_view == _OnlineView.results)
+          Row(
+            children: [
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'Songs', label: Text('Songs')),
+                  ButtonSegment(value: 'Albums', label: Text('Albums')),
+                  ButtonSegment(value: 'Artists', label: Text('Artists')),
+                ],
+                selected: {_onlineType},
+                onSelectionChanged: (set) {
+                  setState(() {
+                    _onlineType = set.first;
+                    _artistId = null;
+                  });
+                  if (query.isNotEmpty) _performOnlineSearch(query);
+                },
+              ),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.link_rounded),
+                label: const Text('Link'),
+                onPressed: () => _openMusicLink(context),
+              ),
+            ],
+          ),
         if (model.state['downloadStatus'] != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -735,8 +774,11 @@ class _SearchPageState extends State<SearchPage> {
               child: ListTile(
                 leading: const Icon(Icons.download_rounded),
                 title: Text('${model.state['downloadStatus']}'),
-                subtitle: Text(
-                  '${(integer(model.state['downloadedBytes']) / 1048576).toStringAsFixed(1)} MB',
+                subtitle: ValueListenableBuilder<Object?>(
+                  valueListenable: model.hot('downloadedBytes'),
+                  builder: (_, bytes, _) => Text(
+                    '${(integer(bytes ?? model.state['downloadedBytes']) / 1048576).toStringAsFixed(1)} MB',
+                  ),
                 ),
                 trailing: model.state['downloading'] == true
                     ? ActionIcon(
@@ -748,79 +790,12 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
           ),
-        if (collection.isNotEmpty)
-          ListTile(
-            title: Text(
-              '${collection['title'] ?? collection['name'] ?? 'Shared music'}',
-            ),
-            trailing: TextButton(
-              onPressed: () => model.call('importPlaylist', {
-                'name': collection['name'] ?? collection['title'] ?? 'Imported playlist',
-              }),
-              child: const Text('Import matches'),
-            ),
-          ),
-        if (query.isEmpty) ...[
-          const SizedBox(height: 20),
-          const EmptyState(
-            icon: Icons.travel_explore_rounded,
-            title: 'Explore the musical universe',
-            detail: 'Search for any song, album or artist to preview and download to your library.',
-          ),
-        ] else if (_onlineType == 'Songs') ...[
-          ...songs.map(
-            (song) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                song['held'] == true ? Icons.library_music_rounded : Icons.music_note_rounded,
-                color: song['held'] == true ? Theme.of(context).colorScheme.primary : null,
-              ),
-              title: Text('${song['title']}'),
-              subtitle: Text('${song['artist']} · ${song['album']}'),
-              trailing: PopupMenuButton<String>(
-                onSelected: (v) => v == 'save'
-                    ? model.call('saveWanted', {'recording': song['recording']})
-                    : chooseDownload(context, model, {
-                        'recording': song['recording'],
-                      }),
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'save',
-                    child: Text('Save for later'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'download',
-                    child: Text('Download'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ] else if (_onlineType == 'Albums') ...[
-          ...albums.map(
-            (album) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.album_outlined),
-              title: Text('${album['title']}'),
-              subtitle: Text('${album['artist']}'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => model.call('onlineReleases', {'id': album['id']}),
-            ),
-          ),
-        ] else if (_onlineType == 'Artists') ...[
-          ...artists.map(
-            (artist) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.person_outline_rounded),
-              title: Text('${artist['name']}'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                setState(() => _onlineType = 'Albums');
-                model.call('artistAlbums', {'id': artist['id']});
-              },
-            ),
-          ),
-        ],
+        ...switch (_view) {
+          _OnlineView.results => _onlineResults(context, query),
+          _OnlineView.releases => _onlineReleases(context),
+          _OnlineView.release => _onlineRelease(context),
+          _OnlineView.link => _onlineLink(context),
+        },
         SizedBox(
           height: MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
         ),
@@ -828,17 +803,271 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  List<Widget> _onlineResults(BuildContext context, String query) {
+    final model = widget.model;
+    final songs = rows(model.state['onlineSongs']);
+    final albums = rows(model.state['onlineAlbums']);
+    final artists = rows(model.state['onlineArtists']);
+    if (query.isEmpty) {
+      return const [
+        SizedBox(height: 20),
+        EmptyState(
+          icon: Icons.travel_explore_rounded,
+          title: 'Explore the musical universe',
+          detail: 'Search for any song, album or artist to preview and download to your library.',
+        ),
+      ];
+    }
+    final shown = switch (_onlineType) {
+      'Albums' => albums.length,
+      'Artists' => artists.length,
+      _ => songs.length,
+    };
+    return [
+      if (_onlineType == 'Songs')
+        ...songs.map((song) => _onlineSong(context, song)),
+      if (_onlineType == 'Albums') ...[
+        if (_artistId != null)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Albums by $_artistName'),
+            trailing: ActionIcon(
+              icon: Icons.close_rounded,
+              label: 'Search albums again',
+              onPressed: () {
+                setState(() => _artistId = null);
+                _performOnlineSearch(query);
+              },
+            ),
+          ),
+        ...albums.map(
+          (album) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.album_outlined),
+            title: Text('${album['title']}'),
+            subtitle: Text('${album['artist']}'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _openEditions(album),
+          ),
+        ),
+        if (_artistId != null && model.state['artistAlbumsNext'] != null)
+          TextButton(
+            onPressed: () => model.call('artistAlbums', {
+              'id': _artistId,
+              'from': model.state['artistAlbumsNext'],
+            }),
+            child: const Text('More albums'),
+          ),
+      ],
+      if (_onlineType == 'Artists')
+        ...artists.map(
+          (artist) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.person_outline_rounded),
+            title: Text('${artist['name']}'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _openArtist(artist),
+          ),
+        ),
+      if (shown == 0 && model.state['searching'] != true)
+        const EmptyState(
+          icon: Icons.search_off_rounded,
+          title: 'Nothing found yet',
+          detail: 'Try a different title or artist.',
+        ),
+    ];
+  }
+
+  List<Widget> _onlineReleases(BuildContext context) {
+    final model = widget.model;
+    final releases = rows(model.state['onlineReleases']);
+    return [
+      _onlineBack('Back to albums', _albumTitle, _backToResults),
+      ...releases.map(
+        (release) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.album_outlined),
+          title: Text('${release['title']}'),
+          subtitle: Text(
+            [
+              '${release['date'] ?? ''}',
+              '${release['country'] ?? ''}',
+            ].where((part) => part.isNotEmpty).join(' · '),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _openRelease(release),
+        ),
+      ),
+      if (releases.isEmpty && model.state['searching'] != true)
+        const EmptyState(
+          icon: Icons.album_outlined,
+          title: 'No editions found',
+          detail: 'This album has no releases to show.',
+        ),
+    ];
+  }
+
+  List<Widget> _onlineRelease(BuildContext context) {
+    final model = widget.model;
+    final songs = rows(model.state['onlineSongs']);
+    return [
+      _onlineBack('Back to editions', _releaseTitle, () {
+        setState(() => _view = _OnlineView.releases);
+      }),
+      ...songs.map((song) => _onlineSong(context, song)),
+      if (songs.isEmpty && model.state['searching'] != true)
+        const EmptyState(
+          icon: Icons.music_off_rounded,
+          title: 'No songs listed',
+          detail: 'This edition lists no songs.',
+        ),
+    ];
+  }
+
+  List<Widget> _onlineLink(BuildContext context) {
+    final model = widget.model;
+    final collection = row(model.state['onlineCollection']);
+    final songs = rows(collection['songs']);
+    final releases = rows(collection['releases']);
+    final artists = rows(collection['artists']);
+    return [
+      _onlineBack(
+        'Close link',
+        '${collection['name'] ?? 'Shared music'}',
+        () {
+          model.call('clearCollection');
+          _backToResults();
+        },
+        action: collection.isEmpty
+            ? null
+            : TextButton(
+                onPressed: () => model.call('importPlaylist', {
+                  'name': collection['name'] ?? 'Imported playlist',
+                }),
+                child: const Text('Import matches'),
+              ),
+      ),
+      if (songs.isNotEmpty) const SectionTitle('Songs'),
+      ...songs.map((song) => _onlineSong(context, song)),
+      if (releases.isNotEmpty) const SectionTitle('Editions'),
+      ...releases.map(
+        (release) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.album_outlined),
+          title: Text('${release['title']}'),
+          subtitle: Text('${release['date'] ?? ''}'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _openRelease(release),
+        ),
+      ),
+      if (artists.isNotEmpty) const SectionTitle('Artists'),
+      ...artists.map(
+        (artist) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.person_outline_rounded),
+          title: Text('${artist['name']}'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _openArtist(artist),
+        ),
+      ),
+      if (collection.isNotEmpty &&
+          songs.isEmpty &&
+          releases.isEmpty &&
+          artists.isEmpty)
+        const EmptyState(
+          icon: Icons.link_off_rounded,
+          title: 'Nothing to show',
+          detail: 'No music could be read from this link.',
+        ),
+    ];
+  }
+
+  Widget _onlineBack(
+    String tooltip,
+    String title,
+    VoidCallback onBack, {
+    Widget? action,
+  }) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: ActionIcon(
+      icon: Icons.arrow_back_rounded,
+      label: tooltip,
+      onPressed: onBack,
+    ),
+    title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+    trailing: action,
+  );
+
+  Widget _onlineSong(BuildContext context, RowData song) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(
+      song['held'] == true
+          ? Icons.library_music_rounded
+          : Icons.music_note_rounded,
+      color: song['held'] == true
+          ? Theme.of(context).colorScheme.primary
+          : null,
+    ),
+    title: Text('${song['title']}'),
+    subtitle: Text('${song['artist']} · ${song['album']}'),
+    trailing: PopupMenuButton<String>(
+      onSelected: (v) => v == 'save'
+          ? widget.model.call('saveWanted', {'recording': song['recording']})
+          : chooseDownload(context, widget.model, {
+              'recording': song['recording'],
+            }),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'save', child: Text('Save for later')),
+        const PopupMenuItem(value: 'download', child: Text('Download')),
+      ],
+    ),
+  );
+
+  void _openEditions(RowData album) {
+    setState(() {
+      _view = _OnlineView.releases;
+      _albumTitle = '${album['title']}';
+    });
+    widget.model.call('onlineReleases', {'id': album['id']});
+  }
+
+  void _openRelease(RowData release) {
+    setState(() {
+      _view = _OnlineView.release;
+      _releaseTitle = '${release['title']}';
+    });
+    widget.model.call('releaseSongs', {'id': release['id']});
+  }
+
+  void _openArtist(RowData artist) {
+    setState(() {
+      _view = _OnlineView.results;
+      _onlineType = 'Albums';
+      _artistId = '${artist['id']}';
+      _artistName = '${artist['name']}';
+    });
+    widget.model.call('artistAlbums', {'id': artist['id']});
+  }
+
+  void _backToResults() {
+    setState(() => _view = _OnlineView.results);
+    final query = _controller.text.trim();
+    if (query.isNotEmpty && _artistId == null) _performOnlineSearch(query);
+  }
+
   Future<void> _openMusicLink(BuildContext context) async {
-    final controller = TextEditingController();
+    var draft = '';
     final link = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Open music link'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          autofocus: true,
+          onChanged: (value) => draft = value,
           decoration: const InputDecoration(
             labelText: 'URL from TIDAL, Spotify or MusicBrainz',
           ),
+          onFieldSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
         actions: [
           TextButton(
@@ -846,49 +1075,18 @@ class _SearchPageState extends State<SearchPage> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            onPressed: () => Navigator.pop(context, draft.trim()),
             child: const Text('Open'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (link != null && link.isNotEmpty) {
-      setState(() => _place = 'Online');
+      setState(() {
+        _place = 'Online';
+        _view = _OnlineView.link;
+      });
       widget.model.call('openLink', {'text': link});
     }
-  }
-
-  Future<void> _openListening(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheet) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.hearing_rounded, size: 48),
-              const SizedBox(height: 12),
-              Text(
-                'Music Recognition',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Resonate uses AcoustID and audio fingerprinting to recognize tracks in your library or from audio playback.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => Navigator.pop(sheet),
-                child: const Text('Done'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

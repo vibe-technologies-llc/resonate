@@ -18,7 +18,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,6 +37,8 @@ import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.audioExtensions
 import org.resonate.android.nativecore.defaultTrackFilter
+
+data class Favourited(val id: ULong, val enabled: Boolean)
 
 class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
@@ -53,6 +58,8 @@ class LibraryRepository(private val context: Context) {
     private val mutableStatus = MutableStateFlow<String?>(null)
     private val mutableScanning = MutableStateFlow(false)
     private val mutablePreferences = MutableStateFlow<PlaybackPreferences?>(null)
+    private val mutableFavourites = MutableSharedFlow<Favourited>(extraBufferCapacity = 64)
+    val favourites: SharedFlow<Favourited> = mutableFavourites.asSharedFlow()
     val tracks = mutableTracks.asStateFlow()
     val queue = mutableQueue.asStateFlow()
     val snapshot = mutableSnapshot.asStateFlow()
@@ -82,6 +89,18 @@ class LibraryRepository(private val context: Context) {
     val features = LibraryFeatures(context, this)
 
     internal suspend fun native() = engine.await()
+
+    @Volatile private var indexed: Pair<List<Track>, Map<ULong, Track>>? = null
+
+    fun findTrack(id: ULong): Track? {
+        val rows = mutableAllTracks.value
+        val index =
+            indexed?.takeIf { it.first === rows }?.second
+                ?: rows.associateBy { it.id }.also { indexed = rows to it }
+        return index[id]
+            ?: mutableQueue.value.firstOrNull { it.id == id }
+            ?: mutableSnapshot.value?.current?.takeIf { it.id == id }
+    }
 
     internal suspend fun refresh() {
         val native = engine.await()
@@ -263,6 +282,7 @@ class LibraryRepository(private val context: Context) {
                     )
             }
             features.playlistRows.value = updated(features.playlistRows.value)
+            mutableFavourites.tryEmit(Favourited(id, enabled))
             scope.launch { reload() }
         }
     }

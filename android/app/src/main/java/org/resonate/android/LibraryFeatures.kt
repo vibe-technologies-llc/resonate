@@ -23,7 +23,10 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -136,7 +139,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val recognition =
         MutableStateFlow<List<org.resonate.android.nativecore.RecognitionCandidate>>(emptyList())
     val recognitionBusy = MutableStateFlow(false)
+    val recognitionTrack = MutableStateFlow<ULong?>(null)
     private val recognitionRequest = AtomicLong()
+    private val inspectorRequest = AtomicLong()
+    private val correctionRequest = AtomicLong()
     val artistAlbumsNext = MutableStateFlow<UInt?>(null)
     val analysis = MutableStateFlow<AnalysisReport?>(null)
     val analysisBusy = MutableStateFlow(false)
@@ -146,6 +152,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val playlists = MutableStateFlow<List<MusicPlaylist>>(emptyList())
     val playlistRows = MutableStateFlow<List<Track>>(emptyList())
     val openPlaylist = MutableStateFlow<ULong?>(null)
+    val playlistLoading = MutableStateFlow(false)
     val onlineAlbums = MutableStateFlow<List<SearchAlbum>>(emptyList())
     val onlineArtists = MutableStateFlow<List<SearchArtist>>(emptyList())
     val onlineReleases = MutableStateFlow<List<SearchRelease>>(emptyList())
@@ -156,7 +163,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val enriching = MutableStateFlow(false)
     val samples = MutableStateFlow<List<Float>>(emptyList())
     val artworkGeneration = MutableStateFlow(0)
-    val enrichment = ArtworkEnrichment(library, settings, scope, ::refreshArtwork)
+    private val mutableArtChanges = MutableSharedFlow<List<ULong>>(extraBufferCapacity = 16)
+    val artChanges: SharedFlow<List<ULong>> = mutableArtChanges.asSharedFlow()
+    val enrichment = ArtworkEnrichment(library, settings, scope, ::artworkChangedFor)
     private val lyricRequest = AtomicLong()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
@@ -191,6 +200,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         object : LruCache<String, Bitmap>(32 * 1024 * 1024) {
             override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
         }
+    private val encoded =
+        object : LruCache<String, ByteArray>(16 * 1024 * 1024) {
+            override fun sizeOf(key: String, value: ByteArray) = value.size
+        }
+    @Volatile private var lyricWatchers = 0
 
     fun initialize(native: MobilePlayer) {
         providerAccount.value =
@@ -312,10 +326,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun saveSync(config: SyncConfig) = work { native ->
-        accounts.writeSync(config)
+    fun saveSync(config: SyncConfig) {
         syncConfig.value = config
-        applySync(native)
+        work { native ->
+            accounts.writeSync(config)
+            applySync(native)
+        }
     }
 
     fun joinSync(code: String) {
@@ -673,35 +689,19 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun refreshArtwork() {
-        pictures.evictAll()
         artworkGeneration.value++
     }
 
-    suspend fun artwork(track: Track): Bitmap? =
+    fun artworkChangedFor(songs: List<ULong>) {
+        mutableArtChanges.tryEmit(songs)
+    }
+
+    suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? =
         withContext(Dispatchers.IO) {
-            val key = "${track.id}:${track.artRevision}:${artworkGeneration.value}"
-            pictures.get(key)?.let {
-                return@withContext it
-            }
             try {
-                val bytes = library.native().artwork(track.id) ?: return@withContext null
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                if (
-                    bounds.outWidth <= 0 ||
-                        bounds.outHeight <= 0 ||
-                        bounds.outWidth > 32768 ||
-                        bounds.outHeight > 32768
-                )
-                    return@withContext null
-                val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-                while (
-                    bounds.outWidth / options.inSampleSize > 1024 ||
-                        bounds.outHeight / options.inSampleSize > 1024
-                ) options.inSampleSize *= 2
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.also {
-                    pictures.put(key, it)
-                }
+                val native = library.native()
+                val picture = native.artworkPicture(track.id) ?: return@withContext null
+                bitmapOf(native, picture, edge)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -709,9 +709,57 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
 
+    suspend fun artworkJpeg(track: Track, edge: Int): ByteArray? =
+        withContext(Dispatchers.IO) {
+            try {
+                val native = library.native()
+                val picture = native.artworkPicture(track.id) ?: return@withContext null
+                val key = "$picture:$edge"
+                encoded.get(key)?.let {
+                    return@withContext it
+                }
+                val bitmap = bitmapOf(native, picture, edge) ?: return@withContext null
+                val jpeg =
+                    java.io.ByteArrayOutputStream().use { output ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
+                        output.toByteArray()
+                    }
+                encoded.put(key, jpeg)
+                jpeg
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                null
+            }
+        }
+
+    private fun bitmapOf(native: MobilePlayer, picture: ULong, edge: Int): Bitmap? {
+        val key = "$picture:$edge"
+        pictures.get(key)?.let {
+            return it
+        }
+        val bytes = native.picture(picture) ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (
+            bounds.outWidth <= 0 ||
+                bounds.outHeight <= 0 ||
+                bounds.outWidth > 32768 ||
+                bounds.outHeight > 32768
+        )
+            return null
+        val options =
+            BitmapFactory.Options().apply {
+                inSampleSize = ArtworkSizes.sampleFor(bounds.outWidth, bounds.outHeight, edge)
+            }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.also {
+            pictures.put(key, it)
+        }
+    }
+
     suspend fun mediaArtwork(track: Track): ByteArray? =
         withContext(Dispatchers.IO) {
-            val source = artwork(track) ?: return@withContext null
+            val source = artworkBitmap(track, ArtworkSizes.MEDIA_EDGE) ?: return@withContext null
             for (edge in listOf(384, 192)) {
                 val scale = minOf(1f, edge.toFloat() / maxOf(source.width, source.height))
                 val thumbnail =
@@ -741,7 +789,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun selectPlaylist(id: ULong?) {
         openPlaylist.value = id
         playlistRows.value = emptyList()
-        if (id != null) work { native -> reloadPlaylist(native, id) }
+        playlistLoading.value = id != null
+        if (id != null)
+            work { native ->
+                try {
+                    reloadPlaylist(native, id)
+                } finally {
+                    if (openPlaylist.value == id) playlistLoading.value = false
+                }
+            }
     }
 
     fun createPlaylist(name: String, track: Track? = null) = work { native ->
@@ -783,10 +839,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun loadInspector(id: ULong) {
+        val request = inspectorRequest.incrementAndGet()
         inspector.value = null
         artistRequest.incrementAndGet()
         artist.value = null
-        work { native -> inspector.value = native.inspector(id) }
+        work { native ->
+            val found = native.inspector(id)
+            if (request == inspectorRequest.get()) inspector.value = found
+        }
     }
 
     fun loadArtist(id: ULong) {
@@ -822,12 +882,23 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    @Synchronized
+    fun watchLyrics(watching: Boolean) {
+        lyricWatchers = if (watching) lyricWatchers + 1 else (lyricWatchers - 1).coerceAtLeast(0)
+    }
+
+    @Synchronized
+    fun stopWatchingLyrics() {
+        lyricWatchers = 0
+    }
+
     fun tick(native: MobilePlayer, snapshot: Snapshot) {
         enrichment.playing(snapshot.current?.id)
-        lyrics.value?.let { sheet ->
-            if (snapshot.current?.id == sheet.trackId)
-                lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
-        }
+        if (lyricWatchers > 0 && foreground)
+            lyrics.value?.let { sheet ->
+                if (snapshot.current?.id == sheet.trackId)
+                    lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
+            }
         actualOutput.value = native.outputDevice()
         if (downloading.value)
             downloadJob?.let(native::downloadProgress)?.let { progress ->
@@ -844,6 +915,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun recognise(id: ULong) {
         val request = recognitionRequest.incrementAndGet()
         recognition.value = emptyList()
+        recognitionTrack.value = id
         recognitionBusy.value = true
         work { native ->
             try {
@@ -912,21 +984,23 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun searchCorrections(text: String) {
+        val request = correctionRequest.incrementAndGet()
         correctionBusy.value = true
         work { native ->
             try {
-                corrections.value = native.searchAutoEq(text)
+                val found = native.searchAutoEq(text)
+                if (request == correctionRequest.get()) corrections.value = found
             } finally {
-                correctionBusy.value = false
+                if (request == correctionRequest.get()) correctionBusy.value = false
             }
         }
     }
 
-    fun applyCorrection(device: AutoEqDevice) {
+    fun applyCorrection(id: String) {
         correctionBusy.value = true
         work { native ->
             try {
-                val found = native.autoEqProfile(device.id) ?: return@work
+                val found = native.autoEqProfile(id) ?: return@work
                 library.updatePreferences {
                     it.copy(equaliserEnabled = true, equaliser = found.curve)
                 }
@@ -1245,6 +1319,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         syncHandoffs.value = emptyList()
         analysisRequest.incrementAndGet()
         recognitionRequest.incrementAndGet()
+        inspectorRequest.incrementAndGet()
+        correctionRequest.incrementAndGet()
         recognitionBusy.value = false
         artistRequest.incrementAndGet()
         lyricRequest.incrementAndGet()

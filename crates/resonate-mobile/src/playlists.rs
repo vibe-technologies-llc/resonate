@@ -5,12 +5,23 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read};
 
+const COVERS_AT_MOST: i64 = 4;
+
+const THE_COVERS_OF_A_PLAYLIST: &str = "SELECT d.id, min(r.position) AS first
+      FROM playlist_rows r JOIN documents d ON d.id = r.track
+      WHERE r.playlist = ?1 AND d.missing = 0 AND d.art_revision > 0
+      GROUP BY d.album_key
+      ORDER BY first
+      LIMIT ?2";
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct MusicPlaylist {
     pub id: u64,
     pub name: String,
     pub songs: u64,
     pub revision: u64,
+    #[uniffi(default = [])]
+    pub covers: Vec<u64>,
 }
 
 #[derive(Clone)]
@@ -32,13 +43,22 @@ impl MobilePlayer {
     pub fn playlists(&self) -> Result<Vec<MusicPlaylist>> {
         let connection = self.catalog.0.lock();
         let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE r.playlist = p.id AND d.missing = 0), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
+        let mut covers = connection
+            .prepare(THE_COVERS_OF_A_PLAYLIST)
+            .map_err(read_error)?;
         query
             .query_map([], |row| {
+                let id = row.get::<_, i64>(0)?;
                 Ok(MusicPlaylist {
-                    id: row.get::<_, i64>(0)? as u64,
+                    id: id as u64,
                     name: row.get(1)?,
                     songs: row.get::<_, i64>(2)? as u64,
                     revision: row.get::<_, i64>(3)? as u64,
+                    covers: covers
+                        .query_map(params![id, COVERS_AT_MOST], |cover| {
+                            Ok(cover.get::<_, i64>(0)? as u64)
+                        })?
+                        .collect::<rusqlite::Result<Vec<_>>>()?,
                 })
             })
             .map_err(read_error)?
@@ -384,6 +404,55 @@ pub(crate) mod tests {
             room: crate::room::Room::under(std::env::temp_dir()),
             tag_undo: crate::tagging::TagUndo::default(),
         }
+    }
+
+    #[test]
+    fn a_playlist_shows_up_to_four_covers_one_an_album_in_the_order_of_its_rows() {
+        let player = player();
+        let song = |name: &str, album: &str, art: Option<u8>| {
+            let track = player
+                .catalog
+                .upsert(Track {
+                    uri: format!("content://test/{name}.flac"),
+                    title: name.into(),
+                    album: album.into(),
+                    artist: "Artist".into(),
+                    ..Track::default()
+                })
+                .expect("a song");
+            if let Some(art) = art {
+                player
+                    .catalog
+                    .keep_artwork(track.id, &[art], "folder", false)
+                    .expect("a cover");
+            }
+            track.id
+        };
+        let bare = song("bare", "Bare", None);
+        let one = song("one", "One", Some(1));
+        let one_again = song("one-again", "One", Some(1));
+        let two = song("two", "Two", Some(2));
+        let three = song("three", "Three", Some(3));
+        let four = song("four", "Four", Some(4));
+        let five = song("five", "Five", Some(5));
+        let id = player.create_playlist("Mix".into()).expect("a list");
+        let empty = player.create_playlist("Empty".into()).expect("a list");
+
+        player
+            .add_to_playlist(id, vec![bare, one, one_again, two, three, four, five])
+            .expect("rows");
+        let playlists = player.playlists().expect("the lists");
+        let mix = playlists
+            .iter()
+            .find(|list| list.id == id)
+            .expect("the mix");
+        let nothing = playlists
+            .iter()
+            .find(|list| list.id == empty)
+            .expect("the empty list");
+
+        assert_eq!(mix.covers, vec![one, two, three, four]);
+        assert!(nothing.covers.is_empty());
     }
 
     #[test]

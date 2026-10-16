@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import 'main.dart' show OpenPage;
 import 'model.dart';
 import 'visuals.dart';
 
@@ -31,8 +30,10 @@ class LyricsPage extends StatelessWidget {
             label: 'Refresh lyrics',
             onPressed: track.isEmpty
                 ? null
-                : () =>
-                      model.call('lyrics', {'id': track['id'], 'refresh': true}),
+                : () => model.call('lyrics', {
+                    'id': track['id'],
+                    'refresh': true,
+                  }),
           ),
         ],
       ),
@@ -66,6 +67,7 @@ class _LyricsPaneState extends State<LyricsPane> {
   @override
   void initState() {
     super.initState();
+    widget.model.call('lyricFrames', {'enabled': true});
     _load();
   }
 
@@ -87,6 +89,7 @@ class _LyricsPaneState extends State<LyricsPane> {
 
   @override
   void dispose() {
+    widget.model.call('lyricFrames', {'enabled': false});
     _resume?.cancel();
     _scroll.dispose();
     super.dispose();
@@ -94,7 +97,10 @@ class _LyricsPaneState extends State<LyricsPane> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.model,
+    listenable: Listenable.merge([
+      widget.model,
+      widget.model.hot('lyricFrame'),
+    ]),
     builder: (context, _) {
       final sheet = row(widget.model.state['lyrics']);
       final lines = rows(sheet['lines']);
@@ -350,7 +356,10 @@ class _InspectorPageState extends State<InspectorPage> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.model,
     builder: (_, _) {
-      final inspector = row(widget.model.state['inspector']);
+      final held = row(widget.model.state['inspector']);
+      final inspector = row(held['track'])['id'] == widget.track['id']
+          ? held
+          : <String, dynamic>{};
       return Scaffold(
         appBar: AppBar(title: const Text('Song details')),
         body: ListView(
@@ -472,6 +481,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final model = widget.model;
       final report = row(model.state['analysis']);
       final valid = report['trackId'] == widget.track['id'];
+      final recognised = row(model.state['recognition']);
+      final candidates = recognised['trackId'] == widget.track['id']
+          ? rows(recognised['candidates'])
+          : <RowData>[];
       final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
       return Ambient(
         child: Scaffold(
@@ -525,10 +538,11 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     if (model.state['analysisBusy'] == true)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 20),
-                        child: LinearProgressIndicator(
-                          value: model.state['analysisProgress'] == null
-                              ? null
-                              : decimal(model.state['analysisProgress']),
+                        child: ValueListenableBuilder<Object?>(
+                          valueListenable: model.hot('analysisProgress'),
+                          builder: (_, progress, _) => LinearProgressIndicator(
+                            value: progress == null ? null : decimal(progress),
+                          ),
                         ),
                       ),
                     if (valid) ...[
@@ -586,12 +600,13 @@ class _AnalysisPageState extends State<AnalysisPage> {
                             : 'Recognise recording',
                       ),
                     ),
-                    ...rows(model.state['recognition']).map(
-                      (candidate) => ListTile(
-                        title: Text('${candidate['title']}'),
-                        subtitle: Text('${candidate['artist']}'),
-                      ),
-                    ),
+                    ...candidates.map((candidate) {
+                      final song = row(candidate['song']);
+                      return ListTile(
+                        title: Text('${song['title']}'),
+                        subtitle: Text('${song['artist']}'),
+                      );
+                    }),
                   ],
                 ),
         ),
@@ -652,12 +667,13 @@ class _VisualizerPageState extends State<VisualizerPage>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SignalPlot(
-                    values: (widget.model.state['samples'] as List? ?? [])
-                        .map(decimal)
-                        .toList(),
-                    height: 280,
-                    bars: true,
+                  ValueListenableBuilder<Object?>(
+                    valueListenable: widget.model.hot('samples'),
+                    builder: (_, samples, _) => SignalPlot(
+                      values: (samples as List? ?? []).map(decimal).toList(),
+                      height: 280,
+                      bars: true,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
@@ -677,303 +693,6 @@ class _VisualizerPageState extends State<VisualizerPage>
       );
     },
   );
-}
-
-class OnlinePage extends StatefulWidget {
-  const OnlinePage({super.key, required this.model, required this.open});
-  final PlayerModel model;
-  final OpenPage open;
-  @override
-  State<OnlinePage> createState() => _OnlinePageState();
-}
-
-class _OnlinePageState extends State<OnlinePage> {
-  Timer? _timer;
-  String _type = 'Songs';
-  String? _artistId;
-  String _text = '';
-  bool _searched = false;
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _search() {
-    _searched = true;
-    widget.model.call(
-      switch (_type) {
-        'Albums' => 'searchAlbums',
-        'Artists' => 'searchArtists',
-        _ => 'searchOnline',
-      },
-      {'text': _text},
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.model,
-    builder: (_, _) {
-      final model = widget.model;
-      final songs = rows(model.state['onlineSongs']);
-      final collection = row(model.state['onlineCollection']);
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Discover'),
-          actions: [
-            ActionIcon(
-              icon: Icons.bookmark_border_rounded,
-              label: 'Saved for later',
-              onPressed: () => widget.open('wanted'),
-            ),
-          ],
-        ),
-        body: Ambient(
-          child: !model.online
-              ? EmptyState(
-                  icon: Icons.cloud_off_rounded,
-                  title: 'You’re listening offline',
-                  detail: 'Enable online features to find music, artwork and lyrics.',
-                  action: FilledButton(
-                    onPressed: () => model.call('online', {'enabled': true}),
-                    child: const Text('Enable online features'),
-                  ),
-                )
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-                      child: Column(
-                        children: [
-                          TextField(
-                            decoration: const InputDecoration(
-                              hintText: 'Find your next favourite',
-                              prefixIcon: Icon(Icons.search_rounded),
-                            ),
-                            onChanged: (v) {
-                              _text = v;
-                              _timer?.cancel();
-                              _timer = Timer(
-                                const Duration(milliseconds: 500),
-                                () {
-                                  if (v.trim().length >= 2) _search();
-                                },
-                              );
-                            },
-                            onSubmitted: (_) => _search(),
-                          ),
-                          const SizedBox(height: 14),
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(
-                                value: 'Songs',
-                                label: Text('Songs'),
-                              ),
-                              ButtonSegment(
-                                value: 'Albums',
-                                label: Text('Albums'),
-                              ),
-                              ButtonSegment(
-                                value: 'Artists',
-                                label: Text('Artists'),
-                              ),
-                            ],
-                            selected: {_type},
-                            onSelectionChanged: (selection) {
-                              setState(() => _type = selection.first);
-                              if (_text.trim().length >= 2) _search();
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextButton.icon(
-                            onPressed: () => _openLink(context),
-                            icon: const Icon(Icons.link_rounded),
-                            label: const Text('Open a music link'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (model.state['searching'] == true)
-                      const LinearProgressIndicator(),
-                    if (collection.isNotEmpty)
-                      ListTile(
-                        title: Text(
-                          '${collection['title'] ?? collection['name'] ?? 'Shared music'}',
-                        ),
-                        trailing: TextButton(
-                          onPressed: () => model.call('importPlaylist', {
-                            'name':
-                                collection['name'] ??
-                                collection['title'] ??
-                                'Imported playlist',
-                          }),
-                          child: const Text('Import matches'),
-                        ),
-                      ),
-                    if (model.state['downloadStatus'] != null)
-                      ListTile(
-                        title: Text('${model.state['downloadStatus']}'),
-                        subtitle: Text(
-                          '${(integer(model.state['downloadedBytes']) / 1048576).toStringAsFixed(1)} MB',
-                        ),
-                        trailing: model.state['downloading'] == true
-                            ? ActionIcon(
-                                icon: Icons.close_rounded,
-                                label: 'Cancel download',
-                                onPressed: () => model.call('cancelDownload'),
-                              )
-                            : null,
-                      ),
-                    Expanded(
-                      child: !_searched && songs.isEmpty
-                          ? const EmptyState(
-                              icon: Icons.travel_explore_rounded,
-                              title: 'Follow your curiosity',
-                              detail: 'Search for a song, explore an artist, or open a shared music link.',
-                            )
-                          : ListView(
-                              padding: const EdgeInsets.only(bottom: 180),
-                              children: [
-                                if (_type == 'Songs' || songs.isNotEmpty)
-                                  ...songs.map(
-                                    (song) => ListTile(
-                                      leading: Icon(
-                                        song['held'] == true
-                                            ? Icons.library_music_rounded
-                                            : Icons.music_note_rounded,
-                                      ),
-                                      title: Text('${song['title']}'),
-                                      subtitle: Text(
-                                        '${song['artist']} · ${song['album']}',
-                                      ),
-                                      trailing: PopupMenuButton<String>(
-                                        onSelected: (v) => v == 'save'
-                                            ? model.call('saveWanted', {
-                                                'recording': song['recording'],
-                                              })
-                                            : chooseDownload(context, model, {
-                                                'recording': song['recording'],
-                                              }),
-                                        itemBuilder: (_) => [
-                                          const PopupMenuItem(
-                                            value: 'save',
-                                            child: Text('Save for later'),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'download',
-                                            child: Text('Download'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                if (_type == 'Albums')
-                                  ...rows(model.state['onlineAlbums']).map(
-                                    (album) => ListTile(
-                                      leading: const Icon(Icons.album_outlined),
-                                      title: Text('${album['title']}'),
-                                      subtitle: Text('${album['artist']}'),
-                                      onTap: () => model.call(
-                                        'onlineReleases',
-                                        {'id': album['id']},
-                                      ),
-                                    ),
-                                  ),
-                                if (_type == 'Artists')
-                                  ...rows(model.state['onlineArtists']).map(
-                                    (artist) => ListTile(
-                                      leading: const Icon(
-                                        Icons.person_outline_rounded,
-                                      ),
-                                      title: Text('${artist['name']}'),
-                                      onTap: () {
-                                        setState(() {
-                                          _type = 'Albums';
-                                          _artistId = '${artist['id']}';
-                                        });
-                                        model.call('artistAlbums', {
-                                          'id': artist['id'],
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                if (_type == 'Albums' &&
-                                    _artistId != null &&
-                                    model.state['artistAlbumsNext'] != null)
-                                  TextButton(
-                                    onPressed: () => model.call(
-                                      'artistAlbums',
-                                      {
-                                        'id': _artistId,
-                                        'from': model.state['artistAlbumsNext'],
-                                      },
-                                    ),
-                                    child: const Text('More albums'),
-                                  ),
-                                ...rows(model.state['onlineReleases']).map(
-                                  (release) => ListTile(
-                                    title: Text('${release['title']}'),
-                                    subtitle: Text('${release['date']}'),
-                                    onTap: () => model.call('releaseSongs', {
-                                      'id': release['id'],
-                                    }),
-                                  ),
-                                ),
-                                if (_searched &&
-                                    songs.isEmpty &&
-                                    rows(model.state['onlineAlbums']).isEmpty &&
-                                    rows(model.state['onlineArtists'])
-                                        .isEmpty &&
-                                    model.state['searching'] != true)
-                                  const EmptyState(
-                                    icon: Icons.search_off_rounded,
-                                    title: 'Nothing found yet',
-                                    detail: 'Try a different title or artist.',
-                                  ),
-                              ],
-                            ),
-                    ),
-                  ],
-                ),
-        ),
-      );
-    },
-  );
-
-  Future<void> _openLink(BuildContext context) async {
-    final controller = TextEditingController();
-    final link = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Open music link'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Song, album, artist or playlist URL',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Open'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (link != null) {
-      setState(() {
-        _searched = true;
-        _type = 'Songs';
-      });
-      widget.model.call('openLink', {'text': link});
-    }
-  }
 }
 
 class WantedPane extends StatelessWidget {

@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -39,6 +40,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private var artworkId: ULong? = null
     private var resumeAfterFocus = false
     private var playlist: BuiltPlaylist? = null
+    private val coverVersion = MutableStateFlow(0)
     private val focus =
         AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(
@@ -102,13 +104,22 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             }
         }
         scope.launch {
-            combine(library.snapshot, library.features.artworkGeneration) { value, generation ->
-                    value?.current to generation
+            library.features.artChanges.collect { songs ->
+                if (snapshot?.current?.id in songs) coverVersion.value++
+            }
+        }
+        scope.launch {
+            combine(
+                    library.snapshot,
+                    library.features.artworkGeneration,
+                    coverVersion,
+                ) { value, generation, version ->
+                    Triple(value?.current, generation, version)
                 }
-                .distinctUntilChangedBy { (track, generation) ->
-                    Triple(track?.id, track?.artRevision, generation)
+                .distinctUntilChangedBy { (track, generation, version) ->
+                    listOf(track?.id, track?.artRevision, generation, version)
                 }
-                .collectLatest { (track, _) ->
+                .collectLatest { (track, _, _) ->
                     artwork = null
                     artworkId = null
                     invalidateState()

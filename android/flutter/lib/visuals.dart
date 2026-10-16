@@ -174,6 +174,7 @@ class EdgeTint extends StatelessWidget {
   }
 }
 
+const _coloursKept = 256;
 final Map<String, List<Color>> _artworkColorsCache = {};
 final Map<String, Uint8List> _artworkBytesCache = {};
 
@@ -223,6 +224,9 @@ Future<List<Color>> extractArtworkColors(
     }
     if (cacheKey.isNotEmpty) {
       _artworkColorsCache[cacheKey] = colors;
+      while (_artworkColorsCache.length > _coloursKept) {
+        _artworkColorsCache.remove(_artworkColorsCache.keys.first);
+      }
     }
     return colors;
   } catch (_) {
@@ -266,8 +270,13 @@ class _ArtworkState extends State<Artwork> {
   }
 
   void _load() {
-    final key =
-        '${widget.track['id']}:${widget.track['artRevision']}:${widget.model.state['artworkGeneration']}';
+    final bucket = artworkBucket(
+      widget.size,
+      WidgetsBinding.instance.platformDispatcher.implicitView?.devicePixelRatio ??
+          1.0,
+    );
+    final key = widget.model.artworkKey(widget.track, bucket);
+    final colours = widget.model.colourKey(widget.track);
     if (_key == key) return;
     _key = key;
     if (widget.track.isEmpty) {
@@ -278,10 +287,10 @@ class _ArtworkState extends State<Artwork> {
     if (cached != null) {
       _bytes = cached;
       if (widget.onColors != null) {
-        if (_artworkColorsCache.containsKey(key)) {
-          _publishColors(key, _artworkColorsCache[key]!);
+        if (_artworkColorsCache.containsKey(colours)) {
+          _publishColors(key, _artworkColorsCache[colours]!);
         } else {
-          extractArtworkColors(cached, key).then((colors) {
+          extractArtworkColors(cached, colours).then((colors) {
             _publishColors(key, colors);
           });
         }
@@ -290,14 +299,12 @@ class _ArtworkState extends State<Artwork> {
       _bytes = null;
     }
     widget.model
-        .artwork(widget.track)
+        .artwork(widget.track, bucket)
         .then((bytes) async {
           if (bytes != null) {
             _artworkBytesCache[key] = bytes;
             while (_artworkBytesCache.length > 96) {
-              final oldest = _artworkBytesCache.keys.first;
-              _artworkBytesCache.remove(oldest);
-              _artworkColorsCache.remove(oldest);
+              _artworkBytesCache.remove(_artworkBytesCache.keys.first);
             }
           }
           if (!mounted || _key != key) return;
@@ -307,7 +314,7 @@ class _ArtworkState extends State<Artwork> {
           if (widget.onColors != null) {
             final colors = bytes == null
                 ? const [accent, mint]
-                : await extractArtworkColors(bytes, key);
+                : await extractArtworkColors(bytes, colours);
             _publishColors(key, colors);
           }
         })
@@ -348,6 +355,74 @@ class _ArtworkState extends State<Artwork> {
       ),
     ),
   );
+}
+
+class PlaylistCover extends StatelessWidget {
+  const PlaylistCover({
+    super.key,
+    required this.model,
+    required this.covers,
+    this.size,
+    this.radius = 12,
+  });
+  final PlayerModel model;
+  final Object? covers;
+  final double? size;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final ids = (covers as List? ?? const []).take(4).toList();
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: ids.isEmpty
+            ? ColoredBox(
+                color: scheme.secondaryContainer,
+                child: Icon(
+                  Icons.queue_music_rounded,
+                  color: scheme.onSecondaryContainer,
+                ),
+              )
+            : ids.length == 1
+            ? Artwork(
+                model: model,
+                track: model.trackById(ids.first),
+                size: size,
+                radius: 0,
+              )
+            : LayoutBuilder(
+                builder: (context, box) {
+                  final tile = box.maxWidth.isFinite ? box.maxWidth / 2 : null;
+                  Widget cover(int index) => index < ids.length
+                      ? Artwork(
+                          model: model,
+                          track: model.trackById(ids[index]),
+                          size: tile,
+                          radius: 0,
+                        )
+                      : ColoredBox(color: scheme.surfaceContainerHighest);
+                  return Column(
+                    children: [
+                      for (var line = 0; line < 2; line++)
+                        Expanded(
+                          child: Row(
+                            children: [
+                              for (var column = 0; column < 2; column++)
+                                Expanded(child: cover(line * 2 + column)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+      ),
+    );
+  }
 }
 
 class CoverFallback extends StatelessWidget {
@@ -415,8 +490,7 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
   }
 
   void _load() {
-    final key =
-        '${widget.track['id']}:${widget.track['artRevision']}:${widget.model.state['artworkGeneration']}';
+    final key = widget.model.colourKey(widget.track);
     if (_key == key) return;
     _key = key;
     if (widget.track.isEmpty) {
@@ -429,7 +503,7 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
       _extractedColors = _artworkColorsCache[key]!;
     }
     widget.model
-        .artwork(widget.track)
+        .artwork(widget.track, colourSampleBucket)
         .then((bytes) async {
           if (!mounted || _key != key) return;
           if (bytes == null) {
@@ -721,15 +795,49 @@ class _SignalPainter extends CustomPainter {
       values != old.values || color != old.color;
 }
 
+class NoticeFooter extends StatelessWidget {
+  const NoticeFooter({super.key, required this.model, required this.child});
+  final PlayerModel model;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      child,
+      Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          type: MaterialType.transparency,
+          child: ListenableBuilder(
+            listenable: model,
+            builder: (context, _) => model.notice == null
+                ? const SizedBox.shrink()
+                : SafeArea(top: false, child: StatusCard(model: model)),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
 class StatusBanner extends StatelessWidget {
-  const StatusBanner({super.key, required this.model, required this.open});
+  const StatusBanner({
+    super.key,
+    required this.model,
+    required this.open,
+    this.noticeOnly = false,
+  });
   final PlayerModel model;
   final OpenPage open;
+  final bool noticeOnly;
 
   @override
   Widget build(BuildContext context) {
-    final scanning = model.state['scanning'] == true;
-    final activity = model.syncActivity;
+    final scanning = !noticeOnly && model.state['scanning'] == true;
+    final activity = noticeOnly ? null : model.syncActivity;
     final notice = model.notice;
 
     if (!scanning && activity == null && notice == null) {

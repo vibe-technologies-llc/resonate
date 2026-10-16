@@ -38,18 +38,8 @@ are in [ROADMAP.md](ROADMAP.md).
   (`upsert`, `tagged`, `keep_artwork_of`) syncs the WAL to flash; `resonate-library` sets NORMAL
 
 ## Android
-- [M] `PlayerModel._receive` notifies on every patch, so `samples` (30 Hz), `lyricFrame` (4 Hz, on
-  after leaving Lyrics), `analysisProgress` and `downloadedBytes` rebuild all five root pages, with
-  `LibraryPage`'s whole-library favourites scan and the non-lazy lyrics column
-- [M] A favourite toggle re-emits `allTracks` and `tracks` (the same list) whole through the
-  channel, decodes both on the UI isolate, rebuilds `_byId` and re-fetches every album and artist
-- [S] `FlutterBridge`'s `play`, `addToPlaylist` and `enrich` resolve each id by scanning
-  `allTracks` on the main thread (quadratic for *Play all*), and `track()` copies the whole catalog
-  per artwork request
-- [M] `artwork` takes no size and is keyed by song: a 50 dp row decodes and JPEG-encodes a cover of
-  up to 1024 px once per track of an album (the 32 MiB cache holds about 8), and
-  `ArtworkEnrichment.update` evicts every cover and bumps `artworkGeneration` on any change where
-  `art_changed_since` names the changed songs
+- [S] The lyrics pane builds every line in a non-lazy `Column` and rebuilds all of them on each
+  4 Hz frame while it is open, a blur filter per line away from the read one
 
 ## iOS
 - [S] Each finished download runs `Library.refresh` (collections, three searches, every catalog

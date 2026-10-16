@@ -89,44 +89,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `{finding:?}` and `inspector` builds `container` with `{:?}` (`IsoMp4`), where `Finding::told`
   and `Container`'s `Display` are the sentences the desktop shows
 
-## Android
-- [S] A queue drag lands one row short: `QueuePage` sends `onReorderItem`'s already-adjusted index
-  to `moveInQueue`, which counts the row it lands before as before the move (`landing_before`), so
-  a downward drag stops a row early and no row can be dropped last
-- [M] Online search dead-ends: `SearchPage` renders neither `onlineReleases` (`releaseSongs` is
-  never called), nor `artistAlbumsNext`, nor a pasted link's songs while the field is empty, so an
-  album result does nothing and an artist shows one page of albums; the older `OnlinePage` is
-  unreachable
-- [M] Notices (`failure`, `status`) render only on root tabs and the player: a profile import,
-  AutoEq apply, playlist edit or folder removal failing on a pushed page shows nothing there, and
-  `CollectionPage` spins for ever when `collectionTracks` answers nothing
-- [S] `PlayerModel.call` clears `failure` on any success, so a background call (`collections` on
-  every catalog revision, `lyrics`, `enrichmentStatus`) erases the error of the action that failed
-  within a tick
-- [S] Statistics' *Your most played* finds the tapped row with `rows(stats['topTracks']).indexOf`
-  over freshly built maps: the index is -1 and every row plays from the default start
-- [S] The empty queue's *Browse songs* opens a `collection` of kind `all` that `CollectionPage` does
-  not know: `collectionTracks` answers `artist_tracks("")`, the unknown-artist group, titled *Songs*
-- [S] Search results and Statistics rows keep the `favourite` of the map they were fetched with: the
-  song sheet offers *Add to favourites* again and cannot take one back until a new search
-  (`CollectionPage`'s `trackById` merge does it right)
-- [S] The Analysis pane lists the last `recognition` for whatever song it shows; `loadInspector` and
-  `searchCorrections` carry no request generation, and `applyCorrection` takes a list index, so an
-  overlapping reply can show another song's result or apply another headphone's profile
-- [S] The *Device sync* switch and every *Sync options* switch edit a draft only *Save sync
-  settings*, in another card above, sends; nothing marks it unsaved and leaving the page drops it
-- [S] *Made for you* applies its mix as the global `library.filter`: back on the Songs tab, it is
-  still filtered to the mix; the mix needs its own query (`filtered_tracks`)
-- [S] Search lists at most 500 of `trackCount` songs under a *Songs (N)* chip and plays only those
-- [S] Playlist rows read `artworkTrack`, which `MusicPlaylist` and its wire map never carry, so
-  every playlist shows the generic icon where `android.md` promises up to four covers
-- [S] Search carries a *Listen & recognise* button whose sheet only describes recognition and has
-  nothing behind it
-- [S] A playlist page shows the empty state and a disabled Play between `selectPlaylist` (which
-  sets `playlistRows` to an empty list) and its rows: loading cannot be told from empty
-- [S] The light theme's *Search online* card draws its second line in `Colors.white70` on the
-  near-white `surfaceContainer`
-
 ## iOS
 - [S] `Erasure.everything` discards every failure (`try?` on each directory listing and
   `removeItem`, an unchecked `SecItemDelete` per class) and `eraseEverything` then calls `exit(0)`:
@@ -167,10 +129,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `fs::write`; two writers stage to one fixed `.txt.new`
 
 ## Search
-- [S] Android's *Go to album* finds the album by raw title and album artist, the player's album
-  link by title alone: a song with no album, another spelling or a *Various artists* release does
-  nothing and a shared title opens the wrong album; `album_key` is exported and uncalled, as is
-  `highlights`
 - [M] A multi-valued genre is one `tracks.genre` (`House; Disco`): `genre:=House` misses it, and
   suggestions tally whole strings (a *House; Disco* card); a one-word genre card is a prefix
   (`Reach::Begins`), so *Rock* holds *Rockabilly* and *Rocksteady* (artist mixes were made whole)
