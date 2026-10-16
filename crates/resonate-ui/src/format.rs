@@ -11,7 +11,16 @@ const PARTS_HELD_INLINE: usize = 6;
 pub type Parts<T> = SmallVec<[T; PARTS_HELD_INLINE]>;
 
 pub fn clock(frames: Frames, rate: SampleRate) -> String {
-    let seconds = frames.to_duration(rate).as_secs();
+    whole_seconds(frames.to_duration(rate).as_secs())
+}
+
+pub fn left(position: Frames, duration: Frames, rate: SampleRate) -> String {
+    let length = duration.to_duration(rate).as_secs();
+    let elapsed = position.to_duration(rate).as_secs();
+    whole_seconds(length.saturating_sub(elapsed))
+}
+
+fn whole_seconds(seconds: u64) -> String {
     let minutes = seconds / 60;
     let hours = minutes / 60;
 
@@ -303,6 +312,31 @@ mod tests {
 
         assert_eq!(counting_down(just_set), "15:00");
         assert_eq!(counting_down(Duration::from_millis(1)), "0:01");
+    }
+
+    #[test]
+    fn the_time_elapsed_and_the_time_left_add_up_to_the_length_through_the_last_second() {
+        let rate = SampleRate::HZ_44100;
+        let length = Frames(44_100 * 210 + 30_000);
+
+        for position in [
+            Frames::ZERO,
+            Frames(44_100 * 60 + 8_000),
+            Frames(44_100 * 209 + 40_000),
+            Frames(44_100 * 210),
+            length,
+        ] {
+            let elapsed = position.to_duration(rate).as_secs();
+            let seconds_left = length.to_duration(rate).as_secs() - elapsed;
+
+            assert_eq!(elapsed + seconds_left, 210);
+            assert_eq!(
+                clock(Frames(44_100 * seconds_left), rate),
+                left(position, length, rate)
+            );
+        }
+        assert_eq!(left(Frames(44_100 * 209 + 40_000), length, rate), "0:01");
+        assert_eq!(left(length, length, rate), "0:00");
     }
 
     #[test]
