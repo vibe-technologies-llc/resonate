@@ -355,9 +355,9 @@ every route change (a pair of headphones at the same rate included), not from th
   at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
   re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
   re-measured a live image every frame). The pane or
-  list is mounted only once that spring is logically complete (`NowPlayingView.settled`) and
-  faded out in 0.12 s as the cover starts to grow back, so building or drawing a `List` or the lyric
-  timeline barely overlaps the cover's frames; Lyrics to Up next crossfades at once, the cover staying put.
+  list fades in over 0.2 s as the cover starts to shrink (`NowPlayingView.settled`), not once the
+  spring has landed, and fades out in 0.12 s as the cover starts to grow back; both are cheap to
+  build in the spring's first frame (the lyrics are layers, the queue a window); Lyrics to Up next crossfades at once, the cover staying put.
   **A mode change asks 120 Hz for its 0.8 s** (`FrameRateBoost`, a `CADisplayLink` that lets go once
   the time is up), and the field rests on the frame it shows while the cover moves
   (`BackdropView(resting:)`, `.dormant`, so the renderer's capped step carries on without a jump):
@@ -371,7 +371,12 @@ every route change (a pair of headphones at the same rate included), not from th
   next* where nothing was asked to play next), as the desktop's four parts (`QueueParts`), each headed by a row of its own
   (`QueueHeading`), never a `Section` header, which a plain list pins under a square blur that
   banded the player's list as it scrolled; it scrolls back to the playing row whenever the song
-  changes. In the player the list takes the full width
+  changes. **The player's list is a window around the playing row** (`QueueParts`' `heardAtMost` 50
+  and `aheadAtMost` 200), with a row naming the earlier and the further songs that opens the Queue
+  tab, which lists them all: a whole library queued from Songs is thousands of rows, and a `List`
+  holding them all set every one up and scrolled past the whole history to the playing row on the
+  main thread, so the pane came in a beat after the cover landed (and, built earlier, swallowed
+  taps). In the player the list takes the full width
   (the player's gutter undone), since its rows carry their own insets;
   empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to

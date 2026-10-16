@@ -235,12 +235,14 @@ struct NowPlayingView: View {
             return
         }
         reshaping = true
-        withAnimation(Self.leaving) { settled = nil }
         withAnimation(Self.reshaping, completionCriteria: .logicallyComplete) {
             mode = target
         } completion: {
             reshaping = false
-            guard mode == target, target != .artwork else { return }
+        }
+        if target == .artwork {
+            withAnimation(Self.leaving) { settled = nil }
+        } else {
             withAnimation(Self.arriving) { settled = target }
         }
     }
@@ -1080,8 +1082,11 @@ struct QueueList: View {
 
 struct QueueSections: View {
     private static let heardFaded = 0.55
+    private static let heardInPlayer = 50
+    private static let aheadInPlayer = 200
 
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let inPlayer: Bool
     let playingRowId: String
     @State private var edited = 0
@@ -1095,10 +1100,19 @@ struct QueueSections: View {
             } else if rows.isEmpty {
                 EmptyQueue()
             } else if let playing {
-                let parts = QueueParts(rows: rows.count, playing: playing, next: library.playingNext)
+                let parts = QueueParts(
+                    rows: rows.count,
+                    playing: playing,
+                    next: library.playingNext,
+                    heardAtMost: inPlayer ? Self.heardInPlayer : nil,
+                    aheadAtMost: inPlayer ? Self.aheadInPlayer : nil
+                )
                 if playing > 0 {
                     Section {
                         QueueHeading(title: "History")
+                        if parts.history.lowerBound > 0 {
+                            wholeQueue(parts.history.lowerBound == 1 ? "1 earlier song" : "\(parts.history.lowerBound) earlier songs")
+                        }
                         rowsOf(rows, parts.history).opacity(Self.heardFaded)
                     }
                 }
@@ -1114,10 +1128,13 @@ struct QueueSections: View {
                 }
                 Section {
                     QueueHeading(title: parts.next.isEmpty ? "Up next" : "Continue playing")
-                    if parts.rest.isEmpty {
+                    if parts.rest.isEmpty, parts.beyond == 0 {
                         Text("Nothing more to play").secondaryInk()
                     } else {
                         rowsOf(rows, parts.rest)
+                    }
+                    if parts.beyond > 0 {
+                        wholeQueue(parts.beyond == 1 ? "1 more song" : "\(parts.beyond) more songs")
                     }
                 }
             } else {
@@ -1128,6 +1145,24 @@ struct QueueSections: View {
             }
         }
         .sensoryFeedback(.selection, trigger: edited)
+    }
+
+    private func wholeQueue(_ title: String) -> some View {
+        Button {
+            navigation.nowPlaying = false
+            navigation.tab = .queue
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold))
+            }
+            .secondaryInk()
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .accessibilityHint("Opens the whole queue")
     }
 
     private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {
@@ -1163,13 +1198,17 @@ struct QueueParts {
     let history: Range<Int>
     let next: Range<Int>
     let rest: Range<Int>
+    let beyond: Int
 
-    init(rows: Int, playing: Int, next asked: Range<Int>?) {
+    init(rows: Int, playing: Int, next asked: Range<Int>?, heardAtMost: Int? = nil, aheadAtMost: Int? = nil) {
         let after = min(playing + 1, rows)
-        history = 0..<min(playing, rows)
-        let nextEnd = asked.map { min(max($0.upperBound, after), rows) } ?? after
+        let heard = min(playing, rows)
+        let shownTo = aheadAtMost.map { min(after + $0, rows) } ?? rows
+        history = (heardAtMost.map { max(heard - $0, 0) } ?? 0)..<heard
+        let nextEnd = asked.map { min(max($0.upperBound, after), shownTo) } ?? after
         next = after..<nextEnd
-        rest = nextEnd..<rows
+        rest = nextEnd..<max(shownTo, nextEnd)
+        beyond = rows - max(shownTo, nextEnd)
     }
 }
 
