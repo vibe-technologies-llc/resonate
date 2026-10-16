@@ -55,7 +55,6 @@ are in [ROADMAP.md](ROADMAP.md).
   the guard now folds 4×, 2× or not at all by rate
 - [S] A cover decodes under `image`'s default 512 MiB allocation limit, any number at once; a
   vault's cover dedup reads the whole standing file to size it
-- [S] A non-seekable source spools up to 8 GiB into `/var/tmp` with no free-space check
 - [M] A WAVE import writes and `sync_all`s the whole uncompressed PCM before compressing and
   deleting it, a dedup hit included
 - [S] `voices_in_play` walks every earlier line of a one-voice sheet each frame

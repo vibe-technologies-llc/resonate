@@ -47,6 +47,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] Organise's case-folded claims are proved through an injected probe alone: no test sees a
   casefold directory (ext4 `+F`) beside ones without the flag
 
+## Providers and network
+- [S] The hosted hifi-api and Monochrome token endpoints are hardcoded: nothing hermetic covers the
+  hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
+
 ## Build and checks
 - [M] No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
