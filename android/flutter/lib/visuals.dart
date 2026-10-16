@@ -37,6 +37,53 @@ Duration motion(BuildContext context, [int milliseconds = 350]) =>
     ? Duration.zero
     : Duration(milliseconds: milliseconds);
 
+class ResonatePageTransitionsBuilder extends PageTransitionsBuilder {
+  const ResonatePageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 400);
+
+  @override
+  Duration get reverseTransitionDuration =>
+      const Duration(milliseconds: 350);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (route.popGestureInProgress) {
+      return const PredictiveBackPageTransitionsBuilder().buildTransitions(
+        route,
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
+    }
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return child;
+    }
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final slide =
+        Tween<Offset>(
+          begin: Offset(rtl ? -0.08 : 0.08, 0),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic));
+    final fade = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).chain(CurveTween(curve: Curves.easeOutCubic));
+    return FadeTransition(
+      opacity: fade.animate(animation),
+      child: SlideTransition(position: slide.animate(animation), child: child),
+    );
+  }
+}
+
 MenuStyle selectionMenuStyle(BuildContext context) {
   final scheme = Theme.of(context).colorScheme;
   return MenuStyle(

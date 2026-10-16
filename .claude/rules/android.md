@@ -261,7 +261,14 @@ owns entrance, dismissal and drag cancellation; sliding, scale, corner rounding 
 edge tint share its progress. The exposed parent remains visible through a light tint, and
 the tint fades as dismissal completes, preventing a black gap or a second route exit animation.
 
-Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions. Artwork
+Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions. Root
+tabs stay mounted in an `IndexedStack`, so scroll position, song filters, settings search and
+search text survive switching; the incoming tab fades in with a slow diagonal drift while
+the outgoing tab hides at once, keeping one heavy list alive through the switch. Pushed pages fade
+with a short trailing-edge slide over a static parent, keeping the system predictive-back gesture;
+the compact tab keeps one fixed layout where the pill fades, the icon glides between the pill and
+the tab center, and the label swaps instantly with no opacity or transform of its own, so text
+never renders mid-animation. Artwork
 is loaded through the existing native cache as JPEG bytes,
 keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
 on updates; comparing two references to the mutable model misses a newly published generation.
