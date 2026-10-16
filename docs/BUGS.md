@@ -122,17 +122,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Command line and bus
-- [S] `resonate play` keeps the queue only on the 500 ms sample (`keep_the_queue`, itself throttled
-  to `KEPT_EVERY`) and not once more as it leaves: `n` then `q`, or a `resonate queue` just before
-  Ctrl-C, resumes on the row before
-- [S] A launch handing files to an open window (`handed_to`) drops `--sink`, `--bit-perfect`,
-  `--quality`, `--dither`, `--library`, `--config` unsaid and exits 0
-- [S] MCP `resources/unsubscribe` runs the subscribe check first, so a playlist discarded or renamed
-  since is `UnknownResource` and its URI read every tick for the session
-- [S] MCP `show_queue` and the queue resource promise play order and list MPRIS `Tracks`, the
-  unshuffled list: with shuffle on a model names the wrong next song
-- [S] The Discord socket search lacks `.flatpak/com.discordapp.DiscordPTB/xdg-run`, which
-  `discord.md` lists
 - [M] `resonate queue --playlist` sends one unchunked `AddTracks`, a catalog lookup a row behind the
   client's 2 s timeout: a large playlist reports failure, lands anyway and a retry doubles it
 

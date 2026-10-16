@@ -124,11 +124,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   different networks meet only through a self-hosted `resonate-server`
 
 ## Command line and bus
+- [M] MCP `show_queue` and the queue resource answer list order with a `shuffle` flag: MPRIS carries
+  only the unshuffled list, so a model cannot read the order a shuffled queue plays in
+- [S] A launch handing files to an open window warns that its settings flags are left behind; the
+  hand-off could carry them
 - [M] The command line cannot mark a favourite, want a track or dismiss a missing one; only the
   window and MCP can
 - [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is not heard by a
   running window or player, and nothing says so
-- [S] MCP tools answer `structuredContent` with no `outputSchema`
 - [M] `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI
   alone
 
