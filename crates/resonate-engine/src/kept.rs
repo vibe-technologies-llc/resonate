@@ -20,6 +20,12 @@ struct Held {
     shuffle: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Throttle {
+    Every,
+    Off,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Keeping {
     held: Option<Held>,
@@ -28,6 +34,19 @@ pub struct Keeping {
 
 impl Keeping {
     pub fn kept(&mut self, state: &PlayerState, queued: &Queued) -> Option<Keep> {
+        self.kept_by(state, queued, Throttle::Every)
+    }
+
+    pub fn kept_on_leaving(&mut self, state: &PlayerState, queued: &Queued) -> Option<Keep> {
+        self.kept_by(state, queued, Throttle::Off)
+    }
+
+    fn kept_by(
+        &mut self,
+        state: &PlayerState,
+        queued: &Queued,
+        throttle: Throttle,
+    ) -> Option<Keep> {
         let row = state.queue_position.unwrap_or(0);
         let at = state
             .current
@@ -63,21 +82,21 @@ impl Keeping {
             }));
         }
 
-        if state.queue_position.is_none() || !self.moved_on(state, row, at) {
+        if state.queue_position.is_none() || !self.moved_on(state, row, at, throttle) {
             return None;
         }
         self.kept = Some((row, at));
         Some(Keep::Place { row, at })
     }
 
-    fn moved_on(&self, state: &PlayerState, row: usize, at: Frames) -> bool {
+    fn moved_on(&self, state: &PlayerState, row: usize, at: Frames, throttle: Throttle) -> bool {
         let Some((held_row, held_at)) = self.kept else {
             return true;
         };
         if held_row != row {
             return true;
         }
-        if state.playback != PlaybackState::Playing {
+        if throttle == Throttle::Off || state.playback != PlaybackState::Playing {
             return held_at != at;
         }
 
@@ -233,6 +252,27 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn leaving_keeps_a_position_that_has_barely_moved() {
+        let mut keeping = Keeping::default();
+        let queue = queued(3);
+        let barely = Frames(kept_every().get() / 4);
+
+        keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+        assert_eq!(
+            keeping.kept(&playing_at(&queue, 0, barely), &drawn(&queue, 1)),
+            None
+        );
+        assert_eq!(
+            keeping.kept_on_leaving(&playing_at(&queue, 0, barely), &drawn(&queue, 1)),
+            Some(Keep::Place { row: 0, at: barely })
+        );
+        assert_eq!(
+            keeping.kept_on_leaving(&playing_at(&queue, 0, barely), &drawn(&queue, 1)),
+            None
+        );
     }
 
     #[test]

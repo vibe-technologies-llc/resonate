@@ -67,8 +67,8 @@ use resonate_core::{
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
-    Levelling, Listening, OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until,
-    plan_output, read_impulse, resolve_replay_gain, stamp_of,
+    Levelling, Listening, OutputPlan, Placement, Player, PlayerState, QueueItem, Queued,
+    RepeatMode, Unclaimed, Until, plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
     Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
@@ -2268,6 +2268,9 @@ fn play_queue(
     readout.clear();
     drop(keyed);
 
+    if keeps {
+        keep_the_queue_on_leaving(&player, library.as_deref(), &mut keeping);
+    }
     count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
     if let Some(library) = library.as_deref() {
         record_a_play(library, listening.leaves(), &mut counted);
@@ -2803,10 +2806,23 @@ fn resuming(config: &Config, library: Option<&Library>) -> bool {
 }
 
 fn keep_the_queue(player: &Player, library: Option<&Library>, keeping: &mut Keeping) {
+    keep_the_queue_by(player, library, keeping, Keeping::kept);
+}
+
+fn keep_the_queue_on_leaving(player: &Player, library: Option<&Library>, keeping: &mut Keeping) {
+    keep_the_queue_by(player, library, keeping, Keeping::kept_on_leaving);
+}
+
+fn keep_the_queue_by(
+    player: &Player,
+    library: Option<&Library>,
+    keeping: &mut Keeping,
+    keep: fn(&mut Keeping, &PlayerState, &Queued) -> Option<Keep>,
+) {
     let Some(library) = library else {
         return;
     };
-    let kept = match keeping.kept(&player.state(), &player.queued()) {
+    let kept = match keep(keeping, &player.state(), &player.queued()) {
         Some(Keep::Queue(resumption)) => library.keep_resumption(&resumption),
         Some(Keep::Order(reordered)) => library.keep_order(&reordered),
         Some(Keep::Place { row, at }) => library.keep_place(row, at),
