@@ -135,7 +135,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Equaliser and DSP
 - [M] With `true-peak` off nothing weighs what the equaliser adds: a zero preamp under boosts
   reaches the hard clamp with no count or report
-- [S] AutoEq's suggestion takes the first measurer `INDEX.md` lists for a device, none ranked
+- [S] AutoEq's measurer is ranked by a fixed list (`MEASURERS_BEST_FIRST`); a listener cannot pick
+  another for a device
 
 ## Search
 - [S] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor

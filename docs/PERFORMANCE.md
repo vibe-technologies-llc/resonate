@@ -44,8 +44,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] The convolver works complex FFTs on real input (twice the memory and multiply-adds), stores a
   mono response's spectrum once a channel, `%`s per partition, and `loudest_gain` allocates
   `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
-- [S] The true-peak guard oversamples 8× with 96 taps at every rate (BS.1770 uses 2× from 96 kHz); a
-  shaped-phase design runs under the `DESIGNED` lock
 - [M] Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
   `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
 - [M] A playlist import missing a file rescans every catalog path and allocates a component vector
@@ -53,6 +51,8 @@ are in [ROADMAP.md](ROADMAP.md).
   smart playlist
 - [M] Retag's preview opens each file twice (`tags.read`, then `tags.rated`); the organise planner
   keeps every library path and folder listing for the whole run
+- [S] The analysis study's `TruePeakMeter` oversamples 8× at every rate: it is given no rate, where
+  the guard now folds 4×, 2× or not at all by rate
 - [S] A cover decodes under `image`'s default 512 MiB allocation limit, any number at once; a
   vault's cover dedup reads the whole standing file to size it
 - [S] A non-seekable source spools up to 8 GiB into `/var/tmp` with no free-space check

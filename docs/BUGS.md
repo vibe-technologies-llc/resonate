@@ -137,9 +137,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   client's 2 s timeout: a large playlist reports failure, lands anyway and a retry doubles it
 
 ## Equaliser and DSP
-- [S] An EqualizerAPO profile's `Preamp:` lines replace one another (`apo.rs` keeps the last) where
-  EqualizerAPO sums them: an AutoEq preamp plus a trim plays louder by the first, uncounted, and a
-  save writes the last alone
 - [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
   1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`, which
   pushes an undo step, so ctrl-z in a cell reaches the last cell's value and Enter writes it
@@ -149,9 +146,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Saving or exporting a profile rewrites it from the parsed model: comments, `Include:`,
   `Device:`, `If:`, filters past 32 and the original text encoding are lost; `export` is a bare
   `fs::write`; two writers stage to one fixed `.txt.new`
-- [S] The pane writes a gain into a gainless band (`EqualiserModel::take`) and stores it
-  un-normalised, so equal notches compare unequal
-- [S] Selecting another profile while playing keeps the old filters' history in the new ones
 
 ## Search
 - [M] Android still groups albums and artists in Kotlin; `search_library`, `albums`, `artists`,
