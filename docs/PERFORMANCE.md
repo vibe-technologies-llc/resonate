@@ -23,20 +23,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
   row on the window's thread; Statistics' *play from here* reads a track a query
 
-## Phones
-- [M] A rescan re-probes and rewrites every document: `index_document` takes no size or mtime and
-  neither phone skips a known URI, so an unchanged library is opened, probed and upserted whole,
-  moving `catalog_revision` and dropping the search index thousands of times
-- [S] `index_document` reads every missing row (`missing_recordings`, `missing` unindexed) once a
-  file, even when none is hidden: a scan is quadratic in the library
-- [M] A long catalog hold stalls the transport: `snapshot` reads the playing row under the catalog
-  mutex while holding the `player` one every poll tick, and `import_playlist_file` (`held_at`, an
-  unindexed `folded(name)` scan per row, up to 10 000), `import_matched_playlist` (`local_match`)
-  and `Index::stored`'s whole-table rebuild after any revision move hold the one connection
-  throughout, so play, pause and seek wait
-- [S] The phones' catalog keeps `synchronous` at FULL under WAL, so each scan autocommit
-  (`upsert`, `tagged`, `keep_artwork_of`) syncs the WAL to flash; `resonate-library` sets NORMAL
-
 ## Android
 - [S] The poll loop calls `queue()` every 250 ms (one `tracks_at` query a row under the catalog and
   action mutexes, every row copied across) and `RustMediaPlayer.getState` rebuilds every
@@ -58,12 +44,6 @@ are in [ROADMAP.md](ROADMAP.md).
   paused too; iOS sleeps until a command or a moved latency
 
 ## iOS
-- [S] Each finished download runs `Library.refresh` (collections, three searches, every catalog
-  page) uncoalesced, so *Download all missing* of N songs rereads the catalog and rebuilds the
-  search index N times; `landReceived` refreshes once a batch
-- [S] `AmbientField` keeps its display link and a full-window render per tick while an album,
-  artist, playlist, lyrics or visualizer page covers it with its own backdrop; only Now Playing
-  freezes it
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
   to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
   needs the counting moved first

@@ -111,6 +111,10 @@ final class Navigation {
         paths[root, default: []].append(destination)
     }
 
+    var coversAmbient: Bool {
+        nowPlaying || (paths[tab]?.last?.drawsItsOwnBackdrop ?? false)
+    }
+
     func leave(_ destination: Destination) {
         for (root, path) in paths where path.last == destination {
             paths[root]?.removeLast()
@@ -119,6 +123,13 @@ final class Navigation {
 }
 
 extension Destination {
+    var drawsItsOwnBackdrop: Bool {
+        switch self {
+        case .album, .artist, .playlist, .songLyrics, .visualizer: true
+        default: false
+        }
+    }
+
     var belongsToSettings: Bool {
         switch self {
         case .sound, .processing, .output, .scrobbling, .providers, .sync, .folders, .appearance, .background: true
@@ -307,7 +318,7 @@ struct ThemedPage: ViewModifier {
                     AppBackdrop(
                         strength: Float(appearance.backgroundStrength),
                         moving: appearance.movingBackground,
-                        frozen: navigation.nowPlaying
+                        frozen: navigation.coversAmbient
                     )
                 }
         } else {

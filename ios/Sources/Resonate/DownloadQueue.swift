@@ -125,6 +125,8 @@ final class DownloadQueue {
     @ObservationIgnored private var created: [UInt64: String] = [:]
     @ObservationIgnored private var paused = false
     @ObservationIgnored private var wantsPoll: Task<Void, Never>?
+    @ObservationIgnored private var settling: Task<Void, Never>?
+    @ObservationIgnored private var landedSince = false
     @ObservationIgnored private var wantsGeneration = 0
     @ObservationIgnored private var askedOnItsOwn: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var batch: Set<UInt64> = []
@@ -235,6 +237,7 @@ final class DownloadQueue {
         wantsPoll = nil
         wantsGeneration += 1
         paused = true
+        landedSince = false
         for job in jobs where job.state == .waiting { update(job.id) { $0.state = .cancelled } }
         if let native = library.native {
             let running = jobs.filter { $0.state.inFlight }.map(\.id)
@@ -423,11 +426,22 @@ final class DownloadQueue {
     private func landed(_ track: Track) {
         let features = library.features
         features.enrichment.landed(track.id)
-        Task {
+        landedSince = true
+        guard settling == nil else { return }
+        settling = Task { [weak self] in
+            await self?.settleLandings()
+        }
+    }
+
+    private func settleLandings() async {
+        let features = library.features
+        while landedSince {
+            landedSince = false
             await library.refresh()
             await features.rereadWanted()
             await features.refreshChangedArt()
         }
+        settling = nil
     }
 
     private func follow(_ native: MobilePlayer) {

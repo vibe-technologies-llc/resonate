@@ -222,7 +222,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   failed, and, where some were and sync started, sync is forced.
 - **`Folders`** is the `Documents` callback. A chosen folder is a security-scoped bookmark kept in
   Application Support (`folders.plist`); the app's own Documents folder (`UIFileSharingEnabled`,
-  `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, admits
+  `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, takes each file's size and modification time from the listing's resource values (`FileStamp`) and hands them to `scan_document`, so an unchanged file is not probed again (`android.md`'s *Documents and catalog*), admits
   `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB once for the
   whole folder (`FolderCovers` gathers the songs sharing it and keeps it in one `keep_folder_cover`
   call, stored once) and a same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL` and held out of every scan until their writer says the file is whole (`Folders.written`; `delete` says it too), so a scan never indexes a half-written download, landing or copy. A file opened
@@ -395,6 +395,10 @@ every route change (a pair of headphones at the same rate included), not from th
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
   `@ScaledMetric`.
+- **A finished download refreshes the library once for a run of them** (`DownloadQueue.landed`
+  sets `landedSince` and starts one `settleLandings` task, which loops until no song landed during
+  its refresh), so *Download all missing* of N songs reads the catalog and rebuilds the search index
+  a few times, not N, as `landReceived` does once a batch.
 - **A destination already on top of a stack is not pushed again** (`Navigation.open` switches the tab and returns), so *Go to album* from Now Playing on that album or *More › Equaliser* twice never leaves a copy for Back to land on.
 - **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
@@ -648,7 +652,7 @@ in; it never opens on another colour first.
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
   `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
-  and sets that background. `AppearanceState` keeps three settings in the `appearance` defaults,
+  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing). `AppearanceState` keeps three settings in the `appearance` defaults,
   edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
   its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
   still frame), `backgroundStrength` (0.4). A plain list's rows draw their own opaque fill, so each
