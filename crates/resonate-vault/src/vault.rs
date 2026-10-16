@@ -498,8 +498,8 @@ impl Vault {
         let key = digest.settled();
 
         if let Some(target) = self.held_cover(key) {
-            let (width, height) =
-                cover::size_of(&self.read_inside(&target)?, kept_as_it_came(&target))?;
+            self.inside(&target)?;
+            let (width, height) = cover::size_of_file(&target, kept_as_it_came(&target))?;
             return Ok(KeptCover {
                 key,
                 bytes: self.sized(&target)?,

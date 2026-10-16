@@ -189,12 +189,17 @@ impl<const PHASES: usize> Oversampler<PHASES> {
 }
 
 enum Sampling {
+    Octuple(Box<Oversampler<METERED_AT>>),
     Quadruple(Box<Oversampler<4>>),
     Double(Box<Oversampler<2>>),
     Single(Box<Oversampler<1>>),
 }
 
 impl Sampling {
+    fn finest(channels: usize) -> Self {
+        Self::Octuple(Box::new(Oversampler::new(channels)))
+    }
+
     fn at(rate: SampleRate, channels: usize) -> Self {
         let hz = rate.hz();
         if hz < GUARDED_BELOW_FOUR_FOLD_HZ {
@@ -208,6 +213,7 @@ impl Sampling {
 
     fn quiet_below(&self, ceiling: f64) -> f64 {
         match self {
+            Self::Octuple(sampler) => sampler.quiet_below(ceiling),
             Self::Quadruple(sampler) => sampler.quiet_below(ceiling),
             Self::Double(sampler) => sampler.quiet_below(ceiling),
             Self::Single(sampler) => sampler.quiet_below(ceiling),
@@ -216,14 +222,25 @@ impl Sampling {
 
     fn clear(&mut self) {
         match self {
+            Self::Octuple(sampler) => sampler.clear(),
             Self::Quadruple(sampler) => sampler.clear(),
             Self::Double(sampler) => sampler.clear(),
             Self::Single(sampler) => sampler.clear(),
         }
     }
 
+    fn loudest_after(&mut self, frame: &[f64]) -> f64 {
+        match self {
+            Self::Octuple(sampler) => sampler.loudest_after(frame),
+            Self::Quadruple(sampler) => sampler.loudest_after(frame),
+            Self::Double(sampler) => sampler.loudest_after(frame),
+            Self::Single(sampler) => sampler.loudest_after(frame),
+        }
+    }
+
     fn loudest_that_could_pass(&mut self, frame: &[f64], quiet_below: f64) -> f64 {
         match self {
+            Self::Octuple(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
             Self::Quadruple(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
             Self::Double(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
             Self::Single(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
@@ -232,15 +249,23 @@ impl Sampling {
 }
 
 pub struct TruePeakMeter {
-    oversampler: Oversampler<METERED_AT>,
+    oversampler: Sampling,
     loudest: f64,
     frame: Vec<f64>,
 }
 
 impl TruePeakMeter {
     pub fn new(channels: NonZeroUsize) -> Self {
+        Self::oversampling(Sampling::finest(channels.get()), channels)
+    }
+
+    pub fn at(rate: SampleRate, channels: NonZeroUsize) -> Self {
+        Self::oversampling(Sampling::at(rate, channels.get()), channels)
+    }
+
+    fn oversampling(oversampler: Sampling, channels: NonZeroUsize) -> Self {
         Self {
-            oversampler: Oversampler::new(channels.get()),
+            oversampler,
             loudest: 0.0,
             frame: vec![0.0; channels.get()],
         }
@@ -627,6 +652,42 @@ mod tests {
     }
 
     #[test]
+    fn a_meter_given_a_rate_oversamples_as_the_guard_does() {
+        const FOLDED_READS_WITHIN_DB: f64 = 0.2;
+        let straddled = faded(sine(12_000.0, 1.0, FRAC_PI_4, 4_800));
+        let narrow: Vec<f32> = straddled.iter().map(|sample| *sample as f32).collect();
+        let sampled = decibels(
+            narrow
+                .iter()
+                .fold(0.0_f64, |loudest, s| loudest.max(f64::from(*s).abs())),
+        );
+        let finest = decibels(metered(&straddled));
+
+        for rate in [
+            SampleRate::HZ_44100,
+            SampleRate::HZ_48000,
+            SampleRate::HZ_96000,
+        ] {
+            let mut meter = TruePeakMeter::at(rate, NonZeroUsize::new(2).expect("two channels"));
+            meter.note(&narrow);
+            let read = decibels(meter.finish());
+
+            assert!(
+                (read - finest).abs() < FOLDED_READS_WITHIN_DB,
+                "{read:.3} dBTP at {} Hz against {finest:.3}",
+                rate.hz()
+            );
+        }
+
+        let mut single = TruePeakMeter::at(
+            SampleRate::HZ_192000,
+            NonZeroUsize::new(2).expect("two channels"),
+        );
+        single.note(&narrow);
+        assert_eq!(decibels(single.finish()), sampled);
+    }
+
+    #[test]
     fn the_meter_reads_the_peak_between_the_samples() {
         let straddled = faded(sine(12_000.0, 1.0, FRAC_PI_4, 4_800));
         let sampled = straddled
@@ -783,6 +844,7 @@ mod tests {
     #[test]
     fn the_guard_oversamples_less_as_the_rate_rises() {
         let folds = |rate: SampleRate| match Sampling::at(rate, 2) {
+            Sampling::Octuple(_) => 8,
             Sampling::Quadruple(_) => 4,
             Sampling::Double(_) => 2,
             Sampling::Single(_) => 1,

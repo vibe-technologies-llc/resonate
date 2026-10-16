@@ -305,7 +305,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `StreamEvent::FormatChanged` carries the settled spec; `downgrade` hands it to `plan_for` as
   target, written into `OutputPlan::stream` whole (writing the source's channels back made the two
   trade turns forever). `MAX_RENEGOTIATIONS` (3) is the belt: a fourth different spec fails the
-  track with `Error::Renegotiation`; reset when a track lands.
+  track with `Error::Renegotiation`; reset when a track lands
+  (`a_graph_answering_another_format_has_the_stream_rebuilt_around_it`,
+  `a_graph_that_will_not_settle_on_a_format_fails_the_row_once_the_rebuilds_are_spent`).
 - **The run loop waits on every channel that can change its mind; the ring sets the timeout.**
   Wakers: command, sink announcement, survey answer, opening landing, worker's decoded block,
   stream-open answer, stream events. Timeout: half what the ring holds, floored at `SHORTEST_TICK`,

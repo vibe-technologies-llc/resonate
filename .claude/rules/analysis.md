@@ -39,8 +39,9 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 - **Loudness BS.1770, range EBU Tech 3342, DR the TT meter's.** K-weighting derived per stream rate;
   channel weight by placement (`resonate_codec::Speakers::placements`, WAVE order if source names
   none): LFE 0, side `SURROUND_WEIGHT`, rear `SURROUND_WEIGHT` only with no side channel, rest 1.0.
-  Matches `ffmpeg -af ebur128` to the tenth, 5.1 included. True peak = `TruePeakMeter` (the engine
-  guard's own, so study and playback agree about an over), stored `track_studies.true_peak`, handed
+  Matches `ffmpeg -af ebur128` to the tenth, 5.1 included. True peak = `TruePeakMeter::at(rate, ..)` (the engine
+  guard's own interpolator, folding 4×, 2× or not at all by rate as the guard does, so study and
+  playback agree about an over; `TruePeakMeter::new` is the 8× read the visualiser's meter has no rate for), stored `track_studies.true_peak`, handed
   to the player by `Library::hinting` (`audio.md`).
 - **Print = Chromaprint, first `PRINTED_FOR` only**: `rusty-chromaprint`
   `Configuration::preset_test2` (the AcoustID default), URL-safe base64, unpadded.

@@ -36,7 +36,7 @@ mod writing;
 pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};
 
 pub use crate::{
-    artwork::{Drawing, Likeness, Raster},
+    artwork::{Drawing, Likeness, Raster, decode_cover},
     boxes::{BoxKind, BoxLayout, Faststart, TopLevelBox, read as probe_boxes},
     cue::{
         CueFile, CueSheet, CueStamp, CueStart, CueTrack, CueTrackKind,

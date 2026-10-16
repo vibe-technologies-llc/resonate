@@ -94,7 +94,7 @@ fn loudest(
     decoder.set_output_format(SampleFormat::F32);
     let channels = NonZeroUsize::new(usize::from(info.spec.channels.count().get()))
         .unwrap_or(NonZeroUsize::MIN);
-    let mut meter = TruePeakMeter::new(channels);
+    let mut meter = TruePeakMeter::at(info.spec.rate, channels);
     let mut block = AudioBuffer::empty(StreamSpec::new(
         info.spec.rate,
         info.spec.channels,

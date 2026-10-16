@@ -1,6 +1,7 @@
 use std::{f64::consts::PI, num::NonZeroUsize};
 
 use resonate_codec::Placement;
+use resonate_core::SampleRate;
 use resonate_dsp::TruePeakMeter;
 
 const SHELF_HZ: f64 = 1_681.974_450_955_533;
@@ -124,8 +125,9 @@ pub(crate) struct Metering {
 }
 
 impl Metering {
-    pub(crate) fn new(placements: &[Placement], rate: u32) -> Self {
+    pub(crate) fn new(placements: &[Placement], sample_rate: SampleRate) -> Self {
         let channels = placements.len().max(1);
+        let rate = sample_rate.hz();
         let hz = f64::from(rate);
         Self {
             channels,
@@ -145,7 +147,10 @@ impl Metering {
             in_dr_block: 0,
             dr_open: vec![DrBlock::default(); channels],
             dr_closed: vec![Vec::new(); channels],
-            peaking: TruePeakMeter::new(NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN)),
+            peaking: TruePeakMeter::at(
+                sample_rate,
+                NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
+            ),
         }
     }
 
@@ -330,7 +335,7 @@ mod tests {
 
     fn metered(channels: usize, interleaved: &[f32]) -> Loudness {
         let placements = resonate_codec::Speakers::UNNAMED.placements(channels as u8);
-        let mut metering = Metering::new(&placements, RATE);
+        let mut metering = Metering::new(&placements, SampleRate::HZ_48000);
         for block in interleaved.chunks(4_096 * channels) {
             metering.note(block);
         }
