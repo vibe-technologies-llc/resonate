@@ -27,7 +27,7 @@ use resonate_engine::{
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
-    Queueing, Running, Seeking,
+    Queueing, ROWS_A_CALL, Running, Seeking, Session,
 };
 use zbus::{
     blocking::{Connection, Proxy, connection, fdo::DBusProxy},
@@ -99,6 +99,12 @@ impl Tree {
     fn wav(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
         fs::write(&path, wav()).expect("a writable temporary file");
+        path
+    }
+
+    fn linked(&self, name: &str, to: &Path) -> PathBuf {
+        let path = self.root.join(name);
+        fs::hard_link(to, &path).expect("a hard link inside the temporary folder");
         path
     }
 
@@ -1753,6 +1759,48 @@ fn a_run_of_files_queued_at_a_row_lands_on_it_in_the_order_they_were_named() {
     );
 }
 
+#[test]
+fn a_run_longer_than_one_call_takes_lands_whole_and_in_order() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let playing = tree.wav("playing.wav");
+    harness.load_all(std::slice::from_ref(&playing));
+    harness.wait_for(
+        |harness| harness.tracks().len() == 1,
+        "the queue to reach the track list",
+    );
+
+    let running = listed_as(&harness);
+    let source = tree.wav("source.wav");
+    let wanted: Vec<MediaLocation> = (0..ROWS_A_CALL * 2 + 3)
+        .map(|n| MediaLocation::local(tree.linked(&format!("row-{n}.wav"), &source)))
+        .collect();
+    let rows: Vec<_> = wanted
+        .iter()
+        .cloned()
+        .map(|location| (location, None))
+        .collect();
+
+    let landed = running
+        .queue(
+            &rows,
+            Queueing {
+                at: Placement::Queued,
+                play: false,
+            },
+        )
+        .expect("the running player takes every chunk");
+
+    assert_eq!(landed, rows.len());
+    harness.wait_for(
+        |harness| harness.tracks().len() == 1 + rows.len(),
+        "every chunk to reach the track list",
+    );
+    assert_eq!(queued_rows(&harness)[1..], wanted[..]);
+}
+
 fn listed_as(harness: &Harness) -> Running {
     let held = harness.names();
     Running::listed()
@@ -1760,6 +1808,39 @@ fn listed_as(harness: &Harness) -> Running {
         .into_iter()
         .find(|player| held.iter().any(|name| player.name().as_str() == name))
         .unwrap_or_else(|| panic!("none of {held:?} was listed among the players of this build"))
+}
+
+#[test]
+fn one_session_serves_every_call_that_looks_for_a_player() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let held = harness.names();
+    let name = held.first().expect("the harness holds a name").clone();
+    let instance = name
+        .strip_prefix(&format!("{BUS_NAME}."))
+        .map(PlayerName::new)
+        .unwrap_or_else(|| PlayerName::new(name.as_str()));
+    let session = Session::open().expect("the session bus is reachable");
+
+    for _ in 0..3 {
+        let named = Running::named_in(&session, &instance)
+            .expect("the bus lists the names it holds")
+            .expect("the player is named");
+        assert_eq!(named.name().as_str(), name);
+        named.playback().expect("the player answers on the session");
+    }
+    assert!(
+        Running::found_in(&session)
+            .expect("the bus lists the names it holds")
+            .is_some()
+    );
+    assert!(
+        Running::listed_in(&session)
+            .expect("the bus lists the names it holds")
+            .iter()
+            .any(|player| player.name().as_str() == name)
+    );
 }
 
 #[test]

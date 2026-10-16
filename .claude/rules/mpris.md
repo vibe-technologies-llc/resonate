@@ -159,7 +159,11 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
   `Command::Insert`, one settle), falling back to `AddTrack` per row only against an older build
   answering `UnknownMethod`. The client turns `Placement` into the spec's *anchor* (track before it;
   `NoTrack` = front): `Next` anchors on the playing row, `Queued` on the last row waiting after it
-  (`PlayingNext` counts them). The fallback adds back to front against one anchor.
+  (`PlayingNext` counts them). A run goes in calls of `ROWS_A_CALL` (128) rows, back to front
+  against one anchor, so each stays inside the client's 2 s timeout; a failure after some landed is
+  `Error::QueuedPartway { landed, asked }`. The fallback adds back to front against one anchor.
+  `Session` is one bus connection a long-lived client (MCP) reuses through `found_in`, `listed_in`
+  and `named_in`; `found`, `listed` and `named` open their own.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows** (`ActivatePlaylist`
   replaces a queue). A search-filled playlist is read via `Library::playlist_entries`, so queued as
   whatever it matches then. `queue` opens the library only for `--playlist`.

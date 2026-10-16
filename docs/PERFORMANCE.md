@@ -23,12 +23,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
   row on the window's thread; Statistics' *play from here* reads a track a query
 
-## Command line and bus
-- [M] MCP opens a fresh D-Bus connection for every player call, a subscribed now-playing resource
-  twice a second on the one answering thread
-- [M] MCP lists are unpaginated (`cursor` ignored), `list_playlists` and the resource list are
-  unbounded, rebuilt every 500 ms once listed
-
 ## Performance and scale
 - [M] Every track open opens its source twice, once more for the inspector's box layout
   (`Unwrapped::inspected` → `probe_boxes`; `probe_stream` likewise), on the path before the first

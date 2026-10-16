@@ -19,7 +19,7 @@ pub use crate::{
     error::{BusOp, Error, Result},
     host::{Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists},
     icons::tell_the_icons_changed,
-    remote::{Described, PlayerName, Queueing, Running, Seeking, Standing},
+    remote::{Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing},
     service::{Mpris, Teller, Told},
     track::{PlaybackStatus, utc_stamp},
 };

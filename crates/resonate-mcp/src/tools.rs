@@ -178,10 +178,12 @@ impl Tool {
                 "Search the music library's catalog for tracks, albums and artists. Needs no \
                  player. {GRAMMAR}"
             ),
-            Self::Playlists => "List the playlists the library holds, with their lengths, play \
-                                counts and, for one that fills itself, the search it fills from. \
-                                Needs no player."
-                .to_owned(),
+            Self::Playlists => format!(
+                "List the playlists the library holds, with their lengths, play counts and, for \
+                 one that fills itself, the search it fills from, {LISTED_BY_DEFAULT} at a \
+                 time: matched counts them all and skip passes over the ones already read. \
+                 Needs no player."
+            ),
             Self::PlaylistTracks => "List the tracks of one playlist, named as list_playlists \
                                      names it. Needs no player."
                 .to_owned(),
@@ -317,6 +319,14 @@ impl Tool {
                     "type": "string",
                     "description": "Only the playlists whose name holds every one of these words.",
                 },
+                "skip": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "How many playlists to pass over first; matched says how many \
+                                    there are in all.",
+                },
+                "limit": limit(LISTED_BY_DEFAULT, "The most playlists to answer with."),
             }),
             Self::PlaylistTracks => json!({
                 "playlist": { "type": "string", "description": "The playlist's name." },
@@ -596,7 +606,12 @@ impl Tool {
             }
             Self::Playlists => {
                 let asked: Naming = self.taken(arguments)?;
-                catalog::playlists(library, asked.named.as_deref())
+                catalog::playlists(
+                    library,
+                    asked.named.as_deref(),
+                    asked.skip.unwrap_or_default(),
+                    rows(asked.limit, LISTED_BY_DEFAULT),
+                )
             }
             Self::PlaylistTracks => {
                 let asked: Listing = self.taken(arguments)?;
@@ -1001,6 +1016,8 @@ struct Searching {
 #[derive(Deserialize)]
 struct Naming {
     named: Option<String>,
+    skip: Option<usize>,
+    limit: Option<usize>,
 }
 
 #[derive(Deserialize)]

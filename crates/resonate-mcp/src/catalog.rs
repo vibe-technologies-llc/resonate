@@ -75,10 +75,17 @@ pub(crate) fn search(library: &Library, query: &str, most: usize) -> Result<Valu
     })))
 }
 
-pub(crate) fn playlists(library: &Library, named: Option<&str>) -> Result<Value> {
-    let held = library.playlists(PlaylistOrder::Name, Direction::Ascending, named)?;
+pub(crate) fn playlists(
+    library: &Library,
+    named: Option<&str>,
+    skip: usize,
+    most: usize,
+) -> Result<Value> {
+    let held =
+        library.playlists_within(PlaylistOrder::Name, Direction::Ascending, named, skip, most)?;
 
     Ok(json!({
+        "matched": library.playlist_count(named)?,
         "playlists": held.iter().map(written::playlist).collect::<Vec<_>>(),
     }))
 }

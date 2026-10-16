@@ -1,9 +1,10 @@
-use std::time::Duration;
+use std::{cell::RefCell, time::Duration};
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
 use resonate_engine::{Asleep, Until};
 use resonate_mpris::{
     Described, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Queueing, Running, Seeking,
+    Session,
 };
 
 use crate::{Error, Result};
@@ -60,26 +61,48 @@ pub trait Reach {
     fn player(&self) -> Result<Box<dyn Controlling>>;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Default)]
 pub struct OnTheBus {
     named: Option<PlayerName>,
+    session: RefCell<Option<Session>>,
 }
 
 impl OnTheBus {
-    pub const fn named(named: Option<PlayerName>) -> Self {
-        Self { named }
+    pub fn named(named: Option<PlayerName>) -> Self {
+        Self {
+            named,
+            session: RefCell::new(None),
+        }
+    }
+
+    fn found_in(&self, session: &Session) -> Result<Box<dyn Controlling>> {
+        let found = match &self.named {
+            Some(name) => Running::named_in(session, name)?
+                .ok_or_else(|| Error::NoSuchPlayer { name: name.clone() })?,
+            None => Running::found_in(session)?.ok_or(Error::NothingRunning)?,
+        };
+        Ok(Box::new(found))
     }
 }
 
 impl Reach for OnTheBus {
     fn player(&self) -> Result<Box<dyn Controlling>> {
-        let found = match &self.named {
-            Some(name) => {
-                Running::named(name)?.ok_or_else(|| Error::NoSuchPlayer { name: name.clone() })?
+        let kept = self.session.borrow().clone();
+        if let Some(session) = kept {
+            match self.found_in(&session) {
+                Err(Error::Mpris(_)) => {
+                    self.session.take();
+                }
+                reached => return reached,
             }
-            None => Running::found()?.ok_or(Error::NothingRunning)?,
-        };
-        Ok(Box::new(found))
+        }
+
+        let session = Session::open()?;
+        let reached = self.found_in(&session);
+        if !matches!(reached, Err(Error::Mpris(_))) {
+            *self.session.borrow_mut() = Some(session);
+        }
+        reached
     }
 }
 

@@ -20,8 +20,8 @@ pub fn read_the_lines(bytes: &[u8]) {
 pub use crate::{
     controlling::{Controlling, OnTheBus, Reach, Row},
     error::{
-        ArgumentName, Code, Error, Field, MethodName, PromptName, Refusal, ResourceUri, Result,
-        StreamOp, ToolName,
+        ArgumentName, Code, CursorText, Error, Field, MethodName, PromptName, Refusal, ResourceUri,
+        Result, StreamOp, ToolName,
     },
     passes::{Lookups, Pass},
     prompts::Prompt,

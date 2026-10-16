@@ -83,10 +83,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
-## Command line and bus
-- [M] `resonate queue --playlist` sends one unchunked `AddTracks`, a catalog lookup a row behind the
-  client's 2 s timeout: a large playlist reports failure, lands anyway and a retry doubles it
-
 ## Equaliser and DSP
 - [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
   1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`, which
