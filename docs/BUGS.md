@@ -97,16 +97,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] A rotated TIDAL token the window cannot write is logged at error level alone, no toast
 
 ## Window
-- [M] *Take out of the queue* on a track queued twice sends one `Command::Remove` a row under the
-  same stale `queued.revision`: the first lands, the rest are refused `QueueChanged` into the log,
-  the toast says one went and *Put back* is hidden behind steps still standing over queued rows
-- [S] A playlist row's *Play* reached by keyboard (`play_reached_rows`) leaves shuffle on, where the
-  playlist's own Play and its menu's turn it off
-- [S] Playing a track row no longer clears `set_playing_playlist`: a playlist mark may stay after a
-  track from another listing plays
-- [S] More background reads and writes fail into the log alone (`models.rs`: the pressings read,
-  cover reads, the play-count and listen-time writes)
-- [S] A trouble toast repeated while the same one shows or waits is shown once, with no count
 - [M] A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which
   joins any next composing edit whatever the selection: undo takes back the whole session, and
   ctrl-a then a letter then undo empties the field with the old text out of reach

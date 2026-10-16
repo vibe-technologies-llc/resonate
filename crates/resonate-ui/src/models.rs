@@ -66,6 +66,8 @@ const MISSING_AT_MOST: usize = 5_000;
 const PREVIEWED_AT_MOST: usize = 500;
 const FAVOURITES_AT_MOST: usize = 5_000;
 const MOST_LISTENED: usize = 10;
+const READING_A_COVER: &str = "read a cover";
+const READING_A_PORTRAIT: &str = "read a portrait";
 const COVERS_HELD: NonZeroUsize = held(512);
 const COVERS_WARMED: usize = 256;
 const NAMES_HELD: NonZeroUsize = held(4_096);
@@ -2431,14 +2433,23 @@ impl LibraryModel {
                 .spawn(async move { reference.release_group(&group) })
                 .await;
             let answered = match asked {
-                Ok(Some(group)) => Pressings::Listed(in_the_order_they_came_out(group.releases)),
-                Ok(None) => Pressings::Unanswered,
+                Ok(Some(group)) => Ok(Pressings::Listed(in_the_order_they_came_out(
+                    group.releases,
+                ))),
+                Ok(None) => Ok(Pressings::Unanswered),
                 Err(error) => {
                     tracing::warn!(%error, "a release group's pressings could not be read");
-                    Pressings::Unanswered
+                    Err(error)
                 }
             };
             let landed = this.update(cx, |this, cx| {
+                let answered = match answered {
+                    Ok(answered) => answered,
+                    Err(error) => {
+                        toast::tell(toast::could_not("read that album's pressings", &error), cx);
+                        Pressings::Unanswered
+                    }
+                };
                 if this
                     .pressings
                     .as_ref()
@@ -3355,7 +3366,10 @@ impl LibraryModel {
                 .await;
 
             let outcome = this.update(cx, |this, cx| match counted {
-                Err(error) => tracing::warn!(%error, "a play was not counted"),
+                Err(error) => {
+                    tracing::warn!(%error, "a play was not counted");
+                    toast::tell(toast::could_not("count that play", &error), cx);
+                }
                 Ok(None) => {}
                 Ok(Some(counted)) => {
                     this.counted = Some(counted.listen);
@@ -3377,10 +3391,15 @@ impl LibraryModel {
         let library = Arc::clone(&self.library);
         let before = mem::replace(&mut self._settled, Task::ready(()));
 
-        self._settled = cx.background_executor().spawn(async move {
+        self._settled = cx.spawn(async move |this, cx| {
             before.await;
-            if let Err(error) = library.listened(listen, heard) {
+            let kept = cx
+                .background_executor()
+                .spawn(async move { library.listened(listen, heard) })
+                .await;
+            if let Err(error) = kept {
                 tracing::warn!(%error, "how long a play has been heard for was not kept");
+                tell_of_listen_time(&this, &error, cx);
             }
         });
     }
@@ -3389,10 +3408,15 @@ impl LibraryModel {
         let library = Arc::clone(&self.library);
         let before = mem::replace(&mut self._passed, Task::ready(()));
 
-        self._passed = cx.background_executor().spawn(async move {
+        self._passed = cx.spawn(async move |this, cx| {
             before.await;
-            if let Err(error) = library.passed(heard) {
+            let kept = cx
+                .background_executor()
+                .spawn(async move { library.passed(heard) })
+                .await;
+            if let Err(error) = kept {
                 tracing::warn!(%error, "how long a passing listen lasted was not kept");
+                tell_of_listen_time(&this, &error, cx);
             }
         });
     }
@@ -3404,10 +3428,15 @@ impl LibraryModel {
         let library = Arc::clone(&self.library);
         let before = mem::replace(&mut self._settled, Task::ready(()));
 
-        self._settled = cx.background_executor().spawn(async move {
+        self._settled = cx.spawn(async move |this, cx| {
             before.await;
-            if let Err(error) = library.listened(listen, heard) {
+            let kept = cx
+                .background_executor()
+                .spawn(async move { library.listened(listen, heard) })
+                .await;
+            if let Err(error) = kept {
                 tracing::warn!(%error, "how long a play was heard for was not kept");
+                tell_of_listen_time(&this, &error, cx);
             }
         });
     }
@@ -3670,8 +3699,9 @@ impl LibraryModel {
             .global::<Drawer>()
             .draw(move || drawn_cover(&library, id, side));
         cx.spawn(async move |this, cx| {
-            let decoded = drawing.await.flatten();
+            let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
+                let decoded = picture_or_trouble(read, READING_A_COVER, cx);
                 this.decoding.remove(&wanted);
                 this.covers.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -3695,8 +3725,9 @@ impl LibraryModel {
             .global::<Drawer>()
             .draw(move || whole_cover_of(&library, id));
         cx.spawn(async move |this, cx| {
-            let read = drawing.await.flatten();
+            let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
+                let read = picture_or_trouble(read, READING_A_COVER, cx);
                 if this.magnified.as_ref().is_some_and(|held| held.names(&id)) {
                     this.magnified
                         .replace(Magnifying::Read(id, read))
@@ -3775,6 +3806,10 @@ impl LibraryModel {
                 Ok(art) => (art, answered),
                 Err(error) => {
                     tracing::warn!(%error, "a found song's cover could not be fetched");
+                    let told = this.update(cx, |_, cx| {
+                        toast::tell(toast::could_not("fetch a song's cover", &error), cx);
+                    });
+                    let _ = told;
                     (None, false)
                 }
             };
@@ -3828,8 +3863,9 @@ impl LibraryModel {
             .global::<Drawer>()
             .draw(move || drawn_portrait(&library, id, side));
         cx.spawn(async move |this, cx| {
-            let decoded = drawing.await.flatten();
+            let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
+                let decoded = picture_or_trouble(read, READING_A_PORTRAIT, cx);
                 this.decoding_portraits.remove(&wanted);
                 this.portraits.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -4356,9 +4392,10 @@ impl LibraryModel {
                 }) else {
                     return;
                 };
-                let decoded = drawing.await.flatten();
+                let read = drawing.await;
 
                 let landed = this.update(cx, |this, cx| {
+                    let decoded = picture_or_trouble(read, READING_A_COVER, cx);
                     this.covers.insert(sized, decoded).forget(cx);
                     cx.notify();
                 });
@@ -6180,34 +6217,53 @@ fn pictures_of<'a>(
     Ok(pictured)
 }
 
-fn drawn_cover(library: &Library, id: AlbumId, side: NonZeroU32) -> Option<Picture> {
-    match library.cover_art(id) {
-        Ok(art) => art.as_ref().and_then(|art| drawn_within(art, side)),
+fn tell_of_listen_time(
+    this: &WeakEntity<LibraryModel>,
+    error: &resonate_library::Error,
+    cx: &mut AsyncApp,
+) {
+    let told = this.update(cx, |_, cx| {
+        toast::tell(toast::could_not("keep how long that was heard", error), cx);
+    });
+    let _ = told;
+}
+
+fn picture_or_trouble(
+    read: Option<resonate_library::Result<Option<Picture>>>,
+    doing: &str,
+    cx: &mut App,
+) -> Option<Picture> {
+    match read? {
+        Ok(picture) => picture,
         Err(error) => {
-            tracing::warn!(%error, album = id.get(), "cover art could not be read");
+            tracing::warn!(%error, doing, "a picture could not be read");
+            toast::tell(toast::could_not(doing, &error), cx);
             None
         }
     }
 }
 
-fn whole_cover_of(library: &Library, id: AlbumId) -> Option<Picture> {
-    match library.cover_art(id) {
-        Ok(art) => art.as_ref().and_then(magnified_of),
-        Err(error) => {
-            tracing::warn!(%error, album = id.get(), "cover art could not be read");
-            None
-        }
-    }
+fn drawn_cover(
+    library: &Library,
+    id: AlbumId,
+    side: NonZeroU32,
+) -> resonate_library::Result<Option<Picture>> {
+    let art = library.cover_art(id)?;
+    Ok(art.as_ref().and_then(|art| drawn_within(art, side)))
 }
 
-fn drawn_portrait(library: &Library, id: ArtistId, side: NonZeroU32) -> Option<Picture> {
-    match library.portrait(id) {
-        Ok(art) => art.as_ref().and_then(|art| drawn_square(art, side)),
-        Err(error) => {
-            tracing::warn!(%error, artist = id.get(), "a portrait could not be read");
-            None
-        }
-    }
+fn whole_cover_of(library: &Library, id: AlbumId) -> resonate_library::Result<Option<Picture>> {
+    let art = library.cover_art(id)?;
+    Ok(art.as_ref().and_then(magnified_of))
+}
+
+fn drawn_portrait(
+    library: &Library,
+    id: ArtistId,
+    side: NonZeroU32,
+) -> resonate_library::Result<Option<Picture>> {
+    let art = library.portrait(id)?;
+    Ok(art.as_ref().and_then(|art| drawn_square(art, side)))
 }
 
 impl Asked {

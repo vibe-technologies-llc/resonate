@@ -66,6 +66,7 @@ pub enum Command {
         play: bool,
     },
     Remove(Span),
+    RemoveAll(Vec<Span>),
     Clear,
     Move {
         rows: Span,
@@ -215,7 +216,7 @@ impl Command {
             Self::Load { .. } => CommandKind::Load,
             Self::Resume(_) => CommandKind::Resume,
             Self::Insert { .. } => CommandKind::Insert,
-            Self::Remove(_) => CommandKind::Remove,
+            Self::Remove(_) | Self::RemoveAll(_) => CommandKind::Remove,
             Self::Clear => CommandKind::Clear,
             Self::Move { .. } => CommandKind::Move,
             Self::Order(_) => CommandKind::Order,

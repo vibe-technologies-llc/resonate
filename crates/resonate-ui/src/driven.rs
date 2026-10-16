@@ -16,13 +16,15 @@ use gpui::{
     Entity, Modifiers, MouseButton, Pixels, Point, ScrollDelta, ScrollWheelEvent, TestAppContext,
     TouchPhase, VisualTestContext, point, px, size,
 };
-use resonate_core::{Appearance, Frames, Gain, MediaLocation, Resumable, Resumption, TrackId};
+use resonate_core::{
+    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, TrackId,
+};
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Player, SinkChange, SinkError, SinkId,
     SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_eq::Corrected;
-use resonate_library::{Fingerprinters, Library, Reference, ScanOptions};
+use resonate_library::{Fingerprinters, Library, Playing, Reference, ScanOptions};
 use resonate_listen::{Listener, Listening, Recognisers};
 use resonate_lyrics::Lyricists;
 use resonate_providers::Providers;
@@ -956,6 +958,76 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         assert_eq!(driven.queue(), vec![kept]);
+    }
+
+    #[gpui::test]
+    fn a_track_queued_twice_is_taken_out_of_both_places_at_once_and_put_back_in_two_steps(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let one = folder.tone("one.wav", 1);
+        let two = folder.tone("two.wav", 1);
+        let three = folder.tone("three.wav", 1);
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&[one, two.clone(), three, two.clone()]);
+        let before = driven.queue();
+        assert_eq!(before.len(), 4);
+
+        let root = driven.root.clone();
+        let location = MediaLocation::local(&two);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.take_out_of_the_queue(&location, None, cx);
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), vec![before[0], before[2]]);
+
+        for _ in 0..2 {
+            let put = driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| {
+                    let queued = root.player.read(cx).queue().len();
+                    root.put_the_queue_back(cx).then_some(queued)
+                })
+            });
+            let queued = put.expect("a step was left to put back");
+            driven.until(|root, cx| root.player.read(cx).queue().len() > queued);
+        }
+
+        let restored: Vec<TrackId> = driven.queue();
+        assert_eq!(restored.len(), 4);
+        assert_eq!(restored[0], before[0]);
+        assert_eq!(restored[2], before[2]);
+    }
+
+    #[gpui::test]
+    fn playing_a_track_row_takes_a_playlists_mark_off_the_queue(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let playlist = library.create_playlist("Mix").expect("a playlist is made");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+        let root = driven.root.clone();
+        let marked = QueueStamp::default();
+
+        let held = driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| {
+                root.library.update(cx, |library, _| {
+                    library.set_playing_playlist(Some(Playing {
+                        playlist,
+                        queue: marked,
+                    }));
+                });
+                let before = root.library.read(cx).playing_playlist(marked);
+                let listing = root.library.read(cx).listing();
+                root.play_the_listing_from(&listing, 0, window, cx);
+                (before, root.library.read(cx).playing_playlist(marked))
+            })
+        });
+
+        assert_eq!(held, (Some(playlist), None));
     }
 
     #[gpui::test]

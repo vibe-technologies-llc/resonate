@@ -1394,6 +1394,7 @@ impl RootView {
         }
 
         self.library.update(cx, |library, _| {
+            library.set_playing_playlist(None);
             library.remember(tracks);
             if let Some(track) = tracks.get(start_at) {
                 library.ask_about(track.album_id, track.artist_id);
@@ -2425,16 +2426,29 @@ impl RootView {
         }
     }
 
+    pub(crate) fn drop_queue_runs(&mut self, runs: Vec<Span>, cx: &mut Context<Self>) {
+        let queued = self.player.read(cx).queue();
+        let kept = self.took_out.keeping_all(&queued, &runs);
+
+        let mut held = queued.len();
+        for rows in runs.iter().rev() {
+            self.reach = Reach::after_dropping(Shift::Queue, *rows, held);
+            held = held.saturating_sub(rows.rows());
+        }
+        self.landed_by_a_jump = None;
+
+        self.send_by_position(Command::RemoveAll(runs), cx);
+        if let Some(kept) = kept {
+            toast::tell(took_out(kept), cx);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn drop_rows(&mut self, shift: Shift, rows: Span, cx: &mut Context<Self>) {
         let held = match shift {
             Shift::Queue => {
-                let queued = self.player.read(cx).queue();
-                let kept = self.took_out.keeping(&queued, rows);
-                self.send_by_position(Command::Remove(rows), cx);
-                if let Some(kept) = kept {
-                    toast::tell(took_out(kept), cx);
-                }
-                queued.len()
+                self.drop_queue_runs(vec![rows], cx);
+                return;
             }
             Shift::Playlist(playlist) => {
                 let held = self.library.read(cx).entries().len();

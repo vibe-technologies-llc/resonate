@@ -399,11 +399,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   is current): a clear made by position in two removals could land after the song had ended and
   take the row that had just begun, since advancing playback does not move the queue's revision.
   The phones' Clear is this command.
+- **`Command::RemoveAll(Vec<Span>)` removes several runs in one step under one revision check**, the
+  only way a gesture over rows that are not adjacent lands whole (a second `Remove` under the same
+  revision would be refused `QueueChanged`); `Queue::remove_all` answers the first run outside the
+  queue and removes nothing.
 - **An edit by position names its queue.** `Player::send_if_the_queue_is_still` /
   `request_if_the_queue_is_still` carry the `Queued::revision` the gesture saw; `dispatch` answers
   `Error::QueueChanged` (`Cause::QueueMoved`) if it moved, so another client's edit between draw and
-  click moves or removes nothing. `PlayerModel::send_by_position` sends the queue's `Remove`, `Move`,
-  `JumpTo`; `Insert`, the bus and MCP (rows named by id) are unguarded.
+  click moves or removes nothing. `PlayerModel::send_by_position` sends the queue's `Remove`, `RemoveAll`,
+  `Move`, `JumpTo`; `Insert`, the bus and MCP (rows named by id) are unguarded.
 - **Ids.** A file no scan has seen takes its `TrackId` from `unclaimed_id` (down from `u64::MAX`).
   **A catalog file is queued under the catalog's id wherever a catalog exists** (`Host::held_as`;
   `AddTrack`, `OpenUri`, `mpris::claimed_by` and a resumed row ask before minting). **A row's id names
