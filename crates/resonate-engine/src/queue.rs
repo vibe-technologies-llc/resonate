@@ -332,13 +332,18 @@ impl Queue {
     }
 
     pub fn remove_rows(&mut self, rows: Span) -> Option<Removal> {
-        if rows.last() >= self.items.len() {
-            return None;
+        self.remove_all(&[rows]).ok()
+    }
+
+    pub fn remove_all(&mut self, runs: &[Span]) -> Result<Removal, Span> {
+        let len = self.items.len();
+        if let Some(outside) = runs.iter().copied().find(|rows| rows.last() >= len) {
+            return Err(outside);
         }
 
         let heard = self.heard();
-        let mut dropping = vec![false; self.items.len()];
-        for row in rows.range() {
+        let mut dropping = vec![false; len];
+        for row in runs.iter().flat_map(|rows| rows.range()) {
             if let Some(index) = self.item_at(row) {
                 dropping[index] = true;
             }
@@ -374,9 +379,9 @@ impl Queue {
 
         if heard.is_some_and(|index| dropping[index]) {
             self.hand_on();
-            return Some(Removal::Playing);
+            return Ok(Removal::Playing);
         }
-        Some(Removal::Queued)
+        Ok(Removal::Queued)
     }
 
     pub fn move_rows(&mut self, rows: Span, to: usize) -> Option<()> {
@@ -1560,6 +1565,29 @@ mod tests {
     fn a_span_running_past_the_end_removes_nothing() {
         let mut queue = loaded(3, 0);
         assert_eq!(queue.remove_rows(Span::between(2, 3)), None);
+        assert_eq!(queue.len(), 3);
+    }
+
+    #[test]
+    fn two_runs_removed_together_leave_the_rows_between_them_and_a_stray_run_removes_nothing() {
+        let mut queue = loaded(6, 0);
+        assert_eq!(
+            queue.remove_all(&[Span::one(1), Span::between(3, 4)]),
+            Ok(Removal::Queued)
+        );
+
+        assert_eq!(queue.len(), 3);
+        let left: Vec<u64> = queue
+            .in_play_order()
+            .iter()
+            .map(|item| item.id.get())
+            .collect();
+        assert_eq!(left, [1, 3, 6]);
+
+        assert_eq!(
+            queue.remove_all(&[Span::one(0), Span::one(3)]),
+            Err(Span::one(3))
+        );
         assert_eq!(queue.len(), 3);
     }
 

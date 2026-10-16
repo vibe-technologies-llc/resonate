@@ -1255,6 +1255,7 @@ impl Engine {
                 Ok(())
             }
             Command::Remove(rows) => self.remove(rows),
+            Command::RemoveAll(runs) => self.remove_runs(&runs),
             Command::Clear => self.clear(),
             Command::Move { rows, to } => self.queue.move_rows(rows, to).ok_or(Error::NoSuchRow {
                 rows: Span::between(rows.last(), to),
@@ -1736,6 +1737,21 @@ impl Engine {
             rows,
             len: self.queue.len(),
         })?;
+        self.carry_on_after(removal)
+    }
+
+    fn remove_runs(&mut self, runs: &[Span]) -> Result<()> {
+        let removal = self
+            .queue
+            .remove_all(runs)
+            .map_err(|rows| Error::NoSuchRow {
+                rows,
+                len: self.queue.len(),
+            })?;
+        self.carry_on_after(removal)
+    }
+
+    fn carry_on_after(&mut self, removal: Removal) -> Result<()> {
         if removal == Removal::Queued || (self.track.is_none() && self.opening.is_none()) {
             return Ok(());
         }

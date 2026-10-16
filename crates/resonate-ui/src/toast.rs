@@ -32,7 +32,7 @@ const ABOVE_ANOTHER_PILL: f32 = 44.0;
 #[derive(Default)]
 pub(crate) struct Toaster {
     showing: Option<Toast>,
-    waiting: VecDeque<Notice>,
+    waiting: VecDeque<Waiting>,
     told: u64,
     fading: Option<Task<()>>,
 }
@@ -42,37 +42,72 @@ impl Global for Toaster {}
 #[derive(Clone)]
 struct Toast {
     notice: Notice,
+    times: u32,
     serial: u64,
     leaving: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Waiting {
+    notice: Notice,
+    times: u32,
+}
+
+impl Waiting {
+    const fn once(notice: Notice) -> Self {
+        Self { notice, times: 1 }
+    }
+}
+
+fn said_with_its_count(notice: &Notice, times: u32) -> String {
+    match notice.tone() {
+        Tone::Trouble if times > 1 => format!("{} (×{times})", notice.text()),
+        _ => notice.text().to_owned(),
+    }
+}
+
 impl Toaster {
-    fn already_says(&self, notice: &Notice) -> bool {
-        self.showing
-            .as_ref()
-            .is_some_and(|toast| !toast.leaving && toast.notice == *notice)
-            || self.waiting.contains(notice)
+    fn counts_a_repeat_of(&mut self, notice: &Notice) -> bool {
+        let standing = self
+            .showing
+            .as_mut()
+            .filter(|toast| !toast.leaving && toast.notice == *notice)
+            .map(|toast| &mut toast.times);
+        let waiting = self
+            .waiting
+            .iter_mut()
+            .find(|waiting| waiting.notice == *notice)
+            .map(|waiting| &mut waiting.times);
+
+        match standing.or(waiting) {
+            Some(times) => {
+                *times += 1;
+                true
+            }
+            None => false,
+        }
     }
 }
 
 pub(crate) fn tell(notice: Notice, cx: &mut App) {
     let toaster = cx.default_global::<Toaster>();
-    if toaster.already_says(&notice) {
+    if toaster.counts_a_repeat_of(&notice) {
+        cx.refresh_windows();
         return;
     }
     if toaster.showing.is_none() {
-        show(notice, cx);
+        show(Waiting::once(notice), cx);
         return;
     }
     wait(&mut toaster.waiting, notice);
     withdraw(cx);
 }
 
-fn wait(waiting: &mut VecDeque<Notice>, notice: Notice) {
+fn wait(waiting: &mut VecDeque<Waiting>, notice: Notice) {
     if waiting.len() >= WAITING_AT_MOST {
         let makes_room = waiting
             .iter()
-            .position(|waiting| waiting.tone() != Tone::Trouble);
+            .position(|waiting| waiting.notice.tone() != Tone::Trouble);
         match makes_room {
             Some(at) => {
                 waiting.remove(at);
@@ -81,7 +116,7 @@ fn wait(waiting: &mut VecDeque<Notice>, notice: Notice) {
             None => {}
         }
     }
-    waiting.push_back(notice);
+    waiting.push_back(Waiting::once(notice));
 }
 
 pub(crate) fn dismiss(cx: &mut App) {
@@ -94,7 +129,7 @@ pub(crate) fn is_showing(cx: &App) -> bool {
         .is_some_and(|toast| !toast.leaving)
 }
 
-fn show(notice: Notice, cx: &mut App) {
+fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
     let lingers = if cx.default_global::<Toaster>().waiting.is_empty() {
         LINGER
     } else {
@@ -109,6 +144,7 @@ fn show(notice: Notice, cx: &mut App) {
     toaster.told += 1;
     toaster.showing = Some(Toast {
         notice,
+        times,
         serial: toaster.told,
         leaving: false,
     });
@@ -185,7 +221,10 @@ pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<Animatio
                         .min_w(px(0.0))
                         .text_size(px(theme::text_sm()))
                         .text_color(rgb(theme::text()))
-                        .child(SharedString::from(toast.notice.text().to_owned())),
+                        .child(SharedString::from(said_with_its_count(
+                            &toast.notice,
+                            toast.times,
+                        ))),
                 ),
         );
 
@@ -333,6 +372,62 @@ mod tests {
         Notice::Noted(text.to_owned())
     }
 
+    fn notices_of(waiting: &VecDeque<Waiting>) -> Vec<Notice> {
+        waiting
+            .iter()
+            .map(|waiting| waiting.notice.clone())
+            .collect()
+    }
+
+    fn standing(notice: Notice) -> Toaster {
+        Toaster {
+            showing: Some(Toast {
+                notice,
+                times: 1,
+                serial: 1,
+                leaving: false,
+            }),
+            ..Toaster::default()
+        }
+    }
+
+    #[test]
+    fn a_trouble_told_again_while_it_shows_is_counted_not_shown_twice() {
+        let mut toaster = standing(trouble("Couldn't read a cover"));
+
+        assert!(toaster.counts_a_repeat_of(&trouble("Couldn't read a cover")));
+        assert!(toaster.counts_a_repeat_of(&trouble("Couldn't read a cover")));
+        assert!(!toaster.counts_a_repeat_of(&trouble("Couldn't read a portrait")));
+
+        let showing = toaster.showing.expect("the toast still shows");
+        assert_eq!(showing.times, 3);
+        assert_eq!(
+            said_with_its_count(&showing.notice, showing.times),
+            "Couldn't read a cover (×3)"
+        );
+    }
+
+    #[test]
+    fn a_trouble_told_again_while_it_waits_is_counted_on_the_one_waiting() {
+        let mut toaster = standing(trouble("first"));
+        wait(&mut toaster.waiting, trouble("second"));
+
+        assert!(toaster.counts_a_repeat_of(&trouble("second")));
+
+        assert_eq!(toaster.waiting.len(), 1);
+        assert_eq!(toaster.waiting[0].times, 2);
+    }
+
+    #[test]
+    fn a_toast_on_its_way_out_does_not_take_a_repeat_and_a_plain_notice_shows_no_count() {
+        let mut toaster = standing(trouble("leaving"));
+        toaster.showing.as_mut().expect("showing").leaving = true;
+
+        assert!(!toaster.counts_a_repeat_of(&trouble("leaving")));
+        assert_eq!(said_with_its_count(&noted("plain"), 4), "plain");
+        assert_eq!(said_with_its_count(&trouble("once"), 1), "once");
+    }
+
     #[test]
     fn a_full_line_drops_its_oldest_plain_notice_for_a_newer_one_and_never_a_trouble() {
         let mut waiting = VecDeque::new();
@@ -343,8 +438,8 @@ mod tests {
         wait(&mut waiting, trouble("e"));
 
         assert_eq!(
-            waiting,
-            VecDeque::from([trouble("a"), noted("c"), trouble("d"), trouble("e")])
+            notices_of(&waiting),
+            [trouble("a"), noted("c"), trouble("d"), trouble("e")]
         );
     }
 
@@ -357,12 +452,12 @@ mod tests {
 
         wait(&mut waiting, noted("plain"));
         assert_eq!(waiting.len(), WAITING_AT_MOST);
-        assert!(!waiting.contains(&noted("plain")));
+        assert!(!notices_of(&waiting).contains(&noted("plain")));
 
         wait(&mut waiting, trouble("e"));
         assert_eq!(waiting.len(), WAITING_AT_MOST + 1);
-        assert_eq!(waiting.back(), Some(&trouble("e")));
-        assert_eq!(waiting.front(), Some(&trouble("a")));
+        assert_eq!(waiting.back(), Some(&Waiting::once(trouble("e"))));
+        assert_eq!(waiting.front(), Some(&Waiting::once(trouble("a"))));
     }
 
     #[test]

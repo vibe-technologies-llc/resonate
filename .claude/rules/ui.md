@@ -339,6 +339,7 @@ is never named.
     as is and queues what Play would (`RootView::play_the_listing_from`: held rows where they are the
     whole listing, else `with_everything_listed`;
     `a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row`).
+    `RootView::play` clears the playing-playlist mark that only `play_playlist` sets.
   - An album adds the info mark (and the download mark, *Get the rest* on its hint, where tracks are missing); an artist adds one where
     it has genres, and the Albums/Tracks choice at the row's right. Play next, Add to queue, Add to
     playlist are not on the page. The row does not wrap (taffy sizes a wrapping flex item at
@@ -372,7 +373,9 @@ is never named.
   so a row's ✕, a reach of thirty rows and backspace all keep what they take; *Clear* is the same
   call over `Span::between(0, last)`. `drop_rows` tells it as a toast (*Took 34 tracks out of the
   queue*); *Put back* stays in the heading and sends the rows as a `Command::Insert` at
-  `Placement::At` the row they came out of. Kept as `QueueItem`s, not ids (`one_id_each` mints new
+  `Placement::At` the row they came out of. A menu's *Take out of the queue* on a track queued
+  more than once takes every place in one `Command::RemoveAll` (`RootView::drop_queue_runs`): one
+  toast for the lot, one step per run of adjacent rows, each put back where it stood. Kept as `QueueItem`s, not ids (`one_id_each` mints new
   ones). `Reach::after_dropping` lands the reach on the first row after the gap, the row now last, or
   nothing.
 - **A run of gestures is walked back one at a time; nothing queued since takes the walk away.**
@@ -588,7 +591,8 @@ is never named.
   every gesture tell it alike (`toast::tell(notice, cx)`). One pill at a time, `type_ahead_lift` above
   the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER` (6 s;
   `LINGER_IN_A_BURST` 2 s where more wait; at most `WAITING_AT_MOST` (4) waiting, never the same words
-  twice; a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
+  twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a
+  repeat of any other tone is dropped); a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
   only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
   `Done` or `Noted`; the tone is the pill's icon (alert in the failure colour, tick in green, info mark
   in the accent). `EqualiserModel` sets its notice where it holds no `cx`: an outbox `RootView` drains
@@ -606,7 +610,8 @@ is never named.
   equaliser failures use `toast::could_not("start the scan", &error)`. A notice is a label: no full
   stop. A press that reads the catalog before it plays or queues (heading Play and Shuffle, a scoped
   listing, a suggestion, a dragged album, a downloaded song) toasts the failed read as well as logging
-  it; a settings write whose writer died is told like one that failed.
+  it; a settings write whose writer died is told like one that failed; so is a cover, portrait or pressings read, a play
+  counted and a listen time kept (`picture_or_trouble`, `tell_of_listen_time`).
 - **No device name in the playback bar** (the sink description pushed the album title off). The
   inspector's OUTPUT stage names the device; the signal path's hint says *Playing through …*.
 - **Thin root over four cached regions: a moving clock redraws only the playback bar.** gpui re-runs the

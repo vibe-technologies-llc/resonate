@@ -447,11 +447,20 @@ pub(crate) struct TakenBack {
 }
 
 impl TakenBack {
-    pub(crate) fn keeping(&mut self, queue: &[QueueItem], rows: Span) -> Option<usize> {
-        let taken = TakenOut::of(queue, rows)?;
-        let kept = taken.rows.len();
+    pub(crate) fn keeping_all(&mut self, queue: &[QueueItem], runs: &[Span]) -> Option<usize> {
+        let taken: Vec<TakenOut> = runs
+            .iter()
+            .filter_map(|rows| TakenOut::of(queue, *rows))
+            .collect();
+        if taken.is_empty() {
+            return None;
+        }
+
+        let kept = taken.iter().map(|taken| taken.rows.len()).sum();
         self.put_back.clear();
-        self.stack(taken);
+        for taken in taken {
+            self.stack(taken);
+        }
         Some(kept)
     }
 
@@ -1113,12 +1122,10 @@ impl RootView {
         span: Option<FrameSpan>,
         cx: &mut Context<Self>,
     ) {
-        for row in self
-            .rows_of_in_the_queue(location, span, cx)
-            .into_iter()
-            .rev()
-        {
-            self.drop_rows(Shift::Queue, Span::one(row), cx);
+        let rows = self.rows_of_in_the_queue(location, span, cx);
+        let runs = runs_of(&rows);
+        if !runs.is_empty() {
+            self.drop_queue_runs(runs, cx);
         }
     }
 
@@ -1373,6 +1380,17 @@ fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> usize {
     })
 }
 
+fn runs_of(rows: &[usize]) -> Vec<Span> {
+    let mut runs: Vec<Span> = Vec::new();
+    for &row in rows {
+        match runs.last_mut() {
+            Some(run) if run.last() + 1 == row => *run = Span::between(run.first(), row),
+            _ => runs.push(Span::one(row)),
+        }
+    }
+    runs
+}
+
 pub(crate) fn took_out(rows: usize) -> Notice {
     Notice::Done(format!(
         "Took {} out of the queue",
@@ -1409,7 +1427,7 @@ mod tests {
 
     use super::{
         KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, Run, Standing, TakenBack,
-        named_again, puts_back, takes_out_again, took_out,
+        named_again, puts_back, runs_of, takes_out_again, took_out,
     };
 
     #[test]
@@ -1479,7 +1497,7 @@ mod tests {
     }
 
     fn back(kept: &mut TakenBack, queue: &mut Vec<QueueItem>, rows: Span) {
-        kept.keeping(queue, rows);
+        kept.keeping_all(queue, &[rows]);
         *queue = without(queue, rows);
     }
 
@@ -1699,6 +1717,32 @@ mod tests {
         assert_eq!(queue, queued(&[1, 9, 4]));
         assert!(put_back(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[1, 2, 3, 9, 4]));
+    }
+
+    #[test]
+    fn rows_are_grouped_into_the_runs_they_stand_in() {
+        assert_eq!(runs_of(&[]), Vec::<Span>::new());
+        assert_eq!(runs_of(&[4]), vec![Span::one(4)]);
+        assert_eq!(
+            runs_of(&[0, 1, 2, 5, 7, 8]),
+            vec![Span::between(0, 2), Span::one(5), Span::between(7, 8)]
+        );
+    }
+
+    #[test]
+    fn a_gesture_over_two_runs_is_one_toast_of_both_and_each_run_is_put_back_where_it_stood() {
+        let mut queue = queued(&[1, 2, 3, 4, 5]);
+        let mut kept = TakenBack::default();
+        let runs = [Span::one(1), Span::between(3, 4)];
+
+        assert_eq!(kept.keeping_all(&queue, &runs), Some(3));
+        queue = queued(&[1, 3]);
+
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 3, 4, 5]));
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 2, 3, 4, 5]));
+        assert!(!put_back(&mut kept, &mut queue));
     }
 
     #[test]
