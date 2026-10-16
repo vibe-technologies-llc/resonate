@@ -1242,10 +1242,18 @@ impl Engine {
                 }
                 Ok(())
             }
-            Command::Insert { items, at, play } => match self.queue.insert(items, at) {
-                Some(row) if play => self.hear(row),
-                _ => Ok(()),
+            Command::Insert {
+                items,
+                at,
+                play: true,
+            } => match self.queue.insert_to_hear(items, at) {
+                Some(_) => self.start_what_was_jumped_to(),
+                None => Ok(()),
             },
+            Command::Insert { items, at, .. } => {
+                self.queue.insert(items, at);
+                Ok(())
+            }
             Command::Remove(rows) => self.remove(rows),
             Command::Clear => self.clear(),
             Command::Move { rows, to } => self.queue.move_rows(rows, to).ok_or(Error::NoSuchRow {
@@ -1435,7 +1443,8 @@ impl Engine {
             return Some(left);
         }
         let ends_here = sleeping.ends_the_track()
-            || (sleeping.ends_the_queue() && self.queue.ends_with_this_row());
+            || (sleeping.ends_the_queue()
+                && (self.queue.ends_with_this_row() || self.queue.wraps_next()));
         if !ends_here {
             return None;
         }
@@ -1543,6 +1552,10 @@ impl Engine {
 
     fn hear(&mut self, row: usize) -> Result<()> {
         self.queue.jump_to(row).ok_or(Error::QueueEmpty)?;
+        self.start_what_was_jumped_to()
+    }
+
+    fn start_what_was_jumped_to(&mut self) -> Result<()> {
         self.failures = 0;
         self.playing = true;
         let started = self.start(Frames::ZERO);
@@ -1727,12 +1740,19 @@ impl Engine {
             return Ok(());
         }
         if self.queue.current().is_none() {
-            self.stop();
-            self.emit(Event::QueueFinished);
+            self.finish_the_queue();
             return Ok(());
         }
         let started = self.start(Frames::ZERO);
         self.past_what_will_not_open(started)
+    }
+
+    fn finish_the_queue(&mut self) {
+        if self.sleep.is_some_and(Sleeping::ends_the_queue) {
+            self.sleep = None;
+        }
+        self.stop();
+        self.emit(Event::QueueFinished);
     }
 
     fn restarts_the_track(&mut self) -> bool {
@@ -1771,11 +1791,7 @@ impl Engine {
             self.nods_off();
         }
         if self.queue.advance(natural).is_none() {
-            if self.sleep.is_some_and(Sleeping::ends_the_queue) {
-                self.sleep = None;
-            }
-            self.stop();
-            self.emit(Event::QueueFinished);
+            self.finish_the_queue();
             return Ok(());
         }
         if wraps && self.sleep.is_some_and(Sleeping::ends_the_queue) {
@@ -3154,8 +3170,7 @@ impl Engine {
 
             self.failures = self.failures.saturating_add(1);
             if self.failures > self.queue.len() {
-                self.stop();
-                self.emit(Event::QueueFinished);
+                self.finish_the_queue();
                 return;
             }
             match self.skip(false) {

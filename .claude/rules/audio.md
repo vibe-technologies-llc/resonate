@@ -416,9 +416,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   playlist while a queued row plays); `Queued::stamp` = every row, what `Keeping` weighs. Load
   replaces `order`, keeps `next`. `Command::Insert` lands as a `Placement`: `Next` (front of `next`),
   `Queued` (end of `next`), `At(row)` (joins `next` where the row before it is the one heard or a
-  queued one, else `order`; nothing heard: all land in `order`). `play: true` spends the row
-  `Queue::insert` returns through `Engine::hear` (shared with `Command::JumpTo`), so they cannot
-  disagree about starting a row. `Queue::unshuffled` keeps the play order with shuffle off: a drag,
+  queued one, else `order`; nothing heard: all land in `order`). `play: true` goes through
+  `Queue::insert_to_hear`, which jumps to the run's first row and, where the run landed in `next`,
+  keeps the rest of it right behind (rows already queued play after the run), then starts it as
+  `Engine::hear` (`Command::JumpTo`) does, so they cannot disagree about starting a row. `Queue::unshuffled` keeps the play order with shuffle off: a drag,
   sort or play-next while unshuffled edits it with `order`; not kept across runs.
 - **Coming back is a command.** `Command::Resume` carries a `Resumption` (rows as playing, where
   each was loaded, row, frame, shuffled or not); sole caller of `Engine::start(at)` with other than
@@ -450,7 +451,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **The sleep timer is the engine's (headless wants one).** `Command::SleepUntil(Option<Until>)`:
   `After`, `EndOfTrack`, `EndOfQueue`; `None` cancels. **Pauses** (a sleeper wakes where they were).
   End-of variants need only the edges in `skip`; the wrap would be missed, so `Queue::wraps_next`
-  reads the two fields `advance` decides it from. **Fades out over the last `SLEEP_FADES_OVER`**;
+  reads the two fields `advance` decides it from, and the fade treats a wrap as the end of the queue
+  like the last row of a non-repeating one. Every `QueueFinished` (`Engine::finish_the_queue`: end of
+  `skip`, `remove`, `fail`) disarms an end-of-queue timer, so the next load is not paused unasked. **Fades out over the last `SLEEP_FADES_OVER`**;
   cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. Outlives
   track change, seek, pause, new load. Due while a row opens, it pauses the opening. Delay capped at
   `LONGEST_SLEEP` so a huge value cannot overflow an `Instant`.
