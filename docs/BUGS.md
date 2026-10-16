@@ -119,24 +119,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   playlist's own Play and its menu's turn it off
 - [S] Playing a track row no longer clears `set_playing_playlist`: a playlist mark may stay after a
   track from another listing plays
-- [S] The seek rail's `along` multiplies in `f32`: a release at the rail's end on a track past 2^24
-  frames (6:20 at 44.1 kHz) rounds a few frames past the end about half the time, refused
-  `SeekOutOfRange` with a toast (the analysis waveform's edge too)
-- [S] The play button draws *Play* while a row opens (`Buffering`), and pressing it pauses
-- [S] Time left floors to the second: `-0:00` through the last second, elapsed and left a second
-  short of the length
-- [S] The visualiser's hints say sixth-octave bands tilted 3 dB an octave whatever `spectrum-bands`
-  and `spectrum-tilt` hold
+- [S] More background reads and writes fail into the log alone (`models.rs`: the pressings read,
+  cover reads, the play-count and listen-time writes)
+- [S] A trouble toast repeated while the same one shows or waits is shown once, with no count
 - [M] A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which
   joins any next composing edit whatever the selection: undo takes back the whole session, and
   ctrl-a then a letter then undo empties the field with the old text out of reach
-- [S] A library read that fails is a log record only (`landed`), and the pane then advises *No
-  albums yet. Add a music folder*
-- [S] Heading Play and Shuffle, a suggestion row, a scoped listing, a dragged album and a downloaded
-  song to play fail into the log alone: the press does nothing visible
-- [S] A fifth toast is dropped while four wait (`WAITING_AT_MOST`), errors included, with no way to
-  see a missed one
-- [S] A settings write whose writer died (a cancelled oneshot) is never told
 - [M] Typing anywhere to search drops text an input method composes until a field is focused; the
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
