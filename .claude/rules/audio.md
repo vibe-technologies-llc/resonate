@@ -549,7 +549,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   whole difference (printed on hover in the settings pane, hence `SincParams` re-exported by
   `resonate-engine`). **Phase is its own setting** (`FilterPhase` `Linear`/`Intermediate`/`Minimum`,
   SoX `-L -I -M`): `phase.rs` folds the quality's linear kernel through the real cepstrum to minimum
-  phase, designed once a run (`DESIGNED`). **Reach is two numbers** (shaped kernels are asymmetric):
+  phase, designed once a run (`DESIGNED`, the design made outside its lock; a racing asker keeps the one held). **Reach is two numbers** (shaped kernels are asymmetric):
   `Reach { behind, ahead }`, history primed with `behind` zeros and flushed with `ahead` zeros; a
   track keeps its length whatever the phase.
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
@@ -627,13 +627,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Unmeasurable`) so a row that will not decode to its end is not decoded again per settings change.
 - **True-peak guard: a lookahead gain, not a clipper; touches nothing under the ceiling.** `TruePeak`
   (`resonate-dsp`) is pushed after gain, before dither, wherever `true-peak` is on and the plan
-  converts, never on bit-perfect or repacked streams. It reads each frame at 8x rate; where a phase
+  converts, never on bit-perfect or repacked streams. It reads each frame oversampled by rate (`Sampling::at`: 4x under 96 kHz, 2x under 176.4 kHz,
+  none above, where a read is the centre tap alone; about 192 kHz of grid in every case, so the guard's
+  worst error on a tone near Nyquist is BS.1770's 0.7 dB, not the meter's tenth); where a phase
   passes -0.1 dBTP it asks for the gain bringing it under, averaged over the lookahead. A stream
   never passing the ceiling is multiplied by exactly one and comes out bit for bit, only later:
   audio waits `lookahead + 48` (`REACH`) frames, handed on in its flush; `Engine::swap_chain` first
   flushes the running chain's held tail into the ring. The interpolator is 96 taps (every fractional
   phase must pass a tone near Nyquist at its own level inside the 0.1 dB between ceiling and full
-  scale; the study's `TruePeakMeter` uses the same one), skipped where nothing can be over
+  scale; the study's `TruePeakMeter` keeps the 8x grid, as it knows no rate), skipped where nothing can be over
   (`quiet_below`).
 - **Pre-amp and an untagged track's gain are part of what ReplayGain asks for; clip prevention weighs
   them.** `Levelling` = a `Trim` each (quantised millibels, so `OutputSettings` keeps `Eq`);

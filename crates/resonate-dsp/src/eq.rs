@@ -2,13 +2,14 @@ use std::{iter, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use resonate_core::{
     ChannelCount, ChannelLayout, SampleRate, StreamSpec,
-    eq::{Biquad, ChannelSet, MAX_BANDS, Profile},
+    eq::{Band, Biquad, ChannelSet, MAX_BANDS, Profile},
 };
 
 use crate::{Error, ProcessCount, Processor, Result, fused::multiply_add};
 
 const DENORMAL_FLOOR: f64 = 1e-30;
 const EASED_OVER: Duration = Duration::from_millis(40);
+const BANDS_A_RETUNE_MOVES_AT_MOST: usize = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Easing {
@@ -409,6 +410,12 @@ impl Piece<'_> {
     }
 }
 
+fn bands_apart(before: &[Band], after: &[Band]) -> usize {
+    (0..before.len().max(after.len()))
+        .filter(|at| before.get(*at) != after.get(*at))
+        .count()
+}
+
 fn eased_over(rate: SampleRate) -> NonZeroUsize {
     let frames = (EASED_OVER.as_secs_f64() * f64::from(rate.hz())).round() as usize;
     NonZeroUsize::new(frames).unwrap_or(NonZeroUsize::MIN)
@@ -549,8 +556,13 @@ impl Processor for Equaliser {
     }
 
     fn set_equalisation(&mut self, profile: &Arc<Profile>) {
+        let replaced =
+            bands_apart(self.profile.bands(), profile.bands()) > BANDS_A_RETUNE_MOVES_AT_MOST;
         self.profile = Arc::clone(profile);
         self.take_the_profile();
+        if replaced {
+            self.state.fill(Section::default());
+        }
         self.preamp = self
             .preamp
             .toward(self.profile.preamp().amplitude(), eased_over(self.rate));
@@ -1018,6 +1030,43 @@ mod tests {
     }
 
     #[test]
+    fn a_profile_selected_in_place_of_another_leaves_the_old_filters_ringing_nowhere() {
+        let rate = SampleRate::HZ_48000;
+        let loud = |at: f64| band(BandKind::Peaking, at, 18.0, 2.0);
+        let mut stage = prepared(
+            &profile(vec![loud(300.0), loud(1_000.0), loud(3_000.0)]),
+            rate,
+        );
+        let quiet = vec![0.0_f64; BLOCK * 2];
+        let mut output = vec![0.0; BLOCK * 2];
+
+        stage.process(&tone(1_000.0, rate, 0, BLOCK), &mut output);
+        stage.set_equalisation(&profile(vec![loud(400.0), loud(1_200.0), loud(4_000.0)]));
+        stage.process(&quiet, &mut output);
+
+        let carried = output
+            .iter()
+            .fold(0.0_f64, |peak, sample| peak.max(sample.abs()));
+        assert!(carried == 0.0, "the old filters rang on at {carried}");
+    }
+
+    #[test]
+    fn replacing_the_filters_allocates_nothing() {
+        let rate = SampleRate::HZ_48000;
+        let one = band(BandKind::Peaking, 100.0, 3.0, 1.0);
+        let other = band(BandKind::Peaking, 900.0, -3.0, 1.0);
+        let mut stage = prepared(&profile(vec![one; 4]), rate);
+
+        let held = stage.coefficients.capacity();
+        let lanes = stage.state.len();
+
+        stage.set_equalisation(&profile(vec![other; 4]));
+
+        assert_eq!(stage.coefficients.capacity(), held);
+        assert_eq!(stage.state.len(), lanes);
+    }
+
+    #[test]
     fn changing_the_band_count_while_it_runs_allocates_nothing() {
         let rate = SampleRate::HZ_48000;
         let one = band(BandKind::Peaking, 100.0, 3.0, 1.0);
@@ -1158,6 +1207,7 @@ mod tests {
         preamp: Preamping,
         coefficients: Vec<Biquad>,
         histories: Vec<[f64; 4]>,
+        bands: Vec<Band>,
     }
 
     impl FrameMajor {
@@ -1168,12 +1218,17 @@ mod tests {
                 preamp: Preamping::steady(profile.preamp().amplitude()),
                 coefficients: Vec::new(),
                 histories: vec![[0.0; 4]; channels * MAX_BANDS],
+                bands: Vec::new(),
             };
             cascade.retune(profile);
             cascade
         }
 
         fn retune(&mut self, profile: &Profile) {
+            if bands_apart(&self.bands, profile.bands()) > BANDS_A_RETUNE_MOVES_AT_MOST {
+                self.histories.fill([0.0; 4]);
+            }
+            self.bands = profile.bands().to_vec();
             self.preamp = self
                 .preamp
                 .toward(profile.preamp().amplitude(), eased_over(self.rate));

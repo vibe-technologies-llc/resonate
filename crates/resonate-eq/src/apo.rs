@@ -166,6 +166,16 @@ fn clamped_preamp(decibels: f64) -> Held<Preamp> {
     }
 }
 
+fn summed(earlier: Option<Preamp>, later: Preamp) -> Held<Preamp> {
+    let total = earlier.map_or(0, Preamp::milli_decibels) + later.milli_decibels();
+    let widest = BandGain::WIDEST_MILLI_DECIBELS;
+    let held = total.clamp(-widest, widest);
+    Held {
+        value: Preamp::from_milli_decibels(held).unwrap_or(Preamp::NONE),
+        moved: held != total,
+    }
+}
+
 fn q_from_bandwidth(octaves: f64) -> f64 {
     let spread = 2.0_f64.powf(octaves);
     if spread <= 1.0 {
@@ -440,7 +450,12 @@ pub fn read(text: &str) -> Result<Reading> {
                         tracing::debug!(line, "a preamp past what this build holds");
                         clamped += 1;
                     }
-                    preamp = Some(read.value);
+                    let total = summed(preamp, read.value);
+                    if total.moved {
+                        tracing::debug!(line, "preamps summing past what this build holds");
+                        clamped += 1;
+                    }
+                    preamp = Some(total.value);
                 }
                 Some(_) => {
                     tracing::debug!(line, "a preamp for some channels and not others");
@@ -847,6 +862,31 @@ mod tests {
         assert_eq!(reading.profile.bands().len(), 4);
         assert_eq!(reading.approximated, 2);
         assert_eq!(reading.passed_over, 0);
+    }
+
+    #[test]
+    fn preamp_lines_sum_as_equalizer_apo_sums_them() {
+        let text = "Preamp: -6.1 dB\nFilter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\nPreamp: -2 dB\n";
+
+        let reading = read(text).expect("it reads");
+        let again = read_profile(&write(&reading.profile)).expect("it reads back");
+
+        assert_eq!(reading.profile.preamp().milli_decibels(), -8_100);
+        assert_eq!(reading.clamped, 0);
+        assert_eq!(again.preamp().milli_decibels(), -8_100);
+    }
+
+    #[test]
+    fn preamps_summing_past_what_a_profile_holds_are_held_to_it_and_counted() {
+        let text = "Preamp: -20 dB\nPreamp: -20 dB\nPreamp: -20 dB\n";
+
+        let reading = read(text).expect("it reads");
+
+        assert_eq!(
+            reading.profile.preamp().milli_decibels(),
+            -BandGain::WIDEST_MILLI_DECIBELS
+        );
+        assert!(reading.clamped >= 1);
     }
 
     #[test]
