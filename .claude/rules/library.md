@@ -372,7 +372,10 @@ rows read via `Player::media` like any unscanned row.
 - **A hidden track is kept and only stepped past.** `tracks.hidden`; `Library::hide_track` sets it
   either way, answers whether it moved. Row, file, plays, playlists, favourite stay; a scan never
   touches the column. `scoped` adds `tracks.hidden = 0` beside the best-copy term; album and artist
-  counts and `HOLDS_A_BEST_COPY` weigh it alike. `is:hidden` is a `Shape`; a search *insisting* on
+  counts and `holds_a_best_copy` weigh it alike, and the albums and artists panes' search
+  (`narrowed_onto`) matches shown best copies alone, by the same terms. The counts are built per
+  query from the music filters (`album_columns`, `artist_columns`, `a_shown_copy`); the count sorts
+  order by their `shown_tracks` and `shown_albums` result columns. `is:hidden` is a `Shape`; a search *insisting* on
   it (a clause of that one alternative, not denied) lifts the visibility term
   (`Clause::insists_on`); `-is:hidden` or an alternative beside it lifts nothing.
 - **A track names its album every way it can and joins the album the first name finds.**
@@ -679,8 +682,8 @@ rows read via `Player::media` like any unscanned row.
   **ISRC**: `recordings_of_isrc` answers a *list*; `best_recording` separates takes by length and
   answers with a `Certainty`: a lone answer is `Exactly` where lengths agree or either is
   unmeasured, `Nearly` where length disagrees but title agrees by some `Spelling`; several → those
-  within `RECORDING_MAY_DIFFER_BY` (5 s), then closest, `Exactly`; a lengthless file takes the first
-  as `Nearly`. **Recording**: a `MUSICBRAINZ_TRACKID` is asked directly. **Search**:
+  within `RECORDING_MAY_DIFFER_BY` (5 s), then closest, `Exactly`; a lengthless file takes none of
+  several (nothing separates the takes). **Recording**: a `MUSICBRAINZ_TRACKID` is asked directly. **Search**:
   `find_recording` with title, length, `asked_with` (track's artist + mbid, else album owner's), and
   the album's billed title as `release` only where neither is known; weighed by
   `matches_a_recording`: `STRICT_SCORE`, title agreeing by some `Spelling`, credit agreeing via
@@ -699,8 +702,8 @@ rows read via `Player::media` like any unscanned row.
   `isrcs`, so `coalesce(isrc, ?8)` fills the column: one request per track, not two.
 - **What a lookup may overwrite is `Certainty`, a type, not a rule each caller remembers.**
   `Exactly`: a recording id the *file itself* named, or a named ISRC whose take is as long as the
-  file. `Nearly`: text search, fingerprint, an ISRC naming several takes of a lengthless file, an
-  ISRC whose only take is another length under the same title. `land_recording` reads it in one
+  file. `Nearly`: text search, fingerprint, an ISRC whose
+  only take is another length under the same title. `land_recording` reads it in one
   `CASE` per column: a name is filled wherever the file named none; a name the file *did* carry is
   corrected only under `Exactly`. `artist_id` follows the same `CASE` as the billed name. Everything
   else fills, never replaces (`track_number`, `disc_number`, `mbid`, `isrc`, all `coalesce`d),
@@ -1094,7 +1097,10 @@ guard and re-keys a sleeve-keyed album after moves land.
   empty one.
 - **A chain is ordered; only a cycle is refused.** `Planner::in_the_way`: `InTheWay::Stands` for a
   destination another planned move claimed or one the filesystem holds that no scanned row names
-  (except a file moved onto itself, same device and inode); `InTheWay::MayGo` for a scanned row. **A
+  (except a file moved onto itself, same device and inode); the claims (`Claims`) are keyed
+  case-folded where the destination's nearest standing folder holds a name and its case-flipped
+  twin as one file (`case_blind_beside`), so a second destination differing in case is refused in
+  the preview; `InTheWay::MayGo` for a scanned row. **A
   destination that is the track itself is reduced to its own name in its own folder**: on a
   case-insensitive volume a case-only layout difference changes only the file name's case.
   `Planner::order_the_chains`: a move waits on at most one other, so `walked` follows each chain to
