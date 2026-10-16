@@ -46,6 +46,21 @@ the service, `DownloadOp`'s says what the download could not be), never a debug 
 `downloads::failure_of` is the one reading of a provider's error into those variants, for a find, an
 opening and the TIDAL sign-in alike.
 
+## A failure is told by its cause
+
+`failure.rs` reads `resonate_engine::Cause` (the desktop's reading of an engine error, with
+`Cause::of_a_read` for a codec error) into the sentences the desktop's toast says, worded for songs:
+`Snapshot.failure` is `would_not_play` (naming the song's title where the queue row and catalog still
+know it) or `would_not_do` for a refused command, and `Error::Player` and `Error::Decode` display
+`of_a_command` and `of_a_read`, so a missing file, an unsupported format, a damaged file and a refused
+device read differently. `Error::Reference` displays `of_a_lookup` (what was asked, through
+`LookupOp::asked_for`, and how it failed), and `StoreOp`, `SyncOp` and `ReceivedOp` implement `Display`,
+so no variant prints an op with `{:?}`. The report text the phones show is `Finding::told` and
+`Container`'s `Display`, never a debug print.
+
+`snapshot` consumes (it drains engine events, takes the failure and counts listening), so a caller that
+only needs the transport asks `transport`, which reads the engine's state and nothing else.
+
 ## The surface is the same on every target
 
 Every export exists on every target, so bindings generated from the host library match the device

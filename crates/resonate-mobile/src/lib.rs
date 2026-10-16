@@ -6,6 +6,7 @@ mod downloads;
 mod enrichment;
 mod equaliser;
 mod error;
+mod failure;
 mod features;
 mod listening;
 mod loves;
@@ -35,7 +36,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
 use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume};
-use resonate_engine::{Command, EngineConfig, Event, PlaybackState, Player, QueueItem, RepeatMode};
+use resonate_engine::{Command, EngineConfig, PlaybackState, Player, QueueItem, RepeatMode};
 
 use crate::{
     catalog::Catalog,
@@ -89,6 +90,15 @@ pub enum Transport {
     Loading,
     Playing,
     Paused,
+}
+
+const fn transport_of(playback: PlaybackState) -> Transport {
+    match playback {
+        PlaybackState::Idle | PlaybackState::Stopped => Transport::Stopped,
+        PlaybackState::Buffering => Transport::Loading,
+        PlaybackState::Playing => Transport::Playing,
+        PlaybackState::Paused => Transport::Paused,
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -337,12 +347,18 @@ impl MobilePlayer {
         Ok(())
     }
 
+    pub fn transport(&self) -> Result<Transport> {
+        let held = self.player.lock();
+        let player = held.as_ref().ok_or(Error::Closed)?;
+        Ok(transport_of(player.state().playback))
+    }
+
     pub fn snapshot(&self) -> Result<Snapshot> {
         let held = self.player.lock();
         let player = held.as_ref().ok_or(Error::Closed)?;
         for event in player.events().try_iter() {
-            if let Event::Failed { error, .. } | Event::CommandFailed { error, .. } = event {
-                *self.failure.lock() = Some(error.to_string());
+            if let Some(told) = self.failure_told(player, event) {
+                *self.failure.lock() = Some(told);
             }
         }
         let state = player.state();
@@ -377,12 +393,7 @@ impl MobilePlayer {
             .next
             .map_or(0, |next| (next.last() - next.first() + 1) as u32);
         Ok(Snapshot {
-            transport: match state.playback {
-                PlaybackState::Idle | PlaybackState::Stopped => Transport::Stopped,
-                PlaybackState::Buffering => Transport::Loading,
-                PlaybackState::Playing => Transport::Playing,
-                PlaybackState::Paused => Transport::Paused,
-            },
+            transport: transport_of(state.playback),
             current,
             queue_index: state.queue_position.unwrap_or(0) as u32,
             position_ms: state.current.map_or(0, |track| {

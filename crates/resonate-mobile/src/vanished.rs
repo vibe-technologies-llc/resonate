@@ -13,6 +13,7 @@ use crate::{
 
 const REFERRING_TABLES: &str = "SELECT m.name, f.\"from\" FROM sqlite_master m, pragma_foreign_key_list(m.name) f WHERE m.type = 'table' AND f.\"table\" = 'documents'";
 const QUEUE_EDITS_AT_MOST: usize = 64;
+const DISPLACED_SCHEME: &str = "resonate-displaced";
 
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
@@ -173,16 +174,7 @@ impl Catalog {
             return Ok(Vec::new());
         }
 
-        let referring = connection
-            .prepare(REFERRING_TABLES)
-            .and_then(|mut query| {
-                query
-                    .query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(read_error)?;
+        let referring = referring_tables(&connection)?;
         let transaction = connection.transaction().map_err(write_error)?;
         for old in &twins {
             handed_over(&transaction, &referring, *old, id as i64).map_err(write_error)?;
@@ -211,11 +203,32 @@ impl Catalog {
     }
 }
 
+pub(crate) fn referring_tables(connection: &Connection) -> Result<Vec<(String, String)>> {
+    connection
+        .prepare(REFERRING_TABLES)
+        .and_then(|mut query| {
+            query
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(read_error)
+}
+
 fn recording_of(connection: &Connection, id: i64) -> Result<Option<Recording>> {
+    recording_where(connection, id, "AND d.missing = 0")
+}
+
+fn recording_held(connection: &Connection, id: i64) -> Result<Option<Recording>> {
+    recording_where(connection, id, "")
+}
+
+fn recording_where(connection: &Connection, id: i64, condition: &str) -> Result<Option<Recording>> {
     connection
         .query_row(
             &format!(
-                "SELECT {} FROM documents d WHERE d.id = ?1 AND d.missing = 0",
+                "SELECT {} FROM documents d WHERE d.id = ?1 {condition}",
                 crate::sync::RECORDING_COLUMNS
             ),
             [id],
@@ -227,6 +240,37 @@ fn recording_of(connection: &Connection, id: i64) -> Result<Option<Recording>> {
             error => Err(error),
         })
         .map_err(read_error)
+}
+
+pub(crate) enum Vacated {
+    HandedOver(u64),
+    Displaced,
+}
+
+pub(crate) fn vacated(
+    transaction: &Transaction<'_>,
+    referring: &[(String, String)],
+    holder: i64,
+    taker: i64,
+) -> Result<Vacated> {
+    let names_the_same_song = match (
+        recording_held(transaction, holder)?,
+        recording_held(transaction, taker)?,
+    ) {
+        (Some(held), Some(taking)) => held.names_the_same_song_as(&taking),
+        _ => false,
+    };
+    if names_the_same_song {
+        handed_over(transaction, referring, holder, taker).map_err(write_error)?;
+        return Ok(Vacated::HandedOver(holder as u64));
+    }
+    transaction
+        .execute(
+            "UPDATE documents SET uri = ?2, missing = 1 WHERE id = ?1",
+            rusqlite::params![holder, format!("{DISPLACED_SCHEME}:{holder}")],
+        )
+        .map_err(write_error)?;
+    Ok(Vacated::Displaced)
 }
 
 fn missing_recordings(connection: &Connection) -> Result<Vec<(i64, Recording)>> {

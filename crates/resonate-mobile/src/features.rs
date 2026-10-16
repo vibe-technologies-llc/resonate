@@ -5,7 +5,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_analysis::Watch;
+use resonate_analysis::{Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
 use resonate_core::{Mbid, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
@@ -282,7 +282,7 @@ impl MobilePlayer {
         let info = probe(&self.sources, &location(&track.uri)?)?;
         Ok(Inspector {
             track,
-            container: format!("{:?}", info.container),
+            container: info.container.to_string(),
             sample_format: info.spec.format.to_string(),
             seekable: info.is_seekable,
             encoder: info.tags.encoder.unwrap_or_default(),
@@ -335,12 +335,7 @@ impl MobilePlayer {
                 .collect(),
             spectrum: study.spectrum.levels().to_vec(),
             spectrum_step_hz: study.spectrum.bin_hz(),
-            findings: study
-                .judgement
-                .findings
-                .iter()
-                .map(|finding| format!("{finding:?}"))
-                .collect(),
+            findings: study.judgement.findings.iter().map(Finding::told).collect(),
         };
         self.catalog.keep_study(id, &report)?;
         Ok(report)

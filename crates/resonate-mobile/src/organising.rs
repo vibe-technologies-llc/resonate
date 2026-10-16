@@ -6,9 +6,14 @@ use std::{
 
 use resonate_engine::{Command, PlaybackState};
 use resonate_library::{DEFAULT_LAYOUT, Layout, Named, Naming};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read, documents::document_uri};
+use crate::{
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::read,
+    documents::document_uri,
+    vanished::{Vacated, referring_tables, vacated},
+};
 
 const FOLDER_ENDS: char = '/';
 const EXTENSION_STARTS: char = '.';
@@ -72,7 +77,12 @@ impl MobilePlayer {
             self.save()?;
         }
 
-        self.catalog.rekeyed(&moved)?;
+        let handed_over = self.catalog.rekeyed(&moved)?;
+        let mut analyses = self.services.analyses.lock();
+        for old in handed_over {
+            analyses.remove(&old);
+        }
+        drop(analyses);
 
         if requeued {
             *self.saved.lock() = None;
@@ -117,12 +127,28 @@ impl MobilePlayer {
 }
 
 impl crate::catalog::Catalog {
-    fn rekeyed(&self, moved: &[MovedDocument]) -> Result<()> {
+    fn rekeyed(&self, moved: &[MovedDocument]) -> Result<Vec<u64>> {
         let mut connection = self.0.lock();
+        let referring = referring_tables(&connection)?;
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let mut handed_over = Vec::new();
         for document in moved {
+            let holder = transaction
+                .query_row(
+                    "SELECT id FROM documents WHERE uri = ?2 AND id != ?1",
+                    params![document.id as i64, document.uri],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Read, source))?;
+            if let Some(holder) = holder
+                && let Vacated::HandedOver(old) =
+                    vacated(&transaction, &referring, holder, document.id as i64)?
+            {
+                handed_over.push(old);
+            }
             transaction
                 .execute(
                     "UPDATE documents SET uri = ?2 WHERE id = ?1",
@@ -132,7 +158,8 @@ impl crate::catalog::Catalog {
         }
         transaction
             .commit()
-            .map_err(|source| Error::store(StoreOp::Write, source))
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(handed_over)
     }
 }
 
@@ -345,5 +372,85 @@ mod tests {
     fn a_layout_that_does_not_read_says_why() {
         assert!(organise_layout_problem(default_organise_layout()).is_none());
         assert!(organise_layout_problem("{albumartist}/{nonsense}".into()).is_some());
+    }
+
+    fn catalogued(name: &str) -> (std::path::PathBuf, crate::catalog::Catalog) {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-organise-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let catalog =
+            crate::catalog::Catalog::open(&folder.join("catalog.sqlite")).expect("opened");
+        (folder, catalog)
+    }
+
+    fn filed(catalog: &crate::catalog::Catalog, path: &str, title: &str) -> Track {
+        catalog
+            .upsert(Track {
+                uri: format!("{WITHIN}{path}"),
+                name: path.into(),
+                title: title.into(),
+                artist: "Pink Floyd".into(),
+                album: "The Wall".into(),
+                duration_ms: 200_000,
+                ..Track::default()
+            })
+            .expect("upserted")
+    }
+
+    #[test]
+    fn a_move_onto_the_place_a_hidden_other_song_holds_succeeds_and_keeps_that_song_hidden() {
+        let (folder, catalog) = catalogued("other");
+        let gone = filed(&catalog, "Pink%20Floyd/The%20Wall/01.flac", "Mother");
+        let moving = filed(&catalog, "a.flac", "Goodbye");
+        catalog.favourite(gone.id, true).expect("favoured");
+        catalog
+            .mark_missing(&[gone.id as i64], &[])
+            .expect("hidden");
+
+        let handed = catalog
+            .rekeyed(&[MovedDocument {
+                id: moving.id,
+                uri: gone.uri.clone(),
+            }])
+            .expect("rekeyed");
+
+        assert!(handed.is_empty());
+        assert_eq!(catalog.track(moving.id).expect("the song").uri, gone.uri);
+        assert!(catalog.track(gone.id).is_ok());
+        assert!(
+            catalog
+                .tracks("", 0, 10)
+                .expect("listed")
+                .iter()
+                .all(|song| song.id != gone.id)
+        );
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_move_onto_the_place_the_same_song_held_hidden_takes_over_its_history() {
+        let (folder, catalog) = catalogued("same");
+        let gone = filed(&catalog, "Pink%20Floyd/The%20Wall/01.flac", "Mother");
+        let moving = filed(&catalog, "a.flac", "Mother");
+        catalog.favourite(gone.id, true).expect("favoured");
+        catalog
+            .mark_missing(&[gone.id as i64], &[])
+            .expect("hidden");
+
+        let handed = catalog
+            .rekeyed(&[MovedDocument {
+                id: moving.id,
+                uri: gone.uri.clone(),
+            }])
+            .expect("rekeyed");
+
+        assert_eq!(handed, [gone.id]);
+        assert!(catalog.track(gone.id).is_err());
+        let song = catalog.track(moving.id).expect("the song");
+        assert_eq!(song.uri, gone.uri);
+        assert!(song.favourite);
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

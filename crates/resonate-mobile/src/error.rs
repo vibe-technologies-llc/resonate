@@ -17,6 +17,18 @@ pub enum StoreOp {
     Write,
 }
 
+impl fmt::Display for StoreOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::CreateFolder => "created",
+            Self::Open => "opened",
+            Self::Migrate => "migrated",
+            Self::Read => "read",
+            Self::Write => "written",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum DownloadOp {
     Open,
@@ -46,6 +58,19 @@ pub enum SyncOp {
     Forget,
 }
 
+impl fmt::Display for SyncOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Start => "start",
+            Self::Mint => "make a new pairing code",
+            Self::Missing => "list the songs this device lacks",
+            Self::Keep => "keep your changes",
+            Self::Handoffs => "read what other devices are playing",
+            Self::Forget => "forget that device",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum ReceivedOp {
     Open,
@@ -53,16 +78,26 @@ pub enum ReceivedOp {
     Finish,
 }
 
+impl fmt::Display for ReceivedOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Open => "opened",
+            Self::Copy => "copied",
+            Self::Finish => "finished",
+        })
+    }
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
 pub enum Error {
-    #[error("the player could not complete the command")]
+    #[error("{}", crate::failure::of_a_command(.0.cause()))]
     Player(#[from] resonate_engine::Error),
-    #[error("the audio file could not be read")]
+    #[error("{}", crate::failure::of_a_read(.0))]
     Decode(#[from] resonate_codec::Error),
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),
-    #[error("the document catalog operation {op:?} failed: {source}")]
+    #[error("The document catalog could not be {op}: {source}")]
     Store {
         op: StoreOp,
         #[source]
@@ -113,7 +148,7 @@ pub enum Error {
     InvalidDescriptor,
     #[error("The downloaded file is not the song asked for: its length differs")]
     WrongSong,
-    #[error("the online library operation {op:?} failed")]
+    #[error("{}", crate::failure::of_a_lookup(*op, source))]
     Reference {
         op: resonate_library::LookupOp,
         #[source]
@@ -188,7 +223,7 @@ pub enum Error {
     UnknownQueueRow { queue_id: u64 },
     #[error("queue row {row} is outside a queue of {rows}")]
     QueueRowOutOfRange { row: u32, rows: u64 },
-    #[error("device sync operation {op:?} failed")]
+    #[error("Device sync could not {op}")]
     Sync {
         op: SyncOp,
         #[source]
@@ -202,7 +237,7 @@ pub enum Error {
     NothingHandedOff,
     #[error("that song from another device is no longer waiting")]
     UnknownReceivedSong,
-    #[error("received song operation {op:?} failed")]
+    #[error("The song from another device could not be {op}")]
     Received {
         op: ReceivedOp,
         #[source]
@@ -281,5 +316,26 @@ mod tests {
         let domain = resonate_core::Error::VolumeOutOfRange(1.5);
         let mobile = Error::from(domain);
         assert_eq!(mobile.to_string(), domain.to_string());
+    }
+
+    #[test]
+    fn a_refused_command_and_a_failed_op_are_sentences_not_debug_prints() {
+        let refused = Error::from(resonate_engine::Error::QueueEmpty);
+        let opened = Error::store(StoreOp::Open, rusqlite::Error::InvalidQuery);
+        let kept = Error::Received {
+            op: ReceivedOp::Copy,
+            source: io::Error::other("full"),
+        };
+
+        assert_eq!(refused.to_string(), "Nothing is playing right now");
+        assert!(
+            opened
+                .to_string()
+                .starts_with("The document catalog could not be opened")
+        );
+        assert_eq!(
+            kept.to_string(),
+            "The song from another device could not be copied"
+        );
     }
 }

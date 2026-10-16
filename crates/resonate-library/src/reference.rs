@@ -457,6 +457,36 @@ pub enum LookupOp {
     FollowLink,
 }
 
+impl LookupOp {
+    pub const fn asked_for(self) -> &'static str {
+        match self {
+            Self::Release => "a release",
+            Self::FindRelease => "a release search",
+            Self::Recording => "a recording",
+            Self::Isrc => "a recording by its ISRC",
+            Self::FindRecording => "a recording search",
+            Self::ReleaseGroup => "a release group",
+            Self::FindReleaseGroup => "a release group search",
+            Self::Artist => "an artist",
+            Self::FindArtist => "an artist search",
+            Self::ReleaseGroupsOfArtist => "the releases of an artist",
+            Self::ReleasesOfGroup => "the pressings of a release",
+            Self::ReleasesOfArtist => "the pressings of an artist",
+            Self::Cover => "a cover",
+            Self::Portrait => "a portrait",
+            Self::Lyrics => "lyrics",
+            Self::Devices => "the measured devices",
+            Self::Correction => "a measured correction",
+            Self::Recognise => "a recognition",
+            Self::Submit => "a submission of what was heard",
+            Self::Love => "a favourite told to a listening service",
+            Self::Token => "a check of a listening service's token",
+            Self::StreamLink => "a look for where a track streams",
+            Self::FollowLink => "what a link names",
+        }
+    }
+}
+
 pub trait Reference: Send + Sync {
     fn source(&self) -> &SourceId;
 

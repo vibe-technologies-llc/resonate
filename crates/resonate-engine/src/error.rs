@@ -89,6 +89,12 @@ pub enum Cause {
     PlayerStopped,
 }
 
+impl Cause {
+    pub const fn of_a_read(read: &resonate_codec::Error) -> Self {
+        cause_of_a_read(read)
+    }
+}
+
 impl Error {
     pub const fn cause(&self) -> Cause {
         match self {

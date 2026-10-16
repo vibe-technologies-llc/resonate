@@ -5619,37 +5619,9 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
     match summary.stopped_by {
         Some(op) => Notice::Trouble(format!(
             "MusicBrainz couldn't be reached while looking up {} · {said}",
-            asked_for(op)
+            op.asked_for()
         )),
         None => Notice::Noted(said),
-    }
-}
-
-const fn asked_for(op: LookupOp) -> &'static str {
-    match op {
-        LookupOp::Release => "a release",
-        LookupOp::FindRelease => "a release search",
-        LookupOp::Recording => "a recording",
-        LookupOp::Isrc => "a recording by its ISRC",
-        LookupOp::FindRecording => "a recording search",
-        LookupOp::ReleaseGroup => "a release group",
-        LookupOp::FindReleaseGroup => "a release group search",
-        LookupOp::Artist => "an artist",
-        LookupOp::FindArtist => "an artist search",
-        LookupOp::ReleaseGroupsOfArtist => "the releases of an artist",
-        LookupOp::ReleasesOfGroup => "the pressings of a release",
-        LookupOp::ReleasesOfArtist => "the pressings of an artist",
-        LookupOp::Cover => "a cover",
-        LookupOp::Portrait => "a portrait",
-        LookupOp::Lyrics => "lyrics",
-        LookupOp::Devices => "the measured devices",
-        LookupOp::Correction => "a measured correction",
-        LookupOp::Recognise => "a recognition",
-        LookupOp::Submit => "a submission of what was heard",
-        LookupOp::Love => "a favourite told to a listening service",
-        LookupOp::Token => "a check of a listening service's token",
-        LookupOp::StreamLink => "a look for where a track streams",
-        LookupOp::FollowLink => "what a link names",
     }
 }
 
