@@ -2280,7 +2280,8 @@ class _AccountPaneState extends State<AccountPane> {
         ],
         if (kind == 'scrobbling') ...[
           const Text(
-            'Completed listens are queued on this device and submitted when online features are enabled.',
+            'Completed listens are queued on this device and submitted when online features are enabled. '
+            'Favourites with a recording are loved on each saved account and taken back there when removed.',
           ),
           const SizedBox(height: 24),
           _field(
@@ -2334,10 +2335,6 @@ class _AccountPaneState extends State<AccountPane> {
                 child: const Text('Sign in'),
               ),
             ],
-          ),
-          TextButton(
-            onPressed: () => model.call('sendFavourites'),
-            child: const Text('Send identified favourites'),
           ),
           if (model.state['scrobbleStatus'] != null)
             Text('${model.state['scrobbleStatus']}'),

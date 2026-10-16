@@ -316,7 +316,6 @@ class FlutterBridge(
             "scrobbling" -> features.saveScrobbling(scrobbling(args), flag("includeHistory"))
             "validateScrobbling" -> features.validateScrobbling(scrobbling(args))
             "lastFm" -> features.signInLastFm(scrobbling(args), text("user"), text("password"))
-            "sendFavourites" -> features.sendFavourites()
             "corrections" -> features.searchCorrections(text("text"))
             "applyCorrection" ->
                 features.applyCorrection(features.corrections.value[number("index").toInt()])

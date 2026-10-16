@@ -82,9 +82,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `Error::Decode` flatten the engine and codec errors to one sentence each, and `Store`,
   `Reference`, `Sync` and `Received` print their op with `{:?}`; the desktop reads
   `engine::Error::cause`, which the boundary never maps
-- [S] `send_favourites` loves every favourite on every press, stops at the first refused love and
-  records no `loves_told`: one recording a service refuses for good blocks every later favourite on
-  Android, and `tell_loves` (which skips `refused_for_good`) later sends them all again
 - [S] `snapshot` consumes state (drains events, `take`s `failure`, counts listening), so the two
   `snapshot()` calls `NowPlaying.swift` makes only to read the transport on releasing the session
   can swallow a playback failure the poll never shows
@@ -93,24 +90,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   and `Container`'s `Display` are the sentences the desktop shows
 
 ## Android
-- [S] `RustMediaPlayer`'s available commands omit `COMMAND_RELEASE`, so `SimpleBasePlayer.release()`
-  returns before `handleRelease`: the service's retain on `LibraryRepository` is never given back,
-  the engine is never saved or closed, the noisy receiver, focus request and widgets outlive a
-  dismissed task, and every restarted service adds three more live collectors
-- [S] The poll loop in `LibraryRepository.start` has no per-tick catch: one `Error` from
-  `snapshot`, `queue`, `save` or `tick` (a full disk refusing `count_listening`) leaves the loop,
-  its `finally` shuts the engine down while `started` stays true, and nothing reopens it until the
-  service is destroyed
-- [S] `RustMediaPlayer` declares `COMMAND_CHANGE_MEDIA_ITEMS` and overrides only
-  `handleSetMediaItems`, so a controller's add, move or remove throws `IllegalStateException` on the
-  main thread; the exported session's default callback accepts every package
-  (`isTrustedForMediaControl` unasked)
-- [S] `MainActivity`'s controller listener calls `pending.get()` uncaught, so a session connection
-  that fails is an `ExecutionException` on the main thread at launch (`ResonateWidgets.control`
-  catches it)
-- [S] `RustMediaPlayer` pauses on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`, though the platform ducks a
-  request without `setWillPauseWhenDucked`, and resumes only if the transport was Playing, so a
-  loss during Loading never resumes
 - [S] A queue drag lands one row short: `QueuePage` sends `onReorderItem`'s already-adjusted index
   to `moveInQueue`, which counts the row it lands before as before the move (`landing_before`), so
   a downward drag stops a row early and no row can be dropped last
@@ -147,11 +126,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   sets `playlistRows` to an empty list) and its rows: loading cannot be told from empty
 - [S] The light theme's *Search online* card draws its second line in `Colors.white70` on the
   near-white `surfaceContainer`
-- [S] `LibraryFeatures.stop` never releases the `MulticastLock` `hearBeacons` acquired, so it stays
-  held, multicast filtering off, for the life of the process
-- [S] `LibraryRepository.scanFolder` admits files by its own extension and cover-name lists, never
-  `audio_extensions()`, so a format added to core is scanned on desktop and iOS and skipped here
-- [S] The release build type signs with the debug keystore and reads no supplied signing config
 
 ## iOS
 - [S] `Erasure.everything` discards every failure (`try?` on each directory listing and

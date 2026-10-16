@@ -248,6 +248,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 } catch (failure: Exception) {
                     scrobbleStatus.value = failure.message
                 }
+                try {
+                    lovesSaid(library.native().tellLoves(account))?.let {
+                        scrobbleStatus.value = it
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    scrobbleStatus.value = failure.message
+                }
             }
         }
         native.configureOnline(online.value)
@@ -945,12 +954,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scrobbleStatus.value = "Scrobbling accounts saved"
     }
 
-    fun sendFavourites() = work { native ->
-        val account = scrobbleAccount.value ?: return@work
-        val count = native.sendFavourites(account)
-        scrobbleStatus.value = "Sent $count favourite updates"
-    }
-
     fun validateScrobbling(account: ScrobbleAccount) = work { native ->
         scrobbleStatus.value = native.validateScrobbling(account).joinToString(" · ")
     }
@@ -1236,6 +1239,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         network = null
+        hearBeacons(false)
         unmetered = false
         transferring.value = false
         syncHandoffs.value = emptyList()

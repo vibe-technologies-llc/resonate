@@ -38,9 +38,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`upsert`, `tagged`, `keep_artwork_of`) syncs the WAL to flash; `resonate-library` sets NORMAL
 
 ## Android
-- [S] The poll loop calls `queue()` every 250 ms (one `tracks_at` query a row under the catalog and
-  action mutexes, every row copied across) and `RustMediaPlayer.getState` rebuilds every
-  `MediaItemData` per tick, whether or not `Snapshot.queue_revision` moved; iOS gates on it
 - [M] `PlayerModel._receive` notifies on every patch, so `samples` (30 Hz), `lyricFrame` (4 Hz, on
   after leaving Lyrics), `analysisProgress` and `downloadedBytes` rebuild all five root pages, with
   `LibraryPage`'s whole-library favourites scan and the non-lazy lyrics column

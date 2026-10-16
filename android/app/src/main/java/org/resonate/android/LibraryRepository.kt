@@ -3,6 +3,7 @@ package org.resonate.android
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -31,6 +32,7 @@ import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
+import org.resonate.android.nativecore.audioExtensions
 import org.resonate.android.nativecore.defaultTrackFilter
 
 class ResonateApplication : Application() {
@@ -162,22 +164,14 @@ class LibraryRepository(private val context: Context) {
                 mutablePreferences.value = preferences
                 features.initialize(native)
                 ready.complete(native)
-                refresh()
-                var saves = 0
-                while (isActive) {
-                    access.withLock {
-                        val state = native.snapshot()
-                        features.tick(native, state)
-                        mutableSnapshot.value = state
-                        state.failure?.let { mutableStatus.value = it }
-                        mutableQueue.value = native.queue()
-                        if (++saves >= 20) {
-                            native.save()
-                            saves = 0
-                        }
-                    }
-                    delay(250)
+                try {
+                    refresh()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    report(failure)
                 }
+                poll(native)
             } catch (cancelled: CancellationException) {
                 ready.cancel(cancelled)
                 throw cancelled
@@ -201,8 +195,46 @@ class LibraryRepository(private val context: Context) {
                         }
                     }
                 }
+                ended(currentCoroutineContext()[Job])
             }
         }
+    }
+
+    private suspend fun poll(native: MobilePlayer) {
+        val queueReads = QueueReads()
+        var saves = 0
+        var failing: String? = null
+        while (currentCoroutineContext().isActive) {
+            try {
+                access.withLock {
+                    val state = native.snapshot()
+                    features.tick(native, state)
+                    mutableSnapshot.value = state
+                    state.failure?.let { mutableStatus.value = it }
+                    val now = SystemClock.elapsedRealtime()
+                    if (queueReads.due(state.queueRevision, state.catalogRevision, now)) {
+                        mutableQueue.value = native.queue()
+                        queueReads.noted(state.queueRevision, state.catalogRevision, now)
+                    }
+                    if (++saves >= SAVE_EVERY_TICKS) {
+                        saves = 0
+                        native.save()
+                    }
+                }
+                failing = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (failure.message != failing) report(failure)
+                failing = failure.message
+            }
+            delay(POLL_EVERY_MS)
+        }
+    }
+
+    @Synchronized
+    private fun ended(job: Job?) {
+        if (playbackJob === job) started = false
     }
 
     fun request(action: (MobilePlayer) -> Unit) {
@@ -454,29 +486,8 @@ class LibraryRepository(private val context: Context) {
     }
 
     companion object {
-        private val extensions =
-            setOf(
-                "aac",
-                "aif",
-                "aiff",
-                "ape",
-                "caf",
-                "dff",
-                "dsf",
-                "flac",
-                "m4a",
-                "m4b",
-                "mka",
-                "mp3",
-                "mp4",
-                "oga",
-                "ogg",
-                "opus",
-                "rf64",
-                "w64",
-                "wav",
-                "wave",
-                "wv",
-            )
+        private const val POLL_EVERY_MS = 250L
+        private const val SAVE_EVERY_TICKS = 20
+        private val extensions by lazy { audioExtensions().toSet() }
     }
 }

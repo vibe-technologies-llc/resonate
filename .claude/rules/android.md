@@ -46,7 +46,11 @@ optimization and thin LTO, in a separate generated directory and packages ARM64 
 emulator binaries; it never packages
 the debug variant's native libraries. Native symbols remain until binding generation finishes;
 Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
-key or password stored in the repository. Flutter enables R8 for release and includes
+key or password stored in the repository: the `release` signing config exists only where Gradle
+properties `resonate.signing.storeFile`, `.storePassword`, `.keyAlias` and `.keyPassword` (or the
+environment variables `RESONATE_SIGNING_STORE_FILE`, `_STORE_PASSWORD`, `_KEY_ALIAS` and
+`_KEY_PASSWORD`) name a keystore, and without them `assembleRelease` leaves the APK unsigned, never
+signed with the debug key. Flutter enables R8 for release and includes
 `app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
 including names, fields, constructors and native entry points used through JNI and reflection.
 The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning
@@ -85,10 +89,26 @@ Dismissing the app task pauses every session player and stops its foreground ser
 keeps playback running; an active download may retain the engine but never keeps music playing
 across task dismissal.
 Controller actions enter one ordered worker, so load/prepare/play cannot race one another.
-Audio focus loss and noisy-output events pause playback. An Activity's recreation does not own
-or close the audio engine. Playback and download services each retain the repository; the last
+`RustMediaPlayer` declares `COMMAND_RELEASE`, so `release()` reaches `handleRelease` once (media3
+ignores a second): the service's retain is given back, its collectors and the widgets stop, and the
+receiver and focus request are removed. Only the service's own controllers, the media
+notification and controllers the platform trusts (`ControllerInfo.isTrusted`) may connect
+(`TrustedControllers`); a controller's add, move and remove become engine queue edits
+(`QueueEdits`: an append then moves, a range as moves of the rows it passes, a removal by queue id).
+Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
+focus if the engine was playing or loading, and a duck is left to the platform
+(`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue
+place, repeat, shuffle, volume or song moved (the position is read live), and its playlist is
+rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
+audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread. A later service
-waits for that cleanup before opening another. Native shutdown stops sync, then the enrichment pass
+waits for that cleanup before opening another. The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
+a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
+ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
+only when `Snapshot.queue_revision` moved, or `catalog_revision` moved and three seconds have passed
+since the last read (`QueueReads`, as iOS's `catalogRereadAfter`), since every enrichment step, scan
+upsert and favourite moves the catalog.
+Native shutdown stops sync, then the enrichment pass
 (leaving its mark to carry on), analysis, downloads and the shared online client before releasing
 playback. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
@@ -535,9 +555,10 @@ AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load
 bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
-asked; Last.fm password sign-in saves the returned session, never that password. A separate
-explicit action sends current identified favourites (`send_favourites`); it promises no remote
-unlove. `tell_loves(account)` (`loves.rs`) is the desktop's `Library::tell_loves` over the document
+asked; Last.fm password sign-in saves the returned session, never that password. Favourites
+are told by `tell_loves(account)` (`loves.rs`), which both phones' 30 s scrobbling loop calls after
+the listens (the Scrobbling page says so; there is no send button, and a favourite taken back is
+unloved on each saved account). It is the desktop's `Library::tell_loves` over the document
 catalog: V10's `loves_told` (service, recording) is weighed against the favourites with a recording,
 at most `LOVES_TOLD_AT_ONCE` loves or take-backs per service and call; a love refused with a 4xx
 other than 401, 403, 408 or 429 (`resonate_library::refused_for_good`) is noted told, any other
@@ -644,8 +665,8 @@ accessibility tree while hidden. `song_uris` lists every document's URI, hidden 
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a
-`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`), so beacons and Bonjour from devices on
-the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
+`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, released when sync stops and when the
+repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
 `SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait.
@@ -661,7 +682,8 @@ From `android/flutter/`, run `flutter pub get`, `flutter analyze` and `flutter t
 tests cover repeated rows, identities, favourite updates, feedback, restoration and large text.
 
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
-both native ABIs and checks Kotlin and the manifest.
+both native ABIs and checks Kotlin and the manifest, and `:app:testDebugUnitTest` runs the plain
+JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence).
 `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks ELF/APK alignment and runs
 clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document

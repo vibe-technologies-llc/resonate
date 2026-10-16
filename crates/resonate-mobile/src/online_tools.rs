@@ -5,9 +5,7 @@ use std::{
 
 use resonate_core::{ListenId, Mbid};
 use resonate_eq::Corrections;
-use resonate_library::{
-    Billed, LookupOp, Love, Loved, LovedNames, Reference, Scrobble, Scrobbler, TokenHeld,
-};
+use resonate_library::{Billed, LookupOp, Reference, Scrobble, Scrobbler, TokenHeld};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{
@@ -277,43 +275,6 @@ impl MobilePlayer {
         )
         .map(|session| session.key)
         .map_err(|source| Error::reference(LookupOp::Token, source))
-    }
-
-    pub fn send_favourites(&self, account: ScrobbleAccount) -> Result<u64> {
-        self.require_online()?;
-        let favourites = {
-            let connection = self.catalog.0.lock();
-            let mut query = connection.prepare("SELECT * FROM documents WHERE favourite = 1 AND recording IS NOT NULL ORDER BY id")
-                .map_err(|source| Error::store(StoreOp::Read, source))?;
-            query
-                .query_map([], read)
-                .map_err(|source| Error::store(StoreOp::Read, source))?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(|source| Error::store(StoreOp::Read, source))?
-        };
-        let mut sent = 0;
-        for client in self.scrobblers(account) {
-            for track in &favourites {
-                let Some(recording) = track.recording.as_deref().and_then(|id| Mbid::new(id).ok())
-                else {
-                    continue;
-                };
-                client
-                    .love(
-                        &Loved {
-                            recording,
-                            named: Some(LovedNames {
-                                title: track.title.clone(),
-                                artist: track.artist.clone(),
-                            }),
-                        },
-                        Love::Loved,
-                    )
-                    .map_err(|source| Error::reference(LookupOp::Love, source))?;
-                sent += 1;
-            }
-        }
-        Ok(sent)
     }
 
     pub fn submit_scrobbles(&self, account: ScrobbleAccount, playing: Option<u64>) -> Result<u64> {

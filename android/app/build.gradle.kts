@@ -3,6 +3,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun signingValue(property: String, environment: String): String? =
+    (findProperty(property) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(environment)?.takeIf { it.isNotBlank() }
+
+val releaseKeystore = signingValue("resonate.signing.storeFile", "RESONATE_SIGNING_STORE_FILE")
+
 android {
     namespace = "org.resonate.android"
     compileSdk = 36
@@ -15,12 +21,43 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword =
+                    requireNotNull(
+                        signingValue(
+                            "resonate.signing.storePassword",
+                            "RESONATE_SIGNING_STORE_PASSWORD",
+                        )
+                    ) {
+                        "Set resonate.signing.storePassword or RESONATE_SIGNING_STORE_PASSWORD"
+                    }
+                keyAlias =
+                    requireNotNull(
+                        signingValue("resonate.signing.keyAlias", "RESONATE_SIGNING_KEY_ALIAS")
+                    ) {
+                        "Set resonate.signing.keyAlias or RESONATE_SIGNING_KEY_ALIAS"
+                    }
+                keyPassword =
+                    requireNotNull(
+                        signingValue(
+                            "resonate.signing.keyPassword",
+                            "RESONATE_SIGNING_KEY_PASSWORD",
+                        )
+                    ) {
+                        "Set resonate.signing.keyPassword or RESONATE_SIGNING_KEY_PASSWORD"
+                    }
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
             ndk { abiFilters += listOf("arm64-v8a") }
         }
     }
@@ -97,6 +134,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.9.3")
     implementation("net.java.dev.jna:jna:5.17.0@aar")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")

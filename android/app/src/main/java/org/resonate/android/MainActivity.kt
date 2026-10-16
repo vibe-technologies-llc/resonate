@@ -7,11 +7,15 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutionException
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : FlutterActivity() {
@@ -37,11 +41,21 @@ class MainActivity : FlutterActivity() {
                 .buildAsync()
         pending.addListener(
             {
-                if (!isDestroyed) controller = pending.get()
-                else MediaController.releaseFuture(pending)
+                if (isDestroyed) MediaController.releaseFuture(pending) else connected(pending)
             },
             ContextCompat.getMainExecutor(this),
         )
+    }
+
+    private fun connected(pending: ListenableFuture<MediaController>) {
+        try {
+            controller = pending.get()
+        } catch (failure: ExecutionException) {
+            Log.w("Resonate", "Playback controls could not connect", failure)
+            library.notice("Playback controls could not connect")
+        } catch (cancelled: CancellationException) {
+            Log.w("Resonate", "Playback controls connection was cancelled", cancelled)
+        }
     }
 
     fun chooseFolder() {
