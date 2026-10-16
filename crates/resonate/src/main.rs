@@ -255,9 +255,12 @@ fn run() -> Result<()> {
         }
         Some(Sub::Poll { again }) => {
             let held = vault_already_kept(&cli, &config);
+            let (registered, keeping) =
+                providers::registered_keeping(&config, settings_path(&cli).ok());
             poll(
                 &open_library_with(&cli, &config, held.as_ref())?,
-                providers::registered(&config, settings_path(&cli).ok()),
+                registered,
+                &keeping,
                 *again,
             )
         }
@@ -1037,7 +1040,12 @@ fn unheld_releases_table(releases: &[UnheldRelease]) -> Table {
     table
 }
 
-fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
+fn poll(
+    library: &Library,
+    providers: Providers,
+    keeping: &providers::Keeping,
+    again: bool,
+) -> Result<()> {
     if !providers.has_a_source() {
         said!("no provider is registered");
     }
@@ -1061,7 +1069,8 @@ fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
     if summary.cancelled {
         said!("cancelled");
     }
-    finished(PassKind::Poll, summary.cancelled)
+    finished(PassKind::Poll, summary.cancelled)?;
+    keeping.unkept().map_or(Ok(()), Err)
 }
 
 fn roots(library: &Library) -> Result<()> {
@@ -2652,6 +2661,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 tidal_refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),
                 hifi_api: config.hifi_api.clone().unwrap_or_default(),
                 monochrome: config.monochrome.clone().unwrap_or_default(),
+                hosted_services: config.hosted_services_allowed(),
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),

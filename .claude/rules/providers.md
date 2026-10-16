@@ -343,7 +343,10 @@ fetched whole and lands as a track row.
   `TidalSignIn` its implementation, handed over as `Lookups::signs_in` by `providers::signs_in`. The
   device flow asks the `r_usr` scope alone and polls every `interval` (at least
   `ASKED_EVERY_AT_LEAST`, longer on `slow_down` and 429) until a refresh token,
-  `AuthorizationLapsed`, `AuthorizationDenied` or the cancel (`Ok(None)`), asking again through an
+  `AuthorizationLapsed`, `AuthorizationDenied` or the cancel (`Ok(None)`), each poll bounded to
+  `A_POLL_ANSWERED_WITHIN` (3 s, not the API agent's 20 s) so a cancel is heard within one poll
+  even when TIDAL does not answer (`a_cancel_is_heard_within_one_poll_even_when_the_server_does_not_answer`),
+  asking again through an
   unreached server or a 500+ (`sign_in::Passing`;
   `a_device_sign_in_asks_again_through_a_server_that_did_not_answer_this_time`); `Debug` never prints
   the device code. The window's *Sign in to TIDAL* writes the token into the field, the global
@@ -359,10 +362,13 @@ fetched whole and lands as a track row.
 ## A hifi-api server
 
 `HifiApi`, same crate, is the second way to a TIDAL subscription. With `online` on,
-`providers::registry` registers it after `Tidal` as `hifi-api`, on a hosted service by default; the
-`hifi-api` setting and field override it, clearing restores the hosted one. The hosted service holds
-no listener credential: its tokens are cached until shortly before expiry and sent only to their own
-issuer or API. `played.rs` reads the manifest through the same checks as a TIDAL account; the
+`providers::registry` registers it after `Tidal` as `hifi-api`: on a server the `hifi-api` setting
+names, else on the hosted service **only where `hosted-services` (default off) is on**, so nothing
+reaches a third party's service without the listener's say (`a_hifi_api_server_the_listener_named_is_registered_without_hosted_services`,
+`the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services`). The hosted
+service holds no listener credential: its tokens are cached until shortly before expiry and sent
+only to their own issuer or API, asking in this build's name alone, never with another site's
+`Origin` or `Referer` (`a_hosted_token_is_asked_for_in_this_builds_name_alone`). `played.rs` reads the manifest through the same checks as a TIDAL account; the
 manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 
 - **Asked by link, then by the seam's choice**, via `played::found`: the linked track first; else the
@@ -384,9 +390,12 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 ## A Monochrome server
 
 `resonate-monochrome` asks the track streamer behind Monochrome. With `online` on,
-`providers::registry` registers it after `hifi-api` as `monochrome`, asking `tracks.monochrome.st`
-by default; the `monochrome` setting and field name another, clearing restores the hosted one. The
-binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services. Two routes:
+`providers::registry` registers it after `hifi-api` as `monochrome`, asking the server the
+`monochrome` setting names, else `tracks.monochrome.st` only where `hosted-services` is on. The
+binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services; `hosting` answers `None`
+for neither a name nor the opt-in. The settings pane's TIDAL group carries the switch *Ask the
+hosted services* (`Online::hosted_services`, `Setting::HostedServices`); *Forget* in that group
+turns it off. Two routes:
 `/search/tracks?q=<words>&limit=` answers `tracks` listings (`trackId`, `isrc`, `playable`, `title`,
 `artistNames`, `duration` in milliseconds), `/track/<trackId>` the whole FLAC.
 

@@ -20,11 +20,33 @@ use crate::{
 };
 
 pub fn registered(config: &Config, settings: Option<PathBuf>) -> Providers {
-    registry(
-        config.inbox.as_deref(),
-        &Accounts::of(config),
-        &Made::new(settings),
-    )
+    registered_keeping(config, settings).0
+}
+
+pub fn registered_keeping(config: &Config, settings: Option<PathBuf>) -> (Providers, Keeping) {
+    let made = Made::new(settings);
+    let providers = registry(config.inbox.as_deref(), &Accounts::of(config), &made);
+    (providers, made.keeping())
+}
+
+#[cfg(feature = "online")]
+pub struct Keeping(Arc<Renewed>);
+
+#[cfg(feature = "online")]
+impl Keeping {
+    pub fn unkept(&self) -> Option<Error> {
+        self.0.unkept.lock().take()
+    }
+}
+
+#[cfg(not(feature = "online"))]
+pub struct Keeping;
+
+#[cfg(not(feature = "online"))]
+impl Keeping {
+    pub const fn unkept(&self) -> Option<Error> {
+        None
+    }
 }
 
 #[cfg(feature = "ui")]
@@ -72,8 +94,11 @@ impl Accounts {
                 config.tidal_client_secret.as_deref(),
                 config.tidal_refresh_token.as_deref(),
             ),
-            hifi: Some(hosting(config.hifi_api.as_deref())),
-            monochrome: Some(hosting(config.monochrome.as_deref())),
+            hifi: hosting(config.hifi_api.as_deref(), config.hosted_services_allowed()),
+            monochrome: hosting(
+                config.monochrome.as_deref(),
+                config.hosted_services_allowed(),
+            ),
         }
     }
 
@@ -93,8 +118,8 @@ impl Accounts {
                 Some(&online.tidal_client_secret),
                 Some(&online.tidal_refresh_token),
             ),
-            hifi: Some(hosting(Some(&online.hifi_api))),
-            monochrome: Some(hosting(Some(&online.monochrome))),
+            hifi: hosting(Some(&online.hifi_api), online.hosted_services),
+            monochrome: hosting(Some(&online.monochrome), online.hosted_services),
         }
     }
 }
@@ -149,8 +174,11 @@ enum Hosting {
 }
 
 #[cfg(feature = "online")]
-fn hosting(server: Option<&str>) -> Hosting {
-    given(server).map_or(Hosting::Hosted, Hosting::Custom)
+fn hosting(server: Option<&str>, hosted_allowed: bool) -> Option<Hosting> {
+    match given(server) {
+        Some(server) => Some(Hosting::Custom(server)),
+        None => hosted_allowed.then_some(Hosting::Hosted),
+    }
 }
 
 #[cfg(feature = "online")]
@@ -170,6 +198,10 @@ impl Made {
     fn new(_settings: Option<PathBuf>) -> Self {
         Self
     }
+
+    const fn keeping(&self) -> Keeping {
+        Keeping
+    }
 }
 
 #[cfg(feature = "online")]
@@ -183,8 +215,13 @@ impl Made {
             renewed: Arc::new(Renewed {
                 settings,
                 rotated: parking_lot::Mutex::new(None),
+                unkept: parking_lot::Mutex::new(None),
             }),
         }
+    }
+
+    fn keeping(&self) -> Keeping {
+        Keeping(Arc::clone(&self.renewed))
     }
 
     fn signed_in(&self, account: &Account) -> Tidal {
@@ -199,6 +236,7 @@ impl Made {
 struct Renewed {
     settings: Option<PathBuf>,
     rotated: parking_lot::Mutex<Option<Rotation>>,
+    unkept: parking_lot::Mutex<Option<Error>>,
 }
 
 #[cfg(feature = "online")]
@@ -227,16 +265,19 @@ impl Renewed {
             given,
             standing: standing.clone(),
         });
-        let Some(settings) = &self.settings else {
-            return;
+        let failure = match &self.settings {
+            None => Some(Error::TidalTokenHasNoSettings),
+            Some(settings) => config::store(settings, ConfigKey::TidalRefreshToken, standing)
+                .err()
+                .map(|source| Error::TidalTokenNotKept {
+                    path: settings.clone(),
+                    source: Box::new(source),
+                }),
         };
-        if let Err(error) = crate::config::store(
-            settings,
-            crate::error::ConfigKey::TidalRefreshToken,
-            standing,
-        ) {
-            tracing::warn!(%error, "the refresh token TIDAL rotated could not be kept");
+        if let Some(failure) = &failure {
+            tracing::error!(%failure, "the refresh token TIDAL rotated could not be kept");
         }
+        *self.unkept.lock() = failure;
     }
 }
 
@@ -486,20 +527,40 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
-    fn the_hosted_hifi_api_is_registered_without_an_override_and_while_online() {
-        assert!(named(&Config::default()).contains(&"hifi-api".to_owned()));
-        assert_eq!(hosting(None), Hosting::Hosted);
+    fn the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services() {
+        let unasked = Config::default();
+        assert!(!named(&unasked).contains(&"hifi-api".to_owned()));
+        assert_eq!(hosting(None, false), None);
+        assert_eq!(hosting(Some("  "), false), None);
 
+        let allowed = Config {
+            hosted_services: Some(true),
+            ..Config::default()
+        };
+        assert!(named(&allowed).contains(&"hifi-api".to_owned()));
+        assert_eq!(hosting(None, true), Some(Hosting::Hosted));
+        assert_eq!(hosting(Some("  "), true), Some(Hosting::Hosted));
+
+        let offline = Config {
+            online: Some(false),
+            ..allowed
+        };
+        assert!(!named(&offline).contains(&"hifi-api".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_hifi_api_server_the_listener_named_is_registered_without_hosted_services() {
         let whole = Config {
             hifi_api: Some("http://hifi.home.arpa:8000".to_owned()),
             ..Config::default()
         };
+
         assert!(named(&whole).contains(&"hifi-api".to_owned()));
         assert!(matches!(
             Accounts::of(&whole).hifi,
             Some(Hosting::Custom(_))
         ));
-        assert_eq!(hosting(Some("  ")), Hosting::Hosted);
 
         let offline = Config {
             online: Some(false),
@@ -510,8 +571,15 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
-    fn the_hosted_monochrome_is_registered_after_hifi_api_without_an_override_and_while_online() {
-        let hosted = named(&Config::default());
+    fn the_hosted_monochrome_is_registered_after_hifi_api_only_when_hosted_services_are_allowed() {
+        assert!(!named(&Config::default()).contains(&"monochrome".to_owned()));
+        assert_eq!(Accounts::of(&Config::default()).monochrome, None);
+
+        let allowed = Config {
+            hosted_services: Some(true),
+            ..Config::default()
+        };
+        let hosted = named(&allowed);
         assert!(hosted.contains(&"monochrome".to_owned()));
         assert_eq!(
             hosted.iter().position(|name| name == "monochrome"),
@@ -520,10 +588,7 @@ mod tests {
                 .position(|name| name == "hifi-api")
                 .map(|hifi| hifi + 1)
         );
-        assert_eq!(
-            Accounts::of(&Config::default()).monochrome,
-            Some(Hosting::Hosted)
-        );
+        assert_eq!(Accounts::of(&allowed).monochrome, Some(Hosting::Hosted));
 
         let whole = Config {
             monochrome: Some("https://tracks.home.arpa".to_owned()),
@@ -544,36 +609,37 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
-    fn a_refresh_token_tidal_rotated_is_kept_and_signed_in_with_from_then_on() {
-        let folder = std::env::temp_dir().join(format!("resonate-renewed-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).expect("a writable temporary directory");
-        let settings = folder.join("config.toml");
-        std::fs::write(&settings, "tidal-refresh-token = \"first\"\n")
-            .expect("a writable temporary directory");
-        let made = Made::new(Some(settings.clone()));
-        let given = Account {
-            client_id: "client".to_owned(),
-            client_secret: None,
-            refresh_token: "first".to_owned(),
+    fn a_rotated_token_that_could_not_be_written_is_told_to_the_listener_once() {
+        let rotate = |made: &Made| {
+            made.renewed.note(
+                "first".to_owned(),
+                resonate_providers::RefreshToken::new("second".to_owned()),
+            );
+            made.keeping().unkept()
         };
 
-        let before = made.renewed.standing_for(&given);
-        made.renewed.note(
-            "first".to_owned(),
-            resonate_providers::RefreshToken::new("second".to_owned()),
-        );
-        let after = made.renewed.standing_for(&given);
-        let elsewhere = made.renewed.standing_for(&Account {
-            refresh_token: "another".to_owned(),
-            ..given.clone()
-        });
-        let kept = std::fs::read_to_string(&settings).expect("the settings read back");
+        let nowhere = Made::new(None);
+        assert!(matches!(
+            rotate(&nowhere),
+            Some(Error::TidalTokenHasNoSettings)
+        ));
+        assert!(nowhere.keeping().unkept().is_none());
+
+        let folder = std::env::temp_dir().join(format!("resonate-unkept-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let file = folder.join("file");
+        std::fs::write(&file, "").expect("a writable temporary directory");
+        let beneath_a_file = file.join("config.toml");
+        let unwritable = Made::new(Some(beneath_a_file.clone()));
+        let failed = rotate(&unwritable);
+        let kept = Made::new(Some(folder.join("config.toml")));
+        let succeeded = rotate(&kept);
         std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
 
-        assert_eq!(before.refresh_token, "first");
-        assert_eq!(after.refresh_token, "second");
-        assert_eq!(elsewhere.refresh_token, "another");
-        assert!(kept.contains("tidal-refresh-token = \"second\""), "{kept}");
+        assert!(
+            matches!(failed, Some(Error::TidalTokenNotKept { path, .. }) if path == beneath_a_file)
+        );
+        assert!(succeeded.is_none());
     }
 
     #[cfg(all(feature = "online", feature = "ui"))]
@@ -602,8 +668,15 @@ mod tests {
             ..resonate_ui::Online::default()
         };
         assert!(named(&signed_in).contains(&"tidal".to_owned()));
-        assert!(named(&signed_in).contains(&"hifi-api".to_owned()));
-        assert!(named(&signed_in).contains(&"monochrome".to_owned()));
+        assert!(!named(&signed_in).contains(&"hifi-api".to_owned()));
+        assert!(!named(&signed_in).contains(&"monochrome".to_owned()));
+
+        let hosted = resonate_ui::Online {
+            hosted_services: true,
+            ..signed_in.clone()
+        };
+        assert!(named(&hosted).contains(&"hifi-api".to_owned()));
+        assert!(named(&hosted).contains(&"monochrome".to_owned()));
 
         let alone = register(&resonate_ui::Supplying {
             inbox: Some(Path::new("/music/inbox")),

@@ -233,6 +233,7 @@ pub enum SettingKey {
     TidalRefreshToken,
     HifiApi,
     Monochrome,
+    HostedServices,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -249,7 +250,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 94] = [
+    pub const ALL: [Self; 95] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -331,6 +332,7 @@ impl SettingKey {
         Self::TidalRefreshToken,
         Self::HifiApi,
         Self::Monochrome,
+        Self::HostedServices,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -433,6 +435,7 @@ pub enum Setting {
     TidalRefreshToken(String),
     HifiApi(String),
     Monochrome(String),
+    HostedServices(bool),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -532,6 +535,7 @@ impl Setting {
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
             Self::HifiApi(_) => SettingKey::HifiApi,
             Self::Monochrome(_) => SettingKey::Monochrome,
+            Self::HostedServices(_) => SettingKey::HostedServices,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -570,6 +574,7 @@ pub struct Online {
     pub tidal_refresh_token: String,
     pub hifi_api: String,
     pub monochrome: String,
+    pub hosted_services: bool,
 }
 
 struct Withheld;
@@ -606,6 +611,7 @@ impl fmt::Debug for Online {
             tidal_refresh_token,
             hifi_api,
             monochrome,
+            hosted_services,
         } = self;
 
         f.debug_struct("Online")
@@ -628,6 +634,7 @@ impl fmt::Debug for Online {
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))
             .field("hifi_api", hifi_api)
             .field("monochrome", monochrome)
+            .field("hosted_services", hosted_services)
             .finish()
     }
 }

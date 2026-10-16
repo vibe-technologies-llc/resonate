@@ -24,8 +24,6 @@ const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
 const HIFI_TOKEN: &str = "https://hifi.odskyler.com/token";
 const TIDAL_TOKEN: &str = "https://auth.odskyler.workers.dev/token";
 const TIDAL_API: &str = "https://api.tidal.com/v1/";
-const TIDAL_ORIGIN: &str = "https://tidal.odskyler.com";
-const TIDAL_REFERER: &str = "https://tidal.odskyler.com/";
 const MANIFEST_DOMAIN: &str = "manifest.tidal.com";
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const LISTED_AT_MOST: usize = 25;
@@ -309,15 +307,9 @@ impl HifiApi {
             return Ok(bearer);
         }
 
-        let sent = self.asker.sent(op, || {
-            let mut request = self.asker.agent.get(endpoint);
-            if service == TokenService::Tidal {
-                request = request
-                    .header("Origin", TIDAL_ORIGIN)
-                    .header("Referer", TIDAL_REFERER);
-            }
-            request.call()
-        })?;
+        let sent = self
+            .asker
+            .sent(op, || self.asker.agent.get(endpoint).call())?;
         let response = match sent {
             Sent::Answered(response) => response,
             Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
@@ -686,5 +678,54 @@ mod tests {
         assert!(hosts.holds("https://im-fa.manifest.tidal.com/path"));
         assert!(!hosts.holds("https://manifest.tidal.com.evil.example/path"));
         assert!(!hosts.holds("http://im-fa.manifest.tidal.com/path"));
+    }
+
+    #[test]
+    fn a_hosted_token_is_asked_for_in_this_builds_name_alone() {
+        use std::{
+            io::{BufRead, BufReader, Write},
+            net::TcpListener,
+            thread,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let endpoint = format!(
+            "http://{}/token",
+            listener.local_addr().expect("an address")
+        );
+        let served = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("a connection");
+            let mut reader = BufReader::new(stream);
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).expect("a request");
+                if line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line.to_ascii_lowercase());
+            }
+            let body = r#"{"access_token":"granted","expires_in":3600}"#;
+            let answer = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            reader
+                .into_inner()
+                .write_all(answer.as_bytes())
+                .expect("an answer");
+            head
+        });
+        let hifi = HifiApi::fetching_from("http://127.0.0.1:1", MediaHosts::tidal());
+
+        let bearer = hifi
+            .token(ProviderOp::Search, &endpoint, TokenService::Tidal)
+            .expect("a token");
+        let head = served.join().expect("the server");
+
+        assert_eq!(bearer, "Bearer granted");
+        assert!(!head.contains("origin:"), "{head}");
+        assert!(!head.contains("referer:"), "{head}");
     }
 }

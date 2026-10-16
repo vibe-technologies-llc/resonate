@@ -261,8 +261,9 @@ yours — the window's *Sign in to TIDAL* fetches the token with a client id you
 subscription, and a wanted track found there is downloaded whole, as lossless FLAC, into the vault, or into your music folder
 where no vault is open, never a preview, a lossy stream or an encrypted one. While online is on,
 [Monochrome](https://monochrome.st)'s track streamer, or the one `monochrome` names, is asked for
-wanted tracks too, matched by ISRC alone and taken only as the whole FLAC. `online = false` stops
-all of them.
+wanted tracks too, matched by ISRC alone and taken only as the whole FLAC. The hosted hifi-api and
+Monochrome services are asked only where `hosted-services` is on (off by default); a server you name
+needs no such switch. `online = false` stops all of them.
 
 Discord is told nothing unless `discord` is on and names an application of yours. What it is
 told is handed to the Discord client on this machine, and the cover is a public Cover Art
