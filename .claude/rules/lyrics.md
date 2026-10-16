@@ -63,7 +63,8 @@ dependency (tested without a window).
   arrives as a raw frame; `resonate-codec`'s `sylt.rs` writes it as LRC (syllable-timed entries
   become a word-timed line), outranking an unsynchronised frame beside it. A frame timed in MPEG
   frames is turned to milliseconds by `mpa::FrameClock` (samples a frame from the codec and rate:
-  MP1 384, MP2 and MPEG-1 MP3 1 152, MPEG-2/2.5 MP3 576; priming not weighed); it is unread on any
+  MP1 384, MP2 and MPEG-1 MP3 1 152, MPEG-2/2.5 MP3 576; counted from the first sample heard, the
+  priming delay taken off, `FrameClock::heard_from`); it is unread on any
   other codec, or whose content type is not lyrics/transcription. A UTF-16 text with no byte-order
   mark is big-endian, as ID3 says; a mark seen sets the order for the texts after it.
   `MOST_SYLLABLES` bounds the read;

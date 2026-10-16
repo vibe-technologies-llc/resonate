@@ -1,5 +1,7 @@
 use std::{
+    collections::BTreeMap,
     io::{Read, Seek, SeekFrom},
+    ops::ControlFlow,
     time::Duration,
 };
 
@@ -84,7 +86,7 @@ pub(crate) struct Segment {
     pub(crate) declared: Option<Duration>,
     pub(crate) counted: Option<Duration>,
     pub(crate) bit_depth: Option<u32>,
-    pub(crate) discarded: Option<Duration>,
+    pub(crate) discarded: BTreeMap<u64, Duration>,
     pub(crate) opus_samples: Option<u64>,
     pub(crate) framed_samples: Option<u64>,
     pub(crate) counted_track: Option<u64>,
@@ -100,8 +102,10 @@ pub(crate) struct Voided {
 }
 
 impl Segment {
-    pub(crate) fn opus_music(&self, pre_skip: u32, padding: u32) -> Option<Frames> {
-        self.opus_samples?
+    pub(crate) fn opus_music(&self, track: u32, pre_skip: u32, padding: u32) -> Option<Frames> {
+        (self.counted_track == Some(u64::from(track)))
+            .then_some(self.opus_samples)
+            .flatten()?
             .checked_sub(u64::from(pre_skip))?
             .checked_sub(u64::from(padding))
             .filter(|music| *music > 0)
@@ -115,9 +119,10 @@ impl Segment {
             .map(Frames)
     }
 
-    pub(crate) fn discarded_frames(&self, rate: SampleRate) -> u32 {
+    pub(crate) fn discarded_frames(&self, track: u32, rate: SampleRate) -> u32 {
         self.discarded
-            .map(|held| Frames::from_duration(held, rate).get())
+            .get(&u64::from(track))
+            .map(|held| Frames::from_duration(*held, rate).get())
             .and_then(|frames| u32::try_from(frames).ok())
             .unwrap_or(0)
     }
@@ -130,12 +135,12 @@ impl Segment {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct Counted {
     ticks: Option<u64>,
     blocks: usize,
-    discarded: Option<Duration>,
-    discarding: Option<u64>,
+    discarded: BTreeMap<u64, Duration>,
+    discarding: Vec<u64>,
     tally: Tally,
 }
 
@@ -288,12 +293,13 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
         .seek(SeekFrom::Start(body))
         .ok()
         .and_then(|_| read_counted_track(source, within));
-    let opus_track = source
+    let opus_tracks = source
         .seek(SeekFrom::Start(body))
         .ok()
-        .and_then(|_| read_track_coded_as(source, within, OPUS_CODEC_ID));
+        .map(|_| read_tracks_coded_as(source, within, OPUS_CODEC_ID))
+        .unwrap_or_default();
     if source.seek(SeekFrom::Start(body)).is_ok() {
-        let counted = count_clusters(source, within, Tally::of(counted_track), opus_track);
+        let counted = count_clusters(source, within, Tally::of(counted_track), opus_tracks);
         let scale = found.scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
         found.counted = span(counted.ticks.map(|ticks| ticks as f64), scale);
         found.discarded = counted.discarded;
@@ -400,7 +406,7 @@ fn count_clusters<S: Read + Seek + ?Sized>(
     source: &mut S,
     within: Option<u64>,
     tally: Tally,
-    discarding: Option<u64>,
+    discarding: Vec<u64>,
 ) -> Counted {
     let mut counted = Counted {
         tally,
@@ -502,19 +508,22 @@ fn read_cluster<S: Read + Seek + ?Sized>(
 }
 
 impl Counted {
-    fn is_discarding(&self, block: Option<Block>) -> bool {
-        block.is_none_or(|block| Some(block.track) == self.discarding)
-    }
-
     fn forget_the_padding_after(&mut self, block: Option<Block>) {
-        if self.is_discarding(block) {
-            self.discarded = None;
+        match block {
+            None => self.discarded.clear(),
+            Some(block) => {
+                self.discarded.remove(&block.track);
+            }
         }
     }
 
     fn take_the_padding_of(&mut self, group: &Group) {
-        if self.is_discarding(group.block) {
-            self.discarded = group.discarded;
+        self.forget_the_padding_after(group.block);
+        if let Some(block) = group.block
+            && let Some(padding) = group.discarded
+            && self.discarding.contains(&block.track)
+        {
+            self.discarded.insert(block.track, padding);
         }
     }
 }
@@ -766,23 +775,55 @@ fn read_track_coded_as<S: Read + Seek + ?Sized>(
     })
 }
 
+fn read_tracks_coded_as<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+    codec: &str,
+) -> Vec<u64> {
+    let mut numbers = Vec::new();
+    walk_tracks::<_, ()>(source, within, |entry| {
+        if entry.codec.as_deref() == Some(codec)
+            && let Some(number) = entry.number
+        {
+            numbers.push(number);
+        }
+        ControlFlow::Continue(())
+    });
+    numbers
+}
+
 fn first_track<S: Read + Seek + ?Sized, T>(
     source: &mut S,
     within: Option<u64>,
     taken: impl Fn(Entry) -> Option<T>,
 ) -> Option<T> {
+    walk_tracks(source, within, |entry| match taken(entry) {
+        Some(track) => ControlFlow::Break(track),
+        None => ControlFlow::Continue(()),
+    })
+}
+
+fn walk_tracks<S: Read + Seek + ?Sized, T>(
+    source: &mut S,
+    within: Option<u64>,
+    mut visit: impl FnMut(Entry) -> ControlFlow<T>,
+) -> Option<T> {
     let tracks = find(source, TRACKS, within)?;
     let limit = tracks.end();
 
     for _ in 0..MAX_ELEMENTS {
-        let entry = element(source)?;
+        let Some(entry) = element(source) else {
+            break;
+        };
         if entry.id == TRACK_ENTRY
-            && let Some(track) = taken(read_entry(source, entry.end()))
+            && let ControlFlow::Break(found) = visit(read_entry(source, entry.end()))
         {
-            return Some(track);
+            return Some(found);
         }
 
-        let next = skip(source, &entry)?;
+        let Some(next) = skip(source, &entry) else {
+            break;
+        };
         if limit.is_some_and(|limit| next >= limit) {
             break;
         }
@@ -958,7 +999,7 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         declared: span(ticks, scale),
         counted: None,
         bit_depth: None,
-        discarded: None,
+        discarded: BTreeMap::new(),
         opus_samples: None,
         framed_samples: None,
         counted_track: None,
@@ -1316,9 +1357,9 @@ mod tests {
 
         let found = read_segment(&mut Cursor::new(bytes));
 
-        assert_eq!(found.discarded, Some(Duration::from_micros(3_500)));
+        assert_eq!(found.discarded.get(&1), Some(&Duration::from_micros(3_500)));
         assert_eq!(
-            found.discarded_frames(SampleRate::new(48_000).expect("a rate")),
+            found.discarded_frames(1, SampleRate::new(48_000).expect("a rate")),
             168
         );
         assert_eq!(found.counted, Some(Duration::from_millis(1_020)));
@@ -1335,7 +1376,7 @@ mod tests {
             &scale,
             &[element(CLUSTER, &earlier)],
         );
-        assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
+        assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
 
         let mut negative = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
         negative.extend_from_slice(&grouped(0, &[0xCA, 0x98, 0x20]));
@@ -1344,7 +1385,7 @@ mod tests {
             &scale,
             &[element(CLUSTER, &negative)],
         );
-        assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
+        assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
     }
 
     #[test]
@@ -1358,8 +1399,8 @@ mod tests {
         video_last.extend_from_slice(&simple_block_of(1, 20));
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &video_last)]);
         assert_eq!(
-            read_segment(&mut Cursor::new(bytes)).discarded,
-            Some(Duration::from_micros(3_500))
+            read_segment(&mut Cursor::new(bytes)).discarded.get(&2),
+            Some(&Duration::from_micros(3_500))
         );
 
         let mut other_audio = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
@@ -1372,14 +1413,47 @@ mod tests {
         ];
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &other_audio)]);
         assert_eq!(
-            read_segment(&mut Cursor::new(bytes)).discarded,
-            Some(Duration::from_micros(3_500))
+            read_segment(&mut Cursor::new(bytes)).discarded.get(&2),
+            Some(&Duration::from_micros(3_500))
         );
 
         let mut padded_elsewhere = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
         padded_elsewhere.extend_from_slice(&grouped_of(3, 0, &padding));
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &padded_elsewhere)]);
-        assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
+        assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
+    }
+
+    #[test]
+    fn each_opus_track_keeps_the_padding_of_its_own_last_block() {
+        let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+        let tracks = [
+            track_entry(1, OPUS_CODEC_ID),
+            track_entry(2, "V_VP9"),
+            track_entry(3, OPUS_CODEC_ID),
+        ];
+        let mut blocks = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+        blocks.extend_from_slice(&grouped_of(1, 0, &[0x35, 0x67, 0xE0]));
+        blocks.extend_from_slice(&grouped_of(3, 20, &[0x0F, 0x42, 0x40]));
+        let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &blocks)]);
+        let rate = SampleRate::new(48_000).expect("a rate");
+
+        let found = read_segment(&mut Cursor::new(bytes));
+
+        assert_eq!(found.discarded_frames(1, rate), 168);
+        assert_eq!(found.discarded_frames(3, rate), 48);
+        assert_eq!(found.discarded_frames(2, rate), 0);
+    }
+
+    #[test]
+    fn a_count_made_of_one_track_is_not_the_music_of_another() {
+        let found = Segment {
+            opus_samples: Some(48_000),
+            counted_track: Some(1),
+            ..Segment::default()
+        };
+
+        assert_eq!(found.opus_music(1, 312, 0), Some(Frames(47_688)));
+        assert_eq!(found.opus_music(3, 312, 0), None);
     }
 
     #[test]
@@ -1509,7 +1583,7 @@ mod tests {
         let found = read_segment(&mut Cursor::new(bytes));
 
         assert_eq!(found.opus_samples, Some(3_840));
-        assert_eq!(found.opus_music(312, 100), Some(Frames(3_428)));
+        assert_eq!(found.opus_music(1, 312, 100), Some(Frames(3_428)));
     }
 
     #[test]

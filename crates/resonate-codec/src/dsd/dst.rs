@@ -21,6 +21,7 @@ const PREDICTION_METHOD_BITS: u32 = 2;
 const UNUSED_PREDICTION_METHOD: u32 = 3;
 const RICE_PARAMETER_BITS: u32 = 3;
 const PLAIN_FRAME_PADDING_BITS: u32 = 6;
+const PACKED_FRAME_AT_MOST_RAW_FRAMES: u64 = 8;
 const CODER_PRECISION_BITS: u32 = 12;
 const CODER_RANGE: u32 = (1 << CODER_PRECISION_BITS) - 1;
 const CODER_HALF: u32 = 1 << (CODER_PRECISION_BITS - 1);
@@ -40,6 +41,7 @@ pub(crate) enum Unpacking {
     FilterOverflows,
     PaddingNotZero,
     CoderNotStarted,
+    Oversized,
 }
 
 struct Bits<'a> {
@@ -276,6 +278,10 @@ impl Unpacker {
         self.samples / 8 * self.channels
     }
 
+    const fn longest_packed_frame(&self) -> u64 {
+        self.frame_bytes() as u64 * PACKED_FRAME_AT_MOST_RAW_FRAMES
+    }
+
     pub(crate) fn unpack(&mut self, frame: &[u8], into: &mut [u8]) -> Result<(), Unpacking> {
         if frame.len() <= 1 {
             return Err(Unpacking::Empty);
@@ -467,6 +473,18 @@ impl Unpacked {
         frames * self.unpacker.frame_bytes() as u64
     }
 
+    fn unpack(&mut self, packed: Packed) -> io::Result<Option<Unpacking>> {
+        if packed.bytes > self.unpacker.longest_packed_frame() {
+            return Ok(Some(Unpacking::Oversized));
+        }
+        self.source.seek(SeekFrom::Start(packed.at))?;
+        self.packed.clear();
+        (&mut self.source)
+            .take(packed.bytes)
+            .read_to_end(&mut self.packed)?;
+        Ok(self.unpacker.unpack(&self.packed, &mut self.held).err())
+    }
+
     fn hold(&mut self, frame: usize) -> io::Result<bool> {
         if self.held_frame == Some(frame) {
             return Ok(true);
@@ -474,18 +492,14 @@ impl Unpacked {
         let Some(packed) = self.known(frame) else {
             return Ok(false);
         };
-        self.source.seek(SeekFrom::Start(packed.at))?;
-        self.packed.clear();
-        (&mut self.source)
-            .take(packed.bytes)
-            .read_to_end(&mut self.packed)?;
         self.held_frame = None;
-        if let Err(refusal) = self.unpacker.unpack(&self.packed, &mut self.held) {
-            tracing::debug!(?refusal, frame, "a DST frame would not unpack");
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "a DST frame would not unpack",
-            ));
+        if let Some(refusal) = self.unpack(packed)? {
+            tracing::debug!(
+                ?refusal,
+                frame,
+                "a DST frame would not unpack and plays as silence"
+            );
+            self.held.fill(DSD_SILENCE);
         }
         self.held_frame = Some(frame);
         Ok(true)
@@ -970,5 +984,56 @@ mod tests {
 
         assert_eq!(all, dsd);
         assert_eq!(unpacked.byte_len(), Some(dsd.len() as u64));
+    }
+
+    fn whole_stream(body: Vec<u8>, declared: u64) -> Vec<u8> {
+        let (mut unpacked, _) = counted(body, declared);
+        let mut all = Vec::new();
+        unpacked.read_to_end(&mut all).expect("every frame reads");
+        all
+    }
+
+    fn frames_chunk_around(dsd: &[u8], damaged: Vec<u8>) -> Vec<u8> {
+        let mut body = Vec::new();
+        let mut info = (((dsd.len() / FRAME_BYTES) + 1) as u32)
+            .to_be_bytes()
+            .to_vec();
+        info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
+        body.extend(chunk(b"FRTE", &info));
+        body.extend(chunk(b"DSTF", &packed(&dsd[..FRAME_BYTES], CHANNELS)));
+        body.extend(chunk(b"DSTF", &damaged));
+        body.extend(chunk(b"DSTF", &packed(&dsd[FRAME_BYTES..], CHANNELS)));
+        body
+    }
+
+    #[test]
+    fn a_frame_that_will_not_unpack_plays_as_silence_between_the_frames_that_do() {
+        let dsd = signal(CHANNELS, 2, 0xBEEF_0004);
+        let body = frames_chunk_around(&dsd, vec![0b1000_0000, 0xFF, 0xFF]);
+
+        let all = whole_stream(body, 3);
+
+        assert_eq!(all.len(), 3 * FRAME_BYTES);
+        assert_eq!(all[..FRAME_BYTES], dsd[..FRAME_BYTES]);
+        assert!(
+            all[FRAME_BYTES..2 * FRAME_BYTES]
+                .iter()
+                .all(|byte| *byte == DSD_SILENCE)
+        );
+        assert_eq!(all[2 * FRAME_BYTES..], dsd[FRAME_BYTES..]);
+    }
+
+    #[test]
+    fn a_frame_longer_than_any_frame_could_be_is_silence_and_is_never_read_into_memory() {
+        let dsd = signal(CHANNELS, 2, 0xBEEF_0005);
+        let hostile = vec![0xFF; 9 * FRAME_BYTES];
+        let body = frames_chunk_around(&dsd, hostile);
+        let (mut unpacked, _) = counted(body, 3);
+
+        let silent = read_frame(&mut unpacked, 1);
+
+        assert!(silent.iter().all(|byte| *byte == DSD_SILENCE));
+        assert!(unpacked.packed.capacity() <= 8 * FRAME_BYTES);
+        assert_eq!(read_frame(&mut unpacked, 2), dsd[FRAME_BYTES..]);
     }
 }

@@ -517,7 +517,8 @@ pub(crate) fn coded_info(
         track.id,
         prescan,
         segment_title_names_the_track(opened.reader.as_ref()),
-        mpa::FrameClock::of(params.codec, spec.rate),
+        mpa::FrameClock::of(params.codec, spec.rate)
+            .map(|clock| clock.heard_from(primed.map_or(0, |held| held.delay))),
     );
 
     Ok(MediaInfo {
@@ -624,11 +625,11 @@ fn priming(
                 .and_then(opus::Head::read)
                 .map(|head| {
                     let pre_skip = u32::from(head.pre_skip);
-                    let padding = prescan.segment.discarded_frames(rate);
+                    let padding = prescan.segment.discarded_frames(track.id, rate);
                     Priming::new(
                         pre_skip,
                         padding,
-                        prescan.segment.opus_music(pre_skip, padding),
+                        prescan.segment.opus_music(track.id, pre_skip, padding),
                     )
                 })
         }

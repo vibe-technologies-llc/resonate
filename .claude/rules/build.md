@@ -54,8 +54,9 @@ metadata, so no Linux sound server or GUI libraries are needed for the Android b
   a seek back to the start and `settle_the_spool`. `cue` resolves every `FILE` line against names a
   folder could list through `the_one_a_cue_names`, `the_best_a_cue_names`, `the_folder_a_cue_names`.
 - **What a fuzz run found stays found**: a failing input is copied into
-  `crates/resonate-codec/tests/found/` and `tests/found.rs` decodes each, holding every block to what
-  a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in one block).
+  `crates/resonate-codec/tests/found/` and `tests/found.rs` probes and decodes each, holding every
+  block to what a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in
+  one block); the same test replays `fuzz/seeds/probe`.
   `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same. `lrc`,
   `lyricsfile`, `playlist` and `mcp` use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.

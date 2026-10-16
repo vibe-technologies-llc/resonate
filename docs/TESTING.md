@@ -56,8 +56,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
   (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,
   the DASH manifest) or the analysis cache reader
-- [S] Twelve of thirteen inputs that crashed `probe` sit only in the ignored `fuzz/artifacts/`, not
-  in `tests/found/`; `fuzz/seeds/` is never replayed by `cargo test`
 - [S] `Encoding::OF_THIS_BUILD` is bumped by hand: a `flacenc` upgrade or a changed `TUKEY_ALPHA` or
   `ARCHIVED_AT` leaves old objects called current
 - [M] `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in

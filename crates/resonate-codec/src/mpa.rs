@@ -94,6 +94,7 @@ const MILLISECONDS_A_SECOND: u64 = 1_000;
 pub(crate) struct FrameClock {
     samples: u64,
     rate: u32,
+    heard_from: u64,
 }
 
 impl FrameClock {
@@ -108,12 +109,20 @@ impl FrameClock {
         Some(Self {
             samples,
             rate: rate.hz(),
+            heard_from: 0,
         })
     }
 
+    pub(crate) const fn heard_from(self, delay: u32) -> Self {
+        Self {
+            heard_from: delay as u64,
+            ..self
+        }
+    }
+
     pub(crate) fn milliseconds(self, frames: u32) -> u32 {
-        let elapsed =
-            u64::from(frames) * self.samples * MILLISECONDS_A_SECOND / u64::from(self.rate);
+        let heard = (u64::from(frames) * self.samples).saturating_sub(self.heard_from);
+        let elapsed = heard * MILLISECONDS_A_SECOND / u64::from(self.rate);
         u32::try_from(elapsed).unwrap_or(u32::MAX)
     }
 }

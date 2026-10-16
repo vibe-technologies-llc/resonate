@@ -49,9 +49,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rate as Matroska `SamplingFrequency`). `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` read as ReplayGain 5 dB
   louder. **Pre-skip is the container's:** Ogg counts it inside granules, Matroska shifts by
   `CodecDelay`, MP4's edit list is read by the box scan. **Matroska's end is the last block's
-  `DiscardPadding`**, a block of the first `A_OPUS` track only (another track's last block neither
-  keeps nor replaces it); declared length is counted from each packet's TOC byte (`Segment::opus_music`),
-  trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
+  `DiscardPadding`**, kept per `A_OPUS` track (`Segment::discarded_frames(track, rate)`; another
+  track's last block neither keeps nor replaces it, so the track the decoder selected is the one
+  asked); declared length is counted from each packet's TOC byte (`Segment::opus_music`, for the
+  counted track only), trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
   predicts band energy from the previous frame) and discard those frames.
 - **WavPack Hybrid is billed as the lossy codec it decodes as** (`wavpack::HYBRID_CODEC_ID`,
   `Codec::WavPackHybrid`, not `is_lossless`); `wavpack.rs` rewrites packets because
@@ -195,6 +196,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `dst::Unpacked`; `FRTE` = frame count, absent: `DsdChunkMissing`). **Frame index found as
   reached:** `dst::Walk` resumes over `DSTF` headers only as far as a read or seek asks. `dst.rs` =
   ISO/IEC 14496-3 subpart 10 as FFmpeg reads it; tests carry their own encoder.
+  **A DST frame that will not unpack, or is longer than `PACKED_FRAME_AT_MOST_RAW_FRAMES` (8) raw
+  frames (`longest_packed_frame`, never read into memory), plays as one frame of `DSD_SILENCE`**;
+  the DSD path counts no holes.
 - **An undecodable packet plays as the silence it would have lasted** (`DecodeError` gives `fill` the
   packet's length via `PacketSpan`; one declaring none lasts as long as the last that decoded,
   `Coded::last_lasted`), handed out at most `SILENCE_HANDED_OUT_AT_ONCE` (8 192) frames a block.

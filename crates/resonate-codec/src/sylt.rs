@@ -310,6 +310,24 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_timed_in_mpeg_frames_counts_from_the_first_sample_heard() {
+        let clock = FrameClock::of(CODEC_ID_MP3, SampleRate::HZ_44100)
+            .expect("a clock")
+            .heard_from(1_105);
+        let bytes = frame(
+            3,
+            MPEG_FRAMES,
+            &[(b"Overhead", 0), (b"Hangs", 1), (b"Still", 1_000)],
+            &[0],
+        );
+
+        assert_eq!(
+            as_lrc(&bytes, Some(clock)).as_deref(),
+            Some("[00:00.000]Overhead\n[00:00.001]Hangs\n[00:26.097]Still\n"),
+        );
+    }
+
+    #[test]
     fn a_frame_timed_in_mpeg_frames_of_a_stream_with_no_frames_is_left_unread() {
         let bytes = frame(3, MPEG_FRAMES, &[(b"Overhead", 12)], &[0]);
 
