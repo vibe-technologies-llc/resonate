@@ -10,10 +10,10 @@ use std::{
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use resonate_engine::PlaybackState;
-use zbus::blocking::{Connection, connection};
 
 use crate::{
     BusOp, Error, Result,
+    blocking::{Connection, connection},
     idle::{Awake, Grip, Gripping},
     interfaces::Shared,
     notify::{Notifier, Shown},

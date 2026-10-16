@@ -11,7 +11,7 @@ use resonate_engine::{
     Asleep, LISTED_APART_BY, MediaInfo, PlaybackState, PlayerState, QueueItem, RepeatMode,
     StreamDigest, TagSet, Until,
 };
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
 use crate::host::Heard;
 
@@ -225,7 +225,7 @@ pub(crate) fn metadata(
     digest: Option<&Arc<StreamDigest>>,
     art: Option<String>,
     heard: Option<Heard>,
-) -> HashMap<String, OwnedValue> {
+) -> HashMap<String, OwnedVariant> {
     let mut fields = HashMap::new();
     let Some(current) = state.current else {
         insert(&mut fields, "mpris:trackid", no_track().into_inner());
@@ -262,7 +262,7 @@ pub(crate) fn metadata(
     fields
 }
 
-fn title_by_file(fields: &mut HashMap<String, OwnedValue>, location: &MediaLocation) {
+fn title_by_file(fields: &mut HashMap<String, OwnedVariant>, location: &MediaLocation) {
     if let Some(stem) = location.stem() {
         insert(fields, "xesam:title", stem.into_owned());
     }
@@ -275,7 +275,7 @@ pub(crate) fn queued_metadata(
     media: Option<&MediaInfo>,
     art: Option<String>,
     heard: Option<Heard>,
-) -> HashMap<String, OwnedValue> {
+) -> HashMap<String, OwnedVariant> {
     if state.current.is_some_and(|current| current.id == item.id) {
         return metadata(state, digest, art, heard);
     }
@@ -311,13 +311,13 @@ pub(crate) fn queued_metadata(
     fields
 }
 
-pub(crate) fn unlisted_metadata(asked: &OwnedObjectPath) -> HashMap<String, OwnedValue> {
+pub(crate) fn unlisted_metadata(asked: &OwnedObjectPath) -> HashMap<String, OwnedVariant> {
     let mut fields = HashMap::new();
     insert(&mut fields, "mpris:trackid", asked.clone().into_inner());
     fields
 }
 
-fn absorb_plays(fields: &mut HashMap<String, OwnedValue>, heard: Option<Heard>) {
+fn absorb_plays(fields: &mut HashMap<String, OwnedVariant>, heard: Option<Heard>) {
     let Some(heard) = heard else {
         return;
     };
@@ -394,7 +394,7 @@ pub fn utc_stamp(at: SystemTime) -> String {
     )
 }
 
-fn absorb_tags(fields: &mut HashMap<String, OwnedValue>, tags: &TagSet) {
+fn absorb_tags(fields: &mut HashMap<String, OwnedVariant>, tags: &TagSet) {
     if let Some(title) = tags.title.as_ref() {
         insert(fields, "xesam:title", title.clone());
     }
@@ -442,9 +442,13 @@ fn absorb_tags(fields: &mut HashMap<String, OwnedValue>, tags: &TagSet) {
     }
 }
 
-fn insert<'a, T: Into<Value<'a>>>(fields: &mut HashMap<String, OwnedValue>, key: &str, value: T) {
-    let value: Value<'a> = value.into();
-    match OwnedValue::try_from(value) {
+fn insert<'a, T: Into<Variant<'a>>>(
+    fields: &mut HashMap<String, OwnedVariant>,
+    key: &str,
+    value: T,
+) {
+    let value: Variant<'a> = value.into();
+    match OwnedVariant::try_from(value) {
         Ok(owned) => {
             fields.insert(key.to_owned(), owned);
         }
@@ -497,11 +501,11 @@ mod tests {
         }
     }
 
-    fn count(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<i32> {
+    fn count(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<i32> {
         i32::try_from(fields.get(key)?.try_clone().ok()?).ok()
     }
 
-    fn reads(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+    fn reads(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
         String::try_from(fields.get(key)?.try_clone().ok()?).ok()
     }
 

@@ -173,7 +173,11 @@ serde = { version = "1.0.229", default-features = false, features = ["std", "der
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 
-zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+zbus = {
+    version = "6.0.0",
+    default-features = false,
+    features = ["default-rt", "proxy", "service"]
+}
 
 gpui = { version = "0.2.2", default-features = false, features = ["wayland", "font-kit"] }
 libc = { version = "=0.2.189", default-features = false }

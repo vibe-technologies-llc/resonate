@@ -1,4 +1,5 @@
 mod art;
+mod blocking;
 mod bluez;
 mod caret;
 mod desktop;

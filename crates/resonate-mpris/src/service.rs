@@ -19,19 +19,15 @@ use resonate_engine::{
     TagsRead, TrackState,
 };
 use zbus::{
-    blocking::{
-        Connection, connection,
-        fdo::{DBusProxy, NameLostIterator},
-        object_server::InterfaceRef,
-    },
-    fdo::{RequestNameFlags, RequestNameReply},
+    OwnedObjectPath, OwnedVariant,
+    fdo::{NameLostStream, RequestNameFlags, RequestNameReply},
     names::{OwnedUniqueName, WellKnownName},
-    zvariant::{OwnedObjectPath, OwnedValue},
 };
 
 use crate::{
     BusOp, Error, Heard, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
     art::Pictures,
+    blocking::{Arrivals, Connection, InterfaceRef, block_on, connection, fdo::DBusProxy},
     bluez::Headsets,
     desktop::Errands,
     interfaces::{Owed, OwnInterface, PlayerInterface, Root, RowArt, Shared, waiting_to_play},
@@ -224,8 +220,8 @@ impl Drop for Mpris {
 }
 
 fn claim(connection: &Connection) -> Result<WellKnownName<'static>> {
-    let preferred = WellKnownName::try_from(BUS_NAME)
-        .map_err(|source| Error::bus(BusOp::ClaimName, source.into()))?;
+    let preferred =
+        WellKnownName::try_from(BUS_NAME).map_err(|source| Error::bus(BusOp::ClaimName, source))?;
     if owned(connection, &preferred)? {
         return Ok(preferred);
     }
@@ -241,7 +237,7 @@ fn instances(
     let mut taken = fallback;
     for attempt in 1..=INSTANCES {
         let name = WellKnownName::try_from(instance_name(attempt))
-            .map_err(|source| Error::bus(BusOp::ClaimName, source.into()))?;
+            .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
         if owned(connection, &name)? {
             return Ok(name);
         }
@@ -251,7 +247,7 @@ fn instances(
     Err(Error::NameTaken { name: taken.into() })
 }
 
-fn name_losses(connection: &Connection) -> Option<NameLostIterator> {
+fn name_losses(connection: &Connection) -> Option<Arrivals<NameLostStream>> {
     let subscribed = DBusProxy::new(connection)
         .map_err(|source| Error::bus(BusOp::Connect, source))
         .and_then(|bus| {
@@ -272,7 +268,7 @@ fn watch_the_name(
     connection: Connection,
     claimed: Arc<Claimed>,
     stop: Arc<AtomicBool>,
-    losses: NameLostIterator,
+    losses: Arrivals<NameLostStream>,
 ) {
     let watching = thread::Builder::new()
         .name("resonate-mpris-name".to_owned())
@@ -322,7 +318,7 @@ fn instance_name(attempt: u32) -> String {
 }
 
 fn owned(connection: &Connection, name: &WellKnownName<'static>) -> Result<bool> {
-    let flags = RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement;
+    let flags = RequestNameFlags::DO_NOT_QUEUE | RequestNameFlags::ALLOW_REPLACEMENT;
     match connection.request_name_with_flags(name.clone(), flags) {
         Ok(reply) => Ok(reply == RequestNameReply::PrimaryOwner),
         Err(zbus::Error::NameTaken) => Ok(false),
@@ -347,7 +343,7 @@ struct Watched {
     shuffle: bool,
     volume: Volume,
     track: Option<TrackId>,
-    metadata: Arc<HashMap<String, OwnedValue>>,
+    metadata: Arc<HashMap<String, OwnedVariant>>,
     described: Described,
     heard: Reading,
     shown: Option<Shown>,
@@ -650,34 +646,34 @@ fn publish(player: &InterfaceRef<PlayerInterface>, before: &Watched, now: &Watch
     let iface = player.get();
 
     if status_moved(before.playback, now.playback) {
-        report(zbus::block_on(iface.playback_status_changed(emitter)));
+        report(block_on(iface.playback_status_changed(emitter)));
     }
     if before.repeat != now.repeat {
-        report(zbus::block_on(iface.loop_status_changed(emitter)));
+        report(block_on(iface.loop_status_changed(emitter)));
     }
     if before.shuffle != now.shuffle {
-        report(zbus::block_on(iface.shuffle_changed(emitter)));
+        report(block_on(iface.shuffle_changed(emitter)));
     }
     if before.volume != now.volume {
-        report(zbus::block_on(iface.volume_changed(emitter)));
+        report(block_on(iface.volume_changed(emitter)));
     }
     if before.track != now.track || described_otherwise(before, now) {
-        report(zbus::block_on(iface.metadata_changed(emitter)));
+        report(block_on(iface.metadata_changed(emitter)));
     }
     if before.can_go_next != now.can_go_next {
-        report(zbus::block_on(iface.can_go_next_changed(emitter)));
+        report(block_on(iface.can_go_next_changed(emitter)));
     }
     if before.can_go_previous != now.can_go_previous {
-        report(zbus::block_on(iface.can_go_previous_changed(emitter)));
+        report(block_on(iface.can_go_previous_changed(emitter)));
     }
     if before.can_play != now.can_play {
-        report(zbus::block_on(iface.can_play_changed(emitter)));
+        report(block_on(iface.can_play_changed(emitter)));
     }
     if before.can_pause != now.can_pause {
-        report(zbus::block_on(iface.can_pause_changed(emitter)));
+        report(block_on(iface.can_pause_changed(emitter)));
     }
     if before.can_seek != now.can_seek {
-        report(zbus::block_on(iface.can_seek_changed(emitter)));
+        report(block_on(iface.can_seek_changed(emitter)));
     }
 }
 
@@ -687,12 +683,10 @@ fn status_moved(before: PlaybackState, now: PlaybackState) -> bool {
 
 fn publish_ours(ours: &InterfaceRef<OwnInterface>, before: &Watched, now: &Watched) {
     if before.sleep != now.sleep {
-        report(zbus::block_on(
-            ours.get().sleep_changed(ours.signal_emitter()),
-        ));
+        report(block_on(ours.get().sleep_changed(ours.signal_emitter())));
     }
     if before.waiting != now.waiting {
-        report(zbus::block_on(
+        report(block_on(
             ours.get().playing_next_changed(ours.signal_emitter()),
         ));
     }
@@ -715,7 +709,7 @@ fn publish_tracks(
         && let Some(track) = now.track
         && now.queue.iter().any(|item| item.id == track)
     {
-        report(zbus::block_on(TrackList::track_metadata_changed(
+        report(block_on(TrackList::track_metadata_changed(
             emitter,
             track_path(track),
             (*now.metadata).clone(),
@@ -742,7 +736,7 @@ fn publish_queue_moves(
                 match edit {
                     Edit::Removed { at } => {
                         if let Some(item) = before.listed.get(at) {
-                            report(zbus::block_on(TrackList::track_removed(
+                            report(block_on(TrackList::track_removed(
                                 emitter,
                                 track_path(item.id),
                             )));
@@ -770,7 +764,7 @@ fn publish_queue_moves(
                                 cover.uri(),
                                 shared.host.heard(&item.location, item.span),
                             );
-                            report(zbus::block_on(TrackList::track_added(
+                            report(block_on(TrackList::track_added(
                                 emitter,
                                 metadata,
                                 after_row(&now.listed, at),
@@ -782,7 +776,7 @@ fn publish_queue_moves(
         }
         Change::Replaced => {
             let rows = now.listed.iter().map(|item| track_path(item.id)).collect();
-            report(zbus::block_on(TrackList::track_list_replaced(
+            report(block_on(TrackList::track_list_replaced(
                 emitter,
                 rows,
                 playing_row(now),
@@ -795,7 +789,7 @@ fn publish_queue_moves(
         .map(|item| item.id)
         .eq(now.listed.iter().map(|item| item.id))
     {
-        report(zbus::block_on(tracks.get().tracks_invalidate(emitter)));
+        report(block_on(tracks.get().tracks_invalidate(emitter)));
     }
 }
 
@@ -841,7 +835,7 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
             cover,
             shared.host.heard(&item.location, item.span),
         );
-        report(zbus::block_on(TrackList::track_metadata_changed(
+        report(block_on(TrackList::track_metadata_changed(
             emitter,
             track_path(track),
             metadata,
@@ -876,7 +870,7 @@ fn publish_playlists(
     let iface = collected.get();
 
     if before.playing != now.playing {
-        report(zbus::block_on(iface.active_playlist_changed(emitter)));
+        report(block_on(iface.active_playlist_changed(emitter)));
     }
 
     if Arc::ptr_eq(&before.rows, &now.rows) {
@@ -884,10 +878,10 @@ fn publish_playlists(
     }
     let moved = moved(&before.rows, &now.rows);
     if moved.arrived_or_left {
-        report(zbus::block_on(iface.playlist_count_changed(emitter)));
+        report(block_on(iface.playlist_count_changed(emitter)));
     }
     for row in moved.renamed {
-        report(zbus::block_on(PlaylistsInterface::playlist_changed(
+        report(block_on(PlaylistsInterface::playlist_changed(
             emitter,
             listed(row.clone()),
         )));
@@ -899,7 +893,7 @@ fn playing_row(now: &Watched) -> OwnedObjectPath {
 }
 
 fn emit_seeked(player: &InterfaceRef<PlayerInterface>, position: i64) {
-    report(zbus::block_on(PlayerInterface::seeked(
+    report(block_on(PlayerInterface::seeked(
         player.signal_emitter(),
         position,
     )));

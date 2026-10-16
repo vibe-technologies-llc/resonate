@@ -7,10 +7,7 @@ use resonate_engine::{
     ArtRead, Command, Placement, Player, PlayerState, QueueItem, StreamDigest, TrackState,
     unclaimed_id,
 };
-use zbus::{
-    fdo, interface,
-    zvariant::{ObjectPath, OwnedValue, Value},
-};
+use zbus::{ObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
     Heard, Host, Opened,
@@ -320,7 +317,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    fn metadata(&self) -> HashMap<String, OwnedVariant> {
         let state = self.shared.player.state();
         let digest = self.shared.player.digest();
         let art = self.shared.art(&state, digest.as_ref());
@@ -407,19 +404,19 @@ impl PlayerInterface {
 }
 
 impl PlayerInterface {
-    pub(crate) fn as_registered(&self) -> HashMap<&'static str, Value<'static>> {
+    pub(crate) fn as_registered(&self) -> HashMap<&'static str, Variant<'static>> {
         HashMap::from([
-            ("Identity", Value::from(self.shared.host.identity())),
-            ("PlaybackStatus", Value::from(self.playback_status())),
-            ("LoopStatus", Value::from(self.loop_status())),
-            ("Shuffle", Value::from(self.shuffle())),
-            ("Position", Value::from(self.position())),
-            ("Metadata", Value::from(self.metadata())),
-            ("CanPlay", Value::from(self.can_play())),
-            ("CanPause", Value::from(self.can_pause())),
-            ("CanGoNext", Value::from(self.can_go_next())),
-            ("CanGoPrevious", Value::from(self.can_go_previous())),
-            ("CanControl", Value::from(self.can_control())),
+            ("Identity", Variant::from(self.shared.host.identity())),
+            ("PlaybackStatus", Variant::from(self.playback_status())),
+            ("LoopStatus", Variant::from(self.loop_status())),
+            ("Shuffle", Variant::from(self.shuffle())),
+            ("Position", Variant::from(self.position())),
+            ("Metadata", Variant::from(self.metadata())),
+            ("CanPlay", Variant::from(self.can_play())),
+            ("CanPause", Variant::from(self.can_pause())),
+            ("CanGoNext", Variant::from(self.can_go_next())),
+            ("CanGoPrevious", Variant::from(self.can_go_previous())),
+            ("CanControl", Variant::from(self.can_control())),
         ])
     }
 }

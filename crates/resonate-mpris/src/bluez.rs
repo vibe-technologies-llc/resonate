@@ -1,18 +1,13 @@
 use std::{mem::ManuallyDrop, sync::Arc, thread, time::Duration};
 
-use zbus::{
-    blocking::{
-        Connection, connection,
-        fdo::{DBusProxy, InterfacesAddedIterator, ObjectManagerProxy},
-        object_server::InterfaceRef,
-    },
-    names::BusName,
-    proxy::CacheProperties,
-    zvariant::ObjectPath,
-};
+use zbus::{ObjectPath, fdo::InterfacesAddedStream, names::BusName};
 
 use crate::{
     BusOp, Error, Result,
+    blocking::{
+        Arrivals, Connection, InterfaceRef, connection,
+        fdo::{DBusProxy, ObjectManagerProxy},
+    },
     interfaces::{PlayerInterface, Shared},
     service::OBJECT_PATH,
 };
@@ -60,10 +55,7 @@ impl Headsets {
             .interface::<_, PlayerInterface>(OBJECT_PATH)
             .map_err(|source| Error::bus(BusOp::Serve, source))?;
 
-        let adapters = ObjectManagerProxy::builder(&connection)
-            .destination(BLUEZ)
-            .and_then(|builder| builder.path(BLUEZ_ROOT))
-            .and_then(|builder| builder.cache_properties(CacheProperties::No).build())
+        let adapters = ObjectManagerProxy::at(&connection, BLUEZ, BLUEZ_ROOT)
             .map_err(|source| Error::bus(BusOp::Find, source))?;
         let arriving = adapters
             .receive_interfaces_added()
@@ -92,8 +84,8 @@ impl Headsets {
 
 fn register_with_every_adapter(
     connection: &Connection,
-    adapters: &ObjectManagerProxy<'_>,
-    arriving: InterfacesAddedIterator,
+    adapters: &ObjectManagerProxy,
+    arriving: Arrivals<InterfacesAddedStream>,
 ) {
     let Ok(player) = connection
         .object_server()

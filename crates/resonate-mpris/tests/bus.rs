@@ -30,13 +30,17 @@ use resonate_mpris::{
     Queueing, ROWS_A_CALL, Running, Seeking, Session,
 };
 use zbus::{
-    blocking::{Connection, Proxy, connection, fdo::DBusProxy},
+    OwnedObjectPath, OwnedVariant,
     fdo::ObjectManager,
     interface,
     message::Header,
     names::{BusName, OwnedUniqueName},
-    zvariant::{OwnedObjectPath, OwnedValue},
 };
+
+#[path = "../src/blocking.rs"]
+mod blocking;
+
+use blocking::{Connection, Proxy, connection, fdo::DBusProxy};
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -664,7 +668,7 @@ impl Harness {
         self.signals(TRACK_LIST)
     }
 
-    fn changed(&self, property: &'static str) -> Receiver<OwnedValue> {
+    fn changed(&self, property: &'static str) -> Receiver<OwnedVariant> {
         let signals = self
             .proxy(PROPERTIES)
             .receive_signal("PropertiesChanged")
@@ -676,7 +680,7 @@ impl Harness {
                 let Ok((_, mut changed, _)) =
                     message
                         .body()
-                        .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                        .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
                 else {
                     continue;
                 };
@@ -703,7 +707,7 @@ impl Harness {
                 let Ok((_, _, invalidated)) =
                     message
                         .body()
-                        .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                        .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
                 else {
                     continue;
                 };
@@ -802,9 +806,9 @@ impl Harness {
         self.status() == "Playing" && self.player.state().current.is_some()
     }
 
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    fn metadata(&self) -> HashMap<String, OwnedVariant> {
         self.proxy(PLAYER)
-            .get_property::<HashMap<String, OwnedValue>>("Metadata")
+            .get_property::<HashMap<String, OwnedVariant>>("Metadata")
             .expect("Metadata is readable")
     }
 
@@ -848,19 +852,19 @@ fn unannounced(signals: &Receiver<String>, unwanted: &str, within: Duration) {
     }
 }
 
-fn path_of(fields: &HashMap<String, OwnedValue>) -> Option<OwnedObjectPath> {
+fn path_of(fields: &HashMap<String, OwnedVariant>) -> Option<OwnedObjectPath> {
     OwnedObjectPath::try_from(fields.get("mpris:trackid")?.try_clone().ok()?).ok()
 }
 
-fn text(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn text(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     String::try_from(fields.get(key)?.try_clone().ok()?).ok()
 }
 
-fn strings(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<Vec<String>> {
+fn strings(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<Vec<String>> {
     Vec::<String>::try_from(fields.get(key)?.try_clone().ok()?).ok()
 }
 
-fn count(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<i32> {
+fn count(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<i32> {
     i32::try_from(fields.get(key)?.try_clone().ok()?).ok()
 }
 
@@ -1379,7 +1383,7 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
 
     let rows = harness.tracks();
     let described = list
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
     assert_eq!(
         described
@@ -1417,7 +1421,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
 
     let rows = harness.tracks();
     let described = list
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
     assert_eq!(described.len(), 2);
     assert_eq!(
@@ -2125,7 +2129,7 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
 
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &asked)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &asked)
         .expect("GetTracksMetadata is served");
 
     assert_eq!(
@@ -2196,7 +2200,7 @@ fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
         let value = announced
             .recv_deadline(deadline)
             .expect("the play counted under the track was never announced");
-        let fields = HashMap::<String, OwnedValue>::try_from(value)
+        let fields = HashMap::<String, OwnedVariant>::try_from(value)
             .expect("Metadata is announced as a dictionary");
         if count(&fields, "xesam:useCount") == Some(4) {
             break;
@@ -2259,7 +2263,7 @@ fn what_the_catalog_has_counted_reaches_the_bus_as_a_use_count_and_a_date() {
     let rows = harness.tracks();
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
     assert_eq!(described.len(), 3);
 
@@ -2327,7 +2331,7 @@ fn two_rows_cut_out_of_one_file_are_counted_apart() {
     let rows = harness.tracks();
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
 
     assert_eq!(count(&described[0], "xesam:useCount"), Some(7));
@@ -2418,7 +2422,7 @@ fn a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever() {
     let rows = harness.tracks();
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
 
     assert_eq!(described.len(), 1);
@@ -2470,7 +2474,7 @@ fn a_row_the_call_could_not_read_in_time_is_announced_when_its_tags_land() {
     let rows = harness.tracks();
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
 
     assert_eq!(described.len(), 1);
@@ -2486,7 +2490,7 @@ fn a_row_the_call_could_not_read_in_time_is_announced_when_its_tags_land() {
 
     let described = harness
         .proxy(TRACK_LIST)
-        .call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
     assert!(
         described[0].contains_key("mpris:length"),
@@ -2573,13 +2577,14 @@ fn an_unknown_sleep_mode_is_refused_by_name() {
         .call::<_, _, ()>(SET_SLEEP, &("tomorrow", 0_u64))
         .expect_err("a mode this build does not know is refused");
 
-    let zbus::Error::MethodError(named, said, _) = &refused else {
+    let zbus::Error::FDO(refusal) = &refused else {
         panic!("an unknown sleep mode was refused as {refused}");
     };
-    assert_eq!(named.as_str(), "org.freedesktop.DBus.Error.InvalidArgs");
+    let zbus::fdo::Error::InvalidArgs(said) = refusal.as_ref() else {
+        panic!("an unknown sleep mode was refused as {refusal}");
+    };
     assert!(
-        said.as_deref()
-            .is_some_and(|said| said.contains("tomorrow")),
+        said.contains("tomorrow"),
         "the refusal did not name the mode it was given: {said:?}"
     );
     assert_eq!(sleep_reads(&harness), ("off".to_owned(), 0));
@@ -2905,7 +2910,7 @@ impl NotificationServer {
         _summary: String,
         _body: String,
         actions: Vec<String>,
-        _hints: HashMap<String, OwnedValue>,
+        _hints: HashMap<String, OwnedVariant>,
         _timeout: i32,
     ) -> u32 {
         let _ = self.raised.send(actions);
@@ -2928,7 +2933,7 @@ struct Registered {
     sender: String,
     adapter: String,
     player: OwnedObjectPath,
-    properties: HashMap<String, OwnedValue>,
+    properties: HashMap<String, OwnedVariant>,
 }
 
 struct Adapter {
@@ -2941,7 +2946,7 @@ impl Adapter {
         &self,
         #[zbus(header)] header: Header<'_>,
         player: OwnedObjectPath,
-        properties: HashMap<String, OwnedValue>,
+        properties: HashMap<String, OwnedVariant>,
     ) {
         let _ = self.registered.send(Registered {
             sender: header.sender().map(ToString::to_string).unwrap_or_default(),
@@ -2952,7 +2957,7 @@ impl Adapter {
     }
 }
 
-fn flag(fields: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+fn flag(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<bool> {
     bool::try_from(fields.get(key)?.try_clone().ok()?).ok()
 }
 
@@ -3121,7 +3126,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
             let Ok((_, mut changed, _)) =
                 message
                     .body()
-                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                    .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
             else {
                 continue;
             };
@@ -3184,7 +3189,7 @@ fn a_queued_row_carrying_a_picture_is_described_with_a_cover_the_desktop_can_ope
     let list = harness.proxy(TRACK_LIST);
     let rows = harness.tracks();
     let described = || {
-        list.call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+        list.call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
             .expect("GetTracksMetadata is served")
     };
     harness.wait_for(

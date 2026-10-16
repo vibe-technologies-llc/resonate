@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use zbus::{
-    blocking::{Connection, Proxy},
-    zvariant::{OwnedObjectPath, Value},
-};
+use zbus::{OwnedObjectPath, Variant};
 
-use crate::{BusOp, Error, Host, Result};
+use crate::{
+    BusOp, Error, Host, Result,
+    blocking::{Connection, Proxy},
+};
 
 const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -74,8 +74,8 @@ impl Awake {
         if self.request.is_some() {
             return;
         }
-        let options: HashMap<&str, Value<'_>> =
-            HashMap::from([("reason", Value::from(self.reason.as_str()))]);
+        let options: HashMap<&str, Variant<'_>> =
+            HashMap::from([("reason", Variant::from(self.reason.as_str()))]);
         let asked = self
             .proxy
             .call::<_, _, OwnedObjectPath>("Inhibit", &(NO_WINDOW, IDLE | SUSPEND, options));

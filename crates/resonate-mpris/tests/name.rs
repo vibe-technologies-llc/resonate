@@ -12,10 +12,14 @@ use resonate_engine::{
 };
 use resonate_mpris::{Host, Mpris};
 use zbus::{
-    blocking::{Connection, Proxy, connection, fdo::DBusProxy},
     fdo::{RequestNameFlags, RequestNameReply},
     names::{BusName, WellKnownName},
 };
+
+#[path = "../src/blocking.rs"]
+mod blocking;
+
+use blocking::{Connection, Proxy, connection, fdo::DBusProxy};
 
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const ROOT: &str = "org.mpris.MediaPlayer2";
@@ -189,7 +193,7 @@ fn a_name_taken_away_is_answered_by_serving_under_an_instance_name() {
     let reply = taking
         .request_name_with_flags(
             WellKnownName::try_from(held.as_str()).expect("a well-known name"),
-            RequestNameFlags::DoNotQueue | RequestNameFlags::ReplaceExisting,
+            RequestNameFlags::DO_NOT_QUEUE | RequestNameFlags::REPLACE_EXISTING,
         )
         .expect("the bus answers a name request");
     assert_eq!(

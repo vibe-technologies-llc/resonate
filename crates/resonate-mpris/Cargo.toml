@@ -16,6 +16,7 @@ zbus.workspace = true
 
 [dev-dependencies]
 resonate-codec.workspace = true
+zbus = { workspace = true, features = ["object-manager"] }
 
 [lints]
 workspace = true

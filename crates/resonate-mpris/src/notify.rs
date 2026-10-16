@@ -10,12 +10,13 @@ use std::{
 
 use resonate_core::MediaLocation;
 use resonate_engine::{Command, TagSet};
-use zbus::{
-    blocking::{Connection, Proxy},
-    zvariant::Value,
-};
+use zbus::Variant;
 
-use crate::{BusOp, Error, Host, Result, interfaces::Shared};
+use crate::{
+    BusOp, Error, Host, Result,
+    blocking::{Connection, Proxy},
+    interfaces::Shared,
+};
 
 const SERVICE: &str = "org.freedesktop.Notifications";
 const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
@@ -134,14 +135,14 @@ impl Notifier {
         } else {
             shown.body.clone()
         };
-        let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
-        hints.insert("urgency", Value::U8(LOW_URGENCY));
-        hints.insert("transient", Value::Bool(transient));
+        let mut hints: HashMap<&str, Variant<'_>> = HashMap::new();
+        hints.insert("urgency", Variant::U8(LOW_URGENCY));
+        hints.insert("transient", Variant::Bool(transient));
         if let Some(entry) = self.entry.as_deref() {
-            hints.insert("desktop-entry", Value::from(entry));
+            hints.insert("desktop-entry", Variant::from(entry));
         }
         if let Some(art) = shown.art.as_deref() {
-            hints.insert("image-path", Value::from(art));
+            hints.insert("image-path", Variant::from(art));
         }
 
         let told = self.proxy.call::<_, _, u32>(

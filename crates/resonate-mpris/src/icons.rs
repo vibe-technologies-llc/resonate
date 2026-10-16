@@ -1,6 +1,6 @@
-use zbus::{blocking::connection, names::BusName};
+use zbus::names::BusName;
 
-use crate::{BusOp, Error, Result};
+use crate::{BusOp, Error, Result, blocking::connection};
 
 const ICON_LOADER_PATH: &str = "/KIconLoader";
 const ICON_LOADER_INTERFACE: &str = "org.kde.KIconLoader";

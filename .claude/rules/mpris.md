@@ -12,6 +12,14 @@ the client a second `resonate` reaches a first through.
 
 ## What it sees
 
+- **zbus 6 has no blocking API; `blocking.rs` is ours.** It wraps the async `Connection`, `Proxy`,
+  `ObjectServer`, `InterfaceRef`, the `fdo` proxies and their streams (`Arrivals` is the iterator)
+  over its own parking `block_on`, never `zbus::block_on`: a connection built inside zbus's runs
+  only while a thread is inside it, and handing it to a helper thread between calls lost signals
+  under load (`a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever`). Built
+  outside, every connection is run by the backend's own helper thread. The integration tests
+  include the file by `#[path]`. An error reply whose name `fdo::Error` defines (`UnknownMethod`,
+  `InvalidArgs`) reaches a caller as `zbus::Error::FDO`, not `MethodError`.
 - **Engine only via `Player`, front end only via `Host`.** No gpui or library dependency: one
   service serves `resonate play` and the window. Media keys are the desktop's to grab (it calls
   MPRIS); the window binds them only as fallback (`ui.md`). Started unconditionally; no session bus

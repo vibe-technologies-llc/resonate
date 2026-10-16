@@ -3,13 +3,13 @@ use std::{collections::HashMap, fmt, time::Duration};
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
 use resonate_engine::{Asleep, Placement, Until};
 use zbus::{
-    blocking::{Connection, Proxy, connection, fdo::DBusProxy},
+    OwnedObjectPath, OwnedVariant,
     names::{OwnedWellKnownName, WellKnownName},
-    zvariant::{OwnedObjectPath, OwnedValue},
 };
 
 use crate::{
     BusOp, Error, PlaylistInfo, PlaylistOrder, Result,
+    blocking::{Connection, Proxy, connection, fdo::DBusProxy},
     interfaces::OWN_INTERFACE,
     service::{BUS_NAME, OBJECT_PATH},
     track::{
@@ -35,7 +35,6 @@ const ADD_TRACKS: &str = "AddTracks";
 const RELOCATE: &str = "Relocate";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
-const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 const PLAYING_NEXT: &str = "PlayingNext";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
@@ -185,7 +184,7 @@ impl Running {
 
     pub fn standing(&self) -> Result<Standing> {
         let playback = self.playback()?;
-        let metadata: HashMap<String, OwnedValue> = self
+        let metadata: HashMap<String, OwnedVariant> = self
             .proxy(PLAYER)?
             .get_property(METADATA)
             .map_err(|source| Error::bus(BusOp::Read, source))?;
@@ -285,7 +284,7 @@ impl Running {
     }
 
     pub fn metadata(&self) -> Result<Option<Described>> {
-        let fields: HashMap<String, OwnedValue> = self
+        let fields: HashMap<String, OwnedVariant> = self
             .proxy(PLAYER)?
             .get_property(METADATA)
             .map_err(|source| Error::bus(BusOp::Read, source))?;
@@ -319,7 +318,7 @@ impl Running {
             return Ok(Vec::new());
         }
         let paths: Vec<OwnedObjectPath> = rows.iter().copied().map(track_path).collect();
-        let listed: Vec<HashMap<String, OwnedValue>> = self
+        let listed: Vec<HashMap<String, OwnedVariant>> = self
             .proxy(TRACK_LIST)?
             .call(GET_TRACKS_METADATA, &(paths,))
             .map_err(|source| Error::bus(BusOp::Call, source))?;
@@ -420,8 +419,8 @@ impl Running {
             let heard_now = queueing.play && nth == 0;
             match own.call::<_, _, ()>(ADD_TRACKS, &(chunk, &after, heard_now)) {
                 Ok(()) => landed += chunk.len(),
-                Err(zbus::Error::MethodError(name, ..))
-                    if landed == 0 && name.as_str() == UNKNOWN_METHOD =>
+                Err(zbus::Error::FDO(refused))
+                    if landed == 0 && matches!(*refused, zbus::fdo::Error::UnknownMethod(_)) =>
                 {
                     return self.queued_one_by_one(rows, &after, queueing.play);
                 }
@@ -494,7 +493,7 @@ impl Running {
     }
 
     fn playing(&self, tracks: &[OwnedObjectPath]) -> Result<Option<usize>> {
-        let metadata: HashMap<String, OwnedValue> = self
+        let metadata: HashMap<String, OwnedVariant> = self
             .proxy(PLAYER)?
             .get_property(METADATA)
             .map_err(|source| Error::bus(BusOp::Read, source))?;
@@ -550,7 +549,7 @@ fn ours(connection: &Connection) -> Result<Vec<WellKnownName<'static>>> {
     ours.into_iter()
         .map(|name| {
             WellKnownName::try_from(name.to_owned())
-                .map_err(|source| Error::bus(BusOp::Find, source.into()))
+                .map_err(|source| Error::bus(BusOp::Find, source))
         })
         .collect()
 }
@@ -585,7 +584,7 @@ fn span_of(micros: i64) -> Duration {
     Duration::from_micros(micros.max(0).unsigned_abs())
 }
 
-fn described(fields: &HashMap<String, OwnedValue>) -> Option<Described> {
+fn described(fields: &HashMap<String, OwnedVariant>) -> Option<Described> {
     let path = fields
         .get(TRACK_ID)
         .and_then(|value| OwnedObjectPath::try_from(value.clone()).ok())?;
@@ -610,17 +609,17 @@ fn described(fields: &HashMap<String, OwnedValue>) -> Option<Described> {
     })
 }
 
-fn length(fields: &HashMap<String, OwnedValue>) -> Option<Duration> {
+fn length(fields: &HashMap<String, OwnedVariant>) -> Option<Duration> {
     let micros = i64::try_from(fields.get(LENGTH)?.clone()).ok()?;
 
     Some(span_of(micros))
 }
 
-fn text(metadata: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn text(metadata: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     String::try_from(metadata.get(key)?.clone()).ok()
 }
 
-fn first(metadata: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn first(metadata: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     Vec::<String>::try_from(metadata.get(key)?.clone())
         .ok()?
         .into_iter()

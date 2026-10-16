@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use zbus::{
-    blocking::{Connection, connection},
-    zvariant::OwnedValue,
-};
+use zbus::OwnedVariant;
 
-use crate::{BusOp, Error, Result};
+use crate::{
+    BusOp, Error, Result,
+    blocking::{Connection, connection},
+};
 
 const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -68,7 +68,7 @@ fn asked() -> Result<Blinking> {
         .map_or(Blinking::Unsaid, Blinking::of_a_cycle))
 }
 
-fn read(connection: &Connection, namespace: &str, key: &str) -> Option<OwnedValue> {
+fn read(connection: &Connection, namespace: &str, key: &str) -> Option<OwnedVariant> {
     connection
         .call_method(
             Some(PORTAL),
@@ -77,14 +77,14 @@ fn read(connection: &Connection, namespace: &str, key: &str) -> Option<OwnedValu
             READ_ONE,
             &(namespace, key),
         )
-        .and_then(|reply| reply.body().deserialize::<OwnedValue>())
+        .and_then(|reply| reply.body().deserialize::<OwnedVariant>())
         .map_err(|error| {
             tracing::debug!(%error, namespace, key, "the desktop did not answer for a setting");
         })
         .ok()
 }
 
-fn whole_millis(value: OwnedValue) -> Option<u64> {
+fn whole_millis(value: OwnedVariant) -> Option<u64> {
     if let Ok(millis) = i32::try_from(&value) {
         return u64::try_from(millis).ok();
     }
@@ -111,14 +111,12 @@ mod tests {
 
     #[test]
     fn a_rate_is_read_whichever_way_the_desktop_types_it() {
-        assert_eq!(whole_millis(OwnedValue::from(1_000_i32)), Some(1_000));
-        assert_eq!(whole_millis(OwnedValue::from(1_000_u32)), Some(1_000));
+        assert_eq!(whole_millis(OwnedVariant::from(1_000_i32)), Some(1_000));
+        assert_eq!(whole_millis(OwnedVariant::from(1_000_u32)), Some(1_000));
         assert_eq!(
-            whole_millis(
-                OwnedValue::try_from(zbus::zvariant::Value::from("1000")).expect("a string")
-            ),
+            whole_millis(OwnedVariant::try_from(zbus::Variant::from("1000")).expect("a string")),
             Some(1_000)
         );
-        assert_eq!(whole_millis(OwnedValue::from(-1_i32)), None);
+        assert_eq!(whole_millis(OwnedVariant::from(-1_i32)), None);
     }
 }

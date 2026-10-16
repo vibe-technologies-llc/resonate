@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use resonate_core::PlaylistId;
-use zbus::{
-    fdo, interface,
-    object_server::SignalEmitter,
-    zvariant::{ObjectPath, OwnedObjectPath},
-};
+use zbus::{ObjectPath, OwnedObjectPath, fdo, interface, object_server::SignalEmitter};
 
 use crate::{
     Opened, PlaylistInfo, PlaylistOrder,

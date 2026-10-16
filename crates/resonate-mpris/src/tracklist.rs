@@ -8,9 +8,7 @@ use ahash::AHashMap;
 use resonate_core::TrackId;
 use resonate_engine::{Command, Placement, QueueItem, Span, unclaimed_id};
 use zbus::{
-    fdo, interface,
-    object_server::SignalEmitter,
-    zvariant::{ObjectPath, OwnedObjectPath, OwnedValue},
+    ObjectPath, OwnedObjectPath, OwnedVariant, fdo, interface, object_server::SignalEmitter,
 };
 
 use crate::{
@@ -155,7 +153,7 @@ impl TrackList {
     fn get_tracks_metadata(
         &self,
         track_ids: Vec<OwnedObjectPath>,
-    ) -> Vec<HashMap<String, OwnedValue>> {
+    ) -> Vec<HashMap<String, OwnedVariant>> {
         let queue = self.shared.player.queue();
         let state = self.shared.player.state();
         let digest = self.shared.player.digest();
@@ -254,7 +252,7 @@ impl TrackList {
     #[zbus(signal)]
     pub(crate) async fn track_added(
         emitter: &SignalEmitter<'_>,
-        metadata: HashMap<String, OwnedValue>,
+        metadata: HashMap<String, OwnedVariant>,
         after_track: OwnedObjectPath,
     ) -> zbus::Result<()>;
 
@@ -268,7 +266,7 @@ impl TrackList {
     pub(crate) async fn track_metadata_changed(
         emitter: &SignalEmitter<'_>,
         track_id: OwnedObjectPath,
-        metadata: HashMap<String, OwnedValue>,
+        metadata: HashMap<String, OwnedVariant>,
     ) -> zbus::Result<()>;
 }
 
