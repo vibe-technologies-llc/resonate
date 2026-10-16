@@ -192,6 +192,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .task { await PlayerWarmup.warm() }
         .tint(AppearanceState.shared.tint)
         .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
         .safeAreaInset(edge: .top) { StatusBanner() }

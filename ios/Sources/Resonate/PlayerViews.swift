@@ -47,9 +47,6 @@ struct MiniPlayer: View {
             } else {
                 Spacer(minLength: 0)
             }
-            if let track, expanded {
-                FavouriteButton(track: track)
-            }
             if expanded {
                 Button("Previous", systemImage: "backward.fill") { skip(forward: false) }
                     .labelStyle(.iconOnly)
@@ -971,6 +968,20 @@ struct PlayerMoreMenu: View {
                 }
             }
         }
+    }
+}
+
+@MainActor
+enum PlayerWarmup {
+    private static let afterLaunch: Duration = .seconds(2)
+
+    static func warm() async {
+        try? await Task.sleep(for: afterLaunch)
+        guard !Task.isCancelled else { return }
+        let picker = AVRoutePickerView()
+        picker.prioritizesVideoDevices = false
+        let warmed: [UIView] = [picker, MPVolumeView(frame: .zero)]
+        for view in warmed { view.layoutIfNeeded() }
     }
 }
 

@@ -312,7 +312,11 @@ and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and 
 field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
 skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
-since the system fixes the accessory's height, and a ring around the play button was dropped). Inline (the
+since the system fixes the accessory's height, and a ring around the play button was dropped) and no
+heart (the song's heart is Now Playing's). Opening Now Playing the first time in a launch built an
+`AVRoutePickerView` and, 600 ms in, an `MPVolumeView`, each the first of its framework, so
+`PlayerWarmup` builds one of each 2 s after launch and drops them, and the first opening costs no
+more than the next. Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
 button always, the title from 150 pt, next from 200 pt (a minimised capsule beside the search
 button is about 220 pt, and without next the title trailed into empty glass), tighter spacing and a
