@@ -82,6 +82,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] Rust caps what a phone hands it unevenly: `keep_sidecar_lyrics`, `keep_lyric_text` and
   `recognise_heard` take any size where `import_playlist_file`, `keep_folder_cover` and
   `keep_room_correction` refuse past a bound (both phones cap at the source today)
+- [S] `snapshot` drains `Event::Waiting` (the output stopped, playback goes on once a device is
+  back) without telling it, so a phone whose route vanished shows a stalled player and no reason,
+  where the desktop says there is no device to play through
 
 ## Android
 - [S] `RustMediaPlayer`'s available commands omit `COMMAND_RELEASE`, so `SimpleBasePlayer.release()`

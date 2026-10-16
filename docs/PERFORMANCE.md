@@ -42,11 +42,18 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S] The Oboe stream asks `PerformanceMode::LowLatency` with no `ContentType::Music`, and its
   output thread wakes every 10 ms (`calculate_latency_millis` included) while a stream is open,
   paused too; iOS sleeps until a command or a moved latency
+- [S] The Downloads (MediaStore) branch of `LibraryRepository.scanFolder` still calls
+  `indexDocument` for every audio row, so a rescan of Downloads probes and rewrites them all;
+  `MusicDocuments.downloadedAudio` could carry `SIZE` and `DATE_MODIFIED` into `scanDocument`
 
 ## iOS
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
   to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
   needs the counting moved first
+- [S] The lyric pane asks `lyric_frame` for every display frame (a lock, a lookup and a record
+  with its wipes lowered across the boundary on a serial queue, then a hop to the main actor), and
+  the frame it draws is one to two frames old; a line-synced sheet needs only the next change time
+  and a word-synced one the word times, which Swift could hold and interpolate per frame
 
 ## Performance and scale
 - [M] Every track open opens its source twice, once more for the inspector's box layout
