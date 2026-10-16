@@ -24,6 +24,8 @@ are build prerequisites. Host binding generation reads ELF metadata and needs no
 The Flutter Gradle plugin uses the legacy AGP DSL, built-in Kotlin and KGP 2.2.20 on the plugin
 classpath. Flutter's automatic ABI filtering is disabled so the host's ARM64/x86_64 filters stay
 authoritative; an ARM32 Flutter engine without its Rust library must not admit an ARM32 install.
+Impeller is disabled in the manifest so the mature Skia OpenGL pipeline renders consistently
+without experimental OpenGLES fallback on devices lacking Vulkan.
 `MainActivity` is a `FlutterActivity`. `FlutterBridge` exposes explicit method-channel actions
 and state-flow patches; `FlutterWire` maps records to codec values without reflection. Unsigned
 64-bit identities, positions and revisions travel as decimal text. The bridge qualifies
@@ -58,6 +60,8 @@ The native boundary is `resonate-mobile`, shared with iOS (`mobile.md`). On Andr
 descriptor arrives detached from Kotlin's `ParcelFileDescriptor`. Kotlin bindings are generated
 under `app/build/`, never checked in or edited; only the foreign presentation flattens error
 display text for Kotlin.
+Core validation failures retain their specific error text across this boundary so a settings
+banner can name the rejected value instead of reporting a generic domain failure.
 
 Handwritten Kotlin, Android tests and Gradle Kotlin scripts use ktfmt's Kotlin language style:
 four-space indentation, wrapped calls, trailing commas and one statement per line. Generated
@@ -91,8 +95,9 @@ separate workers without holding the controller lock; request generations refuse
 
 Oboe opens a shared stereo float stream at 48 kHz; the existing Rust engine converts into it.
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
-rebinding; system default is id zero. The pane distinguishes a requested route from the actual
-opened device. Android owns the physical route, and this is no promise of a DAC's rate or
+rebinding; system default is id zero. Device type distinguishes outputs that share a product name.
+The pane shows the actual route in a status card and names a different requested route when one
+is pending. Android owns the physical route, and this is no promise of a DAC's rate or
 bit-perfect delivery. Buffer length is validated from 50 to 2000 ms at the native boundary.
 DoP, exclusive output and per-device format enumeration are not offered by this backend yet.
 The native callback is `output/oboe_render.rs`, under the realtime lint set: preallocated bytes only,
@@ -182,7 +187,10 @@ installation, and native code currently needs no newer platform symbols.
 Settings use searchable groups for sound/playback, library sources and connected services.
 The online switch lives there; the equaliser and processing have separate pages, and profile
 import expands on request. Child-page Back restores its parent and settings search, including
-after Activity recreation. Library tools use a separate grouped page. The floating mini-player
+after Activity recreation. Library tools use a separate grouped page with compact rows in one
+surface and no duplicate toolbar inset. Folder source cards retain space between them. Processing
+choices and provider selection use rounded, themed menus with compact option rows. Popup menus
+use that surface and corner shape below their trigger. The floating mini-player
 shows cover, title, artist, previous/play/next controls and a favourite heart in a floating pill
 above navigation, with ambient tones matching the album. Its transport targets remain accessible
 touch targets, and accessibility semantics retain the song progress node.
@@ -195,39 +203,50 @@ native library search (songs, albums and artists) and online results; recent que
 Songs without an active search or filter use the full catalog already held by the repository,
 so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
 Queue separates history, the playing row and Up next, and saves its current order through the
-existing playlist seam. Library pins Favourites above playlists,
-albums and artists, with collection search and category chips. Favourites and collection counts
+existing playlist seam. Available device handoffs appear as one Queue entry; opening it lists the
+devices and resumes the selected queue through its original handoff index. Library pins Favourites
+above playlists, albums and artists, with collection search and category chips. Favourites and collection counts
 read the full catalog separately from the song browser's search and filters. A completed favourite
 write updates catalog, browser, queue, snapshot and open playlist state together, then refreshes
 the active browser query. The native catalog remains the persisted source of truth. Liking a song
-presents a non-blocking floating banner with an "Add to playlist" button that opens the playlist
-picker without obstructing navigation or accessibility. Playlist naming fields own their text
-controllers through `TextFormField`, including Save queue as playlist: a dialog's result arrives before its exit animation removes
+presents a compact floating banner in the current app theme, keeping its "Add to playlist" button
+beside the message at phone widths. The button opens the playlist picker without obstructing
+navigation or accessibility. The banner fades out after four seconds even with its action button.
+Playlist naming fields own their text controllers through `TextFormField`, including Save queue as
+playlist: a dialog's result arrives before its exit animation removes
 the field, so disposing a caller-owned controller on that result leaves a live field using a
 disposed controller and causes widget-tree teardown assertions. Creation and rename keep the
 same native calls; cancellation never writes.
 
 
-The shell's top edge and bottom navigation use mirrored progressive backdrop blur, strongest
-at the system bars and fading into the scrolling content. Sixteen disjoint clipped backdrop
-bands increase Gaussian sigma toward the edge; a shader mask around a backdrop filter isolates
-it in an empty layer and cannot blur the underlying screen. The library scrolls beneath the status
-bar. Collection backgrounds enclose the whole scaffold, including the transparent toolbar; the
-cover and rows scroll beneath its fading blur rather than meeting a separate opaque header.
-Settings details use that same continuous artwork background and fading toolbar. Their scrolling
-content includes the system and toolbar insets at the start, so controls begin below the title
-and pass beneath the blur as they scroll. Fixed search controls retain those insets outside the
-results viewport.
+The shell's top edge and bottom navigation use mirrored progressive translucent tints, strongest
+at the system bars and fading into the scrolling content. Rounded controls use opaque surfaces
+without live backdrop filters. The library scrolls beneath the status bar. Collection backgrounds
+enclose the whole scaffold, including the transparent toolbar; the cover and rows scroll beneath
+its fading tint rather than meeting a separate opaque header. Settings details use that same
+continuous color background and fading toolbar. Their scrolling content includes the system and
+toolbar insets at the start, so controls begin below the title and pass beneath the tint as they
+scroll. Fixed search controls retain those insets outside the results viewport. Songs fades its
+cover tint through a fixed-height easing tail to the base surface by the first rows, leaving the
+rest of the list a quiet background. On a W-P311 with PowerVR GE8320, live backdrop filters made
+scrolling miss multiple display periods; the tint and
+one color gradient keep sustained Songs scrolling near the 60 Hz display period.
 
 Settings use neutral surfaces with the same text roles and geometry as the library: 24-pixel
-page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork keeps a quarter
-of the radial wash and three tenths of the image opacity, without decorative drift, so bright
-covers cannot compete with labels. Cards have opaque neutral surfaces; secondary text retains
-its own contrasting color. Root headings align with their actions and omit decorative captions.
-The mini-player keeps 40-pixel artwork and 48-pixel touch targets; navigation is 64 pixels high,
-or 72 for large text. Narrow widths and large text show only the selected navigation label.
-Scrolling lists take their bottom inset from the scaffold rather than reserving a fixed 180
-pixels, keeping the final row clear without leaving an empty tail.
+page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork uses a quarter
+of the album color strength, so bright covers cannot compete with labels. Cards have opaque
+neutral surfaces; secondary text retains its own contrasting color. Root headings align with
+their actions and omit decorative captions.
+The mini-player keeps 40-pixel artwork and 48-pixel touch targets; standard navigation is 80
+pixels high. When five tabs leave less than 80 pixels each or text is enlarged, compact navigation
+is 72 pixels high, shows only the selected label, and gives its pill eight pixels of space above
+and on both sides within its tab. Inactive icons center in the full tab height. A fixed internal
+layout keeps these gaps equal as display scale changes; the Material bar's fixed-width pill spills
+into neighboring tabs and centers variable
+label heights differently.
+Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
+push the page heading down. Scrolling lists take their bottom inset from the scaffold rather than
+reserving a fixed 180 pixels, keeping the final row clear without leaving an empty tail.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
 keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
@@ -239,21 +258,29 @@ of visible track numbers, so rows with thumbnails still identify repeated songs 
 
 The expanded player is a transparent route that keeps its parent painted. One panel animation
 owns entrance, dismissal and drag cancellation; sliding, scale, corner rounding and progressive
-backdrop blur share its progress. The exposed parent remains visible through a light tint, and
-blur clears as dismissal completes, preventing a black gap or a second route exit animation.
+edge tint share its progress. The exposed parent remains visible through a light tint, and
+the tint fades as dismissal completes, preventing a black gap or a second route exit animation.
 
-Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions and
-stops decorative drift. Artwork is loaded through the existing native cache as JPEG bytes,
+Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions. Root
+tabs stay mounted in an `IndexedStack`, so scroll position, song filters, settings search and
+search text survive switching; the incoming tab fades in with a slow diagonal drift while
+the outgoing tab hides at once, keeping one heavy list alive through the switch. Pushed pages fade
+with a short trailing-edge slide over a static parent, keeping the system predictive-back gesture;
+the compact tab keeps one fixed layout where the pill fades, the icon glides between the pill and
+the tab center, and the label swaps instantly with no opacity or transform of its own, so text
+never renders mid-animation. Artwork
+is loaded through the existing native cache as JPEG bytes,
 keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
 on updates; comparing two references to the mutable model misses a newly published generation.
 The decoded Flutter cache is bounded at 64 MiB and encoded/in-flight requests at 48 entries.
-The expanded player samples two tones
-from a 16 by 16 cover decode, falls back for neutral/dark/transparent art and draws radial washes
-inside a repaint boundary. The shell and expanded player place a 128-pixel cover decode behind
-glass surfaces; the expanded player uses a stronger wash. Blur sits inside a repaint boundary
-while transforms drift, and decorative movement stops when paused, offstage or reduced
-motion is requested. Paused artwork settles smaller. Artwork, lyrics, queue and the sleep timer
-share one glass pill; narrow widths and large text use icon-only buttons with named tooltips.
+The expanded player samples two tones from a 16 by 16 cover decode and falls back for
+neutral/dark/transparent art. The shell and expanded player paint one static color gradient,
+stronger in the expanded player, and animate it only when the artwork changes. Continuous drift
+and full-screen blurred cover layers made playback scrolling miss the frame budget on the W-P311.
+Position-only snapshots update the progress controls without notifying the whole screen every
+250 ms; transport, metadata and queue changes still notify it. Artwork, lyrics, queue and the
+sleep timer share one opaque pill; narrow widths and large text use icon-only buttons with named
+tooltips.
 Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
 hits: creating a cover while switching player modes must not rebuild its parent during build.
 The compact lyrics/queue layout keeps a bounded reading viewport and scrolls as a whole when
@@ -267,12 +294,14 @@ open collection rows resolve current metadata by catalog id so favourite changes
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
-Android routes; no UI implies a per-device binding. Android edits it through ten octave sliders
-(31.25 Hz to 16 kHz, Q sqrt(2), via `ten_band_curve`/`ten_band_gains`) and the preamp: a curve of
-any other layout (AutoEq, an import) plays and is kept, its sliders read flat, and moving one
-replaces it with ten bands. Preamp and gains remain independent of the enable switch; reset
-removes every band without changing that switch. The native boundary validates the whole curve
-before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
+Android routes; no UI implies a per-device binding. Android edits it on an interactive graph (tap
+to add, drag to move, per-band type, frequency, gain and Q) with the preamp: an AutoEq or imported
+profile loads as its bands, ready to adjust. Ten octave bands (31.25 Hz to 16 kHz, Q sqrt(2), via
+`ten_band_curve`/`ten_band_gains`) are a reset layout and the migration, not the editor. Preamp and
+bands remain independent of the enable switch; reset removes every band, or starts from ten flat
+bands, without changing that switch. The drawn response is the stage's arithmetic at the stream
+rate (48 kHz with nothing open, so the graph never reads empty); the native boundary validates the
+whole curve before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
 prevention, resampling quality/phase and experimental lossy restoration use existing engine
 commands, never a platform equaliser running beside the Rust chain.
 

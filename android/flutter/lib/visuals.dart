@@ -37,6 +37,68 @@ Duration motion(BuildContext context, [int milliseconds = 350]) =>
     ? Duration.zero
     : Duration(milliseconds: milliseconds);
 
+class ResonatePageTransitionsBuilder extends PageTransitionsBuilder {
+  const ResonatePageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 400);
+
+  @override
+  Duration get reverseTransitionDuration =>
+      const Duration(milliseconds: 350);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (route.popGestureInProgress) {
+      return const PredictiveBackPageTransitionsBuilder().buildTransitions(
+        route,
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
+    }
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return child;
+    }
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final slide =
+        Tween<Offset>(
+          begin: Offset(rtl ? -0.08 : 0.08, 0),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic));
+    final fade = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).chain(CurveTween(curve: Curves.easeOutCubic));
+    return FadeTransition(
+      opacity: fade.animate(animation),
+      child: SlideTransition(position: slide.animate(animation), child: child),
+    );
+  }
+}
+
+MenuStyle selectionMenuStyle(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  return MenuStyle(
+    backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+    elevation: const WidgetStatePropertyAll(3),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+  );
+}
+
 class Glass extends StatelessWidget {
   const Glass({
     super.key,
@@ -50,82 +112,25 @@ class Glass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainer
-                .withValues(alpha: dark ? .78 : .88),
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant
-                  .withValues(alpha: .6),
-            ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: .6),
           ),
-          child: Padding(padding: padding, child: child),
         ),
+        child: Padding(padding: padding, child: child),
       ),
     );
   }
 }
 
-class EdgeFade extends StatelessWidget {
-  const EdgeFade({
-    super.key,
-    required this.child,
-    this.top = true,
-    this.bottom = false,
-    this.topExtent = 28,
-    this.bottomExtent = 28,
-  });
-  final Widget child;
-  final bool top;
-  final bool bottom;
-  final double topExtent;
-  final double bottomExtent;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!top && !bottom) return child;
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) {
-        final colors = <Color>[];
-        final stops = <double>[];
-        if (top && bounds.height > topExtent) {
-          final topFraction = (topExtent / bounds.height).clamp(0.0, 0.5);
-          colors.addAll([Colors.transparent, Colors.white]);
-          stops.addAll([0.0, topFraction]);
-        } else {
-          colors.add(Colors.white);
-          stops.add(0.0);
-        }
-        if (bottom && bounds.height > bottomExtent) {
-          final bottomFraction =
-              1.0 - (bottomExtent / bounds.height).clamp(0.0, 0.5);
-          colors.addAll([Colors.white, Colors.transparent]);
-          stops.addAll([bottomFraction, 1.0]);
-        } else {
-          colors.add(Colors.white);
-          stops.add(1.0);
-        }
-        return LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: colors,
-          stops: stops,
-        ).createShader(bounds);
-      },
-      child: child,
-    );
-  }
-}
-
-class ProgressiveBlurBackdrop extends StatelessWidget {
-  const ProgressiveBlurBackdrop({
+class EdgeTint extends StatelessWidget {
+  const EdgeTint({
     super.key,
     required this.child,
     this.top = false,
@@ -138,42 +143,6 @@ class ProgressiveBlurBackdrop extends StatelessWidget {
   final double strength;
   final double tintStrength;
 
-  Widget _blurBands() => Positioned.fill(
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        const bands = 16;
-        final height = constraints.maxHeight / bands;
-        return Stack(
-          children: [
-            for (var index = 0; index < bands; index++)
-              Positioned(
-                top: height * index,
-                left: 0,
-                right: 0,
-                height: height,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    enabled: strength > 0,
-                    filter: ui.ImageFilter.blur(
-                      sigmaX: _sigma(index, bands),
-                      sigmaY: _sigma(index, bands),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    ),
-  );
-
-  double _sigma(int index, int bands) {
-    final fraction = (index + .5) / bands;
-    final distance = top ? 1 - fraction : fraction;
-    return 26 * strength * distance * distance;
-  }
-
   @override
   Widget build(BuildContext context) {
     final tint = Theme.of(context).scaffoldBackgroundColor;
@@ -181,38 +150,21 @@ class ProgressiveBlurBackdrop extends StatelessWidget {
       children: [
         Positioned.fill(
           child: IgnorePointer(
-            child: Stack(
-              children: [
-                _blurBands(),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: top
-                            ? Alignment.bottomCenter
-                            : Alignment.topCenter,
-                        end: top ? Alignment.topCenter : Alignment.bottomCenter,
-                        stops: const [0.0, 0.28, 0.60, 0.88, 1.0],
-                        colors: [
-                          Colors.transparent,
-                          tint.withValues(
-                            alpha: 0.04 * strength * tintStrength,
-                          ),
-                          tint.withValues(
-                            alpha: 0.22 * strength * tintStrength,
-                          ),
-                          tint.withValues(
-                            alpha: 0.65 * strength * tintStrength,
-                          ),
-                          tint.withValues(
-                            alpha: 0.90 * strength * tintStrength,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: top ? Alignment.bottomCenter : Alignment.topCenter,
+                  end: top ? Alignment.topCenter : Alignment.bottomCenter,
+                  stops: const [0.0, 0.28, 0.60, 0.88, 1.0],
+                  colors: [
+                    Colors.transparent,
+                    tint.withValues(alpha: 0.04 * strength * tintStrength),
+                    tint.withValues(alpha: 0.22 * strength * tintStrength),
+                    tint.withValues(alpha: 0.65 * strength * tintStrength),
+                    tint.withValues(alpha: 0.90 * strength * tintStrength),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -432,6 +384,7 @@ class ArtworkAtmosphere extends StatefulWidget {
     this.colors,
     this.immersive = false,
     this.subdued = false,
+    this.shortFade = false,
   });
   final PlayerModel model;
   final RowData track;
@@ -439,13 +392,13 @@ class ArtworkAtmosphere extends StatefulWidget {
   final List<Color>? colors;
   final bool immersive;
   final bool subdued;
+  final bool shortFade;
 
   @override
   State<ArtworkAtmosphere> createState() => _ArtworkAtmosphereState();
 }
 
 class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
-  Uint8List? _artwork;
   List<Color> _extractedColors = const [accent, mint];
   String _key = '';
 
@@ -468,7 +421,6 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
     _key = key;
     if (widget.track.isEmpty) {
       setState(() {
-        _artwork = null;
         _extractedColors = const [accent, mint];
       });
       return;
@@ -476,19 +428,12 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
     if (_artworkColorsCache.containsKey(key)) {
       _extractedColors = _artworkColorsCache[key]!;
     }
-    if (_artworkBytesCache.containsKey(key)) {
-      _artwork = _artworkBytesCache[key];
-    }
     widget.model
         .artwork(widget.track)
         .then((bytes) async {
-          if (bytes != null) {
-            _artworkBytesCache[key] = bytes;
-          }
           if (!mounted || _key != key) return;
           if (bytes == null) {
             setState(() {
-              _artwork = null;
               _extractedColors = const [accent, mint];
             });
             return;
@@ -496,7 +441,6 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
           final colors = await extractArtworkColors(bytes, key);
           if (!mounted || _key != key) return;
           setState(() {
-            _artwork = bytes;
             _extractedColors = colors;
           });
         })
@@ -507,207 +451,98 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
   Widget build(BuildContext context) {
     final activeColors = widget.colors ?? _extractedColors;
     return Ambient(
-      animated: widget.model.playing && !widget.subdued,
       colors: activeColors,
-      artwork: _artwork,
       immersive: widget.immersive,
       subdued: widget.subdued,
+      shortFade: widget.shortFade,
       child: widget.child,
     );
   }
 }
 
-class Ambient extends StatefulWidget {
+class Ambient extends StatelessWidget {
   const Ambient({
     super.key,
     required this.child,
     this.colors = const [accent, mint],
-    this.animated = false,
-    this.artwork,
     this.immersive = false,
     this.subdued = false,
+    this.shortFade = false,
   });
-  final Uint8List? artwork;
   final bool immersive;
   final bool subdued;
+  final bool shortFade;
   final Widget child;
   final List<Color> colors;
-  final bool animated;
-  @override
-  State<Ambient> createState() => _AmbientState();
-}
-
-class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
-  late final AnimationController _drift = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 22),
-  );
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _update();
-  }
-
-  @override
-  void didUpdateWidget(Ambient oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _update();
-  }
-
-  void _update() {
-    if (widget.animated &&
-        !MediaQuery.disableAnimationsOf(context) &&
-        TickerMode.valuesOf(context).enabled) {
-      if (!_drift.isAnimating) _drift.repeat(reverse: true);
-    } else {
-      _drift.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _drift.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = Theme.of(context).scaffoldBackgroundColor;
+    final strength = (immersive ? .38 : .22) * (subdued ? .25 : 1);
     return Stack(
       fit: StackFit.expand,
       children: [
-        ColoredBox(color: Theme.of(context).scaffoldBackgroundColor),
-        RepaintBoundary(
-          child: TweenAnimationBuilder<Color?>(
-            tween: ColorTween(end: widget.colors.first),
+        ColoredBox(color: surface, child: const SizedBox.expand()),
+        TweenAnimationBuilder<Color?>(
+          tween: ColorTween(end: colors.first),
+          duration: motion(context, 750),
+          builder: (context, color1, _) => TweenAnimationBuilder<Color?>(
+            tween: ColorTween(
+              end: colors.length > 1 ? colors[1] : colors.first,
+            ),
             duration: motion(context, 750),
-            builder: (context, color1, _) => TweenAnimationBuilder<Color?>(
-              tween: ColorTween(
-                end: widget.colors.length > 1
-                    ? widget.colors[1]
-                    : widget.colors.first,
-              ),
-              duration: motion(context, 750),
-              builder: (context, color2, _) => CustomPaint(
-                painter: _AmbientPainter(
-                  _drift,
-                  color1 ?? accent,
-                  color2 ?? mint,
-                  dark,
-                  widget.subdued ? .25 : 1,
+            builder: (context, color2, _) {
+              final first = Color.alphaBlend(
+                (color1 ?? accent).withValues(
+                  alpha: strength * (dark ? 1 : .85),
                 ),
-              ),
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: AnimatedSwitcher(
-            duration: motion(context, 650),
-            layoutBuilder: (currentChild, previousChildren) => Stack(
-              fit: StackFit.expand,
-              children: [...previousChildren, ?currentChild],
-            ),
-            child: widget.artwork != null
-                ? ClipRect(
-                    key: ValueKey(identityHashCode(widget.artwork)),
-                    child: AnimatedBuilder(
-                      animation: _drift,
-                      child: RepaintBoundary(
-                        child: Opacity(
-                          opacity:
-                              (widget.immersive
-                                  ? (dark ? .58 : .38)
-                                  : (dark ? .22 : .15)) *
-                              (widget.subdued ? .3 : 1),
-                          child: ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(
-                              sigmaX: 32,
-                              sigmaY: 32,
-                            ),
-                            child: Image.memory(
-                              widget.artwork!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                              cacheWidth: 128,
-                              gaplessPlayback: true,
-                              excludeFromSemantics: true,
-                            ),
-                          ),
-                        ),
+                surface,
+              );
+              final second = Color.alphaBlend(
+                (color2 ?? mint).withValues(alpha: strength),
+                surface,
+              );
+              final tinted = DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: shortFade ? Alignment.topCenter : Alignment.topLeft,
+                    end: shortFade
+                        ? Alignment.bottomCenter
+                        : Alignment.bottomRight,
+                    stops: shortFade
+                        ? const [0, .14, .35, .58, .8, 1]
+                        : const [0, .55, 1],
+                    colors: shortFade
+                        ? [
+                            first,
+                            second,
+                            Color.lerp(second, surface, .55)!,
+                            Color.lerp(second, surface, .85)!,
+                            surface,
+                            surface,
+                          ]
+                        : [first, second, surface],
+                  ),
+                ),
+              );
+              return shortFade
+                  ? Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 220,
+                        child: tinted,
                       ),
-                      builder: (context, child) => Transform.translate(
-                        offset: Offset(
-                          24 * math.sin(_drift.value * math.pi * 2),
-                          32 * math.cos(_drift.value * math.pi * 2),
-                        ),
-                        child: Transform.rotate(
-                          angle: (_drift.value - .5) * .16,
-                          child: Transform.scale(scale: 1.4, child: child),
-                        ),
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(key: ValueKey('empty')),
+                    )
+                  : tinted;
+            },
           ),
         ),
-        IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Theme.of(context).scaffoldBackgroundColor
-                      .withValues(alpha: .55),
-                ],
-              ),
-            ),
-          ),
-        ),
-        widget.child,
+        child,
       ],
     );
   }
-}
-
-class _AmbientPainter extends CustomPainter {
-  _AmbientPainter(this.drift, this.first, this.second, this.dark, this.strength)
-    : super(repaint: drift);
-  final Animation<double> drift;
-  final Color first, second;
-  final bool dark;
-  final double strength;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final t = drift.value;
-    final points = [
-      Offset(size.width * (.15 + t * .3), size.height * (.08 + t * .13)),
-      Offset(size.width * (.95 - t * .25), size.height * (.54 - t * .12)),
-    ];
-    for (var i = 0; i < 2; i++) {
-      final radius = size.longestSide * .63;
-      canvas.drawCircle(
-        points[i],
-        radius,
-        Paint()
-          ..shader = ui.Gradient.radial(points[i], radius, [
-            (i == 0 ? first : second).withValues(
-              alpha: (dark ? .24 : .16) * strength,
-            ),
-            Colors.transparent,
-          ]),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_AmbientPainter old) =>
-      first != old.first ||
-      second != old.second ||
-      dark != old.dark ||
-      strength != old.strength;
 }
 
 class ActionIcon extends StatelessWidget {

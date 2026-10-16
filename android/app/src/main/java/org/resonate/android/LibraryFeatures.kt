@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioDeviceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -59,10 +60,32 @@ import org.resonate.android.nativecore.syncNewCode
 data class AudioOutput(
     val id: Int,
     val name: String,
+    val kind: String,
     val rates: List<Int>,
     val channels: List<Int>,
     val encodings: List<Int>,
 )
+
+private fun outputKind(type: Int): String =
+    when (type) {
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "Built-in speaker"
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Wired headphones"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headset"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_SPEAKER,
+        AudioDeviceInfo.TYPE_BLE_BROADCAST -> "Bluetooth audio"
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB audio"
+        AudioDeviceInfo.TYPE_HDMI,
+        AudioDeviceInfo.TYPE_HDMI_ARC,
+        AudioDeviceInfo.TYPE_HDMI_EARC -> "HDMI audio"
+        else -> "Audio device"
+    }
 
 data class MusicFolder(val uri: Uri, val name: String, val readable: Boolean, val writable: Boolean)
 
@@ -949,6 +972,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     AudioOutput(
                         device.id,
                         device.productName.toString(),
+                        outputKind(device.type),
                         device.sampleRates.toList(),
                         device.channelCounts.toList(),
                         device.encodings.toList(),

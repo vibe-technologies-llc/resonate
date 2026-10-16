@@ -471,6 +471,7 @@ internal fun flutterValue(value: Any?): Any? =
             mapOf(
                 "id" to value.id,
                 "name" to value.name,
+                "kind" to value.kind,
                 "rates" to value.rates,
                 "channels" to value.channels,
                 "encodings" to value.encodings,

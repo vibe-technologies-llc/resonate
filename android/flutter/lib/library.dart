@@ -446,9 +446,7 @@ class SongsPage extends StatelessWidget {
                   ),
                   const Spacer(),
                   TextButton.icon(
-                    onPressed: tracks.isEmpty
-                        ? null
-                        : () => model.play(tracks),
+                    onPressed: tracks.isEmpty ? null : () => model.play(tracks),
                     icon: const Icon(Icons.play_arrow_rounded),
                     label: const Text('Play all'),
                   ),
@@ -481,25 +479,19 @@ class SongsPage extends StatelessWidget {
                     ),
                   ),
                 )
-              : EdgeFade(
-                  top: true,
-                  bottom: true,
-                  topExtent: 32,
-                  bottomExtent: 32,
-                  child: ListView.builder(
-                    key: const PageStorageKey('songs'),
-                    padding: EdgeInsets.only(
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom +
-                          AppGeometry.pageInset,
-                    ),
-                    itemCount: tracks.length,
-                    itemBuilder: (_, index) => SongTile(
-                      model: model,
-                      track: tracks[index],
-                      onTap: () => model.play(tracks, index),
-                      open: open,
-                    ),
+              : ListView.builder(
+                  key: const PageStorageKey('songs'),
+                  padding: EdgeInsets.only(
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        AppGeometry.pageInset,
+                  ),
+                  itemCount: tracks.length,
+                  itemBuilder: (_, index) => SongTile(
+                    model: model,
+                    track: tracks[index],
+                    onTap: () => model.play(tracks, index),
+                    open: open,
                   ),
                 ),
         ),
@@ -964,10 +956,7 @@ class _CollectionPageState extends State<CollectionPage> {
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             scrolledUnderElevation: 0,
-            flexibleSpace: const ProgressiveBlurBackdrop(
-              top: true,
-              child: SizedBox.expand(),
-            ),
+            flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
             title: Text(
               '${data['name'] ?? widget.data['title']}',
               maxLines: 1,
