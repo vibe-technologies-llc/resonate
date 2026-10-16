@@ -67,8 +67,8 @@ use resonate_core::{
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
-    Levelling, Listening, OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until,
-    plan_output, read_impulse, resolve_replay_gain, stamp_of,
+    Levelling, Listening, OutputPlan, Placement, Player, PlayerState, QueueItem, Queued,
+    RepeatMode, Unclaimed, Until, plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
     Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
@@ -2268,6 +2268,9 @@ fn play_queue(
     readout.clear();
     drop(keyed);
 
+    if keeps {
+        keep_the_queue_on_leaving(&player, library.as_deref(), &mut keeping);
+    }
     count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
     if let Some(library) = library.as_deref() {
         record_a_play(library, listening.leaves(), &mut counted);
@@ -2562,6 +2565,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
 fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = starting::one_window_at_a_time();
     if let Some(window) = Running::a_window().ok().flatten() {
+        warn_of_settings_left_behind(&cli);
         return handed_to(&window, &cli.files);
     }
     let places = resonate_ui::Places {
@@ -2731,6 +2735,36 @@ fn caret_as_the_desktop_blinks() -> resonate_ui::CaretBlink {
 }
 
 #[cfg(feature = "ui")]
+fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
+    [
+        ("--config", cli.config.is_some()),
+        ("--library", cli.library.is_some()),
+        ("--vault", cli.vault.is_some()),
+        ("--sink", cli.sink.is_some()),
+        ("--quality", cli.quality.is_some()),
+        ("--filter-phase", cli.filter_phase.is_some()),
+        ("--dither", cli.dither.is_some()),
+        ("--noise-shaping", cli.noise_shaping.is_some()),
+        ("--bit-perfect", cli.bit_perfect),
+        ("--no-bit-perfect", cli.no_bit_perfect),
+    ]
+    .into_iter()
+    .filter_map(|(flag, given)| given.then_some(flag))
+    .collect()
+}
+
+#[cfg(feature = "ui")]
+fn warn_of_settings_left_behind(cli: &Cli) {
+    let left_behind = settings_left_behind(cli);
+    if !left_behind.is_empty() {
+        told!(
+            "the window already open keeps its own settings, so {} ignored",
+            left_behind.join(", ")
+        );
+    }
+}
+
+#[cfg(feature = "ui")]
 fn handed_to(window: &Running, arguments: &[OsString]) -> Result<()> {
     let rows: Vec<_> = queue_items(arguments)
         .into_iter()
@@ -2803,10 +2837,23 @@ fn resuming(config: &Config, library: Option<&Library>) -> bool {
 }
 
 fn keep_the_queue(player: &Player, library: Option<&Library>, keeping: &mut Keeping) {
+    keep_the_queue_by(player, library, keeping, Keeping::kept);
+}
+
+fn keep_the_queue_on_leaving(player: &Player, library: Option<&Library>, keeping: &mut Keeping) {
+    keep_the_queue_by(player, library, keeping, Keeping::kept_on_leaving);
+}
+
+fn keep_the_queue_by(
+    player: &Player,
+    library: Option<&Library>,
+    keeping: &mut Keeping,
+    keep: fn(&mut Keeping, &PlayerState, &Queued) -> Option<Keep>,
+) {
     let Some(library) = library else {
         return;
     };
-    let kept = match keeping.kept(&player.state(), &player.queued()) {
+    let kept = match keep(keeping, &player.state(), &player.queued()) {
         Some(Keep::Queue(resumption)) => library.keep_resumption(&resumption),
         Some(Keep::Order(reordered)) => library.keep_order(&reordered),
         Some(Keep::Place { row, at }) => library.keep_place(row, at),
@@ -3173,6 +3220,33 @@ mod tests {
             panic!("--import beside --for was refused: {parsed:?}");
         };
         assert_eq!(wanted.r#for.as_deref(), Some("alsa_output.usb"));
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launch_handed_to_a_window_names_the_settings_it_leaves_behind() {
+        let left_behind = |arguments: &[&str]| {
+            let cli = Cli::try_parse_from(arguments.iter().copied()).expect("a launch");
+            settings_left_behind(&cli)
+        };
+
+        assert!(left_behind(&["resonate", "a.flac"]).is_empty());
+        assert_eq!(
+            left_behind(&[
+                "resonate",
+                "--sink",
+                "alsa_output.usb",
+                "--bit-perfect",
+                "--quality",
+                "high",
+                "a.flac"
+            ]),
+            ["--sink", "--quality", "--bit-perfect"]
+        );
+        assert_eq!(
+            left_behind(&["resonate", "--config", "c.toml", "--library", "l.db"]),
+            ["--config", "--library"]
+        );
     }
 
     #[test]

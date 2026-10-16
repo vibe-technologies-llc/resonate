@@ -433,7 +433,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `PlayerState` and published queue like a play and answers `Keep::Queue` (`Queued::stamp` moved),
   `Keep::Order` (`Queued::revision` or shuffle moved) or `Keep::Place` (row changed, position moved
   `KEPT_EVERY`, or transport rests elsewhere than the place kept); only the first allocates a
-  `Resumption`.
+  `Resumption`. `resonate play` samples every 500 ms and keeps once more as it leaves
+  (`Keeping::kept_on_leaving`: the same answers, but a place counts as moved at any distance).
 - **Removing the playing row moves on as a skip** (`Queue::hand_on` = `advance` minus the
   repeat-track hold; else `Engine::remove` stops with `QueueFinished`).
 - **A play is what was heard, sampled not hooked.** `Listening` takes a `PlayerState` beside the

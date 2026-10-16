@@ -148,6 +148,7 @@ struct Standing {
     status: Option<PlaybackStatus>,
     position: Duration,
     volume: Volume,
+    shuffle: bool,
     playlists: Vec<PlaylistInfo>,
     asleep: Option<Asleep>,
     calls: Vec<Call>,
@@ -163,6 +164,7 @@ impl Default for Standing {
             status: Some(PlaybackStatus::Stopped),
             position: Duration::from_millis(61_500),
             volume: Volume::MAX,
+            shuffle: false,
             playlists: Vec::new(),
             asleep: None,
             calls: Vec::new(),
@@ -278,6 +280,10 @@ impl Controlling for Handle {
 
     fn volume(&self) -> resonate_mpris::Result<Volume> {
         Ok(self.0.borrow().volume)
+    }
+
+    fn shuffle(&self) -> resonate_mpris::Result<bool> {
+        Ok(self.0.borrow().shuffle)
     }
 
     fn set_volume(&self, volume: Volume) -> resonate_mpris::Result<()> {
@@ -407,6 +413,81 @@ fn error_code(server: &Server, message: &Value) -> i64 {
         .expect("an error carries a numeric code")
 }
 
+fn type_of(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(number) if number.is_i64() || number.is_u64() => "integer",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+fn disagreement(value: &Value, schema: &Value, at: &str) -> Option<String> {
+    let named = &schema["type"];
+    let types: Vec<&str> = match named {
+        Value::String(one) => vec![one.as_str()],
+        Value::Array(several) => several.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    let found = type_of(value);
+    let fits = types.is_empty()
+        || types.contains(&found)
+        || (found == "integer" && types.contains(&"number"));
+    if !fits {
+        return Some(format!("{at} is {found}, not {named}"));
+    }
+    if let Some(allowed) = schema["enum"].as_array()
+        && !allowed.contains(value)
+    {
+        return Some(format!("{at} is {value}, not one of {allowed:?}"));
+    }
+    if let (Value::Object(fields), Some(properties)) = (value, schema["properties"].as_object()) {
+        for required in schema["required"].as_array().into_iter().flatten() {
+            let field = required.as_str().expect("a required field's name");
+            if !fields.contains_key(field) {
+                return Some(format!("{at} lacks {field}"));
+            }
+        }
+        for (field, inner) in fields {
+            match properties.get(field) {
+                Some(described) => {
+                    if let Some(said) = disagreement(inner, described, &format!("{at}.{field}")) {
+                        return Some(said);
+                    }
+                }
+                None => return Some(format!("{at}.{field} is not described")),
+            }
+        }
+    }
+    if let (Value::Object(fields), Some(counted)) = (value, schema.get("additionalProperties")) {
+        for (field, inner) in fields {
+            if let Some(said) = disagreement(inner, counted, &format!("{at}.{field}")) {
+                return Some(said);
+            }
+        }
+    }
+    if let (Value::Array(items), Some(each)) = (value, schema.get("items")) {
+        for (index, item) in items.iter().enumerate() {
+            if let Some(said) = disagreement(item, each, &format!("{at}[{index}]")) {
+                return Some(said);
+            }
+        }
+    }
+    None
+}
+
+fn output_schema_of(server: &Server, tool: &str) -> Value {
+    let listed = result(server, "tools/list", json!({}));
+    listed["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|entry| entry["name"] == tool))
+        .map(|entry| entry["outputSchema"].clone())
+        .expect("a tool listed")
+}
+
 fn called(server: &Server, tool: &str, arguments: Value) -> Value {
     let answered = result(
         server,
@@ -415,6 +496,9 @@ fn called(server: &Server, tool: &str, arguments: Value) -> Value {
     );
     assert_eq!(answered["isError"], false, "{answered}");
     let structured = answered["structuredContent"].clone();
+    if let Some(said) = disagreement(&structured, &output_schema_of(server, tool), tool) {
+        panic!("{said}: {structured}");
+    }
     let text = answered["content"][0]["text"]
         .as_str()
         .expect("a result carries its text");
@@ -599,6 +683,8 @@ fn every_tool_is_listed_with_a_schema_naming_what_it_requires() {
         assert_eq!(entry["name"], tool.name());
         assert_eq!(Tool::named(tool.name()), Some(*tool));
         assert_eq!(entry["inputSchema"]["type"], "object");
+        assert_eq!(entry["outputSchema"]["type"], "object");
+        assert!(entry["outputSchema"]["properties"].is_object());
         assert_eq!(entry["annotations"]["readOnlyHint"], tool.reads_only());
         assert_eq!(entry["annotations"]["destructiveHint"], tool.destroys());
         assert_eq!(
@@ -1011,6 +1097,32 @@ fn a_queue_is_described_only_as_far_as_it_is_listed() {
     assert_eq!(queue["playing_row"], 30);
     assert_eq!(queue["queue"].as_array().map(Vec::len), Some(3));
     assert_eq!(standing.borrow().described, vec![3]);
+}
+
+#[test]
+fn a_shuffled_queue_says_its_list_is_not_the_order_it_plays_in() {
+    let (players, _) = Fake::with(Standing {
+        rows: (1..=3).map(|id| row(id, "Row")).collect(),
+        playing: Some(1),
+        shuffle: true,
+        ..Standing::default()
+    });
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    let queue = called(&server, "show_queue", json!({}));
+    let listed = result(&server, "tools/list", json!({}));
+    let described = listed["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|tool| tool["name"] == "show_queue"))
+        .and_then(|tool| tool["description"].as_str())
+        .expect("show_queue is listed");
+
+    assert_eq!(queue["shuffle"], true);
+    assert!(described.contains("unshuffled"), "{described}");
+    assert!(!described.contains("in play order"), "{described}");
 }
 
 #[test]
@@ -2424,6 +2536,52 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
                 .is_some_and(|method| method.starts_with("notifications/"))
     }));
     drop(writing);
+}
+
+#[test]
+fn a_playlist_discarded_since_it_was_subscribed_to_is_still_unsubscribed() {
+    let server = nothing_running();
+    let road = "resonate://library/playlist/Road";
+    let unheard = "resonate://library/playlist/Never%20Made";
+    let mut lines = Vec::new();
+    for message in [
+        request(
+            "initialize",
+            json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+        ),
+        request("resources/list", json!({})),
+        request(
+            "tools/call",
+            json!({ "name": "create_playlist", "arguments": { "name": "Road" } }),
+        ),
+        request("resources/subscribe", json!({ "uri": road })),
+        request(
+            "tools/call",
+            json!({ "name": "discard_playlist", "arguments": { "playlist": "Road" } }),
+        ),
+        request("resources/unsubscribe", json!({ "uri": road })),
+        request("resources/unsubscribe", json!({ "uri": unheard })),
+        request("resources/subscribe", json!({ "uri": unheard })),
+    ] {
+        writeln!(lines, "{message}").expect("a line");
+    }
+    let (_stop, stoppable) = resonate_mcp::stoppable();
+    let mut heard = Vec::new();
+
+    server
+        .serve_until_stopped(io::Cursor::new(lines), &mut heard, stoppable)
+        .expect("a session whose input ends to end cleanly");
+
+    let answers: Vec<Value> = String::from_utf8(heard)
+        .expect("text")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("one message"))
+        .filter(|message| message.get("id").is_some())
+        .collect();
+    assert_eq!(answers[3]["result"], json!({}), "{answers:?}");
+    assert_eq!(answers[5]["result"], json!({}), "{answers:?}");
+    assert_eq!(answers[6]["result"], json!({}), "{answers:?}");
+    assert_eq!(answers[7]["error"]["code"], -32_002, "{answers:?}");
 }
 
 #[test]

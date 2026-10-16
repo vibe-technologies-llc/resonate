@@ -102,8 +102,10 @@ impl Resource {
                                  whether it is playing or paused, the volume and any sleep timer."
                 .to_owned(),
             Self::Queue => format!(
-                "The running player's queue in play order, its first {QUEUED_BY_DEFAULT} rows \
-                 described, each with the queue_id remove_from_queue takes."
+                "The running player's queue in list order, its first {QUEUED_BY_DEFAULT} rows \
+                 described, each with the queue_id remove_from_queue takes. The list is the \
+                 queue unshuffled; with shuffle true the next song is not the row after the \
+                 playing one."
             ),
             Self::Passes => "Whether the scan, the lookup and the poll this session started are \
                              idle, running or finished, and how far each has come."

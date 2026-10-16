@@ -154,6 +154,7 @@ pub(crate) fn queue(player: &dyn Controlling, most: usize) -> Result<Value> {
         "player": player.name(),
         "rows": queued.len(),
         "playing_row": queued.iter().position(|track| Some(*track) == playing),
+        "shuffle": player.shuffle()?,
         "queue": listed,
     })))
 }

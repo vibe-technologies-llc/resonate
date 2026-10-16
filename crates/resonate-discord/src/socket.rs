@@ -23,7 +23,7 @@ const PROTOCOL: u8 = 1;
 const SOCKETS_PER_FOLDER: u8 = 10;
 const SOCKET_STEM: &str = "discord-ipc-";
 const SHARED_TEMPORARY: &str = "/tmp";
-const SANDBOXES: [&str; 11] = [
+const SANDBOXES: [&str; 12] = [
     "",
     "app/com.discordapp.Discord",
     "app/com.discordapp.DiscordCanary",
@@ -31,6 +31,7 @@ const SANDBOXES: [&str; 11] = [
     "app/dev.vencord.Vesktop",
     ".flatpak/com.discordapp.Discord/xdg-run",
     ".flatpak/com.discordapp.DiscordCanary/xdg-run",
+    ".flatpak/com.discordapp.DiscordPTB/xdg-run",
     ".flatpak/dev.vencord.Vesktop/xdg-run",
     "snap.discord",
     "snap.discord-canary",
@@ -417,6 +418,9 @@ mod tests {
         assert!(found.contains(&PathBuf::from("/tmp/snap.discord/discord-ipc-3")));
         assert!(found.contains(&PathBuf::from(
             "/run/user/1000/.flatpak/dev.vencord.Vesktop/xdg-run/discord-ipc-0"
+        )));
+        assert!(found.contains(&PathBuf::from(
+            "/run/user/1000/.flatpak/com.discordapp.DiscordPTB/xdg-run/discord-ipc-0"
         )));
         assert!(found.contains(&PathBuf::from(
             "/run/user/1000/app/com.discordapp.DiscordCanary/discord-ipc-0"
