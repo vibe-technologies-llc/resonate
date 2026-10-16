@@ -10,8 +10,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   not give
 - [S] Android has no room correction: `keep_room_correction` and `apply_room_correction` keep and
   play a response, and only iOS offers them
-- [S] Android sends favourites only from its button: `tell_loves` loves and takes back on its own,
-  and only iOS calls it
+- [M] Android lists only the first 500 matches of a search: `search_library` answers at most 500
+  ranked songs and has no offset, so a wider search needs narrowing (the *Songs* chip says how many
+  it shows)
+- [S] Android's search does not light the matched text: `highlights` is exported and nothing on
+  Android calls it
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
 - [M] Android cannot be woken by a media button once its service is gone: no `MediaButtonReceiver`

@@ -24,27 +24,8 @@ are in [ROADMAP.md](ROADMAP.md).
   row on the window's thread; Statistics' *play from here* reads a track a query
 
 ## Android
-- [S] The poll loop calls `queue()` every 250 ms (one `tracks_at` query a row under the catalog and
-  action mutexes, every row copied across) and `RustMediaPlayer.getState` rebuilds every
-  `MediaItemData` per tick, whether or not `Snapshot.queue_revision` moved; iOS gates on it
-- [M] `PlayerModel._receive` notifies on every patch, so `samples` (30 Hz), `lyricFrame` (4 Hz, on
-  after leaving Lyrics), `analysisProgress` and `downloadedBytes` rebuild all five root pages, with
-  `LibraryPage`'s whole-library favourites scan and the non-lazy lyrics column
-- [M] A favourite toggle re-emits `allTracks` and `tracks` (the same list) whole through the
-  channel, decodes both on the UI isolate, rebuilds `_byId` and re-fetches every album and artist
-- [S] `FlutterBridge`'s `play`, `addToPlaylist` and `enrich` resolve each id by scanning
-  `allTracks` on the main thread (quadratic for *Play all*), and `track()` copies the whole catalog
-  per artwork request
-- [M] `artwork` takes no size and is keyed by song: a 50 dp row decodes and JPEG-encodes a cover of
-  up to 1024 px once per track of an album (the 32 MiB cache holds about 8), and
-  `ArtworkEnrichment.update` evicts every cover and bumps `artworkGeneration` on any change where
-  `art_changed_since` names the changed songs
-- [S] The Oboe stream asks `PerformanceMode::LowLatency` with no `ContentType::Music`, and its
-  output thread wakes every 10 ms (`calculate_latency_millis` included) while a stream is open,
-  paused too; iOS sleeps until a command or a moved latency
-- [S] The Downloads (MediaStore) branch of `LibraryRepository.scanFolder` still calls
-  `indexDocument` for every audio row, so a rescan of Downloads probes and rewrites them all;
-  `MusicDocuments.downloadedAudio` could carry `SIZE` and `DATE_MODIFIED` into `scanDocument`
+- [S] The lyrics pane builds every line in a non-lazy `Column` and rebuilds all of them on each
+  4 Hz frame while it is open, a blur filter per line away from the read one
 
 ## iOS
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only

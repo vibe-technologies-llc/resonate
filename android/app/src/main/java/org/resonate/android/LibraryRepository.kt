@@ -3,6 +3,7 @@ package org.resonate.android
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -17,7 +18,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -31,7 +35,10 @@ import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
+import org.resonate.android.nativecore.audioExtensions
 import org.resonate.android.nativecore.defaultTrackFilter
+
+data class Favourited(val id: ULong, val enabled: Boolean)
 
 class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
@@ -51,6 +58,8 @@ class LibraryRepository(private val context: Context) {
     private val mutableStatus = MutableStateFlow<String?>(null)
     private val mutableScanning = MutableStateFlow(false)
     private val mutablePreferences = MutableStateFlow<PlaybackPreferences?>(null)
+    private val mutableFavourites = MutableSharedFlow<Favourited>(extraBufferCapacity = 64)
+    val favourites: SharedFlow<Favourited> = mutableFavourites.asSharedFlow()
     val tracks = mutableTracks.asStateFlow()
     val queue = mutableQueue.asStateFlow()
     val snapshot = mutableSnapshot.asStateFlow()
@@ -80,6 +89,18 @@ class LibraryRepository(private val context: Context) {
     val features = LibraryFeatures(context, this)
 
     internal suspend fun native() = engine.await()
+
+    @Volatile private var indexed: Pair<List<Track>, Map<ULong, Track>>? = null
+
+    fun findTrack(id: ULong): Track? {
+        val rows = mutableAllTracks.value
+        val index =
+            indexed?.takeIf { it.first === rows }?.second
+                ?: rows.associateBy { it.id }.also { indexed = rows to it }
+        return index[id]
+            ?: mutableQueue.value.firstOrNull { it.id == id }
+            ?: mutableSnapshot.value?.current?.takeIf { it.id == id }
+    }
 
     internal suspend fun refresh() {
         val native = engine.await()
@@ -162,22 +183,14 @@ class LibraryRepository(private val context: Context) {
                 mutablePreferences.value = preferences
                 features.initialize(native)
                 ready.complete(native)
-                refresh()
-                var saves = 0
-                while (isActive) {
-                    access.withLock {
-                        val state = native.snapshot()
-                        features.tick(native, state)
-                        mutableSnapshot.value = state
-                        state.failure?.let { mutableStatus.value = it }
-                        mutableQueue.value = native.queue()
-                        if (++saves >= 20) {
-                            native.save()
-                            saves = 0
-                        }
-                    }
-                    delay(250)
+                try {
+                    refresh()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    report(failure)
                 }
+                poll(native)
             } catch (cancelled: CancellationException) {
                 ready.cancel(cancelled)
                 throw cancelled
@@ -201,8 +214,46 @@ class LibraryRepository(private val context: Context) {
                         }
                     }
                 }
+                ended(currentCoroutineContext()[Job])
             }
         }
+    }
+
+    private suspend fun poll(native: MobilePlayer) {
+        val queueReads = QueueReads()
+        var saves = 0
+        var failing: String? = null
+        while (currentCoroutineContext().isActive) {
+            try {
+                access.withLock {
+                    val state = native.snapshot()
+                    features.tick(native, state)
+                    mutableSnapshot.value = state
+                    state.failure?.let { mutableStatus.value = it }
+                    val now = SystemClock.elapsedRealtime()
+                    if (queueReads.due(state.queueRevision, state.catalogRevision, now)) {
+                        mutableQueue.value = native.queue()
+                        queueReads.noted(state.queueRevision, state.catalogRevision, now)
+                    }
+                    if (++saves >= SAVE_EVERY_TICKS) {
+                        saves = 0
+                        native.save()
+                    }
+                }
+                failing = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (failure.message != failing) report(failure)
+                failing = failure.message
+            }
+            delay(POLL_EVERY_MS)
+        }
+    }
+
+    @Synchronized
+    private fun ended(job: Job?) {
+        if (playbackJob === job) started = false
     }
 
     fun request(action: (MobilePlayer) -> Unit) {
@@ -231,6 +282,7 @@ class LibraryRepository(private val context: Context) {
                     )
             }
             features.playlistRows.value = updated(features.playlistRows.value)
+            mutableFavourites.tryEmit(Favourited(id, enabled))
             scope.launch { reload() }
         }
     }
@@ -298,7 +350,7 @@ class LibraryRepository(private val context: Context) {
         try {
             val native = engine.await()
             if (tree == MusicDocuments.downloads) {
-                for ((uri, name) in MusicDocuments.downloadedAudio(context)) {
+                for ((uri, name, size, modified) in MusicDocuments.downloadedAudio(context)) {
                     currentCoroutineContext().ensureActive()
                     if (
                         name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) !in
@@ -306,7 +358,12 @@ class LibraryRepository(private val context: Context) {
                     )
                         continue
                     try {
-                        native.indexDocument(uri.toString(), name)
+                        native.scanDocument(
+                            uri.toString(),
+                            name,
+                            size.coerceAtLeast(0L).toULong(),
+                            modified,
+                        )
                         indexed++
                     } catch (failure: Exception) {
                         Log.w("Resonate", "Downloaded audio could not be indexed", failure)
@@ -469,34 +526,13 @@ class LibraryRepository(private val context: Context) {
     }
 
     companion object {
-        private val extensions =
-            setOf(
-                "aac",
-                "aif",
-                "aiff",
-                "ape",
-                "caf",
-                "dff",
-                "dsf",
-                "flac",
-                "m4a",
-                "m4b",
-                "mka",
-                "mp3",
-                "mp4",
-                "oga",
-                "ogg",
-                "opus",
-                "rf64",
-                "w64",
-                "wav",
-                "wave",
-                "wv",
-            )
+        private const val POLL_EVERY_MS = 250L
+        private const val SAVE_EVERY_TICKS = 20
+        private val extensions by lazy { audioExtensions().toSet() }
     }
 }
 
-private data class ScannedAudio(
+data class ScannedAudio(
     val uri: Uri,
     val name: String,
     val size: Long,

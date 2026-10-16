@@ -27,6 +27,22 @@ String clock(Object? milliseconds) {
 
 String humanize(String value) => value.toLowerCase().split('_').join(' ');
 
+int queueLanding(int from, int adjustedTo) =>
+    adjustedTo > from ? adjustedTo + 1 : adjustedTo;
+
+const _artworkBuckets = [96, 192, 384, 512, 768, 1024];
+const defaultArtworkBucket = 768;
+const colourSampleBucket = 96;
+
+int artworkBucket(double? logicalSize, double pixelRatio) {
+  if (logicalSize == null || logicalSize <= 0) return defaultArtworkBucket;
+  final pixels = (logicalSize * pixelRatio).ceil();
+  return _artworkBuckets.firstWhere(
+    (bucket) => bucket >= pixels,
+    orElse: () => _artworkBuckets.last,
+  );
+}
+
 class SyncActivity {
   const SyncActivity.syncing() : songs = 0, fraction = null, isFetching = false;
   const SyncActivity.fetching({required this.songs, this.fraction})
@@ -52,9 +68,20 @@ class PlayerModel extends ChangeNotifier {
             );
   }
 
+  static const _hotKeys = {
+    'samples',
+    'lyricFrame',
+    'analysisProgress',
+    'downloadedBytes',
+  };
+
   final MethodChannel _methods;
   late final StreamSubscription<dynamic> _subscription;
   final RowData state = {};
+  final Map<String, ValueNotifier<Object?>> _hot = {
+    for (final key in _hotKeys) key: ValueNotifier<Object?>(null),
+  };
+  final Map<String, int> _artStamps = {};
   final ValueNotifier<int> positionMs = ValueNotifier(0);
   final ValueNotifier<int?> sleepRemainingMs = ValueNotifier(null);
   String? failure;
@@ -99,8 +126,23 @@ class PlayerModel extends ChangeNotifier {
   }
 
   List<RowData> _allTracks = [];
+  List<RowData> _favouriteTracks = [];
   Map<String, RowData> _byId = {};
   List<RowData> get allTracks => _allTracks;
+  List<RowData> get favouriteTracks => _favouriteTracks;
+  ValueListenable<Object?> hot(String key) => _hot[key]!;
+  int artStamp(Object? id) => _artStamps['$id'] ?? 0;
+  String get _generation => '${state['artworkGeneration']}';
+  String _stamped(Object? id) {
+    final stamp = artStamp(id);
+    return stamp == 0 ? '' : ':$stamp';
+  }
+
+  String colourKey(RowData track) =>
+      '${track['id']}:${track['artRevision']}:$_generation${_stamped(track['id'])}';
+  String artworkKey(RowData track, int bucket) => '${colourKey(track)}:$bucket';
+  bool isFavourite(RowData track) =>
+      (_byId['${track['id']}'] ?? track)['favourite'] == true;
   List<RowData> _queue = [];
   List<RowData> get queue => _queue;
   RowData get snapshot => row(state['snapshot']);
@@ -154,6 +196,13 @@ class PlayerModel extends ChangeNotifier {
     final patch = row(event);
     final previousSnapshot = snapshot;
     state.addAll(patch);
+    for (final key in _hotKeys) {
+      if (patch.containsKey(key)) _hot[key]!.value = patch[key];
+    }
+    if (patch.isNotEmpty && patch.keys.every(_hotKeys.contains)) {
+      connected = true;
+      return;
+    }
     final nextSnapshot = snapshot;
     if (patch.containsKey('snapshot')) {
       positionMs.value = integer(nextSnapshot['positionMs']);
@@ -165,8 +214,17 @@ class PlayerModel extends ChangeNotifier {
     if (patch.containsKey('allTracks')) {
       _allTracks = rows(patch['allTracks']);
       _byId = {for (final track in _allTracks) '${track['id']}': track};
+      _favouriteTracks = _allTracks
+          .where((track) => track['favourite'] == true)
+          .toList();
     }
     if (patch.containsKey('queue')) _queue = rows(patch['queue']);
+    if (patch.containsKey('favourite')) _favourited(row(patch['favourite']));
+    if (patch.containsKey('artChanged')) {
+      for (final id in patch['artChanged'] as List? ?? const []) {
+        _artStamps['$id'] = artStamp(id) + 1;
+      }
+    }
     connected = true;
     if (patch.containsKey('artworkGeneration')) _pictures.clear();
     final revision =
@@ -192,6 +250,20 @@ class PlayerModel extends ChangeNotifier {
     }
   }
 
+  void _favourited(RowData change) {
+    final id = '${change['id']}';
+    final enabled = change['enabled'] == true;
+    _byId[id]?['favourite'] = enabled;
+    for (final list in [_tracks, _queue]) {
+      for (final track in list) {
+        if ('${track['id']}' == id) track['favourite'] = enabled;
+      }
+    }
+    _favouriteTracks = _allTracks
+        .where((track) => track['favourite'] == true)
+        .toList();
+  }
+
   bool _sameSnapshotExceptTime(RowData before, RowData after) {
     if (before.length != after.length) return false;
     for (final entry in after.entries) {
@@ -209,11 +281,7 @@ class PlayerModel extends ChangeNotifier {
 
   Future<dynamic> call(String method, [RowData arguments = const {}]) async {
     try {
-      final answer = await _methods.invokeMethod<dynamic>(method, arguments);
-      final clearedFailure = failure != null;
-      failure = null;
-      if (clearedFailure) notifyListeners();
-      return answer;
+      return await _methods.invokeMethod<dynamic>(method, arguments);
     } on PlatformException catch (error) {
       failure = error.message ?? 'The action could not be completed';
       notifyListeners();
@@ -234,16 +302,18 @@ class PlayerModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Uint8List?> artwork(RowData track) {
-    final key =
-        '${track['id']}:${track['artRevision']}:${state['artworkGeneration']}';
+  Future<Uint8List?> artwork(
+    RowData track, [
+    int bucket = defaultArtworkBucket,
+  ]) {
+    final key = artworkKey(track, bucket);
     final cached = _pictures.remove(key);
     if (cached != null) {
       _pictures[key] = cached;
       return cached;
     }
     final future = _methods
-        .invokeMethod<Uint8List>('artwork', {'id': track['id']})
+        .invokeMethod<Uint8List>('artwork', {'id': track['id'], 'size': bucket})
         .catchError((Object _) => null);
     _pictures[key] = future;
     while (_pictures.length > 48) {
@@ -253,6 +323,11 @@ class PlayerModel extends ChangeNotifier {
   }
 
   RowData trackById(Object? id) => _byId['$id'] ?? {};
+
+  void beginPlaylist(Object? id) {
+    state['playlistRows'] = null;
+    unawaited(call('selectPlaylist', {'id': id}));
+  }
 
   Future<void> play(List<RowData> tracks, [int index = 0]) async {
     if (tracks.isEmpty) return;
@@ -298,6 +373,9 @@ class PlayerModel extends ChangeNotifier {
   @override
   void dispose() {
     _subscription.cancel();
+    for (final notifier in _hot.values) {
+      notifier.dispose();
+    }
     positionMs.dispose();
     sleepRemainingMs.dispose();
     super.dispose();

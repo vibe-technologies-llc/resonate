@@ -41,7 +41,7 @@ class DownloadsFolderTest {
         try {
             val audio = pcmTone(1)
             resolver.openOutputStream(uri, "w")!!.use { it.write(audio) }
-            assertFalse(MusicDocuments.downloadedAudio(context).any { it.first == uri })
+            assertFalse(MusicDocuments.downloadedAudio(context).any { it.uri == uri })
             resolver
                 .query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)!!
                 .use {
@@ -51,10 +51,10 @@ class DownloadsFolderTest {
             val indexed = player.indexDocument(uri.toString(), name)
             assertEquals(44100u, indexed.rate)
             MusicDocuments.publish(context, uri)
-            val found = MusicDocuments.downloadedAudio(context).first { it.first == uri }
-            assertEquals(name, found.second)
+            val found = MusicDocuments.downloadedAudio(context).first { it.uri == uri }
+            assertEquals(name, found.name)
             player.favourite(indexed.id, true)
-            val rescanned = player.indexDocument(found.first.toString(), found.second)
+            val rescanned = player.indexDocument(found.uri.toString(), found.name)
             assertEquals(indexed.id, rescanned.id)
             assertTrue(rescanned.favourite)
             assertArrayEquals(audio, resolver.openInputStream(uri)!!.use { it.readBytes() })
@@ -103,12 +103,12 @@ class DownloadsFolderTest {
                 Manifest.permission.READ_MEDIA_AUDIO,
             )
             val songs = MusicDocuments.downloadedAudio(context)
-            assertTrue("Expected $canonical in $songs", songs.any { it.first == canonical })
-            val found = songs.first { it.first == canonical }
-            assertEquals(name, found.second)
+            assertTrue("Expected $canonical in $songs", songs.any { it.uri == canonical })
+            val found = songs.first { it.uri == canonical }
+            assertEquals(name, found.name)
             assertArrayEquals(
                 pcmTone(1),
-                context.contentResolver.openInputStream(found.first)!!.use { it.readBytes() },
+                context.contentResolver.openInputStream(found.uri)!!.use { it.readBytes() },
             )
         } finally {
             shell("content delete --uri $uri")

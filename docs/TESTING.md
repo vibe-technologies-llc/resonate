@@ -55,7 +55,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Phones
 - [M] `resonate-mobile` has no test of `documents_moved` (rekey, requeue, resume, collision),
   `analyse_track` and `inspector` text, `snapshot`'s `failure` take and `count_listening`, or
-  anything in `online_tools.rs` (`submit_scrobbles`' mark, `send_favourites`)
+  anything in `online_tools.rs` (`submit_scrobbles`' mark)
 - [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
   `filtered_tracks` and the download calls
 

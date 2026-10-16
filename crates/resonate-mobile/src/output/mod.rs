@@ -6,6 +6,8 @@ mod oboe_render;
 mod remote_io;
 #[cfg(target_os = "ios")]
 mod remote_io_render;
+#[cfg(any(target_os = "android", test))]
+mod waits;
 
 use std::sync::Arc;
 

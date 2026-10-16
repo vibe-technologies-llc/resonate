@@ -11,9 +11,15 @@ import android.provider.MediaStore
 object MusicDocuments {
     val downloads: Uri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
-    fun downloadedAudio(context: Context): List<Pair<Uri, String>> {
+    fun downloadedAudio(context: Context): List<ScannedAudio> {
         val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val columns = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
+        val columns =
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+            )
         val selection =
             "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ? AND " +
                 "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND " +
@@ -29,7 +35,14 @@ object MusicDocuments {
                 cursor ->
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(1) ?: continue
-                    add(ContentUris.withAppendedId(collection, cursor.getLong(0)) to name)
+                    add(
+                        ScannedAudio(
+                            ContentUris.withAppendedId(collection, cursor.getLong(0)),
+                            name,
+                            if (cursor.isNull(2)) 0L else cursor.getLong(2),
+                            if (cursor.isNull(3)) 0L else cursor.getLong(3) * 1000L,
+                        )
+                    )
                 }
             }
         }

@@ -416,7 +416,7 @@ class AppBottomBar extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (isRoot) StatusBanner(model: model, open: open),
+                StatusBanner(model: model, open: open, noticeOnly: !isRoot),
                 if (model.current.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -633,7 +633,18 @@ Route<void> resonatePageRoute(BuildContext context, Object? arguments) {
     'inspector' => InspectorPage(model: model, track: data),
     _ => SettingsDetail(model: model, page: page, open: open),
   };
-  if (page != 'player') return MaterialPageRoute<void>(builder: (_) => child);
+  if (page != 'player') {
+    final noticed = switch (page) {
+      'lyrics' ||
+      'analysis' ||
+      'visualizer' ||
+      'inspector' ||
+      'online' ||
+      'search' => NoticeFooter(model: model, child: child),
+      _ => child,
+    };
+    return MaterialPageRoute<void>(builder: (_) => noticed);
+  }
   return PageRouteBuilder<void>(
     opaque: false,
     allowSnapshotting: false,

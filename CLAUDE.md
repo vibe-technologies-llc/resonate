@@ -147,7 +147,7 @@ Invariants the layering protects (the rules files have the rest):
   analysis and presentation/bridge tests. CI pins Flutter 3.47.7; locate the SDK through
   `FLUTTER_ROOT` or `flutter.sdk` in `android/local.properties`.
 
-- `android/gradlew -p android :app:assembleDebug :app:lintDebug`: Android APK and Kotlin/manifest
+- `android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`: Android APK, Kotlin/manifest
   checks; `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks native alignment and
   Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.

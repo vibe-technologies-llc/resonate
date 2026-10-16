@@ -243,7 +243,7 @@ jobs:
         working-directory: android/flutter
         run: flutter pub get && flutter analyze && flutter test
       - name: Build and lint Android
-        run: android/gradlew -p android :app:assembleDebug :app:lintDebug
+        run: android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
       - name: Enforce Android dependencies and Rust checks
         run: |
           tree=$(cargo tree -p resonate-mobile --target x86_64-linux-android --prefix none)

@@ -19,9 +19,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final model = widget.model;
-    final favourites = model.allTracks
-        .where((t) => t['favourite'] == true)
-        .toList();
+    final favourites = model.favouriteTracks;
     final albums = model.albums;
     final artists = model.artists;
     final playlists = rows(model.state['playlists']);
@@ -204,16 +202,12 @@ class _LibraryPageState extends State<LibraryPage> {
                     ...playlists.map(
                       (p) => ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: p['artworkTrack'] != null
-                            ? Artwork(
-                                model: model,
-                                track: model.trackById(p['artworkTrack']),
-                                size: 48,
-                                radius: 12,
-                              )
-                            : const CircleAvatar(
-                                child: Icon(Icons.queue_music_rounded),
-                              ),
+                        leading: PlaylistCover(
+                          model: model,
+                          covers: p['covers'],
+                          size: 48,
+                          radius: 12,
+                        ),
                         title: Text('${p['name']}'),
                         subtitle: Text('${p['songs']} songs'),
                         trailing: const Icon(Icons.chevron_right_rounded),
@@ -568,117 +562,128 @@ class SongTile extends StatelessWidget {
   }
 }
 
+Future<void> openAlbumOf(
+  PlayerModel model,
+  RowData track,
+  OpenPage open,
+) async {
+  final key = await model.call('albumKey', {
+    'album': track['album'],
+    'artist': track['artist'],
+    'albumArtist': track['albumArtist'],
+  });
+  if (key == null) return;
+  open('collection', {
+    'kind': 'album',
+    'key': key,
+    'title': track['album'],
+    'artist': track['albumArtist'] == ''
+        ? track['artist']
+        : track['albumArtist'],
+    'artworkTrack': track['id'],
+  });
+}
+
 Future<void> songActions(
   BuildContext context,
   PlayerModel model,
   RowData track,
   OpenPage open,
-) => showModalBottomSheet<void>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (sheet) => SafeArea(
-    child: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Artwork(model: model, track: track, size: 52),
-            title: Text(title(track)),
-            subtitle: Text(artist(track)),
-          ),
-          const Divider(),
-          ...<({IconData icon, String label, VoidCallback action})>[
-            (
-              icon: track['favourite'] == true
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              label: track['favourite'] == true
-                  ? 'Remove from favourites'
-                  : 'Add to favourites',
-              action: () => model.call('favourite', {
-                'id': track['id'],
-                'enabled': track['favourite'] != true,
-              }),
+) {
+  final favourite = model.isFavourite(track);
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) => SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Artwork(model: model, track: track, size: 52),
+              title: Text(title(track)),
+              subtitle: Text(artist(track)),
             ),
-            (
-              icon: Icons.playlist_play_rounded,
-              label: 'Play next',
-              action: () => model.call('playNext', {
-                'ids': [track['id']],
-              }),
+            const Divider(),
+            ...<({IconData icon, String label, VoidCallback action})>[
+              (
+                icon: favourite
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                label: favourite
+                    ? 'Remove from favourites'
+                    : 'Add to favourites',
+                action: () => model.call('favourite', {
+                  'id': track['id'],
+                  'enabled': !favourite,
+                }),
+              ),
+              (
+                icon: Icons.playlist_play_rounded,
+                label: 'Play next',
+                action: () => model.call('playNext', {
+                  'ids': [track['id']],
+                }),
+              ),
+              (
+                icon: Icons.queue_music_rounded,
+                label: 'Add to queue',
+                action: () => model.call('addToQueue', {
+                  'ids': [track['id']],
+                }),
+              ),
+              (
+                icon: Icons.playlist_add_rounded,
+                label: 'Add to playlist',
+                action: () => playlistPicker(context, model, [track]),
+              ),
+              (
+                icon: Icons.album_outlined,
+                label: 'Go to album',
+                action: () => openAlbumOf(model, track, open),
+              ),
+              (
+                icon: Icons.person_outline_rounded,
+                label: 'Go to artist',
+                action: () => open('collection', {
+                  'kind': 'artist',
+                  'key': track['artist'],
+                  'title': artist(track),
+                  'artworkTrack': track['id'],
+                }),
+              ),
+              (
+                icon: Icons.lyrics_outlined,
+                label: 'Lyrics',
+                action: () => open('lyrics', track),
+              ),
+              (
+                icon: Icons.insights_rounded,
+                label: 'Analysis',
+                action: () => open('analysis', track),
+              ),
+              (
+                icon: Icons.info_outline_rounded,
+                label: 'Song details',
+                action: () => open('inspector', track),
+              ),
+            ].map(
+              (action) => ListTile(
+                leading: Icon(action.icon),
+                title: Text(action.label),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  action.action();
+                },
+              ),
             ),
-            (
-              icon: Icons.queue_music_rounded,
-              label: 'Add to queue',
-              action: () => model.call('addToQueue', {
-                'ids': [track['id']],
-              }),
-            ),
-            (
-              icon: Icons.playlist_add_rounded,
-              label: 'Add to playlist',
-              action: () => playlistPicker(context, model, [track]),
-            ),
-            (
-              icon: Icons.album_outlined,
-              label: 'Go to album',
-              action: () {
-                final album = model.albums
-                    .where(
-                      (a) =>
-                          a['title'] == track['album'] &&
-                          a['artist'] ==
-                              (track['albumArtist'] == ''
-                                  ? track['artist']
-                                  : track['albumArtist']),
-                    )
-                    .firstOrNull;
-                if (album != null) {
-                  open('collection', {...album, 'kind': 'album'});
-                }
-              },
-            ),
-            (
-              icon: Icons.person_outline_rounded,
-              label: 'Go to artist',
-              action: () => open('collection', {
-                'kind': 'artist',
-                'key': track['artist'],
-                'title': artist(track),
-                'artworkTrack': track['id'],
-              }),
-            ),
-            (
-              icon: Icons.lyrics_outlined,
-              label: 'Lyrics',
-              action: () => open('lyrics', track),
-            ),
-            (
-              icon: Icons.insights_rounded,
-              label: 'Analysis',
-              action: () => open('analysis', track),
-            ),
-            (
-              icon: Icons.info_outline_rounded,
-              label: 'Song details',
-              action: () => open('inspector', track),
-            ),
-          ].map(
-            (action) => ListTile(
-              leading: Icon(action.icon),
-              title: Text(action.label),
-              onTap: () {
-                Navigator.pop(sheet);
-                action.action();
-              },
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
-  ),
-);
+  );
+}
 
 Future<void> namePlaylist(
   BuildContext context,
@@ -905,25 +910,36 @@ class CollectionPage extends StatefulWidget {
 class _CollectionPageState extends State<CollectionPage> {
   List<RowData>? _tracks;
   List<RowData> _artistAlbums = [];
-  bool get playlist => widget.data['kind'] == 'playlist';
+  bool _failed = false;
+  Object? get kind => widget.data['kind'];
+  bool get playlist => kind == 'playlist';
+  bool get held => kind == 'favourites' || kind == 'all';
   @override
   void initState() {
     super.initState();
     if (playlist) {
-      widget.model.call('selectPlaylist', {'id': widget.data['id']});
-    } else if (widget.data['kind'] != 'favourites') {
+      widget.model.beginPlaylist(widget.data['id']);
+    } else if (!held) {
       _load();
     }
   }
 
   Future<void> _load() async {
+    if (_failed) setState(() => _failed = false);
     final answer = await widget.model.call('collectionTracks', widget.data);
-    if (widget.data['kind'] == 'artist') {
+    if (kind == 'artist') {
       _artistAlbums = rows(
         await widget.model.call('albumsBy', {'name': widget.data['key']}),
       );
     }
-    if (mounted && answer != null) setState(() => _tracks = rows(answer));
+    if (!mounted) return;
+    setState(() {
+      if (answer == null) {
+        _failed = true;
+      } else {
+        _tracks = rows(answer);
+      }
+    });
   }
 
   @override
@@ -938,9 +954,13 @@ class _CollectionPageState extends State<CollectionPage> {
                 widget.data)
           : widget.data;
       final tracks = playlist
-          ? rows(model.state['playlistRows'])
-          : widget.data['kind'] == 'favourites'
-          ? model.allTracks.where((t) => t['favourite'] == true).toList()
+          ? (model.state['playlistRows'] == null
+                ? null
+                : rows(model.state['playlistRows']))
+          : kind == 'favourites'
+          ? model.favouriteTracks
+          : kind == 'all'
+          ? model.allTracks
           : _tracks?.map((track) {
               final latest = model.trackById(track['id']);
               return latest.isEmpty ? track : latest;
@@ -1022,7 +1042,17 @@ class _CollectionPageState extends State<CollectionPage> {
             ],
           ),
           body: tracks == null
-              ? const Center(child: CircularProgressIndicator())
+              ? _failed
+                    ? EmptyState(
+                        icon: Icons.error_outline_rounded,
+                        title: 'This could not be loaded',
+                        detail: 'Check the notice below, then try again.',
+                        action: FilledButton(
+                          onPressed: _load,
+                          child: const Text('Try again'),
+                        ),
+                      )
+                    : const Center(child: CircularProgressIndicator())
               : CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
@@ -1050,7 +1080,7 @@ class _CollectionPageState extends State<CollectionPage> {
                                     ),
                                   ],
                                 ),
-                                child: widget.data['kind'] == 'favourites'
+                                child: kind == 'favourites'
                                     ? Container(
                                         decoration: BoxDecoration(
                                           borderRadius: BorderRadius.circular(
@@ -1068,6 +1098,12 @@ class _CollectionPageState extends State<CollectionPage> {
                                           size: 84,
                                           color: Colors.white,
                                         ),
+                                      )
+                                    : playlist
+                                    ? PlaylistCover(
+                                        model: model,
+                                        covers: data['covers'],
+                                        radius: 24,
                                       )
                                     : Artwork(
                                         model: model,

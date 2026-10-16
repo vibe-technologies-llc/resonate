@@ -789,6 +789,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
 
   Widget _statistics() {
     final stats = row(widget.model.state['statistics']);
+    final top = rows(stats['topTracks']);
     return _list([
       Wrap(
         spacing: 8,
@@ -838,17 +839,13 @@ class _SettingsDetailState extends State<SettingsDetail> {
                 .toList(),
       ),
       const SectionTitle('Your most played'),
-      ...rows(stats['topTracks']).map(
-        (track) => SongTile(
+      for (final (index, track) in top.indexed)
+        SongTile(
           model: widget.model,
           track: track,
-          onTap: () => widget.model.play(
-            rows(stats['topTracks']),
-            rows(stats['topTracks']).indexOf(track),
-          ),
+          onTap: () => widget.model.play(top, index),
           open: widget.open,
         ),
-      ),
     ]);
   }
 
@@ -892,22 +889,11 @@ class _SettingsDetailState extends State<SettingsDetail> {
             ),
             title: Text(entry.title),
             subtitle: Text(entry.subtitle),
-            onTap: () async {
-              await widget.model.call('filter', entry.filter);
-              if (!mounted) return;
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => Scaffold(
-                    appBar: AppBar(title: Text(entry.title)),
-                    body: ListenableBuilder(
-                      listenable: widget.model,
-                      builder: (_, _) =>
-                          SongsPage(model: widget.model, open: widget.open),
-                    ),
-                  ),
-                ),
-              );
-            },
+            onTap: () => widget.open('collection', {
+              ...entry.filter,
+              'kind': 'mix',
+              'title': entry.title,
+            }),
           ),
         ),
       ),
@@ -2036,7 +2022,9 @@ class _CorrectionPaneState extends State<CorrectionPane> {
                       ),
                     );
                     if (confirm == true) {
-                      widget.model.call('applyCorrection', {'index': entry.$1});
+                      widget.model.call('applyCorrection', {
+                        'id': entry.$2['id'],
+                      });
                     }
                   },
                 ),
@@ -2087,10 +2075,19 @@ class _AccountPaneState extends State<AccountPane> {
         autocorrect: !secret,
         enableSuggestions: !secret,
         decoration: InputDecoration(labelText: label),
-        onChanged: (value) => _draft[key] = value,
+        onChanged: (value) => setState(() => _draft[key] = value),
       ),
     );
   }
+
+  void _commit(String key, bool value) {
+    setState(() => _draft[key] = value);
+    widget.model.call('sync', {key: value});
+  }
+
+  bool _unsaved(RowData stored) =>
+      '${_draft['device'] ?? ''}' != '${stored['device'] ?? ''}' ||
+      '${_draft['server'] ?? ''}' != '${stored['server'] ?? ''}';
 
   String _syncStanding(
     Map<String, dynamic> status,
@@ -2280,7 +2277,8 @@ class _AccountPaneState extends State<AccountPane> {
         ],
         if (kind == 'scrobbling') ...[
           const Text(
-            'Completed listens are queued on this device and submitted when online features are enabled.',
+            'Completed listens are queued on this device and submitted when online features are enabled. '
+            'Favourites with a recording are loved on each saved account and taken back there when removed.',
           ),
           const SizedBox(height: 24),
           _field(
@@ -2335,10 +2333,6 @@ class _AccountPaneState extends State<AccountPane> {
               ),
             ],
           ),
-          TextButton(
-            onPressed: () => model.call('sendFavourites'),
-            child: const Text('Send identified favourites'),
-          ),
           if (model.state['scrobbleStatus'] != null)
             Text('${model.state['scrobbleStatus']}'),
         ],
@@ -2355,7 +2349,7 @@ class _AccountPaneState extends State<AccountPane> {
                         : 'Playlists, favourites and history follow you across devices.',
                   ),
                   value: _draft['enabled'] == true,
-                  onChanged: (v) => setState(() => _draft['enabled'] = v),
+                  onChanged: (v) => _commit('enabled', v),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -2363,10 +2357,7 @@ class _AccountPaneState extends State<AccountPane> {
                     children: [
                       if (!model.online && _draft['nearbyOnly'] != true)
                         OutlinedButton.icon(
-                          onPressed: () {
-                            setState(() => _draft['nearbyOnly'] = true);
-                            model.call('sync', _draft);
-                          },
+                          onPressed: () => _commit('nearbyOnly', true),
                           icon: const Icon(Icons.wifi_rounded),
                           label: const Text('Sync only on this network'),
                         )
@@ -2397,7 +2388,7 @@ class _AccountPaneState extends State<AccountPane> {
                       'Devices sync on the same network without a server',
                     ),
                     value: _draft['nearbyOnly'] == true,
-                    onChanged: (v) => setState(() => _draft['nearbyOnly'] = v),
+                    onChanged: (v) => _commit('nearbyOnly', v),
                   ),
                   _field('device', 'Device name', initial: stored['device']),
                   if (_draft['nearbyOnly'] == true)
@@ -2418,8 +2409,17 @@ class _AccountPaneState extends State<AccountPane> {
                     _field('server', 'Sync server', initial: stored['server']),
                   ],
                   FilledButton(
-                    onPressed: () => model.call('sync', _draft),
-                    child: const Text('Save sync settings'),
+                    onPressed: _unsaved(stored)
+                        ? () => model.call('sync', {
+                            'device': _draft['device'],
+                            'server': _draft['server'],
+                          })
+                        : null,
+                    child: Text(
+                      _unsaved(stored)
+                          ? 'Save device name and server'
+                          : 'Device name and server saved',
+                    ),
                   ),
                 ],
               ),
@@ -2627,7 +2627,7 @@ class _AccountPaneState extends State<AccountPane> {
                   title: const Text('Sync favourites'),
                   subtitle: const Text('Songs favoured on another device'),
                   value: _draft['favourites'] == true,
-                  onChanged: (v) => setState(() => _draft['favourites'] = v),
+                  onChanged: (v) => _commit('favourites', v),
                 ),
                 SwitchListTile(
                   title: const Text('Sync playlists'),
@@ -2635,20 +2635,19 @@ class _AccountPaneState extends State<AccountPane> {
                     'Playlists set to keep their songs here',
                   ),
                   value: _draft['playlists'] == true,
-                  onChanged: (v) => setState(() => _draft['playlists'] = v),
+                  onChanged: (v) => _commit('playlists', v),
                 ),
                 SwitchListTile(
                   title: const Text('Keep all music here'),
                   subtitle: const Text('Every song your other devices hold'),
                   value: _draft['everything'] == true,
-                  onChanged: (v) => setState(() => _draft['everything'] = v),
+                  onChanged: (v) => _commit('everything', v),
                 ),
                 SwitchListTile(
                   title: const Text('Transfer over mobile data'),
                   subtitle: const Text('Without it, songs move only on Wi-Fi'),
                   value: _draft['meteredAllowed'] == true,
-                  onChanged: (v) =>
-                      setState(() => _draft['meteredAllowed'] = v),
+                  onChanged: (v) => _commit('meteredAllowed', v),
                 ),
               ],
             ),

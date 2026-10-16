@@ -7,6 +7,17 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 
 @UnstableApi
+private object TrustedControllers : MediaLibraryService.MediaLibrarySession.Callback {
+    override fun onConnect(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): MediaSession.ConnectionResult =
+        if (session.isMediaNotificationController(controller) || controller.isTrusted)
+            MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+        else MediaSession.ConnectionResult.reject()
+}
+
+@UnstableApi
 class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private var player: RustMediaPlayer? = null
@@ -26,7 +37,7 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, object : MediaLibrarySession.Callback {})
+            MediaLibrarySession.Builder(this, adapter, TrustedControllers)
                 .setSessionActivity(openApp)
                 .build()
     }

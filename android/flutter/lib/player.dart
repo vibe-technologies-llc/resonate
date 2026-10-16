@@ -781,14 +781,7 @@ class _PlayerTitles extends StatelessWidget {
         ),
         if (!compact && '${model.current['album'] ?? ''}'.isNotEmpty)
           InkWell(
-            onTap: () {
-              final album = model.albums
-                  .where((a) => a['title'] == model.current['album'])
-                  .firstOrNull;
-              if (album != null) {
-                open('collection', {...album, 'kind': 'album'});
-              }
-            },
+            onTap: () => openAlbumOf(model, model.current, open),
             child: Text(
               '${model.current['album']}',
               maxLines: 1,
@@ -1034,7 +1027,10 @@ class QueuePage extends StatelessWidget {
                   padding: EdgeInsets.only(bottom: compact ? 16 : 180),
                   itemCount: queue.length,
                   onReorderItem: (from, to) {
-                    model.call('moveInQueue', {'from': from, 'to': to});
+                    model.call('moveInQueue', {
+                      'from': from,
+                      'to': queueLanding(from, to),
+                    });
                   },
                   itemBuilder: (context, index) {
                     final track = queue[index];

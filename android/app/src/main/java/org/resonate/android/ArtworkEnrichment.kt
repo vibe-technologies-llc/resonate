@@ -19,7 +19,7 @@ class ArtworkEnrichment(
     private val library: LibraryRepository,
     private val settings: SharedPreferences,
     private val scope: CoroutineScope,
-    private val artworkChanged: () -> Unit,
+    private val artworkChanged: (List<ULong>) -> Unit,
 ) {
     val automatic = MutableStateFlow(settings.getBoolean("enrich-automatically", true))
     val unmeteredOnly = MutableStateFlow(settings.getBoolean("enrich-unmetered", false))
@@ -144,8 +144,7 @@ class ArtworkEnrichment(
         val hadRevision = artRevision != null
         artRevision = changed.revision
         val picturesChanged = hadRevision && changed.tracks.isNotEmpty()
-        val portraitsChanged = previous != null && previous.portraits != read.portraits
-        if (picturesChanged || portraitsChanged) artworkChanged()
+        if (picturesChanged) artworkChanged(changed.tracks)
         if (picturesChanged || previous?.running == true && !read.running) library.refresh()
     }
 

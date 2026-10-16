@@ -1,21 +1,26 @@
 package org.resonate.android
 
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.*
+
+private const val PAGE_ROWS = 500u
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class FlutterBridge(
@@ -39,14 +44,18 @@ class FlutterBridge(
     override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
         watching?.cancel()
         watching = scope.launch {
-            fun watch(name: String, flow: StateFlow<*>) = launch {
+            fun watch(name: String, flow: Flow<*>) = launch {
                 flow.collect { value ->
                     val encoded = withContext(Dispatchers.Default) { flutterValue(value) }
                     sink.success(mapOf(name to encoded))
                 }
             }
-            watch("tracks", library.tracks)
-            watch("allTracks", library.allTracks)
+            watch("tracks", library.tracks.distinctUntilChanged(::sameSongs))
+            watch("allTracks", library.allTracks.distinctUntilChanged(::sameSongs))
+            watch(
+                "favourite",
+                library.favourites.map { mapOf("id" to it.id, "enabled" to it.enabled) },
+            )
             watch("queue", library.queue)
             watch("snapshot", library.snapshot)
             watch("status", library.status)
@@ -60,7 +69,12 @@ class FlutterBridge(
             watch("coversAskedAgain", features.enrichment.coversAskedAgain)
             watch("folders", features.folders)
             watch("playlists", features.playlists)
-            watch("playlistRows", features.playlistRows)
+            watch(
+                "playlistRows",
+                combine(features.playlistRows, features.playlistLoading) { rows, loading ->
+                    if (loading) null else rows
+                },
+            )
             watch("statistics", features.statistics)
             watch("lyrics", features.lyrics)
             watch("lyricFrame", features.lyricFrame)
@@ -72,6 +86,7 @@ class FlutterBridge(
             watch("artist", features.artist)
             watch("samples", features.samples)
             watch("artworkGeneration", features.artworkGeneration)
+            watch("artChanged", features.artChanges)
             watch("onlineSongs", features.onlineSongs)
             watch("onlineAlbums", features.onlineAlbums)
             watch("artistAlbumsNext", features.artistAlbumsNext)
@@ -99,7 +114,12 @@ class FlutterBridge(
             watch("syncHandoffs", features.syncHandoffs)
             watch("syncNotice", features.syncNotice)
             watch("playlistSync", features.playlistSync)
-            watch("recognition", features.recognition)
+            watch(
+                "recognition",
+                combine(features.recognition, features.recognitionTrack) { candidates, track ->
+                    mapOf("trackId" to track, "candidates" to candidates)
+                },
+            )
             watch("recognitionBusy", features.recognitionBusy)
             watch("recognitionKey", features.recognitionKey)
         }
@@ -131,11 +151,24 @@ class FlutterBridge(
         fun id(key: String = "id") = text(key).toULong()
         fun flag(key: String) = args[key] == true
         fun ids() = (args["ids"] as List<*>).map { it.toString().toULong() }
-        fun track() =
-            (library.allTracks.value +
-                    library.queue.value +
-                    listOfNotNull(library.snapshot.value?.current))
-                .first { it.id == id() }
+        fun track(value: ULong = id()) =
+            checkNotNull(library.findTrack(value)) { "That song is no longer in the library" }
+        fun tracks() = ids().map { track(it) }
+        fun filter(): TrackFilter =
+            defaultTrackFilter()
+                .copy(
+                    favourites = flag("favourites"),
+                    unplayed = flag("unplayed"),
+                    artist = text("artist"),
+                    album = text("album"),
+                    genre = text("genre"),
+                    minimumRate = number("minimumRate").toUInt(),
+                    minimumBits = number("minimumBits").toUInt(),
+                    order =
+                        TrackOrder.entries.firstOrNull { it.name == text("order") }
+                            ?: TrackOrder.TITLE,
+                    descending = flag("descending"),
+                )
         fun song(): SearchSong =
             features.onlineSongs.value.firstOrNull { it.recording == text("recording") }
                 ?: features.wanted.value.first { it.id == id() }.song
@@ -157,32 +190,10 @@ class FlutterBridge(
                             number("minimumBits") == 0L &&
                             (orderName.isEmpty() || orderName == TrackOrder.TITLE.name) &&
                             !flag("descending"))
-                if (isReset) {
-                    library.clearFilter()
-                } else {
-                    library.setFilter(
-                        defaultTrackFilter()
-                            .copy(
-                                favourites = flag("favourites"),
-                                unplayed = flag("unplayed"),
-                                artist = text("artist"),
-                                album = text("album"),
-                                genre = text("genre"),
-                                minimumRate = number("minimumRate").toUInt(),
-                                minimumBits = number("minimumBits").toUInt(),
-                                order =
-                                    TrackOrder.entries.firstOrNull { it.name == orderName }
-                                        ?: TrackOrder.TITLE,
-                                descending = flag("descending"),
-                            )
-                    )
-                }
+                if (isReset) library.clearFilter() else library.setFilter(filter())
             }
             "play" -> {
-                val media =
-                    ids().map { value ->
-                        library.allTracks.value.first { it.id == value }.mediaItem()
-                    }
+                val media = tracks().map { it.mediaItem() }
                 val remote = checkNotNull(controller()) { "Playback is still connecting" }
                 remote.setMediaItems(media, number("index").toInt(), 0)
                 remote.prepare()
@@ -197,7 +208,13 @@ class FlutterBridge(
             "seek" -> checkNotNull(controller()).seekTo(number("position"))
             "jump" -> checkNotNull(controller()).seekToDefaultPosition(number("index").toInt())
             "shuffle" -> checkNotNull(controller()).shuffleModeEnabled = flag("enabled")
-            "repeat" -> checkNotNull(controller()).repeatMode = number("mode").toInt()
+            "repeat" ->
+                checkNotNull(controller()).repeatMode =
+                    when (number("mode")) {
+                        1L -> Player.REPEAT_MODE_ONE
+                        2L -> Player.REPEAT_MODE_ALL
+                        else -> Player.REPEAT_MODE_OFF
+                    }
             "volume" -> checkNotNull(controller()).volume = (args["value"] as Number).toFloat()
             "favourite" -> library.setFavourite(id(), flag("enabled"))
             "playNext" -> {
@@ -224,13 +241,10 @@ class FlutterBridge(
                     features.folders.value.first { it.uri.toString() == text("uri") }
                 )
             "artwork" ->
-                return withContext(Dispatchers.IO) {
-                    val bitmap = features.artwork(track()) ?: return@withContext null
-                    ByteArrayOutputStream().use {
-                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it)
-                        it.toByteArray()
-                    }
-                }
+                return features.artworkJpeg(
+                    track(),
+                    ArtworkSizes.edgeFor(number("size").toInt()),
+                )
             "collections" ->
                 return withContext(Dispatchers.IO) {
                     val native = library.native()
@@ -244,17 +258,21 @@ class FlutterBridge(
             "collectionTracks" ->
                 return withContext(Dispatchers.IO) {
                     val native = library.native()
-                    if (text("kind") == "album") native.albumTracks(text("key"))
-                    else native.artistTracks(text("key"))
+                    when (text("kind")) {
+                        "album" -> native.albumTracks(text("key"))
+                        "mix" -> {
+                            val mix = filter()
+                            allPages { native.filteredTracks(mix, it, PAGE_ROWS) }
+                        }
+                        else -> native.artistTracks(text("key"))
+                    }
                 }
+            "albumKey" ->
+                return albumKey(text("album"), text("artist"), text("albumArtist"))
             "loadPlaylists" -> features.loadPlaylists()
             "selectPlaylist" -> features.selectPlaylist(id())
             "createPlaylist" -> features.createPlaylist(text("name"))
-            "addToPlaylist" ->
-                features.addToPlaylist(
-                    id(),
-                    ids().map { key -> library.allTracks.value.first { it.id == key } },
-                )
+            "addToPlaylist" -> features.addToPlaylist(id(), tracks())
             "renamePlaylist" ->
                 features.editPlaylist { it.renamePlaylist(id(), id("revision"), text("name")) }
             "deletePlaylist" -> features.editPlaylist { it.deletePlaylist(id(), id("revision")) }
@@ -279,8 +297,8 @@ class FlutterBridge(
             "analyse" -> features.analyse(id())
             "cancelAnalysis" -> features.cancelAnalysis()
             "visualize" -> features.visualize(flag("enabled"))
-            "enrich" ->
-                features.enrich(ids().map { key -> library.allTracks.value.first { it.id == key } })
+            "lyricFrames" -> features.watchLyrics(flag("enabled"))
+            "enrich" -> features.enrich(tracks())
             "enrichmentAutomatic" -> features.enrichment.setAutomatic(flag("enabled"))
             "enrichmentUnmeteredOnly" -> features.enrichment.setUnmeteredOnly(flag("enabled"))
             "enrichmentStatus" -> features.enrichment.read()
@@ -296,6 +314,7 @@ class FlutterBridge(
             "releaseSongs" -> features.releaseSongs(text("id"))
             "artistAlbums" -> features.artistAlbums(text("id"), number("from").toUInt())
             "openLink" -> features.openLink(text("text"))
+            "clearCollection" -> features.clearCollection()
             "saveWanted" -> features.saveWanted(listOf(song()))
             "loadWanted" -> features.loadWanted()
             "removeWanted" -> features.removeWanted(id())
@@ -316,10 +335,8 @@ class FlutterBridge(
             "scrobbling" -> features.saveScrobbling(scrobbling(args), flag("includeHistory"))
             "validateScrobbling" -> features.validateScrobbling(scrobbling(args))
             "lastFm" -> features.signInLastFm(scrobbling(args), text("user"), text("password"))
-            "sendFavourites" -> features.sendFavourites()
             "corrections" -> features.searchCorrections(text("text"))
-            "applyCorrection" ->
-                features.applyCorrection(features.corrections.value[number("index").toInt()])
+            "applyCorrection" -> features.applyCorrection(text("id"))
             "profile" -> features.applyProfileText(text("name"), text("text"))
             "outputs" -> features.refreshOutputs()
             "output" -> features.selectOutput(number("id").toInt())
@@ -510,8 +527,18 @@ class FlutterBridge(
             args["lastfmSession"] as? String ?: "",
         )
 
+    private fun <T> allPages(read: (UInt) -> List<T>): List<T> {
+        val found = ArrayList<T>()
+        do {
+            val page = read(found.size.toUInt())
+            found.addAll(page)
+        } while (page.size == PAGE_ROWS.toInt())
+        return found
+    }
+
     fun close() {
         features.visualize(false)
+        features.stopWatchingLyrics()
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         scope.cancel()

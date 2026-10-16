@@ -46,7 +46,11 @@ optimization and thin LTO, in a separate generated directory and packages ARM64 
 emulator binaries; it never packages
 the debug variant's native libraries. Native symbols remain until binding generation finishes;
 Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
-key or password stored in the repository. Flutter enables R8 for release and includes
+key or password stored in the repository: the `release` signing config exists only where Gradle
+properties `resonate.signing.storeFile`, `.storePassword`, `.keyAlias` and `.keyPassword` (or the
+environment variables `RESONATE_SIGNING_STORE_FILE`, `_STORE_PASSWORD`, `_KEY_ALIAS` and
+`_KEY_PASSWORD`) name a keystore, and without them `assembleRelease` leaves the APK unsigned, never
+signed with the debug key. Flutter enables R8 for release and includes
 `app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
 including names, fields, constructors and native entry points used through JNI and reflection.
 The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning
@@ -85,15 +89,38 @@ Dismissing the app task pauses every session player and stops its foreground ser
 keeps playback running; an active download may retain the engine but never keeps music playing
 across task dismissal.
 Controller actions enter one ordered worker, so load/prepare/play cannot race one another.
-Audio focus loss and noisy-output events pause playback. An Activity's recreation does not own
-or close the audio engine. Playback and download services each retain the repository; the last
+`RustMediaPlayer` declares `COMMAND_RELEASE`, so `release()` reaches `handleRelease` once (media3
+ignores a second): the service's retain is given back, its collectors and the widgets stop, and the
+receiver and focus request are removed. Only the service's own controllers, the media
+notification and controllers the platform trusts (`ControllerInfo.isTrusted`) may connect
+(`TrustedControllers`); a controller's add, move and remove become engine queue edits
+(`QueueEdits`: an append then moves, a range as moves of the rows it passes, a removal by queue id).
+Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
+focus if the engine was playing or loading, and a duck is left to the platform
+(`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue
+place, repeat, shuffle, volume or song moved (the position is read live), and its playlist is
+rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
+audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread. A later service
-waits for that cleanup before opening another. Native shutdown stops sync, then the enrichment pass
+waits for that cleanup before opening another. The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
+a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
+ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
+only when `Snapshot.queue_revision` moved, or `catalog_revision` moved and three seconds have passed
+since the last read (`QueueReads`, as iOS's `catalogRereadAfter`), since every enrichment step, scan
+upsert and favourite moves the catalog.
+Native shutdown stops sync, then the enrichment pass
 (leaving its mark to carry on), analysis, downloads and the shared online client before releasing
 playback. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
 
-Oboe opens a shared stereo float stream at 48 kHz; the existing Rust engine converts into it.
+Oboe opens a shared stereo float stream at 48 kHz in `PerformanceMode::PowerSaving` with
+`ContentType::Music` (the engine's ring is the buffer, so low latency buys nothing and costs
+power); the existing Rust engine converts into it. The output thread waits on its commands as
+`output/waits.rs` says: 10 ms while draining, 100 ms while streaming (the latency is read again
+each time) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
+`OPEN_WITHIN` (3 s) for the stream thread, so a stalled `open_stream` on a route change is a
+timed-out open the engine parks, not a blocked engine thread, and the late stream closes itself
+(`an_open_that_never_answers_times_out_instead_of_blocking`).
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
 rebinding; system default is id zero. Device type distinguishes outputs that share a product name.
 The pane shows the actual route in a status card and names a different requested route when one
@@ -150,7 +177,8 @@ next catalog-wide number whenever `art_revision` moves; both call the connection
 `Catalog::open` registers before migrating, so a write from a connection without it fails.
 Rescanning upserts by the full URI; it never deletes rows on an unavailable or revoked grant. A scan
 asks `scan_document(uri, name, size, modified_ms)` (both phones, with what the folder listing already
-holds: iOS's resource values, SAF's `COLUMN_SIZE` and `COLUMN_LAST_MODIFIED`), which answers the
+holds: iOS's resource values, SAF's `COLUMN_SIZE` and `COLUMN_LAST_MODIFIED`, MediaStore's `SIZE`
+and `DATE_MODIFIED` in seconds made milliseconds), which answers the
 stored row untouched where its stamp and `INDEXING_REVISION` match and it is not hidden, so an
 unchanged library is neither opened, probed nor written (the catalog revision stays, and the search
 index with it) and an unknown size and time (both 0) always indexes; the folder's cover and sidecar
@@ -212,7 +240,11 @@ native library search (songs, albums and artists) and online results; recent que
 Songs without an active search or filter use the full catalog already held by the repository,
 so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
 Queue separates history, the playing row and Up next, and saves its current order through the
-existing playlist seam. Available device handoffs appear as one Queue entry; opening it lists the
+existing playlist seam. A drag is sent as `queueLanding(from, to)`: Flutter's `onReorderItem` gives
+the index after the row is removed, `move_in_queue` the row it lands before counted before the move,
+so a downward drag adds one and the end of the queue is its length. Search's *Songs* chip names how
+many of the matches it lists (`search_library` answers at most 500 and says so), and the empty
+queue's *Browse songs* is the whole catalog (`kind` `all`, read from the repository's list). Available device handoffs appear as one Queue entry; opening it lists the
 devices and resumes the selected queue through its original handoff index. Library pins Favourites
 above playlists, albums and artists, with collection search and category chips. Favourites and collection counts
 read the full catalog separately from the song browser's search and filters. A completed favourite
@@ -254,12 +286,21 @@ layout keeps these gaps equal as display scale changes; the Material bar's fixed
 into neighboring tabs and centers variable
 label heights differently.
 Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
-push the page heading down. Scrolling lists take their bottom inset from the scaffold rather than
+push the page heading down. A notice (a failure or a status) shows on every pushed page too: the
+bottom bar a collection or settings page carries shows the notice card alone, and a page with no bar
+(lyrics, analysis, details, the visualiser, search) is wrapped in `NoticeFooter`. A failure stays
+until dismissed, whatever call succeeds after it, as on iOS. A collection that cannot be read says
+so with *Try again* instead of spinning, and a playlist is a spinner until its rows arrive (the
+bridge sends `playlistRows` as `null` while `playlistLoading`, and `beginPlaylist` clears the
+model's copy at once, so the previous playlist's rows never flash); a *Made for you* mix is a
+collection page of its own (`kind` `mix`, read through `filtered_tracks`), never the Songs tab's
+filter. Scrolling lists take their bottom inset from the scaffold rather than
 reserving a fixed 180 pixels, keeping the final row clear without leaving an empty tail.
 
 Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
-keep disc/track ordering; artist pages expose their albums and songs. Playlist covers use at most
-four existing track covers loaded off the main thread. Playlist detail adds a searchable multi-song
+keep disc/track ordering; artist pages expose their albums and songs. Playlist covers are
+`MusicPlaylist.covers`, up to four songs with a picture, one an album, in row order, drawn as one
+cover or a 2 by 2 (`PlaylistCover`); a playlist with none shows an icon. Playlist detail adds a searchable multi-song
 picker through the existing batched add seam; rename, revision-checked moves/removal, delete and
 undo retain their existing native behavior. Row playback passes the explicit position, so repeated
 songs select the row that was tapped. Collection row semantics name that position independently
@@ -278,16 +319,30 @@ with a short trailing-edge slide over a static parent, keeping the system predic
 the compact tab keeps one fixed layout where the pill fades, the icon glides between the pill and
 the tab center, and the label swaps instantly with no opacity or transform of its own, so text
 never renders mid-animation. Artwork
-is loaded through the existing native cache as JPEG bytes,
-keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
-on updates; comparing two references to the mutable model misses a newly published generation.
-The decoded Flutter cache is bounded at 64 MiB and encoded/in-flight requests at 48 entries.
+is loaded through the native cache as JPEG bytes at the size drawn: Dart asks for the bucket (96,
+192, 384, 512, 768 or 1024 px, `artworkBucket`) that holds its logical size at the display's
+density, the colour sample asks for 96, and Kotlin keeps decoded bitmaps and encoded bytes by
+*picture* and bucket (`artwork_picture`, `picture`), so the twelve songs of an album decode and
+encode one image and a picture never goes stale. Dart keys a request by song, artwork revision,
+generation, a per-song stamp and the bucket; the stamp moves for the songs `art_changed_since`
+names (the `artChanged` event), so an enrichment finding one cover refetches that song's cover
+alone, and the generation moves only where everything may have changed (a scan, an explicit
+refresh). Widgets compare their stored request key on updates; comparing two references to the
+mutable model misses a newly published generation. The colour cache is keyed without the bucket,
+since colours come from any size. The decoded Flutter cache is bounded at 64 MiB and
+encoded/in-flight requests at 48 entries.
 The expanded player samples two tones from a 16 by 16 cover decode and falls back for
 neutral/dark/transparent art. The shell and expanded player paint one static color gradient,
 stronger in the expanded player, and animate it only when the artwork changes. Continuous drift
 and full-screen blurred cover layers made playback scrolling miss the frame budget on the W-P311.
 Position-only snapshots update the progress controls without notifying the whole screen every
-250 ms; transport, metadata and queue changes still notify it. Artwork, lyrics, queue and the
+250 ms; transport, metadata and queue changes still notify it. So do the streams that move many
+times a second (`samples`, `lyricFrame`, `analysisProgress`, `downloadedBytes`): they are
+`PlayerModel.hot(key)` notifiers the one widget reading each listens to, and a patch of nothing else
+never notifies the model; Kotlin computes lyric frames only while a lyrics pane is open
+(`lyricFrames`, counted) and the Activity is visible. A favourite is a `favourite` delta applied in
+place to Dart's lists (the bridge skips re-sending a catalog that differs only in favourites,
+`sameSongs`), and Dart keeps `favouriteTracks` rather than filtering the catalog in a build. Artwork, lyrics, queue and the
 sleep timer share one opaque pill; narrow widths and large text use icon-only buttons with named
 tooltips.
 Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
@@ -331,10 +386,16 @@ restored into a later engine session.
 
 Scanning keeps album artist, genre, date, track/disc numbers, depth, channel count and tagged
 MusicBrainz ids. Embedded pictures precede the folder's cover/folder/front JPEG or PNG, bounded at
-8 MiB; a matching-basename LRC is bounded at 1 MiB and decoded through core's text reader. A bad
+8 MiB; a matching-basename LRC is bounded at 1 MiB and decoded through core's text reader.
+The boundary refuses past the same bound itself (`keep_sidecar_lyrics`, `keep_lyric_text`:
+`LyricsTooLarge`), as `keep_folder_cover` does past 8 MiB and `recognise_heard` past 30 s of
+samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one. A bad
 companion does not refuse playable audio. Bitmap caches use 32 MiB and decode to at most 1024
 pixels per side after checking dimensions. Albums group by title and album artist, falling back
-to the tagged artist. Folder names and grants are listed independently of the catalog, including
+to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
+request. A song's album page opens by `album_key` (`albumKey` through the bridge), so a song with
+another spelling, no album artist or a shared title opens its own album, and the song sheet's
+heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music untouched.
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
@@ -538,9 +599,10 @@ AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load
 bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
-asked; Last.fm password sign-in saves the returned session, never that password. A separate
-explicit action sends current identified favourites (`send_favourites`); it promises no remote
-unlove. `tell_loves(account)` (`loves.rs`) is the desktop's `Library::tell_loves` over the document
+asked; Last.fm password sign-in saves the returned session, never that password. Favourites
+are told by `tell_loves(account)` (`loves.rs`), which both phones' 30 s scrobbling loop calls after
+the listens (the Scrobbling page says so; there is no send button, and a favourite taken back is
+unloved on each saved account). It is the desktop's `Library::tell_loves` over the document
 catalog: V10's `loves_told` (service, recording) is weighed against the favourites with a recording,
 at most `LOVES_TOLD_AT_ONCE` loves or take-backs per service and call; a love refused with a 4xx
 other than 401, 403, 408 or 429 (`resonate_library::refused_for_good`) is noted told, any other
@@ -569,7 +631,11 @@ Finding, Downloading, Validating, Done, Failed, Cancelled; bytes received; the t
 provider said one; the provider); `cancel_download(job)` is heard between provider answers, while an
 offer opens (on its own thread, looked at every 50 ms) and between 64 KiB chunks, and a cancel
 pressed before the find stays (nothing resets it). Shutdown cancels every job; at most 16 settled
-jobs are kept. A failure is a typed error whose message is the sentence the app shows, naming the
+jobs are kept. **A found offer waits for its destination at most `OFFER_HELD_FOR` (2 min)**: a
+watchdog thread per offer drops the provider's reader (and its connection) and fails the job if
+`download_offer` has not taken it, so a front end that cannot create a document leaks neither
+(`download_offer` then answers `DownloadExpired`; `an_offer_nobody_takes_is_let_go_and_its_job_fails`).
+Taking the offer, a cancel or a settled job ends the watchdog at once. A failure is a typed error whose message is the sentence the app shows, naming the
 provider and cause (`NoProvider`, `NotFound`, `Unreachable`, `ProviderAway` (also a provider left
 behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the code,
 `ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,
@@ -643,8 +709,8 @@ accessibility tree while hidden. `song_uris` lists every document's URI, hidden 
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a
-`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`), so beacons and Bonjour from devices on
-the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
+`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, released when sync stops and when the
+repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
 `SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait.
@@ -660,7 +726,8 @@ From `android/flutter/`, run `flutter pub get`, `flutter analyze` and `flutter t
 tests cover repeated rows, identities, favourite updates, feedback, restoration and large text.
 
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
-both native ABIs and checks Kotlin and the manifest.
+both native ABIs and checks Kotlin and the manifest, and `:app:testDebugUnitTest` runs the plain
+JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence).
 `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks ELF/APK alignment and runs
 clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document
