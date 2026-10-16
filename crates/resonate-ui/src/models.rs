@@ -706,6 +706,7 @@ impl Learning for PageLearning {
 
 pub struct LibraryModel {
     first_read: Option<FirstRead>,
+    unreadable: bool,
     library: Arc<Library>,
     reference: Option<Arc<dyn Reference>>,
     for_the_pass: Consulted,
@@ -921,6 +922,7 @@ impl LibraryModel {
         let tags_walk_back = library.retag_walks_back().unwrap_or_default();
         let mut model = Self {
             first_read,
+            unreadable: false,
             library,
             reference,
             for_the_pass,
@@ -2111,6 +2113,7 @@ impl LibraryModel {
                     Ok(tracks) => tracks,
                     Err(error) => {
                         tracing::error!(%error, "a suggestion could not be previewed");
+                        toast::tell(toast::could_not("preview that suggestion", &error), cx);
                         return;
                     }
                 };
@@ -2745,6 +2748,10 @@ impl LibraryModel {
             Selection::Everything => self.tracks_measured,
             Selection::Album(_) | Selection::Artist(_) => self.scoped_measured,
         }
+    }
+
+    pub(crate) const fn unreadable(&self) -> bool {
+        self.unreadable
     }
 
     pub(crate) const fn albums_counted(&self) -> u32 {
@@ -4111,6 +4118,7 @@ impl LibraryModel {
     fn landed(&mut self, loaded: resonate_library::Result<Loaded>, cx: &mut Context<Self>) {
         match loaded {
             Ok(loaded) => {
+                self.unreadable = false;
                 let shelved = loaded.shelves.is_some();
                 let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
                 if self.take(loaded) == Grew::Moved {
@@ -4130,7 +4138,11 @@ impl LibraryModel {
                     self.ask_when_due(cx);
                 }
             }
-            Err(error) => tracing::error!(%error, "the library could not be read"),
+            Err(error) => {
+                tracing::error!(%error, "the library could not be read");
+                self.unreadable = true;
+                toast::tell(toast::could_not("read the library", &error), cx);
+            }
         }
         cx.notify();
     }

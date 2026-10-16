@@ -574,7 +574,8 @@ is never named.
   every gesture tell it alike (`toast::tell(notice, cx)`). One pill at a time, `type_ahead_lift` above
   the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER` (6 s;
   `LINGER_IN_A_BURST` 2 s where more wait; at most `WAITING_AT_MOST` (4) waiting, never the same words
-  twice), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
+  twice; a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
+  only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
   `Done` or `Noted`; the tone is the pill's icon (alert in the failure colour, tick in green, info mark
   in the accent). `EqualiserModel` sets its notice where it holds no `cx`: an outbox `RootView` drains
   (`take_notice`). One line stays in place, belonging to its control: the Library card's refusal of a
@@ -589,7 +590,9 @@ is never named.
   `PlayerStopped`), read exhaustively off codec/PipeWire errors in `Error::cause`; `Error::location`
   names the failed file. `toast::would_not_play`/`would_not_do` turn a cause into words; library and
   equaliser failures use `toast::could_not("start the scan", &error)`. A notice is a label: no full
-  stop.
+  stop. A press that reads the catalog before it plays or queues (heading Play and Shuffle, a scoped
+  listing, a suggestion, a dragged album, a downloaded song) toasts the failed read as well as logging
+  it; a settings write whose writer died is told like one that failed.
 - **No device name in the playback bar** (the sink description pushed the album title off). The
   inspector's OUTPUT stage names the device; the signal path's hint says *Playing through …*.
 - **Thin root over four cached regions: a moving clock redraws only the playback bar.** gpui re-runs the
@@ -618,7 +621,7 @@ is never named.
   `flex_1`, zero basis, ≥ `SIDE_AT_LEAST` (180 px), equal halves of what the centre leaves, so the
   buttons sit on the window's centre line. Centre: basis `theme::transport_centre()` (460), shrinks to
   `CENTRE_AT_LEAST` (260), gives way first. A press on the total clock toggles time left
-  (`RootView::showing_time_left`, not kept); the rail fills its row (`Handle::fills_its_row`). Both
+  (`RootView::showing_time_left`, not kept; `format::left` subtracts whole seconds so elapsed plus left is the length shown, and a row opening (`Buffering`) draws and acts as *Pause*); the rail fills its row (`Handle::fills_its_row`). Both
   sides `overflow_hidden`. **The seek rail names the time under the pointer** in a bubble
   (`slider::Pointed`, `RootView::seek_pointed`; drawn, not a `hint::Names` tooltip; nothing where
   length is unknown).
@@ -888,7 +891,8 @@ is never named.
   artists). `Matching::grouped` carries the whole grammar into albums, artists and tracks,
   `db::cuts_matching` into an opened playlist's rows, while the playlists index narrows on `words_of`
   alone. A lone word draws no chip. A pane with nothing left says "No albums match." where a search is
-  in force, "No albums yet." where none is.
+  in force, "No albums yet." where none is, and "The library couldn't be read." (with a toast)
+  where the last read failed (`LibraryModel::unreadable`).
 - **The window keeps the queue for the next run; the switch stopping it discards what was kept.**
   `RootView` holds a `Keeping` (field `resuming`) off the `PlayerModel` observer, keeping what
   `resonate play` keeps (`audio.md`). `Stored::resume` is a `config.toml` key; the *Resuming* card is a
@@ -1583,16 +1587,16 @@ is never named.
   markers, not samples. Heading = lyrics pane's with a `kit::figure` reading back the analysis
   (*4096-point · 48 kHz*) and a `kit::segmented` *Spectrum*/*Scope*/*Stereo* (`Showing`) living on the
   entity for the run. `spectrum.rs`: hand-written radix-2 real transform under a periodic Hann window,
-  scaled so a full-scale sine on a bin reads 0 dBFS; bands (sixth-octave as built) from the equaliser's
+  scaled so a full-scale sine on a bin reads 0 dBFS; bands (an octave split by `spectrum-bands`, sixths by default) from the equaliser's
   `RESPONSE_FROM_HZ` to what the rate carries (`spectrum::top_of`: Nyquist, never under
   `RESPONSE_TO_HZ`), placed by `spectrum::across`, labelled per decade (`spectrum::marked`). A band = its
-  loudest bin tilted up about 1 kHz (3 dB an octave as built: pink noise stands level), drawn between
+  loudest bin tilted up about 1 kHz (`spectrum-tilt`, 3 dB an octave by default: pink noise stands level), drawn between
   the floor (−78 dB) and 0 over faint lines every 12 dB (no figures: a tilted reading is dBFS only at
   the pivot). A bar rises at once and falls at its rate (40 dB/s as built); its peak is held
   `PEAK_HELD_FOR` (700 ms) before following at half that; all wall-clock. **Tilt, floor, bands an octave
   and fall rate are the listener's**: `resonate_core::Spectral` (`spectrum-tilt`, `spectrum-floor`,
   `spectrum-bands`, `spectrum-falls`) rides `Stored` onto `ResonateApp::spectral` (Appearance's *Live
-  spectrum* group); the visualiser rebuilds its `Spectrum` where the reading or rate moved (the stereo
+  spectrum* group; the pane's hints are written from it, `reads_hint`, `spectrum_hint`); the visualiser rebuilds its `Spectrum` where the reading or rate moved (the stereo
   meters keep `Falling::METERED`). Window sized by rate, about 85 ms (`ANALYSED_FOR`). Scope = 20 ms of
   left over right from the first rising zero crossing, of their mid or their side where it carries more
   energy (`spectrum::louder_of`), armed only once the trace has fallen a tenth of the window's loudest
