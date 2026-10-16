@@ -73,27 +73,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Phones
-- [S] `documents_moved` rekeys a whole batch in one transaction on the `UNIQUE` `documents.uri`
-  after Swift has moved the files: a destination held by a hidden missing row fails the batch,
-  leaving the moved files under their old URIs, re-indexed by the next scan as new songs
-  (favourites, plays and playlists lost) and with no *Put files back* record
-- [M] A phone's playback failure says nothing of its cause: `Snapshot.failure` is
-  `error.to_string()` ("decoding track 12 failed", source chain dropped), `Error::Player` and
-  `Error::Decode` flatten the engine and codec errors to one sentence each, and `Store`,
-  `Reference`, `Sync` and `Received` print their op with `{:?}`; the desktop reads
-  `engine::Error::cause`, which the boundary never maps
 - [S] `send_favourites` loves every favourite on every press, stops at the first refused love and
   records no `loves_told`: one recording a service refuses for good blocks every later favourite on
   Android, and `tell_loves` (which skips `refused_for_good`) later sends them all again
-- [S] `snapshot` consumes state (drains events, `take`s `failure`, counts listening), so the two
-  `snapshot()` calls `NowPlaying.swift` makes only to read the transport on releasing the session
-  can swallow a playback failure the poll never shows
 - [S] A found download whose destination cannot be created leaks its job: `find_download` parks the
   provider's reader in `Standing.opened`, neither phone calls `cancel_download` on that path, and
   `begin` evicts settled jobs only, so the job and its connection stay open
-- [S] The phones show Rust debug prints as report text: `analyse_track` builds `findings` with
-  `{finding:?}` and `inspector` builds `container` with `{:?}` (`IsoMp4`), where `Finding::told`
-  and `Container`'s `Display` are the sentences the desktop shows
 - [S] Rust caps what a phone hands it unevenly: `keep_sidecar_lyrics`, `keep_lyric_text` and
   `recognise_heard` take any size where `import_playlist_file`, `keep_folder_cover` and
   `keep_room_correction` refuse past a bound (both phones cap at the source today)
@@ -161,34 +146,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] `LibraryRepository.scanFolder` admits files by its own extension and cover-name lists, never
   `audio_extensions()`, so a format added to core is scanned on desktop and iOS and skipped here
 - [S] The release build type signs with the debug keystore and reads no supplied signing config
-
-## iOS
-- [S] `Erasure.everything` discards every failure (`try?` on each directory listing and
-  `removeItem`, an unchecked `SecItemDelete` per class) and `eraseEverything` then calls `exit(0)`:
-  a catalog, history file or sync key that survives is never reported and the next launch resumes
-  from it, rejoining sync with the old key
-- [S] `PairingSheet` keeps the pairing code revealed when the scene leaves `.active`, so the App
-  Switcher snapshot shows the sync key, and `.textSelection(.enabled)` on the blurred text lets the
-  system Copy put it on the general pasteboard, past the `localOnly` one
-- [S] `Enrichment.read` on coming forward publishes the status and changed art but never `settle`s
-  a pass that ended while the scene was inactive or backgrounded, so `Library.allTracks` keeps rows
-  without its `artist_mbid` and album artist, and portraits stay absent until a scan or launch
-- [S] `NowPlaying.interrupted` marks a resume only for `.playing` while `Library.pause` also pauses
-  `.loading`, so an interruption beginning during a song change pauses and never resumes
-- [S] `Navigation.open` appends a destination already on top of the stack (*Go to album* from Now
-  Playing on that album, *More › Equaliser* twice), so Back lands on a copy; only `SyncProgress`
-  guards it
-- [S] `SystemVolumeLevel.watch` registers its `outputVolume` KVO synchronously on the main actor
-  (`observing` is `nonisolated` but called from `watch()`), the one `AVAudioSession` call left off
-  `Work.inSession`
-- [S] Lyrics read at about 22 % alpha when nothing is lit (an unsynced sheet, a song not playing):
-  `LyricInks.muted` (0.5) is drawn under `.opacity(ADRIFT 0.45)`, and `LyricsPane` has no Increase
-  Contrast or Reduce Transparency branch
-- [S] Now Playing's sleep countdown, volume glyphs and Up next list (`QueueHeading`, the track
-  detail line) are `.secondary` over the lifted field, not `nowPlayingInk`
-- [S] `SyncDevices`' header menu, `SeeAllLink` and the recent searches' *Clear* skip
-  `touchTarget()`, and `FolderRow`'s three actions are `.controlSize(.small)`: 20 to 28 pt targets
-  where `ios.md` fixes 44 pt
 
 ## Equaliser and DSP
 - [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a

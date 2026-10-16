@@ -40,6 +40,7 @@ final class Enrichment {
     @ObservationIgnored private var erased = false
     @ObservationIgnored private var sought: UInt64?
     @ObservationIgnored private var portraits: UInt32 = 0
+    @ObservationIgnored private var unsettled = false
 
     init(library: Library) {
         self.library = library
@@ -141,7 +142,11 @@ final class Enrichment {
             else { return }
             publish(read)
             await library.features.refreshChangedArt(native)
-            if read.running { watch(native) }
+            if read.running {
+                watch(native)
+            } else if unsettled {
+                await settle(native)
+            }
         }
     }
 
@@ -190,11 +195,13 @@ final class Enrichment {
     }
 
     private func settle(_ native: MobilePlayer) async {
+        unsettled = false
         await library.refresh()
         await library.features.refreshChangedArt(native)
     }
 
     private func publish(_ read: EnrichmentStatus) {
+        if read.running { unsettled = true }
         if status != read { status = read }
         if read.portraits != portraits {
             portraits = read.portraits

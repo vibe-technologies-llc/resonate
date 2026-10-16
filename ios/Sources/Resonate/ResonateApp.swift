@@ -107,6 +107,7 @@ final class Navigation {
         nowPlaying = false
         let root = tab == .settings && !destination.belongsToSettings ? Root.library : tab
         tab = root
+        guard paths[root]?.last != destination else { return }
         paths[root, default: []].append(destination)
     }
 
@@ -139,7 +140,7 @@ struct ErasingOverlay: View {
                     .onTapGesture {}
                 Group {
                     if let left = library.erasedLeaving {
-                        Text("Everything else is erased. \(counted(left, "song")) could not be deleted and stay in their folders, which Resonate keeps. Close Resonate and open it again.")
+                        Text((["Erasing did not finish."] + left.sentences + ["Close Resonate, open it again and erase once more."]).joined(separator: " "))
                     } else {
                         ProgressView("Erasing…")
                     }

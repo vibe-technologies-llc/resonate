@@ -101,9 +101,11 @@ struct SearchStart: View {
                 HStack {
                     Text("Recent searches")
                     Spacer()
-                    Button("Clear") { search.forgetRecents() }
-                        .font(.subheadline)
-                        .textCase(nil)
+                    Button { search.forgetRecents() } label: {
+                        Text("Clear").touchTarget()
+                    }
+                    .font(.subheadline)
+                    .textCase(nil)
                 }
             }
         }

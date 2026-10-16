@@ -254,9 +254,11 @@ struct SeeAllLink<Page: View>: View {
             Text(title)
             Spacer()
             if more {
-                NavigationLink("See all", destination: page)
-                    .font(.subheadline)
-                    .textCase(nil)
+                NavigationLink(destination: page) {
+                    Text("See all").touchTarget()
+                }
+                .font(.subheadline)
+                .textCase(nil)
             }
         }
     }

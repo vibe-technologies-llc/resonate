@@ -168,17 +168,23 @@ struct FolderRow: View {
                     }
                 }
             }
-            HStack {
-                Button("Rescan", systemImage: "arrow.clockwise", action: rescan)
-                    .disabled(!folder.readable || scanning)
-                Button("Organise", systemImage: "folder.badge.gearshape", action: organise)
-                    .disabled(!folder.writable || scanning)
-                if folder.id != Folders.local {
-                    Button("Remove access", systemImage: "xmark.circle", role: .destructive, action: remove)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack { actions }
+                VStack(alignment: .leading) { actions }
             }
             .buttonStyle(.bordered)
-            .controlSize(.small)
+            .controlSize(.large)
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        Button("Rescan", systemImage: "arrow.clockwise", action: rescan)
+            .disabled(!folder.readable || scanning)
+        Button("Organise", systemImage: "folder.badge.gearshape", action: organise)
+            .disabled(!folder.writable || scanning)
+        if folder.id != Folders.local {
+            Button("Remove access", systemImage: "xmark.circle", role: .destructive, action: remove)
         }
     }
 

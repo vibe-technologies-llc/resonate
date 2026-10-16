@@ -154,7 +154,7 @@ final class NowPlaying {
         guard let native else { return }
         Work.enqueueInOrder { [weak self] in
             Self.configureSession()
-            if let now = try? native.snapshot(), now.transport != .playing, now.transport != .loading {
+            if let now = try? native.transport(), now != .playing, now != .loading {
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
             Task { @MainActor in self?.reportRoute(rebind: false) }
@@ -222,7 +222,7 @@ final class NowPlaying {
     private func interrupted(_ type: AVAudioSession.InterruptionType?, _ options: AVAudioSession.InterruptionOptions?) {
         switch type {
         case .began:
-            resumeAfterInterruption = library.transport == .playing
+            resumeAfterInterruption = library.transport == .playing || library.transport == .loading
             library.pause()
         case .ended:
             if resumeAfterInterruption, options?.contains(.shouldResume) == true {
@@ -348,7 +348,7 @@ final class NowPlaying {
         wasSleeping = sleeping
         guard (stopped || sleptOff), !listening, let native else { return }
         Work.enqueueInOrder {
-            guard let now = try? native.snapshot(), now.transport != .playing, now.transport != .loading else { return }
+            guard let now = try? native.transport(), now != .playing, now != .loading else { return }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }

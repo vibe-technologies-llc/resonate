@@ -109,7 +109,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   hang), the keychain reads at launch (`Features.readSecrets`), a landing's `Folders.fresh` and `delete`,
   the journals' recovery at launch and the joining of an enrichment pass or a download on erasing run on `Work.aside`, never the main actor.
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
-  6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` is shown once per distinct text per
+  6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` (the boundary's cause sentence, `mobile.md`'s *A failure is told by its cause*) is shown once per distinct text per
   song, and a poll failure once until that part of polling recovers, so a dismissal holds. The
   snapshot, the queue read and the save are three parts of a tick, each failing and recovering on
   its own: a queue or save that fails never discards the snapshot already taken (which holds the
@@ -156,7 +156,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   folders as well as the app's own; nothing else in those folders), then `Erasure.everything`
   empties Application Support, Caches, Documents and tmp, removes the `library-features`,
   `playback`, `provider-accounts` and `appearance` suites and the standard domain, and deletes
-  every keychain class, then the app exits. With the pairing code gone, other devices hear nothing. The sync poll and the arrivals task are awaited, not only cancelled, so a landing in progress is in the second read; the run holds a background task, and `ErasingOverlay` on the root view blocks every tap and closes the open sheets. When `Folders.delete` could not remove some song (a read-only grant, an offline cloud folder) the bookmarks (`Folders.kept`) are not erased, the app does not exit, and the overlay says how many songs stayed and to close Resonate.
+  every keychain class, then the app exits. `Erasure.everything` counts what stays (a file or folder it could not remove, a keychain class refusing with a status other than success or not found) and returns it as `ErasureLeftovers` beside the songs `Folders.delete` could not remove: with anything left the app does not exit, and the overlay names each kind and asks to close Resonate and erase again, since the next launch would resume from the catalog or sync key that stayed. With the pairing code gone, other devices hear nothing. The sync poll and the arrivals task are awaited, not only cancelled, so a landing in progress is in the second read; the run holds a background task, and `ErasingOverlay` on the root view blocks every tap and closes the open sheets. When `Folders.delete` could not remove some song (a read-only grant, an offline cloud folder) the bookmarks (`Folders.kept`) are not erased, the app does not exit, and the overlay says how many songs stayed and to close Resonate.
 - **The sync page leads with what is happening; setup sits a step away** (`SyncView.swift`). The
   page is the *Sync this iPhone* switch, then a status section (`SyncStateRow`: spinner, *Up to
   date* check, warning or the network mark, a headline and `syncStanding`; *Sync now* turning into
@@ -170,7 +170,8 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
   is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
-  tapped, and covered again whenever the sheet opens. **A computer is paired by the system
+  tapped, covered again whenever the sheet opens or the scene leaves `.active` (so the App Switcher
+  snapshot never shows it), and not selectable: Copy is the only way onto the pasteboard, which is `localOnly`. **A computer is paired by the system
   camera**: `Info.plist` registers the `resonate` URL scheme, so the Camera app or the Control
   Centre scanner opens the desktop's QR code (`resonate://pair/<code>`) in Resonate; `Library.open`
   hands it to `Features.offerPairing` (`sync_code_in_link`), and the root view asks *Join these
@@ -248,7 +249,7 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   could not be kept, with the first of those.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
   (a route report asked while another is reading is the one applied, carrying any rebind owed), reports the route to Rust,
-  pauses on an interruption (resuming when the system says so) and when the old route disappears,
+  pauses on an interruption (resuming when the system says so, whether it began while playing or loading, as `Library.pause` pauses both) and when the old route disappears,
   and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
   the main actor). The category is set at start but the session is activated only on play
   (`activate()`), so opening Resonate never stops another app's audio; it is deactivated with
@@ -277,9 +278,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
   no settle wait.
 - **An icon-only control is at least 44 pt** (`touchTarget()`: a minimum frame and a rectangle
-  content shape: the favourite heart, the mini player's skips and play button and the transport row's skips, shuffle and
+  content shape, put inside a control's label so the hit area grows with it: the favourite heart, a *See all* link, a header's menu and the recent searches' *Clear*; a folder row's three actions are large bordered buttons that stack where they do not fit; the mini player's skips and play button and the transport row's skips, shuffle and
   repeat (the active mode also carries a dot, so colour is never the only sign), a filter token, the online song menu, *See all*). A slider speaks its value in its unit
-  (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. Now Playing's secondary labels (artist, album, times, the quality line) take `nowPlayingInk`, primary at 95 % and solid under Increase Contrast or Reduce Transparency, since the field behind them is lifted by the shader. A long status message opens in full on a tap and always at accessibility text sizes. What is lettered on the
+  (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. Now Playing's secondary labels (artist, album, times, the quality line, the sleep countdown, the volume glyphs and the Up next list's headings and detail lines, the last through `secondaryInk()`, which reads the `liftedField` environment the player's `QueueList` sets) take `nowPlayingInk`, primary at 95 % and solid under Increase Contrast or Reduce Transparency, since the field behind them is lifted by the shader. A long status message opens in full on a tap and always at accessibility text sizes. What is lettered on the
   accent (Play, the active mode toggle, the swatch tick, a chosen handle) takes `Color.wornInk`,
   white or near-black, whichever contrasts more with the accent as it is drawn in the current
   appearance (`AppearanceState.ink(on:)`).
@@ -328,7 +329,7 @@ every route change (a pair of headphones at the same rate included), not from th
   Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
   capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
-  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO, built `nonisolated`; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out)
+  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO registered and the first read made on `Work.inSession`, the level assigned back on the main actor, a registration that finishes after `stopWatching` invalidated at once; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out)
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
   The driver is mounted 600 ms after the row appears (or at the first touch), so building an
@@ -394,6 +395,7 @@ every route change (a pair of headphones at the same rate included), not from th
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
   `@ScaledMetric`.
+- **A destination already on top of a stack is not pushed again** (`Navigation.open` switches the tab and returns), so *Go to album* from Now Playing on that album or *More › Equaliser* twice never leaves a copy for Back to land on.
 - **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
@@ -700,7 +702,7 @@ tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refres
 - **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
   cancels the poll (the pass goes on in Rust), coming back reads the status once and resumes it.
   The line reads "Finding artwork and details · N of M", "Artwork and details up to date" or the
-  `EnrichmentStop` in words; a finished pass refreshes the library once. Switching *Fetch automatically* off, or *Only on Wi-Fi* on while the path is metered, stops a running pass. Settings' *Artwork and
+  `EnrichmentStop` in words; a finished pass refreshes the library once, and one that ended while the scene was away is settled the same way when it comes forward (`Enrichment.read`, `unsettled`). Switching *Fetch automatically* off, or *Only on Wi-Fi* on while the path is metered, stops a running pass. Settings' *Artwork and
   details* group (shown while online) holds both toggles, "Look again for missing covers"
   (`ask_again_for_covers`, then a start), the line and Stop. Library tools' "Refresh artwork and
   details" confirms with the song count, stops any pass and starts one with `refresh`, and offers

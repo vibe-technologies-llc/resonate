@@ -492,7 +492,7 @@ struct PlayableTrack: View {
                     if let detail {
                         Text(detail)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .secondaryInk()
                             .lineLimit(1)
                     }
                 }

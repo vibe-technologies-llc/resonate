@@ -185,7 +185,7 @@ final class Library {
     var status: StatusMessage?
     var scanning = false
     private(set) var erasing = false
-    private(set) var erasedLeaving: Int?
+    private(set) var erasedLeaving: ErasureLeftovers?
     var scanned = 0
     var preferences: PlaybackPreferences?
     private(set) var volume: Float = 1
@@ -1300,13 +1300,14 @@ final class Library {
             }
             await AppearanceState.shared.resetIcon()
             let erased = songs
-            let stuck = (try? await Work.aside {
+            let leftovers = (try? await Work.aside {
                 let stuck = erased.filter { !documents.delete($0) }
-                Erasure.everything(keeping: stuck.isEmpty ? [] : Folders.kept)
-                return stuck.count
-            }) ?? 0
-            guard stuck > 0 else { exit(0) }
-            erasedLeaving = stuck
+                var leftovers = Erasure.everything(keeping: stuck.isEmpty ? [] : Folders.kept)
+                leftovers.songs = stuck.count
+                return leftovers
+            }) ?? ErasureLeftovers(files: 1)
+            guard !leftovers.isNone else { exit(0) }
+            erasedLeaving = leftovers
             UIApplication.shared.endBackgroundTask(holding)
         }
     }

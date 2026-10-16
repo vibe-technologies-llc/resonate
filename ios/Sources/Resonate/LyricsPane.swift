@@ -73,6 +73,8 @@ private struct LyricFollowing: View {
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var phase
     @Environment(\.self) private var environment
@@ -88,7 +90,11 @@ private struct LyricFollowing: View {
     var body: some View {
         let playback = LyricPlayback.of(library.snapshot, at: library.clock.positionMs, showing: track)
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
-        let inks = LyricInks(scheme: scheme, accent: Color.worn.resolve(in: environment))
+        let inks = LyricInks(
+            scheme: scheme,
+            accent: Color.worn.resolve(in: environment),
+            legibility: contrast == .increased || reduceTransparency ? .solid : .glass
+        )
         let awake = visible && phase == .active
         let sounding = playback?.playing == true && sheet.detail != .unsynced
         let turning = awake && stage.isMoving(at: Date.now.timeIntervalSinceReferenceDate)
@@ -448,8 +454,10 @@ enum LyricPace {
     static let coastsFor: TimeInterval = 0.5
     static let settled = 0.5
     static let lit = 1.0
-    static let adrift = 0.45
+    static let adrift = 0.8
     static let unsungShare = 0.38
+    static let solidUnsungShare = 0.7
+    static let solidStandingFloor = 0.85
     static let voiceOfTwoSpans = 0.84
     static let dimDot = 0.22
     static let dotSwellsBy = 0.23
@@ -789,25 +797,36 @@ struct LyricMeasures: Equatable {
     }
 }
 
+enum LyricLegibility: Equatable {
+    case glass
+    case solid
+}
+
 struct LyricInks: Equatable {
     let lit: Color.Resolved
     let second: Color.Resolved
     let muted: Color.Resolved
     let faint: Color.Resolved
     let accent: Color.Resolved
+    let unsungShare: Double
+    let standingFloor: Double
 
     private static let mutedShare: Float = 0.5
     private static let faintShare: Float = 0.22
+    private static let solidFaintShare: Float = 0.6
 
-    init(scheme: ColorScheme, accent: Color.Resolved) {
+    init(scheme: ColorScheme, accent: Color.Resolved, legibility: LyricLegibility) {
         let lit = scheme == .dark
             ? Color.Resolved(red: 1, green: 1, blue: 1, opacity: 1)
             : Color.Resolved(red: 0.06, green: 0.06, blue: 0.08, opacity: 0.92)
         self.lit = lit
         second = accent
-        muted = Self.thinned(lit, to: Self.mutedShare)
-        faint = Self.thinned(lit, to: Self.faintShare)
+        let solid = legibility == .solid
+        muted = solid ? lit : Self.thinned(lit, to: Self.mutedShare)
+        faint = Self.thinned(lit, to: solid ? Self.solidFaintShare : Self.faintShare)
         self.accent = accent
+        unsungShare = solid ? LyricPace.solidUnsungShare : LyricPace.unsungShare
+        standingFloor = solid ? LyricPace.solidStandingFloor : 0
     }
 
     static func thinned(_ ink: Color.Resolved, to share: Float) -> Color.Resolved {
@@ -1493,12 +1512,12 @@ final class LyricStage {
         let lit = second ? cue.inks.second : cue.inks.lit
         let lead = lead(index, at: now)
         let sung = LyricInks.mixed(cue.inks.muted, lit, by: lead)
-        let waiting = LyricInks.mixed(LyricInks.thinned(lit, to: 0), lit, by: LyricPace.unsungShare)
+        let waiting = LyricInks.mixed(LyricInks.thinned(lit, to: 0), lit, by: cue.inks.unsungShare)
         let unsung = LyricInks.mixed(cue.inks.muted, waiting, by: lead)
         let words = wipes[index].map { LyricWords.swept(line.text, by: $0, unsung: unsung, sung: sung) }
             ?? .plain(line.text, sung)
         let breath = breath(at: index, now: now)
-        let standing = standing(index, at: now)
+        let standing = max(standing(index, at: now), cue.inks.standingFloor)
         let look = LyricRowLook(
             blank: false,
             text: line.text,
@@ -1523,7 +1542,7 @@ final class LyricStage {
     private func ending(at now: TimeInterval, still: Bool, column: CGFloat, inks: LyricInks) -> LyricSceneEnd? {
         guard let sheet else { return nil }
         let end = Int(sheet.end)
-        let look = LyricEndLook(standing: standing(end, at: now), width: column, muted: inks.muted, faint: inks.faint)
+        let look = LyricEndLook(standing: max(standing(end, at: now), inks.standingFloor), width: column, muted: inks.muted, faint: inks.faint)
         return LyricSceneEnd(id: end, look: look, inset: inset(end, at: now, still: still))
     }
 }

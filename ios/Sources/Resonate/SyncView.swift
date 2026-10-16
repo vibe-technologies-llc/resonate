@@ -252,6 +252,7 @@ struct SyncDevices: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .touchTarget()
                             .accessibilityLabel("Device options")
                     }
                 }
@@ -309,6 +310,7 @@ struct PairingSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var joining = ""
     @State private var confirmingJoin = false
     @State private var confirmingNew = false
@@ -328,7 +330,6 @@ struct PairingSheet: View {
                             Text(code)
                                 .font(.title3.monospaced().weight(.semibold))
                                 .multilineTextAlignment(.center)
-                                .textSelection(.enabled)
                                 .frame(maxWidth: .infinity)
                                 .blur(radius: revealed ? 0 : 9)
                                 .privacySensitive()
@@ -413,6 +414,9 @@ struct PairingSheet: View {
                 }
             }
             .sensoryFeedback(.success, trigger: copies)
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { revealed = false }
+            }
             .confirmationDialog("Join another group?", isPresented: $confirmingJoin, titleVisibility: .visible) {
                 Button("Join") { join() }
             } message: {

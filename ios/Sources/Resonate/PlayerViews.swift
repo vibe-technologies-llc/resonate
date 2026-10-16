@@ -575,9 +575,36 @@ struct NowPlayingInk: ViewModifier {
     }
 }
 
+private struct LiftedFieldKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var liftedField: Bool {
+        get { self[LiftedFieldKey.self] }
+        set { self[LiftedFieldKey.self] = newValue }
+    }
+}
+
+struct SecondaryInk: ViewModifier {
+    @Environment(\.liftedField) private var lifted
+
+    func body(content: Content) -> some View {
+        if lifted {
+            content.nowPlayingInk()
+        } else {
+            content.foregroundStyle(.secondary)
+        }
+    }
+}
+
 extension View {
     func nowPlayingInk(_ level: Double = NowPlayingInk.secondary) -> some View {
         modifier(NowPlayingInk(level: level))
+    }
+
+    func secondaryInk() -> some View {
+        modifier(SecondaryInk())
     }
 }
 
@@ -660,7 +687,7 @@ struct SleepCountdown: View {
             } label: {
                 Label(text, systemImage: "moon.zzz.fill")
                     .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .nowPlayingInk()
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the sleep timer")
@@ -695,7 +722,7 @@ struct VolumeRow: View {
         let grabbed = dragging != nil
 
         HStack(spacing: 12) {
-            Image(systemName: "speaker.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+            Image(systemName: "speaker.fill").nowPlayingInk().accessibilityHidden(true)
             GeometryReader { space in
                 let width = max(space.size.width, 1)
                 Capsule()
@@ -716,7 +743,7 @@ struct VolumeRow: View {
                 if driven { VolumeDriver(volume: volume).allowsHitTesting(false) }
             }
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
-            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+            Image(systemName: "speaker.wave.3.fill").nowPlayingInk().accessibilityHidden(true)
         }
         .accessibilityElement()
         .accessibilityLabel("Volume")
@@ -769,14 +796,26 @@ final class SystemVolumeLevel {
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
     @ObservationIgnored private var heardSinceWatching = false
+    @ObservationIgnored private var watchAsked = false
+    @ObservationIgnored private var watches = 0
 
     func watch() {
-        guard watching == nil else { return }
+        guard !watchAsked else { return }
+        watchAsked = true
         heardSinceWatching = false
-        watching = Self.observing { [weak self] heard in self?.hear(heard) }
+        watches += 1
+        let watch = watches
+        let hearing: @MainActor @Sendable (Float) -> Void = { [weak self] heard in self?.hear(heard) }
         Task {
-            let current = await Work.inSession { AVAudioSession.sharedInstance().outputVolume }
-            if watching != nil, !heardSinceWatching, driver == nil || current > 0 { level = current }
+            let (observation, current) = await Work.inSession {
+                (Self.observing(hearing), AVAudioSession.sharedInstance().outputVolume)
+            }
+            guard watch == watches else {
+                observation.invalidate()
+                return
+            }
+            watching = observation
+            if !heardSinceWatching, driver == nil || current > 0 { level = current }
         }
     }
 
@@ -785,7 +824,7 @@ final class SystemVolumeLevel {
             for _ in 0..<Self.seedTries {
                 driver.layoutIfNeeded()
                 if let slider = Self.slider(in: driver) {
-                    if watching != nil, !heardSinceWatching { level = slider.value }
+                    if watchAsked, !heardSinceWatching { level = slider.value }
                     return
                 }
                 try? await Task.sleep(for: Self.seedEvery)
@@ -799,6 +838,8 @@ final class SystemVolumeLevel {
     }
 
     func stopWatching() {
+        watches += 1
+        watchAsked = false
         watching?.invalidate()
         watching = nil
     }
@@ -998,6 +1039,7 @@ struct QueueList: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(inPlayer ? .hidden : .automatic)
+            .environment(\.liftedField, inPlayer)
             .onAppear { scroller.scrollTo(Self.playingRow, anchor: .top) }
             .onChange(of: library.currentQueueId) {
                 withAnimation(reduceMotion ? nil : .smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
@@ -1022,7 +1064,7 @@ struct QueueSections: View {
         let playing = library.playingQueueRow
         Group {
             if rows.isEmpty, inPlayer {
-                Text("Your queue is empty").foregroundStyle(.secondary)
+                Text("Your queue is empty").secondaryInk()
             } else if rows.isEmpty {
                 EmptyQueue()
             } else if let playing {
@@ -1046,7 +1088,7 @@ struct QueueSections: View {
                 Section {
                     QueueHeading(title: parts.next.isEmpty ? "Up next" : "Continue playing")
                     if parts.rest.isEmpty {
-                        Text("Nothing more to play").foregroundStyle(.secondary)
+                        Text("Nothing more to play").secondaryInk()
                     } else {
                         rowsOf(rows, parts.rest)
                     }
@@ -1083,7 +1125,7 @@ struct QueueHeading: View {
     var body: some View {
         Text(title)
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .secondaryInk()
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .accessibilityAddTraits(.isHeader)
