@@ -19,6 +19,7 @@ const EXPIRED: &str = "expired_token";
 const DENIED: &str = "access_denied";
 const SLOWED_BY: Duration = Duration::from_secs(5);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
+const A_POLL_ANSWERED_WITHIN: Duration = Duration::from_secs(3);
 const ASKED_EVERY_AT_LEAST: Duration = Duration::from_secs(1);
 const LASTS_WHEN_UNSAID: Duration = Duration::from_secs(300);
 const ASKED_EVERY_WHEN_UNSAID: Duration = Duration::from_secs(2);
@@ -59,6 +60,7 @@ pub struct TidalSignIn {
     source: SourceId,
     endpoints: Endpoints,
     agent: Agent,
+    polls_answered_within: Duration,
 }
 
 enum Answered {
@@ -88,6 +90,15 @@ impl TidalSignIn {
             source: source(),
             endpoints,
             agent: api_agent(),
+            polls_answered_within: A_POLL_ANSWERED_WITHIN,
+        }
+    }
+
+    #[must_use]
+    pub fn polling_within(self, polls_answered_within: Duration) -> Self {
+        Self {
+            polls_answered_within,
+            ..self
         }
     }
 
@@ -130,10 +141,18 @@ impl TidalSignIn {
         }
     }
 
-    fn sent(&self, url: &str, form: &[(&str, &str)]) -> Result<(u16, Vec<u8>)> {
-        let response = self
-            .agent
-            .post(url)
+    fn sent(
+        &self,
+        url: &str,
+        form: &[(&str, &str)],
+        within: Option<Duration>,
+    ) -> Result<(u16, Vec<u8>)> {
+        let request = self.agent.post(url);
+        let request = match within {
+            Some(within) => request.config().timeout_global(Some(within)).build(),
+            None => request,
+        };
+        let response = request
             .send_form(form.iter().copied())
             .map_err(|error| self.unreachable(error))?;
         let status = response.status().as_u16();
@@ -150,7 +169,11 @@ impl TidalSignIn {
         if let Some(secret) = &client.secret {
             form.push(("client_secret", secret.as_str()));
         }
-        let (status, bytes) = self.sent(&self.endpoints.auth, &form)?;
+        let (status, bytes) = self.sent(
+            &self.endpoints.auth,
+            &form,
+            Some(self.polls_answered_within),
+        )?;
         if (200..300).contains(&status) {
             let granted: Granted = serde_json::from_slice(&bytes).map_err(|_| self.unreadable())?;
             return Ok(Answered::Granted(RefreshToken::new(granted.refresh_token)));
@@ -209,6 +232,7 @@ impl SignsIn for TidalSignIn {
         let (status, bytes) = self.sent(
             &self.endpoints.device,
             &[("client_id", client.id.as_str()), ("scope", SCOPE)],
+            None,
         )?;
         if !(200..300).contains(&status) {
             return Err(self.refused(status));
@@ -267,6 +291,12 @@ impl SignsIn for TidalSignIn {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::Read,
+        net::TcpListener,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
     use super::*;
 
     #[test]
@@ -279,5 +309,56 @@ mod tests {
             with_scheme("https://link.tidal.com/ABCDE"),
             "https://link.tidal.com/ABCDE"
         );
+    }
+
+    #[test]
+    fn a_cancel_is_heard_within_one_poll_even_when_the_server_does_not_answer() {
+        const SILENT_FOR: Duration = Duration::from_secs(30);
+        const HEARD_WITHIN: Duration = Duration::from_secs(5);
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else {
+                    return;
+                };
+                thread::spawn(move || {
+                    let mut byte = [0_u8; 1];
+                    let _ = stream.read(&mut byte);
+                    thread::sleep(SILENT_FOR);
+                });
+            }
+        });
+        let signing_in = TidalSignIn::at(Endpoints {
+            auth: format!("{url}/auth/token"),
+            device: format!("{url}/auth/device"),
+            ..Endpoints::tidal()
+        })
+        .polling_within(Duration::from_millis(400));
+        let client = Client {
+            id: "client".to_owned(),
+            secret: None,
+        };
+        let authorizing = Authorizing::new(
+            "ABCDE".to_owned(),
+            "https://link.tidal.com/ABCDE".to_owned(),
+            Duration::from_secs(60),
+            ASKED_EVERY_AT_LEAST,
+            "device-1".to_owned(),
+        );
+
+        let cancelled = AtomicBool::new(false);
+        let started = Instant::now();
+        let answer = thread::scope(|scope| {
+            scope.spawn(|| {
+                thread::sleep(Duration::from_millis(1_500));
+                cancelled.store(true, Ordering::Relaxed);
+            });
+            signing_in.authorized(&client, &authorizing, &|| cancelled.load(Ordering::Relaxed))
+        });
+
+        assert!(matches!(answer, Ok(None)));
+        assert!(started.elapsed() < HEARD_WITHIN, "{:?}", started.elapsed());
     }
 }
