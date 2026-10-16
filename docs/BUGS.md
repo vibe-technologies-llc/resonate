@@ -11,15 +11,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A stream open that fails and parks its row (`land_the_stream` drops the output before `fail`,
   `unbound` unset) parks it at the decoder's position, a ring's depth past what was heard: when the
   device or daemon returns, the first half second of the track (or after a seek) is skipped
-- [S] An end-of-queue sleep under repeat-queue never fades (`sleep_is_due_in` asks
-  `ends_with_this_row`, not `wraps_next`), and a queue ended by `remove` or `fail` emits
-  `QueueFinished` leaving the timer armed: the next album loaded pauses at its end unasked
 - [M] A row whose first bind fails (`NoSink`: headphones not yet connected) returns from `started`
   before `TrackStarted` and before `renegotiations` resets; parked and played later it is never
   announced, so `resonate play a b` with `b` failing exits 1 `NothingPlayed` though `a` played
-- [S] `Insert { play: true }` at `Placement::Queued` lands the run at the end of the play-next block
-  and `jump_to` moves only its first row to the front: `resonate queue a b c --play` over two queued
-  rows plays a, the two queued rows, then b and c
 - [M] Jumping to a queued row while another queued row plays restamps (`let_go_of_what_was_heard` ->
   `rows_changed`) while the chosen row is out of `next`, stamping it as part of `order`: the
   playlist badge and MPRIS `ActivePlaylist` go for that row's length

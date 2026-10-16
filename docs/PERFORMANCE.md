@@ -4,7 +4,9 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [S] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering
+- [M] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering: the binary's
+  `confirm_sink` and the window's sink list read it once at start, so answering early needs a
+  survey-settled signal they wait on
 
 ## Tagging
 - [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every

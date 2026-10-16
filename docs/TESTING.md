@@ -4,6 +4,8 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
+- [S] `transport.rs`'s `a_steady_level_playing` drops its temporary tree as it returns, so a test
+  that makes the engine reopen the file (a repeat wrap) fails intermittently
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
