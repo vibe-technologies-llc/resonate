@@ -128,6 +128,7 @@ impl Failure {
             | Codec::SeekOutOfRange { .. }
             | Codec::NotSeekable { .. }
             | Codec::ReadBySeeking { .. }
+            | Codec::NoRoomToSpool { .. }
             | Codec::SeekBackwardUnsupported { .. }
             | Codec::SeekInvalidTrack { .. }
             | Codec::ResetRequired { .. }

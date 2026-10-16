@@ -294,6 +294,7 @@ struct Turns {
     next: BTreeMap<Host, Instant>,
     stayed_busy: BTreeSet<Host>,
     cooling: BTreeMap<Host, Instant>,
+    backing_off: BTreeMap<Host, Duration>,
     listening: BTreeMap<Host, usize>,
     listener_answered: BTreeMap<Host, Instant>,
 }
@@ -401,6 +402,24 @@ impl Pacing {
         }
     }
 
+    fn backed_off(&self, host: Host, named: Option<Duration>, now: Instant) -> Duration {
+        let mut turns = self.0.turns.lock();
+        if let Some(until) = turns.cooling.get(&host).filter(|until| **until > now) {
+            return *until - now;
+        }
+        let by_default = turns
+            .backing_off
+            .get(&host)
+            .copied()
+            .unwrap_or(RETRY_AFTER_BY_DEFAULT);
+        turns
+            .backing_off
+            .insert(host, (by_default * 2).min(RETRY_AFTER_AT_MOST));
+        let wait = named.unwrap_or(by_default.min(RETRY_AFTER_AT_MOST));
+        turns.cooling.insert(host, now + wait);
+        wait
+    }
+
     fn heard(&self, host: Host, status: StatusCode, asked_for: Option<Duration>, now: Instant) {
         let mut turns = self.0.turns.lock();
         if busy(status) {
@@ -411,6 +430,7 @@ impl Pacing {
         } else {
             turns.stayed_busy.remove(&host);
             turns.cooling.remove(&host);
+            turns.backing_off.remove(&host);
         }
     }
 }
@@ -615,7 +635,6 @@ impl Client {
             .then(|| self.pacing.listening(host, self.clock.as_ref()));
         let owed = self.pacing.retries_owed(host);
         let mut retried = 0;
-        let mut by_default = RETRY_AFTER_BY_DEFAULT;
         loop {
             if !self.is_reaching() {
                 return Err(Error::Offline { host, op });
@@ -658,8 +677,11 @@ impl Client {
             }
 
             retried += 1;
-            let wait = cooling_off(response.headers(), by_default);
-            by_default = (by_default * 2).min(RETRY_AFTER_AT_MOST);
+            let wait = self.pacing.backed_off(
+                host,
+                named_cooling_off(response.headers()),
+                self.clock.now(),
+            );
             tracing::debug!(
                 ?host,
                 ?op,
@@ -781,10 +803,6 @@ fn busy(status: StatusCode) -> bool {
 
 fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
     retry_after(headers, SystemTime::now()).map(|asked_for| asked_for.min(RETRY_AFTER_AT_MOST))
-}
-
-fn cooling_off(headers: &HeaderMap, by_default: Duration) -> Duration {
-    named_cooling_off(headers).unwrap_or_else(|| by_default.min(RETRY_AFTER_AT_MOST))
 }
 
 #[cfg(test)]
@@ -1609,7 +1627,7 @@ mod tests {
                     HeaderValue::from_str(value).expect("ascii"),
                 );
             }
-            cooling_off(&headers, RETRY_AFTER_BY_DEFAULT)
+            named_cooling_off(&headers).unwrap_or(RETRY_AFTER_BY_DEFAULT)
         };
 
         assert_eq!(with(None), RETRY_AFTER_BY_DEFAULT);
@@ -1622,5 +1640,44 @@ mod tests {
             RETRY_AFTER_AT_MOST
         );
         assert_eq!(with(Some("whenever")), RETRY_AFTER_BY_DEFAULT);
+    }
+
+    #[test]
+    fn threads_hearing_the_same_busy_answer_climb_one_ladder_between_them() {
+        let pacing = Pacing::default();
+        let start = Instant::now();
+        let host = Host::CoverArtArchive;
+
+        let first_wave = (0..4)
+            .map(|_| pacing.backed_off(host, None, start))
+            .collect::<Vec<_>>();
+        assert_eq!(first_wave, vec![Duration::from_secs(2); 4]);
+
+        let later = start + Duration::from_secs(2);
+        let second_wave = (0..4)
+            .map(|_| pacing.backed_off(host, None, later))
+            .collect::<Vec<_>>();
+        assert_eq!(second_wave, vec![Duration::from_secs(4); 4]);
+
+        let after = later + Duration::from_secs(4);
+        assert_eq!(pacing.backed_off(host, None, after), Duration::from_secs(8));
+
+        pacing.heard(host, StatusCode::OK, None, after);
+        assert_eq!(pacing.backed_off(host, None, after), RETRY_AFTER_BY_DEFAULT);
+    }
+
+    #[test]
+    fn a_ladder_is_kept_by_host() {
+        let pacing = Pacing::default();
+        let now = Instant::now();
+
+        assert_eq!(
+            pacing.backed_off(Host::CoverArtArchive, None, now),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            pacing.backed_off(Host::Lrclib, None, now),
+            Duration::from_secs(2)
+        );
     }
 }

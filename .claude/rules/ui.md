@@ -74,7 +74,8 @@ is never named.
   `SignsIn` seam's two calls on the background executor; the code shows as a `kit::figure` beside
   *Open the page* and *Stop*. The token lands in the refresh-token field, the global and the file at
   once; a refusal is a toast naming which (`providers.md`). hifi-api and Monochrome addresses are
-  optional overrides: blank = hosted service.
+  optional overrides: blank = the hosted service where *Ask the hosted services* is on, else
+  nothing.
   - **An account given is asked at once.** Every field of the Subsonic and TIDAL groups writes the
     global `Online` as it writes the file (`Sourcing::providers`). `the_sources_moved` calls
     `LibraryModel::sources_moved`: every *No provider is set up* download returns to *Queued* and

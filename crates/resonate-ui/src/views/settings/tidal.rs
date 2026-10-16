@@ -20,6 +20,7 @@ use crate::{
         settings::{
             action, note,
             subsonic::{not_a_server, reads_as_a_server},
+            switch_row,
         },
     },
 };
@@ -87,8 +88,10 @@ const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, you
                           service is used where no custom server is given; a hifi-api server \
                           you run can replace it. Both use the same ISRC and whole-track checks. \
                           Monochrome's hosted service is asked too, by ISRC alone, for the whole \
-                          FLAC; a Monochrome server you name can replace it. Asked as soon as \
-                          they are given, and only while Online is on.";
+                          FLAC; a Monochrome server you name can replace it. The hosted services \
+                          are asked only where Ask the hosted services is on; a server you name \
+                          is asked without it. Asked as soon as they are given, and only while \
+                          Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
@@ -281,6 +284,8 @@ impl RootView {
             });
             self.store(&account.setting(String::new()), cx);
         }
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.hosted_services = false);
+        self.store(&Setting::HostedServices(false), cx);
     }
 
     fn client_for_tidal(&self, cx: &Context<Self>) -> Option<Client> {
@@ -478,7 +483,26 @@ impl RootView {
                 ),
             ));
         }
-        body.child(self.signing_in_to_tidal(cx))
-            .child(note(TIDAL_NOTE))
+        let allowed = cx.global::<ResonateApp>().online.hosted_services;
+        body.child(self.in_the_ring(
+            "hosted-services",
+            switch_row(
+                "Ask the hosted services",
+                "Off, hifi-api and Monochrome are asked only at a server named above",
+                allowed,
+                "hosted-services",
+            ),
+            move |this, _, cx| this.set_hosted_services(!allowed, cx),
+            cx,
+        ))
+        .child(self.signing_in_to_tidal(cx))
+        .child(note(TIDAL_NOTE))
+    }
+
+    fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.hosted_services = allowed);
+        self.store(&Setting::HostedServices(allowed), cx);
+        self.the_sources_moved(cx);
+        cx.notify();
     }
 }

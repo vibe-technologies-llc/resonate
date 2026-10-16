@@ -616,6 +616,7 @@ impl Group {
                 SettingKey::TidalRefreshToken,
                 SettingKey::HifiApi,
                 SettingKey::Monochrome,
+                SettingKey::HostedServices,
             ],
             Self::Resuming => &[SettingKey::Resume],
             Self::History => &[SettingKey::HistoryKept],
@@ -958,7 +959,9 @@ pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in
                                      reached through a hifi-api server you run, the tracks \
                                      marked wanted are also filled from, as lossless FLAC, \
                                      matched by the TIDAL track MusicBrainz names or the ISRC. \
-                                     Monochrome is asked too, by the ISRC alone.";
+                                     Monochrome is asked too, by the ISRC alone. The hosted \
+                                     hifi-api and Monochrome services are asked only where you \
+                                     allow them.";
 
 pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
                                     FLAC as REW or DRC writes it — convolved with everything \

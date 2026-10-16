@@ -659,7 +659,8 @@ impl RootView {
         let tidal_given = self
             .tidal
             .iter()
-            .any(|field| !field.read(cx).text().trim().is_empty());
+            .any(|field| !field.read(cx).text().trim().is_empty())
+            || cx.global::<ResonateApp>().online.hosted_services;
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),

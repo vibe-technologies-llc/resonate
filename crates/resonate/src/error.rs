@@ -84,6 +84,7 @@ pub enum ConfigKey {
     TidalRefreshToken,
     HifiApi,
     Monochrome,
+    HostedServices,
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
@@ -124,7 +125,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 96] = [
+    pub const ALL: [Self; 97] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -199,6 +200,7 @@ impl ConfigKey {
         Self::TidalRefreshToken,
         Self::HifiApi,
         Self::Monochrome,
+        Self::HostedServices,
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
@@ -299,6 +301,7 @@ impl ConfigKey {
             Self::TidalRefreshToken => "tidal-refresh-token",
             Self::HifiApi => "hifi-api",
             Self::Monochrome => "monochrome",
+            Self::HostedServices => "hosted-services",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",
@@ -407,6 +410,23 @@ pub enum Error {
 
     #[error("{key} in {path} is not one of the settings it accepts", path = path.display())]
     ConfigValue { path: PathBuf, key: ConfigKey },
+
+    #[error(
+        "TIDAL rotated the refresh token and it could not be written to {path}; sign in again \
+         with `resonate tidal` once it can",
+        path = path.display()
+    )]
+    TidalTokenNotKept {
+        path: PathBuf,
+        #[source]
+        source: Box<Error>,
+    },
+
+    #[error(
+        "TIDAL rotated the refresh token and there is no settings file to write it to; sign in \
+         again with `resonate tidal`"
+    )]
+    TidalTokenHasNoSettings,
 
     #[error("cannot create {path}", path = path.display())]
     CreateDir {

@@ -162,6 +162,15 @@ pub enum Error {
         container: Container,
     },
 
+    #[error(
+        "{location} cannot be spooled on disc: {needed} bytes would be taken and {room} may be"
+    )]
+    NoRoomToSpool {
+        location: MediaLocation,
+        needed: u64,
+        room: u64,
+    },
+
     #[error("{location} can only be seeked forward")]
     SeekBackwardUnsupported { location: MediaLocation },
 
@@ -268,6 +277,7 @@ impl Error {
             | Self::LayoutNotRepresentable { location, .. }
             | Self::NotSeekable { location }
             | Self::ReadBySeeking { location, .. }
+            | Self::NoRoomToSpool { location, .. }
             | Self::SeekBackwardUnsupported { location }
             | Self::SeekInvalidTrack { location }
             | Self::ResetRequired { location }

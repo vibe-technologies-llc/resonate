@@ -196,8 +196,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   only on request). Off whenever `online` is, unless `sync-nearby-only` (`Config::syncs`). The pane writes them for the next
   start. **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window
   holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the latter).
-- `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers; blank/absent uses the
-  hosted service (`tracks.monochrome.st`) while `online` is on (`providers.md`).
+- `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
+  on. `hosted-services` (default false) lets blank/absent fall back to the hosted services
+  (`tracks.monochrome.st`); without it nothing hosted is registered (`providers.md`).
+- **A rotated TIDAL refresh token that could not be written is told, not lost quietly.**
+  `providers::Keeping::unkept` holds the last `TidalTokenNotKept` (the write failed) or
+  `TidalTokenHasNoSettings` (no config directory and no `--config`); `resonate poll` ends with it
+  as its error after the pass, the window and `resonate mcp` log it at error. The settings path
+  is already the default config file, so no further location is tried.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
