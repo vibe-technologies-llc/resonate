@@ -2708,6 +2708,132 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
 }
 
 #[test]
+fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, 4_000);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    {
+        let mut held = graph.lock();
+        held.sinks.clear();
+        let removed = held
+            .announce
+            .as_ref()
+            .map(|announce| announce.send(SinkChange::Removed(SinkId::new(1))));
+        assert!(removed.is_some_and(|sent| sent.is_ok()));
+    }
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| {
+            plays(player, 2)
+                && player.state().playback == PlaybackState::Buffering
+                && bound_to(player).is_none()
+        },
+        "the second row to wait for a device",
+    );
+    let before: Vec<Event> = player.events().try_iter().collect();
+    assert!(
+        !before
+            .iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "no device was billed to the row: {before:?}"
+    );
+
+    announce(
+        &graph,
+        SinkInfo {
+            id: SinkId::new(3),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
+        "the second row to play on the device that came",
+    );
+
+    let after: Vec<Event> = player.events().try_iter().collect();
+    let second = TrackId::new(2).expect("a non-zero track id");
+    assert!(
+        before
+            .iter()
+            .chain(&after)
+            .any(|event| matches!(event, Event::TrackStarted(started) if *started == second)),
+        "the row played without ever being announced: {before:?} then {after:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_fails_to_open_parks_the_row_where_it_was_heard_not_where_it_was_decoded()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    graph.lock().away = true;
+    let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+    wait_for(
+        &player,
+        |player| plays(player, 2) && player.state().playback == PlaybackState::Buffering,
+        "the second row to wait for the graph",
+    );
+    thread::sleep(A_SHORT_DOZE);
+    assert_eq!(
+        player.state().current.map(|track| track.position.get()),
+        Some(0),
+        "the row was parked past what had been heard"
+    );
+
+    let already_played = graph.lock().played.len();
+    graph.lock().away = false;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the second row to play once the graph is back",
+    );
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= already_played + block,
+        "the second row to play on",
+    );
+
+    assert!(
+        heard_as_faded_in(&graph.lock().played[already_played..], &source.stream),
+        "the second row did not play from its first frame"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_stream_the_system_refuses_to_start_is_lost_like_one_that_failed() -> Result<()> {
     let (player, graph, _) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
@@ -3881,6 +4007,45 @@ fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> 
         .request(Command::Remove(Span::one(9)))?
         .wait_for(PATIENCE);
     assert!(outcome.is_err(), "a row past the end was removed");
+    Ok(())
+}
+
+#[test]
+fn jumping_between_queued_rows_leaves_the_stamp_of_what_is_playing_from_alone() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let items = vec![track(&first, 1), track(&second, 2)];
+    let as_loaded = stamp_of(&items);
+    player.send(Command::Load {
+        items,
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    player
+        .request(Command::Insert {
+            items: vec![track(&first, 90), track(&second, 91)],
+            at: Placement::Queued,
+            play: false,
+        })?
+        .wait_for(PATIENCE)?;
+    player.request(Command::Next)?.wait_for(PATIENCE)?;
+    wait_for(&player, |player| plays(player, 90), "the first queued row");
+    assert_eq!(player.state().queue_stamp, as_loaded);
+
+    player.request(Command::JumpTo(2))?.wait_for(PATIENCE)?;
+    wait_for(&player, |player| plays(player, 91), "the second queued row");
+
+    assert_eq!(
+        player.state().queue_stamp,
+        as_loaded,
+        "a queued row jumped to was stamped as part of what is playing"
+    );
     Ok(())
 }
 

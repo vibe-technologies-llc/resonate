@@ -2015,10 +2015,10 @@ impl Engine {
         self.track = Some(track);
         self.unbound = (!self.playing).then_some(at);
 
-        self.rebind(Some(at), None)?;
+        let bound = self.rebind(Some(at), None);
         self.renegotiations = 0;
         self.emit(Event::TrackStarted(item.id));
-        Ok(())
+        bound
     }
 
     fn reopen_where_the_stream_moves(&mut self) -> Result<()> {
@@ -2706,7 +2706,9 @@ impl Engine {
                 return;
             }
             (Err(error), true) => {
+                let heard = self.heard_position();
                 self.output = None;
+                self.unbound.get_or_insert(heard);
                 self.fail(error.into());
                 return;
             }

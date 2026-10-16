@@ -363,7 +363,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `bind_the_row_waiting_for_a_device`, binding where the row was heard (on the fallback where the
   desktop has one, else the next device to appear). A stream failing again within `GRAPH_BACK_WITHIN`
   of the last loss is the row's after all (`device_last_lost`). With no output, `Engine::position`
-  answers `unbound` where set, not the decoder's place.
+  answers `unbound` where set, not the decoder's place, so `land_the_stream` reads the heard
+  position into `unbound` before it drops an output whose stream would not open. `Engine::started`
+  raises `Event::TrackStarted` and resets `renegotiations` whether or not the first bind found a
+  device: a row parked for one is announced once, when it first plays nowhere else.
 - **A fill is a slice, not a loop to a full ring:** `Engine::fill` decodes and writes for at most
   `FILLED_IN_ONE_GO` (20 ms), answering `Filled::ForNow` where it stopped with room left, so Pause or
   Stop is not held behind a deep ring's priming.

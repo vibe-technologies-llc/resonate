@@ -635,13 +635,14 @@ impl Queue {
         match self.row(at)? {
             Row::Next(0) if self.seat == Seat::Next => {}
             Row::Next(waiting) => {
-                let wanted = self.next.remove(waiting);
-                let wanted = match self.seat {
-                    Seat::Next => self.let_go_of_what_was_heard().map_or(wanted, |gone| {
-                        if wanted > gone { wanted - 1 } else { wanted }
-                    }),
-                    Seat::Nowhere | Seat::InOrder => wanted,
-                };
+                let mut wanted = *self.next.get(waiting)?;
+                if self.seat == Seat::Next
+                    && let Some(gone) = self.let_go_of_what_was_heard()
+                    && wanted > gone
+                {
+                    wanted -= 1;
+                }
+                self.next.retain(|index| *index != wanted);
                 self.next.insert(0, wanted);
                 self.seat = Seat::Next;
                 self.revision = self.revision.wrapping_add(1);
@@ -2169,6 +2170,22 @@ mod tests {
             .expect("the row moves back down");
         assert_eq!(numbered(&queue), [1, 90, 2, 3, 4]);
         assert_eq!(queue.playing_next(), Some(Span::one(1)));
+    }
+
+    #[test]
+    fn jumping_from_one_queued_row_to_another_keeps_both_out_of_what_is_playing_from() {
+        let mut queue = loaded(3, 0);
+        queue.insert(vec![item(90), item(91), item(92)], Placement::Queued);
+        let playing_from = queue.playing_from();
+        queue.advance(false);
+
+        queue.jump_to(3);
+        assert_eq!(current(&queue), Some(92));
+        assert_eq!(queue.playing_from(), playing_from);
+
+        queue.jump_to(2);
+        assert_eq!(current(&queue), Some(91));
+        assert_eq!(queue.playing_from(), playing_from);
     }
 
     #[test]

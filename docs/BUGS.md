@@ -8,15 +8,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `Silence::Marked` ring, which hushes at once without draining (`ring.rs` `fades` is false), so the
   position freezes ten seconds short, the transport stays Playing all night (idle inhibit held) and
   every Play re-silences after `quiet_within`
-- [M] A stream open that fails and parks its row (`land_the_stream` drops the output before `fail`,
-  `unbound` unset) parks it at the decoder's position, a ring's depth past what was heard: when the
-  device or daemon returns, the first half second of the track (or after a seek) is skipped
-- [M] A row whose first bind fails (`NoSink`: headphones not yet connected) returns from `started`
-  before `TrackStarted` and before `renegotiations` resets; parked and played later it is never
-  announced, so `resonate play a b` with `b` failing exits 1 `NothingPlayed` though `a` played
-- [M] Jumping to a queued row while another queued row plays restamps (`let_go_of_what_was_heard` ->
-  `rows_changed`) while the chosen row is out of `next`, stamping it as part of `order`: the
-  playlist badge and MPRIS `ActivePlaylist` go for that row's length
 - [M] A stream open the daemon never answers is `LoopStopped` (`Survey::open` ignores `unanswered`),
   not parked as the graph's: a hung daemon costs 5 s a queued row, and a late `Ok` leaves an orphan
   stream until the next open
