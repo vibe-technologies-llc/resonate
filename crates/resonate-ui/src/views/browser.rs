@@ -7,8 +7,8 @@ use std::{
 
 use gpui::{
     AnyElement, App, BoxShadow, Context, Div, ElementId, FontWeight, MouseButton, MouseDownEvent,
-    ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div, hsla, img, point,
-    prelude::*, px, rgb, uniform_list,
+    ObjectFit, Pixels, Point, SharedString, Stateful, Window, anchored, deferred, div, hsla, img,
+    point, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
@@ -166,6 +166,25 @@ pub(crate) enum Plays {
 }
 
 impl RootView {
+    fn play_the_row(
+        &mut self,
+        plays: Plays,
+        played: &[Track],
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match plays {
+            Plays::TheseRows => self.play(played, index, cx),
+            Plays::AsTheListingIsDrawn { .. } => {
+                let Some((drawn, start)) = self.library.read(cx).played_from_held(index) else {
+                    return;
+                };
+                self.play_the_listing_from(&drawn, start, window, cx);
+            }
+        }
+    }
+
     pub(crate) fn favour_mark(
         &self,
         id: impl Into<ElementId>,
@@ -930,6 +949,7 @@ impl RootView {
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
         let menued = Arc::clone(tracks);
+        let pressed = Arc::clone(tracks);
         let adding_to = self.adding_songs_to;
         let id = track.id;
         let favourite = self
@@ -1056,14 +1076,8 @@ impl RootView {
                             }),
                     ),
             )
-            .on_click(cx.listener(move |this, _, window, cx| match plays {
-                Plays::TheseRows => this.play(&played, index, cx),
-                Plays::AsTheListingIsDrawn { .. } => {
-                    let Some((drawn, start)) = this.library.read(cx).played_from_held(index) else {
-                        return;
-                    };
-                    this.play_the_listing_from(&drawn, start, window, cx);
-                }
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.play_the_row(plays, &played, index, window, cx);
             }));
         let lifted = match plays {
             Plays::AsTheListingIsDrawn { in_an_album: false } => {
@@ -1115,8 +1129,15 @@ impl RootView {
                     .is_in_the_queue(&track.location, track.span, cx)
                     .then(|| (track.location.clone(), track.span));
 
+                let pressed = Arc::clone(&pressed);
+
                 Menu::at(at)
-                    .queues(move || Arc::clone(&queued))
+                    .queues(
+                        move || Arc::clone(&queued),
+                        move |this, window, cx| {
+                            this.play_the_row(plays, &pressed, index, window, cx);
+                        },
+                    )
                     .when_some(in_the_queue, |menu, (location, span)| {
                         menu.does(Icon::Discard, menu::TAKE_OUT, move |this, _, cx| {
                             this.take_out_of_the_queue(&location, span, cx);

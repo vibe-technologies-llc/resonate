@@ -429,19 +429,21 @@ pub(crate) const EXPORT: &str = "Export";
 pub(crate) const DISCARD: &str = "Discard";
 
 impl Menu {
-    pub(crate) fn queues(self, rows: impl Fn() -> Arc<[PlaylistEntry]> + Clone + 'static) -> Self {
+    pub(crate) fn queues(
+        self,
+        rows: impl Fn() -> Arc<[PlaylistEntry]> + Clone + 'static,
+        plays: impl Fn(&mut RootView, &mut Window, &mut Context<RootView>) + 'static,
+    ) -> Self {
         let next = rows.clone();
-        let last = rows.clone();
+        let last = rows;
 
-        self.under(Icon::Play, PLAY, "enter", move |this, _, cx| {
-            this.play_entries(&rows(), cx);
-        })
-        .does(Icon::QueueNext, PLAY_NEXT, move |this, _, cx| {
-            this.queue(&next(), Placement::Next, cx);
-        })
-        .does(Icon::QueueLast, ADD_TO_QUEUE, move |this, _, cx| {
-            this.queue(&last(), Placement::Queued, cx);
-        })
+        self.under(Icon::Play, PLAY, "enter", plays)
+            .does(Icon::QueueNext, PLAY_NEXT, move |this, _, cx| {
+                this.queue(&next(), Placement::Next, cx);
+            })
+            .does(Icon::QueueLast, ADD_TO_QUEUE, move |this, _, cx| {
+                this.queue(&last(), Placement::Queued, cx);
+            })
     }
 
     pub(crate) fn holds(self, rows: impl Fn() -> Held + 'static) -> Self {

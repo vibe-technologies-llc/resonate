@@ -52,6 +52,11 @@ const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker; type the folder
 const FORGET_HINT: &str = "Forget this folder and every track scanned from it. The files are left \
                            alone.";
 
+const FORGET_ASKED: &str = "Press again to forget this folder, its tracks, and the plays, \
+                            favourites and details kept for them.";
+
+const FORGET_ASKED_LABEL: &str = "Press again to forget";
+
 const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it.";
 
 const FOLDERS_NOTE: &str = "Everything under these folders is read into the library and followed \
@@ -216,19 +221,30 @@ impl RootView {
             return;
         }
         let folder = spelt_out_from_home(&typed);
-        if !folder.is_dir() {
-            self.report(
-                Notice::Trouble(format!("{} is not a folder", folder.display())),
-                cx,
-            );
-            return;
-        }
-        self.typed_root
-            .update(cx, |typed, cx| typed.hold(String::new(), cx));
-        self.library
-            .update(cx, |library, cx| library.add_roots(vec![folder], cx));
-        self.leave_typed_root(window, cx);
-        cx.notify();
+        let looked = folder.clone();
+
+        self.looking_at_the_typed_root = cx.spawn_in(window, async move |this, cx| {
+            let there = cx
+                .background_executor()
+                .spawn(async move { looked.is_dir() })
+                .await;
+
+            let _ = this.update_in(cx, |this, window, cx| {
+                if !there {
+                    this.report(
+                        Notice::Trouble(format!("{} is not a folder", folder.display())),
+                        cx,
+                    );
+                    return;
+                }
+                this.typed_root
+                    .update(cx, |typed, cx| typed.hold(String::new(), cx));
+                this.library
+                    .update(cx, |library, cx| library.add_roots(vec![folder], cx));
+                this.leave_typed_root(window, cx);
+                cx.notify();
+            });
+        });
     }
 
     fn folder(&self, root: &Path, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -264,16 +280,48 @@ impl RootView {
             .child(self.forget_root(path, cx))
     }
 
-    fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
         let named = format!("forget {}", root.display());
+        let asked = self.forgetting_the_folder.as_deref() == Some(root.as_path());
 
-        self.root_in_the_ring(
-            named,
-            kit::mark_when(Press::Takes, id, Icon::Discard, FORGET_HINT, FOLDER_GROUP),
-            root,
-            cx,
-        )
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .when(asked, |part| {
+                part.child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .text_color(rgb(theme::failure()))
+                        .child(FORGET_ASKED_LABEL),
+                )
+            })
+            .child(self.root_in_the_ring(
+                named,
+                kit::mark_when(
+                    Press::Takes,
+                    id,
+                    Icon::Discard,
+                    if asked { FORGET_ASKED } else { FORGET_HINT },
+                    FOLDER_GROUP,
+                ),
+                root,
+                cx,
+            ))
+    }
+
+    pub(crate) fn ask_to_forget_the_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        if self.forgetting_the_folder.as_ref() == Some(&root) {
+            self.forgetting_the_folder = None;
+            self.library
+                .update(cx, |library, cx| library.forget_root(root, cx));
+        } else {
+            self.lower_every_armed_press();
+            self.forgetting_the_folder = Some(root);
+        }
+        cx.notify();
     }
 
     fn root_in_the_ring(
@@ -291,16 +339,12 @@ impl RootView {
             .focus(|mark| mark.bg(theme::tinted(theme::accent(), 0x2a)))
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
-                    let root = root.clone();
-                    this.library
-                        .update(cx, |library, cx| library.forget_root(root, cx));
+                    this.ask_to_forget_the_folder(root.clone(), cx);
                     cx.stop_propagation();
                 }),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
-                let root = clicked.clone();
-                this.library
-                    .update(cx, |library, cx| library.forget_root(root, cx));
+                this.ask_to_forget_the_folder(clicked.clone(), cx);
             }))
     }
 
@@ -1299,7 +1343,6 @@ impl RootView {
     }
 
     pub(crate) fn name_the_vault(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
-        let folder = folder.canonicalize().unwrap_or(folder);
         let music = cx.global::<ResonateApp>().music_folder.clone();
         let refusal =
             unusable_as_the_vault(&folder, self.library.read(cx).roots(), music.as_deref());
@@ -1577,7 +1620,12 @@ impl RootView {
                 return;
             };
 
-            let named = this.update(cx, |this, cx| landed(this, folder, cx));
+            let settled = cx
+                .background_executor()
+                .spawn(async move { folder.canonicalize().unwrap_or(folder) })
+                .await;
+
+            let named = this.update(cx, |this, cx| landed(this, settled, cx));
             let _ = named;
         })
         .detach();
@@ -1585,7 +1633,6 @@ impl RootView {
 
     pub(crate) fn set_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
         let vault = self.library.read(cx).vault_root();
-        let folder = folder.canonicalize().unwrap_or(folder);
         if let Some(refusal) = unusable_as_the_music_folder(&folder, vault.as_deref()) {
             self.report(Notice::Trouble(refusal.to_owned()), cx);
             return;

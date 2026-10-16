@@ -720,6 +720,7 @@ impl RootView {
             || self.discarding_the_curve
             || self.telling_the_earlier_plays
             || self.aging_the_history.is_some()
+            || self.forgetting_the_folder.is_some()
     }
 
     pub(super) fn lower_every_armed_press(&mut self) {
@@ -734,6 +735,7 @@ impl RootView {
         self.discarding_the_curve = false;
         self.telling_the_earlier_plays = false;
         self.aging_the_history = None;
+        self.forgetting_the_folder = None;
     }
 
     pub(crate) fn in_the_ring_at(

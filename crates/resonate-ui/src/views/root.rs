@@ -524,6 +524,7 @@ pub struct RootView {
     pub(crate) looking_at_the_music_folder: Task<()>,
     pub(crate) reading_the_room: Task<()>,
     pub(crate) making_the_vault: Task<()>,
+    pub(crate) looking_at_the_typed_root: Task<()>,
     pub(crate) showing_time_left: bool,
     pub(crate) _taking_in: Task<()>,
     pub(crate) settings_written: SettingsWriter,
@@ -587,6 +588,7 @@ pub struct RootView {
     pub(crate) own_server_asked: bool,
     pub(crate) discarding_the_curve: bool,
     pub(crate) aging_the_history: Option<HistoryKept>,
+    pub(crate) forgetting_the_folder: Option<PathBuf>,
     pub(crate) reset_everything_landed: bool,
     pub(crate) moving_the_files: bool,
     pub(crate) walking_the_filing_back: bool,
@@ -1058,6 +1060,7 @@ impl RootView {
             looking_at_the_music_folder: Task::ready(()),
             reading_the_room: Task::ready(()),
             making_the_vault: Task::ready(()),
+            looking_at_the_typed_root: Task::ready(()),
             showing_time_left: false,
             _taking_in: Task::ready(()),
             settings_written: SettingsWriter::over(settings),
@@ -1121,6 +1124,7 @@ impl RootView {
             own_server_asked: false,
             discarding_the_curve: false,
             aging_the_history: None,
+            forgetting_the_folder: None,
             reset_everything_landed: false,
             moving_the_files: false,
             walking_the_filing_back: false,
@@ -1423,31 +1427,6 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn play_entries(&mut self, entries: &[PlaylistEntry], cx: &mut Context<Self>) {
-        let items = playlists::queue_items(entries, &[]);
-        if items.is_empty() {
-            return;
-        }
-        let scanned: Vec<Track> = entries
-            .iter()
-            .filter_map(|entry| entry.track.clone())
-            .collect();
-
-        self.library.update(cx, |library, _| {
-            library.remember(&scanned);
-            library.set_playing_playlist(None);
-        });
-        self.send(
-            Command::Load {
-                items,
-                start_at: 0,
-                autoplay: true,
-            },
-            cx,
-        );
-        cx.notify();
-    }
-
     pub(crate) fn play_playlist(
         &mut self,
         playlist: PlaylistId,
@@ -1583,13 +1562,21 @@ impl RootView {
         self.adding = None;
         self.sorting = (self.sorting != Some(playlist)).then_some(playlist);
 
-        let kept = self.saved(playlist, cx).and_then(|found| found.kept);
-        self.keeping = kept.is_some();
-        if let Some(kept) = kept {
-            self.row_order = kept.order;
-            self.row_reading = kept.reading;
-        }
+        self.read_the_kept_order(Some(playlist), cx);
         cx.notify();
+    }
+
+    fn read_the_kept_order(&mut self, playlist: Option<PlaylistId>, cx: &App) {
+        let kept = playlist
+            .and_then(|playlist| self.saved(playlist, cx))
+            .and_then(|found| found.kept);
+        self.keeping = kept.is_some();
+        let Kept { order, reading } = kept.unwrap_or(Kept {
+            order: RowOrder::default(),
+            reading: Direction::default(),
+        });
+        self.row_order = order;
+        self.row_reading = reading;
     }
 
     pub(crate) fn put_in_order(
@@ -2530,15 +2517,8 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (library, mut asked) = self.library.read(cx).listing_whole();
-        asked.album = match scoped {
-            Selection::Album(album) => Some(album),
-            Selection::Everything | Selection::Artist(_) => None,
-        };
-        asked.artist = match scoped {
-            Selection::Artist(artist) => Some(artist),
-            Selection::Everything | Selection::Album(_) => None,
-        };
+        let library = self.library.read(cx).catalog();
+        let asked = whole_of(scoped);
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -2604,12 +2584,7 @@ impl RootView {
             Lift::Tracks(tracks) => self.landed(tracks, into, cx),
             Lift::Album(album) => {
                 let library = self.library.read(cx).catalog();
-                let asked = TrackQuery {
-                    album: Some(*album),
-                    sort: SortOrder::AlbumThenTrack,
-                    reading: SortOrder::AlbumThenTrack.reads(),
-                    ..TrackQuery::default()
-                };
+                let asked = whole_of(Selection::Album(*album));
                 cx.spawn(async move |this, cx| {
                     let read = cx
                         .background_executor()
@@ -3753,6 +3728,9 @@ impl RootView {
     }
 
     pub(crate) fn show_playlist(&mut self, opened: Option<PlaylistId>, cx: &mut Context<Self>) {
+        if self.library.read(cx).opened() != opened {
+            self.read_the_kept_order(opened, cx);
+        }
         self.playlist_rows = match opened {
             Some(id) => self.left_at.entry(id).or_default().clone(),
             None => UniformListScrollHandle::default(),
@@ -4105,24 +4083,23 @@ impl RootView {
             .flex()
             .flex_col()
             .flex_none()
-            .justify_between()
+            .p_3()
+            .w(px(theme::sidebar_width() - 1.0))
+            .child(browse);
+
+        let foot = div()
+            .flex()
+            .flex_col()
+            .flex_none()
             .gap_1()
             .p_3()
-            .min_h_full()
+            .pt_0()
             .w(px(theme::sidebar_width() - 1.0))
-            .child(browse)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .when(downloads, |column| column.child(self.download_status(cx)))
-                    .when(enriching, |column| column.child(self.enrichment_status(cx)))
-                    .child(self.pane_row(Pane::Settings, None, cx)),
-            );
+            .when(downloads, |column| column.child(self.download_status(cx)))
+            .when(enriching, |column| column.child(self.enrichment_status(cx)))
+            .child(self.pane_row(Pane::Settings, None, cx));
 
         div()
-            .relative()
             .flex()
             .flex_none()
             .flex_col()
@@ -4132,16 +4109,28 @@ impl RootView {
             .bg(rgb(theme::surface()))
             .child(
                 div()
-                    .id("sidebar-scroll")
+                    .relative()
                     .flex()
                     .flex_col()
                     .flex_1()
                     .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .track_scroll(&self.sidebar_scroll)
-                    .child(content),
+                    .child(
+                        div()
+                            .id("sidebar-scroll")
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .overflow_y_scroll()
+                            .track_scroll(&self.sidebar_scroll)
+                            .child(content),
+                    )
+                    .child(
+                        Scrollbars::of(cx)
+                            .vertical("sidebar-scrollbar", self.sidebar_scroll.clone()),
+                    ),
             )
-            .child(Scrollbars::of(cx).vertical("sidebar-scrollbar", self.sidebar_scroll.clone()))
+            .child(foot)
     }
 
     fn pinned_rows(&self, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
@@ -5184,6 +5173,22 @@ impl Deleting {
                 self.title
             ),
         }
+    }
+}
+
+fn whole_of(scoped: Selection) -> TrackQuery {
+    let (album, artist) = match scoped {
+        Selection::Everything => (None, None),
+        Selection::Album(album) => (Some(album), None),
+        Selection::Artist(artist) => (None, Some(artist)),
+    };
+
+    TrackQuery {
+        album,
+        artist,
+        sort: SortOrder::AlbumThenTrack,
+        reading: SortOrder::AlbumThenTrack.reads(),
+        ..TrackQuery::default()
     }
 }
 
