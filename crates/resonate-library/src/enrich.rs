@@ -1338,12 +1338,7 @@ pub fn best_recording(
         let certainty = the_only_take(only, track)?;
         return recordings.into_iter().next().map(|only| (only, certainty));
     }
-    let Some(length) = track.length else {
-        return recordings
-            .into_iter()
-            .next()
-            .map(|first| (first, Certainty::Nearly));
-    };
+    let length = track.length?;
 
     recordings
         .into_iter()
@@ -3482,7 +3477,8 @@ mod tests {
     }
 
     #[test]
-    fn an_isrc_that_names_two_takes_answers_the_one_the_file_is_as_long_as() {
+    fn an_isrc_that_names_two_takes_answers_the_one_the_file_is_as_long_as_and_none_for_a_file_of_no_length()
+     {
         let longer = heard(None, Some(Duration::from_millis(355_500)));
         assert_eq!(
             named_by(best_recording(two_takes(), &longer).as_ref()),
@@ -3496,14 +3492,7 @@ mod tests {
         );
 
         let unmeasured = heard(None, None);
-        assert_eq!(
-            named_by(best_recording(two_takes(), &unmeasured).as_ref()),
-            Some(ORBITS)
-        );
-        assert_eq!(
-            best_recording(two_takes(), &unmeasured).map(|(_, certainty)| certainty),
-            Some(Certainty::Nearly)
-        );
+        assert_eq!(best_recording(two_takes(), &unmeasured), None);
     }
 
     #[test]

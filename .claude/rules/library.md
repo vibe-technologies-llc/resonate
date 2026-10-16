@@ -679,8 +679,8 @@ rows read via `Player::media` like any unscanned row.
   **ISRC**: `recordings_of_isrc` answers a *list*; `best_recording` separates takes by length and
   answers with a `Certainty`: a lone answer is `Exactly` where lengths agree or either is
   unmeasured, `Nearly` where length disagrees but title agrees by some `Spelling`; several → those
-  within `RECORDING_MAY_DIFFER_BY` (5 s), then closest, `Exactly`; a lengthless file takes the first
-  as `Nearly`. **Recording**: a `MUSICBRAINZ_TRACKID` is asked directly. **Search**:
+  within `RECORDING_MAY_DIFFER_BY` (5 s), then closest, `Exactly`; a lengthless file takes none of
+  several (nothing separates the takes). **Recording**: a `MUSICBRAINZ_TRACKID` is asked directly. **Search**:
   `find_recording` with title, length, `asked_with` (track's artist + mbid, else album owner's), and
   the album's billed title as `release` only where neither is known; weighed by
   `matches_a_recording`: `STRICT_SCORE`, title agreeing by some `Spelling`, credit agreeing via
@@ -699,8 +699,8 @@ rows read via `Player::media` like any unscanned row.
   `isrcs`, so `coalesce(isrc, ?8)` fills the column: one request per track, not two.
 - **What a lookup may overwrite is `Certainty`, a type, not a rule each caller remembers.**
   `Exactly`: a recording id the *file itself* named, or a named ISRC whose take is as long as the
-  file. `Nearly`: text search, fingerprint, an ISRC naming several takes of a lengthless file, an
-  ISRC whose only take is another length under the same title. `land_recording` reads it in one
+  file. `Nearly`: text search, fingerprint, an ISRC whose
+  only take is another length under the same title. `land_recording` reads it in one
   `CASE` per column: a name is filled wherever the file named none; a name the file *did* carry is
   corrected only under `Exactly`. `artist_id` follows the same `CASE` as the billed name. Everything
   else fills, never replaces (`track_number`, `disc_number`, `mbid`, `isrc`, all `coalesce`d),
