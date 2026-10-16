@@ -37,7 +37,7 @@ use crate::{
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
     matroska::Voided,
-    opus,
+    mpa, opus,
     prescan::Prescan,
     riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
@@ -506,6 +506,7 @@ pub(crate) fn coded_info(
         track.id,
         prescan,
         segment_title_names_the_track(opened.reader.as_ref()),
+        mpa::FrameClock::of(params.codec, spec.rate),
     );
 
     Ok(MediaInfo {

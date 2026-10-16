@@ -13,7 +13,7 @@ use symphonia::{
     default::meta::Id3v2Reader,
 };
 
-use crate::{Pictured, Picturing, Result, prescan::Prescan, riff::InfoTag, sylt};
+use crate::{Pictured, Picturing, Result, mpa::FrameClock, prescan::Prescan, riff::InfoTag, sylt};
 
 const SEGMENT_TITLE: &str = "SEGMENT@TITLE";
 const CUE_SHEET: &str = "CUESHEET";
@@ -444,8 +444,12 @@ pub(crate) fn read(
     track: u32,
     prescan: &Prescan,
     segment_title_names_the_track: bool,
+    mpeg: Option<FrameClock>,
 ) -> TagSet {
-    let mut builder = Builder::default();
+    let mut builder = Builder {
+        mpeg,
+        ..Builder::default()
+    };
     builder.absorb_info(&prescan.riff.info);
     for set in revisions.sets(track) {
         builder.absorb(&set);
@@ -528,6 +532,7 @@ struct Builder {
     day_and_month: Option<DayAndMonth>,
     synced_lyrics: Option<String>,
     synced_in_this_revision: bool,
+    mpeg: Option<FrameClock>,
     listed_in_this_revision: u16,
 }
 
@@ -599,7 +604,7 @@ impl Builder {
             if let Some(total) = naming.total_beside(tag) {
                 self.absorb_one(&total);
             }
-            if let Some(sheet) = synchronised_lyrics(tag) {
+            if let Some(sheet) = synchronised_lyrics(tag, self.mpeg) {
                 if self.synced_in_this_revision {
                     tracing::debug!("a second timed-lyrics frame in one tag is passed over");
                 } else {
@@ -853,7 +858,7 @@ fn musicbrainz_identifier(tag: &Tag) -> Option<StandardTag> {
     )))
 }
 
-fn synchronised_lyrics(tag: &Tag) -> Option<String> {
+fn synchronised_lyrics(tag: &Tag, mpeg: Option<FrameClock>) -> Option<String> {
     let name = scoped_name(tag.raw.key.as_str());
     if !sylt::FRAME_IDS
         .iter()
@@ -864,7 +869,7 @@ fn synchronised_lyrics(tag: &Tag) -> Option<String> {
     let RawValue::Binary(frame) = &tag.raw.value else {
         return None;
     };
-    sylt::as_lrc(frame)
+    sylt::as_lrc(frame, mpeg)
 }
 
 fn loudness_gain(tag: &Tag) -> Option<StandardTag> {
@@ -1489,7 +1494,7 @@ mod tests {
     }
 
     fn set_of(revisions: &Revisions) -> TagSet {
-        read(revisions, 0, &Prescan::default(), true)
+        read(revisions, 0, &Prescan::default(), true, None)
     }
 
     #[test]
@@ -1593,7 +1598,7 @@ mod tests {
 
         assert_eq!(set_of(&held).title.as_deref(), Some("Echoes"));
         assert_eq!(
-            read(&held, 1, &Prescan::default(), true).title.as_deref(),
+            read(&held, 1, &Prescan::default(), true, None).title.as_deref(),
             Some("Commentary")
         );
     }

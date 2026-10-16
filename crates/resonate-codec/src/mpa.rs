@@ -1,6 +1,10 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use resonate_core::{Decibels, Frames};
+use resonate_core::{Decibels, Frames, SampleRate};
+use symphonia::core::codecs::audio::{
+    AudioCodecId,
+    well_known::{CODEC_ID_MP1, CODEC_ID_MP2, CODEC_ID_MP3},
+};
 
 use crate::{
     prescan::{past_id3, read_exact},
@@ -81,6 +85,37 @@ pub(crate) struct Stream {
     version: MpegVersion,
     layer: MpegLayer,
     rate: u32,
+}
+
+const MPEG_ONE_LOWEST_HZ: u32 = 32_000;
+const MILLISECONDS_A_SECOND: u64 = 1_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct FrameClock {
+    samples: u64,
+    rate: u32,
+}
+
+impl FrameClock {
+    pub(crate) fn of(codec: AudioCodecId, rate: SampleRate) -> Option<Self> {
+        let samples = match codec {
+            CODEC_ID_MP1 => 384,
+            CODEC_ID_MP2 => 1_152,
+            CODEC_ID_MP3 if rate.hz() >= MPEG_ONE_LOWEST_HZ => 1_152,
+            CODEC_ID_MP3 => 576,
+            _ => return None,
+        };
+        Some(Self {
+            samples,
+            rate: rate.hz(),
+        })
+    }
+
+    pub(crate) fn milliseconds(self, frames: u32) -> u32 {
+        let elapsed =
+            u64::from(frames) * self.samples * MILLISECONDS_A_SECOND / u64::from(self.rate);
+        u32::try_from(elapsed).unwrap_or(u32::MAX)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -2,9 +2,12 @@ use std::fmt::Write as _;
 
 use resonate_core::{TextEncoding, text::decoded_as};
 
+use crate::mpa::FrameClock;
+
 pub(crate) const FRAME_IDS: [&str; 2] = ["SYLT", "SLT"];
 
 const LANGUAGE_BYTES: usize = 3;
+const MPEG_FRAMES: u8 = 1;
 const MILLISECONDS: u8 = 2;
 const STAMP_BYTES: usize = 4;
 const MILLISECONDS_PER_MINUTE: u32 = 60_000;
@@ -28,7 +31,7 @@ impl Encoding {
     fn of(byte: u8) -> Option<Self> {
         match byte {
             0 => Some(Self::Latin1),
-            1 => Some(Self::Utf16 { little: true }),
+            1 => Some(Self::Utf16 { little: false }),
             2 => Some(Self::Utf16Be),
             3 => Some(Self::Utf8),
             _ => None,
@@ -84,14 +87,16 @@ struct Syllable {
     at: u32,
 }
 
-pub(crate) fn as_lrc(frame: &[u8]) -> Option<String> {
+pub(crate) fn as_lrc(frame: &[u8], mpeg: Option<FrameClock>) -> Option<String> {
     let (&encoding, rest) = frame.split_first()?;
     let mut encoding = Encoding::of(encoding)?;
     let rest = rest.get(LANGUAGE_BYTES..)?;
     let (&stamps, rest) = rest.split_first()?;
-    if stamps != MILLISECONDS {
-        return None;
-    }
+    let counted_in = match stamps {
+        MILLISECONDS => None,
+        MPEG_FRAMES => Some(mpeg?),
+        _ => return None,
+    };
     let (&content, rest) = rest.split_first()?;
     if content != CONTENT_OF_LYRICS && content != CONTENT_OF_A_TRANSCRIPTION {
         return None;
@@ -99,11 +104,15 @@ pub(crate) fn as_lrc(frame: &[u8]) -> Option<String> {
     let (descriptor, after_descriptor) = encoding.text_at(rest)?;
     encoding.read(&rest[..descriptor]);
 
-    let syllables = syllables(encoding, &rest[after_descriptor..]);
+    let syllables = syllables(encoding, &rest[after_descriptor..], counted_in);
     written(&syllables)
 }
 
-fn syllables(mut encoding: Encoding, mut rest: &[u8]) -> Vec<Syllable> {
+fn syllables(
+    mut encoding: Encoding,
+    mut rest: &[u8],
+    counted_in: Option<FrameClock>,
+) -> Vec<Syllable> {
     let mut read = Vec::new();
     loop {
         if read.len() == MOST_SYLLABLES {
@@ -124,11 +133,15 @@ fn syllables(mut encoding: Encoding, mut rest: &[u8]) -> Vec<Syllable> {
         };
         read.push(Syllable {
             text: encoding.read(&rest[..end]),
-            at: u32::from_be_bytes(stamp),
+            at: milliseconds(u32::from_be_bytes(stamp), counted_in),
         });
         rest = &rest[after + STAMP_BYTES..];
     }
     read
+}
+
+fn milliseconds(stamp: u32, counted_in: Option<FrameClock>) -> u32 {
+    counted_in.map_or(stamp, |clock| clock.milliseconds(stamp))
 }
 
 fn starts_a_line(text: &str) -> bool {
@@ -178,6 +191,9 @@ fn stamp(at: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use resonate_core::SampleRate;
+    use symphonia::core::codecs::audio::well_known::{CODEC_ID_FLAC, CODEC_ID_MP3};
+
     use super::*;
 
     fn frame(encoding: u8, stamps: u8, entries: &[(&[u8], u32)], terminator: &[u8]) -> Vec<u8> {
@@ -221,7 +237,7 @@ mod tests {
         );
 
         assert_eq!(
-            as_lrc(&bytes).as_deref(),
+            as_lrc(&bytes, None).as_deref(),
             Some("[00:04.750]Overhead the albatross\n[01:11.020]Hangs motionless\n"),
         );
     }
@@ -242,7 +258,7 @@ mod tests {
         );
 
         assert_eq!(
-            as_lrc(&bytes).as_deref(),
+            as_lrc(&bytes, None).as_deref(),
             Some(
                 "[00:01.000]<00:01.000>Over<00:01.400>head <00:01.900>the albatross\n\
                  [00:05.000]<00:05.000>Hangs<00:05.600> motionless\n"
@@ -257,7 +273,7 @@ mod tests {
         let bytes = frame(1, MILLISECONDS, &[(&first, 0), (&second, 2_000)], &[0, 0]);
 
         assert_eq!(
-            as_lrc(&bytes).as_deref(),
+            as_lrc(&bytes, None).as_deref(),
             Some("[00:00.000]Überall\n[00:02.000]wo\n"),
         );
     }
@@ -269,19 +285,59 @@ mod tests {
         let events = framed_as(3, 3, MILLISECONDS, entries, &[0]);
         let transcribed = framed_as(CONTENT_OF_A_TRANSCRIPTION, 3, MILLISECONDS, entries, &[0]);
 
-        assert_eq!(as_lrc(&chords), None);
-        assert_eq!(as_lrc(&events), None);
+        assert_eq!(as_lrc(&chords, None), None);
+        assert_eq!(as_lrc(&events, None), None);
         assert_eq!(
-            as_lrc(&transcribed).as_deref(),
+            as_lrc(&transcribed, None).as_deref(),
             Some("[00:01.000]Overhead\n")
         );
     }
 
     #[test]
-    fn a_frame_timed_in_mpeg_frames_is_left_unread() {
-        let bytes = frame(3, 1, &[(b"Overhead", 12)], &[0]);
+    fn a_frame_timed_in_mpeg_frames_is_written_in_the_time_those_frames_last() {
+        let clock = FrameClock::of(CODEC_ID_MP3, SampleRate::HZ_44100);
+        let bytes = frame(
+            3,
+            MPEG_FRAMES,
+            &[(b"Overhead", 0), (b"Hangs", 1_000), (b"Still", 2_000_000)],
+            &[0],
+        );
 
-        assert_eq!(as_lrc(&bytes), None);
+        assert_eq!(
+            as_lrc(&bytes, clock).as_deref(),
+            Some("[00:00.000]Overhead\n[00:26.122]Hangs\n[870:44.897]Still\n"),
+        );
+    }
+
+    #[test]
+    fn a_frame_timed_in_mpeg_frames_of_a_stream_with_no_frames_is_left_unread() {
+        let bytes = frame(3, MPEG_FRAMES, &[(b"Overhead", 12)], &[0]);
+
+        assert_eq!(as_lrc(&bytes, None), None);
+        assert_eq!(FrameClock::of(CODEC_ID_FLAC, SampleRate::HZ_44100), None);
+    }
+
+    #[test]
+    fn a_frame_of_mpeg_two_lasts_as_long_as_one_of_mpeg_one_at_twice_the_rate() {
+        let full = FrameClock::of(CODEC_ID_MP3, SampleRate::HZ_44100).expect("a clock");
+        let half = FrameClock::of(CODEC_ID_MP3, SampleRate::HZ_22050).expect("a clock");
+
+        assert_eq!(full.milliseconds(1_000), 26_122);
+        assert_eq!(half.milliseconds(1_000), 26_122);
+    }
+
+    #[test]
+    fn wide_text_with_no_mark_is_big_endian() {
+        let units: Vec<u8> = "Überall"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        let bytes = frame(1, MILLISECONDS, &[(&units, 0)], &[0, 0]);
+
+        assert_eq!(
+            as_lrc(&bytes, None).as_deref(),
+            Some("[00:00.000]Überall\n")
+        );
     }
 
     #[test]
@@ -289,14 +345,17 @@ mod tests {
         let mut bytes = frame(3, MILLISECONDS, &[(b"Overhead", 1_000)], &[0]);
         bytes.extend_from_slice(b"Hangs\0\0\0");
 
-        assert_eq!(as_lrc(&bytes).as_deref(), Some("[00:01.000]Overhead\n"));
+        assert_eq!(
+            as_lrc(&bytes, None).as_deref(),
+            Some("[00:01.000]Overhead\n")
+        );
     }
 
     #[test]
     fn a_frame_holding_no_words_is_none() {
         let bytes = frame(3, MILLISECONDS, &[(b"", 0), (b"  ", 1_000)], &[0]);
 
-        assert_eq!(as_lrc(&bytes), None);
-        assert_eq!(as_lrc(&[3, b'e']), None);
+        assert_eq!(as_lrc(&bytes, None), None);
+        assert_eq!(as_lrc(&[3, b'e'], None), None);
     }
 }
