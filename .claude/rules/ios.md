@@ -634,12 +634,14 @@ in; it never opens on another colour first.
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
-- **Frame rate** follows what is moving (`BackdropView.rate`): 30 fps while playing, 15 paused, two
-  thirds of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
+- **Frame rate** follows what is moving (`BackdropView.rate`): 120 fps while playing, 60 paused,
+  half that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
   an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
-  field is composited again at every frame the field draws: at the display's 120 fps (tried) that
-  cost took the frames the lyrics needed, and they lagged while turning or dragged. The Metal layer
-  is opaque (the shader writes alpha 1), so the compositor blends nothing beneath it.
+  field is composited again at every frame the field draws, which a 120 Hz frame holds only with the
+  rest of Now Playing cheap: the Metal layer is opaque (the shader writes alpha 1, so the compositor
+  blends nothing beneath it), the lyrics are layers set per frame rather than views rebuilt
+  (*Lyrics*), and the field rests while the cover moves. Before those, 120 fps dropped frames and
+  30 fps was kept, which read as plainly low beside everything else at the display's rate.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
   a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same

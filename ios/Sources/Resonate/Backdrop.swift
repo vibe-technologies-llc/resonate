@@ -97,10 +97,10 @@ struct BackdropView: View {
 
     private static func rate(sounding: Bool, lowPower: Bool) -> Int {
         switch (sounding, lowPower) {
-        case (true, false): 30
-        case (true, true): 20
-        case (false, false): 15
-        case (false, true): 10
+        case (true, false): 120
+        case (true, true): 60
+        case (false, false): 60
+        case (false, true): 30
         }
     }
 
