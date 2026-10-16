@@ -14,7 +14,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## iOS
 - [M] `ios/Package.swift` has no test target: `Folders.uri` and `resolved` (the `..` check),
   `Settling` and `Steered`, `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
-  against the suites in use (it misses `appearance`), `ListenNext.after`, `ArtworkBucket.fitting`,
+  against the suites in use, `ListenNext.after`, `ArtworkBucket.fitting`,
   `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] `remote_io.rs` and `remote_io_render.rs` are `cfg(target_os = "ios")` alone: no host test of
   `render` (a short fill, zero length, the `empty` flag), `Routing::route_changed` or the drain
@@ -36,6 +36,28 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `ArtworkCache`'s flights,
   `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
   192-byte stride against the shader's `Field`
+- [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
+  launch machine, the `ClipSink`/`OnlyOnce` races, `Keychain.read`'s not-found against failure and
+  `landReceived`'s back-off are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
+  `SecItem*` directly, so none can be driven without a seam
+- [M] Pure Swift in the views is unproved too: `EqualiserScale` and `EqualiserResponse`'s
+  coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against
+  the desktop's lyrics tests, `OnlineFound.landing`/`awaited`, `FieldBlend.show` mid-fade,
+  `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
+
+## Android
+- [M] The instrumented tests never drive audio focus, becoming noisy, a controller's queue edits,
+  service destruction releasing the repository, or a poll tick that throws
+- [M] No Dart test mounts `SearchPage`, `EqualiserPane`'s graph, the sync pane's save,
+  `CorrectionPane` or the queue's reorder and removal, and nothing holds Dart's `call` names and
+  arguments against `FlutterBridge.dispatch` (`FlutterWireTest` covers encodings alone)
+
+## Phones
+- [M] `resonate-mobile` has no test of `documents_moved` (rekey, requeue, resume, collision),
+  `analyse_track` and `inspector` text, `snapshot`'s `failure` take and `count_listening`, or
+  anything in `online_tools.rs` (`submit_scrobbles`' mark, `send_favourites`)
+- [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
+  `filtered_tracks` and the download calls
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

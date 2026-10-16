@@ -23,6 +23,51 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
   row on the window's thread; Statistics' *play from here* reads a track a query
 
+## Phones
+- [M] A rescan re-probes and rewrites every document: `index_document` takes no size or mtime and
+  neither phone skips a known URI, so an unchanged library is opened, probed and upserted whole,
+  moving `catalog_revision` and dropping the search index thousands of times
+- [S] `index_document` reads every missing row (`missing_recordings`, `missing` unindexed) once a
+  file, even when none is hidden: a scan is quadratic in the library
+- [M] A long catalog hold stalls the transport: `snapshot` reads the playing row under the catalog
+  mutex while holding the `player` one every poll tick, and `import_playlist_file` (`held_at`, an
+  unindexed `folded(name)` scan per row, up to 10 000), `import_matched_playlist` (`local_match`)
+  and `Index::stored`'s whole-table rebuild after any revision move hold the one connection
+  throughout, so play, pause and seek wait
+- [S] The phones' catalog keeps `synchronous` at FULL under WAL, so each scan autocommit
+  (`upsert`, `tagged`, `keep_artwork_of`) syncs the WAL to flash; `resonate-library` sets NORMAL
+
+## Android
+- [S] The poll loop calls `queue()` every 250 ms (one `tracks_at` query a row under the catalog and
+  action mutexes, every row copied across) and `RustMediaPlayer.getState` rebuilds every
+  `MediaItemData` per tick, whether or not `Snapshot.queue_revision` moved; iOS gates on it
+- [M] `PlayerModel._receive` notifies on every patch, so `samples` (30 Hz), `lyricFrame` (4 Hz, on
+  after leaving Lyrics), `analysisProgress` and `downloadedBytes` rebuild all five root pages, with
+  `LibraryPage`'s whole-library favourites scan and the non-lazy lyrics column
+- [M] A favourite toggle re-emits `allTracks` and `tracks` (the same list) whole through the
+  channel, decodes both on the UI isolate, rebuilds `_byId` and re-fetches every album and artist
+- [S] `FlutterBridge`'s `play`, `addToPlaylist` and `enrich` resolve each id by scanning
+  `allTracks` on the main thread (quadratic for *Play all*), and `track()` copies the whole catalog
+  per artwork request
+- [M] `artwork` takes no size and is keyed by song: a 50 dp row decodes and JPEG-encodes a cover of
+  up to 1024 px once per track of an album (the 32 MiB cache holds about 8), and
+  `ArtworkEnrichment.update` evicts every cover and bumps `artworkGeneration` on any change where
+  `art_changed_since` names the changed songs
+- [S] The Oboe stream asks `PerformanceMode::LowLatency` with no `ContentType::Music`, and its
+  output thread wakes every 10 ms (`calculate_latency_millis` included) while a stream is open,
+  paused too; iOS sleeps until a command or a moved latency
+
+## iOS
+- [S] Each finished download runs `Library.refresh` (collections, three searches, every catalog
+  page) uncoalesced, so *Download all missing* of N songs rereads the catalog and rebuilds the
+  search index N times; `landReceived` refreshes once a batch
+- [S] `AmbientField` keeps its display link and a full-window render per tick while an album,
+  artist, playlist, lyrics or visualizer page covers it with its own backdrop; only Now Playing
+  freezes it
+- [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
+  to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
+  needs the counting moved first
+
 ## Performance and scale
 - [M] Every track open opens its source twice, once more for the inspector's box layout
   (`Unwrapped::inspected` → `probe_boxes`; `probe_stream` likewise), on the path before the first

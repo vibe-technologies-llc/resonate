@@ -72,6 +72,124 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
+## Phones
+- [S] `documents_moved` rekeys a whole batch in one transaction on the `UNIQUE` `documents.uri`
+  after Swift has moved the files: a destination held by a hidden missing row fails the batch,
+  leaving the moved files under their old URIs, re-indexed by the next scan as new songs
+  (favourites, plays and playlists lost) and with no *Put files back* record
+- [M] A phone's playback failure says nothing of its cause: `Snapshot.failure` is
+  `error.to_string()` ("decoding track 12 failed", source chain dropped), `Error::Player` and
+  `Error::Decode` flatten the engine and codec errors to one sentence each, and `Store`,
+  `Reference`, `Sync` and `Received` print their op with `{:?}`; the desktop reads
+  `engine::Error::cause`, which the boundary never maps
+- [S] `send_favourites` loves every favourite on every press, stops at the first refused love and
+  records no `loves_told`: one recording a service refuses for good blocks every later favourite on
+  Android, and `tell_loves` (which skips `refused_for_good`) later sends them all again
+- [S] `snapshot` consumes state (drains events, `take`s `failure`, counts listening), so the two
+  `snapshot()` calls `NowPlaying.swift` makes only to read the transport on releasing the session
+  can swallow a playback failure the poll never shows
+- [S] A found download whose destination cannot be created leaks its job: `find_download` parks the
+  provider's reader in `Standing.opened`, neither phone calls `cancel_download` on that path, and
+  `begin` evicts settled jobs only, so the job and its connection stay open
+- [S] The phones show Rust debug prints as report text: `analyse_track` builds `findings` with
+  `{finding:?}` and `inspector` builds `container` with `{:?}` (`IsoMp4`), where `Finding::told`
+  and `Container`'s `Display` are the sentences the desktop shows
+- [S] Rust caps what a phone hands it unevenly: `keep_sidecar_lyrics`, `keep_lyric_text` and
+  `recognise_heard` take any size where `import_playlist_file`, `keep_folder_cover` and
+  `keep_room_correction` refuse past a bound (both phones cap at the source today)
+
+## Android
+- [S] `RustMediaPlayer`'s available commands omit `COMMAND_RELEASE`, so `SimpleBasePlayer.release()`
+  returns before `handleRelease`: the service's retain on `LibraryRepository` is never given back,
+  the engine is never saved or closed, the noisy receiver, focus request and widgets outlive a
+  dismissed task, and every restarted service adds three more live collectors
+- [S] The poll loop in `LibraryRepository.start` has no per-tick catch: one `Error` from
+  `snapshot`, `queue`, `save` or `tick` (a full disk refusing `count_listening`) leaves the loop,
+  its `finally` shuts the engine down while `started` stays true, and nothing reopens it until the
+  service is destroyed
+- [S] `RustMediaPlayer` declares `COMMAND_CHANGE_MEDIA_ITEMS` and overrides only
+  `handleSetMediaItems`, so a controller's add, move or remove throws `IllegalStateException` on the
+  main thread; the exported session's default callback accepts every package
+  (`isTrustedForMediaControl` unasked)
+- [S] `MainActivity`'s controller listener calls `pending.get()` uncaught, so a session connection
+  that fails is an `ExecutionException` on the main thread at launch (`ResonateWidgets.control`
+  catches it)
+- [S] `oboe.rs` `Opener::open` waits on the stream thread with `started.recv()` and no bound, so a
+  stalled `open_stream` on a Bluetooth or USB route change blocks the engine thread; `remote_io`
+  bounds the same wait with `UNIT_WITHIN`
+- [S] `RustMediaPlayer` pauses on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`, though the platform ducks a
+  request without `setWillPauseWhenDucked`, and resumes only if the transport was Playing, so a
+  loss during Loading never resumes
+- [S] A queue drag lands one row short: `QueuePage` sends `onReorderItem`'s already-adjusted index
+  to `moveInQueue`, which counts the row it lands before as before the move (`landing_before`), so
+  a downward drag stops a row early and no row can be dropped last
+- [M] Online search dead-ends: `SearchPage` renders neither `onlineReleases` (`releaseSongs` is
+  never called), nor `artistAlbumsNext`, nor a pasted link's songs while the field is empty, so an
+  album result does nothing and an artist shows one page of albums; the older `OnlinePage` is
+  unreachable
+- [M] Notices (`failure`, `status`) render only on root tabs and the player: a profile import,
+  AutoEq apply, playlist edit or folder removal failing on a pushed page shows nothing there, and
+  `CollectionPage` spins for ever when `collectionTracks` answers nothing
+- [S] `PlayerModel.call` clears `failure` on any success, so a background call (`collections` on
+  every catalog revision, `lyrics`, `enrichmentStatus`) erases the error of the action that failed
+  within a tick
+- [S] Statistics' *Your most played* finds the tapped row with `rows(stats['topTracks']).indexOf`
+  over freshly built maps: the index is -1 and every row plays from the default start
+- [S] The empty queue's *Browse songs* opens a `collection` of kind `all` that `CollectionPage` does
+  not know: `collectionTracks` answers `artist_tracks("")`, the unknown-artist group, titled *Songs*
+- [S] Search results and Statistics rows keep the `favourite` of the map they were fetched with: the
+  song sheet offers *Add to favourites* again and cannot take one back until a new search
+  (`CollectionPage`'s `trackById` merge does it right)
+- [S] The Analysis pane lists the last `recognition` for whatever song it shows; `loadInspector` and
+  `searchCorrections` carry no request generation, and `applyCorrection` takes a list index, so an
+  overlapping reply can show another song's result or apply another headphone's profile
+- [S] The *Device sync* switch and every *Sync options* switch edit a draft only *Save sync
+  settings*, in another card above, sends; nothing marks it unsaved and leaving the page drops it
+- [S] *Made for you* applies its mix as the global `library.filter`: back on the Songs tab, it is
+  still filtered to the mix; the mix needs its own query (`filtered_tracks`)
+- [S] Search lists at most 500 of `trackCount` songs under a *Songs (N)* chip and plays only those
+- [S] Playlist rows read `artworkTrack`, which `MusicPlaylist` and its wire map never carry, so
+  every playlist shows the generic icon where `android.md` promises up to four covers
+- [S] Search carries a *Listen & recognise* button whose sheet only describes recognition and has
+  nothing behind it
+- [S] A playlist page shows the empty state and a disabled Play between `selectPlaylist` (which
+  sets `playlistRows` to an empty list) and its rows: loading cannot be told from empty
+- [S] The light theme's *Search online* card draws its second line in `Colors.white70` on the
+  near-white `surfaceContainer`
+- [S] `LibraryFeatures.stop` never releases the `MulticastLock` `hearBeacons` acquired, so it stays
+  held, multicast filtering off, for the life of the process
+- [S] `LibraryRepository.scanFolder` admits files by its own extension and cover-name lists, never
+  `audio_extensions()`, so a format added to core is scanned on desktop and iOS and skipped here
+- [S] The release build type signs with the debug keystore and reads no supplied signing config
+
+## iOS
+- [S] `Erasure.everything` discards every failure (`try?` on each directory listing and
+  `removeItem`, an unchecked `SecItemDelete` per class) and `eraseEverything` then calls `exit(0)`:
+  a catalog, history file or sync key that survives is never reported and the next launch resumes
+  from it, rejoining sync with the old key
+- [S] `PairingSheet` keeps the pairing code revealed when the scene leaves `.active`, so the App
+  Switcher snapshot shows the sync key, and `.textSelection(.enabled)` on the blurred text lets the
+  system Copy put it on the general pasteboard, past the `localOnly` one
+- [S] `Enrichment.read` on coming forward publishes the status and changed art but never `settle`s
+  a pass that ended while the scene was inactive or backgrounded, so `Library.allTracks` keeps rows
+  without its `artist_mbid` and album artist, and portraits stay absent until a scan or launch
+- [S] `NowPlaying.interrupted` marks a resume only for `.playing` while `Library.pause` also pauses
+  `.loading`, so an interruption beginning during a song change pauses and never resumes
+- [S] `Navigation.open` appends a destination already on top of the stack (*Go to album* from Now
+  Playing on that album, *More › Equaliser* twice), so Back lands on a copy; only `SyncProgress`
+  guards it
+- [S] `SystemVolumeLevel.watch` registers its `outputVolume` KVO synchronously on the main actor
+  (`observing` is `nonisolated` but called from `watch()`), the one `AVAudioSession` call left off
+  `Work.inSession`
+- [S] Lyrics read at about 22 % alpha when nothing is lit (an unsynced sheet, a song not playing):
+  `LyricInks.muted` (0.5) is drawn under `.opacity(ADRIFT 0.45)`, and `LyricsPane` has no Increase
+  Contrast or Reduce Transparency branch
+- [S] Now Playing's sleep countdown, volume glyphs and Up next list (`QueueHeading`, the track
+  detail line) are `.secondary` over the lifted field, not `nowPlayingInk`
+- [S] `SyncDevices`' header menu, `SeeAllLink` and the recent searches' *Clear* skip
+  `touchTarget()`, and `FolderRow`'s three actions are `.controlSize(.small)`: 20 to 28 pt targets
+  where `ios.md` fixes 44 pt
+
 ## Equaliser and DSP
 - [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
   1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`, which
@@ -84,10 +202,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `fs::write`; two writers stage to one fixed `.txt.new`
 
 ## Search
-- [M] Android still groups albums and artists in Kotlin; `search_library`, `albums`, `artists`,
-  `album_tracks`, `artist_tracks` and `highlights` answer all of it at the boundary and wait to be
-  called there. Android opens an artist page by raw `artist == name || albumArtist == name`, so its
-  empty *Unknown artist* lists nearly every song
+- [S] Android's *Go to album* finds the album by raw title and album artist, the player's album
+  link by title alone: a song with no album, another spelling or a *Various artists* release does
+  nothing and a shared title opens the wrong album; `album_key` is exported and uncalled, as is
+  `highlights`
 - [M] A multi-valued genre is one `tracks.genre` (`House; Disco`): `genre:=House` misses it, and
   suggestions tally whole strings (a *House; Disco* card); a one-word genre card is a prefix
   (`Reach::Begins`), so *Rock* holds *Rockabilly* and *Rocksteady* (artist mixes were made whole)

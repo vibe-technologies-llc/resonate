@@ -14,9 +14,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and only iOS calls it
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
-- [S] Android does not start the background lookup (`start_enrichment`), follow
-  `enrichment_status` or refresh pictures through `art_changed_since`; a song is still looked up
-  only where the front end asks `enrich_track`
+- [M] Android cannot be woken by a media button once its service is gone: no `MediaButtonReceiver`
+  and no `onPlaybackResumption`, so after the system reaps the idle `PlaybackService` or the task
+  is dismissed a headset, Bluetooth or lock-screen play does nothing, though `resume_saved` holds
+  the queue
+- [M] Android registers no `ACTION_VIEW` audio filter, so a file manager cannot open a song in it,
+  and declares a `MediaBrowserService` whose default callback answers the library root as
+  unsupported, so Android Auto and car kits browse an empty service
+- [S] Android never calls `hide_missing_songs` or `hide_songs_under`: a song whose file left a
+  granted folder stays listed and queued and fails to open; iOS hides it at every foregrounding
+- [S] Android installs no `tracing` subscriber, so engine, library and sync warnings never reach
+  logcat
+- [S] Android's *Recent searches* live in Dart's `state` alone and are gone with the process
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account and runs one download at a time; the boundary races
@@ -60,6 +69,19 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   cancels on `Ok(None)`
 - [S] iOS online search answers nothing under three characters (`OnlineAsked.chain`): *U2*, *XX* or
   a two-character CJK name cannot be searched, where the boundary and desktop have no floor
+- [S] A failed `MobilePlayer` open is final on iOS until relaunch: `serveActions` drops every
+  action through `try? await player()` after the one banner, and nothing offers to open the catalog
+  again
+- [S] A song in the iOS queue or a playlist has a reduced menu (`QueueRow`, `PlaylistRow`), and the
+  Inspector and Now Playing's `SongDestinations` carry no *Edit tags*: tags, *Lyrics*, *Analyse*
+  and *Go to album* are reached only from rows built on `TrackMenu`
+- [S] Statistics' most listened albums and artists on iOS are bare `NavigationLink`s
+  (`ListenedToRow`, no cover), without the menu and swipe every other `CollectionRow` carries
+- [S] The iOS lock-screen cover is the 384 px `.card` image whatever size the system asks
+  (`NowPlaying.artwork`'s handler ignores it), so it is upscaled about 2.5× on a 3× phone
+- [S] Songs landed from other devices into the iOS Documents folder are in the device backup though
+  a restore fetches them again: `landReceived` never sets `isExcludedFromBackup`, and `Backup`
+  covers only `sync-received`, `sync-staging` and the `.before-v` copies
 - [S] iOS restores no navigation: `Navigation` is plain `@State` with no `SceneStorage`, so a
   relaunch after the system reclaims the app lands on the Library root, whatever page was open
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
@@ -160,6 +182,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
   alone; nothing adds a row with Control
+- [S] Android's status, scan, sync and failure banners are no live regions: TalkBack announces
+  neither results nor errors
+- [S] Android's equaliser bands are unlabelled graph dots under `IgnorePointer`, so TalkBack and
+  switch access cannot select one; a plain tap only selects and never reaches the add hint
+- [S] Android removes a queue row only by swiping it: the song sheet has no *Remove from queue*
 - [L · blocked: gpui] Nothing is exposed to a screen reader: published gpui 0.2.2 carries no
   AccessKit, which only Zed's `main` has
 
