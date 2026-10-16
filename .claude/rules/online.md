@@ -64,7 +64,11 @@ counted play), only under a token or session the listener signed in for.
   whatever a listener waits on (search, artist page, want, followed link, `share`, `analyse
   --recognise`) asks as the listener.
 - **Busy: three more tries, wait doubling; `Retry-After` in seconds or an HTTP date, capped.**
-  Busy = 503, 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT`, `RETRY_AFTER_AT_MOST`. The
+  Busy = 503, 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT`, `RETRY_AFTER_AT_MOST`. **The
+  ladder is the host's, not the thread's**: `Pacing::backed_off` records each wait as the host's
+  `cooling` and climbs one doubling step per host, so threads hearing the same busy answer wait out
+  the same wait and the next one starts higher; a non-busy answer resets it
+  (`threads_hearing_the_same_busy_answer_climb_one_ladder_between_them`). The
   fourth answer is returned whatever it says. **A host busy through every retry is asked once, not
   four times, until it answers anything else** (`Pacing`'s `stayed_busy`; `retries_owed`): the
   library gets `Refused` at once. **A `Retry-After` on the returned answer is still waited on**
