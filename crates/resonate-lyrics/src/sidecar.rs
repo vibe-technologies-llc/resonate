@@ -141,10 +141,11 @@ impl Sidecar {
     }
 
     fn held(&self, candidate: &Candidate, wanted: &Wanted) -> Result<Option<Lyrics>> {
-        let lyrics = self.read(candidate, wanted)?;
         Ok(match candidate.named {
-            NamedAfter::TheFile => lyrics.and_then(|whole| wanted.cut_of_the_file(whole)),
-            NamedAfter::TheTrack => lyrics,
+            NamedAfter::TheFile => self
+                .read(candidate, &wanted.of_the_whole_file())?
+                .and_then(|whole| wanted.cut_of_the_file(whole)),
+            NamedAfter::TheTrack => self.read(candidate, wanted)?,
         })
     }
 
@@ -678,6 +679,40 @@ mod tests {
                 (Some(Duration::from_secs(10)), "draws me"),
             ]
         );
+    }
+
+    #[test]
+    fn a_whole_file_sheet_with_a_header_is_checked_against_the_file_and_not_the_row_it_is_cut_for()
+    {
+        let tree = Tree::new();
+        tree.write(
+            "Meddle.lrc",
+            "[ti:Meddle][length:46:45]\n[00:01.00]one of these days\n[00:20.50]a cloud of eiderdown\n\
+             [00:30.00]draws me\n[00:40.00]overhead the albatross",
+        );
+        let mut wanted = a_cut(tree.track("Meddle.flac"), 20, Some(40));
+        wanted.album = Some("Meddle".to_owned());
+        wanted.duration = Some(Duration::from_secs(20));
+
+        let lyrics = found(&wanted).expect("the row's share of the file's lyrics");
+
+        let lines: Vec<_> = lyrics
+            .lines()
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect();
+        assert_eq!(lines, ["a cloud of eiderdown", "draws me"]);
+    }
+
+    #[test]
+    fn a_whole_file_sheet_headed_for_another_album_is_passed_over_for_every_row_cut_from_the_file()
+    {
+        let tree = Tree::new();
+        tree.write("Meddle.lrc", "[ti:Animals]\n[00:01.00]pigs\n[00:30.00]dogs");
+        let mut wanted = a_cut(tree.track("Meddle.flac"), 0, Some(40));
+        wanted.album = Some("Meddle".to_owned());
+
+        assert_eq!(found(&wanted), None);
     }
 
     #[test]

@@ -61,8 +61,12 @@ dependency (tested without a window).
   beside a local file or in a lyrics folder next to it. `Embedded`: `Wanted::carried` =
   `TagSet::lyrics` (`USLT`, `LYRICS`, `UNSYNCEDLYRICS`, `UNSYNCED LYRICS`, `©lyr`). ID3 `SYLT`
   arrives as a raw frame; `resonate-codec`'s `sylt.rs` writes it as LRC (syllable-timed entries
-  become a word-timed line), outranking an unsynchronised frame beside it. Unread: a frame timed in
-  MPEG frames, or whose content type is not lyrics/transcription. `MOST_SYLLABLES` bounds the read;
+  become a word-timed line), outranking an unsynchronised frame beside it. A frame timed in MPEG
+  frames is turned to milliseconds by `mpa::FrameClock` (samples a frame from the codec and rate:
+  MP1 384, MP2 and MPEG-1 MP3 1 152, MPEG-2/2.5 MP3 576; priming not weighed); it is unread on any
+  other codec, or whose content type is not lyrics/transcription. A UTF-16 text with no byte-order
+  mark is big-endian, as ID3 says; a mark seen sets the order for the texts after it.
+  `MOST_SYLLABLES` bounds the read;
   of several language frames the first stands. The sidecar wins ties over the file's own (the
   deliberate one). `read_lyrics(source, text)` is the reader's one public door (`Embedded`,
   `Lrclib`), so tag and service text share the bounds.
@@ -93,7 +97,10 @@ dependency (tested without a window).
   a whole-file set into the row's via `Lyrics::within`. An unsynced set gives no row; a cut with no
   `rate` gives nothing, not the album. The file's words = the sidecar named after the file
   (`NamedAfter::TheFile`) + whatever `Embedded` carries; a sidecar named after the row's own title
-  is already the row's.
+  is already the row's. **A whole-file sheet is checked against the whole file, then cut**
+  (`Wanted::of_the_whole_file`: the album stands for the title; the row's artist and length are
+  not the file's, so none is weighed), never against the row, whose title a `[ti:]` of the album
+  would disagree with.
 - **A `.lyricsfile.yaml` beside a file is a sidecar, the richest.** `BESIDE` pairs each ending with
   how it is `Written`: `.lyricsfile.yaml`, `.yml`, then `.lrc`, `.txt`. Read to `LARGEST_LYRICSFILE`,
   refused past it, not cut (YAML is no use in halves). `metadata` feeds the same

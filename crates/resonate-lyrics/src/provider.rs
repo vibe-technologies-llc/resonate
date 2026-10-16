@@ -35,6 +35,20 @@ impl Wanted {
         }
     }
 
+    pub fn of_the_whole_file(&self) -> Self {
+        if self.span.is_none() {
+            return self.clone();
+        }
+        Self {
+            span: None,
+            rate: None,
+            title: self.album.clone(),
+            artist: None,
+            duration: None,
+            ..self.clone()
+        }
+    }
+
     pub fn cut_of_the_file(&self, whole: Lyrics) -> Option<Lyrics> {
         let Some(span) = self.span else {
             return Some(whole);
