@@ -60,7 +60,7 @@ pub enum Error {
     Player(#[from] resonate_engine::Error),
     #[error("the audio file could not be read")]
     Decode(#[from] resonate_codec::Error),
-    #[error("a domain value is out of range")]
+    #[error(transparent)]
     Domain(#[from] resonate_core::Error),
     #[error("the document catalog operation {op:?} failed: {source}")]
     Store {
@@ -274,5 +274,12 @@ mod tests {
     #[test]
     fn error_stays_small_enough_for_result_large_err() {
         assert!(size_of::<Error>() <= 128);
+    }
+
+    #[test]
+    fn domain_error_names_the_rejected_value() {
+        let domain = resonate_core::Error::VolumeOutOfRange(1.5);
+        let mobile = Error::from(domain);
+        assert_eq!(mobile.to_string(), domain.to_string());
     }
 }

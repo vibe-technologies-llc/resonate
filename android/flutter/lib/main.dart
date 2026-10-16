@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import 'library.dart';
 import 'model.dart';
@@ -128,6 +129,31 @@ class ResonateApp extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppGeometry.cardRadius),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+        elevation: 4,
+        position: PopupMenuPosition.under,
+        menuPadding: const EdgeInsets.symmetric(vertical: 6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        labelTextStyle: WidgetStatePropertyAll(text.bodyMedium),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: scheme.surfaceContainer,
+        contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onSurface),
+        actionTextColor: scheme.primary,
+        behavior: SnackBarBehavior.floating,
+        elevation: 2,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        actionOverflowThreshold: .55,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: .6)),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -274,13 +300,10 @@ class _AppShellState extends State<AppShell>
     listenable: widget.model,
     builder: (context, _) {
       final model = widget.model;
-      final hasBanner =
-          model.state['scanning'] == true ||
-          model.syncActivity != null ||
-          model.notice != null;
       return ArtworkAtmosphere(
         model: model,
         track: model.current,
+        shortFade: _tab.value == 0,
         subdued: _tab.value == 3,
         child: Scaffold(
           backgroundColor: Colors.transparent,
@@ -289,11 +312,10 @@ class _AppShellState extends State<AppShell>
             fit: StackFit.expand,
             children: [
               SafeArea(
-                top: _tab.value != 1 || hasBanner,
+                top: _tab.value != 1,
                 bottom: false,
                 child: Column(
                   children: [
-                    StatusBanner(model: model, open: open),
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: motion(context, 260),
@@ -334,6 +356,14 @@ class _AppShellState extends State<AppShell>
   );
 }
 
+const _navigationRoots = <(IconData, IconData, String)>[
+  (Icons.music_note_outlined, Icons.music_note_rounded, 'Songs'),
+  (Icons.library_music_outlined, Icons.library_music_rounded, 'Library'),
+  (Icons.queue_music_outlined, Icons.queue_music_rounded, 'Queue'),
+  (Icons.settings_outlined, Icons.settings_rounded, 'Settings'),
+  (Icons.search_rounded, Icons.search_rounded, 'Search'),
+];
+
 class AppBottomBar extends StatelessWidget {
   const AppBottomBar({
     super.key,
@@ -358,6 +388,7 @@ class AppBottomBar extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (isRoot) StatusBanner(model: model, open: open),
                 if (model.current.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -366,55 +397,46 @@ class AppBottomBar extends StatelessWidget {
                       onOpen: () => open('player'),
                     ),
                   ),
-                Glass(
-                  radius: AppGeometry.chromeRadius,
-                  child: NavigationBar(
-                    backgroundColor: Colors.transparent,
-                    elevation: 0,
-                    height: MediaQuery.textScalerOf(context).scale(12) > 18
-                        ? 72
-                        : 64,
-                    labelBehavior:
-                        MediaQuery.sizeOf(context).width < 360 ||
-                            MediaQuery.textScalerOf(context).scale(12) > 18
-                        ? NavigationDestinationLabelBehavior.onlyShowSelected
-                        : NavigationDestinationLabelBehavior.alwaysShow,
-                    selectedIndex: currentTab,
-                    onDestinationSelected: (index) {
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tabWidth =
+                        constraints.maxWidth / _navigationRoots.length;
+                    final compact =
+                        tabWidth < 80 ||
+                        MediaQuery.textScalerOf(context).scale(12) > 16;
+                    void selectTab(int index) {
                       AppShell.currentTab.value = index;
                       if (!isRoot) {
                         Navigator.of(context)
                             .popUntil((route) => route.isFirst);
                       }
-                    },
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.music_note_outlined),
-                        selectedIcon: Icon(Icons.music_note_rounded),
-                        label: 'Songs',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.library_music_outlined),
-                        selectedIcon: Icon(Icons.library_music_rounded),
-                        label: 'Library',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.queue_music_outlined),
-                        selectedIcon: Icon(Icons.queue_music_rounded),
-                        label: 'Queue',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        selectedIcon: Icon(Icons.settings_rounded),
-                        label: 'Settings',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.search_rounded),
-                        selectedIcon: Icon(Icons.search_rounded),
-                        label: 'Search',
-                      ),
-                    ],
-                  ),
+                    }
+
+                    return Glass(
+                      radius: AppGeometry.chromeRadius,
+                      child: compact
+                          ? _CompactNavigationBar(
+                              selectedIndex: currentTab,
+                              onDestinationSelected: selectTab,
+                            )
+                          : NavigationBar(
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
+                              height: 80,
+                              selectedIndex: currentTab,
+                              onDestinationSelected: selectTab,
+                              destinations: [
+                                for (final (icon, selectedIcon, label)
+                                    in _navigationRoots)
+                                  NavigationDestination(
+                                    icon: Icon(icon),
+                                    selectedIcon: Icon(selectedIcon),
+                                    label: label,
+                                  ),
+                              ],
+                            ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -423,6 +445,103 @@ class AppBottomBar extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _CompactNavigationBar extends StatelessWidget {
+  const _CompactNavigationBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: SizedBox(
+        height: 72,
+        child: Row(
+          children: [
+            for (var index = 0; index < _navigationRoots.length; index++)
+              Expanded(
+                child: Semantics(
+                  container: true,
+                  role: SemanticsRole.tab,
+                  selected: index == selectedIndex,
+                  label: _navigationRoots[index].$3,
+                  onTap: () => onDestinationSelected(index),
+                  child: ExcludeSemantics(
+                    child: Tooltip(
+                      message: _navigationRoots[index].$3,
+                      child: InkWell(
+                        onTap: () => onDestinationSelected(index),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: SizedBox(
+                            height: 56,
+                            child: index == selectedIndex
+                                ? Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      SizedBox(
+                                        height: 32,
+                                        child: DecoratedBox(
+                                          decoration: ShapeDecoration(
+                                            color: scheme.primary.withValues(
+                                              alpha: .16,
+                                            ),
+                                            shape: const StadiumBorder(),
+                                          ),
+                                          child: Center(
+                                            child: Icon(
+                                              _navigationRoots[index].$2,
+                                              color: scheme.onSurface,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SizedBox(
+                                        height: 20,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            _navigationRoots[index].$3,
+                                            maxLines: 1,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelMedium
+                                                ?.copyWith(
+                                                  color: scheme.onSurface,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Center(
+                                    child: Icon(
+                                      _navigationRoots[index].$1,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class PlayerScope extends InheritedWidget {

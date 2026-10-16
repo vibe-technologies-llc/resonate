@@ -298,6 +298,13 @@ void main() {
     await tester.restartAndRestore();
     await tester.pumpAndSettle();
     expect(find.text('True-peak clip prevention'), findsOneWidget);
+    await tester.tap(find.byType(DropdownMenu<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Track'));
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'preferences').arguments, {
+      'replayGain': 'TRACK',
+    });
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('ReplayGain'), findsOneWidget);
@@ -391,6 +398,62 @@ void main() {
     expect(find.text('Remove from favourites'), findsOneWidget);
   });
 
+  for (final brightness in Brightness.values) {
+    testWidgets('favourite banner stays compact in $brightness theme', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.platformBrightnessTestValue = brightness;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+
+      await mount(tester, populated: true);
+      await tester.tap(find.byTooltip('Add to favourites'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final banner = find.byType(SnackBar);
+      final message = find.text('Added to favourites');
+      final action = find.descendant(
+        of: banner,
+        matching: find.text('Add to playlist'),
+      );
+      final theme = Theme.of(tester.element(banner));
+      expect(theme.colorScheme.brightness, brightness);
+      expect(
+        theme.snackBarTheme.backgroundColor,
+        theme.colorScheme.surfaceContainer,
+      );
+      expect(theme.snackBarTheme.actionTextColor, theme.colorScheme.primary);
+      expect(
+        (tester.getCenter(message).dy - tester.getCenter(action).dy).abs(),
+        lessThan(12),
+      );
+      expect(tester.getSize(banner).height, lessThan(80));
+
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(find.text('Create playlist'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('favourite banner fades away after four seconds', (tester) async {
+    await mount(tester, populated: true);
+    await tester.tap(find.byTooltip('Add to favourites'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Added to favourites'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Added to favourites'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Added to favourites'), findsNothing);
+  });
+
   testWidgets('new status replaces stale scan feedback', (tester) async {
     await mount(tester, populated: true);
     events.add({'status': 'Reading music folder…'});
@@ -400,6 +463,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Reading music folder…'), findsNothing);
     expect(find.text('Read 1 song'), findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.byType(StatusBanner)).dy,
+      lessThanOrEqualTo(tester.getTopLeft(find.byType(MiniPlayer)).dy),
+    );
   });
 
   test('queue identity and favourites follow native updates', () async {
@@ -800,6 +867,48 @@ void main() {
     expect(white, greaterThan(tinted + 80));
     expect(find.byType(BackdropFilter), findsNothing);
   });
+
+  testWidgets('Songs tint fades into the page near the first rows', (
+    tester,
+  ) async {
+    const key = ValueKey('songs-tint');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(scaffoldBackgroundColor: Colors.black),
+        home: Scaffold(
+          body: Center(
+            child: RepaintBoundary(
+              key: key,
+              child: const SizedBox(
+                width: 100,
+                height: 400,
+                child: Ambient(
+                  colors: [Colors.red, Colors.red],
+                  shortFade: true,
+                  child: SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byKey(key),
+    );
+    final pixels = await tester.runAsync(() async {
+      final image = await boundary.toImage();
+      final bytes = await image.toByteData();
+      image.dispose();
+      return bytes!;
+    });
+    int redAt(int y) => pixels!.getUint8((y * 100 + 50) * 4);
+    expect(redAt(0), greaterThan(redAt(80)));
+    expect(redAt(80), greaterThan(redAt(140)));
+    expect(redAt(180), 0);
+    expect(redAt(260), 0);
+  });
   testWidgets('playlist naming keeps its text field alive through dismissal', (
     tester,
   ) async {
@@ -951,6 +1060,135 @@ void main() {
     },
   );
   testWidgets(
+    'queue handoffs open one device picker and retain native indices',
+    (tester) async {
+      events.add({
+        'queue': [first],
+        'snapshot': {'current': first},
+        'syncHandoffs': [
+          {'device': 'Android', 'songs': 11},
+          {'device': 'iPhone', 'songs': 13},
+          {'device': 'Linux', 'songs': 441},
+        ],
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: QueuePage(model: model, open: (_, [data = const {}]) {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Continue listening'), findsOneWidget);
+      expect(find.text('3 devices available'), findsOneWidget);
+      expect(find.text('Android'), findsNothing);
+      await tester.tap(find.text('Continue listening'));
+      await tester.pumpAndSettle();
+      expect(find.text('Android'), findsOneWidget);
+      expect(find.text('iPhone'), findsOneWidget);
+      expect(find.text('Linux'), findsOneWidget);
+      await tester.tap(find.text('iPhone'));
+      await tester.pumpAndSettle();
+      expect(calls.last.method, 'handoff');
+      expect(calls.last.arguments, {'index': 1});
+      expect(find.text('iPhone'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('library tools group compact rows below the toolbar', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsDetail(
+          model: model,
+          page: 'tools',
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(find.text('Your library')).dy,
+      lessThan(tester.getTopLeft(find.text('A deeper listen')).dy),
+    );
+    final suggestionsCard = find.ancestor(
+      of: find.text('Suggestions'),
+      matching: find.byType(Card),
+    );
+    final statisticsCard = find.ancestor(
+      of: find.text('Statistics'),
+      matching: find.byType(Card),
+    );
+    expect(tester.element(suggestionsCard), tester.element(statisticsCard));
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('music folder cards keep a visible gap', (tester) async {
+    events.add({
+      'folders': [
+        {
+          'name': 'Downloads',
+          'uri': 'content://media/external_primary/downloads',
+          'readable': false,
+        },
+        {'name': 'Music', 'uri': 'content://music', 'readable': true},
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsDetail(
+          model: model,
+          page: 'folders',
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final downloadsCard = find.ancestor(
+      of: find.text('Downloads'),
+      matching: find.byType(Card),
+    );
+    final musicCard = find.ancestor(
+      of: find.text('Music'),
+      matching: find.byType(Card),
+    );
+    expect(
+      tester.getTopLeft(musicCard).dy - tester.getBottomLeft(downloadsCard).dy,
+      greaterThanOrEqualTo(12),
+    );
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('audio outputs show distinct device types and the active route', (
+    tester,
+  ) async {
+    events.add({
+      'outputs': [
+        {'id': 7, 'name': 'sdk_gphone', 'kind': 'Built-in speaker'},
+        {'id': 8, 'name': 'sdk_gphone', 'kind': 'Earpiece'},
+      ],
+      'selectedOutput': 7,
+      'actualOutput': 8,
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsDetail(
+          model: model,
+          page: 'output',
+          open: (_, [data = const {}]) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Current output'), findsOneWidget);
+    expect(find.text('Requested: Built-in speaker'), findsOneWidget);
+    expect(find.text('Earpiece'), findsWidgets);
+    await tester.tap(find.text('Built-in speaker'));
+    await tester.pump();
+    expect(calls.last.method, 'output');
+    expect(calls.last.arguments, {'id': 7});
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
     'artwork controls send native actions and reflect progress and restrictions',
     (tester) async {
       events.add({
@@ -1101,16 +1339,63 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(48));
       expect(size.height, greaterThanOrEqualTo(48));
     }
-    final navigation = tester.widget<NavigationBar>(find.byType(NavigationBar));
-    expect(
-      navigation.labelBehavior,
-      NavigationDestinationLabelBehavior.onlyShowSelected,
-    );
-    await tester.tap(find.byIcon(Icons.settings_outlined));
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byTooltip('Songs'), findsOneWidget);
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (viewport, textScale) in const [
+    (Size(320, 720), 2.0),
+    (Size(390, 844), 1.25),
+  ]) {
+    testWidgets('scaled navigation keeps equal insets at ${viewport.width}', (
+      tester,
+    ) async {
+      tester.view.physicalSize = viewport;
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      AppShell.currentTab.value = 1;
+      await mount(tester, populated: true);
+
+      final tab = find.byTooltip('Library');
+      final pill = find.descendant(
+        of: tab,
+        matching: find.byType(DecoratedBox),
+      );
+      final label = find.descendant(of: tab, matching: find.text('Library'));
+      final tabRect = tester.getRect(tab);
+      final pillRect = tester.getRect(pill);
+
+      expect(tabRect.height, 72);
+      expect(pillRect.left - tabRect.left, closeTo(8, .1));
+      expect(tabRect.right - pillRect.right, closeTo(8, .1));
+      expect(pillRect.top - tabRect.top, closeTo(8, .1));
+      expect(
+        (tester.getCenter(pill).dx - tabRect.center.dx).abs(),
+        lessThan(1),
+      );
+      expect(
+        (tester.getCenter(label).dx - tabRect.center.dx).abs(),
+        lessThan(1),
+      );
+      final searchTab = find.byTooltip('Search');
+      final searchIcon = find.descendant(
+        of: searchTab,
+        matching: find.byIcon(Icons.search_rounded),
+      );
+      expect(
+        tester.getCenter(searchIcon).dy,
+        closeTo(tester.getCenter(searchTab).dy, .1),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'Downloads works without a folder grant and music access is explicit',

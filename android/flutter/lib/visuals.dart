@@ -37,6 +37,21 @@ Duration motion(BuildContext context, [int milliseconds = 350]) =>
     ? Duration.zero
     : Duration(milliseconds: milliseconds);
 
+MenuStyle selectionMenuStyle(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  return MenuStyle(
+    backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+    elevation: const WidgetStatePropertyAll(3),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+  );
+}
+
 class Glass extends StatelessWidget {
   const Glass({
     super.key,
@@ -322,6 +337,7 @@ class ArtworkAtmosphere extends StatefulWidget {
     this.colors,
     this.immersive = false,
     this.subdued = false,
+    this.shortFade = false,
   });
   final PlayerModel model;
   final RowData track;
@@ -329,6 +345,7 @@ class ArtworkAtmosphere extends StatefulWidget {
   final List<Color>? colors;
   final bool immersive;
   final bool subdued;
+  final bool shortFade;
 
   @override
   State<ArtworkAtmosphere> createState() => _ArtworkAtmosphereState();
@@ -390,6 +407,7 @@ class _ArtworkAtmosphereState extends State<ArtworkAtmosphere> {
       colors: activeColors,
       immersive: widget.immersive,
       subdued: widget.subdued,
+      shortFade: widget.shortFade,
       child: widget.child,
     );
   }
@@ -402,9 +420,11 @@ class Ambient extends StatelessWidget {
     this.colors = const [accent, mint],
     this.immersive = false,
     this.subdued = false,
+    this.shortFade = false,
   });
   final bool immersive;
   final bool subdued;
+  final bool shortFade;
   final Widget child;
   final List<Color> colors;
 
@@ -416,6 +436,7 @@ class Ambient extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
+        ColoredBox(color: surface, child: const SizedBox.expand()),
         TweenAnimationBuilder<Color?>(
           tween: ColorTween(end: colors.first),
           duration: motion(context, 750),
@@ -424,28 +445,51 @@ class Ambient extends StatelessWidget {
               end: colors.length > 1 ? colors[1] : colors.first,
             ),
             duration: motion(context, 750),
-            builder: (context, color2, _) => DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  stops: const [0, .55, 1],
-                  colors: [
-                    Color.alphaBlend(
-                      (color1 ?? accent).withValues(
-                        alpha: strength * (dark ? 1 : .85),
-                      ),
-                      surface,
-                    ),
-                    Color.alphaBlend(
-                      (color2 ?? mint).withValues(alpha: strength),
-                      surface,
-                    ),
-                    surface,
-                  ],
+            builder: (context, color2, _) {
+              final first = Color.alphaBlend(
+                (color1 ?? accent).withValues(
+                  alpha: strength * (dark ? 1 : .85),
                 ),
-              ),
-            ),
+                surface,
+              );
+              final second = Color.alphaBlend(
+                (color2 ?? mint).withValues(alpha: strength),
+                surface,
+              );
+              final tinted = DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: shortFade ? Alignment.topCenter : Alignment.topLeft,
+                    end: shortFade
+                        ? Alignment.bottomCenter
+                        : Alignment.bottomRight,
+                    stops: shortFade
+                        ? const [0, .14, .35, .58, .8, 1]
+                        : const [0, .55, 1],
+                    colors: shortFade
+                        ? [
+                            first,
+                            second,
+                            Color.lerp(second, surface, .55)!,
+                            Color.lerp(second, surface, .85)!,
+                            surface,
+                            surface,
+                          ]
+                        : [first, second, surface],
+                  ),
+                ),
+              );
+              return shortFade
+                  ? Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 220,
+                        child: tinted,
+                      ),
+                    )
+                  : tinted;
+            },
           ),
         ),
         child,

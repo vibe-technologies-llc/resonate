@@ -443,11 +443,11 @@ class _SettingsDetailState extends State<SettingsDetail> {
     },
   );
 
-  Widget _list(List<Widget> children) => Builder(
+  Widget _list(List<Widget> children, {double? top}) => Builder(
     builder: (context) => ListView(
       padding: pageInsets(
         context,
-        top: MediaQuery.paddingOf(context).top + AppGeometry.pageInset,
+        top: top ?? MediaQuery.paddingOf(context).top + AppGeometry.pageInset,
       ),
       children: children,
     ),
@@ -500,16 +500,28 @@ class _SettingsDetailState extends State<SettingsDetail> {
 
   Widget _choice(String label, String key, List<String> choices) => Padding(
     padding: const EdgeInsets.only(bottom: 18),
-    child: DropdownButtonFormField<String>(
+    child: DropdownMenu<String>(
       key: ValueKey('$key:${widget.model.preferences[key]}'),
-      initialValue: widget.model.preferences[key] as String?,
-      decoration: InputDecoration(labelText: label),
-      items: choices
-          .map((v) => DropdownMenuItem(value: v, child: Text(humanize(v))))
+      initialSelection: widget.model.preferences[key] as String?,
+      expandedInsets: EdgeInsets.zero,
+      selectOnly: true,
+      enableSearch: false,
+      label: Text(label),
+      inputDecorationTheme: Theme.of(context).inputDecorationTheme,
+      menuStyle: selectionMenuStyle(context),
+      dropdownMenuEntries: choices
+          .map((v) => DropdownMenuEntry(value: v, label: _choiceLabel(v)))
           .toList(),
-      onChanged: (v) => widget.model.call('preferences', {key: v}),
+      onSelected: (v) {
+        if (v != null) widget.model.call('preferences', {key: v});
+      },
     ),
   );
+
+  String _choiceLabel(String value) {
+    final label = humanize(value);
+    return '${label[0].toUpperCase()}${label.substring(1)}';
+  }
 
   Widget _folders() => _list([
     const Text(
@@ -517,49 +529,52 @@ class _SettingsDetailState extends State<SettingsDetail> {
     ),
     const SizedBox(height: 20),
     ...rows(widget.model.state['folders']).map(
-      (folder) => Card.filled(
-        child: ListTile(
-          leading: const Icon(Icons.folder_outlined),
-          title: Text('${folder['name']}'),
-          subtitle: Text(
-            folder['uri'] == 'content://media/external_primary/downloads'
-                ? 'Tap to allow music access and scan existing songs'
-                : folder['readable'] == true
-                ? (folder['writable'] == true
-                      ? 'Read and write access'
-                      : 'Read access')
-                : 'Access unavailable',
-          ),
-          onTap: folder['uri'] == 'content://media/external_primary/downloads'
-              ? () => widget.model.call('useDownloads')
-              : null,
-          trailing: ActionIcon(
-            icon: Icons.link_off_rounded,
-            label: 'Remove access',
-            onPressed: () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Remove folder access?'),
-                  content: const Text(
-                    'Your files and saved library entries will be kept.',
+      (folder) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Card.filled(
+          child: ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: Text('${folder['name']}'),
+            subtitle: Text(
+              folder['uri'] == 'content://media/external_primary/downloads'
+                  ? 'Tap to allow music access and scan existing songs'
+                  : folder['readable'] == true
+                  ? (folder['writable'] == true
+                        ? 'Read and write access'
+                        : 'Read access')
+                  : 'Access unavailable',
+            ),
+            onTap: folder['uri'] == 'content://media/external_primary/downloads'
+                ? () => widget.model.call('useDownloads')
+                : null,
+            trailing: ActionIcon(
+              icon: Icons.link_off_rounded,
+              label: 'Remove access',
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Remove folder access?'),
+                    content: const Text(
+                      'Your files and saved library entries will be kept.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Remove access'),
+                      ),
+                    ],
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Remove access'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) {
-                widget.model.call('removeFolder', {'uri': folder['uri']});
-              }
-            },
+                );
+                if (confirmed == true) {
+                  widget.model.call('removeFolder', {'uri': folder['uri']});
+                }
+              },
+            ),
           ),
         ),
       ),
@@ -588,67 +603,176 @@ class _SettingsDetailState extends State<SettingsDetail> {
     ),
   ]);
 
-  Widget _output() => _list([
-    const Text(
-      'Android manages the physical audio route. Resonate outputs shared stereo float at 48 kHz.',
-    ),
-    const SizedBox(height: 16),
-    Text(
-      'Requested route: ${widget.model.state['selectedOutput'] ?? 0} · Opened route: ${widget.model.state['actualOutput'] ?? 0}',
-    ),
-    const SizedBox(height: 16),
-    for (final output in [
-      {'id': 0, 'name': 'System default'},
+  Widget _output() {
+    final outputs = <RowData>[
+      {'id': 0, 'name': 'System default', 'kind': 'Automatic'},
       ...rows(widget.model.state['outputs']),
-    ])
-      ListTile(
-        leading: const Icon(Icons.speaker_outlined),
-        title: Text('${output['name']}'),
-        trailing:
-            integer(output['id']) ==
-                integer(widget.model.state['selectedOutput'])
-            ? const Icon(Icons.check_rounded)
-            : null,
-        onTap: () => widget.model.call('output', {'id': output['id']}),
+    ];
+    final selected = integer(widget.model.state['selectedOutput']);
+    final actual = integer(widget.model.state['actualOutput']);
+    final scheme = Theme.of(context).colorScheme;
+    String titleFor(int id) {
+      for (final output in outputs) {
+        if (integer(output['id']) == id) return _outputTitle(output);
+      }
+      return 'Unavailable device';
+    }
+
+    return _list([
+      Card.filled(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              Icon(Icons.volume_up_rounded, color: scheme.primary),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Current output',
+                      style: Theme.of(context).textTheme.labelMedium
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                    Text(
+                      titleFor(actual),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (selected != actual)
+                      Text(
+                        'Requested: ${titleFor(selected)}',
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-  ]);
+      const SectionTitle('Choose an output'),
+      Card.filled(
+        child: Column(
+          children: [
+            for (final output in outputs)
+              ListTile(
+                dense: true,
+                minTileHeight: 64,
+                leading: Icon(_outputIcon(output), color: scheme.primary),
+                title: Text(_outputTitle(output)),
+                subtitle: Text(_outputSubtitle(output)),
+                trailing: integer(output['id']) == selected
+                    ? Icon(Icons.check_circle_rounded, color: scheme.primary)
+                    : null,
+                onTap: () => widget.model.call('output', {'id': output['id']}),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      Text(
+        'Android controls the physical route. Resonate plays shared stereo audio at 48 kHz.',
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    ], top: MediaQuery.paddingOf(context).top + kToolbarHeight + 20);
+  }
+
+  String _outputTitle(RowData output) {
+    final kind = '${output['kind'] ?? 'Audio device'}';
+    return switch (kind) {
+      'Built-in speaker' || 'Earpiece' => kind,
+      _ => '${output['name']}',
+    };
+  }
+
+  String _outputSubtitle(RowData output) {
+    final kind = '${output['kind'] ?? 'Audio device'}';
+    return switch (kind) {
+      'Automatic' => 'Android chooses for you',
+      'Built-in speaker' || 'Earpiece' => '${output['name']}',
+      _ => kind,
+    };
+  }
+
+  IconData _outputIcon(RowData output) => switch (output['kind']) {
+    'Earpiece' => Icons.hearing_rounded,
+    'Wired headphones' || 'Wired headset' => Icons.headphones_rounded,
+    'Bluetooth audio' => Icons.bluetooth_audio_rounded,
+    'USB audio' => Icons.usb_rounded,
+    'HDMI audio' => Icons.tv_rounded,
+    _ => Icons.speaker_rounded,
+  };
 
   Widget _tools() => _list([
     const SectionTitle('A deeper listen'),
-    for (final entry in <({String label, String page, IconData icon})>[
-      (
-        label: 'Suggestions',
-        page: 'suggestions',
-        icon: Icons.auto_awesome_rounded,
+    Card.filled(
+      margin: EdgeInsets.zero,
+      child: Column(
+        children:
+            <({String label, String page, IconData icon})>[
+                  (
+                    label: 'Suggestions',
+                    page: 'suggestions',
+                    icon: Icons.auto_awesome_rounded,
+                  ),
+                  (
+                    label: 'Statistics',
+                    page: 'statistics',
+                    icon: Icons.bar_chart_rounded,
+                  ),
+                  (
+                    label: 'Search online',
+                    page: 'online',
+                    icon: Icons.travel_explore_rounded,
+                  ),
+                  (
+                    label: 'Saved for later',
+                    page: 'wanted',
+                    icon: Icons.bookmark_border_rounded,
+                  ),
+                  (
+                    label: 'Music folders',
+                    page: 'folders',
+                    icon: Icons.folder_open_rounded,
+                  ),
+                  (
+                    label: 'Lyrics',
+                    page: 'lyrics',
+                    icon: Icons.lyrics_outlined,
+                  ),
+                  (
+                    label: 'Analysis',
+                    page: 'analysis',
+                    icon: Icons.insights_rounded,
+                  ),
+                  (
+                    label: 'Visualizer',
+                    page: 'visualizer',
+                    icon: Icons.waves_rounded,
+                  ),
+                ]
+                .map(
+                  (entry) => ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    minTileHeight: 56,
+                    minVerticalPadding: 0,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: Icon(
+                      entry.icon,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(entry.label),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => widget.open(entry.page),
+                  ),
+                )
+                .toList(),
       ),
-      (label: 'Statistics', page: 'statistics', icon: Icons.bar_chart_rounded),
-      (
-        label: 'Search online',
-        page: 'online',
-        icon: Icons.travel_explore_rounded,
-      ),
-      (
-        label: 'Saved for later',
-        page: 'wanted',
-        icon: Icons.bookmark_border_rounded,
-      ),
-      (
-        label: 'Music folders',
-        page: 'folders',
-        icon: Icons.folder_open_rounded,
-      ),
-      (label: 'Lyrics', page: 'lyrics', icon: Icons.lyrics_outlined),
-      (label: 'Analysis', page: 'analysis', icon: Icons.insights_rounded),
-      (label: 'Visualizer', page: 'visualizer', icon: Icons.waves_rounded),
-    ])
-      Card.filled(
-        child: ListTile(
-          leading: Icon(entry.icon),
-          title: Text(entry.label),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => widget.open(entry.page),
-        ),
-      ),
+    ),
     const SectionTitle('Library care'),
     OutlinedButton(
       onPressed: () => widget.model.call('rescan'),
@@ -660,7 +784,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
           : () => refreshArtworkAndDetails(context, widget.model),
       child: const Text('Refresh artwork and details'),
     ),
-  ]);
+  ], top: MediaQuery.paddingOf(context).top + kToolbarHeight - 24);
 
   Widget _statistics() {
     final stats = row(widget.model.state['statistics']);
@@ -1189,18 +1313,23 @@ class _AccountPaneState extends State<AccountPane> {
             'Downloads are matched by recording codes, or by title, artist and duration. Choose the destination folder for each song.',
           ),
           const SizedBox(height: 24),
-          DropdownButtonFormField<String>(
-            initialValue: _draft['provider'] as String?,
-            decoration: const InputDecoration(labelText: 'Provider'),
-            items: ['MONOCHROME', 'HIFI_API', 'SUBSONIC', 'TIDAL']
+          DropdownMenu<String>(
+            initialSelection: _draft['provider'] as String?,
+            expandedInsets: EdgeInsets.zero,
+            selectOnly: true,
+            enableSearch: false,
+            label: const Text('Provider'),
+            inputDecorationTheme: Theme.of(context).inputDecorationTheme,
+            menuStyle: selectionMenuStyle(context),
+            dropdownMenuEntries: ['MONOCHROME', 'HIFI_API', 'SUBSONIC', 'TIDAL']
                 .map(
-                  (v) => DropdownMenuItem(
+                  (v) => DropdownMenuEntry(
                     value: v,
-                    child: Text(v == 'HIFI_API' ? 'hifi-api' : humanize(v)),
+                    label: v == 'HIFI_API' ? 'hifi-api' : humanize(v),
                   ),
                 )
                 .toList(),
-            onChanged: (v) => setState(() => _draft['provider'] = v),
+            onSelected: (v) => setState(() => _draft['provider'] = v),
           ),
           const SizedBox(height: 20),
           if (_draft['provider'] != 'TIDAL')

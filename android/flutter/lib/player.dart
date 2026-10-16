@@ -148,7 +148,8 @@ class FavouriteButton extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Added to favourites'),
-            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            persist: false,
             action: SnackBarAction(
               label: 'Add to playlist',
               onPressed: () => playlistPicker(context, model, [track]),
@@ -942,6 +943,7 @@ class QueuePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final queue = model.queue;
+    final handoffs = rows(model.state['syncHandoffs']);
     final currentQueueId = '${model.current['queueId']}';
     final playing = queue.indexWhere(
       (t) => '${t['queueId']}' == currentQueueId,
@@ -997,23 +999,21 @@ class QueuePage extends StatelessWidget {
             ],
           ),
         ),
-        if (!compact)
-          ...rows(model.state['syncHandoffs']).indexed.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              child: Card.filled(
-                margin: EdgeInsets.zero,
-                child: ListTile(
-                  leading: const Icon(Icons.devices_rounded),
-                  title: const Text('Continue listening'),
-                  subtitle: Text(
-                    '${entry.$2['device']} · ${entry.$2['songs']} songs',
-                  ),
-                  trailing: FilledButton.tonal(
-                    onPressed: () => model.call('handoff', {'index': entry.$1}),
-                    child: const Text('Continue'),
-                  ),
+        if (!compact && handoffs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Card.filled(
+              child: ListTile(
+                leading: Icon(
+                  Icons.devices_rounded,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
+                title: const Text('Continue listening'),
+                subtitle: Text(
+                  '${handoffs.length} ${handoffs.length == 1 ? 'device' : 'devices'} available',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _showHandoffs(context),
               ),
             ),
           ),
@@ -1110,6 +1110,66 @@ class QueuePage extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+
+  void _showHandoffs(BuildContext context) {
+    final handoffs = rows(model.state['syncHandoffs']);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .65,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            children: [
+              Text(
+                'Continue listening',
+                style: Theme.of(sheetContext).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose a device to continue its queue here.',
+                style: Theme.of(sheetContext).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              for (final (index, handoff) in handoffs.indexed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Card.filled(
+                    color: Theme.of(sheetContext)
+                        .colorScheme
+                        .surfaceContainerHigh,
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.devices_rounded,
+                        color: Theme.of(sheetContext).colorScheme.primary,
+                      ),
+                      title: Text('${handoff['device']}'),
+                      subtitle: Text(
+                        '${handoff['songs']} ${integer(handoff['songs']) == 1 ? 'song' : 'songs'}',
+                      ),
+                      trailing: Icon(
+                        Icons.play_arrow_rounded,
+                        color: Theme.of(sheetContext).colorScheme.primary,
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        model.call('handoff', {'index': index});
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
