@@ -16,6 +16,7 @@
         android:theme="@style/Theme.Resonate"
         android:supportsRtl="true">
         <meta-data android:name="flutterEmbedding" android:value="2" />
+        <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

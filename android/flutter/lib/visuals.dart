@@ -54,7 +54,7 @@ class Glass extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainer
@@ -141,7 +141,7 @@ class ProgressiveBlurBackdrop extends StatelessWidget {
   Widget _blurBands() => Positioned.fill(
     child: LayoutBuilder(
       builder: (context, constraints) {
-        const bands = 16;
+        const bands = 3;
         final height = constraints.maxHeight / bands;
         return Stack(
           children: [
@@ -153,7 +153,7 @@ class ProgressiveBlurBackdrop extends StatelessWidget {
                 height: height,
                 child: ClipRect(
                   child: BackdropFilter(
-                    enabled: strength > 0,
+                    enabled: strength > 0 && _sigma(index, bands) >= 1.0,
                     filter: ui.ImageFilter.blur(
                       sigmaX: _sigma(index, bands),
                       sigmaY: _sigma(index, bands),

@@ -24,6 +24,8 @@ are build prerequisites. Host binding generation reads ELF metadata and needs no
 The Flutter Gradle plugin uses the legacy AGP DSL, built-in Kotlin and KGP 2.2.20 on the plugin
 classpath. Flutter's automatic ABI filtering is disabled so the host's ARM64/x86_64 filters stay
 authoritative; an ARM32 Flutter engine without its Rust library must not admit an ARM32 install.
+Impeller is disabled in the manifest so the mature Skia OpenGL pipeline renders consistently
+without experimental OpenGLES fallback on devices lacking Vulkan.
 `MainActivity` is a `FlutterActivity`. `FlutterBridge` exposes explicit method-channel actions
 and state-flow patches; `FlutterWire` maps records to codec values without reflection. Unsigned
 64-bit identities, positions and revisions travel as decimal text. The bridge qualifies
@@ -209,7 +211,7 @@ same native calls; cancellation never writes.
 
 
 The shell's top edge and bottom navigation use mirrored progressive backdrop blur, strongest
-at the system bars and fading into the scrolling content. Sixteen disjoint clipped backdrop
+at the system bars and fading into the scrolling content. Disjoint clipped backdrop
 bands increase Gaussian sigma toward the edge; a shader mask around a backdrop filter isolates
 it in an empty layer and cannot blur the underlying screen. The library scrolls beneath the status
 bar. Collection backgrounds enclose the whole scaffold, including the transparent toolbar; the
