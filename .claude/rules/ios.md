@@ -672,19 +672,41 @@ breath dots, word sweep and *END OF LYRICS* mark, with the same constants, arith
 where a paused timeline must wake) and turns each `TimelineView(.animation)` tick into a
 `LyricScene`; the timeline runs at the display's rate only while something moves: anything turning,
 or a word-synced sheet playing (its sweep); a line-synced sheet playing with nothing turning ticks
-at 10 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn
-(`nudge`), and back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two views swapped, so a drag in progress survives the change. The rate is capped at 60 fps, 30 in Low Power Mode or a serious thermal state
-(`LyricPace.frameCap`): a 120 Hz timeline rebuilt every line each frame. Everything that reads the
+at 20 Hz (`lineSyncedTick`) and is woken to the display rate the moment a line starts to turn, and
+back, all as one `TimelineView` whose `LyricSchedule` is switched between the two rates, never two
+views swapped, so a drag in progress survives the change. **The wake is the landed frame, not the
+next tick**: `LyricStage.land` bumps `beat` whenever the landed frame's reading or lit voices differ
+from what the turns aim at (`unfollowed`, which `isMoving` includes) and no frame is animating, so
+the switch to the display rate happens within a run-loop turn of the frame arriving instead of
+after a further tick, which started every line change 100 to 200 ms late and with its fastest first
+frames missing. **The display-rate schedule has no interval of its own**
+(`AnimationTimelineSchedule(minimumInterval: nil)`, so 120 Hz on a ProMotion iPhone with
+`CADisableMinimumFrameDurationOnPhone`): a minimum interval equal to the refresh period (the old
+`1/60`) discards every frame whose timestamp lands a hair early, so the timeline ran at an uneven
+30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. Only Low Power Mode or a serious or
+critical thermal state asks one (`LyricPace.sparingFrame`, 28 ms, a little under two 60 Hz frames so
+jitter never costs a third). **A frame costs the rows in and near the pane, not the sheet**: once
+the sheet is placed, a row whose measured frame lies more than a pane (at least 320 pt) beyond the
+pane's edges is drawn as a clear placeholder of its measured height (`LyricRowLook.culled`), which
+keeps the sheet's layout, `landing()`'s arithmetic and every row's `onGeometryChange` unchanged while
+leaving no text, opacity group, gesture or accessibility element to diff or draw; a row is culled
+only against a measurement made at the current column width and measures (`LyricColumn`), and never
+while VoiceOver runs, so every line stays reachable. Everything that reads the
 snapshot, the clock or `beat` is `LyricFollowing`, so the pane around it is not rebuilt four times a second. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag
 moves it (rubber-banded past the ends, released into a `Leg` launched at the finger's pace), opens
 the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the last touch.
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
-track change, pause or drift past 250 ms takes the position as is). Frames are asked on their own
+track change, pause or drift past 250 ms takes the position as is): the position is extrapolated
+per display frame from the 250 ms poll's reading, never held between polls, and never read from
+`Features.tick`. Frames are asked on their own
 serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, and
 land on the main actor through a closure built `nonisolated`; `Features.tick` no longer polls
 them. Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
 cascade but keeps the brightening. `compact` is the pane embedded in Now Playing: smaller words,
-tighter gutters, no chrome; `LyricsView` adds the backdrop, the toolbar's refresh and the
+tighter gutters, no chrome. Ink follows the system's legibility settings (`LyricLegibility`): under
+Increase Contrast or Reduce Transparency the unlit ink is the lit ink, unsung words sit at 70 % and
+no line stands below 85 %; otherwise a sheet with nothing lit (unsynced, or the song not playing)
+stands at `ADRIFT` 0.8 over the 0.5 muted ink, since 0.45 over it read at 22 %. `LyricsView` adds the backdrop, the toolbar's refresh and the
 `LyricAttribution` badge.
 
 ## Artwork and details

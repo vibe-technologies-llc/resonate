@@ -75,6 +75,7 @@ private struct LyricFollowing: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var phase
     @Environment(\.self) private var environment
@@ -121,8 +122,8 @@ private struct LyricFollowing: View {
                         still: still,
                         scale: scale,
                         awake: awake,
-                        running: animating || ticking,
-                        animating: animating
+                        animating: animating,
+                        culls: !voiceOver
                     )
                 )
                 return LyricSheetView(
@@ -154,7 +155,7 @@ struct LyricSchedule: TimelineSchedule {
         if ticking {
             return AnySequence(PeriodicTimelineSchedule(from: start, by: LyricPace.lineSyncedTick).entries(from: start, mode: mode))
         }
-        return AnySequence(AnimationTimelineSchedule(minimumInterval: LyricPace.frameCap, paused: paused).entries(from: start, mode: mode))
+        return AnySequence(AnimationTimelineSchedule(minimumInterval: LyricPace.frameInterval, paused: paused).entries(from: start, mode: mode))
     }
 }
 
@@ -319,7 +320,7 @@ private struct LyricRowAccessibility: ViewModifier {
     let seek: (UInt64) -> Void
 
     func body(content: Content) -> some View {
-        if row.look.blank {
+        if row.look.blank || row.look.culled != nil {
             content.accessibilityHidden(true)
         } else if let moment = row.moment {
             content
@@ -342,7 +343,9 @@ private struct LyricRowView: View, Equatable {
     let measures: LyricMeasures
 
     var body: some View {
-        if look.blank {
+        if let height = look.culled {
+            Color.clear.frame(width: look.width, height: height)
+        } else if look.blank {
             Color.clear.frame(width: look.width, height: measures.pause)
         } else {
             VStack(spacing: 0) {
@@ -430,12 +433,13 @@ enum LyricSpace {
 }
 
 enum LyricPace {
-    static let lineSyncedTick: TimeInterval = 0.1
-    static let sparingFrame: TimeInterval = 1.0 / 30
-    static let steadyFrame: TimeInterval = 1.0 / 60
+    static let lineSyncedTick: TimeInterval = 0.05
+    static let sparingFrame: TimeInterval = 0.028
+    static let cullsBeyondPanes = 1.0
+    static let cullsWithin: CGFloat = 320
 
-    static var frameCap: TimeInterval {
-        ProcessInfo.processInfo.sparesFrames ? sparingFrame : steadyFrame
+    static var frameInterval: TimeInterval? {
+        ProcessInfo.processInfo.sparesFrames ? sparingFrame : nil
     }
 
     static let turn: TimeInterval = 0.42
@@ -923,6 +927,7 @@ struct LyricBreathLook: Equatable {
 }
 
 struct LyricRowLook: Equatable {
+    let culled: CGFloat?
     let blank: Bool
     let text: String
     let words: LyricWords
@@ -977,8 +982,13 @@ struct LyricCue {
     let still: Bool
     let scale: CGFloat
     let awake: Bool
-    let running: Bool
     let animating: Bool
+    let culls: Bool
+}
+
+struct LyricColumn: Equatable {
+    let width: CGFloat
+    let measures: LyricMeasures
 }
 
 struct LyricBreathing {
@@ -1042,8 +1052,9 @@ final class LyricStage {
     @ObservationIgnored private var clock = LyricClock()
     @ObservationIgnored private var playingHere = false
     @ObservationIgnored private var canAsk = false
-    @ObservationIgnored private var running = false
+    @ObservationIgnored private var animating = false
     @ObservationIgnored private var rows: [Int: CGRect] = [:]
+    @ObservationIgnored private var columns: [Int: LyricColumn] = [:]
     @ObservationIgnored private var sheetHeight: CGFloat = 0
     @ObservationIgnored private var pane: CGSize = .zero
     @ObservationIgnored private var measures = LyricMeasures.at(words: 32, compact: false)
@@ -1067,7 +1078,7 @@ final class LyricStage {
         pane = cue.pane
         measures = cue.measures
         scale = cue.scale
-        running = cue.running
+        animating = cue.animating
         playingHere = cue.playback != nil
         canAsk = cue.native != nil
 
@@ -1095,6 +1106,7 @@ final class LyricStage {
     func isMoving(at now: TimeInterval) -> Bool {
         guard sheet != nil else { return false }
         return !placed && pane.height > 0
+            || placed && unfollowed
             || !turn.settled(at: now)
             || !light.settled(at: now)
             || !spread.settled(at: now)
@@ -1117,12 +1129,13 @@ final class LyricStage {
 
         frame = landed
         wipes = Dictionary(landed.wipes.map { (Int($0.line), $0) }) { kept, _ in kept }
-        if moved, !running { beat &+= 1 }
+        if moved, !animating { beat &+= 1 }
     }
 
     func measured(row: Int, _ frame: CGRect, generation: Int) {
         guard generation == self.generation else { return }
         rows[row] = frame
+        columns[row] = LyricColumn(width: pane.width, measures: measures)
     }
 
     func measuredSheet(_ height: CGFloat, generation: Int) {
@@ -1226,6 +1239,7 @@ final class LyricStage {
         wipes = [:]
         asked = nil
         rows = [:]
+        columns = [:]
         sheetHeight = 0
         placed = false
         arrived = nil
@@ -1258,6 +1272,19 @@ final class LyricStage {
         spread.onto(following(at: now) ? .around : .across, at: now)
     }
 
+    private var aimed: (reading: LyricReading, lit: LyricVoicesLit) {
+        guard playingHere, let frame else { return (.evenly, .none) }
+        return (
+            LyricReading(frame.reads),
+            LyricVoicesLit(one: frame.voiceOne.map(Int.init), two: frame.voiceTwo.map(Int.init))
+        )
+    }
+
+    private var unfollowed: Bool {
+        let aim = aimed
+        return aim.reading != turn.to || aim.lit != light.to
+    }
+
     private func follow(at now: TimeInterval) {
         spreadOut(at: now)
         guard playingHere, let frame else {
@@ -1268,7 +1295,7 @@ final class LyricStage {
             return
         }
 
-        let lit = LyricVoicesLit(one: frame.voiceOne.map(Int.init), two: frame.voiceTwo.map(Int.init))
+        let lit = aimed.lit
         if let waiting = frame.waiting {
             let next = Int(waiting.next)
             if breathing?.line != next {
@@ -1463,8 +1490,13 @@ final class LyricStage {
         let swell = swell(at: now)
         let seekable = playingHere && synced
 
-        let rows = cue.sheet.lines.enumerated().map { index, line in
-            row(index, line, now: now, cue: cue, column: column, inside: inside, twoVoices: twoVoices, swell: swell, seekable: seekable)
+        let window = cue.culls && placed ? visibleWindow : nil
+        let measured = LyricColumn(width: pane.width, measures: measures)
+        let rows = cue.sheet.lines.enumerated().map { index, line -> LyricSceneRow in
+            if let window, let height = culledHeight(index, in: window, measured: measured) {
+                return culledRow(index, height: height, column: column)
+            }
+            return row(index, line, now: now, cue: cue, column: column, inside: inside, twoVoices: twoVoices, swell: swell, seekable: seekable)
         }
         let end = synced ? ending(at: now, still: cue.still, column: column, inks: inks) : nil
         let edge = synced ? pane.height / 2 : measures.margin
@@ -1481,6 +1513,34 @@ final class LyricStage {
         )
     }
 
+    private var visibleWindow: ClosedRange<Double> {
+        let beyond = max(Double(pane.height) * LyricPace.cullsBeyondPanes, Double(LyricPace.cullsWithin))
+        return -beyond...(Double(pane.height) + beyond)
+    }
+
+    private func culledHeight(_ index: Int, in window: ClosedRange<Double>, measured: LyricColumn) -> CGFloat? {
+        guard let frame = rows[index], columns[index] == measured else { return nil }
+        let top = Double(frame.minY) + offset
+        let bottom = Double(frame.maxY) + offset
+        return bottom < window.lowerBound || top > window.upperBound ? frame.height : nil
+    }
+
+    private func culledRow(_ index: Int, height: CGFloat, column: CGFloat) -> LyricSceneRow {
+        let look = LyricRowLook(
+            culled: height,
+            blank: true,
+            text: "",
+            words: .plain("", .init(red: 0, green: 0, blue: 0, opacity: 0)),
+            side: .centre,
+            width: column,
+            textWidth: 0,
+            standing: 0,
+            breathes: false,
+            breath: nil
+        )
+        return LyricSceneRow(id: index, look: look, inset: 0, moment: nil, lit: false)
+    }
+
     private func row(
         _ index: Int,
         _ line: LyricRow,
@@ -1494,6 +1554,7 @@ final class LyricStage {
     ) -> LyricSceneRow {
         guard !line.blank else {
             let look = LyricRowLook(
+                culled: nil,
                 blank: true,
                 text: "",
                 words: .plain("", cue.inks.muted),
@@ -1519,6 +1580,7 @@ final class LyricStage {
         let breath = breath(at: index, now: now)
         let standing = max(standing(index, at: now), cue.inks.standingFloor)
         let look = LyricRowLook(
+            culled: nil,
             blank: false,
             text: line.text,
             words: words,
