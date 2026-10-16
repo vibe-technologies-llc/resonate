@@ -64,10 +64,24 @@ pub(crate) fn tell(notice: Notice, cx: &mut App) {
         show(notice, cx);
         return;
     }
-    if toaster.waiting.len() < WAITING_AT_MOST {
-        toaster.waiting.push_back(notice);
-    }
+    wait(&mut toaster.waiting, notice);
     withdraw(cx);
+}
+
+fn wait(waiting: &mut VecDeque<Notice>, notice: Notice) {
+    if waiting.len() >= WAITING_AT_MOST {
+        let makes_room = waiting
+            .iter()
+            .position(|waiting| waiting.tone() != Tone::Trouble);
+        match makes_room {
+            Some(at) => {
+                waiting.remove(at);
+            }
+            None if notice.tone() != Tone::Trouble => return,
+            None => {}
+        }
+    }
+    waiting.push_back(notice);
 }
 
 pub(crate) fn dismiss(cx: &mut App) {
@@ -310,6 +324,46 @@ const fn plainly(cause: Cause) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn trouble(text: &str) -> Notice {
+        Notice::Trouble(text.to_owned())
+    }
+
+    fn noted(text: &str) -> Notice {
+        Notice::Noted(text.to_owned())
+    }
+
+    #[test]
+    fn a_full_line_drops_its_oldest_plain_notice_for_a_newer_one_and_never_a_trouble() {
+        let mut waiting = VecDeque::new();
+        for told in [trouble("a"), noted("b"), noted("c"), trouble("d")] {
+            wait(&mut waiting, told);
+        }
+
+        wait(&mut waiting, trouble("e"));
+
+        assert_eq!(
+            waiting,
+            VecDeque::from([trouble("a"), noted("c"), trouble("d"), trouble("e")])
+        );
+    }
+
+    #[test]
+    fn a_full_line_of_troubles_turns_a_plain_notice_away_and_keeps_every_trouble() {
+        let mut waiting = VecDeque::new();
+        for told in ["a", "b", "c", "d"] {
+            wait(&mut waiting, trouble(told));
+        }
+
+        wait(&mut waiting, noted("plain"));
+        assert_eq!(waiting.len(), WAITING_AT_MOST);
+        assert!(!waiting.contains(&noted("plain")));
+
+        wait(&mut waiting, trouble("e"));
+        assert_eq!(waiting.len(), WAITING_AT_MOST + 1);
+        assert_eq!(waiting.back(), Some(&trouble("e")));
+        assert_eq!(waiting.front(), Some(&trouble("a")));
+    }
 
     #[test]
     fn a_library_task_that_failed_says_what_it_was_doing_and_why_in_plain_words() {
