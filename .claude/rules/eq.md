@@ -175,6 +175,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   unescaped name rewrites the same stem; `--list` shows own curves so a gone device can be
   forgotten; a too-large or broken file is an `unreadable` row, not the end of the list.
 - **A profile is read as far as it parses, never failing on a line** (the `lrc.rs`/`cue.rs` rule):
+  `Preamp:` lines sum, as EqualizerAPO sums them (a sum past the widest is held and counted `clamped`);
   parameters by name; `BW` and `S` convert to Q (`BW` in the unit it names: `Oct`, or `Hz` as centre
   over width; unnamed, octaves), comma decimals read, `#` lines are comments. Only `LARGEST_PROFILE`
   (64 KiB of the file's own bytes, weighed before decoding: `Error::TooLarge`) and `LINES_AT_MOST`
