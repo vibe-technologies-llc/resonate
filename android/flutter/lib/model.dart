@@ -28,10 +28,7 @@ String clock(Object? milliseconds) {
 String humanize(String value) => value.toLowerCase().split('_').join(' ');
 
 class SyncActivity {
-  const SyncActivity.syncing()
-    : songs = 0,
-      fraction = null,
-      isFetching = false;
+  const SyncActivity.syncing() : songs = 0, fraction = null, isFetching = false;
   const SyncActivity.fetching({required this.songs, this.fraction})
     : isFetching = true;
 
@@ -58,6 +55,8 @@ class PlayerModel extends ChangeNotifier {
   final MethodChannel _methods;
   late final StreamSubscription<dynamic> _subscription;
   final RowData state = {};
+  final ValueNotifier<int> positionMs = ValueNotifier(0);
+  final ValueNotifier<int?> sleepRemainingMs = ValueNotifier(null);
   String? failure;
   bool connected = false;
   final LinkedHashMap<String, Future<Uint8List?>> _pictures = LinkedHashMap();
@@ -126,7 +125,10 @@ class PlayerModel extends ChangeNotifier {
 
     if (active.isNotEmpty) {
       final sized = active.where((t) => integer(t['size']) > 0).toList();
-      final totalSize = sized.fold<int>(0, (sum, t) => sum + integer(t['size']));
+      final totalSize = sized.fold<int>(
+        0,
+        (sum, t) => sum + integer(t['size']),
+      );
       final received = sized.fold<int>(
         0,
         (sum, t) => sum + math.min(integer(t['received']), integer(t['size'])),
@@ -150,7 +152,15 @@ class PlayerModel extends ChangeNotifier {
 
   void _receive(dynamic event) {
     final patch = row(event);
+    final previousSnapshot = snapshot;
     state.addAll(patch);
+    final nextSnapshot = snapshot;
+    if (patch.containsKey('snapshot')) {
+      positionMs.value = integer(nextSnapshot['positionMs']);
+      sleepRemainingMs.value = nextSnapshot['sleepRemainingMs'] == null
+          ? null
+          : integer(nextSnapshot['sleepRemainingMs']);
+    }
     if (patch.containsKey('tracks')) _tracks = rows(patch['tracks']);
     if (patch.containsKey('allTracks')) {
       _allTracks = rows(patch['allTracks']);
@@ -175,7 +185,26 @@ class PlayerModel extends ChangeNotifier {
         }
       }
     }
-    notifyListeners();
+    if (patch.length != 1 ||
+        !patch.containsKey('snapshot') ||
+        !_sameSnapshotExceptTime(previousSnapshot, nextSnapshot)) {
+      notifyListeners();
+    }
+  }
+
+  bool _sameSnapshotExceptTime(RowData before, RowData after) {
+    if (before.length != after.length) return false;
+    for (final entry in after.entries) {
+      if (entry.key == 'positionMs' || entry.key == 'sleepRemainingMs') {
+        continue;
+      }
+      if (entry.key == 'current') {
+        if (!mapEquals(row(before[entry.key]), row(entry.value))) return false;
+      } else if (before[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<dynamic> call(String method, [RowData arguments = const {}]) async {
@@ -269,6 +298,8 @@ class PlayerModel extends ChangeNotifier {
   @override
   void dispose() {
     _subscription.cancel();
+    positionMs.dispose();
+    sleepRemainingMs.dispose();
     super.dispose();
   }
 }

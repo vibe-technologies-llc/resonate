@@ -395,10 +395,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             scrolledUnderElevation: 0,
-            flexibleSpace: const ProgressiveBlurBackdrop(
-              top: true,
-              child: SizedBox.expand(),
-            ),
+            flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
             title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           body: switch (widget.page) {

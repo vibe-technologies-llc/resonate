@@ -318,10 +318,7 @@ class _AppShellState extends State<AppShell>
                 right: 0,
                 height: MediaQuery.paddingOf(context).top + 28,
                 child: const IgnorePointer(
-                  child: ProgressiveBlurBackdrop(
-                    top: true,
-                    child: SizedBox.expand(),
-                  ),
+                  child: EdgeTint(top: true, child: SizedBox.expand()),
                 ),
               ),
             ],
@@ -353,7 +350,7 @@ class AppBottomBar extends StatelessWidget {
     listenable: model,
     builder: (context, _) => ValueListenableBuilder<int>(
       valueListenable: AppShell.currentTab,
-      builder: (context, currentTab, _) => ProgressiveBlurBackdrop(
+      builder: (context, currentTab, _) => EdgeTint(
         child: SafeArea(
           top: false,
           child: Padding(

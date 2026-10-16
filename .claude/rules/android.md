@@ -210,22 +210,22 @@ disposed controller and causes widget-tree teardown assertions. Creation and ren
 same native calls; cancellation never writes.
 
 
-The shell's top edge and bottom navigation use mirrored progressive backdrop blur, strongest
-at the system bars and fading into the scrolling content. Disjoint clipped backdrop
-bands increase Gaussian sigma toward the edge; a shader mask around a backdrop filter isolates
-it in an empty layer and cannot blur the underlying screen. The library scrolls beneath the status
-bar. Collection backgrounds enclose the whole scaffold, including the transparent toolbar; the
-cover and rows scroll beneath its fading blur rather than meeting a separate opaque header.
-Settings details use that same continuous artwork background and fading toolbar. Their scrolling
-content includes the system and toolbar insets at the start, so controls begin below the title
-and pass beneath the blur as they scroll. Fixed search controls retain those insets outside the
-results viewport.
+The shell's top edge and bottom navigation use mirrored progressive translucent tints, strongest
+at the system bars and fading into the scrolling content. Rounded controls use opaque surfaces
+without live backdrop filters. The library scrolls beneath the status bar. Collection backgrounds
+enclose the whole scaffold, including the transparent toolbar; the cover and rows scroll beneath
+its fading tint rather than meeting a separate opaque header. Settings details use that same
+continuous color background and fading toolbar. Their scrolling content includes the system and
+toolbar insets at the start, so controls begin below the title and pass beneath the tint as they
+scroll. Fixed search controls retain those insets outside the results viewport. On a W-P311 with
+PowerVR GE8320, live backdrop filters made scrolling miss multiple display periods; the tint and
+one color gradient keep sustained Songs scrolling near the 60 Hz display period.
 
 Settings use neutral surfaces with the same text roles and geometry as the library: 24-pixel
-page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork keeps a quarter
-of the radial wash and three tenths of the image opacity, without decorative drift, so bright
-covers cannot compete with labels. Cards have opaque neutral surfaces; secondary text retains
-its own contrasting color. Root headings align with their actions and omit decorative captions.
+page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork uses a quarter
+of the album color strength, so bright covers cannot compete with labels. Cards have opaque
+neutral surfaces; secondary text retains its own contrasting color. Root headings align with
+their actions and omit decorative captions.
 The mini-player keeps 40-pixel artwork and 48-pixel touch targets; navigation is 64 pixels high,
 or 72 for large text. Narrow widths and large text show only the selected navigation label.
 Scrolling lists take their bottom inset from the scaffold rather than reserving a fixed 180
@@ -241,21 +241,22 @@ of visible track numbers, so rows with thumbnails still identify repeated songs 
 
 The expanded player is a transparent route that keeps its parent painted. One panel animation
 owns entrance, dismissal and drag cancellation; sliding, scale, corner rounding and progressive
-backdrop blur share its progress. The exposed parent remains visible through a light tint, and
-blur clears as dismissal completes, preventing a black gap or a second route exit animation.
+edge tint share its progress. The exposed parent remains visible through a light tint, and
+the tint fades as dismissal completes, preventing a black gap or a second route exit animation.
 
-Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions and
-stops decorative drift. Artwork is loaded through the existing native cache as JPEG bytes,
+Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions. Artwork
+is loaded through the existing native cache as JPEG bytes,
 keyed in Dart by song, artwork revision and generation. Widgets compare their stored request key
 on updates; comparing two references to the mutable model misses a newly published generation.
 The decoded Flutter cache is bounded at 64 MiB and encoded/in-flight requests at 48 entries.
-The expanded player samples two tones
-from a 16 by 16 cover decode, falls back for neutral/dark/transparent art and draws radial washes
-inside a repaint boundary. The shell and expanded player place a 128-pixel cover decode behind
-glass surfaces; the expanded player uses a stronger wash. Blur sits inside a repaint boundary
-while transforms drift, and decorative movement stops when paused, offstage or reduced
-motion is requested. Paused artwork settles smaller. Artwork, lyrics, queue and the sleep timer
-share one glass pill; narrow widths and large text use icon-only buttons with named tooltips.
+The expanded player samples two tones from a 16 by 16 cover decode and falls back for
+neutral/dark/transparent art. The shell and expanded player paint one static color gradient,
+stronger in the expanded player, and animate it only when the artwork changes. Continuous drift
+and full-screen blurred cover layers made playback scrolling miss the frame budget on the W-P311.
+Position-only snapshots update the progress controls without notifying the whole screen every
+250 ms; transport, metadata and queue changes still notify it. Artwork, lyrics, queue and the
+sleep timer share one opaque pill; narrow widths and large text use icon-only buttons with named
+tooltips.
 Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
 hits: creating a cover while switching player modes must not rebuild its parent during build.
 The compact lyrics/queue layout keeps a bounded reading viewport and scrolls as a whole when

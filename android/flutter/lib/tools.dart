@@ -616,7 +616,6 @@ class _VisualizerPageState extends State<VisualizerPage>
     builder: (_, _) => Scaffold(
       appBar: AppBar(title: const Text('Visualizer')),
       body: Ambient(
-        animated: widget.model.playing,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),

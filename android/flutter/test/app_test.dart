@@ -110,6 +110,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('position updates only rebuild the progress control', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+    var modelChanges = 0;
+    var progressChanges = 0;
+    model.addListener(() => modelChanges++);
+    model.positionMs.addListener(() => progressChanges++);
+
+    events.add({
+      'snapshot': {...model.snapshot, 'positionMs': '20000'},
+    });
+    await tester.pump();
+
+    expect(modelChanges, 0);
+    expect(progressChanges, 1);
+    expect(model.positionMs.value, 20000);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .value,
+      closeTo(1 / 3, .001),
+    );
+
+    events.add({
+      'snapshot': {...model.snapshot, 'transport': 'PLAYING'},
+    });
+    expect(modelChanges, 1);
+  });
+
   testWidgets(
     'song playback preserves full unsigned ids and explicit position',
     (tester) async {
@@ -426,42 +456,38 @@ void main() {
       expect(find.text(code), findsNothing);
     },
   );
-  testWidgets(
-    'player reveals the library through blur while dragging and snapping back',
-    (tester) async {
-      await mount(tester, populated: true);
-      await tester.tap(find.text('Echoes').first);
-      await tester.pumpAndSettle();
-      expect(find.text('Your library'), findsOneWidget);
-      expect(
-        ModalRoute.of(tester.element(find.byType(NowPlaying)))!.opaque,
-        isFalse,
-      );
-      final backdrop = find.descendant(
-        of: find.byType(NowPlaying),
-        matching: find.byType(ProgressiveBlurBackdrop),
-      );
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.text('NOW PLAYING')),
-      );
-      await gesture.moveBy(const Offset(0, 70));
-      await tester.pump();
-      expect(
-        tester.widget<ProgressiveBlurBackdrop>(backdrop).strength,
-        inExclusiveRange(0, 1),
-      );
-      await tester.pump(const Duration(milliseconds: 200));
-      await gesture.up();
-      await tester.pumpAndSettle();
-      expect(find.text('NOW PLAYING'), findsOneWidget);
-      expect(tester.widget<ProgressiveBlurBackdrop>(backdrop).strength, 1);
-      await tester.drag(find.text('NOW PLAYING'), const Offset(0, 320));
-      await tester.pumpAndSettle();
-      expect(find.text('NOW PLAYING'), findsNothing);
-      expect(find.text('Your library'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('player reveals the library while dragging and snapping back', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+    await tester.tap(find.text('Echoes').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Your library'), findsOneWidget);
+    expect(
+      ModalRoute.of(tester.element(find.byType(NowPlaying)))!.opaque,
+      isFalse,
+    );
+    final backdrop = find.descendant(
+      of: find.byType(NowPlaying),
+      matching: find.byType(EdgeTint),
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('NOW PLAYING')),
+    );
+    await gesture.moveBy(const Offset(0, 70));
+    await tester.pump();
+    expect(tester.widget<EdgeTint>(backdrop).strength, inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('NOW PLAYING'), findsOneWidget);
+    expect(tester.widget<EdgeTint>(backdrop).strength, 1);
+    await tester.drag(find.text('NOW PLAYING'), const Offset(0, 320));
+    await tester.pumpAndSettle();
+    expect(find.text('NOW PLAYING'), findsNothing);
+    expect(find.text('Your library'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('closing the player respects reduced motion', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue =
@@ -717,8 +743,8 @@ void main() {
       expect(tester.takeException(), isNull);
     }
   });
-  testWidgets('progressive blur samples the screen behind it', (tester) async {
-    const key = ValueKey('blur-sample');
+  testWidgets('edge tint leaves the content boundary sharp', (tester) async {
+    const key = ValueKey('tint-sample');
     await tester.pumpWidget(
       const MaterialApp(
         home: Center(
@@ -745,9 +771,9 @@ void main() {
                       ),
                     ],
                   ),
-                  ProgressiveBlurBackdrop(
+                  EdgeTint(
                     top: true,
-                    tintStrength: 0,
+                    tintStrength: .5,
                     child: SizedBox.expand(),
                   ),
                 ],
@@ -767,10 +793,12 @@ void main() {
       image.dispose();
       return bytes!;
     });
-    final blurred = pixels!.getUint8((8 * 64 + 24) * 4);
+    final tinted = pixels!.getUint8((8 * 64 + 24) * 4);
+    final white = pixels.getUint8((8 * 64 + 40) * 4);
     final clear = pixels.getUint8((60 * 64 + 24) * 4);
-    expect(blurred, inExclusiveRange(20, 235));
-    expect(blurred, greaterThan(clear + 20));
+    expect(tinted, greaterThan(clear + 20));
+    expect(white, greaterThan(tinted + 80));
+    expect(find.byType(BackdropFilter), findsNothing);
   });
   testWidgets('playlist naming keeps its text field alive through dismissal', (
     tester,

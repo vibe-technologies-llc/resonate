@@ -71,18 +71,24 @@ class MiniPlayer extends StatelessWidget {
             ),
           ),
         ),
-        Semantics(
-          label: 'Song progress',
-          value:
-              '${clock(model.snapshot['positionMs'])} of ${clock(model.snapshot['durationMs'])}',
-          child: LinearProgressIndicator(
-            value: integer(model.snapshot['durationMs']) > 0
-                ? (integer(model.snapshot['positionMs']) /
-                          integer(model.snapshot['durationMs']))
-                      .clamp(0, 1)
-                : 0,
-            minHeight: 2,
-            backgroundColor: Colors.transparent,
+        RepaintBoundary(
+          child: ValueListenableBuilder<int>(
+            valueListenable: model.positionMs,
+            builder: (context, position, _) => Semantics(
+              label: 'Song progress',
+              value:
+                  '${clock(position)} of ${clock(model.snapshot['durationMs'])}',
+              child: LinearProgressIndicator(
+                value: integer(model.snapshot['durationMs']) > 0
+                    ? (position / integer(model.snapshot['durationMs'])).clamp(
+                        0,
+                        1,
+                      )
+                    : 0,
+                minHeight: 2,
+                backgroundColor: Colors.transparent,
+              ),
+            ),
           ),
         ),
       ],
@@ -272,7 +278,7 @@ class _NowPlayingState extends State<NowPlaying>
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop) _dismiss();
         },
-        child: ProgressiveBlurBackdrop(
+        child: EdgeTint(
           top: true,
           strength: Curves.easeOutCubic.transform(1 - progress),
           tintStrength: .18,
@@ -693,14 +699,21 @@ class _NowPlayingState extends State<NowPlaying>
                               ),
                             ),
                           ),
-                          if (model.snapshot['sleepRemainingMs'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                'Sleep in ${clock(model.snapshot['sleepRemainingMs'])}',
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                            ),
+                          ValueListenableBuilder<int?>(
+                            valueListenable: model.sleepRemainingMs,
+                            builder: (context, remaining, _) =>
+                                remaining == null
+                                ? const SizedBox.shrink()
+                                : Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Text(
+                                      'Sleep in ${clock(remaining)}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall,
+                                    ),
+                                  ),
+                          ),
                         ],
                       ),
                     ),
@@ -793,40 +806,44 @@ class Scrubber extends StatelessWidget {
   const Scrubber({super.key, required this.model});
   final PlayerModel model;
   @override
-  Widget build(BuildContext context) {
-    final duration = decimal(model.snapshot['durationMs']);
-    return Column(
-      children: [
-        CommitSlider(
-          value: decimal(model.snapshot['positionMs']),
-          min: 0,
-          max: duration > 0 ? duration : 1,
-          label: 'Song progress',
-          format: (value) => clock(value.toInt()),
-          onCommit: (value) => model.call('seek', {'position': value.toInt()}),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children:
-              [
-                    Text(clock(model.snapshot['positionMs'])),
-                    Text(
-                      '-${clock((duration - decimal(model.snapshot['positionMs'])).clamp(0, double.infinity).toInt())}',
-                    ),
-                  ]
-                  .map(
-                    (child) => DefaultTextStyle(
-                      style: Theme.of(context).textTheme.labelSmall!.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: model.positionMs,
+    builder: (context, position, _) {
+      final duration = decimal(model.snapshot['durationMs']);
+      return Column(
+        children: [
+          CommitSlider(
+            value: position.toDouble(),
+            min: 0,
+            max: duration > 0 ? duration : 1,
+            label: 'Song progress',
+            format: (value) => clock(value.toInt()),
+            onCommit: (value) =>
+                model.call('seek', {'position': value.toInt()}),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children:
+                [
+                      Text(clock(position)),
+                      Text(
+                        '-${clock((duration - position).clamp(0, double.infinity).toInt())}',
                       ),
-                      child: child,
-                    ),
-                  )
-                  .toList(),
-        ),
-      ],
-    );
-  }
+                    ]
+                    .map(
+                      (child) => DefaultTextStyle(
+                        style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        child: child,
+                      ),
+                    )
+                    .toList(),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class CommitSlider extends StatefulWidget {
@@ -1012,92 +1029,84 @@ class QueuePage extends StatelessWidget {
                     child: const Text('Browse songs'),
                   ),
                 )
-              : EdgeFade(
-                  top: true,
-                  bottom: true,
-                  topExtent: 28,
-                  bottomExtent: 28,
-                  child: ReorderableListView.builder(
-                    buildDefaultDragHandles: false,
-                    padding: EdgeInsets.only(bottom: compact ? 16 : 180),
-                    itemCount: queue.length,
-                    onReorderItem: (from, to) {
-                      model.call('moveInQueue', {'from': from, 'to': to});
-                    },
-                    itemBuilder: (context, index) {
-                      final track = queue[index];
-                      final isPlaying = '${track['queueId']}' == currentQueueId;
-                      final isHeard = playing >= 0 && index < playing;
+              : ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  padding: EdgeInsets.only(bottom: compact ? 16 : 180),
+                  itemCount: queue.length,
+                  onReorderItem: (from, to) {
+                    model.call('moveInQueue', {'from': from, 'to': to});
+                  },
+                  itemBuilder: (context, index) {
+                    final track = queue[index];
+                    final isPlaying = '${track['queueId']}' == currentQueueId;
+                    final isHeard = playing >= 0 && index < playing;
 
-                      Widget? sectionHeader;
-                      if (playing > 0 && index == 0) {
-                        sectionHeader = const _QueueHeader('History');
-                      } else if (playing >= 0 && index == playing) {
-                        sectionHeader = const _QueueHeader('Now playing');
-                      } else if (playing >= 0 && index == playing + 1) {
-                        sectionHeader = const _QueueHeader('Up next');
-                      } else if (playing == -1 && index == 0) {
-                        sectionHeader = const _QueueHeader('Up next');
-                      }
+                    Widget? sectionHeader;
+                    if (playing > 0 && index == 0) {
+                      sectionHeader = const _QueueHeader('History');
+                    } else if (playing >= 0 && index == playing) {
+                      sectionHeader = const _QueueHeader('Now playing');
+                    } else if (playing >= 0 && index == playing + 1) {
+                      sectionHeader = const _QueueHeader('Up next');
+                    } else if (playing == -1 && index == 0) {
+                      sectionHeader = const _QueueHeader('Up next');
+                    }
 
-                      final tile = SongTile(
-                        model: model,
-                        track: track,
-                        onTap: () => model.call('jump', {'index': index}),
-                        open: open,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isPlaying)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: Icon(
-                                  Icons.graphic_eq_rounded,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: Icon(Icons.drag_handle_rounded),
+                    final tile = SongTile(
+                      model: model,
+                      track: track,
+                      onTap: () => model.call('jump', {'index': index}),
+                      open: open,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isPlaying)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Icon(
+                                Icons.graphic_eq_rounded,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
-                          ],
-                        ),
-                      );
-
-                      final content = isHeard
-                          ? Opacity(opacity: 0.55, child: tile)
-                          : tile;
-
-                      return Dismissible(
-                        key: ValueKey('queue:${track['queueId']}'),
-                        direction: DismissDirection.endToStart,
-                        confirmDismiss: (_) async {
-                          await model.call('removeFromQueue', {
-                            'id': track['queueId'],
-                          });
-                          return false;
-                        },
-                        background: Container(
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          child: const Icon(
-                            Icons.remove_circle_outline_rounded,
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Icon(Icons.drag_handle_rounded),
+                            ),
                           ),
-                        ),
-                        child: sectionHeader != null
-                            ? Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [sectionHeader, content],
-                              )
-                            : content,
-                      );
-                    },
-                  ),
+                        ],
+                      ),
+                    );
+
+                    final content = isHeard
+                        ? Opacity(opacity: 0.55, child: tile)
+                        : tile;
+
+                    return Dismissible(
+                      key: ValueKey('queue:${track['queueId']}'),
+                      direction: DismissDirection.endToStart,
+                      confirmDismiss: (_) async {
+                        await model.call('removeFromQueue', {
+                          'id': track['queueId'],
+                        });
+                        return false;
+                      },
+                      background: Container(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        child: const Icon(Icons.remove_circle_outline_rounded),
+                      ),
+                      child: sectionHeader != null
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [sectionHeader, content],
+                            )
+                          : content,
+                    );
+                  },
                 ),
         ),
       ],
