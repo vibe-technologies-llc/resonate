@@ -528,10 +528,11 @@ impl Driven {
 #[cfg(test)]
 mod tests {
     use gpui::BorrowAppContext as _;
+    use resonate_engine::Placement;
 
     use super::*;
     use crate::{
-        Pane,
+        Pane, Selection,
         views::{settings::curve::Plot, visualiser::Showing},
     };
 
@@ -650,6 +651,111 @@ mod tests {
             "the menu stayed open"
         );
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+    }
+
+    #[gpui::test]
+    fn the_play_in_a_tracks_menu_plays_the_listing_from_it_as_enter_does(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let first = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .id;
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
+        driven.right_click(named("track", first.get()));
+        driven.click("menu-entry-0");
+
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+    }
+
+    #[gpui::test]
+    fn the_play_in_a_playlists_menu_turns_shuffle_off_as_every_other_play_does(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.send(Command::SetShuffle(true), cx);
+        });
+        driven.until(|root, cx| root.player.read(cx).state().shuffle);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            let menu = crate::views::playlists::playlist_menu(
+                point(px(200.0), px(200.0)),
+                playlist,
+                false,
+                cx,
+            );
+            root.open_a_menu(menu, cx);
+        });
+        driven.click("menu-entry-0");
+
+        driven.until(|root, cx| !root.player.read(cx).state().shuffle);
+    }
+
+    #[gpui::test]
+    fn an_album_played_from_its_menu_is_queued_whole_whatever_the_search_listed(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the albums read")[0]
+            .id;
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+        driven.focus(|root| &root.search);
+        driven.cx.simulate_input("echoes");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
+        let root = driven.root.clone();
+        driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| {
+                root.plays_everything_in(
+                    Selection::Album(album),
+                    Placement::Queued,
+                    true,
+                    window,
+                    cx,
+                );
+            });
+        });
+
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+    }
+
+    #[gpui::test]
+    fn showing_another_playlist_forgets_the_order_kept_for_the_one_before(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let kept = library.create_playlist("Kept").expect("a playlist");
+        let other = library.create_playlist("Other").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.show_playlist(Some(kept), cx);
+            root.keep_in_order(kept, true, cx);
+        });
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.keeping));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.show_playlist(Some(other), cx);
+        });
+        driven.settle();
+
+        assert!(!driven.read(|root, _| root.keeping));
     }
 
     #[gpui::test]
@@ -1145,8 +1251,14 @@ mod tests {
 
         let squeezed = driven.read(|root, _| root.sidebar_scroll.max_offset().height);
 
+        let settings = driven.bounds_of("tab-settings");
+
         assert_eq!(f32::from(roomy), 0.0);
         assert!(f32::from(squeezed) > 0.0);
+        assert!(
+            settings.bottom() <= px(300.0),
+            "the Settings tab fell below the window: {settings:?}"
+        );
     }
 
     #[gpui::test]
@@ -1919,6 +2031,41 @@ mod tests {
             kept(&mut driven),
             (resonate_library::HistoryKept::Forever, None),
             "keeping more was asked about twice"
+        );
+    }
+
+    #[gpui::test]
+    fn forgetting_a_folder_is_armed_by_the_first_press_and_done_by_the_second(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = catalog();
+        let music = folder.path().join("music");
+        fs::create_dir_all(&music).expect("a folder to forget");
+        library.add_root(&music).expect("the root is added");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        let forget: &'static str =
+            Box::leak(format!("{}-forget", music.display()).into_boxed_str());
+        driven.click("tab-settings");
+        driven.click("category-Library");
+
+        driven.click(forget);
+
+        assert_eq!(
+            driven.read(|root, _| root.forgetting_the_folder.clone()),
+            Some(music.clone())
+        );
+        assert_eq!(
+            library.roots().expect("the roots read"),
+            vec![music.clone()]
+        );
+
+        driven.click(forget);
+
+        driven.until(|_, _| library.roots().expect("the roots read").is_empty());
+        assert_eq!(
+            driven.read(|root, _| root.forgetting_the_folder.clone()),
+            None
         );
     }
 

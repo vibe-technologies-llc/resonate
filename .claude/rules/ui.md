@@ -44,10 +44,20 @@ is never named.
 - **Closing removes the window; quitting follows, never the reverse.** Close control, `ctrl-q` and
   the bus's `Quit` call `Window::remove_window`; `app.rs` quits once the last window closed
   (`App::quit` under a live window logged *window not found* twice every exit).
-- **The sidebar scrolls only when it does not fit.** `RootView::sidebar` holds its column in an
-  `overflow_y_scroll` region tracked by `sidebar_scroll`, the column `min_h_full` so *Settings* stays at the
-  foot of a tall window, with a `Scrollbars` bar over its edge; a window squeezed vertically scrolls the
-  tabs instead of clipping them.
+- **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
+  `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
+  download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
+  vertically (or pinned playlists piling up) scrolls the tabs and leaves the foot above the playback bar.
+- **A menu's *Play* does what a click or `enter` on its cell does.** A track row's menu plays the
+  listing from it (`RootView::play_the_row`, shared with the click); an album or artist cell's
+  menu queues the album or artist whole (`whole_of`: album then track order, no search text, as a drag
+  does); a playlist's menu *Play* sends `plays_in_order` first like every other playlist *Play*.
+- **A playlist shown reads its own kept order.** `show_playlist` sets `keeping`, `row_order` and
+  `row_reading` from the playlist's `kept` (defaults where none) when it changes the playlist opened,
+  so a header press on one playlist never inherits another's.
+- **A typed folder is looked at off the window's thread.** `root_typed` asks `is_dir` on the
+  background executor (`looking_at_the_typed_root`), and a picked folder is canonicalised there too
+  before `set_the_music_folder` or `name_the_vault` see it.
 - **The window names itself to the compositor twice.** `WindowOptions::app_id` = `APP_ID`, matched
   against `resonate.desktop` (its `StartupWMClass` held to it by a test in `app.rs`); the caption is
   `Window::set_window_title` on open (gpui's Wayland backend never reads `WindowParams::titlebar`).
@@ -293,7 +303,10 @@ is never named.
   - **Adding and forgetting a folder are not greyed: they wait.** `LibraryModel::add_roots` and
     `forget_root` put the request in `roots_waiting` (`RootWaiting::ToAdd`/`ToForget`) wherever a
     `Work` runs; `take_up_what_waited` runs when a pass hands its `Work` back: a forget first, one at
-    a time, then every waiting folder in one scan. A forget mark is keyed by its root.
+    a time, then every waiting folder in one scan. A forget mark is keyed by its root, and **armed by a first press** like *Reset everything*:
+    `forgetting_the_folder` names the root asked about (the mark says *Press again to forget*), a second
+    press on the same root calls `forget_root`, any other press or leaving the pane lowers it
+    (`lower_every_armed_press`).
   - **An enrichment is deliberately not a `Work`**: `LibraryModel::enriching` is a slot of its own,
     started with `for_the_pass` (`online.md`). A running lookup greys *Look up*, *Refresh all* and
     *Look for missing covers* via `held_back`; a scan can still start under one. `RootView::enrichment_status` sits

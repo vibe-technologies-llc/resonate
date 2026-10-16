@@ -2040,10 +2040,11 @@ fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
     }
 }
 
-fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
+pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
     let menu = Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, _, cx| {
             let entries = this.library.read(cx).entries_of(id);
+            this.plays_in_order(cx);
             this.play_playlist(id, &entries, 0, true, cx);
         })
         .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, _, cx| {
