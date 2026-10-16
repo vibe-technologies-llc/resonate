@@ -35,13 +35,21 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   over a channel; thread `resonate-mcp-tick` puts a `Tick` on it every `LOOKED_OVER_EVERY` (500 ms),
   answered between lines on the one thread. Each tick re-reads every subscribed URI; a differing
   reading (a failed read counts) sends `notifications/resources/updated`. Once the client has listed
-  resources, a changed list sends `notifications/resources/list_changed`.
+  resources, a changed list sends `notifications/resources/list_changed`: a tick reads the playlist
+  names only when `Library::catalog_revision` moved and compares a hash of them
+  (`resources::fingerprint`), so a quiet catalog costs one counter read.
 - **`serve` pushes nothing**: `initialize` offers `subscribe`/`listChanged` only where `pushing` was
   set; subscribing without it is `UnknownMethod`. Subscriptions are keyed by the URI as asked.
   Unsubscribing drops the URI unconditionally, so a playlist discarded or renamed since is still
   let go.
 
 ## Resources, prompts, completions
+
+- **Every list is paged by `cursor`.** `tools/list`, `resources/list`, `resources/templates/list` and
+  `prompts/list` answer `LISTED_A_PAGE` (100) entries and a `nextCursor`, the decimal offset of the
+  next; a cursor that is not one is `Refusal::BadCursor` (`-32602`). The resource page reads only its
+  own playlist names (`resources::page_from`, one extra to know whether more follow), never every
+  playlist.
 
 - **A resource is a tool's reading under a URI, the same reading**: `Resource::read` calls the
   read-only tools' functions at their defaults
@@ -61,7 +69,9 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
 ## Tools
 
 - **Catalog tools use a `Library` directly.** Transport tools find a player via `Reach` per call (one
-  started mid-session is found; a missing one fails that tool alone). `Controlling` is the seam over
+  started mid-session is found; a missing one fails that tool alone). `OnTheBus` keeps one
+  `resonate_mpris::Session` for the whole run and opens a new one only after a bus error, so a
+  subscribed now-playing costs no connection a tick. `Controlling` is the seam over
   `Running`; tests use a fake, no bus.
 - **`track_id` is the catalog's, `queue_id` the queue's.** `queue_id` is text: the queue mints ids
   down from `u64::MAX`, which clients reading JSON numbers as doubles would round to another row.
@@ -91,7 +101,9 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   `Refusal::OutOfRange`) or every row a search matches; past the end is `Error::NotInThePlaylist`.
   **Only rows asked for are read**: `Library::playlist_entries_within` puts the limit in `LIMIT` and
   counts `matched` separately, so a huge or self-filling playlist costs a few hundred rows. The
-  resource list uses `Library::playlist_names`, no row counted (read every tick).
+  resource list uses `Library::playlist_names`, no row counted. `list_playlists` answers `limit`
+  (default 200) playlists from `skip` with `matched` counting them all (`Library::playlists_within`);
+  the playlists resource is its first page.
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,

@@ -22,7 +22,7 @@ use resonate_library::{
     Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
     ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked, StreamAsked,
 };
-use resonate_mcp::{Controlling, Error, Lookups, Reach, Row, Server, Tool};
+use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking};
 use serde_json::{Value, json};
 
@@ -722,6 +722,89 @@ fn a_ping_is_answered_with_nothing() {
 }
 
 #[test]
+fn playlists_are_listed_a_page_at_a_time_saying_how_many_there_are() {
+    let library = Library::open_in_memory().expect("an in-memory catalog");
+    for name in ["Echo", "Alpha", "Delta", "Bravo", "Charlie"] {
+        library
+            .create_playlist(name)
+            .expect("a playlist to be made");
+    }
+    let server = server(library, Fake::default());
+
+    let first = called(&server, "list_playlists", json!({ "limit": 2 }));
+    let second = called(&server, "list_playlists", json!({ "limit": 2, "skip": 2 }));
+    let last = called(&server, "list_playlists", json!({ "limit": 2, "skip": 4 }));
+
+    let names = |page: &Value| -> Vec<Value> {
+        page["playlists"]
+            .as_array()
+            .expect("a list of playlists")
+            .iter()
+            .map(|playlist| playlist["name"].clone())
+            .collect()
+    };
+    assert_eq!(names(&first), [json!("Alpha"), json!("Bravo")]);
+    assert_eq!(names(&second), [json!("Charlie"), json!("Delta")]);
+    assert_eq!(names(&last), [json!("Echo")]);
+    assert_eq!(first["matched"], 5);
+    assert_eq!(last["matched"], 5);
+}
+
+#[test]
+fn resources_are_listed_a_page_at_a_time_under_a_cursor_that_must_be_one_handed_out() {
+    let library = Library::open_in_memory().expect("an in-memory catalog");
+    let playlists = 250;
+    for n in 0..playlists {
+        library
+            .create_playlist(&format!("List {n:03}"))
+            .expect("a playlist to be made");
+    }
+    let server = server(library, Fake::default());
+
+    let mut uris = Vec::new();
+    let mut pages = 0;
+    let mut cursor = Value::Null;
+    loop {
+        let params = match &cursor {
+            Value::Null => json!({}),
+            cursor => json!({ "cursor": cursor }),
+        };
+        let listed = result(&server, "resources/list", params);
+        let page = listed["resources"].as_array().expect("a list of resources");
+        assert!(page.len() <= 100, "{}", page.len());
+        uris.extend(page.iter().map(|resource| resource["uri"].clone()));
+        pages += 1;
+        cursor = listed.get("nextCursor").cloned().unwrap_or(Value::Null);
+        if cursor.is_null() {
+            break;
+        }
+    }
+
+    assert_eq!(pages, 3);
+    assert_eq!(uris.len(), Resource::FIXED.len() + playlists);
+    assert_eq!(
+        uris[Resource::FIXED.len()],
+        "resonate://library/playlist/List%20000"
+    );
+    assert_eq!(
+        uris.last(),
+        Some(&json!("resonate://library/playlist/List%20249"))
+    );
+    assert_eq!(
+        error_code(
+            &server,
+            &request("resources/list", json!({ "cursor": "not-a-cursor" }))
+        ),
+        -32602
+    );
+    assert!(
+        result(&server, "tools/list", json!({}))
+            .get("nextCursor")
+            .is_none()
+    );
+}
+
+#[test]
 fn a_transport_tool_with_no_player_fails_as_a_tool_and_the_catalog_still_answers() {
     let server = nothing_running();
 
@@ -732,7 +815,7 @@ fn a_transport_tool_with_no_player_fails_as_a_tool_and_the_catalog_still_answers
     );
 
     let listed = called(&server, "list_playlists", json!({}));
-    assert_eq!(listed, json!({ "playlists": [] }));
+    assert_eq!(listed, json!({ "matched": 0, "playlists": [] }));
 }
 
 #[test]

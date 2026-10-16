@@ -214,7 +214,10 @@ impl Tool {
                 ],
                 &["tracks", "albums", "artists"],
             ),
-            Self::Playlists => object(vec![("playlists", list(playlist()))], &["playlists"]),
+            Self::Playlists => object(
+                vec![("matched", whole()), ("playlists", list(playlist()))],
+                &["matched", "playlists"],
+            ),
             Self::PlaylistTracks => object(
                 vec![
                     ("playlist", playlist()),

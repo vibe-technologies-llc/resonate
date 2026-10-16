@@ -16,13 +16,14 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    Code, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp, ToolName,
+    Code, CursorText, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp,
+    ToolName,
     completions::Completing,
     controlling::Reach,
     error::said,
     passes::{Lookups, Passes},
     prompts::Prompt,
-    resources::{self, Resource},
+    resources::{self, LISTED_A_PAGE, Resource},
     tools::Tool,
 };
 
@@ -73,7 +74,13 @@ pub struct Server {
     passes: Passes,
     pushing: Cell<bool>,
     subscribed: RefCell<BTreeMap<String, Option<Value>>>,
-    listed: RefCell<Option<Vec<Value>>>,
+    listed: RefCell<Option<Watched>>,
+}
+
+#[derive(Clone, Copy)]
+struct Watched {
+    revision: u64,
+    fingerprint: u64,
 }
 
 enum Line {
@@ -318,13 +325,23 @@ impl Server {
 
         let mut listed = self.listed.borrow_mut();
         if let Some(last) = listed.as_mut() {
-            match self.listing() {
-                Ok(now) if now != *last => {
-                    *last = now;
-                    notifications.push(notification(RESOURCE_LIST_CHANGED, json!({})));
+            let revision = self.library.catalog_revision();
+            if revision != last.revision {
+                match resources::fingerprint(&self.library) {
+                    Ok(fingerprint) => {
+                        let moved = fingerprint != last.fingerprint;
+                        *last = Watched {
+                            revision,
+                            fingerprint,
+                        };
+                        if moved {
+                            notifications.push(notification(RESOURCE_LIST_CHANGED, json!({})));
+                        }
+                    }
+                    Err(error) => {
+                        tracing::debug!(%error, "the resources could not be listed again");
+                    }
                 }
-                Ok(_) => {}
-                Err(error) => tracing::debug!(%error, "the resources could not be listed again"),
             }
         }
         notifications
@@ -338,11 +355,17 @@ impl Server {
             .ok()
     }
 
-    fn listing(&self) -> Result<Vec<Value>> {
-        Ok(resources::every(&self.library)?
-            .iter()
-            .map(Resource::listed)
-            .collect())
+    fn watch_the_list(&self) -> Result<()> {
+        if !self.pushing.get() || self.listed.borrow().is_some() {
+            return Ok(());
+        }
+        let revision = self.library.catalog_revision();
+        let fingerprint = resources::fingerprint(&self.library)?;
+        *self.listed.borrow_mut() = Some(Watched {
+            revision,
+            fingerprint,
+        });
+        Ok(())
     }
 
     fn subscription(&self, method: &str, params: Value) -> std::result::Result<String, Refusal> {
@@ -414,7 +437,10 @@ impl Server {
                 Ok(initialised(&asked.protocol_version, self.pushing.get()))
             }
             PING => Ok(json!({})),
-            TOOLS_LIST => Ok(json!({ "tools": Tool::ALL.map(Tool::listed) })),
+            TOOLS_LIST => {
+                let from = starting_at(method, params)?;
+                Ok(page_of("tools", Tool::ALL.map(Tool::listed).into(), from))
+            }
             TOOLS_CALL => {
                 let asked: Calling = parameters(method, params)?;
                 let tool = Tool::named(&asked.name)
@@ -427,13 +453,16 @@ impl Server {
                 Ok(called(tool, outcome))
             }
             RESOURCES_LIST => {
-                let offered = self.listing()?;
-                if self.pushing.get() {
-                    *self.listed.borrow_mut() = Some(offered.clone());
-                }
-                Ok(json!({ "resources": offered }))
+                let from = starting_at(method, params)?;
+                let page = resources::page_from(&self.library, from)?;
+                self.watch_the_list()?;
+                let listed = page.resources.iter().map(Resource::listed).collect();
+                Ok(with_next("resources", listed, page.next))
             }
-            RESOURCE_TEMPLATES_LIST => Ok(json!({ "resourceTemplates": Resource::templates() })),
+            RESOURCE_TEMPLATES_LIST => {
+                let from = starting_at(method, params)?;
+                Ok(page_of("resourceTemplates", Resource::templates(), from))
+            }
             RESOURCES_READ => {
                 let asked: Reading = parameters(method, params)?;
                 let resource = Resource::at(&asked.uri).ok_or_else(|| {
@@ -460,7 +489,14 @@ impl Server {
                 self.subscribed.borrow_mut().remove(&asked.uri);
                 Ok(json!({}))
             }
-            PROMPTS_LIST => Ok(json!({ "prompts": Prompt::ALL.map(Prompt::listed) })),
+            PROMPTS_LIST => {
+                let from = starting_at(method, params)?;
+                Ok(page_of(
+                    "prompts",
+                    Prompt::ALL.map(Prompt::listed).into(),
+                    from,
+                ))
+            }
             PROMPTS_GET => {
                 let asked: Getting = parameters(method, params)?;
                 let prompt = Prompt::named(&asked.name)
@@ -601,6 +637,42 @@ fn answerable(id: Option<Value>) -> Value {
         Some(id @ (Value::String(_) | Value::Number(_))) => id,
         _ => Value::Null,
     }
+}
+
+#[derive(Deserialize)]
+struct Paging {
+    cursor: Option<String>,
+}
+
+fn starting_at(method: &str, params: Value) -> std::result::Result<usize, Refusal> {
+    let params = match params {
+        Value::Null => Value::Object(Map::new()),
+        given => given,
+    };
+    let asked: Paging = parameters(method, params)?;
+    let Some(cursor) = asked.cursor else {
+        return Ok(0);
+    };
+
+    cursor
+        .parse()
+        .map_err(|_| Refusal::BadCursor(CursorText::new(cursor)))
+}
+
+fn page_of(key: &str, items: Vec<Value>, from: usize) -> Value {
+    let next = (from.saturating_add(LISTED_A_PAGE) < items.len()).then(|| from + LISTED_A_PAGE);
+    let page = items.into_iter().skip(from).take(LISTED_A_PAGE).collect();
+
+    with_next(key, page, next)
+}
+
+fn with_next(key: &str, items: Vec<Value>, next: Option<usize>) -> Value {
+    let mut listed = Map::new();
+    listed.insert(key.to_owned(), Value::Array(items));
+    if let Some(next) = next {
+        listed.insert("nextCursor".to_owned(), Value::String(next.to_string()));
+    }
+    Value::Object(listed)
 }
 
 fn parameters<Asked: serde::de::DeserializeOwned>(

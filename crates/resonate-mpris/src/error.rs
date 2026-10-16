@@ -32,6 +32,14 @@ pub enum Error {
         source: Box<zbus::Error>,
     },
 
+    #[error("{landed} of the {asked} rows reached the queue before the bus failed")]
+    QueuedPartway {
+        landed: usize,
+        asked: usize,
+        #[source]
+        source: Box<Error>,
+    },
+
     #[error("{name} is already owned by another player")]
     NameTaken { name: OwnedWellKnownName },
 

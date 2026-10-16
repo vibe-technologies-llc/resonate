@@ -34,6 +34,7 @@ const SET_SLEEP: &str = "SetSleep";
 const ADD_TRACKS: &str = "AddTracks";
 const RELOCATE: &str = "Relocate";
 const MOVES_A_CALL: usize = 4096;
+pub const ROWS_A_CALL: usize = 128;
 const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 const PLAYING_NEXT: &str = "PlayingNext";
 const PLAY: &str = "Play";
@@ -125,9 +126,22 @@ pub struct Running {
     name: WellKnownName<'static>,
 }
 
+#[derive(Clone)]
+pub struct Session(Connection);
+
+impl Session {
+    pub fn open() -> Result<Self> {
+        session().map(Self)
+    }
+}
+
 impl Running {
     pub fn found() -> Result<Option<Self>> {
-        let connection = session()?;
+        Self::found_in(&Session::open()?)
+    }
+
+    pub fn found_in(session: &Session) -> Result<Option<Self>> {
+        let connection = session.0.clone();
         let Some(name) = ours(&connection)?.into_iter().next() else {
             return Ok(None);
         };
@@ -135,9 +149,13 @@ impl Running {
     }
 
     pub fn listed() -> Result<Vec<Self>> {
-        let connection = session()?;
+        Self::listed_in(&Session::open()?)
+    }
 
-        Ok(ours(&connection)?
+    pub fn listed_in(session: &Session) -> Result<Vec<Self>> {
+        let connection = &session.0;
+
+        Ok(ours(connection)?
             .into_iter()
             .map(|name| Self {
                 connection: connection.clone(),
@@ -147,7 +165,11 @@ impl Running {
     }
 
     pub fn named(given: &PlayerName) -> Result<Option<Self>> {
-        let connection = session()?;
+        Self::named_in(&Session::open()?, given)
+    }
+
+    pub fn named_in(session: &Session, given: &PlayerName) -> Result<Option<Self>> {
+        let connection = session.0.clone();
         let Some(name) = ours(&connection)?
             .into_iter()
             .find(|name| answers_to(name.as_str(), given.as_str()))
@@ -391,22 +413,43 @@ impl Running {
             .iter()
             .map(|(location, span)| location.to_uri_within(*span))
             .collect();
-        match self
-            .proxy(OWN_INTERFACE)?
-            .call::<_, _, ()>(ADD_TRACKS, &(uris, &after, queueing.play))
-        {
-            Ok(()) => return Ok(rows.len()),
-            Err(zbus::Error::MethodError(name, ..)) if name.as_str() == UNKNOWN_METHOD => {}
-            Err(source) => return Err(Error::bus(BusOp::Queue, source)),
-        }
+        let own = self.proxy(OWN_INTERFACE)?;
 
+        let mut landed = 0;
+        for (nth, chunk) in uris.chunks(ROWS_A_CALL).enumerate().rev() {
+            let heard_now = queueing.play && nth == 0;
+            match own.call::<_, _, ()>(ADD_TRACKS, &(chunk, &after, heard_now)) {
+                Ok(()) => landed += chunk.len(),
+                Err(zbus::Error::MethodError(name, ..))
+                    if landed == 0 && name.as_str() == UNKNOWN_METHOD =>
+                {
+                    return self.queued_one_by_one(rows, &after, queueing.play);
+                }
+                Err(source) => {
+                    return Err(partway(
+                        landed,
+                        rows.len(),
+                        Error::bus(BusOp::Queue, source),
+                    ));
+                }
+            }
+        }
+        Ok(rows.len())
+    }
+
+    fn queued_one_by_one(
+        &self,
+        rows: &[(MediaLocation, Option<FrameSpan>)],
+        after: &OwnedObjectPath,
+        play: bool,
+    ) -> Result<usize> {
         let tracks = self.proxy(TRACK_LIST)?;
         for (place, (location, span)) in rows.iter().enumerate().rev() {
-            let heard_now = queueing.play && place == 0;
+            let heard_now = play && place == 0;
             tracks
                 .call_method(
                     ADD_TRACK,
-                    &(location.to_uri_within(*span), &after, heard_now),
+                    &(location.to_uri_within(*span), after, heard_now),
                 )
                 .map_err(|source| Error::bus(BusOp::Queue, source))?;
         }
@@ -469,6 +512,17 @@ impl Running {
     fn proxy(&self, interface: &'static str) -> Result<Proxy<'_>> {
         Proxy::new(&self.connection, self.name.clone(), OBJECT_PATH, interface)
             .map_err(|source| Error::bus(BusOp::Connect, source))
+    }
+}
+
+fn partway(landed: usize, asked: usize, source: Error) -> Error {
+    if landed == 0 {
+        return source;
+    }
+    Error::QueuedPartway {
+        landed,
+        asked,
+        source: Box::new(source),
     }
 }
 

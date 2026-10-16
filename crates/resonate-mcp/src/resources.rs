@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use resonate_core::{uri_escaped, uri_unescaped};
 use resonate_library::{Direction, Library, PlaylistName, PlaylistOrder, Window};
 use serde_json::{Value, json};
@@ -110,9 +112,11 @@ impl Resource {
             Self::Passes => "Whether the scan, the lookup and the poll this session started are \
                              idle, running or finished, and how far each has come."
                 .to_owned(),
-            Self::Playlists => "Every playlist the library holds, with its length, its play count \
-                                and, for one that fills itself, the search it fills from."
-                .to_owned(),
+            Self::Playlists => format!(
+                "The first {LISTED_BY_DEFAULT} playlists the library holds, with their length, \
+                 their play count and, for one that fills itself, the search it fills from; the \
+                 list_playlists tool reads on from there."
+            ),
             Self::Playlist(name) => format!(
                 "The first {LISTED_BY_DEFAULT} rows of the playlist {name}, each with the \
                  track_id add_to_queue takes."
@@ -145,8 +149,8 @@ impl Resource {
         })
     }
 
-    pub(crate) fn templates() -> Value {
-        json!(Template::ALL.map(Template::listed))
+    pub(crate) fn templates() -> Vec<Value> {
+        Template::ALL.map(Template::listed).into()
     }
 
     pub(crate) fn read(
@@ -163,7 +167,7 @@ impl Resource {
                 .player()
                 .and_then(|player| transport::queue(&*player, QUEUED_BY_DEFAULT)),
             Self::Passes => Ok(passes.states()),
-            Self::Playlists => catalog::playlists(library, None),
+            Self::Playlists => catalog::playlists(library, None, 0, LISTED_BY_DEFAULT),
             Self::Playlist(name) => {
                 catalog::playlist_tracks(library, name.as_str(), None, LISTED_BY_DEFAULT)
             }
@@ -261,15 +265,50 @@ pub(crate) const fn over(window: Window) -> &'static str {
     }
 }
 
-pub(crate) fn every(library: &Library) -> Result<Vec<Resource>> {
-    let playlists = library.playlist_names(PlaylistOrder::Name, Direction::Ascending, 0, None)?;
+pub(crate) const LISTED_A_PAGE: usize = 100;
 
-    Ok(Resource::FIXED
+pub(crate) struct Page {
+    pub(crate) resources: Vec<Resource>,
+    pub(crate) next: Option<usize>,
+}
+
+pub(crate) fn page_from(library: &Library, from: usize) -> Result<Page> {
+    let fixed: Vec<Resource> = Resource::FIXED
+        .into_iter()
+        .skip(from)
+        .take(LISTED_A_PAGE)
+        .collect();
+    let room = LISTED_A_PAGE - fixed.len();
+    let playlists_from = from.saturating_sub(Resource::FIXED.len());
+
+    let mut named = library.playlist_names(
+        PlaylistOrder::Name,
+        Direction::Ascending,
+        playlists_from,
+        Some(room + 1),
+    )?;
+    let more = named.len() > room;
+    named.truncate(room);
+
+    let resources: Vec<Resource> = fixed
         .into_iter()
         .chain(
-            playlists
+            named
                 .into_iter()
                 .map(|playlist| Resource::Playlist(PlaylistName::new(playlist.name))),
         )
-        .collect())
+        .collect();
+    let next = more.then(|| from + resources.len());
+
+    Ok(Page { resources, next })
+}
+
+pub(crate) fn fingerprint(library: &Library) -> Result<u64> {
+    let named = library.playlist_names(PlaylistOrder::Name, Direction::Ascending, 0, None)?;
+    let mut hasher = DefaultHasher::new();
+    named
+        .iter()
+        .for_each(|playlist| playlist.name.hash(&mut hasher));
+
+    Ok(hasher.finish())
 }

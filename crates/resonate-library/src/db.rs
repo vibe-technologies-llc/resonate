@@ -2176,6 +2176,17 @@ impl Library {
         playlist::all(&self.inner, order, direction, named)
     }
 
+    pub fn playlists_within(
+        &self,
+        order: PlaylistOrder,
+        direction: Direction,
+        named: Option<&str>,
+        from: usize,
+        most: usize,
+    ) -> Result<Vec<Playlist>> {
+        playlist::within(&self.inner, order, direction, named, from, Some(most))
+    }
+
     pub fn playlist_lists(
         &self,
         order: PlaylistOrder,

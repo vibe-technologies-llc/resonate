@@ -3055,6 +3055,28 @@ fn a_playlist_keeps_the_order_rows_were_added_in() -> Result<()> {
 }
 
 #[test]
+fn playlists_are_read_a_page_at_a_time_in_the_order_they_are_listed_in() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    for name in ["Echo", "Alpha", "Delta", "Bravo", "Charlie"] {
+        library.create_playlist(name)?;
+    }
+
+    let names = |from, most| -> Result<Vec<String>> {
+        Ok(library
+            .playlists_within(PlaylistOrder::Name, Direction::Ascending, None, from, most)?
+            .into_iter()
+            .map(|playlist| playlist.name)
+            .collect())
+    };
+
+    assert_eq!(names(0, 2)?, ["Alpha", "Bravo"]);
+    assert_eq!(names(2, 2)?, ["Charlie", "Delta"]);
+    assert_eq!(names(4, 2)?, ["Echo"]);
+    assert!(names(5, 2)?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn a_row_the_scan_has_never_seen_is_still_a_row() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let unscanned = MediaLocation::local(tree.path().join("nothing-scanned.wav"));

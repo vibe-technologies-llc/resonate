@@ -99,6 +99,21 @@ impl fmt::Display for MethodName {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CursorText(Box<str>);
+
+impl CursorText {
+    pub fn new(text: impl Into<Box<str>>) -> Self {
+        Self(text.into())
+    }
+}
+
+impl fmt::Display for CursorText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ToolName(Box<str>);
 
 impl ToolName {
@@ -199,6 +214,9 @@ pub enum Refusal {
         source: serde_json::Error,
     },
 
+    #[error("{0} is not a cursor this server handed out")]
+    BadCursor(CursorText),
+
     #[error("{0} is not a tool this server offers")]
     UnknownTool(ToolName),
 
@@ -294,6 +312,7 @@ impl Refusal {
             Self::UnknownMethod(_) => Code::MethodNotFound,
             Self::UnknownResource(_) => Code::ResourceNotFound,
             Self::BadParameters { .. }
+            | Self::BadCursor(_)
             | Self::UnknownTool(_)
             | Self::UnknownPrompt(_)
             | Self::UnknownArgument(_)

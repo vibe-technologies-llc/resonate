@@ -69,9 +69,22 @@ pub fn all(
     direction: Direction,
     named: Option<&str>,
 ) -> Result<Vec<Playlist>> {
+    within(inner, order, direction, named, 0, None)
+}
+
+pub fn within(
+    inner: &Inner,
+    order: PlaylistOrder,
+    direction: Direction,
+    named: Option<&str>,
+    from: usize,
+    most: Option<usize>,
+) -> Result<Vec<Playlist>> {
     let (filters, binds) = narrowed_by(named);
+    let taking = most.map_or(NO_LIMIT, |most| i64::try_from(most).unwrap_or(i64::MAX));
+    let skipping = i64::try_from(from).unwrap_or(i64::MAX);
     let sql = format!(
-        "SELECT {COLUMNS} {COUNTED}{} {PER_PLAYLIST} ORDER BY {}",
+        "SELECT {COLUMNS} {COUNTED}{} {PER_PLAYLIST} ORDER BY {} LIMIT {taking} OFFSET {skipping}",
         db::clause(&filters),
         order_by(order, direction)
     );
