@@ -152,6 +152,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::NoSuchSource { .. }
         | Read::OpenTookTooLong { .. }
         | Read::LocatorNotUsable { .. }
+        | Read::NoRoomToSpool { .. }
         | Read::Unwritable { .. } => Cause::Unreadable,
         Read::UnrecognisedContainer { .. }
         | Read::NoAudioTrack { .. }

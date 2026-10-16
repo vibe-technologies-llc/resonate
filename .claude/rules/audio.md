@@ -113,7 +113,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `SPOOLED_WITHIN` (750 ms); ending inside both, it opens seekable. A stream still arriving goes on
   onto disc: `spool::Spool` = unnamed unlinked file under `TMPDIR` else `/var/tmp` (`/tmp` is tmpfs
   on Arch, Fedora, Flatpak), copied by a `resonate-spool` thread up to `SPOOLED_ON_DISC_AT_MOST`
-  (8 GiB); symphonia gets the `Spooling` side (`is_seekable() == false`). **Once all has arrived it
+  (8 GiB) or the room `fstatvfs` finds less `LEFT_FREE_ON_DISC` (256 MiB), whichever is less: a
+  source whose length is known and does not fit is refused before a byte is written
+  (`spool::Refusal::NoRoom`; the stream plays from its head, a DSD or Monkey's Audio file that
+  must be whole is `Error::NoRoomToSpool`) (`a_source_longer_than_the_disc_has_room_for_is_refused_before_anything_is_written`); symphonia gets the `Spooling` side (`is_seekable() == false`). **Once all has arrived it
   can seek:** `Decoder::settle_the_spool` reopens the file as seekable `Unspooled` at the old
   decoder's frame; the engine asks every pass (`Engine::settle_what_was_spooled`) and republishes the
   digest so MPRIS `CanSeek` follows. One cut short never claims to be whole. DSF, DSDIFF and

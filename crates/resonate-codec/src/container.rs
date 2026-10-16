@@ -41,7 +41,7 @@ use crate::{
     prescan::Prescan,
     riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
-    spool::{SPOOLED_ON_DISC_AT_MOST, Spool},
+    spool::{Refusal, SPOOLED_ON_DISC_AT_MOST, Spool},
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
 };
@@ -264,17 +264,28 @@ fn open_spooling_within(
                 Prescan::buffered(bytes.as_mut())
             }
             Spooled::Head(head) if let Some(container) = read_by_seeking(&head) => {
-                bytes = spooled_whole_on_disc(
+                bytes = match spooled_whole_on_disc(
                     &head,
                     bytes,
                     named.clone(),
                     at_most.on_disc,
                     at_most.folder.as_deref(),
-                )
-                .ok_or_else(|| Error::ReadBySeeking {
-                    location: location.clone(),
-                    container,
-                })?;
+                ) {
+                    Ok(Some(whole)) => whole,
+                    Err(Refusal::NoRoom { needed, room }) => {
+                        return Err(Error::NoRoomToSpool {
+                            location: location.clone(),
+                            needed,
+                            room,
+                        });
+                    }
+                    Ok(None) | Err(Refusal::Unwritable(_)) => {
+                        return Err(Error::ReadBySeeking {
+                            location: location.clone(),
+                            container,
+                        });
+                    }
+                };
                 seekable = true;
                 Prescan::buffered(bytes.as_mut())
             }
@@ -292,8 +303,8 @@ fn open_spooling_within(
                         spool = Some(held);
                         streamed
                     }
-                    Err((source, bytes)) => {
-                        tracing::debug!(%source, "a source that cannot seek could not be spooled on disc; it plays from its head");
+                    Err((refusal, bytes)) => {
+                        tracing::debug!(%refusal, "a source that cannot seek could not be spooled on disc; it plays from its head");
                         Box::new(Replaying::over(bytes, head))
                     }
                 };
@@ -366,13 +377,13 @@ fn spooled_whole_on_disc(
     hint: Option<FormatHint>,
     at_most: u64,
     folder: Option<&std::path::Path>,
-) -> Option<Box<dyn MediaStream>> {
-    let spool = Spool::beginning_in(head, rest, hint, at_most, folder)
-        .inspect_err(|(source, _)| {
-            tracing::debug!(%source, "a source read by seeking could not be spooled on disc");
-        })
-        .ok()?;
-    spool.ended_whole().map(|whole| whole.stream)
+) -> std::result::Result<Option<Box<dyn MediaStream>>, Refusal> {
+    let spool =
+        Spool::beginning_in(head, rest, hint, at_most, folder).map_err(|(refusal, _)| {
+            tracing::debug!(%refusal, "a source read by seeking could not be spooled on disc");
+            refusal
+        })?;
+    Ok(spool.ended_whole().map(|whole| whole.stream))
 }
 
 fn read_by_seeking(head: &[u8]) -> Option<Container> {

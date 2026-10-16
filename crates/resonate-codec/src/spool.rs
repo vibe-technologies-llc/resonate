@@ -14,6 +14,7 @@ use std::{
 };
 
 use parking_lot::{Condvar, Mutex};
+use thiserror::Error;
 
 use crate::source::{FormatHint, Media, MediaStream};
 
@@ -21,8 +22,18 @@ pub(crate) const SPOOLED_ON_DISC_AT_MOST: u64 = 8 << 30;
 const COPIED_AT_A_TIME: usize = 64 << 10;
 const CHOSEN_TEMPORARY_FOLDER: &str = "TMPDIR";
 const KEPT_ON_DISC: &str = "/var/tmp";
+const LEFT_FREE_ON_DISC: u64 = 256 << 20;
 
 static NAMED: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Error)]
+pub(crate) enum Refusal {
+    #[error("the spool could not be made or started")]
+    Unwritable(#[source] io::Error),
+
+    #[error("{needed} bytes would be spooled and {room} may be taken of the disc")]
+    NoRoom { needed: u64, room: u64 },
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Ending {
@@ -48,7 +59,7 @@ impl Spool {
         head: &[u8],
         rest: Box<dyn MediaStream>,
         hint: Option<FormatHint>,
-    ) -> Result<Arc<Self>, (io::Error, Box<dyn MediaStream>)> {
+    ) -> Result<Arc<Self>, (Refusal, Box<dyn MediaStream>)> {
         Self::beginning_with_at_most(head, rest, hint, SPOOLED_ON_DISC_AT_MOST)
     }
 
@@ -58,7 +69,7 @@ impl Spool {
         rest: Box<dyn MediaStream>,
         hint: Option<FormatHint>,
         at_most: u64,
-    ) -> Result<Arc<Self>, (io::Error, Box<dyn MediaStream>)> {
+    ) -> Result<Arc<Self>, (Refusal, Box<dyn MediaStream>)> {
         Self::beginning_in(head, rest, hint, at_most, None)
     }
 
@@ -68,14 +79,23 @@ impl Spool {
         hint: Option<FormatHint>,
         at_most: u64,
         folder: Option<&Path>,
-    ) -> Result<Arc<Self>, (io::Error, Box<dyn MediaStream>)> {
-        let file = match folder
-            .map_or_else(unnamed_file, unnamed_file_in)
-            .and_then(|file| file.write_all_at(head, 0).map(|()| file))
-        {
+    ) -> Result<Arc<Self>, (Refusal, Box<dyn MediaStream>)> {
+        let file = match folder.map_or_else(unnamed_file, unnamed_file_in) {
             Ok(file) => file,
-            Err(source) => return Err((source, rest)),
+            Err(source) => return Err((Refusal::Unwritable(source), rest)),
         };
+        let at_most = match ceiling_for(
+            head.len() as u64,
+            rest.byte_len(),
+            at_most,
+            room_on_disc(&file),
+        ) {
+            Ok(at_most) => at_most,
+            Err(refusal) => return Err((refusal, rest)),
+        };
+        if let Err(source) = file.write_all_at(head, 0) {
+            return Err((Refusal::Unwritable(source), rest));
+        }
         let spool = Arc::new(Self {
             file,
             hint,
@@ -99,7 +119,7 @@ impl Spool {
                 let _ = handing.send(rest);
                 Ok(spool)
             }
-            Err(source) => Err((source, rest)),
+            Err(source) => Err((Refusal::Unwritable(source), rest)),
         }
     }
 
@@ -191,6 +211,31 @@ impl Spool {
         }
         self.file.read_at(&mut into[..taking], at)
     }
+}
+
+fn room_on_disc(file: &File) -> Option<u64> {
+    let stat = rustix::fs::fstatvfs(file).ok()?;
+    Some(
+        stat.f_bavail
+            .saturating_mul(stat.f_frsize)
+            .saturating_sub(LEFT_FREE_ON_DISC),
+    )
+}
+
+fn ceiling_for(
+    head: u64,
+    whole: Option<u64>,
+    at_most: u64,
+    room: Option<u64>,
+) -> Result<u64, Refusal> {
+    let Some(room) = room else {
+        return Ok(at_most);
+    };
+    let needed = whole.map_or(head, |whole| whole.max(head)).min(at_most);
+    if needed > room {
+        return Err(Refusal::NoRoom { needed, room });
+    }
+    Ok(at_most.min(room))
 }
 
 pub(crate) fn spooled_under() -> Vec<PathBuf> {
@@ -452,5 +497,73 @@ mod tests {
         assert_eq!(streamed, all[..1_000]);
         assert!(!spool.is_whole());
         assert!(spool.whole().is_none());
+    }
+
+    struct ClaimsToBeEnormous;
+
+    impl Read for ClaimsToBeEnormous {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Ok(0)
+        }
+    }
+
+    impl Seek for ClaimsToBeEnormous {
+        fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+            Err(io::Error::from(io::ErrorKind::Unsupported))
+        }
+    }
+
+    impl MediaStream for ClaimsToBeEnormous {
+        fn is_seekable(&self) -> bool {
+            false
+        }
+
+        fn byte_len(&self) -> Option<u64> {
+            Some(1 << 62)
+        }
+    }
+
+    #[test]
+    fn a_source_longer_than_the_disc_has_room_for_is_refused_before_anything_is_written() {
+        let refused = Spool::beginning_in(
+            &[1, 2, 3],
+            Box::new(ClaimsToBeEnormous),
+            None,
+            u64::MAX,
+            None,
+        );
+
+        assert!(matches!(
+            refused,
+            Err((Refusal::NoRoom { needed, .. }, _)) if needed == 1 << 62
+        ));
+    }
+
+    #[test]
+    fn the_ceiling_is_the_room_on_disc_when_the_length_is_unknown_and_a_known_length_must_fit() {
+        const GIB: u64 = 1 << 30;
+
+        assert!(matches!(ceiling_for(10, None, 8 * GIB, None), Ok(ceiling) if ceiling == 8 * GIB));
+        assert!(
+            matches!(ceiling_for(10, None, 8 * GIB, Some(2 * GIB)), Ok(ceiling) if ceiling == 2 * GIB)
+        );
+        assert!(
+            matches!(ceiling_for(10, Some(GIB), 8 * GIB, Some(2 * GIB)), Ok(ceiling) if ceiling == 2 * GIB)
+        );
+        assert!(matches!(
+            ceiling_for(10, Some(3 * GIB), 8 * GIB, Some(2 * GIB)),
+            Err(Refusal::NoRoom { needed, room }) if needed == 3 * GIB && room == 2 * GIB
+        ));
+        assert!(matches!(
+            ceiling_for(100, None, 8 * GIB, Some(50)),
+            Err(Refusal::NoRoom {
+                needed: 100,
+                room: 50
+            })
+        ));
+        assert!(matches!(
+            ceiling_for(10, Some(20 * GIB), 8 * GIB, Some(9 * GIB)),
+            Ok(ceiling) if ceiling == 8 * GIB
+        ));
     }
 }
