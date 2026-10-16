@@ -2,13 +2,14 @@ use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
     fs::{self, File, OpenOptions},
-    io::{Read as _, Write as _},
+    io::{self, Read as _, Write as _},
     path::{self, Component, Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
+use resonate_codec::carries_what_the_file_did;
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, text};
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf};
@@ -542,14 +543,30 @@ fn staged_over(path: &Path, text: &str) -> Result<()> {
         .map_err(failed)?;
     let landed = staging
         .write_all(text.as_bytes())
-        .and_then(|()| staging.sync_all())
-        .and_then(|()| fs::rename(&staged, path));
+        .and_then(|()| {
+            if let Ok(standing) = fs::metadata(path) {
+                carries_what_the_file_did(&standing, path, &staged);
+            }
+            staging.sync_all()
+        })
+        .and_then(|()| fs::rename(&staged, path))
+        .and_then(|()| settled_folder_of(path));
     drop(staging);
 
     if landed.is_err() {
         let _ = fs::remove_file(&staged);
     }
     landed.map_err(failed)
+}
+
+fn settled_folder_of(path: &Path) -> io::Result<()> {
+    match path
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+    {
+        Some(folder) => fs::File::open(folder)?.sync_all(),
+        None => fs::File::open(".")?.sync_all(),
+    }
 }
 
 fn staging_name_for(name: &OsStr) -> OsString {
@@ -604,6 +621,34 @@ mod tests {
                 assert_eq!(sheet.locations.len(), 2, "{format:?} ended by {ending:?}");
             }
         }
+    }
+
+    #[test]
+    fn an_exported_playlist_replacing_a_file_keeps_the_mode_the_file_had() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder = std::env::temp_dir().join(format!("resonate-sheet-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let path = folder.join("favourites.m3u");
+        fs::write(&path, "#EXTM3U\n").expect("a playlist");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("a mode");
+
+        staged_over(&path, "#EXTM3U\na.flac\n").expect("the playlist is rewritten");
+
+        assert_eq!(
+            fs::read_to_string(&path).expect("the playlist"),
+            "#EXTM3U\na.flac\n"
+        );
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("the playlist")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o640
+        );
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 
     #[test]

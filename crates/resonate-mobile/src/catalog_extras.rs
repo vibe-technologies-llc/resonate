@@ -32,7 +32,7 @@ const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min
 
 const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
 
-const LISTENING_BY_DAY: &str = "SELECT (l.began + ?2) / 86400 AS day, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l WHERE l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY day ORDER BY day DESC LIMIT ?3";
+const LISTENING_BY_DAY: &str = "SELECT (l.began + ?2) / 86400 AS day, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY day ORDER BY day DESC LIMIT ?3";
 
 const SHARES_SHOWN_AT_MOST: u32 = 8;
 
@@ -180,7 +180,7 @@ impl Catalog {
     pub(crate) fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
-        let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(heard_ms), 0) FROM listens WHERE counted = 1 AND (?1 = 0 OR began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
             .query_map([days], read)
@@ -398,7 +398,7 @@ mod tests {
         assert_eq!(everything.songs_heard, 3);
         assert!(everything.first_heard < week.first_heard);
         assert!(week.days[0].starts < week.days[1].starts);
-        assert_eq!(week.days[1].plays, 3);
+        assert_eq!(week.days[1].plays, 2);
         assert_eq!(everything.albums[1].plays, 2);
         assert_eq!(everything.days.len(), 3);
         assert_eq!(
@@ -442,6 +442,54 @@ mod tests {
         assert_eq!(
             statistics.listened_ms,
             detail.days.iter().map(|day| day.listened_ms).sum::<u64>()
+        );
+    }
+
+    #[test]
+    fn a_missing_songs_counted_listens_are_left_out_of_the_totals_and_the_days() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let held = catalog
+            .upsert(Track {
+                uri: "content://test/held.flac".into(),
+                name: "held.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song")
+            .id as i64;
+        let gone = catalog
+            .upsert(Track {
+                uri: "content://test/gone.flac".into(),
+                name: "gone.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song")
+            .id as i64;
+
+        for (song, heard_ms) in [(held, 30_000), (gone, 40_000)] {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, unixepoch(), ?2, 1)",
+                    params![song, heard_ms],
+                )
+                .expect("a listen");
+        }
+        catalog
+            .0
+            .lock()
+            .execute("UPDATE documents SET missing = 1 WHERE id = ?1", [gone])
+            .expect("the song goes missing");
+
+        let statistics = catalog.statistics(0).expect("the statistics");
+        let detail = catalog.listening_detail(0, 10, 0).expect("the detail");
+
+        assert_eq!(statistics.plays, 1);
+        assert_eq!(statistics.listened_ms, 30_000);
+        assert_eq!(detail.songs_heard, 1);
+        assert_eq!(
+            detail.days.iter().map(|day| day.listened_ms).sum::<u64>(),
+            30_000
         );
     }
 

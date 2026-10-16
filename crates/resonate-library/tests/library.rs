@@ -2177,6 +2177,53 @@ fn a_file_with_a_name_that_is_not_text_is_counted_unnamed_and_the_rest_are_scann
 }
 
 #[test]
+fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    fs::write(
+        tree.path()
+            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+                b"Meddle\xe9.cue",
+            )),
+        MEDDLE_SHEET.as_bytes(),
+    )
+    .expect("a sheet with a name that is not text");
+
+    let library = Library::open_in_memory()?;
+    for _ in 0..2 {
+        let stats = scan(&library, &options(&tree))?;
+
+        assert_eq!(stats.failed.unnamed, 0, "got {:?}", stats.failed);
+        assert_eq!(all(&library)?.len(), 3, "the sheet did not cut its file");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_cue_sheet_naming_a_file_whose_name_is_not_text_cuts_nothing_and_the_file_is_counted_unnamed()
+-> Result<()> {
+    let tree = Tree::new();
+    fs::write(
+        tree.path()
+            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+                b"Meddle\xe9.wav",
+            )),
+        Wav::new().frames(44_100).build(),
+    )
+    .expect("a file with a name that is not text");
+    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+
+    let library = Library::open_in_memory()?;
+    for _ in 0..2 {
+        let stats = scan(&library, &options(&tree))?;
+
+        assert_eq!(stats.failed.unnamed, 1, "got {:?}", stats.failed);
+        assert!(all(&library)?.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
 fn a_file_that_will_not_probe_is_counted_and_stepped_over() -> Result<()> {
     let tree = Tree::new();
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
@@ -7854,6 +7901,44 @@ fn taking_the_sheet_away_leaves_the_file_as_the_one_track_it_is() -> Result<()> 
         "the cut rows outlived the sheet that cut them"
     );
     assert_eq!(rows[0].span, None, "the whole file still reads as a span");
+    Ok(())
+}
+
+#[test]
+fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<()> {
+    let (tree, library) = scanned_sheet();
+    let held = MediaLocation::local(tree.path().join("Meddle.wav"));
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the third cut");
+    library.track_played(&held, echoes.span, Duration::ZERO)?;
+
+    tree.write("Meddle.cue", b"");
+    let stats = scan(&library, &options(&tree))?;
+    let rows = library.tracks(&TrackQuery::default())?;
+
+    assert_eq!(
+        rows.len(),
+        3,
+        "a sheet read as empty cost the file its cuts"
+    );
+    assert_eq!(
+        stats.removed, 0,
+        "rows were pruned under a sheet that could not be read"
+    );
+
+    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    scan(&library, &options(&tree))?;
+    let again = library.tracks(&TrackQuery::default())?;
+
+    assert_eq!(again.len(), 3);
+    assert_eq!(
+        again.iter().map(|row| row.id).collect::<Vec<_>>(),
+        rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        "the cuts came back as new rows"
+    );
     Ok(())
 }
 

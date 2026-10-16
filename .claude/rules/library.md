@@ -244,7 +244,8 @@ rows read via `Player::media` like any unscanned row.
     its folder's key names another album or none, the row stays and `lend_the_free_names` gives the
     album whichever of its keys nobody holds.
 - **A scan says what went wrong with a file.** `ScanStats::failed` = `Failures`, four counts;
-  `Failure` decides: `Unnamed` (non-UTF-8 path), `Misnamed` (`UnrecognisedContainer`,
+  `Failure` decides: `Unnamed` (non-UTF-8 path: the catalog keys on text paths, so such a file is
+  counted and never catalogued, whether or not a sheet cuts it, and a sheet with such a name still cuts), `Misnamed` (`UnrecognisedContainer`,
   `NoAudioTrack`), `Undecodable` (`NoDecoder`, `DsdCompressed`, unrepresentable properties or
   packets), `Unreadable` for the rest (`Io`, `Symphonia` residual: where a corrupt file lands). The
   match on `resonate_codec::Error` is exhaustive, so a new codec variant fails to compile here.
@@ -267,6 +268,11 @@ rows read via `Player::media` like any unscanned row.
   - A directory `read_dir` refuses or whose listing an error cuts short (entries are gathered whole
     first), an entry whose kind cannot be read, an entry whose `stat` fails: every row
     `Known::at_or_under` names at or below the path is kept.
+  - A cue sheet that cannot be read (`scan::heard_sheet` answers `Heard::Unreadable`: an `io` error
+    but `NotFound`, longer than `LARGEST_SHEET_ON_DISC`, or zero bytes, as a sheet read mid-rewrite):
+    it claims nothing, but every row with a `sheet_modified` that `Known::cuts_in` finds on a file
+    beside it is kept and its file is not probed whole. A sheet that parses to nothing
+    (`Heard::Blank`) keeps nothing.
   - An *empty* folder is guarded only where seen as a volume: keeping every empty folder's rows kept
     `moves::follow_the_moved` from pairing any move out of a folder it emptied.
 - **A volume seen mounted is remembered; its rows are kept while it is not.** The walk notes a
@@ -1116,7 +1122,8 @@ guard and re-keys a sleeve-keyed album after moves land.
   `SharesASheet`, `NamedFromAbove`, `SourceGone`, `Unmoved`.
 - **A rename crossing a filesystem is a copy; the source goes only once the catalog has followed.**
   `landed_onto` reads `io::ErrorKind::CrossesDevices` off `fs::rename` and falls back to `copying`:
-  copy, carry the source's mtime onto the copy (so the next scan reads the known file), `sync_all`,
+  copy, carry the source's mode, owner and extended attributes (`codec::carries_what_the_file_did`,
+  refusals logged, never failing the copy) and mtime onto the copy (so the next scan reads the known file), `sync_all`,
   written as destination name plus `STAGED` and renamed into place once whole. Nothing is deleted
   inside the batch: `put_back` undoes a copy by *removing* it; `left_behind` removes sources only
   after `Library::files_moved` committed. A run killed after the rename, before the commit, leaves
@@ -1162,7 +1169,8 @@ guard and re-keys a sleeve-keyed album after moves land.
   sheet's encoding, checks exactly one `FILE` line names that file and splices the one byte run
   following a `FILE` command (one encoding unit at a time: a UTF-16 sheet is walked in pairs;
   `REM`/`TITLE` lines are left alone), so BOM, line endings and every other byte survive;
-  `staged_over` renames a staged file over the sheet. A file two `FILE` lines name leaves the sheet
+  `staged_over` gives the staged file the sheet's mode, owner and extended attributes
+  (`codec::carries_what_the_file_did`), renames it over the sheet and syncs the folder. A file two `FILE` lines name leaves the sheet
   alone. A name the sheet's legacy code page cannot hold carries the sheet into UTF-8 with a
   byte-order mark (`carried_into_unicode`).
 - **A sheet cutting a file travels with it whatever it is called; one naming several files takes
@@ -1654,7 +1662,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   decides from the *text* which format, hands `m3u.rs`, `pls.rs` or `xspf.rs` the job;
   `sheet::parse` reads a sheet with no file. Shared there: the relative-or-absolute path rule,
   percent escaping both ways, and the staged rename over the target (hidden sibling
-  `.<name>.<pid>-<n>.new`, `create_new`, `sync_all`ed, removed on any failure). Writing picks the
+  `.<name>.<pid>-<n>.new`, `create_new`, carrying the replaced file's mode, owner and extended
+  attributes, `sync_all`ed, the folder synced after the rename, removed on any failure). Writing picks the
   format by the target's extension (M3U where it declares nothing); reading picks by content.
   - **Track facts are never believed**: a row is a path, so `#EXTINF:`, `TitleN`/`LengthN`,
     `<title>`/`<creator>`/`<duration>` are written, never read. XSPF text is unescaped in one pass

@@ -387,6 +387,25 @@ impl Known {
         self.rows.get(path).map_or(&[], Vec::as_slice)
     }
 
+    fn cuts_in(&self, folder: &Path) -> Vec<(PathBuf, Vec<TrackId>)> {
+        let Some(text) = folder.to_str() else {
+            return Vec::new();
+        };
+        let (from, past) = walked_from(text);
+        self.rows
+            .range(from..past)
+            .filter(|(file, _)| Path::new(file.as_str()).parent() == Some(folder))
+            .filter_map(|(file, rows)| {
+                let cut: Vec<TrackId> = rows
+                    .iter()
+                    .filter(|held| held.sheet_modified.is_some())
+                    .map(|held| held.id)
+                    .collect();
+                (!cut.is_empty()).then(|| (PathBuf::from(file), cut))
+            })
+            .collect()
+    }
+
     fn at_or_under(&self, path: &Path) -> Vec<TrackId> {
         let Some(text) = path.to_str() else {
             return Vec::new();
@@ -1043,8 +1062,15 @@ fn directory_of(
         let Some(folder) = path.parent() else {
             continue;
         };
-        let Some(sheet) = read_sheet(path) else {
-            continue;
+        let sheet = match heard_sheet(path) {
+            Heard::Sheet(sheet) => sheet,
+            Heard::Blank => continue,
+            Heard::Unreadable => {
+                if !keep_the_cuts_in(walking, folder, &mut claimed) {
+                    return Ok(false);
+                }
+                continue;
+            }
         };
         let touched = metadata.modified().unwrap_or(UNIX_EPOCH);
 
@@ -1449,20 +1475,69 @@ pub(crate) fn is_a_sheet(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(SHEET_EXTENSION))
 }
 
+enum Heard {
+    Sheet(CueSheet),
+    Blank,
+    Unreadable,
+}
+
 pub(crate) fn read_sheet(path: &Path) -> Option<CueSheet> {
-    let held = fs::metadata(path).ok()?;
+    match heard_sheet(path) {
+        Heard::Sheet(sheet) => Some(sheet),
+        Heard::Blank | Heard::Unreadable => None,
+    }
+}
+
+fn heard_sheet(path: &Path) -> Heard {
+    let held = match fs::metadata(path) {
+        Ok(held) => held,
+        Err(error) => return unheard(path, &error),
+    };
     if held.len() > LARGEST_SHEET_ON_DISC {
         tracing::warn!(
             path = %path.display(),
             bytes = held.len(),
             "skipping a cue sheet larger than one is read as being"
         );
-        return None;
+        return Heard::Unreadable;
     }
 
-    let bytes = fs::read(path).ok()?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => return unheard(path, &error),
+    };
+    if bytes.is_empty() {
+        tracing::debug!(path = %path.display(), "a cue sheet read as empty");
+        return Heard::Unreadable;
+    }
+
     let sheet = read_cue(&bytes);
-    (!sheet.is_empty()).then_some(sheet)
+    if sheet.is_empty() {
+        Heard::Blank
+    } else {
+        Heard::Sheet(sheet)
+    }
+}
+
+fn unheard(path: &Path, error: &io::Error) -> Heard {
+    if error.kind() == io::ErrorKind::NotFound {
+        return Heard::Blank;
+    }
+    tracing::warn!(%error, path = %path.display(), "keeping what a cue sheet cut, which could not be read");
+    Heard::Unreadable
+}
+
+fn keep_the_cuts_in(walking: &Walking<'_>, folder: &Path, claimed: &mut AHashSet<PathBuf>) -> bool {
+    for (file, ids) in walking.known.cuts_in(folder) {
+        claimed.insert(file);
+        if !ids
+            .into_iter()
+            .all(|id| walking.work.send(Job::Unread(id)).is_ok())
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn named_in<T>(audio: &[(PathBuf, T)]) -> impl Iterator<Item = (&(PathBuf, T), &str)> {

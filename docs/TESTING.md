@@ -79,7 +79,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M] Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths
   beyond `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested
 - [M] The Output and Processing settings panes have no test pressing their controls
-- [S] The scan is never fed a non-UTF-8 name
 - [M] `transport.rs`'s
   `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once when
   the whole workspace's tests ran at once, passed alone eight times after; its frame counts assume
