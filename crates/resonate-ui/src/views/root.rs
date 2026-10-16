@@ -10,6 +10,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet, AHasher};
+use futures_channel::oneshot;
 use gpui::{
     AnimationElement, AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId,
     Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
@@ -101,6 +102,23 @@ const WORDMARK_CAPITALS_CENTRED_BY: f32 = 1.0;
 
 pub(crate) const SETTING_UNSAVED: &str =
     "Couldn't save that setting — the settings file couldn't be written";
+
+const SETTING_WRITER_STOPPED: &str =
+    "Couldn't save that setting — the part that writes the settings stopped";
+
+fn unsaved(written: Result<crate::Result<()>, oneshot::Canceled>) -> Option<Notice> {
+    match written {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => {
+            tracing::error!(%error, "a setting could not be saved");
+            Some(Notice::Trouble(SETTING_UNSAVED.to_owned()))
+        }
+        Err(oneshot::Canceled) => {
+            tracing::error!("the thread writing the settings dropped a batch unanswered");
+            Some(Notice::Trouble(SETTING_WRITER_STOPPED.to_owned()))
+        }
+    }
+}
 
 const LISTEN_BUTTON_HINT: &str = keyed!(
     "Listen for a song on the desktop or a microphone",
@@ -1352,9 +1370,8 @@ impl RootView {
             let written = landed.await;
             let landed = this.update(cx, |this, cx| {
                 this.settings_written.landed();
-                if let Ok(Err(error)) = written {
-                    tracing::error!(%error, "a setting could not be saved");
-                    toast::tell(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
+                if let Some(notice) = unsaved(written) {
+                    toast::tell(notice, cx);
                 }
                 this.write_the_settings(cx);
             });
@@ -2451,7 +2468,10 @@ impl RootView {
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
                 Ok(listing) => then(this, drawn.ordered(listing.into()), window, cx),
-                Err(error) => tracing::error!(%error, "the whole listing could not be read"),
+                Err(error) => {
+                    tracing::error!(%error, "the whole listing could not be read");
+                    toast::tell(toast::could_not("read that listing", &error), cx);
+                }
             });
             let _ = outcome;
         });
@@ -2503,7 +2523,10 @@ impl RootView {
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
                 Ok(rows) => then(this, rows.into(), window, cx),
-                Err(error) => tracing::error!(%error, "a suggestion's rows could not be read"),
+                Err(error) => {
+                    tracing::error!(%error, "a suggestion's rows could not be read");
+                    toast::tell(toast::could_not("read that suggestion", &error), cx);
+                }
             });
             let _ = outcome;
         });
@@ -2529,7 +2552,10 @@ impl RootView {
             let outcome = this.update(cx, |this, cx| match read {
                 Ok(listing) if now => this.play(&listing, 0, cx),
                 Ok(listing) => this.queue(&listed(&listing), at, cx),
-                Err(error) => tracing::error!(%error, "a scoped listing could not be read"),
+                Err(error) => {
+                    tracing::error!(%error, "a scoped listing could not be read");
+                    toast::tell(toast::could_not("read those tracks", &error), cx);
+                }
             });
             let _ = outcome;
         });
@@ -2592,7 +2618,10 @@ impl RootView {
                         .await;
                     let _ = this.update(cx, |this, cx| match read {
                         Ok(tracks) => this.landed(&tracks, into, cx),
-                        Err(error) => tracing::error!(%error, "a dragged album could not be read"),
+                        Err(error) => {
+                            tracing::error!(%error, "a dragged album could not be read");
+                            toast::tell(toast::could_not("read that album", &error), cx);
+                        }
                     });
                 })
                 .detach();
@@ -4521,6 +4550,7 @@ impl RootView {
                 Ok(None) => {}
                 Err(error) => {
                     tracing::warn!(%error, "a downloaded song could not be read to play");
+                    toast::tell(toast::could_not("play that song", &error), cx);
                 }
             });
             let _ = played;
@@ -5320,9 +5350,9 @@ mod tests {
 
     use super::{
         Following, Landing, LeftAt, Pane, PlayingRow, QueueStamp, Step, TrackId, UnderThePointer,
-        in_front_of, landing, stepped_pane,
+        in_front_of, landing, stepped_pane, unsaved,
     };
-    use crate::{Selection, Tabs};
+    use crate::{Selection, Tabs, models::Notice};
 
     const EVERY_TAB: Tabs = Tabs {
         suggestions: true,
@@ -5340,6 +5370,15 @@ mod tests {
 
     fn an_artist() -> Selection {
         Selection::Artist(ArtistId::new(5).expect("a non-zero id"))
+    }
+
+    #[test]
+    fn a_settings_write_whose_writer_died_is_told_as_one_that_failed_is() {
+        assert!(unsaved(Ok(Ok(()))).is_none());
+        assert!(matches!(
+            unsaved(Err(futures_channel::oneshot::Canceled)),
+            Some(Notice::Trouble(_))
+        ));
     }
 
     #[test]

@@ -343,7 +343,10 @@ impl RootView {
             (Some(fraction), Some(duration)) => along(duration, fraction),
             _ => played,
         };
-        let playing = state.playback == PlaybackState::Playing;
+        let playing = matches!(
+            state.playback,
+            PlaybackState::Playing | PlaybackState::Buffering
+        );
 
         div()
             .flex()
@@ -1188,10 +1191,7 @@ impl RootView {
         let showing_left = self.showing_time_left && duration.is_some();
         let far_end = match duration {
             Some(duration) if showing_left => {
-                format!(
-                    "-{}",
-                    format::clock(duration.saturating_sub(position), rate)
-                )
+                format!("-{}", format::left(position, duration, rate))
             }
             Some(duration) => format::clock(duration, rate),
             None => "–:––".to_owned(),
@@ -1450,7 +1450,8 @@ fn clock(reading: String) -> Div {
 }
 
 fn along(duration: Frames, fraction: f32) -> Frames {
-    Frames((duration.get() as f32 * fraction) as u64)
+    let reached = (duration.get() as f64 * f64::from(fraction.clamp(0.0, 1.0))) as u64;
+    Frames(reached.min(duration.get()))
 }
 
 fn titled_by(title: &str, artist: &str) -> SharedString {
@@ -1540,5 +1541,18 @@ mod tests {
         );
         assert_eq!(titled_by("Echoes", " "), "Echoes · Resonate");
         assert_eq!(titled_by("", "Pink Floyd"), "Resonate");
+    }
+
+    #[test]
+    fn a_release_at_the_rails_end_lands_on_the_length_however_long_the_track() {
+        for length in [1, 44_100, 1 << 24, (1 << 24) + 1, 16_777_219, 400_000_000] {
+            let duration = Frames(length);
+
+            assert_eq!(along(duration, 1.0), duration);
+            assert_eq!(along(duration, 1.5), duration);
+            assert_eq!(along(duration, -0.5), Frames::ZERO);
+            assert!(along(duration, 0.999_999_94) <= duration);
+        }
+        assert_eq!(along(Frames(1_000), 0.5), Frames(500));
     }
 }

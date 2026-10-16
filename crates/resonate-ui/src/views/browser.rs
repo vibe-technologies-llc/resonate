@@ -44,6 +44,8 @@ use crate::{
 };
 
 const COVERS_AHEAD: usize = 48;
+const ADD_A_FOLDER: &str = "Add a music folder from Settings to scan one in.";
+const LIBRARY_UNREADABLE: &str = "The library couldn't be read.";
 const SEVERAL: &str = "Various artists";
 const FORGET_THE_MATCH: &str = "Not this record";
 const OTHER_PRESSINGS: &str = "Other pressings";
@@ -246,6 +248,7 @@ impl RootView {
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
         let nothing = albums.is_empty();
+        let unreadable = library.unreadable();
         let counted = library.albums_counted() as usize;
         let listed = library.albums_listed();
         let beyond = self.albums_found_beyond(cx);
@@ -255,10 +258,12 @@ impl RootView {
                     Icon::Albums,
                     if narrowed {
                         "No albums match."
+                    } else if unreadable {
+                        LIBRARY_UNREADABLE
                     } else {
                         "No albums yet."
                     },
-                    (!narrowed).then_some("Add a music folder from Settings to scan one in."),
+                    (!narrowed && !unreadable).then_some(ADD_A_FOLDER),
                     cx,
                 )
             })
@@ -598,6 +603,7 @@ impl RootView {
         let reads = self.library.read(cx).search().reads();
         let selected = self.library.read(cx).selection();
         let nothing = artists.is_empty();
+        let unreadable = self.library.read(cx).unreadable();
         let counted = self.library.read(cx).artists_counted() as usize;
         let held = artists.len();
         let listed = self.library.read(cx).artists_listed();
@@ -613,10 +619,12 @@ impl RootView {
                     Icon::Artists,
                     if narrowed {
                         "No artists match."
+                    } else if unreadable {
+                        LIBRARY_UNREADABLE
                     } else {
                         "No artists yet."
                     },
-                    (!narrowed).then_some("Add a music folder from Settings to scan one in."),
+                    (!narrowed && !unreadable).then_some(ADD_A_FOLDER),
                     cx,
                 )
             })
@@ -760,11 +768,11 @@ impl RootView {
         let narrowed = self.library.read(cx).narrowing().is_some();
         let scoped = self.library.read(cx).selection() != Selection::Everything;
         if tracks.is_empty() && !narrowed && !scoped {
-            return empty(
-                Icon::Tracks,
-                "No tracks yet.",
-                Some("Add a music folder from Settings to scan one in."),
-            );
+            return if self.library.read(cx).unreadable() {
+                empty(Icon::Tracks, LIBRARY_UNREADABLE, None)
+            } else {
+                empty(Icon::Tracks, "No tracks yet.", Some(ADD_A_FOLDER))
+            };
         }
         let playing = self.playing_now(cx).track;
         let rows = self.library.read(cx).rows();

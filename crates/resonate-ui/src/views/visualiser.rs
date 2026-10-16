@@ -5,7 +5,7 @@ use gpui::{
     Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px,
     rgb,
 };
-use resonate_core::{Frames, SampleRate, Spectral};
+use resonate_core::{Frames, SampleRate, Spectral, SpectrumBands, SpectrumTilt};
 use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
 use smallvec::SmallVec;
 
@@ -32,14 +32,12 @@ const MARKED: &str = "A DSD stream sent as DoP carries markers rather than sampl
 const MARKED_MORE: &str = "With DoP off under Output the stream is decimated to PCM, and the \
                            pane draws that.";
 
-const READS_HINT: &str = "What reaches the device — after the equaliser, the volume and the \
-                          dither — drawn as it is heard rather than as it is decoded. The \
-                          spectrum is sixth-octave bands, tilted up 3 dB an octave about 1 kHz \
-                          so that pink noise stands level, falling back slowly with each band's \
-                          peak held above it.";
+const READS_HINT_BEFORE_SPECTRUM: &str = "What reaches the device — after the equaliser, the volume and the \
+                                          dither — drawn as it is heard rather than as it is decoded. The \
+                                          spectrum is ";
 
-const SPECTRUM_HINT: &str =
-    "Sixth-octave bands from 20 Hz to what the rate carries, with each band's peak held";
+const READS_HINT_AFTER_SPECTRUM: &str =
+    ", falling back slowly with each band's peak held above it.";
 
 const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising edge of the mid, \
                           or of the side where that is the louder";
@@ -52,6 +50,44 @@ const LEVEL_HINT: &str = "Each channel's loudness over the last moment, its true
 
 const CORRELATION_HINT: &str = "How alike the two channels are: +1 the same sound in each, 0 \
                                 unrelated, below 0 out of phase";
+
+fn band_width(bands: SpectrumBands) -> &'static str {
+    match bands {
+        SpectrumBands::Thirds => "third-octave",
+        SpectrumBands::Sixths => "sixth-octave",
+        SpectrumBands::Twelfths => "twelfth-octave",
+    }
+}
+
+fn tilt_clause(tilt: SpectrumTilt) -> String {
+    match tilt {
+        SpectrumTilt::Flat => "each drawn at the level it reads".to_owned(),
+        SpectrumTilt::Pink => format!(
+            "tilted up {} dB an octave about 1 kHz so that pink noise stands level",
+            tilt.db_per_octave()
+        ),
+        SpectrumTilt::Steep => format!(
+            "tilted up {} dB an octave about 1 kHz",
+            tilt.db_per_octave()
+        ),
+    }
+}
+
+fn reads_hint(spectral: Spectral) -> String {
+    format!(
+        "{READS_HINT_BEFORE_SPECTRUM}{} bands, {}{READS_HINT_AFTER_SPECTRUM}",
+        band_width(spectral.bands),
+        tilt_clause(spectral.tilt)
+    )
+}
+
+fn spectrum_hint(spectral: Spectral) -> String {
+    let width = band_width(spectral.bands);
+    let mut hint =
+        format!("{width} bands from 20 Hz to what the rate carries, with each band's peak held");
+    hint[..1].make_ascii_uppercase();
+    hint
+}
 
 const DRAWN_BEFORE_ANYTHING_IS_HEARD: SampleRate = SampleRate::HZ_48000;
 const SCOPE_SPAN: Duration = Duration::from_millis(20);
@@ -103,11 +139,11 @@ impl Showing {
         }
     }
 
-    const fn about(self) -> &'static str {
+    fn about(self, spectral: Spectral) -> String {
         match self {
-            Self::Spectrum => SPECTRUM_HINT,
-            Self::Scope => SCOPE_HINT,
-            Self::Stereo => STEREO_HINT,
+            Self::Spectrum => spectrum_hint(spectral),
+            Self::Scope => SCOPE_HINT.to_owned(),
+            Self::Stereo => STEREO_HINT.to_owned(),
         }
     }
 }
@@ -690,6 +726,7 @@ impl RootView {
     }
 
     fn visualiser_heading(&self, playing: &Playing, cx: &mut Context<Self>) -> Div {
+        let spectral = cx.global::<ResonateApp>().spectral;
         let (chosen, readback) = {
             let visualiser = self.visualiser.read(cx);
             (visualiser.showing(), visualiser.readback())
@@ -707,7 +744,7 @@ impl RootView {
                 .child(
                     kit::actions()
                         .child(kit::figure(readback))
-                        .child(hint::explains("visualiser-reads", READS_HINT))
+                        .child(hint::explains("visualiser-reads", reads_hint(spectral)))
                         .child(
                             kit::segmented().children(Showing::ALL.into_iter().enumerate().map(
                                 |(index, showing)| {
@@ -717,7 +754,7 @@ impl RootView {
                                             showing.label(),
                                             showing == chosen,
                                         )
-                                        .names(showing.about()),
+                                        .names(showing.about(spectral)),
                                         move |this, _, cx| {
                                             this.visualiser.update(cx, |visualiser, cx| {
                                                 visualiser.show(showing);
@@ -731,5 +768,34 @@ impl RootView {
                         ),
                 ),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_hints_describe_the_bands_and_tilt_that_are_set() {
+        let steep_twelfths = Spectral {
+            bands: SpectrumBands::Twelfths,
+            tilt: SpectrumTilt::Steep,
+            ..Spectral::default()
+        };
+        let flat_thirds = Spectral {
+            bands: SpectrumBands::Thirds,
+            tilt: SpectrumTilt::Flat,
+            ..Spectral::default()
+        };
+
+        let reads = reads_hint(steep_twelfths);
+        assert!(reads.contains("twelfth-octave bands"), "{reads}");
+        assert!(reads.contains("tilted up 4.5 dB an octave"), "{reads}");
+        assert!(spectrum_hint(steep_twelfths).starts_with("Twelfth-octave bands"));
+
+        let reads = reads_hint(flat_thirds);
+        assert!(reads.contains("third-octave bands"), "{reads}");
+        assert!(!reads.contains("tilted"), "{reads}");
+        assert!(spectrum_hint(flat_thirds).starts_with("Third-octave bands"));
     }
 }
