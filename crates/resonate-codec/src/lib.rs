@@ -66,5 +66,8 @@ pub use crate::{
         Credits, LISTED_APART_BY, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged,
     },
     timeline::Timeline,
-    writing::{FileTags, Popularity, RATED_BY, Rated, TagEdit, TagField, TagSink, Writing},
+    writing::{
+        FileTags, Popularity, RATED_BY, Rated, TagEdit, TagField, TagSink, Writing,
+        carries_what_the_file_did,
+    },
 };

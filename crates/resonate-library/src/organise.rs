@@ -21,7 +21,9 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
-use resonate_codec::{DEEPEST_FOLDER_A_SHEET_NAMES, the_folder_a_cue_names};
+use resonate_codec::{
+    DEEPEST_FOLDER_A_SHEET_NAMES, carries_what_the_file_did, the_folder_a_cue_names,
+};
 use resonate_core::{
     AlbumId, MediaLocation, TrackId, names_a_picture,
     writer::{self, Held, Writer},
@@ -2484,6 +2486,7 @@ fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
     io::copy(&mut source, &mut written)
         .and_then(|_| written.set_permissions(stood.permissions()))
         .map_err(copy_failed)?;
+    carries_what_the_file_did(&stood, from, to);
 
     if let Ok(stamp) = stood.modified()
         && let Err(source) = written.set_modified(stamp)
@@ -2576,7 +2579,12 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
         source,
     };
     let landed = fs::write(&staged, written)
-        .and_then(|()| fs::File::open(&staged))
+        .and_then(|()| {
+            if let Ok(standing) = fs::metadata(sheet) {
+                carries_what_the_file_did(&standing, sheet, &staged);
+            }
+            fs::File::open(&staged)
+        })
         .and_then(|opened| opened.sync_all())
         .map_err(landing)
         .and_then(|()| {
@@ -2586,6 +2594,11 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
                 source,
             })
         });
+    if landed.is_ok()
+        && let Some(folder) = sheet.parent()
+    {
+        settled_folder(folder);
+    }
     staged_left(library, &staged);
     landed
 }
@@ -2654,14 +2667,18 @@ fn settle(landed: &[Move]) {
     }
 
     for folder in folders {
-        if let Err(source) = fs::File::open(folder).and_then(|opened| opened.sync_all()) {
-            let error = Error::Move {
-                op: MoveOp::Settle,
-                path: folder.to_path_buf(),
-                source,
-            };
-            tracing::warn!(%error, "a folder this run wrote is not settled onto the disk");
-        }
+        settled_folder(folder);
+    }
+}
+
+fn settled_folder(folder: &Path) {
+    if let Err(source) = fs::File::open(folder).and_then(|opened| opened.sync_all()) {
+        let error = Error::Move {
+            op: MoveOp::Settle,
+            path: folder.to_path_buf(),
+            source,
+        };
+        tracing::warn!(%error, "a folder this run wrote is not settled onto the disk");
     }
 }
 
@@ -2909,7 +2926,9 @@ fn taken_away(folder: &Path) -> Pruning {
 #[cfg(test)]
 mod tests {
     use std::{
-        env, slice,
+        env,
+        os::unix::fs::PermissionsExt as _,
+        slice,
         sync::atomic::{AtomicU64, Ordering as Counting},
     };
 
@@ -4136,6 +4155,66 @@ mod tests {
             0
         );
 
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_rewritten_sheet_keeps_the_mode_and_attributes_of_the_one_it_replaced() {
+        const NAME: &str = "user.resonate.kept";
+
+        let folder = a_folder_of_its_own();
+        let library = Library::open(&folder.join("library.db")).expect("a catalog");
+        let sheet = folder.join("Meddle.cue");
+        fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
+        fs::set_permissions(&sheet, fs::Permissions::from_mode(0o640)).expect("a mode");
+        let attributed =
+            rustix::fs::setxattr(&sheet, NAME, b"yes", rustix::fs::XattrFlags::empty()).is_ok();
+
+        staged_over(&library, &sheet, b"FILE \"new.wav\" WAVE\n").expect("it is rewritten");
+
+        assert_eq!(
+            fs::metadata(&sheet).expect("the sheet").mode() & 0o777,
+            0o640
+        );
+        if attributed {
+            let mut held = [0_u8; 8];
+            let read = rustix::fs::getxattr(&sheet, NAME, &mut held[..])
+                .expect("the attribute is still there");
+            assert_eq!(held.get(..read), Some(b"yes".as_slice()));
+        }
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_file_copied_whole_carries_its_time_mode_and_attributes() {
+        const NAME: &str = "user.resonate.kept";
+
+        let folder = a_folder_of_its_own();
+        let from = folder.join("one.flac");
+        let to = folder.join("two.flac");
+        fs::write(&from, b"fLaC").expect("a file");
+        fs::set_permissions(&from, fs::Permissions::from_mode(0o640)).expect("a mode");
+        let attributed =
+            rustix::fs::setxattr(&from, NAME, b"yes", rustix::fs::XattrFlags::empty()).is_ok();
+        let stood = fs::metadata(&from)
+            .expect("the file")
+            .modified()
+            .expect("a time");
+
+        let held = copied_whole(&from, &to).expect("the copy lands");
+
+        let copy = fs::metadata(&to).expect("the copy");
+        assert_eq!(copy.mode() & 0o777, 0o640);
+        assert_eq!(copy.modified().expect("a time"), stood);
+        if attributed {
+            let mut kept = [0_u8; 8];
+            let read = rustix::fs::getxattr(&to, NAME, &mut kept[..])
+                .expect("the attribute is on the copy");
+            assert_eq!(kept.get(..read), Some(b"yes".as_slice()));
+        }
+
+        drop(held);
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 

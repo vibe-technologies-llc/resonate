@@ -1236,7 +1236,7 @@ fn settled_over(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled
     Ok(())
 }
 
-fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
+pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
     let owned = unix_fs::chown(staged, Some(standing.uid()), Some(standing.gid()));
     let moded = fs::set_permissions(staged, standing.permissions());
     let attributed = attributes_of(path).and_then(|attributes| {
@@ -1254,7 +1254,7 @@ fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) ->
                 owned = ?owned.err(),
                 moded = ?moded.err(),
                 attributed = ?attributed.err(),
-                "a staged copy cannot carry what the file did, so it is written back in place"
+                "a copy cannot carry the owner, mode and extended attributes the file held"
             );
             false
         }
