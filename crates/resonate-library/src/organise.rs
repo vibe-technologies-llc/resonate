@@ -20,6 +20,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use parking_lot::Mutex;
 use resonate_codec::{DEEPEST_FOLDER_A_SHEET_NAMES, the_folder_a_cue_names};
 use resonate_core::{
     AlbumId, MediaLocation, TrackId, names_a_picture,
@@ -833,13 +834,109 @@ struct Planner<'a> {
     namings: AHashMap<PathBuf, Naming>,
     discs: AHashMap<AlbumId, u32>,
     filed: AHashSet<PathBuf>,
-    claimed: AHashMap<PathBuf, PathBuf>,
+    claimed: Claims,
     going: AHashSet<PathBuf>,
     beside: AHashMap<PathBuf, Beside>,
     sheets: AHashMap<PathBuf, Vec<Claiming>>,
     emptying: AHashMap<PathBuf, PathBuf>,
     moves: Vec<Planned>,
     plan: Plan,
+}
+
+struct Claims {
+    held: AHashMap<PathBuf, PathBuf>,
+    blind: fn(&Path) -> bool,
+    known: Mutex<AHashMap<PathBuf, bool>>,
+}
+
+impl Claims {
+    fn new() -> Self {
+        Self {
+            held: AHashMap::new(),
+            blind: case_blind_beside,
+            known: Mutex::new(AHashMap::new()),
+        }
+    }
+
+    fn insert(&mut self, destination: PathBuf, by: PathBuf) {
+        let key = self.key(&destination);
+        self.held.insert(key, by);
+    }
+
+    fn get(&self, destination: &Path) -> Option<&PathBuf> {
+        self.held.get(&self.key(destination))
+    }
+
+    fn key(&self, destination: &Path) -> PathBuf {
+        if self.is_blind_to_case(destination) {
+            PathBuf::from(destination.to_string_lossy().to_lowercase())
+        } else {
+            destination.to_path_buf()
+        }
+    }
+
+    fn is_blind_to_case(&self, destination: &Path) -> bool {
+        let Some(standing) = destination
+            .ancestors()
+            .skip(1)
+            .find(|folder| folder.is_dir())
+        else {
+            return false;
+        };
+        if let Some(known) = self.known.lock().get(standing) {
+            return *known;
+        }
+
+        let blind = (self.blind)(standing);
+        self.known.lock().insert(standing.to_path_buf(), blind);
+        blind
+    }
+}
+
+const ENTRIES_PROBED_FOR_CASE: usize = 64;
+
+fn case_blind_beside(folder: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return false;
+    };
+
+    for entry in entries.flatten().take(ENTRIES_PROBED_FOR_CASE) {
+        let Some(flipped) = entry.file_name().to_str().and_then(case_flipped) else {
+            continue;
+        };
+        return names_one_file(&entry.path(), &folder.join(flipped));
+    }
+
+    let Some(flipped) = folder
+        .file_name()
+        .and_then(OsStr::to_str)
+        .and_then(case_flipped)
+    else {
+        return false;
+    };
+    names_one_file(folder, &folder.with_file_name(flipped))
+}
+
+fn case_flipped(name: &str) -> Option<String> {
+    let flipped: String = name
+        .chars()
+        .map(|letter| {
+            if letter.is_ascii_lowercase() {
+                letter.to_ascii_uppercase()
+            } else {
+                letter.to_ascii_lowercase()
+            }
+        })
+        .collect();
+    (flipped != name).then_some(flipped)
+}
+
+fn names_one_file(first: &Path, second: &Path) -> bool {
+    let (Ok(first), Ok(second)) = (fs::symlink_metadata(first), fs::symlink_metadata(second))
+    else {
+        return false;
+    };
+    first.dev() == second.dev() && first.ino() == second.ino()
 }
 
 struct Claiming {
@@ -862,7 +959,7 @@ impl<'a> Planner<'a> {
             namings: AHashMap::new(),
             discs: AHashMap::new(),
             filed: AHashSet::new(),
-            claimed: AHashMap::new(),
+            claimed: Claims::new(),
             going: AHashSet::new(),
             beside: AHashMap::new(),
             sheets: AHashMap::new(),
@@ -3457,6 +3554,70 @@ mod tests {
             ]
         );
         assert_eq!(stats.collided, 2);
+    }
+
+    fn planned_beside(
+        rows: &[TrackToFile],
+        blind: fn(&Path) -> bool,
+        progress: &OrganiseProgress,
+    ) -> Plan {
+        let layout = read(DEFAULT_LAYOUT);
+        let discs = AHashMap::new();
+        let mut planner = Planner::new(&layout, progress);
+        planner.claimed.blind = blind;
+        for row in rows {
+            planner.knows(
+                &Filing {
+                    path: row.path.clone(),
+                    root: row.root.clone(),
+                    album: row.album_id,
+                    disc: row.disc,
+                },
+                &discs,
+            );
+        }
+        planner
+            .plan(rows, |_| Ok(Vec::new()))
+            .expect("a plan of rows held in memory");
+        planner.settle()
+    }
+
+    #[test]
+    fn two_destinations_differing_in_case_collide_in_the_preview_on_a_volume_blind_to_case() {
+        let first = row(1, &format!("{NOWHERE}/a.wav"));
+        let mut second = row(2, &format!("{NOWHERE}/b.wav"));
+        second.title = "ECHOES".to_owned();
+        let rows = [first, second];
+
+        let blind = planned_beside(&rows, |_| true, &OrganiseProgress::default());
+        let sensitive = planned_beside(&rows, |_| false, &OrganiseProgress::default());
+
+        assert_eq!(blind.moves.len(), 1);
+        assert_eq!(
+            blind.refused,
+            vec![Refused {
+                from: rows[1].path.clone(),
+                refusal: Refusal::Collided {
+                    with: rows[0].path.clone()
+                },
+            }]
+        );
+        assert_eq!(sensitive.moves.len(), 2);
+        assert!(sensitive.refused.is_empty());
+    }
+
+    #[test]
+    fn a_folder_is_blind_to_case_when_its_flipped_name_is_the_same_file() {
+        let folder = a_folder_of_its_own();
+        fs::write(folder.join("Echoes.wav"), b"").expect("a file");
+
+        let sensitive = !fs::exists(folder.join("eCHOES.WAV")).expect("the folder answers");
+
+        assert_eq!(case_blind_beside(&folder), !sensitive);
+        assert_eq!(case_flipped("Echoes.wav").as_deref(), Some("eCHOES.WAV"));
+        assert_eq!(case_flipped("1234"), None);
+
+        fs::remove_dir_all(&folder).expect("the folder goes");
     }
 
     #[test]
