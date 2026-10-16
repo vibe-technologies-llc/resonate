@@ -135,6 +135,7 @@ struct Counted {
     ticks: Option<u64>,
     blocks: usize,
     discarded: Option<Duration>,
+    discarding: Option<u64>,
     tally: Tally,
 }
 
@@ -287,8 +288,12 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
         .seek(SeekFrom::Start(body))
         .ok()
         .and_then(|_| read_counted_track(source, within));
+    let opus_track = source
+        .seek(SeekFrom::Start(body))
+        .ok()
+        .and_then(|_| read_track_coded_as(source, within, OPUS_CODEC_ID));
     if source.seek(SeekFrom::Start(body)).is_ok() {
-        let counted = count_clusters(source, within, Tally::of(counted_track));
+        let counted = count_clusters(source, within, Tally::of(counted_track), opus_track);
         let scale = found.scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
         found.counted = span(counted.ticks.map(|ticks| ticks as f64), scale);
         found.discarded = counted.discarded;
@@ -299,7 +304,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
     let wavpack_track = source
         .seek(SeekFrom::Start(body))
         .ok()
-        .and_then(|_| read_wavpack_track(source, within));
+        .and_then(|_| read_track_coded_as(source, within, WAVPACK_CODEC_ID));
     if let Some(track) = wavpack_track
         && source.seek(SeekFrom::Start(body)).is_ok()
     {
@@ -395,9 +400,11 @@ fn count_clusters<S: Read + Seek + ?Sized>(
     source: &mut S,
     within: Option<u64>,
     tally: Tally,
+    discarding: Option<u64>,
 ) -> Counted {
     let mut counted = Counted {
         tally,
+        discarding,
         ..Counted::default()
     };
     let mut reached_the_end = false;
@@ -461,13 +468,13 @@ fn read_cluster<S: Read + Seek + ?Sized>(
                 let block = read_block(source, element, into.tally.reading());
                 offsets.saw(block.map(|block| block.offset));
                 into.tally.add(block);
-                into.discarded = None;
+                into.forget_the_padding_after(block);
             }
             BLOCK_GROUP => {
                 let group = read_group(source, element.end(), into.tally.reading());
                 offsets.saw(group.block.map(|block| block.offset));
                 into.tally.add(group.block);
-                into.discarded = group.discarded;
+                into.take_the_padding_of(&group);
             }
             _ => {}
         }
@@ -492,6 +499,24 @@ fn read_cluster<S: Read + Seek + ?Sized>(
     }
     let _ = source.seek(SeekFrom::Start(body));
     unsized_until
+}
+
+impl Counted {
+    fn is_discarding(&self, block: Option<Block>) -> bool {
+        block.is_none_or(|block| Some(block.track) == self.discarding)
+    }
+
+    fn forget_the_padding_after(&mut self, block: Option<Block>) {
+        if self.is_discarding(block) {
+            self.discarded = None;
+        }
+    }
+
+    fn take_the_padding_of(&mut self, group: &Group) {
+        if self.is_discarding(group.block) {
+            self.discarded = group.discarded;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -729,9 +754,13 @@ fn read_counted_track<S: Read + Seek + ?Sized>(
     })
 }
 
-fn read_wavpack_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u64> {
+fn read_track_coded_as<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+    codec: &str,
+) -> Option<u64> {
     first_track(source, within, |entry| {
-        (entry.codec.as_deref() == Some(WAVPACK_CODEC_ID))
+        (entry.codec.as_deref() == Some(codec))
             .then_some(entry.number)
             .flatten()
     })
@@ -1224,7 +1253,11 @@ mod tests {
     }
 
     fn simple_block(offset: i16) -> Vec<u8> {
-        let mut block = vec![0x81];
+        simple_block_of(1, offset)
+    }
+
+    fn simple_block_of(track: u8, offset: i16) -> Vec<u8> {
+        let mut block = vec![0x80 | track];
         block.extend_from_slice(&offset.to_be_bytes());
         block.push(0);
         element(SIMPLE_BLOCK, &block)
@@ -1239,7 +1272,14 @@ mod tests {
     }
 
     fn clustered(info: &[u8], clusters: &[Vec<u8>]) -> Vec<u8> {
+        clustered_of(&[], info, clusters)
+    }
+
+    fn clustered_of(entries: &[Vec<u8>], info: &[u8], clusters: &[Vec<u8>]) -> Vec<u8> {
         let mut segment = element(INFO, info);
+        if !entries.is_empty() {
+            segment.extend_from_slice(&element(TRACKS, &entries.concat()));
+        }
         for cluster in clusters {
             segment.extend_from_slice(cluster);
         }
@@ -1250,7 +1290,11 @@ mod tests {
     }
 
     fn grouped(offset: i16, discarded: &[u8]) -> Vec<u8> {
-        let mut block = vec![0x81];
+        grouped_of(1, offset, discarded)
+    }
+
+    fn grouped_of(track: u8, offset: i16, discarded: &[u8]) -> Vec<u8> {
+        let mut block = vec![0x80 | track];
         block.extend_from_slice(&offset.to_be_bytes());
         block.push(0);
         let mut group = element(BLOCK, &block);
@@ -1264,7 +1308,11 @@ mod tests {
         let mut last = element(CLUSTER_TIMESTAMP, &1_000_u64.to_be_bytes());
         last.extend_from_slice(&simple_block(0));
         last.extend_from_slice(&grouped(20, &[0x35, 0x67, 0xE0]));
-        let bytes = clustered(&scale, &[cluster(0, &[0, 20]), element(CLUSTER, &last)]);
+        let bytes = clustered_of(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &scale,
+            &[cluster(0, &[0, 20]), element(CLUSTER, &last)],
+        );
 
         let found = read_segment(&mut Cursor::new(bytes));
 
@@ -1282,12 +1330,55 @@ mod tests {
         let mut earlier = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
         earlier.extend_from_slice(&grouped(0, &[0x35, 0x67, 0xE0]));
         earlier.extend_from_slice(&simple_block(20));
-        let bytes = clustered(&scale, &[element(CLUSTER, &earlier)]);
+        let bytes = clustered_of(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &scale,
+            &[element(CLUSTER, &earlier)],
+        );
         assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
 
         let mut negative = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
         negative.extend_from_slice(&grouped(0, &[0xCA, 0x98, 0x20]));
-        let bytes = clustered(&scale, &[element(CLUSTER, &negative)]);
+        let bytes = clustered_of(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &scale,
+            &[element(CLUSTER, &negative)],
+        );
+        assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
+    }
+
+    #[test]
+    fn a_block_of_another_track_neither_keeps_nor_replaces_the_opus_tracks_padding() {
+        let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+        let tracks = [track_entry(1, "V_VP9"), track_entry(2, OPUS_CODEC_ID)];
+        let padding = [0x35, 0x67, 0xE0];
+
+        let mut video_last = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+        video_last.extend_from_slice(&grouped_of(2, 0, &padding));
+        video_last.extend_from_slice(&simple_block_of(1, 20));
+        let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &video_last)]);
+        assert_eq!(
+            read_segment(&mut Cursor::new(bytes)).discarded,
+            Some(Duration::from_micros(3_500))
+        );
+
+        let mut other_audio = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+        other_audio.extend_from_slice(&grouped_of(2, 0, &padding));
+        other_audio.extend_from_slice(&grouped_of(3, 20, &[0x0F, 0x42, 0x40]));
+        let tracks = [
+            track_entry(1, "V_VP9"),
+            track_entry(2, OPUS_CODEC_ID),
+            track_entry(3, "A_AAC"),
+        ];
+        let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &other_audio)]);
+        assert_eq!(
+            read_segment(&mut Cursor::new(bytes)).discarded,
+            Some(Duration::from_micros(3_500))
+        );
+
+        let mut padded_elsewhere = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+        padded_elsewhere.extend_from_slice(&grouped_of(3, 0, &padding));
+        let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &padded_elsewhere)]);
         assert_eq!(read_segment(&mut Cursor::new(bytes)).discarded, None);
     }
 
