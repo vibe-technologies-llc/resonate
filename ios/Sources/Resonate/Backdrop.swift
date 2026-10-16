@@ -793,7 +793,7 @@ final class BackdropMetalView: UIView {
     init(device: any MTLDevice, renderer: BackdropRenderer) {
         self.renderer = renderer
         super.init(frame: .zero)
-        isOpaque = false
+        isOpaque = true
         backgroundColor = .clear
         isUserInteractionEnabled = false
         contentScaleFactor = Self.drawingScale
@@ -801,7 +801,7 @@ final class BackdropMetalView: UIView {
         metal.device = device
         metal.pixelFormat = BackdropPipeline.pixelFormat
         metal.framebufferOnly = true
-        metal.isOpaque = false
+        metal.isOpaque = true
         metal.contentsScale = Self.drawingScale
     }
 

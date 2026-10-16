@@ -633,7 +633,8 @@ in; it never opens on another colour first.
   thirds of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
   an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
   field is composited again at every frame the field draws: at the display's 120 fps (tried) that
-  cost took the frames the lyrics needed, and they lagged while turning or dragged.
+  cost took the frames the lyrics needed, and they lagged while turning or dragged. The Metal layer
+  is opaque (the shader writes alpha 1), so the compositor blends nothing beneath it.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
   a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same
@@ -688,11 +689,10 @@ frames missing. **The display-rate schedule has no interval of its own**
 (`AnimationTimelineSchedule(minimumInterval: nil)`, so 120 Hz on a ProMotion iPhone with
 `CADisableMinimumFrameDurationOnPhone`): a minimum interval equal to the refresh period (the old
 `1/60`) discards every frame whose timestamp lands a hair early, so the timeline ran at an uneven
-30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. While it animates the pane holds
-`FullFrameRate` (`fullFrameRate(while:)`, a counted `CADisplayLink` asking 120 fps and doing
-nothing), since an animation timeline alone leaves the display's rate to the system, and Now Playing
-holds it for as long as it is open in an active scene: left to itself the display flipped between
-120 and 60 Hz through the cover's spring and the lyrics' pauses, which read as random lag. **A frame costs the rows in and near the pane, not the sheet**: once
+30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. **Nothing holds the display at 120
+Hz**: Now Playing's field redraws and every glass control over it is composited again, which fits a
+60 Hz frame and not a 120 Hz one, so a held 120 Hz (tried, for Now Playing and the moving lyrics)
+dropped a frame at each of the field's redraws, 30 stutters a second. **A frame costs the rows in and near the pane, not the sheet**: once
 the sheet is placed, a row whose measured frame lies more than a pane (at least 320 pt) beyond the
 pane's edges is left out of the sheet, each run of them standing as one clear spacer of their
 measured heights and the spacing between (`LyricPiece.gathered`), which keeps the sheet's layout and

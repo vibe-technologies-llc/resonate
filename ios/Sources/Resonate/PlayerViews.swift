@@ -143,7 +143,6 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var phase
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var picked: PickedTracks?
@@ -180,7 +179,6 @@ struct NowPlayingView: View {
             }
             .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
         }
-        .fullFrameRate(while: phase == .active)
     }
 
     private func layout(_ track: Track?) -> some View {

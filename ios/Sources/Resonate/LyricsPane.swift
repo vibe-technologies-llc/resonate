@@ -138,7 +138,6 @@ private struct LyricFollowing: View {
             TimelineView(LyricSchedule(ticking: ticking, paused: !animating)) { timeline in
                 content(timeline.date, ticking || animating)
             }
-            .fullFrameRate(while: animating)
         }
     }
 
