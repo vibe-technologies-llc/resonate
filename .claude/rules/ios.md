@@ -629,9 +629,11 @@ in; it never opens on another colour first.
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
-- **Frame rate** follows what is moving (`BackdropView.rate`): 30 fps while playing, 15 paused (the glass
-  over the field is composited again at every frame the field draws, so a faster field only costs Now Playing its smoothness), two thirds
-  of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`, as the lyric timeline);
+- **Frame rate is the display's** (`FullFrameRate`, `FrameRate.swift`): the field asks 120 fps
+  (`FullFrameRate.fullest`, the range down to two thirds of it, so a 60 Hz panel takes its own top)
+  playing or paused, 60 in Low Power Mode or a serious or critical thermal state
+  (`ProcessInfo.sparesFrames`), which the system caps at 60 anyway. 30 fps playing and 15 paused read
+  as plainly low on a ProMotion iPhone beside the lyrics and scrubber moving at the display's rate;
   an inactive or backgrounded scene, or a view out of its window, draws nothing.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
@@ -641,11 +643,11 @@ in; it never opens on another colour first.
   showed, from their first frame: one picture is drawn per tick however many pages hold it, a page
   joining a window takes the latest picture at once (rendering one synchronously only where none of
   its size exists), and no page holds a Metal layer or display link of its own. It ticks on one
-  `CADisplayLink` at 10 fps (5 in Low Power Mode or a serious thermal state): the field drifts at
-  18 % speed, under two pixels a frame, so a faster tick only made every glass surface over it
-  composite again. It never reads the transport, so playing or pausing redraws no page's
+  `CADisplayLink` at the display's rate (`FullFrameRate`, 60 in Low Power Mode or a serious thermal
+  state); a render still in flight when the next tick comes skips that tick (`drawing`, the latest
+  owed), so a slow GPU readback lowers the rate rather than queueing pictures. It never reads the transport, so playing or pausing redraws no page's
   background. The palette is built around the accent colour (re-sampled when the accent changes,
-  crossfaded at 30 fps for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
+  crossfaded at the display's rate for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
   to 0.32, light floor 0.96 down to 0.80, chroma and range scaled by the strength, so system labels
   keep their contrast); a change of tone (light and dark) renders at once. The field's clock
   advances only while it flows: Now Playing's cover, an inactive scene and the background freeze it
@@ -687,9 +689,9 @@ frames missing. **The display-rate schedule has no interval of its own**
 (`AnimationTimelineSchedule(minimumInterval: nil)`, so 120 Hz on a ProMotion iPhone with
 `CADisableMinimumFrameDurationOnPhone`): a minimum interval equal to the refresh period (the old
 `1/60`) discards every frame whose timestamp lands a hair early, so the timeline ran at an uneven
-30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. Only Low Power Mode or a serious or
-critical thermal state asks one (`LyricPace.sparingFrame`, 28 ms, a little under two 60 Hz frames so
-jitter never costs a third). **A frame costs the rows in and near the pane, not the sheet**: once
+30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. While it animates the pane holds
+`FullFrameRate` (`fullFrameRate(while:)`, a counted `CADisplayLink` asking 120 fps and doing
+nothing), since an animation timeline alone leaves the display's rate to the system. **A frame costs the rows in and near the pane, not the sheet**: once
 the sheet is placed, a row whose measured frame lies more than a pane (at least 320 pt) beyond the
 pane's edges is drawn as a clear placeholder of its measured height (`LyricRowLook.culled`), which
 keeps the sheet's layout, `landing()`'s arithmetic and every row's `onGeometryChange` unchanged while
@@ -702,10 +704,12 @@ the falloff out, offers *Follow*, and following returns `HANDS_OFF` after the la
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
 track change, pause or drift past 250 ms takes the position as is): the position is extrapolated
 per display frame from the 250 ms poll's reading, never held between polls, and never read from
-`Features.tick`. Frames are asked on their own
-serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, and
-land on the main actor through a closure built `nonisolated`; `Features.tick` no longer polls
-them. Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
+`Features.tick`. **The frame drawn is the frame of the tick drawing it**: `kept_lyric_frame` answers
+from the sheet Rust already holds (a lock and the arithmetic, no SQLite) on the main actor inside the
+tick, so the word sweep moves every display frame; only a sheet not yet held is asked on its own
+serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, landing on
+the main actor through a closure built `nonisolated`, since that ask may read the catalog. An
+asynchronous frame was one or two display frames old and landed on alternate frames at 120 Hz. Lines seek only while the pane's song is the one playing; Reduce Motion snaps glide, rise and
 cascade but keeps the brightening. `compact` is the pane embedded in Now Playing: smaller words,
 tighter gutters, no chrome. Ink follows the system's legibility settings (`LyricLegibility`): under
 Increase Contrast or Reduce Transparency the unlit ink is the lit ink, unsung words sit at 70 % and

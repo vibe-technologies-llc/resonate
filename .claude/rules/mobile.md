@@ -107,6 +107,10 @@ line, else the end, else, with no wait, `read_at`; else `Spent`); `waiting`; `en
 `LyricWipe` per lit line with words, `Sweep::wiped` turned from UTF-8 bytes into UTF-16 code units,
 how Swift and Kotlin index a string (`a_wipe_counts_both_halves_of_a_surrogate_pair`).
 
+`kept_lyric_frame` is the same frame answered only from a kept sheet (`None` where none is, unlit
+for a `Wordless` song), never the catalog, so a front end may ask it inside a display tick
+(`a_kept_frame_answers_only_from_a_sheet_already_held`).
+
 The kept sheets are least recently *read* first out (`KeptSheets`; a frame reads, so the playing
 sheet is never the one dropped: `a_sheet_read_lately_outlasts_the_sheets_remembered_after_it`). A
 frame for a sheet not kept reads it from the catalog again rather than answering nothing; a song

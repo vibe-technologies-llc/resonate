@@ -138,6 +138,7 @@ private struct LyricFollowing: View {
             TimelineView(LyricSchedule(ticking: ticking, paused: !animating)) { timeline in
                 content(timeline.date, ticking || animating)
             }
+            .fullFrameRate(while: animating)
         }
     }
 
@@ -155,7 +156,7 @@ struct LyricSchedule: TimelineSchedule {
         if ticking {
             return AnySequence(PeriodicTimelineSchedule(from: start, by: LyricPace.lineSyncedTick).entries(from: start, mode: mode))
         }
-        return AnySequence(AnimationTimelineSchedule(minimumInterval: LyricPace.frameInterval, paused: paused).entries(from: start, mode: mode))
+        return AnySequence(AnimationTimelineSchedule(minimumInterval: nil, paused: paused).entries(from: start, mode: mode))
     }
 }
 
@@ -434,13 +435,8 @@ enum LyricSpace {
 
 enum LyricPace {
     static let lineSyncedTick: TimeInterval = 0.05
-    static let sparingFrame: TimeInterval = 0.028
     static let cullsBeyondPanes = 1.0
     static let cullsWithin: CGFloat = 320
-
-    static var frameInterval: TimeInterval? {
-        ProcessInfo.processInfo.sparesFrames ? sparingFrame : nil
-    }
 
     static let turn: TimeInterval = 0.42
     static let glide: TimeInterval = 0.6
@@ -1125,11 +1121,20 @@ final class LyricStage {
 
     func land(_ landed: LyricFrame, for track: UInt64) {
         guard track == sheet?.trackId, playingHere else { return }
+        if took(landed), !animating { beat &+= 1 }
+    }
+
+    private func hold(_ kept: LyricFrame, for track: UInt64) {
+        guard track == sheet?.trackId, playingHere else { return }
+        if took(kept), !animating { nudge() }
+    }
+
+    private func took(_ landed: LyricFrame) -> Bool {
         let moved = frame.map(LyricLandmarks.init) != LyricLandmarks(landed)
 
         frame = landed
         wipes = Dictionary(landed.wipes.map { (Int($0.line), $0) }) { kept, _ in kept }
-        if moved, !animating { beat &+= 1 }
+        return moved
     }
 
     func measured(row: Int, _ frame: CGRect, generation: Int) {
@@ -1214,6 +1219,10 @@ final class LyricStage {
         guard asking != asked else { return }
         asked = asking
 
+        if let kept = native.keptLyricFrame(id: track, positionMs: positionMs) {
+            hold(kept, for: track)
+            return
+        }
         let source = frames ?? LyricFrameSource(landed: Self.delivering(to: self))
         frames = source
         source.ask(LyricAsk(native: native, track: track, positionMs: positionMs))

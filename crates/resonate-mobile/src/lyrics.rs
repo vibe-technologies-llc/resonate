@@ -227,6 +227,17 @@ impl MobilePlayer {
             frame_of(&lyrics, Duration::from_millis(position_ms))
         })
     }
+
+    pub fn kept_lyric_frame(&self, id: u64, position_ms: u64) -> Option<LyricFrame> {
+        kept_frame(&self.services.lyrics, id, position_ms)
+    }
+}
+
+fn kept_frame(sheets: &KeptSheets, id: u64, position_ms: u64) -> Option<LyricFrame> {
+    Some(match sheets.read(id)? {
+        Kept::Sheet(lyrics) => frame_of(&lyrics, Duration::from_millis(position_ms)),
+        Kept::Wordless => unlit(),
+    })
 }
 
 impl MobilePlayer {
@@ -461,6 +472,26 @@ mod tests {
             })
             .expect("a song")
             .id
+    }
+
+    #[test]
+    fn a_kept_frame_answers_only_from_a_sheet_already_held() {
+        let sheets = KeptSheets::default();
+        let lyrics = read_lyrics(
+            SourceId::new("embedded").expect("a source name"),
+            "[00:01.00]la\n[00:03.00]da\n",
+        )
+        .expect("readable lyrics")
+        .expect("a sheet");
+
+        assert_eq!(kept_frame(&sheets, 7, 1_500), None);
+
+        sheets.keep(7, Kept::Sheet(Arc::new(lyrics)));
+        sheets.keep(8, Kept::Wordless);
+        let held = kept_frame(&sheets, 7, 1_500).expect("a held sheet's frame");
+
+        assert_eq!(held.read_at, Some(0));
+        assert_eq!(kept_frame(&sheets, 8, 1_500), Some(unlit()));
     }
 
     #[test]

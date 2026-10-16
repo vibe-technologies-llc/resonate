@@ -31,10 +31,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
   to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
   needs the counting moved first
-- [S] The lyric pane asks `lyric_frame` for every display frame (a lock, a lookup and a record
-  with its wipes lowered across the boundary on a serial queue, then a hop to the main actor), and
-  the frame it draws is one to two frames old; a line-synced sheet needs only the next change time
-  and a word-synced one the word times, which Swift could hold and interpolate per frame
 
 ## Performance and scale
 - [M] Every track open opens its source twice, once more for the inspector's box layout
