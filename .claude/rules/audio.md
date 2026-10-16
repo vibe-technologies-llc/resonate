@@ -49,7 +49,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rate as Matroska `SamplingFrequency`). `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` read as ReplayGain 5 dB
   louder. **Pre-skip is the container's:** Ogg counts it inside granules, Matroska shifts by
   `CodecDelay`, MP4's edit list is read by the box scan. **Matroska's end is the last block's
-  `DiscardPadding`**; declared length is counted from each packet's TOC byte (`Segment::opus_music`),
+  `DiscardPadding`**, a block of the first `A_OPUS` track only (another track's last block neither
+  keeps nor replaces it); declared length is counted from each packet's TOC byte (`Segment::opus_music`),
   trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
   predicts band energy from the previous frame) and discard those frames.
 - **WavPack Hybrid is billed as the lossy codec it decodes as** (`wavpack::HYBRID_CODEC_ID`,
@@ -58,7 +59,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   read. **Vorbis setup headers are walked before symphonia reads them** (an ordered codebook can
   index past its table and abort in release; `vorbis::Vorbis`).
 - **Own readers where symphonia has none:** Monkey's Audio (`ape.rs`; markers `MAC ` and `MACF`, else
-  the probe opens the stored `RIFF` header as WAVE; 32-bit stereo refused); WAVE too long for RIFF
+  the probe opens the stored `RIFF` header as WAVE; 32-bit stereo refused; the last frame ends where
+  the audio does, before a trailing APEv2 or ID3v1 tag and the terminating data, as the SDK counts it); WAVE too long for RIFF
   (`wide.rs`, RF64/BW64 `ds64` and Wave64; scan takes `.rf64`, `.w64`).
 - **Every PCM symphonia names = `Codec::Pcm`; ADPCM = `Codec::Adpcm`** (lossy). **64-bit float
   decodes as 32-bit float** (`container::representable`); declared depth stays 64.

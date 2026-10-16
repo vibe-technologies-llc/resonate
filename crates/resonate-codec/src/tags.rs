@@ -1598,7 +1598,9 @@ mod tests {
 
         assert_eq!(set_of(&held).title.as_deref(), Some("Echoes"));
         assert_eq!(
-            read(&held, 1, &Prescan::default(), true, None).title.as_deref(),
+            read(&held, 1, &Prescan::default(), true, None)
+                .title
+                .as_deref(),
             Some("Commentary")
         );
     }
