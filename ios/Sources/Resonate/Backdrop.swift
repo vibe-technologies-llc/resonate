@@ -86,11 +86,20 @@ struct BackdropView: View {
     private var motion: BackdropMotion {
         guard phase == .active else { return .dormant }
         if reduceMotion { return .still }
-        return .flowing(framesPerSecond: lowPower ? FullFrameRate.spared : FullFrameRate.fullest)
+        return .flowing(framesPerSecond: Self.rate(sounding: sounding, lowPower: lowPower))
     }
 
     private var sounding: Bool {
         library.transport == .playing
+    }
+
+    private static func rate(sounding: Bool, lowPower: Bool) -> Int {
+        switch (sounding, lowPower) {
+        case (true, false): 30
+        case (true, true): 20
+        case (false, false): 15
+        case (false, true): 10
+        }
     }
 
     private var wantsEnergy: Bool {
@@ -176,7 +185,7 @@ struct AppBackdrop: View {
     private var motion: AmbientMotion {
         if frozen || phase != .active { return .frozen }
         if reduceMotion || !moving { return .still }
-        return .flowing(framesPerSecond: lowPower ? FullFrameRate.spared : FullFrameRate.fullest)
+        return .flowing(framesPerSecond: lowPower ? 5 : 10)
     }
 }
 
@@ -579,7 +588,7 @@ final class AmbientField: NSObject {
     private static let speed = 0.18
     private static let loopSeconds = 360.0
     private static let longestStep: CFTimeInterval = 0.25
-    private static let fadingFramesPerSecond = Float(FullFrameRate.fullest)
+    private static let fadingFramesPerSecond: Float = 30
 
     private let views = NSHashTable<AmbientLayerView>.weakObjects()
     private var gpu: BackdropGPU?
@@ -714,7 +723,7 @@ final class AmbientField: NSObject {
             self.link = link
             return link
         }()
-        started.preferredFrameRateRange = FullFrameRate.range(at: rate)
+        started.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
     }
 
     @objc private func tick(_ link: CADisplayLink) {
@@ -862,7 +871,7 @@ final class BackdropMetalView: UIView {
         case .flowing(let framesPerSecond):
             let rate = Float(framesPerSecond)
             let link = running()
-            link?.preferredFrameRateRange = FullFrameRate.range(at: rate)
+            link?.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
             link?.isPaused = false
         case .still:
             running()?.isPaused = false

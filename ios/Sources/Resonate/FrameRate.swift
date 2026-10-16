@@ -5,23 +5,16 @@ import SwiftUI
 final class FullFrameRate: NSObject {
     static let shared = FullFrameRate()
 
-    static let fullest = 120
-    static let spared = 60
-
-    private static let lowestShare: Float = 2.0 / 3.0
+    private static let fullest = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
 
     private var holders = 0
     private var link: CADisplayLink?
-
-    static func range(at rate: Float) -> CAFrameRateRange {
-        CAFrameRateRange(minimum: rate * lowestShare, maximum: rate, preferred: rate)
-    }
 
     func hold() {
         holders += 1
         guard link == nil else { return }
         let started = CADisplayLink(target: self, selector: #selector(tick))
-        started.preferredFrameRateRange = Self.range(at: Float(Self.fullest))
+        started.preferredFrameRateRange = Self.fullest
         started.add(to: .main, forMode: .common)
         link = started
     }

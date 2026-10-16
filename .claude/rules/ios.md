@@ -329,7 +329,7 @@ every route change (a pair of headphones at the same rate included), not from th
   Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
   capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
-  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO registered and the first read made on `Work.inSession`, the level assigned back on the main actor, a registration that finishes after `stopWatching` invalidated at once; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out)
+  until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO registered and the first read made on `Work.inSession`, the level assigned back on the main actor, a registration that finishes after `stopWatching` invalidated at once; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out, but only where the session gave no level above 0: a freshly made `MPVolumeView`'s slider holds a stale value for a while, and seeding from it over the session's answer slid the bar from 50 to 40 each time the cover layout came back; a row opens on the last level shown, `lastShown`, not 0)
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
   (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
   The driver is mounted 600 ms after the row appears (or at the first touch), so building an
@@ -629,12 +629,11 @@ in; it never opens on another colour first.
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
-- **Frame rate is the display's** (`FullFrameRate`, `FrameRate.swift`): the field asks 120 fps
-  (`FullFrameRate.fullest`, the range down to two thirds of it, so a 60 Hz panel takes its own top)
-  playing or paused, 60 in Low Power Mode or a serious or critical thermal state
-  (`ProcessInfo.sparesFrames`), which the system caps at 60 anyway. 30 fps playing and 15 paused read
-  as plainly low on a ProMotion iPhone beside the lyrics and scrubber moving at the display's rate;
-  an inactive or backgrounded scene, or a view out of its window, draws nothing.
+- **Frame rate** follows what is moving (`BackdropView.rate`): 30 fps while playing, 15 paused, two
+  thirds of that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
+  an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
+  field is composited again at every frame the field draws: at the display's 120 fps (tried) that
+  cost took the frames the lyrics needed, and they lagged while turning or dragged.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
   a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same
@@ -643,11 +642,11 @@ in; it never opens on another colour first.
   showed, from their first frame: one picture is drawn per tick however many pages hold it, a page
   joining a window takes the latest picture at once (rendering one synchronously only where none of
   its size exists), and no page holds a Metal layer or display link of its own. It ticks on one
-  `CADisplayLink` at the display's rate (`FullFrameRate`, 60 in Low Power Mode or a serious thermal
-  state); a render still in flight when the next tick comes skips that tick (`drawing`, the latest
-  owed), so a slow GPU readback lowers the rate rather than queueing pictures. It never reads the transport, so playing or pausing redraws no page's
+  `CADisplayLink` at 10 fps (5 in Low Power Mode or a serious thermal state): the field drifts at
+  18 % speed, under two pixels a frame, so a faster tick only made every glass surface over it
+  composite again. It never reads the transport, so playing or pausing redraws no page's
   background. The palette is built around the accent colour (re-sampled when the accent changes,
-  crossfaded at the display's rate for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
+  crossfaded at 30 fps for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
   to 0.32, light floor 0.96 down to 0.80, chroma and range scaled by the strength, so system labels
   keep their contrast); a change of tone (light and dark) renders at once. The field's clock
   advances only while it flows: Now Playing's cover, an inactive scene and the background freeze it
@@ -691,11 +690,16 @@ frames missing. **The display-rate schedule has no interval of its own**
 `1/60`) discards every frame whose timestamp lands a hair early, so the timeline ran at an uneven
 30 to 60 fps on a 60 Hz panel and never above 60 on ProMotion. While it animates the pane holds
 `FullFrameRate` (`fullFrameRate(while:)`, a counted `CADisplayLink` asking 120 fps and doing
-nothing), since an animation timeline alone leaves the display's rate to the system. **A frame costs the rows in and near the pane, not the sheet**: once
+nothing), since an animation timeline alone leaves the display's rate to the system, and Now Playing
+holds it for as long as it is open in an active scene: left to itself the display flipped between
+120 and 60 Hz through the cover's spring and the lyrics' pauses, which read as random lag. **A frame costs the rows in and near the pane, not the sheet**: once
 the sheet is placed, a row whose measured frame lies more than a pane (at least 320 pt) beyond the
-pane's edges is drawn as a clear placeholder of its measured height (`LyricRowLook.culled`), which
-keeps the sheet's layout, `landing()`'s arithmetic and every row's `onGeometryChange` unchanged while
-leaving no text, opacity group, gesture or accessibility element to diff or draw; a row is culled
+pane's edges is left out of the sheet, each run of them standing as one clear spacer of their
+measured heights and the spacing between (`LyricPiece.gathered`), which keeps the sheet's layout and
+`landing()`'s arithmetic unchanged (a culled row keeps its last measurement) while leaving SwiftUI a
+dozen or so rows to update each frame instead of the whole sheet: with every row in the `ForEach`,
+updating their geometry, tap and accessibility modifiers cost about 5 ms a frame on the main thread,
+over half of a 120 Hz frame, though only two or three rows' bodies changed; a row is culled
 only against a measurement made at the current column width and measures (`LyricColumn`), and never
 while VoiceOver runs, so every line stays reachable. Everything that reads the
 snapshot, the clock or `beat` is `LyricFollowing`, so the pane around it is not rebuilt four times a second. The sheet's offset is a transform the stage owns, not a `ScrollView`: a vertical drag

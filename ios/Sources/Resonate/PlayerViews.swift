@@ -143,6 +143,7 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var picked: PickedTracks?
@@ -179,6 +180,7 @@ struct NowPlayingView: View {
             }
             .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
         }
+        .fullFrameRate(while: phase == .active)
     }
 
     private func layout(_ track: Track?) -> some View {
@@ -792,10 +794,13 @@ final class SystemVolumeLevel {
     private static let seedTries = 10
     private static let seedEvery: Duration = .milliseconds(100)
 
-    private(set) var level: Float = 0
+    private static var lastShown: Float = 0
+
+    private(set) var level: Float = SystemVolumeLevel.lastShown
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
     @ObservationIgnored private var heardSinceWatching = false
+    @ObservationIgnored private var sessionAnswered = false
     @ObservationIgnored private var watchAsked = false
     @ObservationIgnored private var watches = 0
 
@@ -803,6 +808,7 @@ final class SystemVolumeLevel {
         guard !watchAsked else { return }
         watchAsked = true
         heardSinceWatching = false
+        sessionAnswered = false
         watches += 1
         let watch = watches
         let hearing: @MainActor @Sendable (Float) -> Void = { [weak self] heard in self?.hear(heard) }
@@ -815,7 +821,9 @@ final class SystemVolumeLevel {
                 return
             }
             watching = observation
-            if !heardSinceWatching, driver == nil || current > 0 { level = current }
+            guard !heardSinceWatching, current > 0 else { return }
+            sessionAnswered = true
+            show(current)
         }
     }
 
@@ -824,7 +832,7 @@ final class SystemVolumeLevel {
             for _ in 0..<Self.seedTries {
                 driver.layoutIfNeeded()
                 if let slider = Self.slider(in: driver) {
-                    if watchAsked, !heardSinceWatching { level = slider.value }
+                    if watchAsked, !heardSinceWatching, !sessionAnswered { show(slider.value) }
                     return
                 }
                 try? await Task.sleep(for: Self.seedEvery)
@@ -834,7 +842,12 @@ final class SystemVolumeLevel {
 
     private func hear(_ heard: Float) {
         heardSinceWatching = true
-        level = heard
+        show(heard)
+    }
+
+    private func show(_ shown: Float) {
+        level = shown
+        Self.lastShown = shown
     }
 
     func stopWatching() {
@@ -846,7 +859,7 @@ final class SystemVolumeLevel {
 
     func set(_ wanted: Float) {
         heardSinceWatching = true
-        level = wanted
+        show(wanted)
         guard let slider = driver.flatMap(Self.slider(in:)) else { return }
         slider.setValue(wanted, animated: false)
         slider.sendActions(for: .valueChanged)

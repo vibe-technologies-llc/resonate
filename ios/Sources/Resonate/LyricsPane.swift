@@ -229,20 +229,27 @@ private struct LyricSheetView: View {
     private var sheet: some View {
         let generation = scene.generation
         return VStack(spacing: measures.spacing) {
-            ForEach(scene.rows) { row in
-                LyricRowView(look: row.look, measures: measures)
-                    .equatable()
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .named(LyricSpace.sheet))
-                    } action: { frame in
-                        stage.measured(row: row.id, frame, generation: generation)
-                    }
-                    .offset(y: row.inset)
-                    .onTapGesture {
-                        if let moment = row.moment { seek(moment) }
-                    }
-                    .allowsHitTesting(row.moment != nil)
-                    .modifier(LyricRowAccessibility(row: row, seek: seek))
+            ForEach(LyricPiece.gathered(scene.rows, spacing: measures.spacing)) { piece in
+                switch piece {
+                case .row(let row):
+                    LyricRowView(look: row.look, measures: measures)
+                        .equatable()
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .named(LyricSpace.sheet))
+                        } action: { frame in
+                            stage.measured(row: row.id, frame, generation: generation)
+                        }
+                        .offset(y: row.inset)
+                        .onTapGesture {
+                            if let moment = row.moment { seek(moment) }
+                        }
+                        .allowsHitTesting(row.moment != nil)
+                        .modifier(LyricRowAccessibility(row: row, seek: seek))
+                case .gap(_, let width, let height):
+                    Color.clear
+                        .frame(width: width, height: height)
+                        .accessibilityHidden(true)
+                }
             }
             if let end = scene.end {
                 LyricEndMark(look: end.look, measures: measures)
@@ -321,7 +328,7 @@ private struct LyricRowAccessibility: ViewModifier {
     let seek: (UInt64) -> Void
 
     func body(content: Content) -> some View {
-        if row.look.blank || row.look.culled != nil {
+        if row.look.blank {
             content.accessibilityHidden(true)
         } else if let moment = row.moment {
             content
@@ -344,9 +351,7 @@ private struct LyricRowView: View, Equatable {
     let measures: LyricMeasures
 
     var body: some View {
-        if let height = look.culled {
-            Color.clear.frame(width: look.width, height: height)
-        } else if look.blank {
+        if look.blank {
             Color.clear.frame(width: look.width, height: measures.pause)
         } else {
             VStack(spacing: 0) {
@@ -933,6 +938,39 @@ struct LyricRowLook: Equatable {
     let standing: Double
     let breathes: Bool
     let breath: LyricBreathLook?
+}
+
+enum LyricPiece: Identifiable {
+    case row(LyricSceneRow)
+    case gap(first: Int, width: CGFloat, height: CGFloat)
+
+    var id: Int {
+        switch self {
+        case .row(let row): row.id
+        case .gap(let first, _, _): -1 - first
+        }
+    }
+
+    static func gathered(_ rows: [LyricSceneRow], spacing: CGFloat) -> [LyricPiece] {
+        var pieces: [LyricPiece] = []
+        var open: (first: Int, width: CGFloat, height: CGFloat)?
+
+        for row in rows {
+            if let height = row.look.culled {
+                open = open.map { ($0.first, $0.width, $0.height + spacing + height) } ?? (row.id, row.look.width, height)
+                continue
+            }
+            if let gap = open {
+                pieces.append(.gap(first: gap.first, width: gap.width, height: gap.height))
+                open = nil
+            }
+            pieces.append(.row(row))
+        }
+        if let gap = open {
+            pieces.append(.gap(first: gap.first, width: gap.width, height: gap.height))
+        }
+        return pieces
+    }
 }
 
 struct LyricSceneRow: Identifiable {
