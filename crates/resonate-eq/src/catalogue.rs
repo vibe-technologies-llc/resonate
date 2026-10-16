@@ -43,6 +43,17 @@ const SAID_BY_THE_GRAPH: [&str; 37] = [
     "wireless",
 ];
 
+const MEASURERS_BEST_FIRST: [&str; 8] = [
+    "oratory1990",
+    "crinacle",
+    "innerfidelity",
+    "hypethesonics",
+    "rtings",
+    "super review",
+    "filk",
+    "dhrme",
+];
+
 const NOT_A_DEVICE: [&str; 12] = [
     "adapter",
     "jack",
@@ -117,6 +128,14 @@ pub struct Catalogue {
     devices: Vec<Device>,
     folded: Vec<String>,
     words: Vec<Vec<String>>,
+}
+
+fn measurer_rank(measured_by: &str) -> usize {
+    let named = measured_by.trim().to_lowercase();
+    MEASURERS_BEST_FIRST
+        .iter()
+        .position(|ranked| *ranked == named)
+        .unwrap_or(MEASURERS_BEST_FIRST.len())
 }
 
 fn folded(text: &str) -> String {
@@ -231,6 +250,12 @@ impl Catalogue {
         self.devices.get(found.at)
     }
 
+    fn measurer_rank_of(&self, at: usize) -> usize {
+        self.devices
+            .get(at)
+            .map_or(usize::MAX, |device| measurer_rank(&device.measured_by))
+    }
+
     pub fn get(&self, id: &DeviceId) -> Option<&Device> {
         self.devices.iter().find(|device| &device.id == id)
     }
@@ -251,12 +276,19 @@ pub fn search(catalogue: &Catalogue, typed: &str) -> Vec<Found> {
         .collect();
 
     hits.sort_by(|one, other| {
-        one.0.cmp(&other.0).then_with(|| {
-            catalogue
-                .folded
-                .get(one.1)
-                .cmp(&catalogue.folded.get(other.1))
-        })
+        one.0
+            .cmp(&other.0)
+            .then_with(|| {
+                catalogue
+                    .folded
+                    .get(one.1)
+                    .cmp(&catalogue.folded.get(other.1))
+            })
+            .then_with(|| {
+                catalogue
+                    .measurer_rank_of(one.1)
+                    .cmp(&catalogue.measurer_rank_of(other.1))
+            })
     });
     hits.into_iter()
         .take(FOUND_AT_MOST)
@@ -309,7 +341,17 @@ pub fn suggest(catalogue: &Catalogue, description: &str) -> Option<Found> {
         }
     }
 
-    best.sort_by(|one, other| other.0.cmp(&one.0).then_with(|| other.1.cmp(&one.1)));
+    best.sort_by(|one, other| {
+        other
+            .0
+            .cmp(&one.0)
+            .then_with(|| other.1.cmp(&one.1))
+            .then_with(|| {
+                catalogue
+                    .measurer_rank_of(one.2)
+                    .cmp(&catalogue.measurer_rank_of(other.2))
+            })
+    });
     let top = best.first().copied()?;
     let named = catalogue.folded.get(top.2);
     let rivals = best
@@ -444,6 +486,53 @@ mod tests {
                 "{description}"
             );
         }
+    }
+
+    fn suggested_measurer(catalogue: &Catalogue, description: &str) -> Option<String> {
+        suggest(catalogue, description)
+            .and_then(|found| catalogue.device(found))
+            .map(|device| device.measured_by.clone())
+    }
+
+    #[test]
+    fn a_device_several_measurers_cover_is_suggested_from_the_best_ranked_whatever_the_index_order()
+    {
+        let catalogue = catalogue();
+
+        for (description, wanted) in [
+            ("HIFIMAN Ananda", "oratory1990"),
+            ("Samsung AKG EO-IG955", "oratory1990"),
+            ("Jabra Elite 10", "Rtings"),
+        ] {
+            assert_eq!(
+                suggested_measurer(&catalogue, description).as_deref(),
+                Some(wanted),
+                "{description}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_measurer_the_ranking_does_not_name_comes_after_every_one_it_does() {
+        let by = |measured_by: &str| Device {
+            id: DeviceId::new(&format!("{measured_by}/over-ear/Maker Thing 100")).expect("a path"),
+            label: "Maker Thing 100".to_owned(),
+            measured_by: measured_by.to_owned(),
+            rig: None,
+        };
+        let catalogue = Catalogue::of(vec![by("somebody new"), by("DHRME"), by("Oratory1990")]);
+
+        let measurers = search(&catalogue, "maker thing")
+            .into_iter()
+            .filter_map(|found| catalogue.device(found))
+            .map(|device| device.measured_by.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(measurers, ["Oratory1990", "DHRME", "somebody new"]);
+        assert_eq!(
+            suggested_measurer(&catalogue, "Maker Thing 100").as_deref(),
+            Some("Oratory1990")
+        );
     }
 
     #[test]

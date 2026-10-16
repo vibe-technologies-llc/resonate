@@ -224,6 +224,11 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   vocabulary, one mixing letters and digits, or one of 3+ digits); refuses a description naming a
   socket; prefers the longest name; nothing on a tie between two *different* devices
   (`tests/whole_index.rs` is the probe).
+- **Measurers are ranked, fixed in `MEASURERS_BEST_FIRST`**: oratory1990, crinacle, Innerfidelity,
+  HypetheSonics, Rtings, Super Review, Filk, DHRME, any other last (case-folded). The rank breaks only
+  a tie of match and name length, so `suggest` takes the best-ranked measurer of the one device it
+  found and `search` lists a device's rows best-ranked first; within a rank the index order stands
+  (`a_device_several_measurers_cover_is_suggested_from_the_best_ranked_whatever_the_index_order`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
   `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is
