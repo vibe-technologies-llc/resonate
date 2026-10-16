@@ -571,7 +571,7 @@ impl EqualiserModel {
         if let Some((_, profile)) = self.shown.as_mut()
             && let Some(slot) = profile.band_mut(row)
         {
-            *slot = band;
+            *slot = band.normalised();
         }
         self.settle(cx);
     }
@@ -1105,6 +1105,56 @@ mod tests {
             quieter,
             "a change made within the settle of closing was lost"
         );
+    }
+
+    #[gpui::test]
+    fn a_gain_typed_into_a_band_that_has_none_is_not_kept(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-gainless-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let name = named("Notched");
+        let dac = NodeName::new("alsa_output.dac");
+        let notch = Band::new(
+            BandKind::Notch,
+            Frequency::from_hertz(1_000.0).expect("a frequency"),
+            BandGain::FLAT,
+            Q::BUTTERWORTH,
+        );
+        store
+            .keep(
+                &name,
+                &Profile::new(Preamp::NONE, vec![notch]).expect("a profile"),
+            )
+            .expect("the profile is kept");
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings {
+                    enabled: true,
+                    fallback: None,
+                    by_sink: vec![(dac.clone(), Binding::Profile(name.clone()))],
+                },
+            )
+        });
+
+        let taken = model.update(cx, |model, cx| {
+            model.show(Some(&dac));
+            let editing = Editing {
+                row: 0,
+                cell: Cell::Gain,
+            };
+            model.take(editing, "4.5", cx)
+        });
+        let bands = model.read_with(cx, |model, _| model.shown_bands());
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(taken);
+        assert_eq!(bands, vec![notch]);
     }
 
     #[gpui::test]

@@ -350,14 +350,21 @@ impl Band {
         Self {
             kind,
             frequency,
-            gain: if kind.uses_gain() {
-                gain
-            } else {
-                BandGain::FLAT
-            },
+            gain,
             q,
             on: true,
             channels: ChannelSet::EVERY,
+        }
+        .normalised()
+    }
+
+    pub const fn normalised(self) -> Self {
+        if self.kind.uses_gain() {
+            return self;
+        }
+        Self {
+            gain: BandGain::FLAT,
+            ..self
         }
     }
 
@@ -1043,6 +1050,24 @@ pub fn sweep(points: usize) -> impl Iterator<Item = f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_gainless_band_given_a_gain_is_normalised_to_the_one_made_without() {
+        let made = Band::new(
+            BandKind::Notch,
+            Frequency::from_hertz(1_000.0).expect("in range"),
+            BandGain::FLAT,
+            Q::BUTTERWORTH,
+        );
+        let given = Band {
+            gain: BandGain::from_decibels(4.5).expect("in range"),
+            ..made
+        };
+
+        assert_ne!(given, made);
+        assert_eq!(given.normalised(), made);
+        assert_eq!(made.normalised(), made);
+    }
 
     #[test]
     fn a_narrow_boost_between_the_drawn_points_is_fitted_under_whole() {
