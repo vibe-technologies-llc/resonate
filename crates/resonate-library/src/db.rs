@@ -99,9 +99,6 @@ const A_SHOWN_TRACK: &str = "tracks.hidden = 0";
 
 const A_HIDDEN_TRACK: &str = "tracks.hidden = 1";
 
-const HOLDS_A_BEST_COPY: &str = "EXISTS (SELECT 1 FROM tracks t
-      WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)";
-
 const CD_SAMPLE_RATE: u32 = 44_100;
 
 const CD_SAMPLE_DEPTH: u8 = 16;
@@ -176,33 +173,9 @@ macro_rules! album_owner_filed_as {
     };
 }
 
-macro_rules! album_tracks {
-    () => {
-        "(SELECT count(*) FROM tracks t WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)"
-    };
-}
-
 macro_rules! album_added {
     () => {
         "(SELECT max(t.added) FROM tracks t WHERE t.album_id = a.id)"
-    };
-}
-
-macro_rules! artist_albums {
-    () => {
-        "(SELECT count(DISTINCT t.album_id) FROM tracks t
-           WHERE (t.artist_id = r.id
-                  OR t.id IN (SELECT c.track_id FROM track_credits c WHERE c.artist_id = r.id))
-             AND t.alternative_of IS NULL AND t.hidden = 0)"
-    };
-}
-
-macro_rules! artist_tracks {
-    () => {
-        "(SELECT count(*) FROM tracks t
-           WHERE (t.artist_id = r.id
-                  OR t.id IN (SELECT c.track_id FROM track_credits c WHERE c.artist_id = r.id))
-             AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
@@ -225,26 +198,71 @@ macro_rules! unheld_by_any_album {
     };
 }
 
-const ALBUM_COLUMNS: &str = concat!(
-    "a.id, ",
-    album_title!(),
-    ", a.artist_id, a.year, ",
-    album_tracks!(),
-    ",
+macro_rules! shown_tracks {
+    () => {
+        "shown_tracks"
+    };
+}
+
+macro_rules! shown_albums {
+    () => {
+        "shown_albums"
+    };
+}
+
+fn a_shown_copy(filters: MusicFilters) -> String {
+    match filters.predicate("t") {
+        Some(predicate) => format!("t.alternative_of IS NULL AND t.hidden = 0 AND {predicate}"),
+        None => "t.alternative_of IS NULL AND t.hidden = 0".to_owned(),
+    }
+}
+
+fn holds_a_best_copy(filters: MusicFilters) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND {})",
+        a_shown_copy(filters)
+    )
+}
+
+fn album_columns(filters: MusicFilters) -> String {
+    format!(
+        "a.id, {title}, a.artist_id, a.year,
+     (SELECT count(*) FROM tracks t WHERE t.album_id = a.id AND {shown}) AS {counted},
      (SELECT count(DISTINCT t.artist_id) FROM tracks t WHERE t.album_id = a.id),
      (a.cover_art IS NOT NULL OR a.cover_path IS NOT NULL), a.mbid,
-     (SELECT count(*) FROM release_tracks rt WHERE rt.album_id = a.id AND rt.track_id IS NULL), ",
-    album_owner!(),
-    ", a.favourite"
-);
+     (SELECT count(*) FROM release_tracks rt WHERE rt.album_id = a.id AND rt.track_id IS NULL), {owner},
+     a.favourite",
+        title = album_title!(),
+        shown = a_shown_copy(filters),
+        counted = shown_tracks!(),
+        owner = album_owner!(),
+    )
+}
 
-const ARTIST_COLUMNS: &str = concat!(
-    "r.id, r.name, ",
-    artist_albums!(),
-    ", ",
-    artist_tracks!(),
-    ", r.mbid, r.portrait IS NOT NULL, r.favourite"
-);
+fn held_by_an_artist(select: &str, filters: MusicFilters) -> String {
+    format!(
+        "(SELECT {select} FROM tracks t
+           WHERE (t.artist_id = r.id
+                  OR t.id IN (SELECT c.track_id FROM track_credits c WHERE c.artist_id = r.id))
+             AND {})",
+        a_shown_copy(filters)
+    )
+}
+
+fn artist_tracks(filters: MusicFilters) -> String {
+    held_by_an_artist("count(*)", filters)
+}
+
+fn artist_columns(filters: MusicFilters) -> String {
+    format!(
+        "r.id, r.name, {albums} AS {shown_albums}, {tracks} AS {shown_tracks},
+     r.mbid, r.portrait IS NOT NULL, r.favourite",
+        albums = held_by_an_artist("count(DISTINCT t.album_id)", filters),
+        shown_albums = shown_albums!(),
+        tracks = artist_tracks(filters),
+        shown_tracks = shown_tracks!(),
+    )
+}
 
 const LINKS_OF_UNPICTURED_ARTISTS: &str = "SELECT l.artist_id, l.relation, l.provider, l.url
        FROM artist_links l JOIN artists r ON r.id = l.artist_id
@@ -1817,7 +1835,7 @@ impl Library {
     }
 
     pub fn album(&self, id: AlbumId) -> Result<Option<Album>> {
-        let columns = filtered_counts(ALBUM_COLUMNS, self.music_filters());
+        let columns = album_columns(self.music_filters());
         self.inner.read(|connection| {
             connection
                 .query_row(
@@ -1845,15 +1863,12 @@ impl Library {
             return Ok(Vec::new());
         };
 
-        let columns = filtered_counts(ALBUM_COLUMNS, filters);
+        let columns = album_columns(filters);
         let mut sql = format!("SELECT {columns} FROM albums a{}", scoped.from);
         let mut binds = scoped.binds;
 
         sql.push_str(" ORDER BY ");
-        sql.push_str(&filtered_counts(
-            album_order_by(query.sort, query.reading, scoped.ranked),
-            filters,
-        ));
+        sql.push_str(album_order_by(query.sort, query.reading, scoped.ranked));
         sql.push_str(" LIMIT ? OFFSET ?");
         binds.push(Value::Integer(limit(query.limit)));
         binds.push(Value::Integer(query.offset as i64));
@@ -1932,16 +1947,13 @@ impl Library {
             return Ok(Vec::new());
         };
 
-        let columns = filtered_counts(ARTIST_COLUMNS, filters);
+        let columns = artist_columns(filters);
         let mut sql = format!("SELECT {columns} FROM artists r{}", scoped.from);
         let mut binds = scoped.binds;
         let ranked = scoped.ranked;
 
         sql.push_str(" ORDER BY ");
-        sql.push_str(&filtered_counts(
-            artist_order_by(query.sort, query.reading, ranked),
-            filters,
-        ));
+        sql.push_str(artist_order_by(query.sort, query.reading, ranked));
         sql.push_str(" LIMIT ? OFFSET ?");
         binds.push(Value::Integer(limit(query.limit)));
         binds.push(Value::Integer(query.offset as i64));
@@ -5617,16 +5629,9 @@ fn unheld_holding(narrowing: Option<&str>) -> (String, Vec<Value>) {
     (held, binds)
 }
 
-fn filtered_counts(sql: &str, filters: MusicFilters) -> String {
-    match filters.predicate("t") {
-        Some(predicate) => sql.replace("t.hidden = 0", &format!("t.hidden = 0 AND {predicate}")),
-        None => sql.to_owned(),
-    }
-}
-
 fn scoped_albums(query: &AlbumQuery, only: Option<&str>, filters: MusicFilters) -> Option<Scoped> {
     let mut scoped = narrowed_onto(query.text.as_deref(), "album_id", "a.id", filters)?;
-    let mut conditions = vec![filtered_counts(HOLDS_A_BEST_COPY, filters)];
+    let mut conditions = vec![holds_a_best_copy(filters)];
 
     if let Some(artist) = query.artist {
         let owned_or_played_on = artist.get() as i64;
@@ -5654,10 +5659,7 @@ fn scoped_artists(
     let mut scoped = narrowed_onto(query.text.as_deref(), "artist_id", "r.id", filters)?;
     let mut conditions: Vec<String> = only.map(str::to_owned).into_iter().collect();
     if filters != MusicFilters::default() {
-        conditions.push(format!(
-            "{} > 0",
-            filtered_counts(artist_tracks!(), filters)
-        ));
+        conditions.push(format!("{} > 0", artist_tracks(filters)));
     }
     scoped.from.push_str(&clause(&conditions));
 
@@ -5681,6 +5683,11 @@ fn narrowed_onto(
     }
 
     matching.filters.extend(filters.predicate("tracks"));
+    matching.filters.push(THE_BEST_COPY.to_owned());
+    if !matching.insists_on_hidden {
+        matching.filters.push(A_SHOWN_TRACK.to_owned());
+    }
+
     Some(Scoped {
         from: matching.grouped(column, onto),
         binds: matching.binds,
@@ -6681,7 +6688,7 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
                 album_ids_rising!()
             ),
             down: concat!(
-                "a.year IS NULL DESC, a.year DESC, ",
+                "a.year IS NULL, a.year DESC, ",
                 album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
@@ -6689,14 +6696,14 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
         },
         AlbumOrder::Tracks => Reading {
             up: concat!(
-                album_tracks!(),
+                shown_tracks!(),
                 ", ",
                 album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
-                album_tracks!(),
+                shown_tracks!(),
                 " DESC, ",
                 album_filed_as!(),
                 " COLLATE NOCASE DESC",
@@ -6754,9 +6761,9 @@ const fn artist_order_by(sort: ArtistOrder, reading: Direction, ranked: bool) ->
             down: concat!(filed_as!("r"), " DESC", artist_ids_falling!()),
         },
         ArtistOrder::Albums => Reading {
-            up: concat!(artist_albums!(), ", ", filed_as!("r"), artist_ids_rising!()),
+            up: concat!(shown_albums!(), ", ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
-                artist_albums!(),
+                shown_albums!(),
                 " DESC, ",
                 filed_as!("r"),
                 " DESC",
@@ -6764,9 +6771,9 @@ const fn artist_order_by(sort: ArtistOrder, reading: Direction, ranked: bool) ->
             ),
         },
         ArtistOrder::Tracks => Reading {
-            up: concat!(artist_tracks!(), ", ", filed_as!("r"), artist_ids_rising!()),
+            up: concat!(shown_tracks!(), ", ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
-                artist_tracks!(),
+                shown_tracks!(),
                 " DESC, ",
                 filed_as!("r"),
                 " DESC",
@@ -7886,6 +7893,138 @@ mod tests {
         library.filter_music(MusicFilters::default());
         assert_eq!(library.tracks(&query)?, all);
         Ok(())
+    }
+
+    fn titles_of_albums(library: &Library, query: &AlbumQuery) -> Vec<String> {
+        library
+            .albums(query)
+            .expect("the albums are listed")
+            .into_iter()
+            .map(|album| album.title)
+            .collect()
+    }
+
+    fn run(library: &Library, sql: &str) {
+        library
+            .inner
+            .write(|transaction| {
+                transaction
+                    .execute_batch(sql)
+                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+                Ok(())
+            })
+            .expect("the catalog takes the statements");
+    }
+
+    #[test]
+    fn an_album_counted_order_reads_the_tracks_the_music_filters_leave() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        for title in [
+            "Short one",
+            "Short two",
+            "Long one",
+            "Long two",
+            "Long three",
+        ] {
+            titled(&library, title);
+        }
+        run(
+            &library,
+            "INSERT INTO albums (id, title) VALUES (1, 'Alpha'), (2, 'Beta');
+             UPDATE tracks SET duration = 59 * sample_rate WHERE title LIKE 'Short%';
+             UPDATE tracks SET duration = 600 * sample_rate WHERE title LIKE 'Long%';
+             UPDATE tracks SET album_id = 1 WHERE title IN ('Short one', 'Short two', 'Long one');
+             UPDATE tracks SET album_id = 2 WHERE title IN ('Long two', 'Long three');",
+        );
+        let by_tracks = AlbumQuery {
+            sort: AlbumOrder::Tracks,
+            ..AlbumQuery::default()
+        };
+        assert_eq!(titles_of_albums(&library, &by_tracks), ["Beta", "Alpha"]);
+
+        library.filter_music(MusicFilters {
+            minimum_length: crate::MinimumLength::new(60).expect("a minute"),
+            ..MusicFilters::default()
+        });
+
+        let albums = library.albums(&by_tracks).expect("the albums are listed");
+        assert_eq!(
+            albums
+                .iter()
+                .map(|album| (album.title.as_str(), album.track_count))
+                .collect::<Vec<_>>(),
+            [("Alpha", 1), ("Beta", 2)]
+        );
+    }
+
+    #[test]
+    fn albums_with_no_year_come_last_whichever_way_the_year_is_read() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        for title in ["One", "Two", "Three"] {
+            titled(&library, title);
+        }
+        run(
+            &library,
+            "INSERT INTO albums (id, title, year) VALUES (1, 'Old', 1990), (2, 'New', 2000), (3, 'Undated', NULL);
+             UPDATE tracks SET album_id = (SELECT id FROM albums WHERE title = CASE tracks.title WHEN 'One' THEN 'Old' WHEN 'Two' THEN 'New' ELSE 'Undated' END);",
+        );
+
+        let read = |reading| {
+            titles_of_albums(
+                &library,
+                &AlbumQuery {
+                    sort: AlbumOrder::Year,
+                    reading,
+                    ..AlbumQuery::default()
+                },
+            )
+        };
+
+        assert_eq!(read(Direction::Ascending), ["Old", "New", "Undated"]);
+        assert_eq!(read(Direction::Descending), ["New", "Old", "Undated"]);
+    }
+
+    #[test]
+    fn the_albums_and_artists_panes_match_a_search_only_over_shown_best_copies() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        for title in [
+            "Whisper hidden",
+            "Whisper copy",
+            "Original",
+            "Plain",
+            "Seen",
+        ] {
+            titled(&library, title);
+        }
+        run(
+            &library,
+            "INSERT INTO artists (id, key, name) VALUES (1, 'a', 'Hidden Maker'), (2, 'b', 'Copy Maker'), (3, 'c', 'Seen Maker');
+             INSERT INTO albums (id, title, artist_id) VALUES (1, 'Veiled', 1), (2, 'Doubled', 2), (3, 'Open', 3);
+             UPDATE tracks SET album_id = 1, artist_id = 1, hidden = 1 WHERE id = 1;
+             UPDATE tracks SET album_id = 1, artist_id = 1 WHERE id = 4;
+             UPDATE tracks SET album_id = 2, artist_id = 2, alternative_of = 3 WHERE id = 2;
+             UPDATE tracks SET album_id = 2, artist_id = 2 WHERE id = 3;
+             UPDATE tracks SET album_id = 3, artist_id = 3 WHERE id = 5;
+             INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
+                  SELECT id, title, '', '', '', '' FROM tracks;",
+        );
+        let asking = |text: &str| AlbumQuery {
+            text: Some(text.to_owned()),
+            ..AlbumQuery::default()
+        };
+
+        assert!(titles_of_albums(&library, &asking("whisper")).is_empty());
+        assert_eq!(titles_of_albums(&library, &asking("plain")), ["Veiled"]);
+        assert_eq!(titles_of_albums(&library, &asking("seen")), ["Open"]);
+        assert!(
+            library
+                .artists(&ArtistQuery {
+                    text: Some("whisper".to_owned()),
+                    ..ArtistQuery::default()
+                })
+                .expect("the artists are listed")
+                .is_empty()
+        );
     }
 
     fn suggested(library: &Library, text: &str) -> Option<String> {
