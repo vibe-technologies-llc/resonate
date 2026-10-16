@@ -86,7 +86,10 @@ rows read via `Player::media` like any unscanned row.
   the last `listens` row told. `Library::submit_listens` (`scrobble.rs`) reads listens past the mark
   in id order, `SUBMITTED_AT_ONCE` (100) a batch, each at `listens.began`, joined for the names and
   MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` (library-owned seam;
-  `resonate-online`'s `ListenBrainz` fills it) and moves the mark past the batch in a `max`.
+  `resonate-online`'s `ListenBrainz` fills it) in pieces of at most `Scrobbler::at_once` (default
+  `SUBMITTED_AT_ONCE`; Last.fm answers 50) and moves the mark past each piece in a `max`, so a
+  later piece failing never retells an earlier one
+  (`a_batch_a_service_takes_in_pieces_is_marked_a_piece_at_a_time`).
   `listens.id` is `AUTOINCREMENT` seeded at the greater of its newest id and every mark, so an
   aged-away id is never reissued below a mark. No title or artist = `Submitted::unnamed`, passed
   over. A batch refused as malformed (`Refused`, 400) is retold a listen at a time; a listen refused

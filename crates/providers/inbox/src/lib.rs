@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs, io,
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
@@ -11,6 +12,7 @@ use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, Provider
 
 const INBOX: &str = "inbox";
 const SETTLES_FOR: Duration = Duration::from_secs(2);
+const SETTLED_ALONE_AFTER: Duration = Duration::from_secs(60);
 const LISTING_TRUSTED_FOR: Duration = Duration::from_secs(30);
 const LOSSLESS: [&str; 10] = [
     "aif", "aiff", "ape", "dff", "dsf", "flac", "rf64", "w64", "wav", "wave",
@@ -75,6 +77,27 @@ fn changed_at(metadata: &fs::Metadata) -> Option<SystemTime> {
     SystemTime::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Sighting {
+    size: u64,
+    stamp: Stamp,
+    since: Instant,
+}
+
+impl Sighting {
+    fn of(metadata: &fs::Metadata, stamp: Stamp, earlier: Option<Self>) -> Self {
+        let size = metadata.len();
+        match earlier {
+            Some(held) if held.size == size && held.stamp == stamp => held,
+            _ => Self {
+                size,
+                stamp,
+                since: Instant::now(),
+            },
+        }
+    }
+}
+
 struct Listed {
     path: PathBuf,
     stem: String,
@@ -90,8 +113,10 @@ pub struct Inbox {
     source: SourceId,
     folder: PathBuf,
     settles_for: Duration,
+    settled_alone_after: Duration,
     listing_trusted_for: Duration,
     listed: Mutex<Option<Listing>>,
+    sighted: Mutex<BTreeMap<PathBuf, Sighting>>,
 }
 
 impl Inbox {
@@ -100,8 +125,10 @@ impl Inbox {
             source: SourceId::new(INBOX).unwrap_or_else(|_| SourceId::local()),
             folder: folder.into(),
             settles_for: SETTLES_FOR,
+            settled_alone_after: SETTLED_ALONE_AFTER,
             listing_trusted_for: LISTING_TRUSTED_FOR,
             listed: Mutex::new(None),
+            sighted: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -158,19 +185,36 @@ impl Inbox {
     fn settled(&self, file: PathBuf) -> Result<Option<PathBuf>> {
         let metadata = match fs::metadata(&file) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.sighted.lock().remove(&file);
+                return Ok(None);
+            }
             Err(error) => return Err(self.refused(error)),
         };
         if !metadata.is_file() {
             return Ok(None);
         }
-        if Stamp::of(&metadata).touched_within(self.settles_for, SystemTime::now()) {
-            return Err(Error::StillArriving {
-                provider: self.source.clone(),
-                file,
-            });
+
+        let stamp = Stamp::of(&metadata);
+        let now = SystemTime::now();
+        let sighting = {
+            let mut sighted = self.sighted.lock();
+            let sighting = Sighting::of(&metadata, stamp, sighted.get(&file).copied());
+            sighted.insert(file.clone(), sighting);
+            sighting
+        };
+
+        let quiet = !stamp.touched_within(self.settles_for, now);
+        let unchanged_since_sighted = sighting.since.elapsed() >= self.settles_for;
+        let quiet_long_enough_alone = !stamp.touched_within(self.settled_alone_after, now);
+        if quiet && (unchanged_since_sighted || quiet_long_enough_alone) {
+            self.sighted.lock().remove(&file);
+            return Ok(Some(file));
         }
-        Ok(Some(file))
+        Err(Error::StillArriving {
+            provider: self.source.clone(),
+            file,
+        })
     }
 }
 
@@ -217,6 +261,7 @@ mod tests {
         fs::File,
         process,
         sync::atomic::{AtomicU64, Ordering},
+        thread,
     };
 
     use resonate_core::{Isrc, Mbid};
@@ -228,6 +273,7 @@ mod tests {
     const ECHOES_ISRC: &str = "GBN9Y1100089";
     const WANTS_IN_A_POLL: u64 = 500;
     const AN_HOUR: Duration = Duration::from_secs(3600);
+    const A_MOMENT: Duration = Duration::from_millis(60);
 
     static FOLDERS: AtomicU64 = AtomicU64::new(0);
 
@@ -470,6 +516,60 @@ mod tests {
             inbox.find(&echoes()),
             Err(Error::StillArriving { .. })
         ));
+    }
+
+    #[test]
+    fn a_file_quiet_when_first_seen_is_delivered_only_once_it_stays_unchanged() {
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let inbox = Inbox {
+            settles_for: A_MOMENT,
+            settled_alone_after: AN_HOUR,
+            ..Inbox::at(&folder.0)
+        };
+
+        thread::sleep(A_MOMENT * 3);
+        assert!(matches!(
+            inbox.find(&echoes()),
+            Err(Error::StillArriving { .. })
+        ));
+
+        thread::sleep(A_MOMENT * 2);
+        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
+    }
+
+    #[test]
+    fn a_file_that_grew_between_two_looks_is_seen_afresh() {
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let path = folder.0.join(format!("{ECHOES}.flac"));
+        let first = fs::metadata(&path).expect("the file");
+        let stamp = Stamp::of(&first);
+        let earlier = Sighting::of(&first, stamp, None);
+
+        thread::sleep(A_MOMENT);
+        let unchanged = Sighting::of(&first, stamp, Some(earlier));
+        assert_eq!(unchanged.since, earlier.since);
+
+        fs::write(&path, b"more audio than before").expect("a longer file");
+        let grown = fs::metadata(&path).expect("the file");
+        let seen_again = Sighting::of(&grown, stamp, Some(earlier));
+        assert!(seen_again.since > earlier.since);
+        assert_eq!(seen_again.size, grown.len());
+    }
+
+    #[test]
+    fn a_file_quiet_for_long_is_delivered_at_first_sight() {
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let inbox = Inbox {
+            settles_for: A_MOMENT,
+            settled_alone_after: A_MOMENT,
+            ..Inbox::at(&folder.0)
+        };
+
+        thread::sleep(A_MOMENT * 3);
+        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+
+        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
     }
 
     #[test]

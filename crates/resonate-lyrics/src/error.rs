@@ -19,6 +19,13 @@ pub enum Error {
         cause: io::Error,
     },
 
+    #[error("the {provider} lyric provider refused {op:?} with status {status}")]
+    Refused {
+        provider: SourceId,
+        op: LyricOp,
+        status: u16,
+    },
+
     #[error("{op:?} against the {provider} lyric provider produced nothing this build can read")]
     Unreadable { provider: SourceId, op: LyricOp },
 

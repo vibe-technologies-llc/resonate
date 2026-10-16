@@ -254,7 +254,13 @@ a `.cue`, `.jpg` or rip log is never delivered ahead of it.
 - **A file still being copied in is not delivered.** If the best-named file's modification or change
   time is within `SETTLES_FOR` of now it answers `Error::StillArriving`, and no lesser file is
   delivered instead. The change time is the one a copy cannot keep old (`cp -p`); a future time holds
-  nothing back.
+  nothing back. **Quiet is not enough: the size and both times must also be unchanged between two
+  looks `SETTLES_FOR` apart.** `Inbox` keeps a `Sighting` (size, stamp, when first seen so) per
+  file asked for, reset whenever either moved, so a torrent client pausing between writes is not
+  taken for done; a file quiet for `SETTLED_ALONE_AFTER` (60 s) needs no earlier look, so a file
+  already settled is delivered at once
+  (`a_file_quiet_when_first_seen_is_delivered_only_once_it_stays_unchanged`,
+  `a_file_that_grew_between_two_looks_is_seen_afresh`).
 
 ## A Subsonic server
 

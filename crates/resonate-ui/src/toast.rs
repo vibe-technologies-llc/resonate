@@ -294,6 +294,7 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
 
     let why = match error {
         Eq::Unreachable { .. } => Some("AutoEq couldn't be reached"),
+        Eq::Refused { .. } => Some("AutoEq turned the request down"),
         Eq::Unreadable { .. } => Some("AutoEq's answer couldn't be read"),
         Eq::Store { .. } => Some("the profile file couldn't be read or written"),
         Eq::NotAProfile { .. } => Some("that file isn't an equaliser profile"),

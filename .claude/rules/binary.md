@@ -202,7 +202,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **A rotated TIDAL refresh token that could not be written is told, not lost quietly.**
   `providers::Keeping::unkept` holds the last `TidalTokenNotKept` (the write failed) or
   `TidalTokenHasNoSettings` (no config directory and no `--config`); `resonate poll` ends with it
-  as its error after the pass, the window and `resonate mcp` log it at error. The settings path
+  as its error after the pass, `resonate mcp` logs it at error, and the window logs it and toasts it
+  once when the pass ends (`Sourcing::unkept`, `providers::sourced`'s second half). The settings path
   is already the default config file, so no further location is tried.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,

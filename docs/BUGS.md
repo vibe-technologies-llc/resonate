@@ -64,17 +64,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`Known::cuts_in`): rows of a file it cut from a folder below are pruned with their history
   until the sheet reads again
 
-## Providers and network
-- [M] Last.fm is sent a batch in requests of 50 (`LastFm::submit`) and answers `Err` at the first
-  that fails; the library marks nothing on such an error, so the chunks already taken are scrobbled
-  again next pass (`library.md` says the mark moves past what was told)
-- [M] The inbox takes a file as settled after two quiet seconds of mtime and ctime, no size
-  compared: a torrent client writing sporadically delivers half a file, and the refusal burns the
-  want's offer
-- [M] `Refused` is collapsed into `Unreadable` at the equaliser and lyric seams, so a 429 from
-  LRCLIB or GitHub cannot be backed off from
-- [S] A rotated TIDAL token the window cannot write is logged at error level alone, no toast
-
 ## Window
 - [M] A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which
   joins any next composing edit whatever the selection: undo takes back the whole session, and

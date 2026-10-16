@@ -38,11 +38,11 @@ use resonate_library::{
     PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
     RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
     Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions,
+    ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder,
+    Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet,
+    TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten,
+    Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -5568,9 +5568,19 @@ struct Told {
     malformed: Option<&'static str>,
     love_refused: Option<(&'static str, u16)>,
     unreachable: std::sync::atomic::AtomicBool,
+    at_once: Option<NonZeroUsize>,
+    batches_before_unreachable: Option<usize>,
 }
 
 impl Told {
+    fn taking(at_once: usize, batches_before_unreachable: usize) -> Self {
+        Self {
+            at_once: NonZeroUsize::new(at_once),
+            batches_before_unreachable: Some(batches_before_unreachable),
+            ..Self::default()
+        }
+    }
+
     fn refusing(title: &'static str) -> Self {
         Self {
             malformed: Some(title),
@@ -5599,8 +5609,16 @@ impl Scrobbler for Told {
         ListeningService::ListenBrainz
     }
 
+    fn at_once(&self) -> NonZeroUsize {
+        self.at_once
+            .unwrap_or(NonZeroUsize::new(SUBMITTED_AT_ONCE).expect("a batch size"))
+    }
+
     fn submit(&self, listens: &[Scrobble]) -> Result<()> {
-        if self.unreachable.load(Ordering::Relaxed) {
+        let broken = self
+            .batches_before_unreachable
+            .is_some_and(|accepted| self.batches.lock().len() >= accepted);
+        if broken || self.unreachable.load(Ordering::Relaxed) {
             return Err(Error::Unreachable {
                 op: LookupOp::Submit,
                 source: io::Error::from(io::ErrorKind::ConnectionRefused),
@@ -6122,6 +6140,28 @@ fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<(
     told.unreachable.store(false, Ordering::Relaxed);
     assert_eq!(library.submit_listens(&told)?.submitted, 2);
     assert_eq!(told.titles(), vec![vec!["Cold", "Heat"]]);
+    Ok(())
+}
+
+#[test]
+fn a_batch_a_service_takes_in_pieces_is_marked_a_piece_at_a_time() -> Result<()> {
+    let (_tree, library, [cold, heat, _]) = scanned_listening();
+    let told = Told::taking(2, 1);
+    library.submit_listens(&told)?;
+    for track in [&cold, &heat, &cold, &heat, &cold] {
+        library.track_played(track, None, Duration::ZERO)?;
+    }
+
+    assert!(matches!(
+        library.submit_listens(&told),
+        Err(Error::Unreachable { .. })
+    ));
+    assert_eq!(told.titles(), vec![vec!["Cold", "Heat"]]);
+
+    let again = Told::taking(2, usize::MAX);
+    let submitted = library.submit_listens(&again)?;
+    assert_eq!(submitted.submitted, 3);
+    assert_eq!(again.titles(), vec![vec!["Cold", "Heat"], vec!["Cold"]]);
     Ok(())
 }
 

@@ -42,7 +42,7 @@ pub use crate::{
         Asking, Bindings, CaretBlink, Ephemeral, HandedOff, Online, Places, Present, Registering,
         Setting, SettingChange, SettingKey, Settings, SettingsCategory, Sourcing, Stored,
         Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
-        Tabs, WindowButtons, WindowSize,
+        Tabs, Unkept, WindowButtons, WindowSize,
     },
     views::{Pane, RootView},
 };

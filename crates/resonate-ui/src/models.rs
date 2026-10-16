@@ -5135,7 +5135,11 @@ impl LibraryModel {
                     this.poll_owed.get_or_insert(PollOptions::default());
                 }
                 this.take_up_what_waited(cx);
-                match handle.join() {
+                let joined = handle.join();
+                if let Some(notice) = this.sourcing.unkept_notice() {
+                    toast::tell(notice, cx);
+                }
+                match joined {
                     Ok(summary) => {
                         if !summary.cancelled {
                             this.providers_unheard =

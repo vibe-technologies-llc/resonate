@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fmt::{self, Write as _},
+    num::NonZeroUsize,
     sync::Arc,
     time::UNIX_EPOCH,
 };
@@ -19,7 +20,7 @@ use crate::{
 };
 
 const FORM: &str = "application/x-www-form-urlencoded";
-const SCROBBLED_AT_ONCE: usize = 50;
+const SCROBBLED_AT_ONCE: NonZeroUsize = NonZeroUsize::new(50).unwrap();
 const ANSWERED_AS: &str = "json";
 const SCROBBLE: &str = "track.scrobble";
 const PLAYING_NOW: &str = "track.updateNowPlaying";
@@ -120,10 +121,12 @@ impl Scrobbler for LastFm {
     }
 
     fn submit(&self, listens: &[Scrobble]) -> resonate_library::Result<()> {
-        for batch in listens.chunks(SCROBBLED_AT_ONCE) {
-            self.told(SCROBBLE, LookupOp::Submit, scrobbled(batch))?;
-        }
-        Ok(())
+        self.told(SCROBBLE, LookupOp::Submit, scrobbled(listens))
+            .map(drop)
+    }
+
+    fn at_once(&self) -> NonZeroUsize {
+        SCROBBLED_AT_ONCE
     }
 
     fn playing_now(&self, playing: &Billed) -> resonate_library::Result<()> {
