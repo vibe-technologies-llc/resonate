@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use resonate_core::StreamSpec;
+use resonate_core::{SampleRate, StreamSpec};
 
 use crate::{
     ProcessCount, Processor, Result,
@@ -8,10 +8,12 @@ use crate::{
     resample::{SincParams, WindowedSinc},
 };
 
-const OVERSAMPLED: usize = 8;
+const METERED_AT: usize = 8;
+const GUARDED_BELOW_FOUR_FOLD_HZ: u32 = 96_000;
+const GUARDED_BELOW_TWO_FOLD_HZ: u32 = 176_400;
 const INTERPOLATOR: SincParams = SincParams {
     half_taps: 48,
-    phases: OVERSAMPLED as u32,
+    phases: METERED_AT as u32,
     cutoff: 0.998,
     kaiser_beta: 10.0,
 };
@@ -25,8 +27,8 @@ const DECIBELS_PER_DECADE: f64 = 20.0;
 const BACK_AT_UNITY_WITHIN: f64 = 1.0 / 4_294_967_296.0;
 const ROUNDING_MARGIN: f64 = 1.0 - 1e-9;
 
-struct Oversampler {
-    weights: [[f64; OVERSAMPLED]; TAPS],
+struct Oversampler<const PHASES: usize> {
+    weights: [[f64; PHASES]; TAPS],
     gain_at_most: f64,
     held: Vec<f64>,
     newest: usize,
@@ -34,18 +36,18 @@ struct Oversampler {
     channels: usize,
 }
 
-impl Oversampler {
+impl<const PHASES: usize> Oversampler<PHASES> {
     fn new(channels: usize) -> Self {
         let windowed = WindowedSinc::new(INTERPOLATOR);
-        let mut weights = [[0.0; OVERSAMPLED]; TAPS];
+        let mut weights = [[0.0; PHASES]; TAPS];
         if let Some(lane) = weights
             .get_mut(REACH - 1)
             .and_then(|lanes| lanes.first_mut())
         {
             *lane = 1.0;
         }
-        for phase in 1..OVERSAMPLED {
-            let fraction = phase as f64 / OVERSAMPLED as f64;
+        for phase in 1..PHASES {
+            let fraction = phase as f64 / PHASES as f64;
             let row: [f64; TAPS] = std::array::from_fn(|tap| {
                 let distance = tap as f64 - (REACH - 1) as f64 - fraction;
                 windowed.at(distance.abs())
@@ -57,7 +59,7 @@ impl Oversampler {
                 }
             }
         }
-        let gain_at_most = (0..OVERSAMPLED)
+        let gain_at_most = (0..PHASES)
             .map(|phase| {
                 weights
                     .iter()
@@ -123,7 +125,10 @@ impl Oversampler {
     }
 
     fn read(&self) -> f64 {
-        let mut loudest = [0.0; OVERSAMPLED];
+        if PHASES == 1 {
+            return self.centre();
+        }
+        let mut loudest = [0.0; PHASES];
         let mut channel = 0;
         while channel + 2 <= self.channels {
             let (left, right) = self.phases_of_a_pair(channel);
@@ -140,13 +145,19 @@ impl Oversampler {
         loudest.into_iter().fold(0.0, larger)
     }
 
+    fn centre(&self) -> f64 {
+        (0..self.channels)
+            .filter_map(|channel| self.window_of(channel).get(REACH - 1))
+            .fold(0.0, |loudest, sample| larger(loudest, sample.abs()))
+    }
+
     fn window_of(&self, channel: usize) -> &[f64] {
         let from = channel * HELD_TWICE + self.newest + 1;
         self.held.get(from..from + TAPS).unwrap_or_default()
     }
 
-    fn phases_of(&self, channel: usize) -> [f64; OVERSAMPLED] {
-        let mut phases = [0.0; OVERSAMPLED];
+    fn phases_of(&self, channel: usize) -> [f64; PHASES] {
+        let mut phases = [0.0; PHASES];
         for (lanes, sample) in self.weights.iter().zip(self.window_of(channel)) {
             for (phase, weight) in phases.iter_mut().zip(lanes) {
                 *phase = multiply_add(*weight, *sample, *phase);
@@ -155,9 +166,9 @@ impl Oversampler {
         phases
     }
 
-    fn phases_of_a_pair(&self, first: usize) -> ([f64; OVERSAMPLED], [f64; OVERSAMPLED]) {
-        let mut left = [0.0; OVERSAMPLED];
-        let mut right = [0.0; OVERSAMPLED];
+    fn phases_of_a_pair(&self, first: usize) -> ([f64; PHASES], [f64; PHASES]) {
+        let mut left = [0.0; PHASES];
+        let mut right = [0.0; PHASES];
         let pairs = self.window_of(first).iter().zip(self.window_of(first + 1));
         for (lanes, (sample, beside)) in self.weights.iter().zip(pairs) {
             for ((left, right), weight) in left.iter_mut().zip(right.iter_mut()).zip(lanes) {
@@ -177,8 +188,51 @@ impl Oversampler {
     }
 }
 
+enum Sampling {
+    Quadruple(Box<Oversampler<4>>),
+    Double(Box<Oversampler<2>>),
+    Single(Box<Oversampler<1>>),
+}
+
+impl Sampling {
+    fn at(rate: SampleRate, channels: usize) -> Self {
+        let hz = rate.hz();
+        if hz < GUARDED_BELOW_FOUR_FOLD_HZ {
+            Self::Quadruple(Box::new(Oversampler::new(channels)))
+        } else if hz < GUARDED_BELOW_TWO_FOLD_HZ {
+            Self::Double(Box::new(Oversampler::new(channels)))
+        } else {
+            Self::Single(Box::new(Oversampler::new(channels)))
+        }
+    }
+
+    fn quiet_below(&self, ceiling: f64) -> f64 {
+        match self {
+            Self::Quadruple(sampler) => sampler.quiet_below(ceiling),
+            Self::Double(sampler) => sampler.quiet_below(ceiling),
+            Self::Single(sampler) => sampler.quiet_below(ceiling),
+        }
+    }
+
+    fn clear(&mut self) {
+        match self {
+            Self::Quadruple(sampler) => sampler.clear(),
+            Self::Double(sampler) => sampler.clear(),
+            Self::Single(sampler) => sampler.clear(),
+        }
+    }
+
+    fn loudest_that_could_pass(&mut self, frame: &[f64], quiet_below: f64) -> f64 {
+        match self {
+            Self::Quadruple(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
+            Self::Double(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
+            Self::Single(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
+        }
+    }
+}
+
 pub struct TruePeakMeter {
-    oversampler: Oversampler,
+    oversampler: Oversampler<METERED_AT>,
     loudest: f64,
     frame: Vec<f64>,
 }
@@ -226,7 +280,7 @@ pub struct TruePeak {
     ceiling: f64,
     quiet_below: f64,
     channels: usize,
-    oversampler: Option<Oversampler>,
+    oversampler: Option<Sampling>,
     lookahead: usize,
     delay: usize,
     release: f64,
@@ -368,7 +422,7 @@ impl Processor for TruePeak {
         let channels = usize::from(spec.channel_count().get());
         let rate = f64::from(spec.rate.hz());
         self.channels = channels;
-        let oversampler = Oversampler::new(channels);
+        let oversampler = Sampling::at(spec.rate, channels);
         self.quiet_below = oversampler.quiet_below(self.ceiling);
         self.oversampler = Some(oversampler);
         self.lookahead = (LOOKAHEAD_SECONDS * rate).ceil() as usize;
@@ -487,6 +541,16 @@ mod tests {
             .collect()
     }
 
+    fn sine_at(rate: SampleRate, hz: f64, amplitude: f64, phase: f64, frames: usize) -> Vec<f64> {
+        let step = TAU * hz / f64::from(rate.hz());
+        (0..frames)
+            .flat_map(|n| {
+                let sample = amplitude * (step * n as f64 + phase).sin();
+                [sample, sample]
+            })
+            .collect()
+    }
+
     fn faded(mut samples: Vec<f64>) -> Vec<f64> {
         let frames = samples.len() / 2;
         for (frame, pair) in samples.as_chunks_mut::<2>().0.iter_mut().enumerate() {
@@ -509,14 +573,14 @@ mod tests {
     }
 
     fn guarded(input: &[f64]) -> (Vec<f64>, TruePeak) {
+        guarded_at(SampleRate::HZ_48000, input)
+    }
+
+    fn guarded_at(rate: SampleRate, input: &[f64]) -> (Vec<f64>, TruePeak) {
         let mut stage = TruePeak::new();
         stage
             .prepare(
-                StreamSpec::new(
-                    SampleRate::HZ_48000,
-                    ChannelLayout::Stereo,
-                    SampleFormat::F32,
-                ),
+                StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32),
                 BLOCK,
             )
             .expect("the guard prepares");
@@ -549,7 +613,7 @@ mod tests {
         }
         let narrow: Vec<f32> = music.iter().map(|sample| *sample as f32).collect();
 
-        let mut everywhere = Oversampler::new(2);
+        let mut everywhere = Oversampler::<METERED_AT>::new(2);
         let mut every_read = 0.0_f64;
         for frame in narrow.as_chunks::<2>().0 {
             let widened = [f64::from(frame[0]), f64::from(frame[1])];
@@ -618,8 +682,8 @@ mod tests {
     fn every_phase_passes_a_tone_at_nineteen_twentieths_of_nyquist_within_a_tenth_of_a_decibel() {
         const FRACTION_OF_NYQUIST: f64 = 0.95;
         let omega = PI * FRACTION_OF_NYQUIST;
-        let weights = Oversampler::new(1).weights;
-        for phase in 1..OVERSAMPLED {
+        let weights = Oversampler::<METERED_AT>::new(1).weights;
+        for phase in 1..METERED_AT {
             let (real, imaginary) =
                 weights
                     .iter()
@@ -643,8 +707,8 @@ mod tests {
     #[test]
     fn the_detector_skips_only_frames_no_phase_could_carry_over_the_ceiling() {
         let ceiling = 10_f64.powf(CEILING_DECIBELS / DECIBELS_PER_DECADE);
-        let mut exact = Oversampler::new(2);
-        let mut skipping = Oversampler::new(2);
+        let mut exact = Oversampler::<METERED_AT>::new(2);
+        let mut skipping = Oversampler::<METERED_AT>::new(2);
         let quiet_below = skipping.quiet_below(ceiling);
         let quiet = sine(18_000.0, quiet_below, 0.4, 3_000);
         let loud = sine(18_000.0, 1.3, 0.4, 3_000);
@@ -699,6 +763,57 @@ mod tests {
             after <= CEILING_DECIBELS + READS_WITHIN_DB,
             "the guard let {after:.3} dBTP through"
         );
+    }
+
+    #[test]
+    fn a_single_fold_read_is_the_loudest_sample_at_the_centre_of_the_window() {
+        let signal = sine(997.0, 0.9, 0.3, 600);
+        let mut interpolating = Oversampler::<1>::new(2);
+        let mut sample_peak = std::collections::VecDeque::from(vec![[0.0_f64; 2]; REACH]);
+
+        for frame in signal.as_chunks::<2>().0 {
+            sample_peak.push_back(*frame);
+            let delayed = sample_peak.pop_front().expect("a delayed frame");
+            let expected = delayed[0].abs().max(delayed[1].abs());
+
+            assert_eq!(interpolating.loudest_after(frame), expected);
+        }
+    }
+
+    #[test]
+    fn the_guard_oversamples_less_as_the_rate_rises() {
+        let folds = |rate: SampleRate| match Sampling::at(rate, 2) {
+            Sampling::Quadruple(_) => 4,
+            Sampling::Double(_) => 2,
+            Sampling::Single(_) => 1,
+        };
+
+        assert_eq!(folds(SampleRate::HZ_44100), 4);
+        assert_eq!(folds(SampleRate::HZ_48000), 4);
+        assert_eq!(folds(SampleRate::HZ_96000), 2);
+        assert_eq!(folds(SampleRate::HZ_192000), 1);
+    }
+
+    #[test]
+    fn an_over_between_the_samples_is_ridden_down_at_every_rate_the_guard_oversamples_for() {
+        const FOLDED_READS_WITHIN_DB: f64 = 0.2;
+        for rate in [
+            SampleRate::HZ_44100,
+            SampleRate::HZ_48000,
+            SampleRate::HZ_96000,
+            SampleRate::HZ_192000,
+        ] {
+            let hot = sine_at(rate, 12_000.0, 1.25, FRAC_PI_4, rate.hz() as usize);
+
+            let (output, _) = guarded_at(rate, &hot);
+            let after = decibels(metered(&output));
+
+            assert!(
+                after <= CEILING_DECIBELS + FOLDED_READS_WITHIN_DB,
+                "the guard let {after:.3} dBTP through at {} Hz",
+                rate.hz()
+            );
+        }
     }
 
     #[test]

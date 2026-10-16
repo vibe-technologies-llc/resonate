@@ -30,12 +30,12 @@
 0.976	equalise 32 bands at 48k
 1.248	equalise 10 bands at 192k
 3.912	equalise 32 bands at 192k
-2.440	true peak guard at 48k
-2.536	true peak guard limiting at 48k
-0.224	true peak guard at half volume at 48k
-9.808	true peak guard at 192k
-10.092	true peak guard limiting at 192k
-0.900	true peak guard at half volume at 192k
+2.150	true peak guard at 48k
+2.160	true peak guard limiting at 48k
+0.200	true peak guard at half volume at 48k
+1.350	true peak guard at 192k
+1.900	true peak guard limiting at 192k
+0.850	true peak guard at half volume at 192k
 2.308	restore a lossy source
 0.108	dither flat to 16 bits
 0.156	dither lipshitz to 16 bits

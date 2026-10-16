@@ -73,16 +73,31 @@ pub(crate) fn designed(params: SincParams, phase: FilterPhase) -> Option<Arc<Pro
     if phase == FilterPhase::Linear {
         return None;
     }
-    let mut held = DESIGNED.lock();
-    if let Some((_, _, prototype)) = held
-        .iter()
+    Some(designed_in(&DESIGNED, params, phase, design))
+}
+
+fn kept(held: &Designed, params: SincParams, phase: FilterPhase) -> Option<Arc<Prototype>> {
+    held.iter()
         .find(|(kept, shaped, _)| *kept == params && *shaped == phase)
-    {
-        return Some(Arc::clone(prototype));
+        .map(|(_, _, prototype)| Arc::clone(prototype))
+}
+
+fn designed_in(
+    cache: &Mutex<Designed>,
+    params: SincParams,
+    phase: FilterPhase,
+    make: impl FnOnce(SincParams, FilterPhase) -> Prototype,
+) -> Arc<Prototype> {
+    if let Some(prototype) = kept(&cache.lock(), params, phase) {
+        return prototype;
     }
-    let prototype = Arc::new(design(params, phase));
+    let prototype = Arc::new(make(params, phase));
+    let mut held = cache.lock();
+    if let Some(raced) = kept(&held, params, phase) {
+        return raced;
+    }
     held.push((params, phase, Arc::clone(&prototype)));
-    Some(prototype)
+    prototype
 }
 
 fn stencil_denominators() -> [f64; STENCIL] {
@@ -203,6 +218,47 @@ mod tests {
 
     fn decibels(ratio: f64) -> f64 {
         20.0 * ratio.log10()
+    }
+
+    const SMALL: SincParams = SincParams {
+        half_taps: 4,
+        phases: 16,
+        cutoff: 0.95,
+        kaiser_beta: 8.0,
+    };
+
+    #[test]
+    fn a_design_is_made_with_the_cache_unlocked_and_kept_for_the_next_asking() {
+        let cache = Mutex::new(Vec::new());
+        let mut made = 0;
+
+        let first = designed_in(&cache, SMALL, FilterPhase::Minimum, |params, phase| {
+            assert!(!cache.is_locked(), "the design ran under the lock");
+            made += 1;
+            design(params, phase)
+        });
+        let again = designed_in(&cache, SMALL, FilterPhase::Minimum, |_, _| {
+            unreachable!("a kept design was made again")
+        });
+
+        assert_eq!(made, 1);
+        assert!(Arc::ptr_eq(&first, &again));
+    }
+
+    #[test]
+    fn an_asking_that_loses_a_race_to_the_same_design_returns_the_one_held() {
+        let cache = Mutex::new(Vec::new());
+
+        let first = designed_in(&cache, SMALL, FilterPhase::Intermediate, |params, phase| {
+            let raced = designed_in(&cache, params, phase, design);
+            assert_eq!(cache.lock().len(), 1);
+            drop(raced);
+            design(params, phase)
+        });
+
+        assert_eq!(cache.lock().len(), 1);
+        let kept = designed_in(&cache, SMALL, FilterPhase::Intermediate, design);
+        assert!(Arc::ptr_eq(&first, &kept));
     }
 
     #[test]
