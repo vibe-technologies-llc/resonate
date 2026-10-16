@@ -39,23 +39,18 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
   `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the main decoder
   misses them: a click at every mono/stereo switch of a low-bitrate podcast
-- [S] A whole-file lyric sheet beside a cue-cut file is checked against the cut row before it is cut
-  (`Sidecar::held` reads with the row's `Wanted`, then `cut_of_the_file`): a sheet headed
-  `[ti:Meddle][length:46:45]` names "another track" for every row and the pane shows nothing; the
-  test's sheet has no header
-- [S] Matroska's trailing `DiscardPadding` is taken from whichever track's block ends the file
-  (`read_cluster` sets `discarded` for every SimpleBlock and BlockGroup): a video frame last keeps
-  the Opus padding, another audio track's padding trims this one
 - [M] One DST frame that will not unpack fails the whole row as `Error::Io` rather than playing as a
   hole as every PCM codec's does; a `DSTF` chunk's length is bounded only by the file, so a hostile
   one reads the rest of it into memory on a seek
 - [M] A fragmented MP4 sized from `sidx` counts the first top-level `sidx` alone (one a segment in
   DASH files), and only the first non-empty edit-list entry is honoured, so a spliced M4A stops at
   its first edit
-- [S] A Monkey's Audio file's last frame carries any trailing APE tag: copied each read, refused
-  outright past `LARGEST_FRAME_BYTES` with the tag
-- [S] A `SYLT` frame stamped in MPEG frames is dropped (`as_lrc` reads milliseconds only); a UTF-16
-  descriptor with no byte-order mark is read little-endian
+- [S] A whole-file lyric sheet beside a cue-cut file is weighed on its title alone: `Wanted` has no
+  whole-file length or artist, so its `[length:]` and `[ar:]` are not checked against the file
+- [S] A `SYLT` frame stamped in MPEG frames counts from the first frame, not the first sample heard:
+  lines land one encoder delay early
+- [S] Matroska's trailing `DiscardPadding` is taken from the first `A_OPUS` track, not the track the
+  decoder selected, in a file carrying several Opus tracks
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
