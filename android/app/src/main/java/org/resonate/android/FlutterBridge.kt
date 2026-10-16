@@ -359,10 +359,33 @@ class FlutterBridge(
                 }
             "equaliser" ->
                 library.updatePreferences { current ->
+                    val bands =
+                        (args["bands"] as? List<*>)?.map { item ->
+                            val band = item as Map<*, *>
+                            val filterName =
+                                (band["filter"] as? String)?.uppercase() ?: "PEAKING"
+                            val filter =
+                                try {
+                                    EqualiserFilter.valueOf(filterName)
+                                } catch (_: IllegalArgumentException) {
+                                    EqualiserFilter.PEAKING
+                                }
+                            EqualiserBand(
+                                filter,
+                                (band["frequencyHz"] as Number).toFloat(),
+                                (band["gainDb"] as Number).toFloat(),
+                                (band["q"] as Number).toFloat(),
+                            )
+                        }
+                    val name = args["name"] as? String ?: current.equaliser.name
+                    val preamp =
+                        (args["preamp"] as? Number)?.toFloat()
+                            ?: current.equaliser.preampDb
                     val gains = (args["gains"] as? List<*>)?.map { (it as Number).toFloat() }
                     current.copy(
                         equaliser =
                             if (flag("reset")) EqualiserCurve("", 0f, emptyList())
+                            else if (bands != null) EqualiserCurve(name, preamp, bands)
                             else if (gains != null)
                                 tenBandCurve((args["preamp"] as Number).toFloat(), gains)
                             else
@@ -374,14 +397,22 @@ class FlutterBridge(
             "equaliserInfo" ->
                 return withContext(Dispatchers.Default) {
                     val curve = library.preferences.value?.equaliser
+                    val rate = library.snapshot.value?.outputRate?.takeIf { it != 0u }
+                    val response =
+                        try {
+                            curve?.let { responseCurve(it, 256u, rate) }
+                        } catch (_: Exception) {
+                            try {
+                                curve?.let { responseCurve(it, 256u, null) }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
                     mapOf(
                         "limits" to flutterValue(equaliserLimits()),
                         "frequencies" to equaliserFrequencies(),
                         "gains" to curve?.let { tenBandGains(it) },
-                        "response" to
-                            curve?.let {
-                                responseCurve(it, 256u, library.snapshot.value?.outputRate)
-                            },
+                        "response" to response,
                     )
                 }
             "openUrl" -> {

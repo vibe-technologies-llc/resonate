@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -921,12 +922,76 @@ class EqualiserPane extends StatefulWidget {
   State<EqualiserPane> createState() => _EqualiserPaneState();
 }
 
+String _eqFilterValue(Object? raw) {
+  final upper = '${raw ?? ''}'.toUpperCase();
+  return switch (upper) {
+    'PEAKING' => 'PEAKING',
+    'LOW_SHELF' || 'LOWSHELF' || 'LOW-SHELF' => 'LOW_SHELF',
+    'HIGH_SHELF' || 'HIGHSHELF' || 'HIGH-SHELF' => 'HIGH_SHELF',
+    'LOW_PASS' || 'LOWPASS' || 'LOW-PASS' => 'LOW_PASS',
+    'HIGH_PASS' || 'HIGHPASS' || 'HIGH-PASS' => 'HIGH_PASS',
+    'NOTCH' => 'NOTCH',
+    'BAND_PASS' || 'BANDPASS' || 'BAND-PASS' => 'BAND_PASS',
+    'ALL_PASS' || 'ALLPASS' || 'ALL-PASS' => 'ALL_PASS',
+    _ => 'PEAKING',
+  };
+}
+
+bool _eqUsesGain(String filter) {
+  final value = _eqFilterValue(filter);
+  return value == 'PEAKING' || value == 'LOW_SHELF' || value == 'HIGH_SHELF';
+}
+
+String _eqFilterLabel(String filter) => switch (_eqFilterValue(filter)) {
+  'LOW_SHELF' => 'Low shelf',
+  'HIGH_SHELF' => 'High shelf',
+  'LOW_PASS' => 'Low pass',
+  'HIGH_PASS' => 'High pass',
+  'NOTCH' => 'Notch',
+  'BAND_PASS' => 'Band pass',
+  'ALL_PASS' => 'All pass',
+  _ => 'Peak',
+};
+
+double _eqTidyHertz(double hertz) {
+  if (hertz < 100) return (hertz * 10).round() / 10;
+  if (hertz < 1000) return hertz.roundToDouble();
+  return (hertz / 10).round() * 10;
+}
+
+double _eqTidyDb(double decibels) => (decibels * 10).round() / 10;
+
+double _eqTidyQ(double q) => (q * 100).round() / 100;
+
+String _eqFormatHertz(double hertz) {
+  if (hertz < 1000) {
+    return hertz >= 100
+        ? '${hertz.toStringAsFixed(0)} Hz'
+        : '${hertz.toStringAsFixed(1)} Hz';
+  }
+  final khz = hertz / 1000;
+  return khz >= 10
+      ? '${khz.toStringAsFixed(1)} kHz'
+      : '${khz.toStringAsFixed(2)} kHz';
+}
+
+List<RowData> _eqBands(RowData curve) => rows(curve['bands']);
+
+double _eqLevel(RowData band, double preamp) {
+  if (_eqUsesGain('${band['filter']}')) {
+    return decimal(band['gainDb']) + preamp;
+  }
+  return preamp;
+}
+
 class _EqualiserPaneState extends State<EqualiserPane> {
-  List<double>? _gains;
   RowData _limits = {};
   List<double> _frequencies = [];
-  List<double> _response = [];
-  String _revision = '';
+  List<double> _responseDb = [];
+  RowData? _draft;
+  int? _selected;
+  bool _holding = false;
+  String _prefsRevision = '';
   final _name = TextEditingController();
   final _text = TextEditingController();
   bool _import = false;
@@ -944,10 +1009,7 @@ class _EqualiserPaneState extends State<EqualiserPane> {
       _frequencies = (answer['frequencies'] as List? ?? [])
           .map(decimal)
           .toList();
-      _gains = (answer['gains'] as List?)?.map(decimal).toList();
-      _response = (answer['response'] as List? ?? [])
-          .map((v) => (decimal(v) + 30) / 60)
-          .toList();
+      _responseDb = (answer['response'] as List? ?? []).map(decimal).toList();
     });
   }
 
@@ -958,119 +1020,951 @@ class _EqualiserPaneState extends State<EqualiserPane> {
     super.dispose();
   }
 
+  RowData _displayed(RowData prefsCurve) => _draft ?? prefsCurve;
+
+  void _commitCurve(RowData curve, {bool enableIfOff = false}) {
+    final bands = _eqBands(curve)
+        .map(
+          (band) => {
+            'filter': _eqFilterValue(band['filter']),
+            'frequencyHz': decimal(band['frequencyHz']),
+            'gainDb': decimal(band['gainDb']),
+            'q': decimal(band['q']),
+          },
+        )
+        .toList();
+    widget.model.call('equaliser', {
+      'name': '${curve['name'] ?? ''}',
+      'preamp': decimal(curve['preampDb']),
+      'bands': bands,
+    });
+    if (enableIfOff && widget.model.preferences['equaliserEnabled'] != true) {
+      widget.model.call('preferences', {'equaliserEnabled': true});
+    }
+  }
+
+  void _addBand(RowData displayed, double hertz, double gainDb) {
+    final bandsAtMost = integer(_limits['bandsAtMost']);
+    final bands = _eqBands(displayed);
+    if (bandsAtMost > 0 && bands.length >= bandsAtMost) return;
+    final lowest = decimal(_limits['lowestHz']);
+    final highest = decimal(_limits['highestHz']);
+    final gainAtMost = decimal(_limits['gainAtMostDb']);
+    final low = lowest > 0 ? lowest : 20.0;
+    final high = highest > 0 ? highest : 20000.0;
+    final gainCap = gainAtMost > 0 ? gainAtMost : 24.0;
+    final next = {
+      'filter': 'PEAKING',
+      'frequencyHz': _eqTidyHertz(hertz.clamp(low, high)),
+      'gainDb': _eqTidyDb(gainDb.clamp(-gainCap, gainCap)),
+      'q': 1.0,
+    };
+    final nextBands = [...bands, row(next)];
+    final nextCurve = {
+      ...displayed,
+      'bands': nextBands,
+    };
+    setState(() {
+      _draft = row(nextCurve);
+      _selected = nextBands.length - 1;
+      _holding = false;
+    });
+    _commitCurve(row(nextCurve), enableIfOff: true);
+  }
+
+  void _removeBand(RowData displayed, int index) {
+    final bands = _eqBands(displayed).toList();
+    if (index < 0 || index >= bands.length) return;
+    bands.removeAt(index);
+    final nextCurve = {
+      ...displayed,
+      'bands': bands,
+    };
+    setState(() {
+      _draft = row(nextCurve);
+      _selected = null;
+      _holding = false;
+    });
+    _commitCurve(row(nextCurve));
+  }
+
+  void _replaceCurve(RowData curve) {
+    setState(() {
+      _draft = row(curve);
+      _selected = null;
+      _holding = false;
+    });
+    _commitCurve(row(curve));
+  }
+
+  RowData _tenFlatCurve() {
+    final centres = _frequencies.length == 10
+        ? _frequencies
+        : const [31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+    return {
+      'name': '',
+      'preampDb': 0.0,
+      'bands': centres
+          .map(
+            (centre) => {
+              'filter': 'PEAKING',
+              'frequencyHz': centre,
+              'gainDb': 0.0,
+              'q': 1.41421356,
+            },
+          )
+          .toList(),
+    };
+  }
+
+  Future<void> _confirmReset() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset the curve?'),
+        content: const Text(
+          'The preamp returns to 0 dB and the current preset is cleared.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'flat'),
+            child: const Text('Remove every band'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'ten'),
+            child: const Text('Start from ten flat bands'),
+          ),
+        ],
+      ),
+    );
+    if (choice == 'flat') {
+      _replaceCurve({'name': '', 'preampDb': 0.0, 'bands': []});
+    } else if (choice == 'ten') {
+      _replaceCurve(_tenFlatCurve());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final model = widget.model;
     final prefs = model.preferences;
-    final curve = row(prefs['equaliser']);
-    final revision = curve.toString();
-    if (revision != _revision) {
-      _revision = revision;
-      unawaited(_load());
+    final prefsCurve = row(prefs['equaliser']);
+    final prefsStr = prefsCurve.toString();
+    if (prefsStr != _prefsRevision) {
+      if (!_holding) {
+        _prefsRevision = prefsStr;
+        _draft = null;
+        unawaited(_load());
+      }
     }
-    final preampLimit = decimal(_limits['preampAtMostDb']);
-    final gainLimit = decimal(_limits['gainAtMostDb']);
-    return ListView(
-      padding: pageInsets(
-        context,
-        top: widget.topInset + AppGeometry.pageInset,
-      ),
-      children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Enable equaliser'),
-          value: prefs['equaliserEnabled'] == true,
-          onChanged: (v) => model.call('preferences', {'equaliserEnabled': v}),
+    if (prefs.isEmpty && _limits.isEmpty) {
+      return ListView(
+        padding: pageInsets(
+          context,
+          top: widget.topInset + AppGeometry.pageInset,
         ),
-        const Text('This curve applies to every Android audio route.'),
-        if ('${curve['name'] ?? ''}'.isNotEmpty)
-          SectionTitle('${curve['name']}'),
-        const SizedBox(height: 20),
-        Card.filled(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
+        children: const [Center(child: CircularProgressIndicator())],
+      );
+    }
+    return ListenableBuilder(
+      listenable: model,
+      builder: (context, _) {
+        final livePrefs = model.preferences;
+        final liveCurve = row(livePrefs['equaliser']);
+        final liveStr = liveCurve.toString();
+        if (liveStr != _prefsRevision && !_holding) {
+          _prefsRevision = liveStr;
+          _draft = null;
+          unawaited(_load());
+        }
+        final shown = _displayed(liveCurve);
+        final shownBands = _eqBands(shown);
+        final shownPreamp = decimal(shown['preampDb']);
+        final shownSelected =
+            _selected != null &&
+                _selected! >= 0 &&
+                _selected! < shownBands.length
+            ? _selected
+            : null;
+        final preampLimit = decimal(_limits['preampAtMostDb']);
+        final bandsAtMost = integer(_limits['bandsAtMost']);
+        final canAdd = bandsAtMost <= 0 || shownBands.length < bandsAtMost;
+        return ListView(
+          padding: pageInsets(
+            context,
+            top: widget.topInset + AppGeometry.pageInset,
+          ),
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable equaliser'),
+              value: livePrefs['equaliserEnabled'] == true,
+              onChanged: (v) =>
+                  model.call('preferences', {'equaliserEnabled': v}),
+            ),
+            const Text('This curve applies to every Android audio route.'),
+            if ('${shown['name'] ?? ''}'.isNotEmpty)
+              SectionTitle('${shown['name']}'),
+            const SizedBox(height: 20),
+            Card.filled(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  children: [
+                    _EqualiserGraph(
+                      curve: shown,
+                      responseDb: _responseDb,
+                      limits: _limits,
+                      selected: shownSelected,
+                      onSelect: (index) =>
+                          setState(() => _selected = index),
+                      onEdit: (next) => setState(() {
+                        _draft = next;
+                        _holding = true;
+                      }),
+                      onCommit: (next) {
+                        setState(() {
+                          _draft = next;
+                          _holding = false;
+                        });
+                        _commitCurve(next);
+                      },
+                      onAdd: (hertz, gainDb) =>
+                          _addBand(shown, hertz, gainDb),
+                    ),
+                    const SizedBox(height: 12),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('20 Hz'),
+                        Text('1 kHz'),
+                        Text('20 kHz'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (shownSelected != null) ...[
+              const SizedBox(height: 12),
+              _BandEditor(
+                band: shownBands[shownSelected],
+                index: shownSelected,
+                limits: _limits,
+                onChange: (nextBand) {
+                  final nextBands = shownBands.toList();
+                  nextBands[shownSelected] = nextBand;
+                  final nextCurve = {
+                    ...shown,
+                    'bands': nextBands,
+                  };
+                  setState(() {
+                    _draft = row(nextCurve);
+                    _holding = false;
+                  });
+                  _commitCurve(row(nextCurve));
+                },
+                onDelete: () => _removeBand(shown, shownSelected),
+              ),
+            ],
+            const SectionTitle('Preamp'),
+            if (preampLimit > 0)
+              CommitSlider(
+                value: shownPreamp.clamp(-preampLimit, preampLimit),
+                min: -preampLimit,
+                max: preampLimit,
+                label: 'Preamp',
+                format: (v) => '${v.toStringAsFixed(1)} dB',
+                onCommit: (v) {
+                  final nextCurve = {
+                    ...shown,
+                    'preampDb': _eqTidyDb(v),
+                  };
+                  setState(() {
+                    _draft = row(nextCurve);
+                    _holding = false;
+                  });
+                  _commitCurve(row(nextCurve));
+                },
+              )
+            else
+              CommitSlider(
+                value: shownPreamp.clamp(-24, 24),
+                min: -24,
+                max: 24,
+                label: 'Preamp',
+                format: (v) => '${v.toStringAsFixed(1)} dB',
+                onCommit: (v) {
+                  final nextCurve = {
+                    ...shown,
+                    'preampDb': _eqTidyDb(v),
+                  };
+                  setState(() {
+                    _draft = row(nextCurve);
+                    _holding = false;
+                  });
+                  _commitCurve(row(nextCurve));
+                },
+              ),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                SignalPlot(values: _response, height: 150),
-                const SizedBox(height: 12),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [Text('20 Hz'), Text('1 kHz'), Text('20 kHz')],
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: canAdd
+                        ? () => _addBand(shown, 1000, 0)
+                        : null,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('Add a band'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _confirmReset,
+                    icon: const Icon(Icons.restart_alt_rounded),
+                    label: const Text('Reset curve'),
+                  ),
                 ),
               ],
             ),
-          ),
-        ),
-        if (_gains == null && rows(curve['bands']).isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Your parametric profile is playing. Moving a band slider replaces it with ten octave bands.',
+            OutlinedButton(
+              onPressed: () => setState(() => _import = !_import),
+              child: const Text('Import an equaliser profile'),
             ),
-          ),
-        const SectionTitle('Preamp'),
-        if (preampLimit > 0)
-          CommitSlider(
-            value: decimal(curve['preampDb']),
-            min: -preampLimit,
-            max: preampLimit,
-            label: 'Preamp',
-            format: (v) => '${v.toStringAsFixed(1)} dB',
-            onCommit: (v) => model.call('equaliser', {'preamp': v}),
-          ),
-        for (var i = 0; i < _frequencies.length && gainLimit > 0; i++) ...[
-          Text(
-            _frequencies[i] < 1000
-                ? '${_frequencies[i]} Hz'
-                : '${_frequencies[i] / 1000} kHz',
-          ),
-          CommitSlider(
-            value: _gains?[i] ?? 0,
-            min: -gainLimit,
-            max: gainLimit,
-            label: 'Band ${i + 1}',
-            format: (v) => '${v.toStringAsFixed(1)} dB',
-            onCommit: (v) {
-              final gains =
-                  _gains?.toList() ?? List.filled(_frequencies.length, 0.0);
-              gains[i] = v;
-              model.call('equaliser', {
-                'preamp': decimal(curve['preampDb']),
-                'gains': gains,
+            if (_import) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Profile name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _text,
+                minLines: 3,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: 'EqualizerAPO / GraphicEQ profile',
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  model.call('profile', {
+                    'name': _name.text,
+                    'text': _text.text,
+                  });
+                  setState(() {
+                    _selected = null;
+                    _import = false;
+                  });
+                },
+                child: const Text('Apply profile'),
+              ),
+              Text(
+                'EqualizerAPO or GraphicEQ text. Parametric filters load as bands; a GraphicEQ line is fitted onto bands.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              shownBands.isEmpty
+                  ? 'Tap the graph to add your first band. Drag a point to move it.'
+                  : 'Tap the graph to add a band. Drag a point to move it. Select a band to change its type, frequency, gain and Q.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EqualiserGraph extends StatefulWidget {
+  const _EqualiserGraph({
+    required this.curve,
+    required this.responseDb,
+    required this.limits,
+    required this.selected,
+    required this.onSelect,
+    required this.onEdit,
+    required this.onCommit,
+    required this.onAdd,
+  });
+  final RowData curve;
+  final List<double> responseDb;
+  final RowData limits;
+  final int? selected;
+  final ValueChanged<int?> onSelect;
+  final ValueChanged<RowData> onEdit;
+  final ValueChanged<RowData> onCommit;
+  final void Function(double hertz, double gainDb) onAdd;
+  @override
+  State<_EqualiserGraph> createState() => _EqualiserGraphState();
+}
+
+class _EqualiserGraphState extends State<_EqualiserGraph> {
+  int? _held;
+  Offset _offset = Offset.zero;
+  double? _span;
+  bool _moved = false;
+  Offset _start = Offset.zero;
+
+  static const double _lowest = 20;
+  static const double _highest = 20000;
+  static const double _narrowest = 15;
+  static const double _widest = 30;
+  static const double _markedEvery = 5;
+  static const double _reach = 32;
+  static const double _tapTravel = 8;
+
+  double _currentSpan() {
+    final preamp = decimal(widget.curve['preampDb']);
+    final bands = _eqBands(widget.curve);
+    final handles = bands.map((band) => _eqLevel(band, preamp)).toList();
+    final values = [...widget.responseDb, ...handles].where(
+      (v) => v.isFinite,
+    );
+    double loudest = 0;
+    for (final v in values) {
+      final abs = v.abs();
+      if (abs > loudest) loudest = abs;
+    }
+    final rounded = (loudest / _markedEvery).ceil() * _markedEvery;
+    return rounded.clamp(_narrowest, _widest).toDouble();
+  }
+
+  double _x(double hertz, double width) {
+    final held = hertz.clamp(_lowest, _highest);
+    return math.log(held / _lowest) / math.ln10 / 3 * width;
+  }
+
+  double _hertzAtX(double x, double width) {
+    final fraction = (x / math.max(width, 1)).clamp(0.0, 1.0);
+    return _lowest * math.pow(1000, fraction).toDouble();
+  }
+
+  double _y(double decibels, double height, double span) {
+    final held = decibels.clamp(-span, span);
+    return (span - held) / (2 * span) * height;
+  }
+
+  double _dbAtY(double y, double height, double span) =>
+      span - y / math.max(height, 1) * 2 * span;
+
+  double _levelOf(RowData band) =>
+      _eqLevel(band, decimal(widget.curve['preampDb']));
+
+  int? _nearest(Offset point, Size size, double span) {
+    final bands = _eqBands(widget.curve);
+    double? best;
+    int? at;
+    for (var i = 0; i < bands.length; i++) {
+      final centre = Offset(
+        _x(decimal(bands[i]['frequencyHz']), size.width),
+        _y(_levelOf(bands[i]), size.height, span),
+      );
+      final distance = (centre - point).distance;
+      if (best == null || distance < best) {
+        best = distance;
+        at = i;
+      }
+    }
+    if (at != null && best != null && best <= _reach) return at;
+    return null;
+  }
+
+  RowData _placed(int held, Offset location, Size size, double span) {
+    final bands = _eqBands(widget.curve).toList();
+    if (held < 0 || held >= bands.length) return widget.curve;
+    final pointed = Offset(
+      location.dx + _offset.dx,
+      location.dy + _offset.dy,
+    );
+    final lowest = decimal(widget.limits['lowestHz']);
+    final highest = decimal(widget.limits['highestHz']);
+    final gainAtMost = decimal(widget.limits['gainAtMostDb']);
+    final low = lowest > 0 ? lowest : _lowest;
+    final high = highest > 0 ? highest : _highest;
+    final gainCap = gainAtMost > 0 ? gainAtMost : 24.0;
+    final band = Map<String, dynamic>.from(bands[held]);
+    final hertz = _eqTidyHertz(
+      _hertzAtX(pointed.dx, size.width).clamp(low, high),
+    );
+    band['frequencyHz'] = hertz;
+    if (_eqUsesGain('${band['filter']}')) {
+      final preamp = decimal(widget.curve['preampDb']);
+      final gain = _eqTidyDb(
+        (_dbAtY(pointed.dy, size.height, span) - preamp).clamp(
+          -gainCap,
+          gainCap,
+        ),
+      );
+      band['gainDb'] = gain;
+    }
+    bands[held] = row(band);
+    return row({...widget.curve, 'bands': bands});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final span = _span ?? _currentSpan();
+    final scheme = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        const height = 240.0;
+        final size = Size(width, height);
+        final bands = _eqBands(widget.curve);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (details) {
+            final point = details.localPosition;
+            final current = _span ?? _currentSpan();
+            final found = _nearest(point, size, current);
+            if (found != null) {
+              final centre = Offset(
+                _x(decimal(bands[found]['frequencyHz']), size.width),
+                _y(_levelOf(bands[found]), size.height, current),
+              );
+              setState(() {
+                _held = found;
+                _offset = centre - point;
+                _span = current;
+                _moved = false;
+                _start = point;
               });
-            },
-          ),
-        ],
-        TextButton(
-          onPressed: () => model.call('equaliser', {'reset': true}),
-          child: const Text('Reset curve'),
-        ),
-        OutlinedButton(
-          onPressed: () => setState(() => _import = !_import),
-          child: const Text('Import an equaliser profile'),
-        ),
-        if (_import) ...[
-          const SizedBox(height: 16),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(labelText: 'Profile name'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _text,
-            minLines: 3,
-            maxLines: 8,
-            decoration: const InputDecoration(
-              labelText: 'EqualizerAPO / GraphicEQ profile',
+              widget.onSelect(found);
+            } else {
+              setState(() {
+                _held = null;
+                _span = current;
+                _moved = false;
+                _start = point;
+              });
+            }
+          },
+          onPanUpdate: (details) {
+            if (_held == null || _span == null) return;
+            final travel = (details.localPosition - _start).distance;
+            if (!_moved && travel <= 2) return;
+            if (!_moved) setState(() => _moved = true);
+            widget.onEdit(_placed(_held!, details.localPosition, size, _span!));
+          },
+          onPanEnd: (details) {
+            final held = _held;
+            final frozen = _span;
+            final moved = _moved;
+            final start = _start;
+            final end = details.localPosition;
+            setState(() {
+              _held = null;
+              _span = null;
+              _moved = false;
+            });
+            if (held != null && frozen != null) {
+              if (moved) widget.onCommit(_placed(held, end, size, frozen));
+            } else {
+              final travel = (end - start).distance;
+              if (travel <= _tapTravel) {
+                final preamp = decimal(widget.curve['preampDb']);
+                final hertz = _hertzAtX(start.dx, size.width);
+                final gain = _dbAtY(start.dy, size.height, frozen ?? span) - preamp;
+                widget.onAdd(hertz, gain);
+              }
+            }
+          },
+          onTapDown: (details) {
+            final point = details.localPosition;
+            final current = _span ?? _currentSpan();
+            final found = _nearest(point, size, current);
+            if (found != null) widget.onSelect(found);
+          },
+          child: SizedBox(
+            height: height,
+            width: double.infinity,
+            child: Stack(
+              children: [
+                CustomPaint(
+                  size: size,
+                  painter: _EqualiserPainter(
+                    responseDb: widget.responseDb,
+                    span: span,
+                    line: scheme.primary,
+                    faint: scheme.onSurfaceVariant.withValues(alpha: 0.18),
+                    marked: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                  ),
+                ),
+                for (var i = 0; i < bands.length; i++)
+                  Positioned(
+                    left:
+                        _x(
+                          decimal(bands[i]['frequencyHz']).clamp(_lowest, _highest),
+                          size.width,
+                        ) -
+                        13,
+                    top:
+                        _y(
+                          _levelOf(bands[i]).clamp(-span, span),
+                          size.height,
+                          span,
+                        ) -
+                        13,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: widget.selected == i
+                              ? scheme.primary
+                              : scheme.surface,
+                          border: Border.all(
+                            color: scheme.primary,
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${i + 1}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: widget.selected == i
+                                  ? scheme.onPrimary
+                                  : scheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          TextButton(
-            onPressed: () =>
-                model.call('profile', {'name': _name.text, 'text': _text.text}),
-            child: const Text('Apply profile'),
+        );
+      },
+    );
+  }
+}
+
+class _EqualiserPainter extends CustomPainter {
+  _EqualiserPainter({
+    required this.responseDb,
+    required this.span,
+    required this.line,
+    required this.faint,
+    required this.marked,
+  });
+  final List<double> responseDb;
+  final double span;
+  final Color line;
+  final Color faint;
+  final Color marked;
+  static const List<double> _faintFreqs = [
+    30, 40, 50, 60, 70, 80, 90, 200, 300, 400, 500, 600, 700, 800, 900,
+    2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
+  ];
+  static const List<(double, String)> _labelledFreqs = [
+    (100, '100'),
+    (1000, '1k'),
+    (10000, '10k'),
+  ];
+  double _x(double hertz, double width) {
+    final held = hertz.clamp(20, 20000);
+    return math.log(held / 20) / math.ln10 / 3 * width;
+  }
+
+  double _y(double decibels, double height) {
+    final held = decibels.clamp(-span, span);
+    return (span - held) / (2 * span) * height;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final faintPaint = Paint()
+      ..color = faint
+      ..strokeWidth = 0.5;
+    final markedPaint = Paint()
+      ..color = marked
+      ..strokeWidth = 0.75;
+    for (final hertz in _faintFreqs) {
+      final x = _x(hertz, size.width);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), faintPaint);
+    }
+    for (final entry in _labelledFreqs) {
+      final x = _x(entry.$1, size.width);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), markedPaint);
+      final label = TextPainter(
+        text: TextSpan(
+          text: entry.$2,
+          style: const TextStyle(fontSize: 10, color: Colors.grey),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(x + 3, size.height - 13));
+    }
+    var level = -span;
+    while (level <= span + 0.001) {
+      final y = _y(level, size.height);
+      final zero = level.abs() < 0.001;
+      if (zero) {
+        canvas.drawLine(
+          Offset(0, y),
+          Offset(size.width, y),
+          Paint()
+            ..color = marked
+            ..strokeWidth = 1,
+        );
+      } else {
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), faintPaint);
+      }
+      if (zero || (level - span).abs() < 0.001 || (level + span).abs() < 0.001) {
+        final text = zero ? '0 dB' : level.toStringAsFixed(0);
+        final label = TextPainter(
+          text: TextSpan(
+            text: text,
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
-        ],
-      ],
+          textDirection: TextDirection.ltr,
+        )..layout();
+        label.paint(
+          canvas,
+          Offset(3, y + (level >= span - 0.001 ? 2 : -12)),
+        );
+      }
+      level += 5;
+    }
+    if (responseDb.length < 2) return;
+    final trace = Path();
+    for (var i = 0; i < responseDb.length; i++) {
+      final x = i / (responseDb.length - 1) * size.width;
+      final y = _y(responseDb[i], size.height);
+      if (i == 0) {
+        trace.moveTo(x, y);
+      } else {
+        trace.lineTo(x, y);
+      }
+    }
+    final zeroY = _y(0, size.height);
+    final wash = Path.from(trace)
+      ..lineTo(size.width, zeroY)
+      ..lineTo(0, zeroY)
+      ..close();
+    canvas.drawPath(
+      wash,
+      Paint()..color = line.withValues(alpha: 0.18),
+    );
+    canvas.drawPath(
+      trace,
+      Paint()
+        ..color = line
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_EqualiserPainter old) =>
+      responseDb != old.responseDb || span != old.span || line != old.line;
+}
+
+class _BandEditor extends StatelessWidget {
+  const _BandEditor({
+    required this.band,
+    required this.index,
+    required this.limits,
+    required this.onChange,
+    required this.onDelete,
+  });
+  final RowData band;
+  final int index;
+  final RowData limits;
+  final ValueChanged<RowData> onChange;
+  final VoidCallback onDelete;
+  @override
+  Widget build(BuildContext context) {
+    final filter = _eqFilterValue(band['filter']);
+    final freq = decimal(band['frequencyHz']);
+    final gain = decimal(band['gainDb']);
+    final q = decimal(band['q']);
+    final lowest = decimal(limits['lowestHz']);
+    final highest = decimal(limits['highestHz']);
+    final gainAtMost = decimal(limits['gainAtMostDb']);
+    final qLeast = decimal(limits['qAtLeast']);
+    final qMost = decimal(limits['qAtMost']);
+    final low = lowest > 0 ? lowest : 20.0;
+    final high = highest > 0 ? highest : 20000.0;
+    final gainCap = gainAtMost > 0 ? gainAtMost : 24.0;
+    final qLow = qLeast > 0 ? qLeast : 0.1;
+    final qHigh = qMost > 0 ? qMost : 40.0;
+    final usesGain = _eqUsesGain(filter);
+    return Card.filled(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Band ${index + 1}', style: Theme.of(context).textTheme.titleMedium)),
+                TextButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text('Delete'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownMenu<String>(
+              initialSelection: filter,
+              expandedInsets: EdgeInsets.zero,
+              requestFocusOnTap: false,
+              label: const Text('Type'),
+              menuStyle: selectionMenuStyle(context),
+              dropdownMenuEntries: const [
+                'PEAKING',
+                'LOW_SHELF',
+                'HIGH_SHELF',
+                'LOW_PASS',
+                'HIGH_PASS',
+                'NOTCH',
+                'BAND_PASS',
+                'ALL_PASS',
+              ]
+                  .map(
+                    (value) => DropdownMenuEntry(
+                      value: value,
+                      label: _eqFilterLabel(value),
+                    ),
+                  )
+                  .toList(),
+              onSelected: (value) {
+                if (value == null) return;
+                onChange(row({...band, 'filter': value}));
+              },
+            ),
+            const SizedBox(height: 12),
+            Text('${_eqFormatHertz(freq)} · ${_eqFilterLabel(filter)}'),
+            _LogCommitSlider(
+              value: freq.clamp(low, high),
+              min: low,
+              max: high,
+              label: 'Band ${index + 1} frequency',
+              format: _eqFormatHertz,
+              onCommit: (chosen) => onChange(
+                row({
+                  ...band,
+                  'frequencyHz': _eqTidyHertz(chosen.clamp(low, high)),
+                }),
+              ),
+            ),
+            if (usesGain) ...[
+              Text('${gain.toStringAsFixed(1)} dB'),
+              CommitSlider(
+                value: gain.clamp(-gainCap, gainCap),
+                min: -gainCap,
+                max: gainCap,
+                label: 'Band ${index + 1} gain',
+                format: (v) => '${v.toStringAsFixed(1)} dB',
+                onCommit: (chosen) => onChange(
+                  row({
+                    ...band,
+                    'gainDb': _eqTidyDb(chosen.clamp(-gainCap, gainCap)),
+                  }),
+                ),
+              ),
+            ],
+            Text('Q ${q.toStringAsFixed(2)}'),
+            _LogCommitSlider(
+              value: q.clamp(qLow, qHigh),
+              min: qLow,
+              max: qHigh,
+              label: 'Band ${index + 1} Q',
+              format: (v) => 'Q ${v.toStringAsFixed(2)}',
+              onCommit: (chosen) => onChange(
+                row({
+                  ...band,
+                  'q': _eqTidyQ(chosen.clamp(qLow, qHigh)),
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogCommitSlider extends StatefulWidget {
+  const _LogCommitSlider({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.label,
+    required this.onCommit,
+    this.format,
+  });
+  final double value;
+  final double min;
+  final double max;
+  final String label;
+  final ValueChanged<double> onCommit;
+  final String Function(double)? format;
+  @override
+  State<_LogCommitSlider> createState() => _LogCommitSliderState();
+}
+
+class _LogCommitSliderState extends State<_LogCommitSlider> {
+  double? _draft;
+  double _toSlider(double actual) {
+    final low = math.max(widget.min, 1e-6);
+    final high = math.max(widget.max, low * 1.001);
+    final held = actual.clamp(low, high);
+    return math.log(held / low) / math.log(high / low);
+  }
+
+  double _toActual(double slider) {
+    final low = math.max(widget.min, 1e-6);
+    final high = math.max(widget.max, low * 1.001);
+    final held = slider.clamp(0.0, 1.0);
+    return low * math.pow(high / low, held).toDouble();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _draft ?? widget.value;
+    final slider = _toSlider(shown).clamp(0.0, 1.0);
+    return Semantics(
+      label: widget.label,
+      child: Slider(
+        value: slider,
+        min: 0,
+        max: 1,
+        label: widget.format?.call(shown) ?? shown.toStringAsFixed(1),
+        onChanged: (t) => setState(() => _draft = _toActual(t)),
+        onChangeEnd: (t) {
+          final actual = _toActual(t);
+          widget.onCommit(actual);
+          setState(() => _draft = null);
+        },
+      ),
     );
   }
 }

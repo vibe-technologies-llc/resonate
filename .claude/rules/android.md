@@ -287,12 +287,14 @@ open collection rows resolve current metadata by catalog id so favourite changes
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
-Android routes; no UI implies a per-device binding. Android edits it through ten octave sliders
-(31.25 Hz to 16 kHz, Q sqrt(2), via `ten_band_curve`/`ten_band_gains`) and the preamp: a curve of
-any other layout (AutoEq, an import) plays and is kept, its sliders read flat, and moving one
-replaces it with ten bands. Preamp and gains remain independent of the enable switch; reset
-removes every band without changing that switch. The native boundary validates the whole curve
-before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
+Android routes; no UI implies a per-device binding. Android edits it on an interactive graph (tap
+to add, drag to move, per-band type, frequency, gain and Q) with the preamp: an AutoEq or imported
+profile loads as its bands, ready to adjust. Ten octave bands (31.25 Hz to 16 kHz, Q sqrt(2), via
+`ten_band_curve`/`ten_band_gains`) are a reset layout and the migration, not the editor. Preamp and
+bands remain independent of the enable switch; reset removes every band, or starts from ten flat
+bands, without changing that switch. The drawn response is the stage's arithmetic at the stream
+rate (48 kHz with nothing open, so the graph never reads empty); the native boundary validates the
+whole curve before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
 prevention, resampling quality/phase and experimental lossy restoration use existing engine
 commands, never a platform equaliser running beside the Rust chain.
 
