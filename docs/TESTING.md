@@ -43,6 +43,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test
 
+## Catalog
+- [S] Organise's case-folded claims are proved through an injected probe alone: no test sees a
+  casefold directory (ext4 `+F`) beside ones without the flag
+
 ## Build and checks
 - [M] No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding

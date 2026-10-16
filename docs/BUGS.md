@@ -53,13 +53,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A write back staged in the spool folder (`written_back_from_elsewhere`, the track's folder
   refusing a new file) keeps no whole copy beside the track: a crash part way leaves the track torn
   with nothing to finish it, and the staged copy under `/var/tmp` swept by nothing
-- [S] A tag landed in place never asks `Taken::still_stands`, as the staged path does: a page
-  another program changed between the overlay's read and `land` is put back
 - [M] A landing on the closest pressing (`Fit::Wider`, `Fit::Narrower`) is written into the files as
   a match: a 14-track rip landed on a 12-track pressing gets `TRACKTOTAL=12` in tracks 13 and 14;
   the fit is not stored
-- [S] The first of several ISRC takes is landed `Nearly` for a file of no length and its recording
-  id written, then loved on Last.fm and ListenBrainz by it
 - [M] The tag undo record is keyed by path and does not follow organise or a hand-move, so *Put the
   last run back* answers `Unreadable` for the whole library after the usual tag-then-organise
 
@@ -77,21 +73,17 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] An album's `tagged_tracks` is one file's raw `TRACKTOTAL`, a disc's count on a set (this
   build's own writer writes it per disc), weighed against a release's whole count: a 12 + 10 deluxe
   rip misses its 22-track pressing and lands strictly on the 12-track standard edition
-- [S] On a case-insensitive volume two destinations differing in case both preview and the second is
-  refused `Collided` at apply (`claimed` is keyed by exact path)
 - [S] A cross-filesystem organise copy (`copied_whole`) keeps the mtime alone, dropping xattrs and
   ownership; a rewritten sheet or exported playlist (`staged_over`) is created with default mode and
   no folder fsync
 - [M] A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read
   in `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
-- [S] `filtered_counts` applies the music filters by replacing `t.hidden = 0` in SQL text
-- [S] The phones' statistics disagree with their own chart: `statistics` sums `heard_ms` over every
-  listen, while the chart, *Busiest day*, *Songs heard* and the top lists count `counted = 1` alone,
-  so *Listened* never equals the chart's total and skips inflate the daily average
-- [S] `listening_detail` cuts days at the phone's current UTC offset (`day * 86400 - offset`), and
+- [M] `listening_detail` cuts and buckets days at the phone's current UTC offset (`day * 86400 - offset`), and
   the phones regroup those instants in the local calendar: under summer time every winter day starts
   at 23:00 the day before, so the 1st of a month counts in the previous month and *Busiest day*
-  reads a day early
+  reads a day early; the phones must pass their zone or their day boundaries across the boundary
+- [S] The phones' `statistics` and `listening_detail` count a missing song's counted listens in the
+  totals, where `android.md` leaves hidden songs out
 
 ## Providers and network
 - [M] Last.fm is sent a batch in requests of 50 (`LastFm::submit`) and answers `Err` at the first
@@ -166,14 +158,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `album_tracks`, `artist_tracks` and `highlights` answer all of it at the boundary and wait to be
   called there. Android opens an artist page by raw `artist == name || albumArtist == name`, so its
   empty *Unknown artist* lists nearly every song
-- [S] The albums and artists panes match a search over hidden rows and other copies
-  (`Matching::grouped` takes neither `THE_BEST_COPY` nor `A_SHOWN_TRACK`): a hidden *Seamus* lists
-  *Meddle* and Pink Floyd for `seamus` while the tracks pane lists nothing
 - [M] A multi-valued genre is one `tracks.genre` (`House; Disco`): `genre:=House` misses it, and
   suggestions tally whole strings (a *House; Disco* card); a one-word genre card is a prefix
   (`Reach::Begins`), so *Rock* holds *Rockabilly* and *Rocksteady* (artist mixes were made whole)
-- [S] An album order by year read the other way flips `a.year IS NULL` too: the artist page and the
-  albums pane's default *Year* reading list undated rips first
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
