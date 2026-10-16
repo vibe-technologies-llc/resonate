@@ -316,6 +316,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     }
 }
 
+@UnstableApi
 private class BuiltPlaylist(
     val tracks: List<Track>,
     val cover: ByteArray?,

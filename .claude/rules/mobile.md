@@ -95,7 +95,9 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
 
 `output/mod.rs` picks one backend per target behind `output::player` and one `Routing`:
 
-- **Android**: Oboe, shared stereo float at 48 kHz (`android.md`).
+- **Android**: Oboe, shared stereo float at 48 kHz, power-saving and music-typed; the output thread's
+  waits and the bounded open are `output/waits.rs`, compiled on the host as well so its tests run
+  there (`android.md`).
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
   into it. Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s

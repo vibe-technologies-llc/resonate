@@ -1,5 +1,6 @@
 package org.resonate.android
 
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
@@ -207,7 +208,13 @@ class FlutterBridge(
             "seek" -> checkNotNull(controller()).seekTo(number("position"))
             "jump" -> checkNotNull(controller()).seekToDefaultPosition(number("index").toInt())
             "shuffle" -> checkNotNull(controller()).shuffleModeEnabled = flag("enabled")
-            "repeat" -> checkNotNull(controller()).repeatMode = number("mode").toInt()
+            "repeat" ->
+                checkNotNull(controller()).repeatMode =
+                    when (number("mode")) {
+                        1L -> Player.REPEAT_MODE_ONE
+                        2L -> Player.REPEAT_MODE_ALL
+                        else -> Player.REPEAT_MODE_OFF
+                    }
             "volume" -> checkNotNull(controller()).volume = (args["value"] as Number).toFloat()
             "favourite" -> library.setFavourite(id(), flag("enabled"))
             "playNext" -> {

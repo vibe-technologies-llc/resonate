@@ -74,7 +74,7 @@ RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP cost
 rust-formatter --check                                                # local only; not in CI
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
 (cd android/flutter && flutter pub get && flutter analyze && flutter test)
-android/gradlew -p android :app:assembleDebug :app:lintDebug
+android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 python3 android/check-native.py --sdk "$ANDROID_HOME"
 android/gradlew -p android :app:connectedDebugAndroidTest
 python3 ios/build-native.py && (cd ios && xtool dev build --ipa)  # local only; needs the Darwin SDK
