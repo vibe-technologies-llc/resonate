@@ -308,6 +308,29 @@ impl Queue {
         Some(self.drawn_at(row))
     }
 
+    pub fn insert_to_hear(&mut self, items: Vec<QueueItem>, at: Placement) -> Option<usize> {
+        let first = self.items.len();
+        let run = first..first + items.len();
+        let row = self.insert(items, at)?;
+        let heard = self.jump_to(row);
+
+        if self.seat == Seat::Next {
+            let head = self.next[0];
+            let rest: Vec<usize> = self
+                .next
+                .iter()
+                .skip(1)
+                .copied()
+                .filter(|index| run.contains(index))
+                .collect();
+            self.next
+                .retain(|index| *index == head || !run.contains(index));
+            self.next.splice(1..1, rest);
+            self.revision = self.revision.wrapping_add(1);
+        }
+        heard
+    }
+
     pub fn remove_rows(&mut self, rows: Span) -> Option<Removal> {
         if rows.last() >= self.items.len() {
             return None;

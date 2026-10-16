@@ -3993,6 +3993,58 @@ fn queueing_into_an_empty_queue_to_hear_it_plays_it_without_a_play() -> Result<(
 }
 
 #[test]
+fn queueing_a_run_to_hear_it_plays_the_whole_run_before_the_rows_already_queued() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let paths: Vec<PathBuf> = (0..3)
+        .map(|n| tree.write(&format!("{n}.wav"), &source.file))
+        .collect();
+    let waiting: Vec<PathBuf> = (0..2)
+        .map(|n| tree.write(&format!("waiting{n}.wav"), &source.file))
+        .collect();
+    let run: Vec<PathBuf> = (0..3)
+        .map(|n| tree.write(&format!("run{n}.wav"), &source.file))
+        .collect();
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the first track to open");
+
+    player
+        .request(Command::Insert {
+            items: vec![track(&waiting[0], 80), track(&waiting[1], 81)],
+            at: Placement::Queued,
+            play: false,
+        })?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::Insert {
+            items: (0..3).map(|n| track(&run[n], 90 + n as u64)).collect(),
+            at: Placement::Queued,
+            play: true,
+        })?
+        .wait_for(PATIENCE)?;
+    wait_for(&player, |player| plays(player, 90), "the run to start");
+
+    let ids: Vec<u64> = player.queue().iter().map(|item| item.id.get()).collect();
+    assert_eq!(ids, [1, 90, 91, 92, 80, 81, 2, 3]);
+
+    for expected in [91, 92, 80, 81, 2] {
+        player.request(Command::Next)?.wait_for(PATIENCE)?;
+        wait_for(
+            &player,
+            |player| plays(player, expected),
+            "the next row in turn to play",
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn queueing_a_row_next_to_hear_it_jumps_to_the_row_that_landed() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
@@ -6716,6 +6768,82 @@ fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Res
         graph.lock().played.len(),
         source.stream.len() * 2,
         "the wrapped queue played a round and a half"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_end_of_queue_timer_under_repeat_queue_fades_the_music_out_before_the_wrap() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("steady.wav", &steady(16_000, RATE as usize * 6));
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    player
+        .request(Command::SetRepeat(RepeatMode::Queue))?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfQueue)))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| paused(player),
+        "the repeating queue to wrap onto the timer",
+    );
+    let heard = left_channel(&graph.lock().played);
+
+    assert_eq!(
+        heard.last().copied(),
+        Some(0),
+        "the timer cut the music rather than faded it"
+    );
+    assert!(
+        largest_step(&heard) < 16,
+        "the timer's fade stepped the level by {}",
+        largest_step(&heard)
+    );
+    Ok(())
+}
+
+#[test]
+fn removing_the_last_row_under_an_end_of_queue_timer_disarms_it() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfQueue)))?
+        .wait_for(PATIENCE)?;
+    assert_eq!(dozing(&player), Some(Until::EndOfQueue));
+
+    player
+        .request(Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Stopped,
+        "the transport to stop",
+    );
+
+    assert_eq!(
+        dozing(&player),
+        None,
+        "a timer for the end of a queue that ended is still armed"
     );
     Ok(())
 }
