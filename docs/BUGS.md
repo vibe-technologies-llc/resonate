@@ -112,22 +112,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   of their own; the hifi token request claims another site's `Origin` and `Referer`
 
 ## Window
-- [S] *Forget* beside a library folder is one unarmed press (`forget_root` from a click or
-  `PressControl`) deleting every row under it with plays, favourites and enrichment, no undo and no
-  toast; *Reset everything* arms on a first press
 - [M] *Take out of the queue* on a track queued twice sends one `Command::Remove` a row under the
   same stale `queued.revision`: the first lands, the rest are refused `QueueChanged` into the log,
   the toast says one went and *Put back* is hidden behind steps still standing over queued rows
-- [S] The opened playlist's column header sorts by the window-wide `keeping`, `row_order` and
-  `row_reading` (`show_playlist` resets none): after *From now on* on one playlist, a header press
-  on another keeps it in order unasked; on a saved search or kept list it is a trouble toast
-- [S] A track row's menu *Play* (hinted `enter`) queues that row alone; a click or Enter plays the
-  listing from it
-- [S] The playlist menu's *Play* (index card, row, pinned sidebar row, the ⋯ mark) leaves shuffle
-  on; every other playlist *Play* sends `plays_in_order` first
-- [S] An album or artist cell's menu queues through `listing_whole`, the search text and the tracks
-  pane's sort included: *Play* on an album the search listed for one track plays that track, in
-  title order where the tracks pane sorts so; dragging the same cell queues the album whole
+- [S] A playlist row's *Play* reached by keyboard (`play_reached_rows`) leaves shuffle on, where the
+  playlist's own Play and its menu's turn it off
+- [S] Playing a track row no longer clears `set_playing_playlist`: a playlist mark may stay after a
+  track from another listing plays
 - [S] The seek rail's `along` multiplies in `f32`: a release at the rail's end on a track past 2^24
   frames (6:20 at 44.1 kHz) rounds a few frames past the end about half the time, refused
   `SeekOutOfRange` with a toast (the analysis waveform's edge too)
@@ -143,8 +134,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   albums yet. Add a music folder*
 - [S] Heading Play and Shuffle, a suggestion row, a scoped listing, a dragged album and a downloaded
   song to play fail into the log alone: the press does nothing visible
-- [S] The sidebar does not scroll: at the 520 px minimum, or with pinned playlists piling up,
-  Settings and the download and enrichment status fall under the playback bar
 - [S] A fifth toast is dropped while four wait (`WAITING_AT_MOST`), errors included, with no way to
   see a missed one
 - [S] A settings write whose writer died (a cancelled oneshot) is never told

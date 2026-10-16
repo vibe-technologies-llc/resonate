@@ -22,8 +22,6 @@ are in [ROADMAP.md](ROADMAP.md).
   shares an `Arc<[Cut]>`
 - [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
   row on the window's thread; Statistics' *play from here* reads a track a query
-- [S] Typing a folder into the library settings checks `is_dir` and `canonicalize`s on the window's
-  thread, where dropping one does it on the background executor: a hung mount hangs the window
 
 ## Command line and bus
 - [M] MCP opens a fresh D-Bus connection for every player call, a subscribed now-playing resource
