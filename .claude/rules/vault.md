@@ -123,7 +123,9 @@ through `VaultFiles` (the playing path). `Vault::verify` reads WAVE objects like
 `Encoding::OF_THIS_BUILD` names this build's encoders; each `vault_objects` row carries the one it
 was weighed under. **Bump by hand whenever what an import writes changes** (new `flacenc`, other zstd
 level, a `Form::of` bound, new kept-form stripping): nothing else says an object came from a worse
-encoder.
+encoder. `the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs` pins the FLAC and zstd
+output of fixed noise to the stamp: a `flacenc` upgrade or a changed `TUKEY_ALPHA` or `ARCHIVED_AT`
+fails it until the stamp is bumped and the pins retaken.
 
 `--import` re-walks a vaulted row whose stamp is behind, except a row whose source is gone and a row
 `Form::of` keeps as is, unless the bump changed how that kind is kept (`sheds_tags_kept`: MP3, AAC,
@@ -160,7 +162,10 @@ undrawn (`a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came`
 as `CoverArt { format: Png, bytes }`, the type every caller takes (window, `mpris::art::Pictures`);
 `dependencies.md` forbids an image crate in `resonate-ui`.
 
-A cover already under its key is a dedup hit sized from its head (`cover::size_of`). **Drawn once a
+A cover already under its key is a dedup hit sized from its head, read in chunks off the file
+(`cover::size_of_file`), never the whole file. A cover decodes through `resonate_codec::decode_cover`
+(sides within `LARGEST_COVER_SIDE`, at most `COVERS_DECODED_AT_ONCE` at a time, the window's
+drawing included), so a burst of imports holds a bounded number of decoded pictures. **Drawn once a
 run**: `Drawings` holds the PNG under the cover's key, evicting past `DRAWN_BYTES_AT_MOST` (48 MiB);
 `Vault::forget` takes a drawing with the file; a `Forgetting` count drops a drawing made while its
 cover was being pruned.

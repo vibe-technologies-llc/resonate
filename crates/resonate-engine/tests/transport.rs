@@ -1232,6 +1232,121 @@ fn the_word_the_graph_settled_on_is_published_once_it_says() -> Result<()> {
     Ok(())
 }
 
+const REBUILDS_ALLOWED: usize = 3;
+
+fn the_other_word_of_the_two(format: SampleFormat) -> SampleFormat {
+    match format {
+        SampleFormat::S24 => SampleFormat::S16,
+        _ => SampleFormat::S24,
+    }
+}
+
+fn answer_with_the_other_format(graph: &Arc<Mutex<Graph>>) {
+    let graph = graph.lock();
+    let asked = graph.requests.last().expect("an open stream").spec;
+    let answered = StreamSpec::new(
+        asked.rate,
+        asked.channels,
+        the_other_word_of_the_two(asked.format),
+    );
+    graph
+        .events
+        .as_ref()
+        .expect("an open stream")
+        .send(StreamEvent::FormatChanged {
+            spec: answered,
+            words: Words::Packed,
+        })
+        .expect("the engine hears the stream");
+}
+
+fn two_formats_over_a_deep_track() -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
+    let tree = Tree::new();
+    let path = tree.write("deep.wav", &pcm(24, FRAMES).file);
+    let (player, graph) = player(vec![sink(
+        &[SampleRate::HZ_44100],
+        &[SampleFormat::S16, SampleFormat::S24],
+    )])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    Ok((player, graph, tree))
+}
+
+#[test]
+fn a_graph_answering_another_format_has_the_stream_rebuilt_around_it() -> Result<()> {
+    let (player, graph, _tree) = two_formats_over_a_deep_track()?;
+    let asked = graph.lock().requests[0].spec;
+
+    answer_with_the_other_format(&graph);
+    wait_for(
+        &player,
+        |_| graph.lock().opens == 2,
+        "the stream to be rebuilt around the format the graph chose",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.requests[1].spec.format,
+        the_other_word_of_the_two(asked.format)
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "a graph's answer was billed to the row"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_graph_that_will_not_settle_on_a_format_fails_the_row_once_the_rebuilds_are_spent() -> Result<()>
+{
+    let (player, graph, _tree) = two_formats_over_a_deep_track()?;
+
+    for rebuilt in 1..=REBUILDS_ALLOWED {
+        answer_with_the_other_format(&graph);
+        wait_for(
+            &player,
+            |_| graph.lock().opens == rebuilt + 1,
+            "the stream to be rebuilt again",
+        );
+    }
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the row failed before the rebuilds were spent"
+    );
+
+    answer_with_the_other_format(&graph);
+    let mut failure = None;
+    wait_for(
+        &player,
+        |player| {
+            failure = player.events().try_iter().find_map(|event| match event {
+                Event::Failed { error, .. } => Some(error),
+                _ => None,
+            });
+            failure.is_some()
+        },
+        "the row to fail",
+    );
+
+    assert!(matches!(
+        failure,
+        Some(EngineError::Renegotiation { attempts, .. })
+            if usize::from(attempts) == REBUILDS_ALLOWED + 1
+    ));
+    assert_eq!(graph.lock().opens, REBUILDS_ALLOWED + 1);
+    Ok(())
+}
+
 #[test]
 fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<()> {
     let tree = Tree::new();
@@ -6688,7 +6803,7 @@ fn largest_step(samples: &[i32]) -> i32 {
         .unwrap_or_default()
 }
 
-fn a_steady_level_playing(level: i16) -> Result<(Player, Arc<Mutex<Graph>>)> {
+fn a_steady_level_playing(level: i16) -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
     let tree = Tree::new();
     let path = tree.write("steady.wav", &steady(level, RATE as usize * 6));
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
@@ -6705,13 +6820,13 @@ fn a_steady_level_playing(level: i16) -> Result<(Player, Arc<Mutex<Graph>>)> {
         |_, graph| graph.played.len() >= 4_096 * frame_bytes(SampleFormat::S16),
         "the steady level to play",
     );
-    Ok((player, graph))
+    Ok((player, graph, tree))
 }
 
 #[test]
 fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
     let level = 16_000_i16;
-    let (player, graph) = a_steady_level_playing(level)?;
+    let (player, graph, _tree) = a_steady_level_playing(level)?;
     let pull = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
 
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
@@ -6756,7 +6871,7 @@ fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
 
 #[test]
 fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
-    let (player, graph) = a_steady_level_playing(16_000)?;
+    let (player, graph, _tree) = a_steady_level_playing(16_000)?;
 
     player.request(Command::Stop)?.wait_for(PATIENCE)?;
     play_until(
@@ -6783,7 +6898,7 @@ fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
 
 #[test]
 fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
-    let (player, graph) = a_steady_level_playing(16_000)?;
+    let (player, graph, _tree) = a_steady_level_playing(16_000)?;
 
     player
         .request(Command::SleepUntil(Some(Until::After(A_SHORT_DOZE))))?
@@ -6813,7 +6928,7 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
 #[test]
 fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Result<()> {
     let level = 16_000_i32;
-    let (player, graph) = a_steady_level_playing(16_000)?;
+    let (player, graph, _tree) = a_steady_level_playing(16_000)?;
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;

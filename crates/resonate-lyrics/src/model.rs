@@ -276,6 +276,11 @@ pub struct Lyrics {
     timing: Timing,
     lines: Vec<LyricLine>,
     credits: Credits,
+    answered: bool,
+}
+
+fn has_answering_voice(lines: &[LyricLine]) -> bool {
+    lines.iter().any(|line| line.voice == Voice::Two)
 }
 
 impl Lyrics {
@@ -288,6 +293,7 @@ impl Lyrics {
         Ok(Self {
             source,
             timing: Timing::Synced,
+            answered: has_answering_voice(&lines),
             lines,
             credits: Credits::default(),
         })
@@ -303,6 +309,7 @@ impl Lyrics {
                 .map(LyricLine::untimed)
                 .collect(),
             credits: Credits::default(),
+            answered: false,
         }
     }
 
@@ -357,7 +364,11 @@ impl Lyrics {
             return None;
         }
 
-        Some(Self { lines, ..self })
+        Some(Self {
+            answered: has_answering_voice(&lines),
+            lines,
+            ..self
+        })
     }
 
     pub fn line_at(&self, position: Duration) -> Option<usize> {
@@ -382,7 +393,7 @@ impl Lyrics {
         }
 
         let passed = self.passed(position);
-        let mut seen = [false; 2];
+        let mut seen = [false, !self.answered];
         for index in (0..passed).rev() {
             let line = &self.lines[index];
             let voice = line.voice.index();
@@ -620,6 +631,42 @@ mod tests {
         assert_eq!(lyrics.voices_in_play(at(8)), [Some(2), Some(3)]);
         assert_eq!(lyrics.line_in_play(at(8)), Some(3));
         assert_eq!(lyrics.voices_in_play(at(20)), [None, None]);
+    }
+
+    #[test]
+    fn a_one_voice_sheet_reads_only_its_latest_line_however_long_it_runs() {
+        let lines = (0..10_000)
+            .map(|second| LyricLine::sung(at(second), "a line"))
+            .collect();
+        let lyrics = Lyrics::synced(source(), lines).expect("every line is timed");
+
+        assert!(!lyrics.answered);
+        assert_eq!(
+            lyrics.voices_in_play(millis(9_999_500)),
+            [Some(9_999), None]
+        );
+        assert_eq!(lyrics.voices_in_play(at(5_000)), [Some(5_000), None]);
+    }
+
+    #[test]
+    fn a_sheet_cut_down_to_one_voice_stops_looking_for_the_other() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "first singer"),
+                LyricLine::sung(at(10), "second singer").voiced(Voice::Two),
+                LyricLine::sung(at(20), "first singer again"),
+            ],
+        )
+        .expect("every line is timed");
+        assert!(lyrics.answered);
+
+        let cut = lyrics
+            .within(at(15), None)
+            .expect("a line is left in the window");
+
+        assert!(!cut.answered);
+        assert_eq!(cut.voices_in_play(at(6)), [Some(0), None]);
     }
 
     #[test]

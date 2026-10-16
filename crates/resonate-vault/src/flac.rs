@@ -316,4 +316,45 @@ mod tests {
             "an encode past its ceiling went on writing: {cut_bytes} of {whole_bytes}"
         );
     }
+
+    const STAMP_THE_PINS_WERE_TAKEN_AT: u16 = 6;
+    const FLAC_OF_THE_NOISE: &str = "5a50edbaf266bb9d43f93957cfa2894c";
+    const ZSTD_OF_THE_NOISE: &str = "a5df14a15f07cc00fae2bf2e3ac3ac26";
+
+    fn digest_of(bytes: &[u8]) -> String {
+        let mut digest = crate::pcm::Digest::default();
+        digest.note(bytes);
+        digest.settled().to_string()
+    }
+
+    #[test]
+    fn the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs() {
+        let folder = env::temp_dir().join(format!("resonate-vault-pinned-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let source = folder.join("noise.wav");
+        let flac_at = folder.join("noise.flac");
+        fs::write(&source, noise_wave()).expect("a written source");
+
+        encoded(&source, &flac_at, None);
+        let flac = fs::read(&flac_at).expect("an encoded file");
+        let _ = fs::remove_dir_all(&folder);
+        let zstd = zstd::bulk::compress(&noise_wave(), crate::wave::ARCHIVED_AT)
+            .expect("a compressed wave");
+
+        assert_eq!(
+            crate::Encoding::OF_THIS_BUILD.get(),
+            STAMP_THE_PINS_WERE_TAKEN_AT,
+            "the stamp moved without the pins below being retaken"
+        );
+        assert_eq!(
+            digest_of(&flac),
+            FLAC_OF_THE_NOISE,
+            "the FLAC encoder's output changed: bump Encoding::OF_THIS_BUILD and retake the pins"
+        );
+        assert_eq!(
+            digest_of(&zstd),
+            ZSTD_OF_THE_NOISE,
+            "the zstd output changed: bump Encoding::OF_THIS_BUILD and retake the pins"
+        );
+    }
 }

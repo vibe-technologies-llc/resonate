@@ -22,7 +22,8 @@ dependency (tested without a window).
 - **`line_at` (pane centres on it) and `voices_in_play` (pane lights it) part company.** `line_at` =
   last line whose moment has passed (a long instrumental holds its place). Each voice stays lit to
   its next line or `LIT_AT_MOST`, so one singer entering does not put out the other; with neither
-  active the set dims and the pane stays put.
+  active the set dims and the pane stays put. `Lyrics` notes at construction whether any line names
+  the second voice, so a one-voice sheet reads its latest passed line alone, never the lines before.
 - **`Credits`**: what a sheet claims about its own making, not which track it is; embedded sets
   carry them unchecked.
 - **A line may carry words, each with a moment, and the sheet's end for it.** `LyricLine::worded`

@@ -253,7 +253,7 @@ fn walked<D: Drawing>(
     let mut transforming = Transforming::new(rate.hz(), &placements);
     let mut drawn = drawing(&examined, transforming.points());
     let mut leveling = Leveling::new(channels, format);
-    let mut metering = Metering::new(&placements, rate.hz());
+    let mut metering = Metering::new(&placements, rate);
     let mut printing = Printing::new(rate.hz(), channels);
 
     let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));

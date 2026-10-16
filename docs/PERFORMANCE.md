@@ -51,13 +51,8 @@ are in [ROADMAP.md](ROADMAP.md).
   smart playlist
 - [M] Retag's preview opens each file twice (`tags.read`, then `tags.rated`); the organise planner
   keeps every library path and folder listing for the whole run
-- [S] The analysis study's `TruePeakMeter` oversamples 8× at every rate: it is given no rate, where
-  the guard now folds 4×, 2× or not at all by rate
-- [S] A cover decodes under `image`'s default 512 MiB allocation limit, any number at once; a
-  vault's cover dedup reads the whole standing file to size it
 - [M] A WAVE import writes and `sync_all`s the whole uncompressed PCM before compressing and
   deleting it, a dedup hit included
-- [S] `voices_in_play` walks every earlier line of a one-voice sheet each frame
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

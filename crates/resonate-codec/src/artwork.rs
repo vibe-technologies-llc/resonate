@@ -1,6 +1,7 @@
 use std::{num::NonZeroU32, sync::LazyLock};
 
 use image::{DynamicImage, RgbImage, RgbaImage};
+use parking_lot::{Condvar, Mutex};
 
 use crate::probe::{CoverArt, ImageFormat};
 
@@ -19,6 +20,7 @@ const EIGHT_BIT_FULL_SCALE: f32 = 255.0;
 const OPAQUE: f32 = 1.0;
 
 const LARGEST_COVER_SIDE: u32 = 8_192;
+const COVERS_DECODED_AT_ONCE: usize = 2;
 
 const RGB: usize = 3;
 const RGBA: usize = 4;
@@ -381,7 +383,37 @@ impl CoverArt {
     }
 }
 
-fn read_art(art: &CoverArt) -> Option<DynamicImage> {
+struct DecodeGate {
+    running: Mutex<usize>,
+    freed: Condvar,
+}
+
+static DECODE_GATE: DecodeGate = DecodeGate {
+    running: Mutex::new(0),
+    freed: Condvar::new(),
+};
+
+struct DecodePermit;
+
+impl DecodeGate {
+    fn enter(&'static self) -> DecodePermit {
+        let mut running = self.running.lock();
+        while *running >= COVERS_DECODED_AT_ONCE {
+            self.freed.wait(&mut running);
+        }
+        *running += 1;
+        DecodePermit
+    }
+}
+
+impl Drop for DecodePermit {
+    fn drop(&mut self) {
+        *DECODE_GATE.running.lock() -= 1;
+        DECODE_GATE.freed.notify_one();
+    }
+}
+
+pub fn decode_cover(art: &CoverArt) -> image::ImageResult<DynamicImage> {
     let mut reader =
         image::ImageReader::with_format(std::io::Cursor::new(&art.bytes), read_as(art.format));
     let mut limits = image::Limits::default();
@@ -389,7 +421,12 @@ fn read_art(art: &CoverArt) -> Option<DynamicImage> {
     limits.max_image_height = Some(LARGEST_COVER_SIDE);
     reader.limits(limits);
 
-    match reader.decode() {
+    let _permit = DECODE_GATE.enter();
+    reader.decode()
+}
+
+fn read_art(art: &CoverArt) -> Option<DynamicImage> {
+    match decode_cover(art) {
         Ok(read) => Some(read),
         Err(error) => {
             tracing::warn!(%error, "cover art could not be read for drawing");
@@ -454,9 +491,9 @@ mod tests {
     use image::{RgbImage, Rgba, Rgba32FImage, RgbaImage, imageops::FilterType};
 
     use super::{
-        CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LARGEST_COVER_SIDE,
-        LINEAR_FROM_EIGHT_BIT, Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb,
-        sides_within, srgb_from_linear,
+        COVERS_DECODED_AT_ONCE, CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat,
+        LARGEST_COVER_SIDE, LINEAR_FROM_EIGHT_BIT, Likeness, RGB, drawn_smaller, eight_bit,
+        linear_from_srgb, sides_within, srgb_from_linear,
     };
 
     fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {
@@ -758,5 +795,26 @@ mod tests {
             .likeness(),
             None
         );
+    }
+
+    #[test]
+    fn no_more_covers_decode_at_once_than_the_gate_lets_in() {
+        const HELD_BACK_FOR: std::time::Duration = std::time::Duration::from_millis(150);
+        const GIVEN_UP_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
+
+        let permits: Vec<_> = (0..COVERS_DECODED_AT_ONCE)
+            .map(|_| super::DECODE_GATE.enter())
+            .collect();
+        let (entered, waiting) = std::sync::mpsc::channel();
+        let late = std::thread::spawn(move || {
+            let _permit = super::DECODE_GATE.enter();
+            entered.send(()).expect("a listener");
+        });
+
+        assert!(waiting.recv_timeout(HELD_BACK_FOR).is_err());
+
+        drop(permits);
+        assert!(waiting.recv_timeout(GIVEN_UP_AFTER).is_ok());
+        late.join().expect("a finished thread");
     }
 }

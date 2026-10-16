@@ -4,8 +4,6 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [S] `transport.rs`'s `a_steady_level_playing` drops its temporary tree as it returns, so a test
-  that makes the engine reopen the file (a repeat wrap) fails intermittently
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
@@ -56,8 +54,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
   (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,
   the DASH manifest) or the analysis cache reader
-- [S] `Encoding::OF_THIS_BUILD` is bumped by hand: a `flacenc` upgrade or a changed `TUKEY_ALPHA` or
-  `ARCHIVED_AT` leaves old objects called current
 - [M] `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in
   `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
 
@@ -66,8 +62,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   mobile network and a Linux desktop, have not been driven against a live server
 - [M] The MPRIS bus tests skip without a session bus and CI's `cargo test` gives them none, so all
   but the `dbus-run-session` ones pass having run nothing
-- [S] `downgrade`, `MAX_RENEGOTIATIONS` and `Error::Renegotiation` are untested (the only
-  `FormatChanged` test answers the spec asked for)
 - [M] Loudness and the print have no reference: no test against `ffmpeg -af ebur128` or EBU
   3341/3342, K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - [M] Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
