@@ -180,7 +180,7 @@ impl Catalog {
     pub(crate) fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
-        let (plays, listened_ms) = connection.query_row("SELECT coalesce(sum(counted), 0), coalesce(sum(heard_ms), 0) FROM listens WHERE ?1 = 0 OR began >= unixepoch() - ?1 * 86400", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(heard_ms), 0) FROM listens WHERE counted = 1 AND (?1 = 0 OR began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
             .query_map([days], read)
@@ -408,6 +408,40 @@ mod tests {
                 .albums
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn statistics_count_the_listens_that_counted_alone() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = catalog
+            .upsert(Track {
+                uri: "content://test/song.flac".into(),
+                name: "song.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song")
+            .id as i64;
+
+        for (counted, heard_ms) in [(1, 30_000), (1, 20_000), (0, 99_000)] {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, unixepoch(), ?2, ?3)",
+                    params![song, heard_ms, counted],
+                )
+                .expect("a listen");
+        }
+
+        let statistics = catalog.statistics(0).expect("the statistics");
+        let detail = catalog.listening_detail(0, 10, 0).expect("the detail");
+
+        assert_eq!(statistics.plays, 2);
+        assert_eq!(statistics.listened_ms, 50_000);
+        assert_eq!(
+            statistics.listened_ms,
+            detail.days.iter().map(|day| day.listened_ms).sum::<u64>()
         );
     }
 
