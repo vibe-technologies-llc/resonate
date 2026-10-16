@@ -72,7 +72,7 @@ impl Render for Hint {
     }
 }
 
-pub(crate) fn explains(about: &'static str, text: &'static str) -> Stateful<Div> {
+pub(crate) fn explains(about: &'static str, text: impl Into<SharedString>) -> Stateful<Div> {
     div()
         .id(SharedString::new_static(about))
         .group(HINT_GROUP)
