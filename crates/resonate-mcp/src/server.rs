@@ -346,10 +346,7 @@ impl Server {
     }
 
     fn subscription(&self, method: &str, params: Value) -> std::result::Result<String, Refusal> {
-        if !self.pushing.get() {
-            return Err(Refusal::UnknownMethod(MethodName::new(method)));
-        }
-        let asked: Reading = parameters(method, params)?;
+        let asked = self.pushed(method, params)?;
         let held = match Resource::at(&asked.uri) {
             Some(Resource::Playlist(name)) => {
                 matches!(self.library.playlist_named(name.as_str()), Ok(Some(_)))
@@ -361,6 +358,13 @@ impl Server {
             return Err(Refusal::UnknownResource(ResourceUri::new(asked.uri)));
         }
         Ok(asked.uri)
+    }
+
+    fn pushed(&self, method: &str, params: Value) -> std::result::Result<Reading, Refusal> {
+        if !self.pushing.get() {
+            return Err(Refusal::UnknownMethod(MethodName::new(method)));
+        }
+        parameters(method, params)
     }
 
     pub fn answer(&self, line: &[u8]) -> Option<Value> {
@@ -452,8 +456,8 @@ impl Server {
                 Ok(json!({}))
             }
             RESOURCES_UNSUBSCRIBE => {
-                let uri = self.subscription(method, params)?;
-                self.subscribed.borrow_mut().remove(&uri);
+                let asked = self.pushed(method, params)?;
+                self.subscribed.borrow_mut().remove(&asked.uri);
                 Ok(json!({}))
             }
             PROMPTS_LIST => Ok(json!({ "prompts": Prompt::ALL.map(Prompt::listed) })),

@@ -48,6 +48,7 @@ const TRACKS: &str = "Tracks";
 const METADATA: &str = "Metadata";
 const POSITION: &str = "Position";
 const VOLUME: &str = "Volume";
+const SHUFFLE: &str = "Shuffle";
 const SLEEP: &str = "Sleep";
 const PLAYBACK_STATUS: &str = "PlaybackStatus";
 const TRACK_ID: &str = "mpris:trackid";
@@ -253,6 +254,12 @@ impl Running {
         self.proxy(PLAYER)?
             .set_property(VOLUME, f64::from(volume.get()))
             .map_err(|source| Error::bus(BusOp::Write, source.into()))
+    }
+
+    pub fn shuffle(&self) -> Result<bool> {
+        self.proxy(PLAYER)?
+            .get_property(SHUFFLE)
+            .map_err(|source| Error::bus(BusOp::Read, source))
     }
 
     pub fn metadata(&self) -> Result<Option<Described>> {

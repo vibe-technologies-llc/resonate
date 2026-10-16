@@ -38,6 +38,8 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   resources, a changed list sends `notifications/resources/list_changed`.
 - **`serve` pushes nothing**: `initialize` offers `subscribe`/`listChanged` only where `pushing` was
   set; subscribing without it is `UnknownMethod`. Subscriptions are keyed by the URI as asked.
+  Unsubscribing drops the URI unconditionally, so a playlist discarded or renamed since is still
+  let go.
 
 ## Resources, prompts, completions
 
@@ -67,11 +69,15 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   `Refusal::TooMany`.
 - **A failed queueing says how far it got** (`Error::QueuedPartway`).
 - **Results omit what nothing answered** (no `null`) and are one object twice: `structuredContent`
-  and a text block of its JSON.
+  and a text block of its JSON. Each tool lists an `outputSchema` (`outputs.rs`, `Tool::gives`)
+  that the test helper `called` holds every answer to; a field a tool can leave out is not
+  `required`.
 - **Transport tools answer what the player reads back once the gesture landed** (`seek`: landed
   position and `moved_seconds`). Exception `play_playlist`: `ActivatePlaylist` is the front end's,
   so it answers once handed over, resolving the name via the playlists the *player* offers.
 - **`show_queue` describes only what it lists**: `GetTracksMetadata` for the first `limit` rows.
+  The rows are the MPRIS `Tracks` list, the queue unshuffled, never play order (`mpris.md`), so the
+  answer carries `shuffle` and the tool and resource descriptions say so.
 
 ## What a model may change
 

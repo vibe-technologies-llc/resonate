@@ -248,8 +248,10 @@ impl Tool {
             Self::SetVolume => "Set the running player's volume, as a percentage, and read it \
                                 back."
                 .to_owned(),
-            Self::Queue => "List the running player's queue in play order, each row with the \
-                            queue_id remove_from_queue takes, marking the row being played."
+            Self::Queue => "List the running player's queue in list order, each row with the \
+                            queue_id remove_from_queue takes, marking the row being played. \
+                            The list is the queue unshuffled; with shuffle true the next song \
+                            is not the row after the playing one."
                 .to_owned(),
             Self::AddToQueue => format!(
                 "Add tracks to the running player's queue: either catalog track_ids from \
@@ -567,6 +569,7 @@ impl Tool {
             "name": self.name(),
             "description": self.describes(),
             "inputSchema": self.takes(),
+            "outputSchema": self.gives(),
             "annotations": {
                 "readOnlyHint": self.reads_only(),
                 "destructiveHint": self.destroys(),

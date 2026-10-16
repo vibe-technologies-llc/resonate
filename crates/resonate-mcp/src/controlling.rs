@@ -33,6 +33,8 @@ pub trait Controlling {
 
     fn set_volume(&self, volume: Volume) -> resonate_mpris::Result<()>;
 
+    fn shuffle(&self) -> resonate_mpris::Result<bool>;
+
     fn metadata(&self) -> resonate_mpris::Result<Option<Described>>;
 
     fn position(&self) -> resonate_mpris::Result<Duration>;
@@ -124,6 +126,10 @@ impl Controlling for Running {
 
     fn set_volume(&self, volume: Volume) -> resonate_mpris::Result<()> {
         Running::set_volume(self, volume)
+    }
+
+    fn shuffle(&self) -> resonate_mpris::Result<bool> {
+        Running::shuffle(self)
     }
 
     fn metadata(&self) -> resonate_mpris::Result<Option<Described>> {
