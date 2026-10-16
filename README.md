@@ -85,7 +85,7 @@ select the architecture's baseline CPU so a build runs on other machines.
 ## Android and Android Studio
 
 The Android app uses Flutter with Resonate's Rust playback engine and Android's media session. Android
-16 or newer (API 36+) is required. The app supports granted music folders, song/album/artist
+13 or newer (API 33+) is required. The app supports granted music folders, song/album/artist
 browsing, search, favourites, queue, background media controls, saved resumption, equalisation,
 ReplayGain, DSP controls and sleep timers. The interface uses a violet accent, system light/dark appearance, glass navigation and artwork-led player colors. It plays files in place; no all-files permission is needed.
 

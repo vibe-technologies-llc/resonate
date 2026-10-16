@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--sdk", required=True, type=Path)
 parser.add_argument("--profile", choices=("debug", "release"), default="debug")
 parser.add_argument("--output", type=Path)
+parser.add_argument("--abis", nargs="+", choices=("arm64-v8a", "x86_64"), default=["arm64-v8a", "x86_64"])
 args = parser.parse_args()
 repository = Path(__file__).resolve().parent.parent
 output = args.output or repository / "android/app/build/generated"
@@ -29,7 +30,10 @@ cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")
 def run(command, env):
     subprocess.run(command, cwd=repository, env=env, check=True)
 
-for triple, abi in [("aarch64-linux-android", "arm64-v8a"), ("x86_64-linux-android", "x86_64")]:
+TARGETS = [("aarch64-linux-android", "arm64-v8a"), ("x86_64-linux-android", "x86_64")]
+selected = [entry for entry in TARGETS if entry[1] in args.abis]
+shutil.rmtree(output / "jniLibs", ignore_errors=True)
+for triple, abi in selected:
     native = environment.copy()
     key = triple.replace("-", "_")
     native.update({
@@ -55,4 +59,5 @@ for triple, abi in [("aarch64-linux-android", "arm64-v8a"), ("x86_64-linux-andro
 run([cargo, "build", "--locked", "-p", "resonate-bindgen"], environment)
 shutil.rmtree(output / "uniffi", ignore_errors=True)
 (output / "uniffi").mkdir(parents=True, exist_ok=True)
-run([str(target / f"debug/resonate-bindgen{executable_suffix}"), "generate", "--library", str(target / "x86_64-linux-android" / args.profile / "libresonate_mobile.so"), "--language", "kotlin", "--no-format", "--config", "crates/resonate-mobile/uniffi.toml", "--out-dir", str(output / "uniffi")], environment)
+run([str(target / f"debug/resonate-bindgen{executable_suffix}"), "generate", "--library", str(target / selected[0][0] / args.profile / "libresonate_mobile.so"), "--language", "kotlin", "--no-format", "--config", "crates/resonate-mobile/uniffi.toml", "--out-dir", str(output / "uniffi")], environment)
+

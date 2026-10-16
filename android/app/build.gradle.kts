@@ -9,12 +9,20 @@ android {
     ndkVersion = "28.2.13676358"
     defaultConfig {
         applicationId = "org.resonate.android"
-        minSdk = 36
+        minSdk = 33
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+    buildTypes {
+        getByName("debug") {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
+            ndk { abiFilters += listOf("arm64-v8a") }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -29,22 +37,29 @@ abstract class RustBuild : DefaultTask() {
     @get:Internal abstract val sdkDirectory: DirectoryProperty
     @get:Internal abstract val repository: DirectoryProperty
     @get:Input abstract val profile: Property<String>
+    @get:Input abstract val abis: ListProperty<String>
     @get:Inject abstract val execution: ExecOperations
 
     @TaskAction
     fun build() {
+        val requestedAbis = abis.get()
         execution.exec {
             workingDir(repository.get().asFile)
-            commandLine(
-                if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
-                repository.file("android/build-native.py").get().asFile,
-                "--sdk",
-                sdkDirectory.get().asFile.absolutePath,
-                "--profile",
-                profile.get(),
-                "--output",
-                kotlinDirectory.get().asFile.parentFile.absolutePath,
-            )
+            val command =
+                mutableListOf(
+                    if (System.getProperty("os.name").startsWith("Windows")) "python"
+                    else "python3",
+                    repository.file("android/build-native.py").get().asFile.absolutePath,
+                    "--sdk",
+                    sdkDirectory.get().asFile.absolutePath,
+                    "--profile",
+                    profile.get(),
+                    "--output",
+                    kotlinDirectory.get().asFile.parentFile.absolutePath,
+                    "--abis",
+                )
+            command.addAll(requestedAbis)
+            commandLine(command)
         }
     }
 }
@@ -57,6 +72,7 @@ androidComponents.onVariants { variant ->
             repository.set(rootProject.layout.projectDirectory.dir(".."))
             sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
             profile.set(if (release) "release" else "debug")
+            abis.set(if (release) listOf("arm64-v8a") else listOf("arm64-v8a", "x86_64"))
             inputs.files(
                 fileTree(repository.dir("crates")) {
                     include("**/*.rs", "**/Cargo.toml", "**/uniffi.toml")

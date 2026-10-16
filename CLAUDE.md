@@ -39,7 +39,7 @@ playback is the guiding constraint.
   rates and **resamples itself at high quality**, so lossless sources stay bit-accurate where the
   hardware allows.
 - A **GPUI** front end, native on Wayland.
-- An **Android 16+ Flutter** front end, with the same Rust playback engine,
+- An **Android 13+ Flutter** front end, with the same Rust playback engine,
   opened and run from the `android/` project in Android Studio; Dart lives in `android/flutter/`.
 - An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from
   Linux with xtool from the `ios/` package.

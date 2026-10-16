@@ -16,8 +16,8 @@ standalone Flutter Android runner; opening it and running `main.dart` searches f
 second Android project under `android/flutter/android/`. Flutter 3.47.7 is
 pinned in CI. `flutter.sdk` in `android/local.properties` or `FLUTTER_ROOT` locates the SDK;
 settings pass the resolved path to Flutter's loader so an environment-only build needs no local
-properties file. Gradle builds Flutter assets, Rust and generated Kotlin bindings. Android 16
-(API 36) is the minimum. ARM64 phones and x86_64 emulators share the debug APK; SDK 36,
+properties file. Gradle builds Flutter assets, Rust and generated Kotlin bindings. Android 13
+(API 33) is the minimum. ARM64 phones and x86_64 emulators share the debug APK; SDK 36,
 build-tools 36 and NDK 28.2.13676358 are pinned. Python 3, Cargo and both Rust Android targets
 are build prerequisites. Host binding generation reads ELF metadata and needs no PipeWire.
 
@@ -40,7 +40,8 @@ Compose dependencies and the old screens are removed together
 with their Activity entry point and instrumentation selectors, so a build cannot mix the two UIs.
 
 Each APK variant owns its native build task. Release uses Cargo's release profile, including
-optimization and thin LTO, in a separate generated directory; it never packages
+optimization and thin LTO, in a separate generated directory and packages ARM64 alone without
+emulator binaries; it never packages
 the debug variant's native libraries. Native symbols remain until binding generation finishes;
 Android packaging strips the APK's libraries afterward. Release signing is supplied separately, with no signing
 key or password stored in the repository. Flutter enables R8 for release and includes
@@ -173,9 +174,9 @@ splits history from up next by row, a repeated song included
 
 Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
 rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
-theme follows day/night. Android 16 is
+theme follows day/night. Android 13 is
 the minimum app version, so there is no older-platform palette or notification-permission branch.
-The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 36 governs
+The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 33 governs
 installation, and native code currently needs no newer platform symbols.
 
 Settings use searchable groups for sound/playback, library sources and connected services.
