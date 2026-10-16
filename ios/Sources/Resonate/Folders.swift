@@ -50,6 +50,18 @@ struct FoundDocument: Sendable {
     let name: String
     let cover: String?
     let lyrics: String?
+    let size: UInt64
+    let modifiedMs: Int64
+}
+
+struct FileStamp: Sendable {
+    let size: UInt64
+    let modifiedMs: Int64
+
+    init(_ values: URLResourceValues?) {
+        size = values?.fileSize.map { UInt64(max($0, 0)) } ?? 0
+        modifiedMs = values?.contentModificationDate.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) } ?? 0
+    }
 }
 
 enum FolderFailure: Swift.Error, LocalizedError {
@@ -214,7 +226,7 @@ final class Folders: Documents, @unchecked Sendable {
             do {
                 children = try FileManager.default.contentsOfDirectory(
                     at: folder,
-                    includingPropertiesForKeys: [.isDirectoryKey],
+                    includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
                     options: [.skipsHiddenFiles]
                 )
             } catch {
@@ -222,17 +234,18 @@ final class Folders: Documents, @unchecked Sendable {
                 skipped(relative, error)
                 continue
             }
-            var audio: [(URL, String)] = []
+            var audio: [(URL, String, FileStamp)] = []
             var sidecars: [String: String] = [:]
             var covers: [String: String] = [:]
             for child in children {
                 let name = child.lastPathComponent
                 let path = relative.isEmpty ? name : "\(relative)/\(name)"
                 let lower = name.lowercased()
-                if (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey])
+                if values?.isDirectory == true {
                     if depth < Self.deepest { pending.append((child, path, depth + 1)) }
                 } else if extensions.contains((lower as NSString).pathExtension) {
-                    if !isBeingWritten(uri(root: id, relative: path)) { audio.append((child, path)) }
+                    if !isBeingWritten(uri(root: id, relative: path)) { audio.append((child, path, FileStamp(values))) }
                 } else if lower.hasSuffix(".lrc") {
                     sidecars[String(lower.dropLast(4))] = uri(root: id, relative: path)
                 } else if Self.coverNames.contains(lower) {
@@ -240,10 +253,19 @@ final class Folders: Documents, @unchecked Sendable {
                 }
             }
             let cover = Self.coverNames.lazy.compactMap { covers[$0] }.first
-            for (file, path) in audio.sorted(by: { $0.1 < $1.1 }) where !stop.isStopped {
+            for (file, path, stamp) in audio.sorted(by: { $0.1 < $1.1 }) where !stop.isStopped {
                 let name = file.lastPathComponent
                 let stem = (name as NSString).deletingPathExtension.lowercased()
-                try found(FoundDocument(uri: uri(root: id, relative: path), name: name, cover: cover, lyrics: sidecars[stem]))
+                try found(
+                    FoundDocument(
+                        uri: uri(root: id, relative: path),
+                        name: name,
+                        cover: cover,
+                        lyrics: sidecars[stem],
+                        size: stamp.size,
+                        modifiedMs: stamp.modifiedMs
+                    )
+                )
             }
         }
     }

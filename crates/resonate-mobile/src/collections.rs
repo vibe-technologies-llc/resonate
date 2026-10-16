@@ -159,17 +159,14 @@ impl MobilePlayer {
         name: String,
         songs: Vec<SearchSong>,
     ) -> Result<ImportedPlaylist> {
-        let tracks = {
-            let connection = self.catalog.0.lock();
-            songs
-                .iter()
-                .take(500)
-                .map(|song| local_match(&connection, song))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-        };
+        let tracks = songs
+            .iter()
+            .take(500)
+            .map(|song| local_match(&self.catalog.0.lock(), song))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         if tracks.is_empty() {
             return Err(Error::NoLocalMatches);
         }
@@ -472,8 +469,10 @@ impl Catalog {
     }
 }
 
+const LOCAL_MATCH: &str = "SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE missing = 0 AND ((?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000))) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2";
+
 fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>> {
-    let mut query = connection.prepare("SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE missing = 0 AND ((?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000))) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2").map_err(read_error)?;
+    let mut query = connection.prepare(LOCAL_MATCH).map_err(read_error)?;
     let matches = query
         .query_map(
             params![
@@ -746,5 +745,33 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let connection = catalog.0.lock();
+
+        for (sql, index) in [
+            (LOCAL_MATCH, "documents_recording"),
+            (LOCAL_MATCH, "documents_folded_title"),
+            (crate::playlist_files::HELD_AT, "documents_folded_name"),
+        ] {
+            let mut query = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("a plan");
+            let unbound = rusqlite::params_from_iter(
+                (0..query.parameter_count()).map(|_| rusqlite::types::Value::Text("x".into())),
+            );
+            let plan = query
+                .query_map(unbound, |row| row.get::<_, String>(3))
+                .expect("plan rows")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("a plan")
+                .join("; ");
+
+            assert!(plan.contains(index), "{plan}");
+            assert!(!plan.contains("SCAN documents"), "{plan}");
+        }
     }
 }

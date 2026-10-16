@@ -162,6 +162,9 @@ impl Catalog {
 
     pub(crate) fn take_the_place_of_missing(&self, id: u64) -> Result<Vec<u64>> {
         let mut connection = self.0.lock();
+        if !any_missing(&connection)? {
+            return Ok(Vec::new());
+        }
         let Some(arrived) = recording_of(&connection, id as i64)? else {
             return Ok(Vec::new());
         };
@@ -271,6 +274,16 @@ pub(crate) fn vacated(
         )
         .map_err(write_error)?;
     Ok(Vacated::Displaced)
+}
+
+fn any_missing(connection: &Connection) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM documents WHERE missing = 1)",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(read_error)
 }
 
 fn missing_recordings(connection: &Connection) -> Result<Vec<(i64, Recording)>> {

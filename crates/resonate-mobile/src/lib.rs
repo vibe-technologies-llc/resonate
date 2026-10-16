@@ -22,6 +22,7 @@ mod queue_edit;
 mod room;
 mod search;
 mod sharing;
+mod stamp;
 mod sync;
 mod tagging;
 mod vanished;
@@ -41,6 +42,7 @@ use resonate_engine::{Command, EngineConfig, PlaybackState, Player, QueueItem, R
 use crate::{
     catalog::Catalog,
     documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
+    stamp::DocumentStamp,
 };
 pub use crate::{
     documents::{Documents, audio_extensions},
@@ -191,6 +193,28 @@ impl MobilePlayer {
     }
 
     pub fn index_document(&self, uri: String, name: String) -> Result<Track> {
+        self.indexed(uri, name, None)
+    }
+
+    pub fn scan_document(
+        &self,
+        uri: String,
+        name: String,
+        size: u64,
+        modified_ms: i64,
+    ) -> Result<Track> {
+        let stamp = DocumentStamp::of(size, modified_ms);
+        if let Some(stamp) = stamp
+            && let Some(known) = self.catalog.unchanged(&uri, stamp)?
+        {
+            return Ok(known);
+        }
+        self.indexed(uri, name, stamp)
+    }
+}
+
+impl MobilePlayer {
+    fn indexed(&self, uri: String, name: String, stamp: Option<DocumentStamp>) -> Result<Track> {
         let (info, picture) = probe_pictured(&self.sources, &location(&uri)?, Picturing::Copied)?;
         let duration_ms = info.duration.map_or(0, |frames| {
             frames
@@ -212,7 +236,7 @@ impl MobilePlayer {
             ..Track::default()
         })?;
         self.services.analyses.lock().remove(&track.id);
-        self.catalog.tagged(track.id, &info)?;
+        self.catalog.tagged(track.id, &info, stamp)?;
         if let Some(picture) = picture.into_copied() {
             self.catalog
                 .keep_artwork(track.id, &picture.bytes, "embedded", true)?;
@@ -225,7 +249,10 @@ impl MobilePlayer {
         self.take_the_place_of_missing(track.id)?;
         self.catalog.track(track.id)
     }
+}
 
+#[uniffi::export]
+impl MobilePlayer {
     pub fn song_uris(&self) -> Result<Vec<String>> {
         self.catalog.uris()
     }
@@ -354,15 +381,17 @@ impl MobilePlayer {
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
-        for event in player.events().try_iter() {
-            if let Some(told) = self.failure_told(player, event) {
+        let (events, state, queue) = {
+            let held = self.player.lock();
+            let player = held.as_ref().ok_or(Error::Closed)?;
+            let events = player.events().try_iter().collect::<Vec<_>>();
+            (events, player.state(), player.queued())
+        };
+        for event in events {
+            if let Some(told) = self.failure_told(&queue.rows, event) {
                 *self.failure.lock() = Some(told);
             }
         }
-        let state = player.state();
-        let queue = player.queued();
         self.count_listening(&state, &queue.rows)?;
         let current = state.current.and_then(|track| {
             queue

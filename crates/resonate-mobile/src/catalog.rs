@@ -108,7 +108,15 @@ ALTER TABLE album_art ADD COLUMN picture INTEGER REFERENCES pictures(id);
 UPDATE album_art SET picture = (SELECT p.id FROM pictures p WHERE p.crc = picture_crc(album_art.bytes) AND p.bytes = album_art.bytes) WHERE bytes IS NOT NULL;
 ALTER TABLE album_art DROP COLUMN bytes;";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
+const V13: &str = "ALTER TABLE documents ADD COLUMN size INTEGER;
+ALTER TABLE documents ADD COLUMN modified INTEGER;
+ALTER TABLE documents ADD COLUMN indexed_by INTEGER;
+CREATE INDEX documents_missing ON documents(id) WHERE missing = 1;
+CREATE INDEX documents_folded_name ON documents(folded(name));
+CREATE INDEX documents_folded_title ON documents(folded(title));
+CREATE INDEX documents_recording ON documents(recording);";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];
 
 const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
 
@@ -171,7 +179,9 @@ impl Catalog {
             .commit()
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
         connection
-            .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+            .execute_batch(
+                "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
+            )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
         let revision = Arc::new(AtomicU64::new(0));
         let written = Arc::clone(&revision);

@@ -326,8 +326,10 @@ class LibraryRepository(private val context: Context) {
                             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                             DocumentsContract.Document.COLUMN_MIME_TYPE,
+                            DocumentsContract.Document.COLUMN_SIZE,
+                            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
                         )
-                    val audio = ArrayList<Pair<Uri, String>>()
+                    val audio = ArrayList<ScannedAudio>()
                     val sidecars = HashMap<String, Uri>()
                     val covers = HashMap<String, Uri>()
                     context.contentResolver.query(children, columns, null, null, null)?.use { cursor
@@ -342,7 +344,14 @@ class LibraryRepository(private val context: Context) {
                             if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                                 if (depth < 32) pending.add(id to depth + 1)
                             } else if (lower.substringAfterLast('.', "") in extensions)
-                                audio.add(uri to name)
+                                audio.add(
+                                    ScannedAudio(
+                                        uri,
+                                        name,
+                                        if (cursor.isNull(3)) 0L else cursor.getLong(3),
+                                        if (cursor.isNull(4)) 0L else cursor.getLong(4),
+                                    )
+                                )
                             else if (lower.endsWith(".lrc"))
                                 sidecars[lower.removeSuffix(".lrc")] = uri
                             else if (
@@ -370,10 +379,16 @@ class LibraryRepository(private val context: Context) {
                             )
                             .firstNotNullOfOrNull { covers[it] }
                             ?.let { readDocumentWithin(it, 8 * 1024 * 1024) }
-                    for ((uri, name) in audio) {
+                    for ((uri, name, size, modified) in audio) {
                         currentCoroutineContext().ensureActive()
                         try {
-                            val track = native.indexDocument(uri.toString(), name)
+                            val track =
+                                native.scanDocument(
+                                    uri.toString(),
+                                    name,
+                                    size.coerceAtLeast(0L).toULong(),
+                                    modified,
+                                )
                             indexed++
                             try {
                                 if (cover != null) native.setArtwork(track.id, cover)
@@ -480,3 +495,10 @@ class LibraryRepository(private val context: Context) {
             )
     }
 }
+
+private data class ScannedAudio(
+    val uri: Uri,
+    val name: String,
+    val size: Long,
+    val modified: Long,
+)

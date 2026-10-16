@@ -1069,7 +1069,12 @@ final class Library {
                 defer { covers.flush() }
                 try folders.scan(id, skipped: { path, reason in tally.skipped(path, reason) }) { document in
                     do {
-                        let track = try native.indexDocument(uri: document.uri, name: document.name)
+                        let track = try native.scanDocument(
+                            uri: document.uri,
+                            name: document.name,
+                            size: document.size,
+                            modifiedMs: document.modifiedMs
+                        )
                         if let read = tally.indexed() { Task { @MainActor in self?.reached(read) } }
                         covers.add(track.id, cover: document.cover, named: document.name)
                         if let lyrics = document.lyrics, let bytes = folders.companion(lyrics, sidecar: true) {

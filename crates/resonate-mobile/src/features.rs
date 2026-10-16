@@ -590,6 +590,9 @@ impl MobilePlayer {
     }
 
     fn store_counting(&self, visit: &mut Option<i64>, counted: Option<Counting>) -> Result<()> {
+        if counted.is_none() {
+            return Ok(());
+        }
         let connection = self.catalog.0.lock();
         match counted {
             Some(Counting::Counts(played)) => {

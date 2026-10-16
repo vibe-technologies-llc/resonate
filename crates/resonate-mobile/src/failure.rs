@@ -1,16 +1,14 @@
-use resonate_engine::{Cause, CommandKind, Event, Player};
+use resonate_engine::{Cause, CommandKind, Event, QueueItem};
 use resonate_library::{Error as Library, LookupOp};
 
 use crate::{MobilePlayer, documents::document_uri};
 
 impl MobilePlayer {
-    pub(crate) fn failure_told(&self, player: &Player, event: Event) -> Option<String> {
+    pub(crate) fn failure_told(&self, rows: &[QueueItem], event: Event) -> Option<String> {
         match event {
             Event::Failed { track, error } => {
                 tracing::error!(%error, %track, "playback failed");
-                let title = player
-                    .queued()
-                    .rows
+                let title = rows
                     .iter()
                     .find(|item| item.id == track)
                     .and_then(|item| document_uri(&item.location).ok())

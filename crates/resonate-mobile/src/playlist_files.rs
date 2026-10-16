@@ -14,6 +14,9 @@ const NAMES_TRIED: u32 = 99;
 
 const FOLDER_ROOT: &str = "/";
 
+pub(crate) const HELD_AT: &str =
+    "SELECT id, uri FROM documents WHERE missing = 0 AND folded(name) = folded(?1) ORDER BY id";
+
 pub(crate) const PLAYLIST_FILE_EXTENSIONS: [&str; 4] = ["m3u", "m3u8", "pls", "xspf"];
 
 #[uniffi::export]
@@ -68,21 +71,18 @@ impl MobilePlayer {
             return Err(Error::PlaylistFileEmpty);
         }
 
-        let tracks = {
-            let connection = self.catalog.0.lock();
-            sheet
-                .locations
-                .iter()
-                .take(ROWS_AT_MOST)
-                .map(|listed| match listed.location.as_path() {
-                    Some(path) => held_at(&connection, path),
-                    None => Ok(None),
-                })
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-        };
+        let tracks = sheet
+            .locations
+            .iter()
+            .take(ROWS_AT_MOST)
+            .map(|listed| match listed.location.as_path() {
+                Some(path) => held_at(&self.catalog.0.lock(), path),
+                None => Ok(None),
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         if tracks.is_empty() {
             return Err(Error::NoLocalMatches);
         }
@@ -177,7 +177,7 @@ fn held_at(connection: &Connection, listed: &Path) -> Result<Option<u64>> {
         return Ok(None);
     };
     let mut query = connection
-        .prepare("SELECT id, uri FROM documents WHERE missing = 0 AND folded(name) = folded(?1) ORDER BY id")
+        .prepare(HELD_AT)
         .map_err(|source| Error::store(StoreOp::Read, source))?;
     let candidates = query
         .query_map(params![name], |row| {

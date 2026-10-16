@@ -11,7 +11,7 @@ use resonate_core::{folded_letters, is_lettered};
 use resonate_library::{
     Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term, disc_in_folder,
 };
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
@@ -20,6 +20,8 @@ use crate::{
 };
 
 const LISTED_AT_MOST: u32 = 500;
+
+const STORED_PAGE: i64 = 2_000;
 
 const AN_ORDER_STANDS_FOR: Duration = Duration::from_secs(30);
 
@@ -481,13 +483,8 @@ impl Searching {
             return Ok(index);
         }
 
-        let (revision, stored) = {
-            let connection = catalog.0.lock();
-            let revision = catalog.revision();
-            let stored =
-                Index::stored(&connection).map_err(|source| Error::store(StoreOp::Read, source))?;
-            (revision, stored)
-        };
+        let revision = catalog.revision();
+        let stored = Index::stored(catalog)?;
         let index = Arc::new(Index::gathered(Index::rows_of(stored), revision));
         *self.held.lock() = Some(Arc::clone(&index));
 
@@ -1202,28 +1199,60 @@ struct Index {
 }
 
 impl Index {
-    fn stored(connection: &Connection) -> rusqlite::Result<Vec<(Track, Vec<i64>)>> {
+    fn stored(catalog: &Catalog) -> Result<Vec<(Track, Vec<i64>)>> {
         let mut heard: HashMap<u64, Vec<i64>> = HashMap::new();
-        let mut listens = connection
-            .prepare("SELECT track, began FROM listens WHERE counted = 1 AND track IS NOT NULL")?;
-        for listen in listens.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)?))
-        })? {
-            let (track, began) = listen?;
-            heard.entry(track).or_default().push(began);
+        let mut after = 0_i64;
+        loop {
+            let page = {
+                let connection = catalog.0.lock();
+                let mut listens = connection
+                    .prepare_cached("SELECT id, track, began FROM listens WHERE id > ?1 AND counted = 1 AND track IS NOT NULL ORDER BY id LIMIT ?2")
+                    .map_err(read_error)?;
+                listens
+                    .query_map(params![after, STORED_PAGE], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)? as u64,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    })
+                    .map_err(read_error)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(read_error)?
+            };
+            let Some(&(last, _, _)) = page.last() else {
+                break;
+            };
+            after = last;
+            for (_, track, began) in page {
+                heard.entry(track).or_default().push(began);
+            }
         }
 
-        let mut documents =
-            connection.prepare("SELECT * FROM documents WHERE missing = 0 ORDER BY id")?;
-        documents
-            .query_map([], read)?
-            .map(|track| {
-                track.map(|track| {
-                    let listened = heard.remove(&track.id).unwrap_or_default();
-                    (track, listened)
-                })
-            })
-            .collect()
+        let mut stored = Vec::new();
+        let mut after = 0_i64;
+        loop {
+            let page = {
+                let connection = catalog.0.lock();
+                let mut documents = connection
+                    .prepare_cached("SELECT * FROM documents WHERE missing = 0 AND id > ?1 ORDER BY id LIMIT ?2")
+                    .map_err(read_error)?;
+                documents
+                    .query_map(params![after, STORED_PAGE], read)
+                    .map_err(read_error)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(read_error)?
+            };
+            let Some(last) = page.last().map(|track| track.id) else {
+                break;
+            };
+            after = last as i64;
+            stored.extend(page.into_iter().map(|track| {
+                let listened = heard.remove(&track.id).unwrap_or_default();
+                (track, listened)
+            }));
+        }
+        Ok(stored)
     }
 
     fn rows_of(stored: Vec<(Track, Vec<i64>)>) -> Vec<Row> {
@@ -1764,6 +1793,10 @@ fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, seconds_of)
+}
+
+fn read_error(source: rusqlite::Error) -> Error {
+    Error::store(StoreOp::Read, source)
 }
 
 fn counted(count: usize) -> u32 {

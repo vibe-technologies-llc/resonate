@@ -659,4 +659,79 @@ mod tests {
         ));
         assert!(matches!(harness.player.clear_queue(), Err(Error::Closed)));
     }
+
+    #[test]
+    fn a_document_scanned_unchanged_is_not_read_again_and_a_changed_one_is() {
+        let harness = Harness::new();
+        let uri = format!("{FOLDER}a.wav");
+        harness
+            .player
+            .scan_document(uri.clone(), "a.wav".into(), 100, 5)
+            .expect("a first scan");
+        let settled = harness.player.catalog.revision();
+        fs::remove_file(harness.folder.join("a.wav")).expect("a file removed");
+
+        let again = harness
+            .player
+            .scan_document(uri.clone(), "a.wav".into(), 100, 5)
+            .expect("an unchanged document");
+        let touched = harness
+            .player
+            .scan_document(uri.clone(), "a.wav".into(), 100, 6);
+        let unstamped = harness.player.scan_document(uri, "a.wav".into(), 0, 0);
+
+        assert_eq!(again.title, harness.song('a').title);
+        assert_eq!(harness.player.catalog.revision(), settled);
+        assert!(touched.is_err());
+        assert!(unstamped.is_err());
+    }
+
+    #[test]
+    fn a_hidden_document_is_indexed_again_though_its_stamp_matches() {
+        let harness = Harness::new();
+        let uri = format!("{FOLDER}b.wav");
+        let song = harness
+            .player
+            .scan_document(uri.clone(), "b.wav".into(), 100, 5)
+            .expect("a first scan");
+        harness
+            .player
+            .catalog
+            .mark_missing(&[song.id as i64], &[])
+            .expect("hidden");
+
+        harness
+            .player
+            .scan_document(uri, "b.wav".into(), 100, 5)
+            .expect("a second scan");
+
+        let shown = harness.player.catalog.tracks("", 0, 10).expect("listed");
+        assert!(shown.iter().any(|track| track.id == song.id));
+    }
+
+    #[test]
+    fn a_snapshot_waiting_on_the_catalog_does_not_hold_up_the_transport() {
+        let harness = Harness::new();
+        harness.resumed("ab", 0, 0);
+        let held_for = Duration::from_millis(1500);
+        let transport_within = Duration::from_millis(1000);
+        let player = &harness.player;
+        let asked = std::thread::scope(|scope| {
+            let (held, holding) = std::sync::mpsc::channel();
+            scope.spawn(move || {
+                let _connection = player.catalog.0.lock();
+                held.send(()).expect("a signal");
+                std::thread::sleep(held_for);
+            });
+            holding.recv().expect("the catalog held");
+            scope.spawn(move || player.snapshot());
+            std::thread::sleep(Duration::from_millis(200));
+
+            let began = std::time::Instant::now();
+            player.seek(0).expect("a seek");
+            began.elapsed()
+        });
+
+        assert!(asked < transport_within, "the seek waited {asked:?}");
+    }
 }

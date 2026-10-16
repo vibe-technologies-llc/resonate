@@ -61,6 +61,18 @@ so no variant prints an op with `{:?}`. The report text the phones show is `Find
 `snapshot` consumes (it drains engine events, takes the failure and counts listening), so a caller that
 only needs the transport asks `transport`, which reads the engine's state and nothing else.
 
+## The catalog does not hold the transport
+
+Nothing the transport needs waits on the catalog's one connection. `snapshot` copies the engine's
+events, state and queue under the player lock and reads the catalog after releasing it (and
+`store_counting` takes the connection only with something to store), so a long catalog hold delays
+the poll alone, never play, pause or seek (`a_snapshot_waiting_on_the_catalog_does_not_hold_up_the_transport`).
+The long holds themselves are short: the search index is read in pages of 2 000 rows with the lock
+taken per page (stamped with the revision read before the first, so a write between pages makes the
+next ask rebuild), and a playlist file or a link's matches take the lock per song over the
+`folded(name)`, `folded(title)` and `recording` indexes
+(`a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog`).
+
 ## The surface is the same on every target
 
 Every export exists on every target, so bindings generated from the host library match the device
