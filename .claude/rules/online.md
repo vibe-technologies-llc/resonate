@@ -87,7 +87,10 @@ counted play), only under a token or session the listener signed in for.
   `TooLarge`; else `Unreadable`. `From<Error> for resonate_library::Error` drops the host: the
   library ends a pass on `Unreachable`; `TooLarge` is warned, stamped asked like a miss, and counts
   toward no `REFUSALS_THAT_END_A_PASS` (asking again would not shrink the document).
-  `into_lyric_error`, `into_eq_error`, `into_listen_error` map onto the lyrics, eq and listen errors.
+  `into_lyric_error`, `into_eq_error`, `into_listen_error` map onto the lyrics, eq and listen errors;
+  a status stays a `Refused { provider, op, status }` on the lyric and eq seams (a 429 from LRCLIB or
+  GitHub can be backed off from), only `Unreadable` and `TooLarge` read as `Unreadable`
+  (`the_library_and_the_lyric_crate_each_read_the_error_in_their_own_vocabulary`).
 - **Queries are escaped once, in `query.rs`** (`escape_query`, `lucene_quoted`, `Params`): an
   ampersand or quote in a title reaches a service as words, not syntax.
 
@@ -290,7 +293,7 @@ before a source joined is asked again by `look_again_for_portraits`.
   (`ListeningService::LastFm`; the catalog's `submissions` and `loves_told` rows are per service).
   Every call is a form POST to `Host::LastFm`: `api_sig` = MD5 of every field but `format`, sorted
   by name, written name then value, then the application's secret (`Fields::signature`),
-  `format=json` after. `track.scrobble` in batches of `SCROBBLED_AT_ONCE` (50), each listen numbered
+  `format=json` after. `track.scrobble` one request per batch of at most `SCROBBLED_AT_ONCE` (50), the size `LastFm` answers `Scrobbler::at_once`, so the library marks the mark after each request, each listen numbered
   (`artist[i]`, `track[i]`, `timestamp[i]` when it began, …); `track.updateNowPlaying` for what
   plays; `user.getInfo` answers who holds the session. An error in the answer is read by its code
   (`refused`): invalid session, key or authentication = `Refused` 401 (the submitter holds that

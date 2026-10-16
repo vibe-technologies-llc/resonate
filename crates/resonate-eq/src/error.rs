@@ -27,6 +27,13 @@ pub enum Error {
         cause: io::Error,
     },
 
+    #[error("the {provider} correction source refused {op:?} with status {status}")]
+    Refused {
+        provider: SourceId,
+        op: EqOp,
+        status: u16,
+    },
+
     #[error("{op:?} against the {provider} correction source produced nothing this build can read")]
     Unreadable { provider: SourceId, op: EqOp },
 

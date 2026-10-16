@@ -2667,9 +2667,13 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 monochrome: config.monochrome.clone().unwrap_or_default(),
                 hosted_services: config.hosted_services_allowed(),
             },
-            sourcing: resonate_ui::Sourcing {
-                inbox: config.inbox.clone(),
-                register: providers::sourced(settings_path(&cli).ok()),
+            sourcing: {
+                let (register, unkept) = providers::sourced(settings_path(&cli).ok());
+                resonate_ui::Sourcing {
+                    inbox: config.inbox.clone(),
+                    register,
+                    unkept,
+                }
             },
             listens,
         },

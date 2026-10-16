@@ -85,17 +85,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] The phones' `statistics` and `listening_detail` count a missing song's counted listens in the
   totals, where `android.md` leaves hidden songs out
 
-## Providers and network
-- [M] Last.fm is sent a batch in requests of 50 (`LastFm::submit`) and answers `Err` at the first
-  that fails; the library marks nothing on such an error, so the chunks already taken are scrobbled
-  again next pass (`library.md` says the mark moves past what was told)
-- [M] The inbox takes a file as settled after two quiet seconds of mtime and ctime, no size
-  compared: a torrent client writing sporadically delivers half a file, and the refusal burns the
-  want's offer
-- [M] `Refused` is collapsed into `Unreadable` at the equaliser and lyric seams, so a 429 from
-  LRCLIB or GitHub cannot be backed off from
-- [S] A rotated TIDAL token the window cannot write is logged at error level alone, no toast
-
 ## Window
 - [M] *Take out of the queue* on a track queued twice sends one `Command::Remove` a row under the
   same stale `queued.revision`: the first lands, the rest are refused `QueueChanged` into the log,

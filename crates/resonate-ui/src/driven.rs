@@ -343,6 +343,7 @@ impl Driven {
                 sourcing: Sourcing {
                     inbox: None,
                     register,
+                    unkept: Arc::new(|| false),
                 },
                 listens: nobody_listening(),
                 first_read: None,

@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeSet,
     fmt,
+    num::NonZeroUsize,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -156,6 +157,10 @@ pub trait Scrobbler: Send + Sync {
 
     fn submit(&self, listens: &[Scrobble]) -> Result<()>;
 
+    fn at_once(&self) -> NonZeroUsize {
+        NonZeroUsize::new(SUBMITTED_AT_ONCE).unwrap_or(NonZeroUsize::MIN)
+    }
+
     fn playing_now(&self, playing: &Billed) -> Result<()>;
 
     fn love(&self, loved: &Loved, love: Love) -> Result<()>;
@@ -301,45 +306,59 @@ fn told_in_batches(
     loop {
         let pending =
             inner.read(|connection| listens_after(connection, through, cursor.until()))?;
-        let Some(last) = pending.last().map(|pending| pending.listen.get()) else {
+        if pending.is_empty() {
             return Ok(());
-        };
-        let named: Vec<Scrobble> = pending
-            .iter()
-            .filter_map(|pending| pending.scrobble.clone())
-            .collect();
-        submitted.unnamed += pending.len() - named.len();
-
-        match submitted_whole(scrobbler, &named) {
-            Ok(()) => submitted.submitted += named.len(),
-            Err(error) if !refused_as_malformed(&error) => return Err(error),
-            Err(_) => {
-                for one in &named {
-                    match scrobbler.submit(std::slice::from_ref(one)) {
-                        Ok(()) => submitted.submitted += 1,
-                        Err(error) if refused_as_malformed(&error) => {
-                            tracing::warn!(
-                                listen = one.listen.get(),
-                                title = one.billed.title,
-                                "a listen was refused as malformed and is passed over"
-                            );
-                            submitted.refused += 1;
-                        }
-                        Err(error) => {
-                            marked(one.listen.get() - 1)?;
-                            return Err(error);
-                        }
-                    }
-                }
+        }
+        let at_once = scrobbler.at_once().get().min(SUBMITTED_AT_ONCE);
+        for chunk in pending.chunks(at_once) {
+            told_chunk(scrobbler, chunk, &marked, submitted)?;
+            if let Some(last) = chunk.last() {
+                through = last.listen.get();
+                marked(through)?;
             }
         }
-
-        through = last;
-        marked(through)?;
         if pending.len() < SUBMITTED_AT_ONCE {
             return Ok(());
         }
     }
+}
+
+fn told_chunk(
+    scrobbler: &dyn Scrobbler,
+    chunk: &[Pending],
+    marked: &dyn Fn(u64) -> Result<()>,
+    submitted: &mut Submitted,
+) -> Result<()> {
+    let named: Vec<Scrobble> = chunk
+        .iter()
+        .filter_map(|pending| pending.scrobble.clone())
+        .collect();
+    submitted.unnamed += chunk.len() - named.len();
+
+    match submitted_whole(scrobbler, &named) {
+        Ok(()) => submitted.submitted += named.len(),
+        Err(error) if !refused_as_malformed(&error) => return Err(error),
+        Err(_) => {
+            for one in &named {
+                match scrobbler.submit(std::slice::from_ref(one)) {
+                    Ok(()) => submitted.submitted += 1,
+                    Err(error) if refused_as_malformed(&error) => {
+                        tracing::warn!(
+                            listen = one.listen.get(),
+                            title = one.billed.title,
+                            "a listen was refused as malformed and is passed over"
+                        );
+                        submitted.refused += 1;
+                    }
+                    Err(error) => {
+                        marked(one.listen.get() - 1)?;
+                        return Err(error);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<LovesTold> {

@@ -132,7 +132,12 @@ impl Error {
                 provider,
                 cause: switched_off(),
             },
-            Self::Refused { .. } | Self::Unreadable { .. } | Self::TooLarge { .. } => {
+            Self::Refused { status, .. } => resonate_eq::Error::Refused {
+                provider,
+                op,
+                status,
+            },
+            Self::Unreadable { .. } | Self::TooLarge { .. } => {
                 resonate_eq::Error::Unreadable { provider, op }
             }
         }
@@ -148,7 +153,12 @@ impl Error {
                 provider,
                 cause: switched_off(),
             },
-            Self::Refused { .. } | Self::Unreadable { .. } | Self::TooLarge { .. } => {
+            Self::Refused { status, .. } => resonate_lyrics::Error::Refused {
+                provider,
+                op,
+                status,
+            },
+            Self::Unreadable { .. } | Self::TooLarge { .. } => {
                 resonate_lyrics::Error::Unreadable { provider, op }
             }
         }
@@ -257,6 +267,30 @@ mod tests {
         assert!(matches!(
             unreachable.into_lyric_error(provider.clone(), LyricOp::Fetch),
             resonate_lyrics::Error::Unreachable { cause, .. } if cause.kind() == io::ErrorKind::TimedOut
+        ));
+
+        let refused = Error::Refused {
+            host: Host::Lrclib,
+            op: LookupOp::Lyrics,
+            status: 429,
+        };
+        assert!(matches!(
+            refused.into_lyric_error(provider.clone(), LyricOp::Fetch),
+            resonate_lyrics::Error::Refused { status: 429, .. }
+        ));
+
+        let refused = Error::Refused {
+            host: Host::AutoEq,
+            op: LookupOp::Correction,
+            status: 429,
+        };
+        assert!(matches!(
+            refused.into_eq_error(provider.clone(), EqOp::Index),
+            resonate_eq::Error::Refused {
+                op: EqOp::Index,
+                status: 429,
+                ..
+            }
         ));
 
         let too_large = Error::TooLarge {

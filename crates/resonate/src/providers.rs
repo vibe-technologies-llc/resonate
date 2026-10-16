@@ -50,18 +50,26 @@ impl Keeping {
 }
 
 #[cfg(feature = "ui")]
-pub fn sourced(settings: Option<PathBuf>) -> resonate_ui::Registering {
-    let made = Made::new(settings);
-    Arc::new(move |supplying: &resonate_ui::Supplying<'_>| {
-        let every = registry(supplying.inbox, &Accounts::given(supplying.online), &made);
-        match (supplying.asking, supplying.inbox) {
-            (resonate_ui::Asking::TheInboxAlone, Some(folder)) => {
-                every.only(resonate_providers::Provider::source(&Inbox::at(folder)))
+pub fn sourced(settings: Option<PathBuf>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
+    sourced_over(Arc::new(Made::new(settings)))
+}
+
+#[cfg(feature = "ui")]
+fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
+    let keeping = made.keeping();
+    let register: resonate_ui::Registering =
+        Arc::new(move |supplying: &resonate_ui::Supplying<'_>| {
+            let every = registry(supplying.inbox, &Accounts::given(supplying.online), &made);
+            match (supplying.asking, supplying.inbox) {
+                (resonate_ui::Asking::TheInboxAlone, Some(folder)) => {
+                    every.only(resonate_providers::Provider::source(&Inbox::at(folder)))
+                }
+                (resonate_ui::Asking::TheInboxAlone, None) => Providers::none(),
+                (resonate_ui::Asking::EveryProvider, _) => every,
             }
-            (resonate_ui::Asking::TheInboxAlone, None) => Providers::none(),
-            (resonate_ui::Asking::EveryProvider, _) => every,
-        }
-    })
+        });
+    let unkept: resonate_ui::Unkept = Arc::new(move || keeping.unkept().is_some());
+    (register, unkept)
 }
 
 #[cfg(feature = "online")]
@@ -644,9 +652,26 @@ mod tests {
 
     #[cfg(all(feature = "online", feature = "ui"))]
     #[test]
+    fn the_window_is_told_of_a_rotated_token_that_could_not_be_written_once() {
+        let made = Arc::new(Made::new(None));
+        let (_, unkept) = sourced_over(Arc::clone(&made));
+
+        assert!(!unkept());
+
+        made.renewed.note(
+            "first".to_owned(),
+            resonate_providers::RefreshToken::new("second".to_owned()),
+        );
+
+        assert!(unkept());
+        assert!(!unkept());
+    }
+
+    #[cfg(all(feature = "online", feature = "ui"))]
+    #[test]
     fn the_window_registers_what_its_settings_say_now_and_keeps_a_provider_its_settings_left_alone()
     {
-        let register = sourced(None);
+        let (register, _) = sourced(None);
         let named = |online: &resonate_ui::Online| -> Vec<String> {
             register(&resonate_ui::Supplying {
                 inbox: None,

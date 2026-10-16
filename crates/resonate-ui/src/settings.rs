@@ -26,7 +26,7 @@ use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 
-use crate::{Launcher, Result, equaliser::Curve};
+use crate::{Launcher, Notice, Result, equaliser::Curve};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsCategory {
@@ -655,13 +655,22 @@ pub enum Asking {
 
 pub type Registering = Arc<dyn Fn(&Supplying<'_>) -> Providers + Send + Sync>;
 
+pub type Unkept = Arc<dyn Fn() -> bool + Send + Sync>;
+
+const TOKEN_NOT_KEPT: &str = "TIDAL's new sign-in couldn't be saved — sign in to TIDAL again once the settings file can be written";
+
 #[derive(Clone)]
 pub struct Sourcing {
     pub inbox: Option<PathBuf>,
     pub register: Registering,
+    pub unkept: Unkept,
 }
 
 impl Sourcing {
+    pub(crate) fn unkept_notice(&self) -> Option<Notice> {
+        (self.unkept)().then(|| Notice::Trouble(TOKEN_NOT_KEPT.to_owned()))
+    }
+
     pub fn providers(&self, online: &Online, asking: Asking) -> Providers {
         (self.register)(&Supplying {
             inbox: self.inbox.as_deref(),
@@ -676,6 +685,7 @@ impl Default for Sourcing {
         Self {
             inbox: None,
             register: Arc::new(|_| Providers::none()),
+            unkept: Arc::new(|| false),
         }
     }
 }
@@ -1073,6 +1083,22 @@ mod tests {
 
     fn kept(name: &str) -> Binding {
         Binding::Profile(ProfileName::new(name).expect("a usable name"))
+    }
+
+    #[test]
+    fn a_rotated_token_that_could_not_be_kept_is_told_once_to_the_listener() {
+        let left = Arc::new(AtomicBool::new(true));
+        let sourcing = Sourcing {
+            unkept: Arc::new({
+                let left = Arc::clone(&left);
+                move || left.swap(false, Ordering::Relaxed)
+            }),
+            ..Sourcing::default()
+        };
+
+        assert!(matches!(sourcing.unkept_notice(), Some(Notice::Trouble(_))));
+        assert_eq!(sourcing.unkept_notice(), None);
+        assert_eq!(Sourcing::default().unkept_notice(), None);
     }
 
     #[test]
