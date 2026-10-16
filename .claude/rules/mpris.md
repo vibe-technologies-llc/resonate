@@ -165,7 +165,10 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
   whatever it matches then. `queue` opens the library only for `--playlist`.
 - **The window is single.** The window's host answers `CanRaise`/`Raise`; a launch finding a player
   of this build able to raise (`Running::a_window`) hands it its files as `AddTrack`s placed next
-  and heard now, raises it and leaves. Headless `resonate play` can't raise. The name is claimed
+  and heard now, raises it and leaves; the settings flags it was given (`--config`, `--library`,
+  `--vault`, `--sink`, `--quality`, `--filter-phase`, `--dither`, `--noise-shaping`,
+  `--bit-perfect`, `--no-bit-perfect`) are not handed over, so `settings_left_behind` names them on
+  stderr. Headless `resonate play` can't raise. The name is claimed
   only after the engine starts, so `starting::one_window_at_a_time` takes an exclusive lock on
   `resonate-starting.lock` under `$XDG_RUNTIME_DIR` (none: `resonate-starting-<uid>.lock` in the
   temp folder) before asking the bus and holds it until `Mpris::start` claimed the name; a second

@@ -2565,6 +2565,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
 fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = starting::one_window_at_a_time();
     if let Some(window) = Running::a_window().ok().flatten() {
+        warn_of_settings_left_behind(&cli);
         return handed_to(&window, &cli.files);
     }
     let places = resonate_ui::Places {
@@ -2731,6 +2732,36 @@ fn caret_as_the_desktop_blinks() -> resonate_ui::CaretBlink {
         tracing::debug!(%error, "the desktop was not asked how its caret blinks");
     }
     caret
+}
+
+#[cfg(feature = "ui")]
+fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
+    [
+        ("--config", cli.config.is_some()),
+        ("--library", cli.library.is_some()),
+        ("--vault", cli.vault.is_some()),
+        ("--sink", cli.sink.is_some()),
+        ("--quality", cli.quality.is_some()),
+        ("--filter-phase", cli.filter_phase.is_some()),
+        ("--dither", cli.dither.is_some()),
+        ("--noise-shaping", cli.noise_shaping.is_some()),
+        ("--bit-perfect", cli.bit_perfect),
+        ("--no-bit-perfect", cli.no_bit_perfect),
+    ]
+    .into_iter()
+    .filter_map(|(flag, given)| given.then_some(flag))
+    .collect()
+}
+
+#[cfg(feature = "ui")]
+fn warn_of_settings_left_behind(cli: &Cli) {
+    let left_behind = settings_left_behind(cli);
+    if !left_behind.is_empty() {
+        told!(
+            "the window already open keeps its own settings, so {} ignored",
+            left_behind.join(", ")
+        );
+    }
 }
 
 #[cfg(feature = "ui")]
@@ -3189,6 +3220,33 @@ mod tests {
             panic!("--import beside --for was refused: {parsed:?}");
         };
         assert_eq!(wanted.r#for.as_deref(), Some("alsa_output.usb"));
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launch_handed_to_a_window_names_the_settings_it_leaves_behind() {
+        let left_behind = |arguments: &[&str]| {
+            let cli = Cli::try_parse_from(arguments.iter().copied()).expect("a launch");
+            settings_left_behind(&cli)
+        };
+
+        assert!(left_behind(&["resonate", "a.flac"]).is_empty());
+        assert_eq!(
+            left_behind(&[
+                "resonate",
+                "--sink",
+                "alsa_output.usb",
+                "--bit-perfect",
+                "--quality",
+                "high",
+                "a.flac"
+            ]),
+            ["--sink", "--quality", "--bit-perfect"]
+        );
+        assert_eq!(
+            left_behind(&["resonate", "--config", "c.toml", "--library", "l.db"]),
+            ["--config", "--library"]
+        );
     }
 
     #[test]
