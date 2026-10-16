@@ -44,6 +44,14 @@ const LARGEST_FRAME_BYTES: u64 = 64 << 20;
 const READ_PAST_THE_FRAME: u64 = 4;
 const PARAMETER_BYTES: usize = 6;
 
+const ID3V1_BYTES: u64 = 128;
+const ID3V1_MAGIC: &[u8; 3] = b"TAG";
+const APE_TAG_FOOTER_BYTES: u64 = 32;
+const APE_TAG_MAGIC: &[u8; 8] = b"APETAGEX";
+const APE_TAG_SIZE_AT: usize = 12;
+const APE_TAG_FLAGS_AT: usize = 20;
+const APE_TAG_HAS_HEADER: u32 = 1 << 31;
+
 const RIFF_MAGIC: &[u8; 4] = b"RIFF";
 const WAVE_MAGIC: &[u8; 4] = b"WAVE";
 const FORMAT_CHUNK: &[u8; 4] = b"fmt ";
@@ -68,6 +76,7 @@ pub(crate) struct ApeReader<'s> {
     metadata: MetadataLog,
     chapters: Option<ChapterGroup>,
     time_base: TimeBase,
+    audio_ends_at: u64,
     next: u32,
 }
 
@@ -123,6 +132,8 @@ impl<'s> ApeReader<'s> {
             .with_max_frames_per_packet(u64::from(header.blocks_per_frame))
             .with_extra_data(extra.into_boxed_slice());
 
+        let audio_ends_at = audio_end(&mut reader, &file);
+
         let frames = u64::try_from(file.total_blocks).unwrap_or(0);
         let mut track = Track::new(TRACK);
         track
@@ -139,8 +150,18 @@ impl<'s> ApeReader<'s> {
             chapters: options.external_data.chapters,
             time_base,
             file,
+            audio_ends_at,
             next: 0,
         })
+    }
+
+    fn frame_bytes(&self, frame: u32) -> u64 {
+        if frame + 1 < self.file.header.total_frames {
+            self.file.frame_byte_count(frame)
+        } else {
+            self.audio_ends_at
+                .saturating_sub(self.file.seek_byte(frame))
+        }
     }
 
     fn remainder(&self, frame: u32) -> u64 {
@@ -148,7 +169,7 @@ impl<'s> ApeReader<'s> {
     }
 
     fn read_frame(&mut self, frame: u32) -> Result<Vec<u8>> {
-        let bytes = self.file.frame_byte_count(frame);
+        let bytes = self.frame_bytes(frame);
         if bytes > LARGEST_FRAME_BYTES {
             return decode_error("ape: a frame claims more bytes than any encoder writes");
         }
@@ -167,6 +188,56 @@ impl<'s> ApeReader<'s> {
         }
         Ok(data)
     }
+}
+
+fn audio_end<S: Read + Seek>(source: &mut S, file: &ApeFileInfo) -> u64 {
+    let after_the_tags = match tags_at_the_end(source, file.file_bytes) {
+        Ok(tags) => file.file_bytes.saturating_sub(tags),
+        Err(error) => {
+            tracing::debug!(%error, "the tags at the end of a Monkey's Audio file would not read");
+            file.file_bytes
+        }
+    };
+    after_the_tags.saturating_sub(u64::from(file.descriptor.terminating_data_bytes))
+}
+
+fn tags_at_the_end<S: Read + Seek>(source: &mut S, file_bytes: u64) -> std::io::Result<u64> {
+    let mut end = file_bytes;
+    if let Some(start) = end.checked_sub(ID3V1_BYTES) {
+        let mut magic = [0_u8; ID3V1_MAGIC.len()];
+        source.seek(SeekFrom::Start(start))?;
+        source.read_exact(&mut magic)?;
+        if &magic == ID3V1_MAGIC {
+            end = start;
+        }
+    }
+    if let Some(start) = end.checked_sub(APE_TAG_FOOTER_BYTES) {
+        let mut footer = [0_u8; APE_TAG_FOOTER_BYTES as usize];
+        source.seek(SeekFrom::Start(start))?;
+        source.read_exact(&mut footer)?;
+        if footer.starts_with(APE_TAG_MAGIC) {
+            let size = u64::from(u32::from_le_bytes(
+                footer[APE_TAG_SIZE_AT..APE_TAG_SIZE_AT + 4]
+                    .try_into()
+                    .unwrap_or_default(),
+            ));
+            let flags = u32::from_le_bytes(
+                footer[APE_TAG_FLAGS_AT..APE_TAG_FLAGS_AT + 4]
+                    .try_into()
+                    .unwrap_or_default(),
+            );
+            let header = if flags & APE_TAG_HAS_HEADER != 0 {
+                APE_TAG_FOOTER_BYTES
+            } else {
+                0
+            };
+            let whole = size.saturating_add(header);
+            if size >= APE_TAG_FOOTER_BYTES && whole <= end {
+                end = end.saturating_sub(whole);
+            }
+        }
+    }
+    Ok(file_bytes - end)
 }
 
 fn seek_table_holds(file: &ApeFileInfo) -> bool {
@@ -538,6 +609,109 @@ impl RegisterableAudioDecoder for Ape {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FRAME_BYTES: usize = 20;
+
+    fn le32(value: u32) -> [u8; 4] {
+        value.to_le_bytes()
+    }
+
+    fn file_of(frames: usize, trailer: &[u8]) -> Vec<u8> {
+        let seek_table_at = 52 + 24;
+        let frame_at = seek_table_at + 4 * frames;
+        let mut file = b"MAC ".to_vec();
+        file.extend_from_slice(&3990_u16.to_le_bytes());
+        file.extend_from_slice(&0_u16.to_le_bytes());
+        for field in [
+            52,
+            24,
+            4 * frames as u32,
+            0,
+            (FRAME_BYTES * frames) as u32,
+            0,
+            0,
+        ] {
+            file.extend_from_slice(&le32(field));
+        }
+        file.extend_from_slice(&[0; 16]);
+        file.extend_from_slice(&2000_u16.to_le_bytes());
+        file.extend_from_slice(&0_u16.to_le_bytes());
+        for field in [73_728, 100, frames as u32] {
+            file.extend_from_slice(&le32(field));
+        }
+        file.extend_from_slice(&16_u16.to_le_bytes());
+        file.extend_from_slice(&2_u16.to_le_bytes());
+        file.extend_from_slice(&le32(44_100));
+        for frame in 0..frames {
+            file.extend_from_slice(&le32((frame_at + frame * FRAME_BYTES) as u32));
+        }
+        file.extend_from_slice(&vec![0xAB; FRAME_BYTES * frames]);
+        file.extend_from_slice(trailer);
+        file
+    }
+
+    fn ape_tag(with_header: bool) -> Vec<u8> {
+        let mut tag = Vec::new();
+        if with_header {
+            tag.extend_from_slice(APE_TAG_MAGIC);
+            tag.extend_from_slice(&[0; 24]);
+        }
+        tag.extend_from_slice(&[b'x'; 40]);
+        tag.extend_from_slice(APE_TAG_MAGIC);
+        tag.extend_from_slice(&le32(2000));
+        let size = 40 + APE_TAG_FOOTER_BYTES as u32;
+        tag.extend_from_slice(&le32(size));
+        tag.extend_from_slice(&le32(1));
+        tag.extend_from_slice(&le32(if with_header { APE_TAG_HAS_HEADER } else { 0 }));
+        tag.extend_from_slice(&[0; 8]);
+        tag
+    }
+
+    fn id3v1() -> Vec<u8> {
+        let mut tag = ID3V1_MAGIC.to_vec();
+        tag.resize(ID3V1_BYTES as usize, b' ');
+        tag
+    }
+
+    fn last_frame_bytes(file: Vec<u8>) -> u64 {
+        let stream =
+            MediaSourceStream::new(Box::new(std::io::Cursor::new(file)), Default::default());
+        let reader = ApeReader::try_new(stream, FormatOptions::default()).expect("a reader");
+        reader.frame_bytes(reader.file.header.total_frames - 1)
+    }
+
+    #[test]
+    fn the_last_frame_ends_where_the_audio_ends_whatever_tags_follow() {
+        let trailers = [
+            Vec::new(),
+            ape_tag(false),
+            ape_tag(true),
+            id3v1(),
+            [ape_tag(true), id3v1()].concat(),
+        ];
+
+        for trailer in trailers {
+            let bytes = last_frame_bytes(file_of(3, &trailer));
+
+            assert_eq!(
+                bytes,
+                FRAME_BYTES as u64,
+                "a {}-byte trailer",
+                trailer.len()
+            );
+        }
+    }
+
+    #[test]
+    fn a_tag_the_footer_overstates_is_left_as_audio() {
+        let mut tag = ape_tag(false);
+        let overstated = tag.len() - APE_TAG_FOOTER_BYTES as usize + APE_TAG_SIZE_AT;
+        tag[overstated..overstated + 4].copy_from_slice(&le32(u32::MAX));
+
+        let bytes = last_frame_bytes(file_of(2, &tag));
+
+        assert_eq!(bytes, FRAME_BYTES as u64 + tag.len() as u64);
+    }
 
     #[test]
     fn a_stored_float_is_turned_back_into_the_bits_it_was_made_from() {
