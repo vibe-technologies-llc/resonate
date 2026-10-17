@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import android.app.ActivityManager
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.ContentValues
@@ -8,12 +9,15 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.provider.MediaStore
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.io.ByteArrayOutputStream
@@ -42,6 +46,7 @@ class BackgroundPlaybackTest {
             android.Manifest.permission.POST_NOTIFICATIONS,
         )
         val device = UiDevice.getInstance(instrumentation)
+        device.pressHome()
         val values =
             ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, "Resonate playback test.wav")
@@ -95,9 +100,10 @@ class BackgroundPlaybackTest {
                         }
                         present
                     }
-                    assertTrue(
-                        device.wait(Until.hasObject(By.descContains("Song progress")), 10000)
-                    )
+                    eventually {
+                        instrumentation.uiAutomation.clearCache()
+                        device.hasObject(By.descContains("Song progress"))
+                    }
                     assertTrue(device.hasObject(By.desc("Previous")))
                     assertTrue(device.hasObject(By.desc("Next")))
                     device.pressHome()
@@ -134,13 +140,52 @@ class BackgroundPlaybackTest {
                         }
                     }
                     assertTrue(device.openNotification())
-                    val notification = device.wait(Until.findObject(By.text(track.title)), 10000)
-                    assertTrue("The media notification shows the song title", notification != null)
-                    notification.click()
+                    clickNotificationControl(device, By.text(track.title))
                     assertTrue(
                         "Tapping the media notification opens Resonate",
                         device.wait(Until.hasObject(By.descContains("Song progress")), 10000),
                     )
+                    for (paused in listOf(false, true)) {
+                        if (paused) {
+                            instrumentation.runOnMainSync { controller.pause() }
+                            eventually { library.snapshot.value?.transport == Transport.PAUSED }
+                        }
+                        assertTrue(device.openNotification())
+                        clickNotificationControl(device, By.desc("Close"))
+                        eventually { library.snapshot.value?.transport == Transport.STOPPED }
+                        eventually {
+                            notifications.activeNotifications.none {
+                                it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
+                            }
+                        }
+                        eventually {
+                            var stopped = false
+                            instrumentation.runOnMainSync {
+                                stopped =
+                                    controller.playbackState == Player.STATE_IDLE &&
+                                        !controller.playWhenReady
+                            }
+                            stopped
+                        }
+                        Thread.sleep(500)
+                        assertTrue(
+                            "The closed notification stays dismissed while a controller is bound",
+                            notifications.activeNotifications.none {
+                                it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
+                            },
+                        )
+                        device.pressBack()
+                        instrumentation.runOnMainSync {
+                            controller.prepare()
+                            controller.play()
+                        }
+                        eventually { library.snapshot.value?.transport == Transport.PLAYING }
+                        eventually {
+                            notifications.activeNotifications.any {
+                                it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
+                            }
+                        }
+                    }
                     val tasks = context.getSystemService(ActivityManager::class.java).appTasks
                     assertTrue(tasks.isNotEmpty())
                     instrumentation.runOnMainSync { tasks.forEach { it.finishAndRemoveTask() } }
@@ -162,6 +207,19 @@ class BackgroundPlaybackTest {
             }
         } finally {
             resolver.delete(uri, null, null)
+        }
+    }
+
+    private fun clickNotificationControl(device: UiDevice, selector: BySelector) {
+        eventually {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.clearCache()
+            try {
+                val control = device.findObject(selector) ?: return@eventually false
+                control.click()
+                true
+            } catch (stale: StaleObjectException) {
+                false
+            }
         }
     }
 

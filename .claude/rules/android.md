@@ -87,7 +87,12 @@ artwork is decoded off the main thread and encoded into a thumbnail bounded at 3
 across a Binder timeline. Art revision and cache generation refresh the session after enrichment.
 Dismissing the app task pauses every session player and stops its foreground service. Going Home
 keeps playback running; an active download may retain the engine but never keeps music playing
-across task dismissal.
+across task dismissal. The media notification offers Close as a session command, including on
+Android 13's system controls: it stops the player, abandons audio focus and stops the started
+service. A stopped transport is Media3 idle and idle players show no notification, so the card
+disappears even while an Activity or another controller remains bound. Playing again restores it;
+pausing keeps the card. Stop clears pending audio-focus resumption so a later focus gain cannot
+restart music after Close.
 Controller actions enter one ordered worker, so load/prepare/play cannot race one another.
 `RustMediaPlayer` declares `COMMAND_RELEASE`, so `release()` reaches `handleRelease` once (media3
 ignores a second): the service's retain is given back, its collectors and the widgets stop, and the

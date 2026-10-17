@@ -1,4 +1,5 @@
 <resources>
+    <string name="notification_close">Close</string>
     <string name="widget_compact_name">Resonate · Compact</string>
     <string name="widget_artwork_name">Resonate · Album</string>
     <string name="widget_description">Album artwork and playback controls in a glass-inspired player.</string>

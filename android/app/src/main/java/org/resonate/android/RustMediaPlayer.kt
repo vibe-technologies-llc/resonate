@@ -201,7 +201,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                 when {
                     playlist.isEmpty() -> Player.STATE_IDLE
                     value?.transport == Transport.LOADING -> Player.STATE_BUFFERING
-                    value?.transport == Transport.STOPPED -> Player.STATE_ENDED
+                    value?.transport == Transport.STOPPED -> Player.STATE_IDLE
                     else -> Player.STATE_READY
                 }
             )
@@ -301,6 +301,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
 
     override fun handleStop(): ListenableFuture<*> {
+        resumeAfterFocus = false
         library.request { it.stop() }
         audio.abandonAudioFocusRequest(focus)
         return Futures.immediateVoidFuture()
