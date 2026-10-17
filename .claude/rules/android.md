@@ -363,14 +363,21 @@ open collection rows resolve current metadata by catalog id so favourite changes
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
-Android routes; no UI implies a per-device binding. Android edits it on an interactive graph (tap
-to add, drag to move, per-band type, frequency, gain and Q) with the preamp: an AutoEq or imported
-profile loads as its bands, ready to adjust. Ten octave bands (31.25 Hz to 16 kHz, Q sqrt(2), via
-`ten_band_curve`/`ten_band_gains`) are a reset layout and the migration, not the editor. Preamp and
-bands remain independent of the enable switch; reset removes every band, or starts from ten flat
-bands, without changing that switch. The drawn response is the stage's arithmetic at the stream
-rate (48 kHz with nothing open, so the graph never reads empty); the native boundary validates the
-whole curve before sending any commands, and sends only fields that changed. ReplayGain, true-peak clip
+Android routes; no UI implies a per-device binding. Android opens on nine named presets and
+frequency sliders labelled by their audible range, with live signed gain values. Selecting a
+preset enables the equaliser and stores its name and curve through the existing preferences;
+boosted presets lower the preamp to leave headroom, except Bass only: it raises the three lowest
+octave bands, leaves every other band flat and the preamp at zero, so the rest is never lowered.
+Editing a band or the preamp clears that preset name. An empty flat curve shows ten octave sliders
+(31.25 Hz to 16 kHz, Q sqrt(2)), creating
+the bands only on a completed edit. An AutoEq or imported profile keeps its filters, frequencies,
+Q and preamp; its gain-bearing bands get sliders without being converted to the octave layout.
+Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
+gain and Q. Preamp and bands remain independent of the enable switch; confirmed reset removes
+every band and returns the preamp to zero without changing that switch. The drawn response is the
+stage's arithmetic at the stream rate (48 kHz with nothing open, so the graph never reads empty);
+the native boundary validates the whole curve before sending any commands, and sends only fields
+that changed. ReplayGain, true-peak clip
 prevention, resampling quality/phase and experimental lossy restoration use existing engine
 commands, never a platform equaliser running beside the Rust chain.
 

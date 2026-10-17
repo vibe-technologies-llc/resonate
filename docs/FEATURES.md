@@ -187,8 +187,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   alone; nothing adds a row with Control
 - [S] Android's status, scan, sync and failure banners are no live regions: TalkBack announces
   neither results nor errors
-- [S] Android's equaliser bands are unlabelled graph dots under `IgnorePointer`, so TalkBack and
-  switch access cannot select one; a plain tap only selects and never reaches the add hint
 - [S] Android removes a queue row only by swiping it: the song sheet has no *Remove from queue*
 - [L · blocked: gpui] Nothing is exposed to a screen reader: published gpui 0.2.2 carries no
   AccessKit, which only Zed's `main` has
