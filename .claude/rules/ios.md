@@ -32,6 +32,30 @@ alternate icon beside the primary `Icon`. `Package.swift` takes those as a syste
 from `Generated/lib` with AudioToolbox, CoreAudio, Security and SystemConfiguration. Everything under
 `ios/Generated`, `ios/.cargo-target` and `ios/.build` is generated, never checked in or edited.
 
+## App Intents metadata
+
+iOS finds an app's intents and App Shortcuts through `Metadata.appintents` in the bundle, which Xcode
+writes with `appintentsmetadataprocessor`, an arm64 Mach-O that cannot run on the Linux host; xtool
+has no such step. So the `Resonate` target is compiled with `-emit-const-values` and
+`-const-gather-protocols-file Resonate/AppIntentsProtocols.json` (an absolute path, since the
+compiler resolves it from its own working directory; both flags, since the first alone gathers
+nothing), which leaves a `.swiftconstvalues` per source under
+`.build/out/Intermediates.noindex/Resonate.build/<Config>-iphoneos/Resonate-t.build/`, and
+`ios/app-intents.py [-c debug|release] [--ipa]` writes `xtool/Resonate.app/Metadata.appintents`
+(`extract.actionsdata`, `version.json` naming tools version 27A266a) from them after
+`xtool dev build`, and with `--ipa` packs `xtool/Resonate.ipa`. `xtool dev run` and
+`xtool dev build --ipa` rebuild the bundle without it, so the app is installed with
+`xtool install xtool/Resonate.app`. The generator writes what Apple's processor writes for the
+same input, field for field, for what Resonate uses alone: `AppIntent`s with literal titles and
+descriptions and `String` parameters (`requestValueDialog` leaves no trace), a `perform()` returning
+a result with or without a dialog, `AudioPlaybackIntent` as the system protocol
+`com.apple.link.systemProtocol.AudioStarting` (the identifier Xcode's `LinkMetadataDT` pairs with
+it), and one `AppShortcutsProvider` whose phrases interpolate only `.applicationName`. Anything else
+(an entity, an enum, a query, a parameter summary, a phrase with a parameter) stops it, since iOS
+ignores metadata it cannot match to the binary; a new construct is added only against Apple's
+output for it. Without Xcode's second step (`nlu.appintents`) Siri matches the phrases as written,
+not paraphrases.
+
 ## Hardening
 
 The entitlements opt into Enhanced Security: `hardened-process`, `enhanced-security-version-string`
@@ -963,9 +987,28 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length
   and *Forget the response* follow (`eq.md`'s *Room correction*). One response serves every output.
 
+## Siri
+
+- **Siri reaches the library through App Intents** (`Siri.swift`), all four `AudioPlaybackIntent`s,
+  so they run in the background and may start audio from a locked phone, none opening the app: *Play*
+  (`ResumePlaybackIntent`: resumes the restored queue, or shuffles the library where nothing is
+  loaded), *Play from Your Library* (`PlayFromLibraryIntent`, a `String` Siri asks for: a playlist
+  whose folded name is the answer, else `search_library`'s artist or album of that folded name,
+  else its songs from the best), *Shuffle Your Library* and *Play Favourites*, each answering with
+  a dialog that names what plays or why nothing does. `ResonateShortcuts` gives each its phrases
+  (*Play Resonate*, *Play a playlist in Resonate*, *Shuffle Resonate*, *Play my favourites in
+  Resonate*); a phrase holds no parameter, so the music is asked for, never spoken in the phrase.
+  Siri's own *pause*, *skip* and *go back* reach the remote commands, so there is no intent for them.
+- **An intent opens the player itself.** A background launch connects no scene, so no `onAppear`
+  runs: `ResonateApp.init` makes the `Library` and registers it with `AppDependencyManager`, each
+  intent takes it as a `@Dependency` and calls `start()` (which runs once) before
+  `player()`, and plays through the same `Library.play`/`shuffle`/`resume` as a tap, so activation
+  and the lock screen follow. Tracks are read whole, page by page, on `Work.aside`
+  (`Spoken.every`), the snapshot on `Work.inOrder`.
+
 ## Checks
 
-`python3 ios/build-native.py` then `cd ios && xtool dev build --ipa` must produce
-`ios/xtool/Resonate.ipa` with no Swift warning (the package builds in Swift 6 mode, so a data race is
-an error); with a
-device attached, `xtool dev run` installs and launches it (the `run-ios` skill).
+`python3 ios/build-native.py` then `cd ios && xtool dev build && python3 app-intents.py --ipa` must
+produce `ios/xtool/Resonate.ipa` with no Swift warning (the package builds in Swift 6 mode, so a data
+race is an error); with a device attached, `xtool install xtool/Resonate.app` installs it (the
+`run-ios` skill).

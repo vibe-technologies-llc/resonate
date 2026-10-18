@@ -3,10 +3,9 @@
 import Foundation
 import PackageDescription
 
-let native = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .appendingPathComponent("Generated/lib")
-    .path
+let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+let native = root.appendingPathComponent("Generated/lib").path
+let intentProtocols = root.appendingPathComponent("Resonate/AppIntentsProtocols.json").path
 
 let package = Package(
     name: "Resonate",
@@ -31,7 +30,14 @@ let package = Package(
         .target(
             name: "Resonate",
             dependencies: ["ResonateNative"],
-            path: "Sources/Resonate"
+            path: "Sources/Resonate",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-emit-const-values",
+                    "-Xfrontend", "-const-gather-protocols-file",
+                    "-Xfrontend", intentProtocols,
+                ])
+            ]
         ),
     ]
 )

@@ -1,14 +1,18 @@
+import AppIntents
 import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers
 
 @main
 struct ResonateApp: App {
-    @State private var library = Library()
+    @State private var library: Library
     @Environment(\.scenePhase) private var phase
 
     init() {
         BackgroundHold.register()
+        let library = Library()
+        _library = State(initialValue: library)
+        AppDependencyManager.shared.add(dependency: library)
     }
 
     var body: some Scene {

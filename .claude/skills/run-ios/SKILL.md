@@ -19,22 +19,27 @@ description: Build, package, install and launch the Resonate iOS app from this L
 
 ```bash
 python3 ios/build-native.py --profile debug
-cd ios && xtool dev build --ipa
+cd ios && xtool dev build && python3 app-intents.py --ipa
 ```
 
 The first command writes `ios/Generated/` (bindings, module map, `libresonate_mobile.a`); rerun it
-after any change under `crates/`. `--profile release` builds the optimised archive. The second
-leaves `ios/xtool/Resonate.ipa` in place of the `.app` (unsigned unless `--sign`; entitlements are
-applied when signing).
+after any change under `crates/`. `--profile release` builds the optimised archive. `xtool dev
+build` leaves `ios/xtool/Resonate.app` (entitlements applied ad hoc); `app-intents.py` writes the
+App Intents metadata Siri and Shortcuts read into it, which Xcode would have written (`ios.md`'s
+*App Intents metadata*), and `--ipa` packs `ios/xtool/Resonate.ipa` beside it. Give both the same
+configuration: `xtool dev build -c release` goes with `app-intents.py -c release`. Never
+`xtool dev build --ipa`: it packs the app before the metadata is in it.
 
 ## On a device
 
 ```bash
 xtool devices
-cd ios && xtool dev run
+cd ios && xtool dev build && python3 app-intents.py && xtool install xtool/Resonate.app
 ```
 
-`xtool dev run` signs with the listener's team, installs and launches. A free Apple ID's profile
+`xtool install` signs with the listener's team and installs; open the app on the phone, or
+`xtool launch org.resonate.ios`. Never `xtool dev run`: it builds the bundle again without the App
+Intents metadata, so Siri and Shortcuts would not see the app's intents. A free Apple ID's profile
 lasts seven days; the device must trust the developer in Settings › General › VPN & Device
 Management the first time. Logs: `idevicesyslog | grep -i resonate` (libimobiledevice).
 

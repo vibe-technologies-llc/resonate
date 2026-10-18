@@ -22,6 +22,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `build-native.py` reads the accents and `LIFTED_TOWARD_WHITE` out of Rust sources by regex and
   recolours the SVG with a silent `replace(..., 1)`, and nothing asserts that the twenty-one PNGs
   match `xtool.yml` and `Info.plist`
+- [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
+  fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
+  `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
 - [S] The build is checked for Swift warnings by hand only (`ios.md`'s *Checks*); no check reads
   `xtool dev build`'s output
 - [S] `explained` digs the sentence out of the generated `ResonateNative.Error` with `Mirror` (one

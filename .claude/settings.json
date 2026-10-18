@@ -9,6 +9,8 @@
       "Bash(python3 android/build-native.py:*)",
       "Bash(python3 android/check-native.py:*)",
       "Bash(python3 ios/build-native.py:*)",
+      "Bash(python3 ios/app-intents.py:*)",
+      "Bash(python3 app-intents.py:*)",
       "Bash(xtool dev build:*)",
       "Bash(xtool devices:*)",
       "Bash(swift sdk list:*)"

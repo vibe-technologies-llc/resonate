@@ -9,7 +9,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Flutter, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target |
-| `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, hardening, the shape of the SwiftUI app |
+| `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
 | `realtime.md` | engine, pipewire, the Oboe and RemoteIO callbacks, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
@@ -152,9 +152,11 @@ Invariants the layering protects (the rules files have the rest):
   Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
 
-- `python3 ios/build-native.py`, then `cd ios && xtool dev build --ipa`: the iOS staticlib, Swift
-  bindings and app package; `xtool dev run` installs on an attached iPhone (`run-ios` skill). Not in
-  CI: the Darwin SDK comes from the listener's Xcode download.
+- `python3 ios/build-native.py`, then `cd ios && xtool dev build && python3 app-intents.py --ipa`:
+  the iOS staticlib, Swift bindings, app, its App Intents metadata (Siri, written on Linux in place of
+  Xcode's step) and package; `xtool install xtool/Resonate.app` installs on an attached iPhone
+  (`run-ios` skill), never `xtool dev run`, which drops the metadata. Not in CI: the Darwin SDK comes
+  from the listener's Xcode download.
 
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
