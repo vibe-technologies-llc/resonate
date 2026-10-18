@@ -1274,8 +1274,13 @@ is never named.
   `RootView::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
   put back trimmed on enter); `contact_given` stores `Setting::Contact`, moves the global, reports it
   is sent from the next request (`online.md`); press outside = `leave_contact` (gives typed text if it
-  differs), escape = `put_back_contact`. Same pair for AcoustID key, AudD and ListenBrainz tokens,
-  Subsonic and TIDAL accounts, organise layout
+  differs), escape = `put_back_contact`. The field losing focus any other way (tab: `field::Blurred`)
+  takes what was typed through `contact_left` and kin without taking the caret back to the window
+  (`take_the_contact` is the one giving; `contact_given` adds the refocus); the typed folder adds
+  itself the same way and escape clears it first
+  (`tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back`). Same pair for
+  AcoustID key, AudD and ListenBrainz tokens, Subsonic and TIDAL accounts, organise layout (`layout_left`
+  keeps a valid one, reports a refused one)
   (`a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back`), ahead of
   the naming row in `dismiss_search`.
 - **A run of rows is dragged where it goes; the keyboard reaches one before moving it.**

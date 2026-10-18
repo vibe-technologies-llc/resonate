@@ -36,10 +36,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
 
 ## Keyboard and accessibility
-- [M] Tab out of an Online or Library field (contact, AcoustID key, AudD or ListenBrainz token, typed
-  folder, filing layout) commits nothing and leaves the typed text unsaved: only a press outside
-  commits (`leave_contact` and kin answer while the field holds focus), and each `*_given` refocuses
-  the window, so a `Blurred` handler needs a variant that settles without taking the caret back
 - [M] The keyboard reach keeps its row through `opened` and an order or reading change: after
   reaching row 19, *Go to album* on a 10-track album and Enter plays its last track with nothing
   marked; after a header press the edge stays on another song

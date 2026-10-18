@@ -873,6 +873,8 @@ impl RootView {
             this.contact_given(window, cx);
         })
         .detach();
+        cx.subscribe(&contact, |this, _, _: &Blurred, cx| this.contact_left(cx))
+            .detach();
 
         let acoustid = cx.new(|cx| {
             let mut field = Field::new(ACOUSTID_PLACEHOLDER, window, cx).masked();
@@ -881,6 +883,10 @@ impl RootView {
         });
         cx.subscribe_in(&acoustid, window, |this, _, _: &Submitted, window, cx| {
             this.acoustid_key_given(window, cx);
+        })
+        .detach();
+        cx.subscribe(&acoustid, |this, _, _: &Blurred, cx| {
+            this.acoustid_key_left(cx)
         })
         .detach();
 
@@ -893,6 +899,8 @@ impl RootView {
             this.audd_token_given(window, cx);
         })
         .detach();
+        cx.subscribe(&audd, |this, _, _: &Blurred, cx| this.audd_token_left(cx))
+            .detach();
 
         let listenbrainz = cx.new(|cx| {
             let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx).masked();
@@ -906,6 +914,10 @@ impl RootView {
                 this.listenbrainz_token_given(window, cx);
             },
         )
+        .detach();
+        cx.subscribe(&listenbrainz, |this, _, _: &Blurred, cx| {
+            this.listenbrainz_token_left(cx)
+        })
         .detach();
 
         let subsonic = Account::fields(&online, window, cx);
@@ -1014,9 +1026,15 @@ impl RootView {
             this.layout_given(window, cx);
         })
         .detach();
+        cx.subscribe(&organising, |this, _, _: &Blurred, cx| this.layout_left(cx))
+            .detach();
 
         let typed_root = cx.new(|cx| Field::new(TYPED_ROOT_PLACEHOLDER, window, cx));
         cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
+            this.root_typed(window, cx);
+        })
+        .detach();
+        cx.subscribe_in(&typed_root, window, |this, _, _: &Blurred, window, cx| {
             this.root_typed(window, cx);
         })
         .detach();
@@ -1782,6 +1800,19 @@ impl RootView {
     }
 
     fn contact_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_contact(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn contact_left(&mut self, cx: &mut Context<Self>) {
+        if self.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
+            self.take_the_contact(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_contact(&mut self, cx: &mut Context<Self>) {
         let given = self.contact.read(cx).text().trim().to_owned();
         self.contact
             .update(cx, |contact, cx| contact.hold(given.clone(), cx));
@@ -1794,11 +1825,22 @@ impl RootView {
         };
         self.store(&Setting::Contact(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
+    }
+
+    fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_acoustid_key(cx);
         window.focus(&self.focus);
         cx.notify();
     }
 
-    fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn acoustid_key_left(&mut self, cx: &mut Context<Self>) {
+        if self.acoustid.read(cx).text().trim() != cx.global::<ResonateApp>().online.acoustid_key {
+            self.take_the_acoustid_key(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_acoustid_key(&mut self, cx: &mut Context<Self>) {
         let given = self.acoustid.read(cx).text().trim().to_owned();
         self.acoustid
             .update(cx, |key, cx| key.hold(given.clone(), cx));
@@ -1811,8 +1853,6 @@ impl RootView {
         };
         self.store(&Setting::AcoustidKey(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     pub(crate) fn leave_acoustid_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1834,6 +1874,19 @@ impl RootView {
     }
 
     fn audd_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_audd_token(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn audd_token_left(&mut self, cx: &mut Context<Self>) {
+        if self.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
+            self.take_the_audd_token(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_audd_token(&mut self, cx: &mut Context<Self>) {
         let given = self.audd.read(cx).text().trim().to_owned();
         self.audd
             .update(cx, |token, cx| token.hold(given.clone(), cx));
@@ -1846,8 +1899,6 @@ impl RootView {
         };
         self.store(&Setting::AuddToken(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     pub(crate) fn leave_audd_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1869,6 +1920,21 @@ impl RootView {
     }
 
     fn listenbrainz_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_listenbrainz_token(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn listenbrainz_token_left(&mut self, cx: &mut Context<Self>) {
+        if self.listenbrainz.read(cx).text().trim()
+            != cx.global::<ResonateApp>().online.listenbrainz_token
+        {
+            self.take_the_listenbrainz_token(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_listenbrainz_token(&mut self, cx: &mut Context<Self>) {
         let given = self.listenbrainz.read(cx).text().trim().to_owned();
         self.listenbrainz
             .update(cx, |token, cx| token.hold(given.clone(), cx));
@@ -1884,8 +1950,6 @@ impl RootView {
         self.store(&Setting::ListenbrainzToken(given.clone()), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.check_the_listenbrainz_token(given, cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     fn check_the_listenbrainz_token(&mut self, token: String, cx: &mut Context<Self>) {
@@ -3703,6 +3767,8 @@ impl RootView {
             return;
         }
         if self.typed_root.read(cx).is_focused(window) {
+            self.typed_root
+                .update(cx, |typed, cx| typed.hold(String::new(), cx));
             self.leave_typed_root(window, cx);
             return;
         }

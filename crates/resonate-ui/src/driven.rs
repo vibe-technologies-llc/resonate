@@ -1792,6 +1792,151 @@ mod tests {
         );
     }
 
+    fn showing_settings(driven: &mut Driven, category: SettingsCategory) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Settings, cx);
+            root.settings_category = category;
+            cx.notify();
+        });
+        driven.settle();
+    }
+
+    fn typed_into(
+        driven: &mut Driven,
+        field: fn(&RootView) -> &Entity<crate::views::field::Field>,
+        text: &str,
+    ) {
+        driven.focus(field);
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            let field = field(root.read(cx)).clone();
+            field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
+        });
+    }
+
+    #[gpui::test]
+    fn tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Online);
+
+        typed_into(&mut driven, |root| &root.contact, "me@example.test");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.contact.clone()),
+            "me@example.test"
+        );
+        assert!(
+            !driven.cx.update(|window, cx| {
+                let root = driven.root.read(cx);
+                root.contact.read(cx).is_focused(window)
+            }),
+            "the contact kept the caret"
+        );
+        assert!(
+            !driven.cx.update(|window, cx| {
+                let root = driven.root.read(cx);
+                window.focused(cx).is_some_and(|held| held == root.focus)
+            }),
+            "the window took the caret back from the next stop"
+        );
+
+        showing_settings(&mut driven, SettingsCategory::Recognition);
+
+        typed_into(&mut driven, |root| &root.acoustid, "a-key");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.acoustid_key.clone()),
+            "a-key"
+        );
+
+        typed_into(&mut driven, |root| &root.audd, "an-audd");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.audd_token.clone()),
+            "an-audd"
+        );
+
+        showing_settings(&mut driven, SettingsCategory::Scrobbling);
+
+        typed_into(&mut driven, |root| &root.listenbrainz, "a-token");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.listenbrainz_token.clone()),
+            "a-token"
+        );
+    }
+
+    #[gpui::test]
+    fn tab_out_of_the_filing_layout_keeps_a_valid_one_and_escape_puts_it_back(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Library);
+        let filed_as = |driven: &mut Driven| {
+            driven.read(|_, cx| cx.global::<ResonateApp>().organise_as.clone())
+        };
+        let before = filed_as(&mut driven);
+
+        typed_into(&mut driven, |root| &root.organising, "{artist}/{title}");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(filed_as(&mut driven), "{artist}/{title}");
+
+        typed_into(&mut driven, |root| &root.organising, "{album}/{title}");
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        assert_eq!(filed_as(&mut driven), "{artist}/{title}");
+        assert_ne!(before, "{artist}/{title}");
+    }
+
+    #[gpui::test]
+    fn tab_out_of_the_typed_folder_adds_it_and_escape_discards_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let kept = Folder::new();
+        let dropped = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        showing_settings(&mut driven, SettingsCategory::Library);
+
+        typed_into(
+            &mut driven,
+            |root| &root.typed_root,
+            &dropped.path().display().to_string(),
+        );
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.typed_root.read(cx).text().to_owned()),
+            ""
+        );
+
+        typed_into(
+            &mut driven,
+            |root| &root.typed_root,
+            &kept.path().display().to_string(),
+        );
+        driven.cx.simulate_keystrokes("tab");
+        driven.until(|root, cx| root.library.read(cx).roots().len() == 1);
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).roots().to_vec()),
+            vec![kept.path().to_path_buf()]
+        );
+    }
+
     #[gpui::test]
     fn pasting_at_the_window_puts_the_words_in_the_search(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
