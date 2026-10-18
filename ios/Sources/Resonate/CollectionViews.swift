@@ -554,7 +554,7 @@ struct CollectionMenu: View {
             }
             if editsTags {
                 Section {
-                    Button("Edit album tags", systemImage: "pencil") { navigation.tagging = TagEditing(tracks: tracks) }
+                    Button("Edit album tags", systemImage: "pencil") { navigation.editTags(tracks) }
                 }
             }
         }

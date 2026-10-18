@@ -453,6 +453,17 @@ every route change (a pair of headphones at the same rate included), not from th
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
   `@ScaledMetric`.
+- **One song menu everywhere a song is listed** (`SongPages`: *Song details*, *Share link*, *Edit
+  tags* where writable, *Lyrics*, *Analyse*, *Go to album*, *Go to artist*): `TrackMenu` carries it
+  under its queue, favourite and playlist sections, a queue row (`QueueRow`) under its favourite and
+  playlist entries with *Remove from queue* last (no Play next or Add to queue, which would only copy
+  the row), a playlist row (`PlaylistRow`) under its own queue, favourite and *Add to another
+  playlist* entries with *Move up*, *Move down* and *Remove from playlist* last, and Now Playing's
+  `SongDestinations` without *Lyrics*, which the player's own mode shows. The Inspector's actions
+  add *Edit tags*, *Go to album* and *Go to artist*. **The tag editor opens after Now Playing
+  closes** (`Navigation.editTags`): asked inside the cover, it is held (`taggingAfterPlayer`), the
+  cover dismissed, and the root's sheet presented from the cover's `onDismiss`
+  (`Navigation.playerClosed`), since the root cannot present over the full-screen cover.
 - **A finished download refreshes the library once for a run of them** (`DownloadQueue.landed`
   sets `landedSince` and starts one `settleLandings` task, which loops until no song landed during
   its refresh), so *Download all missing* of N songs reads the catalog and rebuilds the search index

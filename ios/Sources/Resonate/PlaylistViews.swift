@@ -285,7 +285,6 @@ struct PlaylistOptions: View {
 
 struct PlaylistRow: View, Equatable {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     let entry: PlaylistEntry
     let count: Int
     let move: (Int, Int) -> Void
@@ -321,13 +320,15 @@ struct PlaylistRow: View, Equatable {
                 }
             }
             Section {
+                SongPages(track: track)
+            }
+            Section {
                 if position > 0 {
                     Button("Move up", systemImage: "arrow.up") { move(position, position - 1) }
                 }
                 if position + 1 < count {
                     Button("Move down", systemImage: "arrow.down") { move(position, position + 1) }
                 }
-                Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
                 Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
             }
         }

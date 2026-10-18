@@ -602,19 +602,35 @@ struct TrackMenu: View {
             Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
         }
         Section {
+            SongPages(track: track)
+        }
+    }
+}
+
+struct SongPages: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let track: Track
+    var details = true
+    var lyrics = true
+
+    var body: some View {
+        if details {
             Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
-            Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
-            if library.features.tagsWritable(track) {
-                Button("Edit tags", systemImage: "pencil") { navigation.tagging = TagEditing(tracks: [track]) }
-            }
+        }
+        Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
+        if library.features.tagsWritable(track) {
+            Button("Edit tags", systemImage: "pencil") { navigation.editTags([track]) }
+        }
+        if lyrics {
             Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
-            Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
-            if let albumPage = track.albumPage {
-                Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
-            }
-            if !track.artist.isEmpty {
-                Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
-            }
+        }
+        Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+        if let albumPage = track.albumPage {
+            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+        }
+        if !track.artist.isEmpty {
+            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
         }
     }
 }

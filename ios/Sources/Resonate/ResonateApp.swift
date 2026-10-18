@@ -94,11 +94,28 @@ final class Navigation {
     var filters = false
     var listening = false
     var tagging: TagEditing?
+    @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
     var searchPlace = SearchPlace.library
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
+    }
+
+    func editTags(_ tracks: [Track]) {
+        let editing = TagEditing(tracks: tracks)
+        guard nowPlaying else {
+            tagging = editing
+            return
+        }
+        taggingAfterPlayer = editing
+        nowPlaying = false
+    }
+
+    func playerClosed() {
+        guard let waiting = taggingAfterPlayer else { return }
+        taggingAfterPlayer = nil
+        tagging = waiting
     }
 
     func searchOnline() {
@@ -264,7 +281,7 @@ struct RootView: View {
         .tint(AppearanceState.shared.tint)
         .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
         .safeAreaInset(edge: .top) { StatusBanner() }
-        .fullScreenCover(isPresented: $navigation.nowPlaying) {
+        .fullScreenCover(isPresented: $navigation.nowPlaying, onDismiss: navigation.playerClosed) {
             NowPlayingView()
                 .tint(AppearanceState.shared.tint)
                 .navigationTransition(.zoom(sourceID: PlayerTransition.source, in: player))

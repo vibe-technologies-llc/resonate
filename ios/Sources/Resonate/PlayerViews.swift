@@ -379,26 +379,15 @@ struct SongMenu<Label: View>: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .tint(Color.primary)
-        .accessibilityHint("Shows the album, artist, song details and a link to share")
+        .accessibilityHint("Shows the album, artist, song details, tags, analysis and a link to share")
     }
 }
 
 struct SongDestinations: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     let track: Track
 
     var body: some View {
-        if let albumPage = track.albumPage {
-            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
-        }
-        if !track.artist.isEmpty {
-            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
-        }
-        Button("Song details", systemImage: "info.circle") {
-            navigation.open(.inspector(track))
-        }
-        Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
+        SongPages(track: track, lyrics: false)
     }
 }
 
@@ -1214,7 +1203,6 @@ struct QueueParts {
 
 struct QueueRow: View {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     let row: Track
     @Binding var edited: Int
     @State private var choosingPlaylist = false
@@ -1231,15 +1219,21 @@ struct QueueRow: View {
             }
         }
         .contextMenu {
-            Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
-                edited += 1
-                library.removeFromQueue(row)
+            Section {
+                Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                    library.setFavourite(row, !favourite)
+                }
+                Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
             }
-            Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
-                library.setFavourite(row, !favourite)
+            Section {
+                SongPages(track: row)
             }
-            Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
-            Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(row)) }
+            Section {
+                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                    edited += 1
+                    library.removeFromQueue(row)
+                }
+            }
         }
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]) }
     }

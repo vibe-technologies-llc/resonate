@@ -69,9 +69,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] A failed `MobilePlayer` open is final on iOS until relaunch: `serveActions` drops every
   action through `try? await player()` after the one banner, and nothing offers to open the catalog
   again
-- [S] A song in the iOS queue or a playlist has a reduced menu (`QueueRow`, `PlaylistRow`), and the
-  Inspector and Now Playing's `SongDestinations` carry no *Edit tags*: tags, *Lyrics*, *Analyse*
-  and *Go to album* are reached only from rows built on `TrackMenu`
 - [S] Statistics' most listened albums and artists on iOS are bare `NavigationLink`s
   (`ListenedToRow`, no cover), without the menu and swipe every other `CollectionRow` carries
 - [S] The iOS lock-screen cover is the 384 px `.card` image whatever size the system asks

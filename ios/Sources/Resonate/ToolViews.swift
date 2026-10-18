@@ -244,8 +244,17 @@ struct InspectorView: View {
             InspectorCover(track: shown)
             Section {
                 Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                if features.tagsWritable(shown) {
+                    Button("Edit tags", systemImage: "pencil") { navigation.editTags([shown]) }
+                }
                 Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(shown)) }
                 Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(shown)) }
+                if let albumPage = shown.albumPage {
+                    Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+                }
+                if !shown.artist.isEmpty {
+                    Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(shown.artist)) }
+                }
                 if features.online {
                     Button(features.enriching ? "Enriching…" : "Enrich metadata, artwork and lyrics", systemImage: "sparkles") {
                         features.enrich(shown)
