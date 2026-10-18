@@ -52,6 +52,7 @@ pub struct GainStage {
     channels: usize,
     amplitude: f32,
     limits: bool,
+    clamped: u64,
 }
 
 impl GainStage {
@@ -61,6 +62,7 @@ impl GainStage {
             channels: 1,
             amplitude: config.amplitude(),
             limits: config.limits_every_sample(),
+            clamped: 0,
         }
     }
 
@@ -106,6 +108,10 @@ impl Processor for GainStage {
         Some(self.amplitude)
     }
 
+    fn overs(&self) -> u64 {
+        self.clamped
+    }
+
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let channels = self.channels;
         let frames = (input.len() / channels).min(output.len() / channels);
@@ -119,9 +125,13 @@ impl Processor for GainStage {
         };
 
         if self.limits {
+            let mut past = 0_u64;
             for (sample, slot) in taken.iter().zip(made.iter_mut()) {
-                *slot = (sample * amplitude).clamp(-1.0, 1.0);
+                let scaled = sample * amplitude;
+                past += u64::from(scaled.abs() > 1.0);
+                *slot = scaled.clamp(-1.0, 1.0);
             }
+            self.clamped = self.clamped.saturating_add(past);
         } else {
             for (sample, slot) in taken.iter().zip(made.iter_mut()) {
                 *slot = sample * amplitude;
@@ -242,6 +252,20 @@ mod tests {
         stage.process(&input, &mut output);
 
         assert_eq!(output, [1.0, -1.0]);
+    }
+
+    #[test]
+    fn a_boost_that_clamps_counts_the_samples_it_clamped() {
+        let mut stage = prepared(GainConfig {
+            replay_gain: boost(12.0, None),
+            prevent_clipping: true,
+            ..GainConfig::default()
+        });
+
+        let mut output = [0.0; 4];
+        stage.process(&[0.9, -0.9, 0.1, 0.0], &mut output);
+
+        assert_eq!(stage.overs(), 2);
     }
 
     #[test]

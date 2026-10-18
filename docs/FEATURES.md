@@ -114,10 +114,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   do not even say so
 
 ## Equaliser and DSP
-- [M] With `true-peak` off nothing weighs what the equaliser adds: a zero preamp under boosts
-  reaches the hard clamp with no count or report
 - [S] The measurer a listener prefers is a flag of `resonate eq --find` and `--suggest` alone: no
   setting keeps one per device, and the equaliser pane suggests from the fixed ranking
+- [S] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
+  not carry it
 
 ## Search
 - [S] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor

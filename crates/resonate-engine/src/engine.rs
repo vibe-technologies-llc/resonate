@@ -355,6 +355,7 @@ struct Output {
     sleep_fading: bool,
     sleep_lifted: Option<Instant>,
     last_pulled: Option<(u64, Instant)>,
+    overs_of_retired_chains: u64,
 }
 
 struct Retiring {
@@ -449,6 +450,7 @@ impl Output {
                 latency: Frames::ZERO,
                 underruns: 0,
                 went_without: Frames::ZERO,
+                overs: 0,
                 device_turned: attenuator == Attenuator::Device,
                 device_muted: attenuator.hears_the_mute_of(sink),
                 stream_volume: StreamVolume::Unity,
@@ -477,6 +479,7 @@ impl Output {
             sleep_fading: false,
             sleep_lifted: None,
             last_pulled: None,
+            overs_of_retired_chains: 0,
         })
     }
 
@@ -528,7 +531,11 @@ impl Output {
                 .resize(carried_samples(&chain, plan.stream), 0.0);
             self.staged.set_frames(chain.max_output_frames());
         }
+        self.overs_of_retired_chains = self
+            .overs_of_retired_chains
+            .saturating_add(self.chain.overs());
         self.chain = chain;
+        self.note_the_overs();
         self.status.hears(plan.mode);
         self.plan = plan;
         self.settles_into = None;
@@ -557,6 +564,20 @@ impl Output {
         let rendered = self.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
         let ahead = self.frames_rendered_ahead_of_the_ring();
         self.producer.render_at(rendered, ahead);
+    }
+
+    fn note_the_overs(&mut self) {
+        let overs = self
+            .overs_of_retired_chains
+            .saturating_add(self.chain.overs());
+        if self.status.overs == 0 && overs > 0 {
+            tracing::warn!(
+                sink = %self.bound,
+                "samples past full scale reach the sink's word with nothing weighing them; \
+                 lower the preamp or turn true-peak on"
+            );
+        }
+        self.status.overs = overs;
     }
 
     fn waits_for_room_to_reshape(&self) -> bool {
@@ -2943,6 +2964,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+        output.note_the_overs();
 
         let mut seen = 0;
         while let Some(fault) = output.monitor.next_fault() {

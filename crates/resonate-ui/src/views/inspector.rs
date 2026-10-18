@@ -345,6 +345,10 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
             ("latency", Some(format!("{latency} ms"))),
             ("underruns", Some(output.underruns.to_string())),
             (
+                "clamped samples",
+                (output.overs > 0).then(|| output.overs.to_string()),
+            ),
+            (
                 "went without",
                 (output.went_without > Frames::ZERO).then(|| {
                     let lost = output.went_without.to_duration(output.negotiated.rate);
