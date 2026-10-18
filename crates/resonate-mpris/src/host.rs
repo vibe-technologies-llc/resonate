@@ -15,6 +15,35 @@ pub enum Tuned {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Reloaded {
+    Applied,
+    Refused,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Reloadable {
+    Equaliser,
+    Submission,
+    Sync,
+}
+
+impl Reloadable {
+    pub const ALL: [Self; 3] = [Self::Equaliser, Self::Submission, Self::Sync];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Equaliser => "equaliser",
+            Self::Submission => "submission",
+            Self::Sync => "sync",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|group| group.name() == name)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Tunable {
     Sink,
     Quality,
@@ -110,6 +139,10 @@ pub trait Host: Send + Sync + 'static {
 
     fn tune(&self, _setting: Tunable, _value: &str) -> Tuned {
         Tuned::Refused
+    }
+
+    fn reload(&self, _group: Reloadable, _settings: &str) -> Reloaded {
+        Reloaded::Refused
     }
 }
 

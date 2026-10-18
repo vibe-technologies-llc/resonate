@@ -34,12 +34,14 @@ paths:
   `--bring-back`; a name matching nothing is `Error::NothingNamed`. All live in `favourites.rs` and
   `wanting.rs`, over the calls MCP's edits make.
 
-- **A launch handed to an open window carries its engine flags.** `launch` finds the window by
-  `Running::a_window`, sends `--sink`, `--quality`, `--filter-phase`, `--dither`, `--noise-shaping`
-  and `--bit-perfect`/`--no-bit-perfect` over `Tune` (`mpris::tuning_of`, `Desktop::tune`) before the
-  files, and says on stderr that `--config`, `--library` and `--vault` are ignored, since the window's
-  settings file and catalog are open already; a window too old for `Tune` is said not to have taken
-  the settings.
+- **A launch handed to an open window carries its engine flags, and one naming its own world is not
+  handed over.** `launch` finds the window by `Running::a_window`, sends `--sink`, `--quality`,
+  `--filter-phase`, `--dither`, `--noise-shaping` and `--bit-perfect`/`--no-bit-perfect` over `Tune`
+  (`mpris::tuning_of`, `Desktop::tune`) before the files; a window too old for `Tune` is said not to
+  have taken the settings. A launch giving `--config`, `--library` or `--vault` (`settings_of_its_own`)
+  asks the bus for no window at all and opens one of its own: the open window's settings file and
+  catalog are its own and cannot be swapped from outside, so handing files over while ignoring those
+  flags would play them from a catalog the listener did not name.
 
 ## Reading a file argument
 
@@ -266,11 +268,18 @@ written as the figure it is (`settings::as_typed`): 70 % is `volume = 0.7`. `Fil
 batch of `SettingChange`s through one `config::edit`, writing only if something moved; a setting the
 file cannot say (a non-UTF-8 folder) is `SettingNotStored` while the rest land.
 
-**A subcommand's write is not heard by a player already running.** A window or `resonate play` reads
-`config.toml` once at start and nothing tells it of a change, so `resonate eq` compares the file
-before and after and, when it moved, lists the players on the bus (`Running::listed`) and says they
-keep the settings they started with (`equaliser::kept_by_running`); with none running, or no bus,
-it says nothing.
+**A subcommand's write is delivered to the players already running.** `reloading::delivering` wraps
+the write of `resonate eq`, `tidal`, `lastfm` and `sync`: it compares the settings file before and
+after and, when it moved, lists the players on the bus (`Running::listed`) and calls `Reload` on each
+with the group the command changed (`Reloadable`) and the file's path. A player that took it is
+said to take it up; one that refused, or is too old to know `Reload`, is said to keep the settings it
+started with and to hear the change once started again; with none running, or no bus, nothing is
+said. `Desktop::reload` (`mpris.rs`) answers only for the file it reads (`same_file`, so a
+`--config` elsewhere is a refusal): `Equaliser` reads the file again and sends
+`Command::SetEqualisation` from `equaliser::resolved`; `Submission` and `Sync` are `Applied` where
+the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file
+themselves. `tidal` names no group: the window's providers are registered from the pane's own copy
+of the account, so a TIDAL sign-in is only said to wait for the next start.
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and

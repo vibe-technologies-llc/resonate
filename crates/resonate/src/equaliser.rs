@@ -1,4 +1,4 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use resonate_core::{SampleRate, eq::Profile};
 use resonate_engine::NodeName;
@@ -6,12 +6,12 @@ use resonate_eq::{
     Binding, Catalogue, Corrected, DeviceId, Kept, ProfileName, Store, search_preferring,
     suggest_preferring,
 };
-use resonate_mpris::Running;
+use resonate_mpris::Reloadable;
 use resonate_pipewire::PipeWire;
 
 use crate::{
     Cli, ConfigKey, Error, Result, SINK_TIMEOUT, cli::EqArgs, config, config::Config, online,
-    select_sink, table::Table,
+    reloading, select_sink, table::Table,
 };
 
 const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
@@ -39,49 +39,9 @@ fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
 
 pub fn run(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     let settings = crate::settings_path(cli)?;
-    let before = fs::read(&settings).ok();
 
-    performed(cli, config, wanted, &settings)?;
-
-    if fs::read(&settings).ok() != before {
-        say_running_players_keep_their_settings(&running_players());
-    }
-    Ok(())
-}
-
-fn running_players() -> Vec<String> {
-    match Running::listed() {
-        Ok(players) => players
-            .iter()
-            .map(|player| player.name().to_string())
-            .collect(),
-        Err(error) => {
-            tracing::debug!(%error, "the session bus was not asked which players are running");
-            Vec::new()
-        }
-    }
-}
-
-fn say_running_players_keep_their_settings(players: &[String]) {
-    if let Some(told) = kept_by_running(players) {
-        said!("{told}");
-    }
-}
-
-fn kept_by_running(players: &[String]) -> Option<String> {
-    let (first, rest) = players.split_first()?;
-
-    Some(if rest.is_empty() {
-        format!(
-            "{first} is running and keeps the settings it started with; it hears this once it \
-             is started again"
-        )
-    } else {
-        format!(
-            "{} are running and keep the settings they started with; they hear this once they \
-             are started again",
-            players.join(", ")
-        )
+    reloading::delivering(&settings, Some(Reloadable::Equaliser), || {
+        performed(cli, config, wanted, &settings)
     })
 }
 
@@ -779,25 +739,6 @@ mod tests {
             measurer_missed(Some("crinacle"), "Rtings").as_deref(),
             Some("crinacle measured nothing for it: Rtings's is the best ranked")
         );
-    }
-
-    #[test]
-    fn a_running_player_is_told_to_keep_the_settings_it_started_with_and_none_is_no_remark() {
-        let one = kept_by_running(&["org.mpris.MediaPlayer2.resonate".to_owned()]);
-        let two = kept_by_running(&[
-            "org.mpris.MediaPlayer2.resonate".to_owned(),
-            "org.mpris.MediaPlayer2.resonate.instance7".to_owned(),
-        ]);
-
-        assert_eq!(
-            one.as_deref(),
-            Some(
-                "org.mpris.MediaPlayer2.resonate is running and keeps the settings it started \
-                 with; it hears this once it is started again"
-            )
-        );
-        assert!(two.is_some_and(|told| told.contains("are running and keep the settings they")));
-        assert_eq!(kept_by_running(&[]), None);
     }
 
     #[test]

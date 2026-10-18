@@ -27,7 +27,7 @@ the client a second `resonate` reaches a first through.
 - **A location whose source is not in `Host::sources` is refused**; `SupportedUriSchemes` is built
   from the same list; `SupportedMimeTypes` is the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets our own interface** `org.resonate.Player1`, same object path:
-  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`, `Tune`. `Relocate(a(ss))` takes `(from, to)`
+  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`, `Tune`, `Reload`. `Relocate(a(ss))` takes `(from, to)`
   URI pairs in landing order = one `Command::Relocate`; `Running::relocate` sends `MOVES_A_CALL`
   (4096) per call (moves compose) to stay under the bus's message limit.
   The poll diffs the *published pair*, not the `Asleep` behind it (`left` ticks continuously).
@@ -35,6 +35,10 @@ the client a second `resonate` reaches a first through.
   and a value spelled as the flag spells it, each asked of `Host::tune` (the binary maps it to the
   `Command::Set…` the pane would send, for this run only; the settings file is untouched); a name or
   value the host refuses is `InvalidArgs` and the settings before it stay applied.
+  `Reload(ss)` tells a running player that a subcommand wrote the settings file at the path given:
+  `Reloadable::name` of the group changed (`equaliser`, `submission`, `sync`) and the path, asked of
+  `Host::reload`, which refuses (`InvalidArgs`) a file it does not read or a group it cannot take
+  up (`Running::reload`).
 
 ## The track list
 
@@ -183,10 +187,10 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
   whatever it matches then. `queue` opens the library only for `--playlist`.
 - **The window is single.** The window's host answers `CanRaise`/`Raise`; a launch finding a player
   of this build able to raise (`Running::a_window`) hands it its files as `AddTrack`s placed next
-  and heard now, raises it and leaves; the settings flags it was given (`--config`, `--library`,
-  `--vault`, `--sink`, `--quality`, `--filter-phase`, `--dither`, `--noise-shaping`,
-  `--bit-perfect`, `--no-bit-perfect`) are not handed over, so `settings_left_behind` names them on
-  stderr. Headless `resonate play` can't raise. The name is claimed
+  and heard now, raises it and leaves; the engine flags it was given (`--sink`, `--quality`,
+  `--filter-phase`, `--dither`, `--noise-shaping`, `--bit-perfect`, `--no-bit-perfect`) go over
+  `Tune`, while one giving `--config`, `--library` or `--vault` (`settings_of_its_own`) never asks
+  for a window and opens its own (`binary.md`). Headless `resonate play` can't raise. The name is claimed
   only after the engine starts, so `starting::one_window_at_a_time` takes an exclusive lock on
   `resonate-starting.lock` under `$XDG_RUNTIME_DIR` (none: `resonate-starting-<uid>.lock` in the
   temp folder) before asking the bus and holds it until `Mpris::start` claimed the name; a second

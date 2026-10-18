@@ -10,7 +10,7 @@ use resonate_engine::{
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
-    Heard, Host, Opened, Tunable, Tuned,
+    Heard, Host, Opened, Reloadable, Reloaded, Tunable, Tuned,
     art::Pictures,
     service,
     track::{
@@ -478,6 +478,16 @@ impl OwnInterface {
             }
         }
         Ok(())
+    }
+
+    fn reload(&self, group: &str, settings: &str) -> fdo::Result<()> {
+        let refused =
+            || fdo::Error::InvalidArgs(format!("{group} cannot be reloaded from {settings}"));
+        let group = Reloadable::named(group).ok_or_else(refused)?;
+        match self.shared.host.reload(group, settings) {
+            Reloaded::Applied => Ok(()),
+            Reloaded::Refused => Err(refused()),
+        }
     }
 
     fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {

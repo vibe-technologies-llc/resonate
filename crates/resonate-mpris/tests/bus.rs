@@ -27,7 +27,7 @@ use resonate_engine::{
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
-    Queueing, ROWS_A_CALL, Running, Seeking, Session, Tunable, Tuned,
+    Queueing, ROWS_A_CALL, Reloadable, Reloaded, Running, Seeking, Session, Tunable, Tuned,
 };
 use zbus::{
     OwnedObjectPath, OwnedVariant,
@@ -354,6 +354,7 @@ struct Desktop {
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
     tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
+    reloaded: Arc<Mutex<Vec<(Reloadable, String)>>>,
     catalog: Catalog,
     headsets: bool,
 }
@@ -404,6 +405,14 @@ impl Host for Desktop {
         Tuned::Applied
     }
 
+    fn reload(&self, group: Reloadable, settings: &str) -> Reloaded {
+        if settings == ELSEWHERE {
+            return Reloaded::Refused;
+        }
+        self.reloaded.lock().push((group, settings.to_owned()));
+        Reloaded::Applied
+    }
+
     fn heard(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<Heard> {
         self.catalog
             .lock()
@@ -423,6 +432,7 @@ impl Host for Desktop {
 
 const HELD_IDS_FROM: u64 = 4_242;
 const UNTUNABLE: &str = "nonsense";
+const ELSEWHERE: &str = "/elsewhere/config.toml";
 
 struct Shelf {
     rows: Mutex<Vec<PlaylistInfo>>,
@@ -508,6 +518,7 @@ struct Harness {
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
     tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
+    reloaded: Arc<Mutex<Vec<(Reloadable, String)>>>,
     catalog: Catalog,
     shelf: Arc<Shelf>,
     mpris: Option<Mpris>,
@@ -550,12 +561,14 @@ impl Harness {
         let raised = Arc::new(AtomicBool::new(false));
         let opened = Arc::new(Mutex::new(Vec::new()));
         let tuned = Arc::new(Mutex::new(Vec::new()));
+        let reloaded = Arc::new(Mutex::new(Vec::new()));
         let catalog: Catalog = Arc::new(Mutex::new(Vec::new()));
         let host = Desktop {
             quit: Arc::clone(&quit),
             raised: Arc::clone(&raised),
             opened: Arc::clone(&opened),
             tuned: Arc::clone(&tuned),
+            reloaded: Arc::clone(&reloaded),
             catalog: Arc::clone(&catalog),
             headsets,
         };
@@ -577,6 +590,7 @@ impl Harness {
             raised,
             opened,
             tuned,
+            reloaded,
             catalog,
             shelf,
             mpris: Some(mpris),
@@ -1166,6 +1180,27 @@ fn settings_handed_over_the_bus_reach_the_host_and_one_it_refuses_is_an_error() 
         ]
     );
     assert!(refused.is_err(), "a value the host refused was accepted");
+}
+
+#[test]
+fn a_reload_handed_over_the_bus_reaches_the_host_and_one_it_refuses_is_an_error() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let running = Running::named(&PlayerName::new(harness.name().as_str()))
+        .expect("the bus answers")
+        .expect("the player is on the bus");
+
+    running
+        .reload(Reloadable::Equaliser, Path::new("/home/a/config.toml"))
+        .expect("the host takes the reload");
+    let refused = running.reload(Reloadable::Equaliser, Path::new(ELSEWHERE));
+
+    assert_eq!(
+        *harness.reloaded.lock(),
+        [(Reloadable::Equaliser, "/home/a/config.toml".to_owned())]
+    );
+    assert!(refused.is_err(), "a reload the host refused was accepted");
 }
 
 #[test]

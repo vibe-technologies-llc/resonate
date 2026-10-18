@@ -106,12 +106,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   different networks meet only through a self-hosted `resonate-server`
 
 ## Command line and bus
-- [S] A launch handing files to an open window carries `--sink`, `--quality`, `--filter-phase`,
-  `--dither`, `--noise-shaping` and `--bit-perfect` but still leaves `--config`, `--library` and
-  `--vault` behind (the window's catalog and file stay its own)
-- [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is only said not to
-  be heard by a running window or player, not delivered to it; `tidal`, `lastfm` and `sync --join`
-  do not even say so
+- [S] A TIDAL sign-in (`resonate tidal`) is only said not to be heard by a running window or
+  player: the window's providers are registered from the settings pane's own copy of the account
+- [S] A window whose equaliser pane is open keeps showing the bindings it started with after
+  `resonate eq` changed them, though the engine plays the new ones; the pane's next edit writes from
+  what it showed
 
 ## Equaliser and DSP
 - [S] The measurer a listener prefers is a flag of `resonate eq --find` and `--suggest` alone: no

@@ -1,5 +1,6 @@
 use std::{
-    env,
+    env, fs,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -12,11 +13,11 @@ use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId};
 use resonate_engine::{Command, NodeName, Placement, Player, QueueItem, Unclaimed};
 use resonate_library::Library;
-use resonate_mpris::{Heard, Host, Mpris, Opened, Tunable, Tuned};
+use resonate_mpris::{Heard, Host, Mpris, Opened, Reloadable, Reloaded, Tunable, Tuned};
 
 use crate::{
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
-    names_a_sheet,
+    config, equaliser, names_a_sheet,
     playlists::Collection,
     sheet_items,
 };
@@ -74,6 +75,7 @@ struct Desktop {
     player: Arc<Player>,
     sources: Arc<Sources>,
     library: Option<Arc<Library>>,
+    settings: Option<PathBuf>,
     quit: Option<Sender<()>>,
     attention: Option<Attention>,
     raise: Option<Sender<()>>,
@@ -206,6 +208,54 @@ impl Host for Desktop {
             }
         }
     }
+
+    fn reload(&self, group: Reloadable, settings: &str) -> Reloaded {
+        if !self.reads(settings) {
+            return Reloaded::Refused;
+        }
+
+        match group {
+            Reloadable::Equaliser => self.equalised_again(Path::new(settings)),
+            Reloadable::Submission | Reloadable::Sync if self.library.is_some() => {
+                Reloaded::Applied
+            }
+            Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
+        }
+    }
+}
+
+impl Desktop {
+    fn reads(&self, settings: &str) -> bool {
+        self.settings
+            .as_deref()
+            .is_some_and(|own| same_file(own, Path::new(settings)))
+    }
+
+    fn equalised_again(&self, settings: &Path) -> Reloaded {
+        let config = match config::load(Some(settings)) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::warn!(%error, "the equaliser could not be read again from the settings");
+                return Reloaded::Refused;
+            }
+        };
+        let equalisation = Arc::new(equaliser::resolved(&config));
+
+        match self.player.send(Command::SetEqualisation(equalisation)) {
+            Ok(()) => Reloaded::Applied,
+            Err(error) => {
+                tracing::warn!(%error, "the equaliser read again did not reach the engine");
+                Reloaded::Refused
+            }
+        }
+    }
+}
+
+fn same_file(first: &Path, second: &Path) -> bool {
+    match (fs::canonicalize(first), fs::canonicalize(second)) {
+        (Ok(first), Ok(second)) => first == second,
+        _ => first == second,
+    }
 }
 
 fn tuning_command(setting: Tunable, value: &str) -> Option<Command> {
@@ -288,6 +338,7 @@ pub(crate) fn start(
     player: &Arc<Player>,
     sources: &Arc<Sources>,
     library: Option<&Arc<Library>>,
+    settings: Option<PathBuf>,
     quit: Option<Sender<()>>,
     window: Option<Window>,
     notify: &Arc<AtomicBool>,
@@ -300,6 +351,7 @@ pub(crate) fn start(
         player: Arc::clone(player),
         sources: Arc::clone(sources),
         library: library.map(Arc::clone),
+        settings,
         quit,
         attention: attention.map(|changes| Attention {
             changes,
@@ -436,5 +488,24 @@ mod tests {
                 "{kind} is claimed by the entry and not offered on the bus"
             );
         }
+    }
+
+    #[test]
+    fn a_settings_file_is_the_same_one_however_it_is_spelled_and_another_is_not() {
+        let folder = crate::fixtures::scratch("mpris-settings");
+        let settings = folder.join("config.toml");
+        let other = folder.join("other.toml");
+        fs::write(&settings, "").expect("a settings file");
+        fs::write(&other, "").expect("another settings file");
+        let roundabout = folder.join(".").join("config.toml");
+
+        assert!(same_file(&settings, &roundabout));
+        assert!(!same_file(&settings, &other));
+        assert!(same_file(
+            &folder.join("missing.toml"),
+            &folder.join("missing.toml")
+        ));
+
+        let _ = fs::remove_dir_all(&folder);
     }
 }

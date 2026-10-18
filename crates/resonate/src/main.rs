@@ -25,6 +25,7 @@ mod online;
 mod playlists;
 mod providers;
 mod readout;
+mod reloading;
 #[cfg(feature = "ui")]
 mod settings;
 mod share;
@@ -81,7 +82,7 @@ use resonate_library::{
     RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter,
     TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in, folded_letters,
 };
-use resonate_mpris::{PlayerName, Queueing, Running, Standing};
+use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing};
 use resonate_pipewire::{
     HardwareVolume, NodeName, PipeWire, Plugged, SinkFormats, SinkInfo, Words,
 };
@@ -280,9 +281,17 @@ fn run() -> Result<()> {
                 *again,
             )
         }
-        Some(Sub::Tidal) => providers::sign_in_to_tidal(&config, &settings_path(&cli)?),
+        Some(Sub::Tidal) => {
+            let settings = settings_path(&cli)?;
+            reloading::delivering(&settings, None, || {
+                providers::sign_in_to_tidal(&config, &settings)
+            })
+        }
         Some(Sub::Lastfm { user, forget }) => {
-            lastfm::sign_in(&config, &settings_path(&cli)?, user.as_deref(), *forget)
+            let settings = settings_path(&cli)?;
+            reloading::delivering(&settings, Some(Reloadable::Submission), || {
+                lastfm::sign_in(&config, &settings, user.as_deref(), *forget)
+            })
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
         Some(Sub::Tag { root, apply, undo }) => {
@@ -2154,7 +2163,10 @@ fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> {
         sync::Asked::Join(_) | sync::Asked::Leave => None,
         _ => Some(Arc::new(open_library(cli, config)?)),
     };
-    let Some(items) = sync::asked(config, &settings, library.clone(), asked)? else {
+    let Some(items) = reloading::delivering(&settings, Some(Reloadable::Sync), || {
+        sync::asked(config, &settings, library.clone(), asked)
+    })?
+    else {
         return Ok(());
     };
     let transport = TransportArgs {
@@ -2209,6 +2221,7 @@ fn play_queue(
         &player,
         &sources,
         library.as_ref(),
+        settings_path(cli).ok(),
         Some(asked_to_quit),
         None,
         &Arc::new(AtomicBool::new(config.notifies())),
@@ -2593,8 +2606,9 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
 #[cfg(feature = "ui")]
 fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = starting::one_window_at_a_time();
-    if let Some(window) = Running::a_window().ok().flatten() {
-        warn_of_settings_left_behind(&cli);
+    if settings_of_its_own(&cli).is_empty()
+        && let Some(window) = Running::a_window().ok().flatten()
+    {
         return handed_to(&window, &cli.files, &mpris::tuning_of(&cli));
     }
     let places = resonate_ui::Places {
@@ -2624,6 +2638,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         &player,
         &sources,
         Some(&library),
+        Some(places.config.clone()),
         Some(asked_to_quit),
         Some(mpris::Window {
             attention,
@@ -2769,7 +2784,7 @@ fn caret_as_the_desktop_blinks() -> resonate_ui::CaretBlink {
 }
 
 #[cfg(feature = "ui")]
-fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
+fn settings_of_its_own(cli: &Cli) -> Vec<&'static str> {
     [
         ("--config", cli.config.is_some()),
         ("--library", cli.library.is_some()),
@@ -2778,17 +2793,6 @@ fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
     .into_iter()
     .filter_map(|(flag, given)| given.then_some(flag))
     .collect()
-}
-
-#[cfg(feature = "ui")]
-fn warn_of_settings_left_behind(cli: &Cli) {
-    let left_behind = settings_left_behind(cli);
-    if !left_behind.is_empty() {
-        told!(
-            "the window already open keeps its own settings, so {} ignored",
-            left_behind.join(", ")
-        );
-    }
 }
 
 #[cfg(feature = "ui")]
@@ -3259,16 +3263,16 @@ mod tests {
 
     #[cfg(feature = "ui")]
     #[test]
-    fn a_launch_handed_to_a_window_names_the_settings_it_leaves_behind() {
-        let left_behind = |arguments: &[&str]| {
+    fn a_launch_naming_a_settings_file_catalog_or_vault_opens_a_window_of_its_own() {
+        let own_settings = |arguments: &[&str]| {
             let cli = Cli::try_parse_from(arguments.iter().copied()).expect("a launch");
-            settings_left_behind(&cli)
+            settings_of_its_own(&cli)
         };
 
-        assert!(left_behind(&["resonate", "a.flac"]).is_empty());
-        assert!(left_behind(&["resonate", "--sink", "alsa_output.usb", "a.flac"]).is_empty());
+        assert!(own_settings(&["resonate", "a.flac"]).is_empty());
+        assert!(own_settings(&["resonate", "--sink", "alsa_output.usb", "a.flac"]).is_empty());
         assert_eq!(
-            left_behind(&[
+            own_settings(&[
                 "resonate",
                 "--config",
                 "c.toml",

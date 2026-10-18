@@ -18,7 +18,10 @@ mod tracklist;
 pub use crate::{
     caret::{Blinking, caret_blinking},
     error::{BusOp, Error, Result},
-    host::{Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists, Tunable, Tuned},
+    host::{
+        Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists, Reloadable, Reloaded, Tunable,
+        Tuned,
+    },
     icons::tell_the_icons_changed,
     remote::{Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing},
     service::{Mpris, Teller, Told},

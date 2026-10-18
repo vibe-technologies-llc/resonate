@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, time::Duration};
+use std::{collections::HashMap, fmt, path::Path, time::Duration};
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
 use resonate_engine::{Asleep, Placement, Until};
@@ -8,7 +8,7 @@ use zbus::{
 };
 
 use crate::{
-    BusOp, Error, PlaylistInfo, PlaylistOrder, Result, Tunable,
+    BusOp, Error, PlaylistInfo, PlaylistOrder, Reloadable, Result, Tunable,
     blocking::{Connection, Proxy, connection, fdo::DBusProxy},
     interfaces::OWN_INTERFACE,
     service::{BUS_NAME, OBJECT_PATH},
@@ -34,6 +34,7 @@ const SET_SLEEP: &str = "SetSleep";
 const ADD_TRACKS: &str = "AddTracks";
 const RELOCATE: &str = "Relocate";
 const TUNE: &str = "Tune";
+const RELOAD: &str = "Reload";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
 const PLAYING_NEXT: &str = "PlayingNext";
@@ -418,6 +419,15 @@ impl Running {
 
         self.proxy(OWN_INTERFACE)?
             .call::<_, _, ()>(TUNE, &(pairs,))
+            .map_err(|source| Error::bus(BusOp::Call, source))
+    }
+
+    pub fn reload(&self, group: Reloadable, settings: &Path) -> Result<()> {
+        self.proxy(OWN_INTERFACE)?
+            .call::<_, _, ()>(
+                RELOAD,
+                &(group.name(), settings.to_string_lossy().into_owned()),
+            )
             .map_err(|source| Error::bus(BusOp::Call, source))
     }
 
