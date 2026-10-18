@@ -82,8 +82,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] Songs landed from other devices into the iOS Documents folder are in the device backup though
   a restore fetches them again: `landReceived` never sets `isExcludedFromBackup`, and `Backup`
   covers only `sync-received`, `sync-staging` and the `.before-v` copies
-- [S] iOS restores no navigation: `Navigation` is plain `@State` with no `SceneStorage`, so a
-  relaunch after the system reclaims the app lands on the Library root, whatever page was open
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

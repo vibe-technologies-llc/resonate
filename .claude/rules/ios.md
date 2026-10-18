@@ -458,6 +458,14 @@ every route change (a pair of headphones at the same rate included), not from th
   its refresh), so *Download all missing* of N songs reads the catalog and rebuilds the search index
   a few times, not N, as `landReceived` does once a batch.
 - **A destination already on top of a stack is not pushed again** (`Navigation.open` switches the tab and returns), so *Go to album* from Now Playing on that album or *More › Equaliser* twice never leaves a copy for Back to land on.
+- **The tab and every stack outlive the process** (`NavigationKeeper`, behind the `TabView`): the
+  selected tab and each tab's path are `KeptNavigation` (`Root` and `Destination` are `Codable`),
+  JSON in the scene's `@SceneStorage("navigation")`, written on every change once restored. They are
+  restored on the root's first appearance, so the page shows from the first frame, and then checked
+  once the player is open and the whole catalog read (`Library.wholeCatalog`): a song page whose id
+  the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
+  playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
+  it was reached through it. A failed read cuts nothing. Now Playing and the sheets are not kept.
 - **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,

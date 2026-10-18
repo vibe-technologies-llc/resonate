@@ -222,6 +222,8 @@ final class Library {
     @ObservationIgnored private let enqueue: AsyncStream<NativeAction>.Continuation
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var catalogWhole = false
+    @ObservationIgnored private var catalogWaiting: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var queuedScans: [QueuedScan] = []
     @ObservationIgnored private var unaskedRescan: Task<Void, Never>?
     @ObservationIgnored private var owedRescan: RescanScope?
@@ -853,13 +855,58 @@ final class Library {
             if !catalogRead || first.count < Library.page {
                 await publishCatalog(first, request: request)
             }
-            guard first.count == Library.page else { return }
+            guard first.count == Library.page else {
+                caughtUpWithCatalog()
+                return
+            }
 
             let rest = try await Work.aside { try Library.pages(native, everything, from: Library.page) }
             guard request == catalogRequest else { return }
             await publishCatalog(first + rest, request: request)
+            caughtUpWithCatalog()
         } catch {
             report(error)
+        }
+    }
+
+    private func caughtUpWithCatalog() {
+        catalogWhole = true
+        let waiting = catalogWaiting
+        catalogWaiting.removeAll()
+        waiting.forEach { $0.resume() }
+    }
+
+    func wholeCatalog() async {
+        guard !catalogWhole else { return }
+        await withCheckedContinuation { catalogWaiting.append($0) }
+    }
+
+    func gone(among destinations: [Destination]) async -> Set<Destination> {
+        guard let native = try? await player() else { return [] }
+        await wholeCatalog()
+        var gone: Set<Destination> = []
+        var asked: [Destination] = []
+        for destination in destinations {
+            switch destination {
+            case .songLyrics(let id?), .songAnalysis(let id?), .songDetails(let id):
+                if track(id) == nil { gone.insert(destination) }
+            case .album, .artist, .playlist:
+                asked.append(destination)
+            default:
+                break
+            }
+        }
+        let looked = asked
+        let missing = (try? await Work.aside { try looked.filter { try !Library.resolves($0, in: native) } }) ?? []
+        return gone.union(missing)
+    }
+
+    nonisolated private static func resolves(_ destination: Destination, in native: MobilePlayer) throws -> Bool {
+        switch destination {
+        case .album(let key): try native.album(key: key) != nil
+        case .artist(let name): try !native.artistTracks(name: name).isEmpty
+        case .playlist(let id): try native.playlists().contains { $0.id == id }
+        default: true
         }
     }
 

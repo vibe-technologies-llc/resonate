@@ -38,11 +38,11 @@ struct ResonateApp: App {
     }
 }
 
-enum Root: Hashable {
+enum Root: String, Hashable, Codable {
     case songs, library, queue, settings, search
 }
 
-enum Destination: Hashable {
+enum Destination: Hashable, Codable {
     case album(String)
     case artist(String)
     case playlist(UInt64)
@@ -124,6 +124,69 @@ final class Navigation {
             paths[root]?.removeLast()
         }
     }
+
+    var kept: KeptNavigation {
+        KeptNavigation(tab: tab, paths: paths.filter { !$0.value.isEmpty })
+    }
+
+    func restore(_ kept: KeptNavigation) {
+        tab = kept.tab
+        paths = kept.paths
+    }
+
+    func drop(_ gone: Set<Destination>) {
+        guard !gone.isEmpty else { return }
+        for (root, path) in paths where path.contains(where: gone.contains) {
+            paths[root] = Array(path.prefix { !gone.contains($0) })
+        }
+    }
+}
+
+struct KeptNavigation: Codable, Equatable {
+    let tab: Root
+    let paths: [Root: [Destination]]
+
+    var destinations: [Destination] {
+        Array(Set(paths.values.joined()))
+    }
+
+    var encoded: Data? {
+        try? JSONEncoder().encode(self)
+    }
+
+    static func decoded(_ data: Data) -> KeptNavigation? {
+        try? JSONDecoder().decode(KeptNavigation.self, from: data)
+    }
+}
+
+struct NavigationKeeper: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    @SceneStorage("navigation") private var stored: Data?
+    @State private var restored = false
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onAppear(perform: restore)
+            .onChange(of: navigation.kept) { _, now in
+                guard restored else { return }
+                stored = now.encoded
+            }
+    }
+
+    private func restore() {
+        guard !restored else { return }
+        restored = true
+        guard let stored, let kept = KeptNavigation.decoded(stored) else { return }
+        navigation.restore(kept)
+        let destinations = kept.destinations
+        guard !destinations.isEmpty else { return }
+        Task {
+            let gone = await library.gone(among: destinations)
+            navigation.drop(gone)
+        }
+    }
 }
 
 extension Destination {
@@ -196,6 +259,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .background { NavigationKeeper() }
         .task { await PlayerWarmup.warm() }
         .tint(AppearanceState.shared.tint)
         .modifier(PlayerAccessory(loaded: library.loaded, zoom: player))
