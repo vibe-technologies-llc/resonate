@@ -19069,7 +19069,7 @@ fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -
         .iter()
         .find(|suggestion| suggestion.query.text.as_deref() == Some("genre:=\"House\""))
         .expect("House is offered");
-    assert_eq!(u64::from(house.rows), u64::from(TRACKS_OF_A_DECADE / 2));
+    assert_eq!(house.rows, u64::from(TRACKS_OF_A_DECADE / 2));
     Ok(())
 }
 
@@ -24099,6 +24099,19 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
         .expect("the row followed the file");
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
+    assert_eq!(row.title, "Money", "the row kept the title it was heard as");
+    assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(
+        row.file_size,
+        fs::metadata(&after).expect("the file is there").len(),
+        "the row kept the size of the file before it was retagged"
+    );
+    assert_eq!(narrowed(&library, "money")?, vec!["Money"]);
+    assert_eq!(narrowed(&library, "artist:floyd")?, vec!["Money"]);
+    assert!(
+        narrowed(&library, "echoes")?.is_empty(),
+        "the index still held the title the file had before it moved"
+    );
     Ok(())
 }
 

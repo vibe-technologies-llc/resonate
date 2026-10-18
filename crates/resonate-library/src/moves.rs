@@ -10,6 +10,7 @@ use crate::{
     enriched,
     error::{Error, Result, StoreOp},
     organise::{self, Move},
+    store,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -31,6 +32,7 @@ struct Sound {
 
 #[derive(Clone, Debug)]
 struct Row {
+    id: i64,
     path: String,
     root: Option<i64>,
     album: Option<i64>,
@@ -256,7 +258,7 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
         .prepare(&format!(
             "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,
                     t.tagged_title, t.tagged_artist, t.sample_rate, t.channels, t.span_start,
-                    t.span_frames, s.print, t.packets
+                    t.span_frames, s.print, t.packets, t.id
                FROM tracks t
                LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE {narrowed}"
@@ -281,6 +283,7 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
                 cut: (row.get(10)?, row.get(11)?),
                 print: row.get(12)?,
                 packets: row.get(13)?,
+                id: row.get(14)?,
             })
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -433,6 +436,9 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
             sidecars: Vec::new(),
         })
         .collect();
+    for pair in paired.iter().filter(|pair| pair.rows == 1) {
+        refresh_from_the_arrival(tx, pair)?;
+    }
     organise::files_moved(tx, &moves)?;
 
     for pair in paired {
@@ -450,7 +456,103 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
     for (album, came) in into_album {
         settle_the_album(tx, album, &came)?;
     }
+    for pair in paired.iter().filter(|pair| pair.rows == 1) {
+        store::reindex_the_track(tx, pair.from.id)?;
+    }
     Ok(())
+}
+
+const RETAGGED_AS_IT_MOVED: &str = "(NOT (tracks.named_by_its_stem AND arrived.named_by_its_stem)
+    AND (tracks.tagged_title  IS NOT arrived.tagged_title
+      OR tracks.tagged_artist IS NOT arrived.tagged_artist))";
+
+const UNCHANGED_AS_IT_MOVED: &str = "tracks.answered IS NOT NULL
+    AND tracks.file_size      =  arrived.file_size
+    AND tracks.modified       =  arrived.modified
+    AND tracks.sheet_modified IS arrived.sheet_modified
+    AND tracks.span_frames    IS arrived.span_frames";
+
+const THE_FILE_AS_IT_ARRIVED: &str = "UPDATE tracks SET
+         title = CASE
+             WHEN tracks.answered IS NULL OR {RETAGGED} THEN arrived.title
+             ELSE tracks.title END,
+         artist = CASE
+             WHEN tracks.answered IS NULL OR {RETAGGED} THEN arrived.artist
+             ELSE tracks.artist END,
+         artist_id = CASE
+             WHEN tracks.answered IS NULL OR {RETAGGED} THEN arrived.artist_id
+             ELSE tracks.artist_id END,
+         track_number = CASE WHEN {UNCHANGED} THEN tracks.track_number ELSE arrived.track_number END,
+         numbered_by_its_stem = CASE
+             WHEN {UNCHANGED} THEN tracks.numbered_by_its_stem
+             ELSE arrived.numbered_by_its_stem END,
+         disc_number = CASE WHEN {UNCHANGED} THEN tracks.disc_number ELSE arrived.disc_number END,
+         mbid = CASE
+             WHEN {UNCHANGED} THEN tracks.mbid
+             WHEN arrived.mbid IS NOT NULL THEN arrived.mbid
+             WHEN {RETAGGED} THEN NULL
+             ELSE tracks.mbid END,
+         artist_mbid = CASE
+             WHEN {UNCHANGED} THEN tracks.artist_mbid
+             WHEN arrived.artist_mbid IS NOT NULL THEN arrived.artist_mbid
+             WHEN {RETAGGED} THEN NULL
+             ELSE tracks.artist_mbid END,
+         release_track_mbid = CASE
+             WHEN {UNCHANGED} THEN tracks.release_track_mbid
+             WHEN arrived.release_track_mbid IS NOT NULL THEN arrived.release_track_mbid
+             WHEN {RETAGGED} THEN NULL
+             ELSE tracks.release_track_mbid END,
+         isrc = CASE
+             WHEN {UNCHANGED} THEN tracks.isrc
+             WHEN arrived.isrc IS NOT NULL THEN arrived.isrc
+             WHEN {RETAGGED} THEN NULL
+             ELSE tracks.isrc END,
+         vault_key = CASE
+             WHEN tracks.file_size = arrived.file_size AND tracks.modified = arrived.modified
+              THEN tracks.vault_key
+             ELSE NULL END,
+         vault_path = CASE
+             WHEN tracks.file_size = arrived.file_size AND tracks.modified = arrived.modified
+              THEN tracks.vault_path
+             ELSE NULL END,
+         vault_bits = CASE
+             WHEN tracks.file_size = arrived.file_size AND tracks.modified = arrived.modified
+              THEN tracks.vault_bits
+             ELSE NULL END,
+         asks = CASE WHEN {RETAGGED} THEN 0 ELSE tracks.asks END,
+         refusals = CASE WHEN {RETAGGED} THEN 0 ELSE tracks.refusals END,
+         answered = CASE WHEN {RETAGGED} THEN NULL ELSE tracks.answered END,
+         duration = arrived.duration,
+         sample_rate = arrived.sample_rate,
+         channels = arrived.channels,
+         sample_format = arrived.sample_format,
+         codec = arrived.codec,
+         rg_track_gain = arrived.rg_track_gain,
+         rg_track_peak = arrived.rg_track_peak,
+         rg_album_gain = arrived.rg_album_gain,
+         rg_album_peak = arrived.rg_album_peak,
+         file_size = arrived.file_size,
+         modified = arrived.modified,
+         sheet_modified = arrived.sheet_modified,
+         tagged_title = arrived.tagged_title,
+         tagged_artist = arrived.tagged_artist,
+         named_by_its_stem = arrived.named_by_its_stem,
+         packets = arrived.packets,
+         title_sort = arrived.title_sort,
+         artist_sort = arrived.artist_sort,
+         genre = arrived.genre,
+         lyrics = arrived.lyrics,
+         probe_again = 0
+       FROM tracks arrived
+      WHERE tracks.id = ?1 AND arrived.id = ?2";
+
+fn refresh_from_the_arrival(tx: &Transaction<'_>, pair: &Paired) -> Result<()> {
+    let sql = THE_FILE_AS_IT_ARRIVED
+        .replace("{RETAGGED}", RETAGGED_AS_IT_MOVED)
+        .replace("{UNCHANGED}", UNCHANGED_AS_IT_MOVED);
+    tx.execute(&sql, params![pair.from.id, pair.to.id])
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 fn settle_the_album(tx: &Transaction<'_>, album: Option<i64>, came: &[&Paired]) -> Result<()> {

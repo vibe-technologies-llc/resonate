@@ -480,7 +480,12 @@ rows read via `Player::media` like any unscanned row.
   unnamed, never in a transaction (`moves::to_be_heard` notes the paths on a read connection, the
   scan decodes lock-free, `follow_the_moved` pairs in the write). A pair goes through
   `organise::files_moved` (the old row takes the new path and keeps its id, so plays, listens,
-  favourite, enrichment, vault object, playlist rows, kept lyric and queue row follow);
+  favourite, enrichment, vault object, playlist rows, kept lyric and queue row follow). **The old
+  row is first refreshed from the arrived one** (`moves::refresh_from_the_arrival`, a one-row pair
+  only; the upsert's own retag and unchanged rules over the file's columns: size, mtime, tags, sort
+  names, the names and ids an answered row keeps unless the file was retagged), and indexed again
+  after `settle_the_album` (`store::reindex_the_track`), so a file retagged as it moved is found by
+  its new names (`a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested`);
   `settle_the_album` gathers into the old album via `enriched::gather` when the new folder's album
   holds nothing else and every moved row came from one album. **A cue track whose `INDEX 01` moved
   is the row it was** (`store::follow_a_cut_that_moved`, carrying its dependents, `CUT_FOLLOWERS`);

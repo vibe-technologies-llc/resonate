@@ -2401,6 +2401,42 @@ pub(crate) fn reindex_the_tracks_of(tx: &Transaction<'_>, artist: i64) -> Result
     Ok(())
 }
 
+pub(crate) fn reindex_the_track(tx: &Transaction<'_>, id: i64) -> Result<()> {
+    let held = tx
+        .query_row(
+            "SELECT t.title, t.artist, a.title, t.genre, t.artist_id
+               FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+              WHERE t.id = ?1",
+            params![id],
+            |row| {
+                Ok((
+                    Indexable {
+                        id,
+                        title: row.get(0)?,
+                        artist: row.get(1)?,
+                        album: row.get(2)?,
+                        genre: row.get(3)?,
+                    },
+                    row.get::<_, Option<i64>>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((track, artist)) = held else {
+        return Ok(());
+    };
+
+    index_row(
+        tx,
+        id,
+        &track.title,
+        track.artist.as_deref().unwrap_or_default(),
+        track.album.as_deref().unwrap_or_default(),
+        &indexed_genre_of(tx, track.genre.as_deref(), artist)?,
+    )
+}
+
 pub(crate) fn reindex_the_tracks_on(tx: &Transaction<'_>, album: i64) -> Result<()> {
     let mut statement = tx
         .prepare(
