@@ -24253,6 +24253,52 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
 }
 
 #[test]
+fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited_sheet_gives()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the sheet's third row");
+    library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
+
+    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    fs::rename(
+        tree.path().join("rip"),
+        tree.path().join("Pink Floyd/Meddle"),
+    )
+    .expect("the rip is moved by hand");
+    tree.write(
+        "Pink Floyd/Meddle/Meddle.cue",
+        MEDDLE_SHEET.replace("Echoes", "Fearless").as_bytes(),
+    );
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 3);
+    assert_eq!(stats.added, 0);
+    let moved = library
+        .track_at(
+            &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
+            echoes.span,
+        )?
+        .expect("the row followed the file");
+    assert_eq!(moved.id, echoes.id);
+    assert_eq!(moved.plays, 1);
+    assert_eq!(moved.title, "Fearless");
+    assert_eq!(narrowed(&library, "fearless")?, vec!["Fearless"]);
+    assert!(
+        narrowed(&library, "echoes")?.is_empty(),
+        "the index still held the title the sheet had before it was edited"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does()
 -> Result<()> {
     const HEARD_FOR: Duration = Duration::from_secs(90);

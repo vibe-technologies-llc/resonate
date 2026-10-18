@@ -36,9 +36,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`tidy_the_roots_beside`) before any pairing could follow it: a hand move inside `~/Archive` is
   forgotten with its history by a poll's delivery scan, *Add folder* or `resonate scan ~/Music`, and
   refound as new
-- [S] A file a sheet cuts, followed as it moved (`moves::cuts_moved`), is not refreshed from the rows
-  the scan wrote at its new path: a sheet edited as the file moved keeps the gone rows' titles and
-  index entries until the sheet's mtime brings a reprobe
 
 ## Window
 - [M] Typing anywhere to search drops text an input method composes until a field is focused; the

@@ -103,12 +103,31 @@ impl Row {
 struct Paired {
     from: Row,
     to: Row,
-    rows: usize,
+    followed: Vec<(i64, i64)>,
 }
 
 impl Paired {
-    const fn whole(from: Row, to: Row) -> Self {
-        Self { from, to, rows: 1 }
+    fn whole(from: Row, to: Row) -> Self {
+        let followed = vec![(from.id, to.id)];
+        Self { from, to, followed }
+    }
+
+    fn cut(from: Cut, to: Cut) -> Option<Self> {
+        let followed = from
+            .rows
+            .iter()
+            .zip(&to.rows)
+            .map(|(from, to)| (from.id, to.id))
+            .collect();
+        Some(Self {
+            from: from.rows.into_iter().next()?,
+            to: to.rows.into_iter().next()?,
+            followed,
+        })
+    }
+
+    fn rows(&self) -> usize {
+        self.followed.len()
     }
 }
 
@@ -159,7 +178,7 @@ pub(crate) fn follow_the_moved(
         return Ok(0);
     }
     follow(tx, &paired, generation)?;
-    Ok(paired.iter().map(|pair| pair.rows as u64).sum())
+    Ok(paired.iter().map(|pair| pair.rows() as u64).sum())
 }
 
 fn wholes_moved(
@@ -229,12 +248,7 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
             if !from.named_alike(&to) {
                 return None;
             }
-            let rows = from.rows.len();
-            Some(Paired {
-                from: from.rows.into_iter().next()?,
-                to: to.rows.into_iter().next()?,
-                rows,
-            })
+            Paired::cut(from, to)
         })
         .collect())
 }
@@ -431,13 +445,15 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
         .map(|pair| Move {
             from: PathBuf::from(&pair.from.path),
             to: PathBuf::from(&pair.to.path),
-            rows: u32::try_from(pair.rows).unwrap_or(u32::MAX),
+            rows: u32::try_from(pair.rows()).unwrap_or(u32::MAX),
             companions: Vec::new(),
             sidecars: Vec::new(),
         })
         .collect();
-    for pair in paired.iter().filter(|pair| pair.rows == 1) {
-        refresh_from_the_arrival(tx, pair)?;
+    for pair in paired {
+        for &(was, is) in &pair.followed {
+            refresh_from_the_arrival(tx, was, is)?;
+        }
     }
     organise::files_moved(tx, &moves)?;
 
@@ -456,8 +472,10 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
     for (album, came) in into_album {
         settle_the_album(tx, album, &came)?;
     }
-    for pair in paired.iter().filter(|pair| pair.rows == 1) {
-        store::reindex_the_track(tx, pair.from.id)?;
+    for pair in paired {
+        for &(was, _) in &pair.followed {
+            store::reindex_the_track(tx, was)?;
+        }
     }
     Ok(())
 }
@@ -547,11 +565,11 @@ const THE_FILE_AS_IT_ARRIVED: &str = "UPDATE tracks SET
        FROM tracks arrived
       WHERE tracks.id = ?1 AND arrived.id = ?2";
 
-fn refresh_from_the_arrival(tx: &Transaction<'_>, pair: &Paired) -> Result<()> {
+fn refresh_from_the_arrival(tx: &Transaction<'_>, was: i64, is: i64) -> Result<()> {
     let sql = THE_FILE_AS_IT_ARRIVED
         .replace("{RETAGGED}", RETAGGED_AS_IT_MOVED)
         .replace("{UNCHANGED}", UNCHANGED_AS_IT_MOVED);
-    tx.execute(&sql, params![pair.from.id, pair.to.id])
+    tx.execute(&sql, params![was, is])
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Update, source))
 }
