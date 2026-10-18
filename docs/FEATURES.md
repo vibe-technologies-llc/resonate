@@ -56,8 +56,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   though sync seals its records: neither matters under free signing, both before any distribution
 - [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
   caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
-- [S] iOS online search answers nothing under three characters (`OnlineAsked.chain`): *U2*, *XX* or
-  a two-character CJK name cannot be searched, where the boundary and desktop have no floor
 - [S] The iOS lock-screen cover is the 384 px `.card` image whatever size the system asks
   (`NowPlaying.artwork`'s handler ignores it), so it is upscaled about 2.5× on a 3× phone
 - [S] Songs landed from other devices into the iOS Documents folder are in the device backup though

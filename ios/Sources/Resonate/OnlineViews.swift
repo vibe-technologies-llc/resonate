@@ -9,7 +9,6 @@ enum OnlineMode: String, CaseIterable {
 
 struct OnlineAsked: Hashable {
     static let settle: Duration = .milliseconds(450)
-    static let shortest = 3
     static let prompt = "Song, album, artist or shared link"
     private static let linkPrefixes = ["http://", "https://", "spotify:"]
 
@@ -18,7 +17,7 @@ struct OnlineAsked: Hashable {
 
     static func chain(_ text: String) -> [OnlineAsked] {
         if isLink(text) { return [OnlineAsked(text: text, mode: nil)] }
-        guard text.count >= shortest else { return [] }
+        guard !text.isEmpty else { return [] }
         return OnlineMode.allCases.map { OnlineAsked(text: text, mode: $0) }
     }
 
@@ -145,10 +144,6 @@ struct OnlineSearchContent: View {
                 description: Text("Find songs, artists, albums and shared music. Paste a shared link to open it.")
             )
             .listRowSeparator(.hidden)
-        } else if OnlineAsked.chain(text).isEmpty {
-            Text("Type at least 3 letters")
-                .foregroundStyle(.secondary)
-                .listRowSeparator(.hidden)
         } else if current, found.isWhole, found.isEmpty, !features.searching {
             OnlineNothingFound(text: text)
         } else {

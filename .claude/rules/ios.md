@@ -663,7 +663,8 @@ every route change (a pair of headphones at the same rate included), not from th
   The Library tab's search uses the same model for albums and artists and folds playlist names
   (`searchFolded`, which is core's `folded_letters` through `folded_text`, so *Lodz* finds *Łódź* as library search does), as the Favourites and Add-songs searches fold
   a song's title, artist and album.
-- **Online** search asks as the listener types: 450 ms settle, three letters at least, one request
+- **Online** search asks as the listener types: 450 ms settle, any text that is not blank (no floor
+  of letters, as the boundary and the desktop have none, so *U2* or a two-character CJK name is asked), one request
   generation (`Features.searchRequest`) and an in-memory answer per spelling, the last 64 per mode
   (`OnlineAnswers`). MusicBrainz is paced at about a request a second, so one spelling is a chain
   (`OnlineAsked.chain`): songs, then albums, then artists, one after another on `Work.aside`, each
