@@ -1357,7 +1357,7 @@ is never named.
     crate, level M, painted as quads in runs of dark modules on `scanned_paper` with `scanned_ink`,
     the one place a colour is not the palette's: a scanner wants black on white); beside it the code,
     covered by `•` until shown, with *Show*/*Hide*, *Copy* and *New code* (armed by the first press,
-    `regenerating_the_code`; the second clears `sync-key` for the next start), then *Join another
+    `regenerating_the_code`; the second clears `sync-key`, and the binary's sync watcher mints a new code at once), then *Join another
     device's code* (read by `Stored::reads_as_a_code`, the binary's `SyncKey::from_code`, whether or
     not sync runs). `RootView::pairing_shown` falls back to covered with every armed press lowered
     (leaving the category or the pane, or the pointer leaving the body) and after a new code.
@@ -1368,8 +1368,9 @@ is never named.
     field; `own_server_asked` holds the choice until an address is given) and *This network only*
     (`sync-nearby-only`), the chosen one's meaning under it, then the device name.
   - *Songs between devices*: the three `sync-songs` switches.
-  Each writes `ResonateApp::synchronised` and the file for the next start; a reset never forgets the
-  code. The `Syncing` seam on `Stored` (absent without the `sync` feature) answers the rest: a
+  Each writes `ResonateApp::synchronised` and the file, which the binary's sync watcher reads again
+  within seconds (`sync.md`); a reset never forgets the code. `SyncStanding::Waiting` is the
+  service not yet running (just switched on, or another Resonate holds the catalog's sync). The `Syncing` seam on `Stored` (absent without the `sync` feature) answers the rest: a
   playlist's menu offers *Fetch N missing songs from* each online device and *Keep its songs here*;
   the queue heading offers *Continue from* up to two devices whose last queue holds songs.
 - **Discord = two Desktop groups; they write a global before a file.** *Discord* (switch, application

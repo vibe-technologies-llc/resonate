@@ -92,7 +92,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   only
 
 ## Device sync
-- [M] A changed sync setting, or a code joined in the pane, takes effect only at the next start
 - [M] Saved-query playlists stay on the device they were saved on; only lists travel
 - [S] A handoff continues from the song the other device was on, not from its place in that song
 - [S] A song from another device is refused where no music folder is set; an open vault does not

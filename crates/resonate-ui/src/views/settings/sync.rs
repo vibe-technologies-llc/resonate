@@ -23,7 +23,7 @@ pub(crate) const SYNC_SERVER_PLACEHOLDER: &str = "host or host:port of your own 
 pub(crate) const SYNC_DEVICE_PLACEHOLDER: &str = "What your other devices call this one";
 pub(crate) const SYNC_CODE_PLACEHOLDER: &str = "Another device's pairing code, then press enter";
 
-const SYNCING_NOTE: &str = "A change here is taken up when Resonate next starts.";
+const SYNCING_NOTE: &str = "A change here is taken up within a few seconds.";
 
 const PAIRING_NOTE: &str = "Scan the code with your phone's camera, or type it into Device sync \
                             on the other device. Anyone with it can join your devices, so keep \
@@ -49,16 +49,16 @@ const CODE_COPIED: &str = "The pairing code is on the clipboard";
 
 const FORCED: &str = "Reaching your other devices again";
 
-const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device and restart first";
+const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device first";
 
-const REGENERATE_HINT: &str = "Make a new pairing code at the next start, so a code someone else saw \
-                               reaches nothing; your other devices then join the new one";
+const REGENERATE_HINT: &str = "Make a new pairing code, so a code someone else saw reaches nothing; \
+                               your other devices then join the new one";
 
 const ARMED_TO_REGENERATE: &str = "Press again to make a new code: every device using this one stops \
                                    syncing with this device until the new code is typed into it";
 
-const REGENERATED: &str = "A new pairing code is made when Resonate next starts; type it into your \
-                           other devices then";
+const REGENERATED: &str = "A new pairing code is being made; type it into your other devices \
+                           when it shows";
 
 const FORGET_HINT: &str = "Take this device off every device's list; one that syncs again comes \
                            back";
@@ -70,7 +70,7 @@ const NO_OTHER_DEVICE: &str = "No other device shares this code yet. Show the pa
                                scan it with your phone, or type it into another device.";
 
 const NO_CODE_YET: &str = "The pairing code is made when this device first syncs: turn on \
-                           Synchronise this device and restart";
+                           Synchronise this device";
 
 const HOSTED_MEANS: &str = "Your devices meet through Resonate's server wherever they are, and \
                             directly on the same network. What travels is sealed with the \
@@ -169,8 +169,8 @@ fn standing_said(synchronised: &Synchronised, shown: Option<&SyncShown>) -> Said
         return if synchronised.enabled {
             Said {
                 mood: Mood::Quiet,
-                headline: "On from the next start",
-                under: "Restart Resonate to begin syncing this device".to_owned(),
+                headline: "Not in this build",
+                under: "This build carries no device sync".to_owned(),
             }
         } else {
             Said {
@@ -185,6 +185,11 @@ fn standing_said(synchronised: &Synchronised, shown: Option<&SyncShown>) -> Said
     let online = others.filter(|device| device.online).count();
     let on_this_network = format!("{} on this network", counted(nearby, "device"));
     match shown.standing {
+        SyncStanding::Waiting => Said {
+            mood: Mood::Busy,
+            headline: "Starting",
+            under: "This device begins syncing in a moment".to_owned(),
+        },
         SyncStanding::Connecting => Said {
             mood: Mood::Busy,
             headline: "Connecting",
@@ -584,7 +589,7 @@ impl RootView {
             .syncing
             .as_ref()
             .map(|syncing| syncing.shown());
-        let Some(shown) = shown else {
+        let Some(shown) = shown.filter(|shown| !shown.devices.is_empty()) else {
             return kit::section_body()
                 .child(note("Your devices are listed here once this device syncs"));
         };
@@ -868,9 +873,7 @@ impl RootView {
                 cx,
             );
             self.report(
-                Notice::Done(
-                    "Devices sync through Resonate's server from the next start".to_owned(),
-                ),
+                Notice::Done("Devices sync through Resonate's server".to_owned()),
                 cx,
             );
         }
@@ -892,9 +895,9 @@ impl RootView {
             cx,
         );
         let said = if nearby_only {
-            "Devices sync only on this network from the next start"
+            "Devices sync only on this network"
         } else {
-            "Devices sync through a server again from the next start"
+            "Devices sync through a server again"
         };
         self.report(Notice::Done(said.to_owned()), cx);
     }
@@ -922,9 +925,9 @@ impl RootView {
         self.sync_server
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         let said = if typed.is_empty() {
-            "Devices sync through Resonate's server from the next start"
+            "Devices sync through Resonate's server"
         } else {
-            "Devices sync through that server from the next start"
+            "Devices sync through that server"
         };
         self.own_server_asked = !typed.is_empty();
         self.synchronise(
@@ -946,7 +949,7 @@ impl RootView {
             cx,
         );
         self.report(
-            Notice::Done("Your other devices learn the new name from the next start".to_owned()),
+            Notice::Done("Your other devices learn the new name shortly".to_owned()),
             cx,
         );
         window.focus(&self.focus);
@@ -969,7 +972,7 @@ impl RootView {
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.store(&Setting::SyncKey(typed), cx);
         self.report(
-            Notice::Done("This device joins those devices from the next start".to_owned()),
+            Notice::Done("This device joins those devices".to_owned()),
             cx,
         );
         window.focus(&self.focus);

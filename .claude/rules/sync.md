@@ -186,6 +186,25 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
   roots (a private CA, the tests' self-signed server).
 
+## The desktop follows its settings
+
+- **The settings file is the one way to reconfigure.** `sync::start` returns a `Syncing` over a
+  `Service` (the running `Running`, swapped under a lock) and a watcher thread
+  (`resonate-sync-settings`) that looks at the file's modified time every `SETTINGS_LOOKED_AT_EVERY`
+  (2 s) and, when it moved, reads it again with `config::load`. An `Arrangement` (whether it syncs,
+  the code as `SyncKey::code` spells it, the server, certificate, device name and `sync-songs`) is
+  compared with the one running; only a difference stops the running service (`released`, waiting
+  up to `RELEASED_WITHIN` for a call in flight to let go of `sync.lock`) and starts another. A device
+  that is off holds one arrangement whatever else is set, and a key minted at start is kept in the
+  arrangement (`Arrangement::keyed`), so the write that records it is not a change. A file that will
+  not read leaves what runs as it is. So the pane, `resonate sync --join` and `--leave` from another
+  process, and a hand edit take effect within seconds, and *New code* (the pane clears `sync-key`)
+  mints and joins a new space at once.
+- **The window's seam never goes absent.** `Service` implements `resonate_ui::Syncing` over
+  whatever runs, answering `SyncStanding::Waiting` and nothing else while none does (just switched
+  on, or another Resonate holds `sync.lock`). It also serves headless `resonate play` with a catalog,
+  which starts the same watcher.
+
 ## Peers
 
 - **The server introduces, the devices connect.** `Punch` carries the asker's LAN candidates sealed;

@@ -879,6 +879,7 @@ impl Default for Synchronised {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SyncStanding {
     #[default]
+    Waiting,
     Connecting,
     Connected,
     Unreachable,
