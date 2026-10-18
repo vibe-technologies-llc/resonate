@@ -564,6 +564,8 @@ fn run(
     beside: Beside,
     progress: &Arc<ScanProgress>,
 ) -> Result<ScanSummary> {
+    resonate_codec::mend_what_was_written_back_from_elsewhere();
+
     let generation = store::to_nanos(SystemTime::now());
     let ids: Vec<i64> = roots.iter().map(|root| root.id).collect();
     let walked_roots: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();

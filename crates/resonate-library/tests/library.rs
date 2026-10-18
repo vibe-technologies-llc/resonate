@@ -12042,6 +12042,23 @@ fn an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one() -> Res
     assert_eq!(album.missing, 0);
     assert_eq!(summary.stats.releases, 1);
     assert_eq!(summary.stats.matched, 2);
+
+    let landed = retagged(&library, false)?;
+    enrich(&library, &fake, true)?;
+    let landed_again = retagged(&library, false)?;
+
+    for preview in [&landed, &landed_again] {
+        assert!(!preview.retagging.writes.is_empty());
+        for write in &preview.retagging.writes {
+            let fields = fields_of(write);
+            for withheld in [TagField::TrackTotal, TagField::MusicBrainzAlbumId] {
+                assert!(
+                    !fields.contains(&withheld),
+                    "the closest pressing was written as a match: {fields:?}"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -18129,6 +18146,62 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
         Some("Echos"),
         "a file already put back had the run written into it again"
     );
+    Ok(())
+}
+
+#[test]
+fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
+    retagged(&library, true)?;
+
+    let organised = applied(&library)?;
+    let landed = landings(&organised)
+        .into_iter()
+        .map(|(_, to)| to)
+        .next()
+        .expect("the tagged file was filed");
+    assert!(!file.exists(), "organise left the file where it stood");
+    assert_eq!(tags_of(&landed).title.as_deref(), Some("Echoes"));
+
+    let undone = walked_back(&library, true)?;
+
+    assert_eq!(
+        undone.stats.written, 1,
+        "{:?}",
+        undone.retagging.passed_over
+    );
+    assert!(undone.retagging.passed_over.is_empty());
+    assert_eq!(tags_of(&landed).title.as_deref(), Some("Echos"));
+    Ok(())
+}
+
+#[test]
+fn a_tag_run_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
+    retagged(&library, true)?;
+
+    let after = tree.path().join("filed/Pink Floyd/02 Echoes.wav");
+    moved(&file, &after);
+    let stats = scan(&library, &options(&tree))?;
+    let undone = walked_back(&library, true)?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(
+        undone.stats.written, 1,
+        "{:?}",
+        undone.retagging.passed_over
+    );
+    assert_eq!(tags_of(&after).title.as_deref(), Some("Echos"));
     Ok(())
 }
 

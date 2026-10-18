@@ -779,6 +779,22 @@ pub enum Fit {
     Narrower,
 }
 
+impl Fit {
+    pub(crate) const fn stored(self) -> Option<i64> {
+        match self {
+            Self::Exact => None,
+            Self::Wider => Some(1),
+            Self::Narrower => Some(2),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Pressing {
+    Fitted(Fit),
+    AsHeld,
+}
+
 #[derive(Clone, Copy)]
 enum Looking<'a> {
     ForAnAlbum { id: AlbumId, title: &'a str },
@@ -1731,7 +1747,9 @@ impl Pass<'_> {
         let since = self.refusals();
         if let Some(mbid) = &album.mbid {
             match self.heard(self.reference.release(mbid))? {
-                Heard::Answered(Some(release)) => return self.take_release(album, release, since),
+                Heard::Answered(Some(release)) => {
+                    return self.take_release(album, release, since, Pressing::AsHeld);
+                }
                 Heard::Answered(None) => tracing::debug!(
                     album = %album.id,
                     %mbid,
@@ -1742,7 +1760,7 @@ impl Pass<'_> {
         }
         match self.find_release(album)? {
             Heard::Answered(Identified::Found(mbid)) => {
-                return self.land_release(album, &mbid, since);
+                return self.land_release(album, &mbid, since, Pressing::Fitted(Fit::Exact));
             }
             Heard::Answered(Identified::Group(group)) => {
                 return self.land_group(album, &group, since);
@@ -1817,9 +1835,15 @@ impl Pass<'_> {
         Ok(())
     }
 
-    fn land_release(&self, album: &AlbumToAsk, mbid: &Mbid, since: Refusals) -> Result<()> {
+    fn land_release(
+        &self,
+        album: &AlbumToAsk,
+        mbid: &Mbid,
+        since: Refusals,
+        pressing: Pressing,
+    ) -> Result<()> {
         match self.heard(self.reference.release(mbid))? {
-            Heard::Answered(Some(release)) => self.take_release(album, release, since),
+            Heard::Answered(Some(release)) => self.take_release(album, release, since, pressing),
             Heard::Answered(None) => {
                 tracing::debug!(album = %album.id, %mbid, "the reference holds no release under this id");
                 self.nothing_landed(album, since)
@@ -1828,7 +1852,13 @@ impl Pass<'_> {
         }
     }
 
-    fn take_release(&self, album: &AlbumToAsk, release: Release, since: Refusals) -> Result<()> {
+    fn take_release(
+        &self,
+        album: &AlbumToAsk,
+        release: Release,
+        since: Refusals,
+        pressing: Pressing,
+    ) -> Result<()> {
         if self.library.refuses(album.id, &release.id)? {
             tracing::debug!(
                 album = %album.id,
@@ -1837,7 +1867,7 @@ impl Pass<'_> {
             );
             return self.nothing_landed(album, since);
         }
-        self.library.land_release(album.id, &release)?;
+        self.library.land_pressing(album.id, &release, pressing)?;
         self.progress.releases.fetch_add(1, Ordering::Relaxed);
         self.rematch(album.id)?;
         if self.wants_a_cover(album)? {
@@ -1873,7 +1903,7 @@ impl Pass<'_> {
                     tracks = ?release.track_count,
                     "the group's closest pressing is landed"
                 );
-                self.land_release(album, &release.id, since)
+                self.land_release(album, &release.id, since, Pressing::Fitted(fit))
             }
             None => self.take_group(album, found, since),
         }
@@ -2163,7 +2193,7 @@ impl Pass<'_> {
         let (Some(album), Some(release)) = (album, release) else {
             return Ok(());
         };
-        self.land_release(&album, &release.id, since)
+        self.land_release(&album, &release.id, since, Pressing::AsHeld)
     }
 
     fn album_under(&self, track: &TrackToAsk) -> Result<Option<AlbumToAsk>> {

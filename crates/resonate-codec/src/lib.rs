@@ -48,7 +48,10 @@ pub use crate::{
     decoder::{Codec, Container, DecodeStatus, Decoder, Delivery, Holes, MediaInfo},
     dsd::{DsdChunk, DsdField, DsdRate, Packing},
     error::{CodecOp, Error, Result, StreamTrackId, TrackProperty},
-    journal::{Mended, mend_a_cut_short_write, names_a_cut_short_write},
+    journal::{
+        Mended, mend_a_cut_short_write, mend_what_was_written_back_from_elsewhere,
+        names_a_cut_short_write,
+    },
     probe::{
         CoverArt, ImageFormat, PacketDigest, Pictured, Picturing, Scanned, probe, probe_cover_art,
         probe_pictured, probe_scanned, probe_span,

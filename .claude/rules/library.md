@@ -680,7 +680,12 @@ rows read via `Player::media` like any unscanned row.
   the top hit is strict but for count and names a group. `settle_group` → `closest_release` answers
   a pressing and a `Fit`: `Exact` (`track_count` = `declared_count`), else `Wider` (smallest
   pressing with more tracks than the album), else `Narrower` (widest with no more); earliest dated
-  among equals; `land_release` then runs on it. Rows the rip lacks are release rows with no
+  among equals; `land_release` then runs on it. **The fit is kept**: `albums.pressing_fit` (NULL
+  exact, `Fit::stored` otherwise) is written by every landing as its `enrich::Pressing` says:
+  `Fitted` from `settle_group` (`Exact` from a strict release hit, a pressing the listener chose,
+  `Library::land_release`), `AsHeld` from the album's own `albums.mbid` and a recording's release,
+  which keeps the stored fit where the id is the one landed and is exact otherwise, so a refresh
+  never turns a closest pressing into a match (`a_closest_pressing_is_kept_as_one_until_a_pressing_that_matches_lands`). Rows the rip lacks are release rows with no
   `track_id`, so `Album::missing` counts them and the Missing pane lists them. Only where no group
   pressing declares a count does `take_group` run `land_release_group`, deliberately thin
   (`albums.release_group`, `kind`, `date`, `year`, `disambiguation` coalesced; no `albums.mbid`, no
@@ -939,7 +944,13 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 - **A guess is never written: a name goes only where a lookup answered for its row.** `tracks.title`
   falls back to the stem, `albums.title` to whatever grouped the folder. `offered` gates track name
   and artist on `tracks.answered`; album name and its two totals on `albums.answered` (offering
-  `albums.release_title`, never `albums.title`); album artist, its id and sort name on the
+  `albums.release_title`, never `albums.title`); **a closest pressing is not written as a match**:
+  where `albums.pressing_fit` is set the totals and what names the pressing (`albums.mbid`,
+  catalog number, barcode) are withheld, the album name, release group, date and label still go,
+  so a 14-track rip on a 12-track pressing never reads `TRACKTOTAL=12` and the next enrichment
+  does not take the pressing's id off the files as the album's own
+  (`a_closest_pressing_names_the_album_but_never_its_totals_or_its_identity`,
+  `an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one`); album artist, its id and sort name on the
   *artist's* own `answered` (`land_release` never repoints `albums.artist_id`). Identifiers go
   whatever answered: `tracks.mbid`, `release_track_mbid`, `artist_mbid`, `isrc`, `albums.mbid`,
   `release_group`, what the tags declared about the pressing.
@@ -988,7 +999,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Taken::still_stands` before the rename: an edit another program made meanwhile answers
   `Error::ChangedWhileWritten`. A folder the listener may not create in does not refuse a file they
   may write: `landed_from_elsewhere` stages under the spool's folders (`/var/tmp`, replaced by
-  `TMPDIR`; then the temp dir) and writes back through `written_back`. The copy is a clone
+  `TMPDIR`; then the temp dir) as `.<name>.<pid>-<n>.resonate-staged` and writes it back into the
+  track's own inode. **A copy kept outside the track's folder names its track:** before the write
+  back `WholeCopy::kept_elsewhere` appends the stood record and then the track's canonical path
+  (FNV-1a check, `AWAY_MAGIC` last) and renames it `.resonate-whole` in the spool; a write back
+  failing part way renames it `.resonate-torn` there. Every write and every scan first runs
+  `mend_what_was_written_back_from_elsewhere` over the spool folders: a dead writer's staged copy is
+  swept, a dead writer's or torn whole copy is finished over the track its record names (only where
+  its file name is the one the copy's name carries, and under the same `Stood::standing` guard), a
+  damaged or mismatched record writes nothing and the copy goes, a copy with no such record is not
+  this build's to touch (`a_track_torn_by_a_dead_writer_is_finished_from_the_whole_copy_kept_outside_its_folder`,
+  `only_a_dead_writers_copy_staged_outside_the_tracks_folder_is_swept`). The copy is a clone
   (`cloned_beside`, `FICLONE`) where the filesystem shares extents. **Where it cannot clone, an edit
   the tag's own room holds lands in the file itself**: `landed_in_place` has lofty write into an
   `Overlay` (4 KiB in-memory pages); `Overlay::land` writes back only differing pages and
@@ -1055,6 +1076,12 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `KeptPictures` weighs each against the last eight kept (`PICTURES_WEIGHED_AGAINST`), by pointer
   then bytes; `run` drops `Held::picture` from every write once its page is applied; the walk back
   reads each picture by id as a file first asks for it (`PicturesPutBack`).
+- **The record follows the file.** `retagged` and `retagged_fields` are keyed by path, so
+  `organise::files_moved` (organise's apply and its walk back, the scan's move pairing in
+  `moves::follow`) moves both to the new path beside `tracks.path`, a record the destination held
+  dropped first: a tag run organised or moved by hand afterwards is still put back
+  (`a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote`,
+  `a_tag_run_is_put_back_after_a_hand_move_the_scan_followed`).
 - **Rows are read a page at a time; a file is never split across two.** `retag::run` walks the
   catalog through `paged::Paging`: `ROWS_A_PAGE` (2 048) rows in path order past the last path
   handed out, the rows of the file a page ended in held back for the next, the page doubled where

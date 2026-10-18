@@ -34,7 +34,10 @@ use rustix::fs::XattrFlags;
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
     counted::{Counted, counts},
-    journal::{Torn, Unsettled, WholeCopy, copied_over, mend_what_a_dead_writer_left},
+    journal::{
+        Torn, Unsettled, WholeCopy, mend_what_a_dead_writer_left, mend_what_was_left_in,
+        staged_elsewhere_name,
+    },
     overlay::{Landing, Overlay},
     padded::Head,
     probe_pictured,
@@ -959,6 +962,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         source,
     };
     mend_what_a_dead_writer_left(path);
+    mend_what_was_left_in(&crate::spool::spooled_under());
     sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged.path, path, location, saving),
@@ -982,7 +986,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
 fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
     for folder in crate::spool::spooled_under() {
-        match copied_beside(path, &folder) {
+        match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged)) {
             Ok(staged) => {
                 return landed_by(
                     &staged.path,
@@ -1019,7 +1023,10 @@ fn cloned_beside(_: &Path) -> io::Result<Option<Staged>> {
 }
 
 fn copied_beside(path: &Path, folder: &Path) -> io::Result<Staged> {
-    let staged = Staged::within(folder, path)?;
+    copied_into(path, Staged::within(folder, path)?)
+}
+
+fn copied_into(path: &Path, staged: Staged) -> io::Result<Staged> {
     let copied = File::open(path).and_then(|mut from| {
         let permissions = from.metadata()?.permissions();
         let mut into = staged.held.file();
@@ -1154,7 +1161,14 @@ impl Staged {
     }
 
     fn within(folder: &Path, path: &Path) -> io::Result<Self> {
-        let staged = staged_in(folder, path);
+        Self::named(staged_in(folder, path))
+    }
+
+    fn elsewhere(folder: &Path, path: &Path) -> io::Result<Self> {
+        Self::named(folder.join(staged_elsewhere_name(path)?))
+    }
+
+    fn named(staged: PathBuf) -> io::Result<Self> {
         let held = Held::made(&staged)?;
         Ok(Self { path: staged, held })
     }
@@ -1301,8 +1315,7 @@ fn unsupported(error: &io::Error) -> bool {
 
 fn written_back_from_elsewhere(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
     File::open(staged)?.sync_all()?;
-    copied_over(staged, path)?;
-    Ok(fs::remove_file(staged)?)
+    WholeCopy::kept_elsewhere(staged, path)?.written_back()
 }
 
 fn front_cover(picture: &CoverArt) -> Picture {
@@ -1872,8 +1885,18 @@ mod tests {
         let written = tags.write(&location, just(&edits));
         let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
 
+        let ours = format!(".echoes.flac.{}-", process::id());
+        let left: Vec<PathBuf> = crate::spool::spooled_under()
+            .iter()
+            .filter_map(|spool| fs::read_dir(spool).ok())
+            .flat_map(|entries| entries.flatten())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(&ours))
+            .map(|entry| entry.path())
+            .collect();
+
         written.expect("a file in an unwritable folder written");
         assert_eq!(fs::metadata(&path).expect("a file").ino(), before);
+        assert!(left.is_empty(), "copies left in the spool: {left:?}");
         assert_read_back(
             &tags
                 .read(&location, Picturing::Whether)

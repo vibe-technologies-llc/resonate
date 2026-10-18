@@ -355,7 +355,7 @@ const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, t
             tracks.vault_key IS NOT NULL, tracks.favourite IS NOT NULL, tracks.plays,
             CASE WHEN performer.answered IS NOT NULL AND performer.name = tracks.artist
                  THEN performer.sort_name END,
-            artists.sort_name
+            artists.sort_name, a.pressing_fit IS NOT NULL
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN albums a ON a.id = tracks.album_id
@@ -5099,7 +5099,13 @@ impl Library {
         };
         self.inner.write(|transaction| {
             enriched::forgive(transaction, album, &found.id)?;
-            enriched::land_release(transaction, album, &found, SystemTime::now())
+            enriched::land_release(
+                transaction,
+                album,
+                &found,
+                enrich::Pressing::Fitted(enrich::Fit::Exact),
+                SystemTime::now(),
+            )
         })?;
         self.rematch(album)?;
         Ok(true)
@@ -5163,8 +5169,17 @@ impl Library {
     }
 
     pub fn land_release(&self, album: AlbumId, release: &Release) -> Result<()> {
+        self.land_pressing(album, release, enrich::Pressing::Fitted(enrich::Fit::Exact))
+    }
+
+    pub(crate) fn land_pressing(
+        &self,
+        album: AlbumId,
+        release: &Release,
+        pressing: enrich::Pressing,
+    ) -> Result<()> {
         self.inner.write(|transaction| {
-            enriched::land_release(transaction, album, release, SystemTime::now())
+            enriched::land_release(transaction, album, release, pressing, SystemTime::now())
         })
     }
 
@@ -6402,6 +6417,7 @@ struct RawToTag {
     plays: i64,
     artist_sort: Option<String>,
     album_artist_sort: Option<String>,
+    pressing_fitted: bool,
 }
 
 impl RawToTag {
@@ -6437,6 +6453,7 @@ impl RawToTag {
             plays: row.get(27)?,
             artist_sort: row.get(28)?,
             album_artist_sort: row.get(29)?,
+            pressing_fitted: row.get(30)?,
         })
     }
 
@@ -6474,6 +6491,7 @@ impl RawToTag {
             label: self.label,
             catalog_number: self.catalog_number,
             barcode: self.barcode,
+            pressing_fitted: self.pressing_fitted,
             track_total: self
                 .album
                 .and_then(|album| tracks.get(&(album, seat)).copied()),

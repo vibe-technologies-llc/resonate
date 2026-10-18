@@ -9,6 +9,7 @@ use crate::{
     Agreement, AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt,
     CoverSource, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium, Recording, RecordingRelease,
     Release, ReleaseGroup, ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
+    enrich::Pressing,
     model::{CoverFrom, CoverWanted},
     store,
 };
@@ -198,9 +199,14 @@ pub(crate) fn land_release(
     tx: &Transaction<'_>,
     album: AlbumId,
     release: &Release,
+    pressing: Pressing,
     now: SystemTime,
 ) -> Result<()> {
     let id = album.get() as i64;
+    let (fit, as_held) = match pressing {
+        Pressing::Fitted(fit) => (fit.stored(), false),
+        Pressing::AsHeld => (None, true),
+    };
     let changed = tx
         .execute(
             "UPDATE albums SET
@@ -216,6 +222,7 @@ pub(crate) fn land_release(
                  disambiguation = ?10,
                  year           = coalesce(year, ?11),
                  front_cover    = ?14,
+                 pressing_fit   = CASE WHEN ?16 AND mbid IS ?1 THEN pressing_fit ELSE ?15 END,
                  asks           = 0,
                  refusals       = 0,
                  asked          = ?12,
@@ -236,6 +243,8 @@ pub(crate) fn land_release(
                 store::to_nanos(now),
                 id,
                 release.has_front_cover,
+                fit,
+                as_held,
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -1954,9 +1963,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        Medium, ReleaseTrack, schema,
+        Medium, ReleaseTrack,
+        enrich::Fit,
+        schema,
         store::{Cache, TrackRecord},
     };
+
+    const EXACTLY: Pressing = Pressing::Fitted(Fit::Exact);
 
     const RELEASE: &str = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
     const RECORDING: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -2243,6 +2256,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row(1, "One of These Days", None)]),
+            EXACTLY,
             asked,
         )
         .expect("the pressing lands");
@@ -2277,6 +2291,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row(1, "One of These Days", None)]),
+            EXACTLY,
             asked,
         )
         .expect("the release lands");
@@ -2295,6 +2310,46 @@ mod tests {
             due_at(asked + A_MONTH + A_MOMENT),
             "an answer that went stale did not make the album due"
         );
+    }
+
+    #[test]
+    fn a_closest_pressing_is_kept_as_one_until_a_pressing_that_matches_lands() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root is stored");
+        let tx = connection.transaction().expect("a transaction");
+        let album = one_album(&tx);
+        let release = meddle(vec![row(1, "One of These Days", None)]);
+        let fit = || -> Option<i64> {
+            tx.query_row(
+                "SELECT pressing_fit FROM albums WHERE id = ?1",
+                params![album.get() as i64],
+                |row| row.get(0),
+            )
+            .expect("the album reads back")
+        };
+
+        land_release(
+            &tx,
+            album,
+            &release,
+            Pressing::Fitted(Fit::Narrower),
+            UNIX_EPOCH,
+        )
+        .expect("the closest pressing lands");
+        let fitted = fit();
+        land_release(&tx, album, &release, Pressing::AsHeld, UNIX_EPOCH)
+            .expect("the pressing the album holds lands again");
+        let held = fit();
+        land_release(&tx, album, &release, EXACTLY, UNIX_EPOCH).expect("a match lands");
+        let matched = fit();
+
+        assert_eq!(fitted, Fit::Narrower.stored());
+        assert_eq!(held, Fit::Narrower.stored());
+        assert_eq!(matched, None);
     }
 
     #[test]
@@ -2319,6 +2374,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row(1, "One of These Days", None)]),
+            EXACTLY,
             landed,
         )
         .expect("the release lands");
@@ -2359,6 +2415,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row(1, "One of These Days", None)]),
+            EXACTLY,
             landed,
         )
         .expect("the release lands");
@@ -2403,6 +2460,7 @@ mod tests {
                 row(3, "Fearless", None),
                 row(4, "San Tropez", None),
             ]),
+            EXACTLY,
             UNIX_EPOCH,
         )
         .expect("the release lands");
@@ -2456,6 +2514,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row(1, "One of These Days", Some(RECORDING))]),
+            EXACTLY,
             UNIX_EPOCH,
         )
         .expect("the release lands");
@@ -2497,6 +2556,7 @@ mod tests {
             &tx,
             album,
             &meddle(vec![row_of_the_release(1, "San Tropez", TRACK)]),
+            EXACTLY,
             UNIX_EPOCH,
         )
         .expect("the release lands");
