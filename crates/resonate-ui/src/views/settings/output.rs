@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
+use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
 use resonate_core::{SampleFormat, SampleRate, StreamSpec};
 use resonate_engine::{
     BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
@@ -9,6 +9,7 @@ use resonate_engine::{
 use crate::{
     Setting, format, theme,
     views::{
+        focus::by_the_pointer,
         hint::Names,
         kit,
         root::RootView,
@@ -540,9 +541,11 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.send(Command::SetSink(Some(clicked.clone())), cx);
-                this.store(&Setting::Sink(Some(clicked.clone())), cx);
+            .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {
+                if by_the_pointer(click) {
+                    this.send(Command::SetSink(Some(clicked.clone())), cx);
+                    this.store(&Setting::Sink(Some(clicked.clone())), cx);
+                }
             }))
     }
 

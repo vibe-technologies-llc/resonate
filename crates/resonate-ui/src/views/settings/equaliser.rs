@@ -518,11 +518,13 @@ impl RootView {
                 Cell::Q => "q",
             }
         );
+        let selector = id.clone();
         div().child(
             self.in_the_ring_at(
                 id.clone(),
                 frame
                     .id(gpui::SharedString::from(id))
+                    .debug_selector(move || selector)
                     .cursor_text()
                     .hover(|cell| cell.bg(rgb(theme::hover())))
                     .child(kit::figure(shown)),
@@ -1170,7 +1172,7 @@ impl RootView {
             model.written(Editing { row, cell })
         });
         self.figure.update(cx, |figure, cx| {
-            figure.hold(written, cx);
+            figure.open_with(written, cx);
             figure.take_focus(window);
         });
         cx.notify();
@@ -1187,7 +1189,7 @@ impl RootView {
 
         if taken {
             self.figure
-                .update(cx, |figure, cx| figure.hold(String::new(), cx));
+                .update(cx, |figure, cx| figure.open_with(String::new(), cx));
             self.controls.lets_go(window);
             self.tell_the_engine(cx);
         }
@@ -1200,8 +1202,27 @@ impl RootView {
         }
         self.equaliser.update(cx, |model, _| model.leave_cell());
         self.figure
-            .update(cx, |figure, cx| figure.hold(String::new(), cx));
+            .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         self.controls.lets_go(window);
+        cx.notify();
+    }
+
+    pub(crate) fn figure_left(&mut self, cx: &mut Context<Self>) {
+        let Some(editing) = self.equaliser.read(cx).editing() else {
+            return;
+        };
+        let typed = self.figure.read(cx).text().to_owned();
+        let taken = self
+            .equaliser
+            .update(cx, |model, cx| model.take(editing, &typed, cx));
+
+        if taken {
+            self.tell_the_engine(cx);
+        } else {
+            self.equaliser.update(cx, |model, _| model.leave_cell());
+        }
+        self.figure
+            .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         cx.notify();
     }
 

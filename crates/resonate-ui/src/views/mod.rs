@@ -4,7 +4,7 @@ mod chrome;
 pub(crate) mod dropping;
 mod favourites;
 pub(crate) mod field;
-mod focus;
+pub(crate) mod focus;
 mod gives_way;
 mod hint;
 mod inspector;

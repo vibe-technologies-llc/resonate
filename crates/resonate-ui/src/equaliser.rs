@@ -534,11 +534,7 @@ impl EqualiserModel {
         let Some(band) = self.band(editing.row) else {
             return String::new();
         };
-        match editing.cell {
-            Cell::Frequency => format!("{:.0}", band.frequency.hertz()),
-            Cell::Gain => format!("{:.2}", band.gain.decibels()),
-            Cell::Q => format!("{:.3}", band.q.units()),
-        }
+        written_exactly(band, editing.cell)
     }
 
     pub fn take(&mut self, editing: Editing, typed: &str, cx: &mut Context<Self>) -> bool {
@@ -968,6 +964,32 @@ pub fn unused_name(kept: &[ProfileName], called: &str) -> ProfileName {
 
 const HERTZ_A_KILOHERTZ: f64 = 1_000.0;
 const DIGITS_IN_A_THOUSANDS_GROUP: usize = 3;
+
+const MOST_DECIMALS_WRITTEN: usize = 6;
+
+fn written_exactly(band: Band, cell: Cell) -> String {
+    let (value, fewest_decimals) = match cell {
+        Cell::Frequency => (band.frequency.hertz(), 0),
+        Cell::Gain => (band.gain.decibels(), 2),
+        Cell::Q => (band.q.units(), 3),
+    };
+
+    (fewest_decimals..=MOST_DECIMALS_WRITTEN)
+        .map(|decimals| format!("{value:.decimals$}"))
+        .find(|written| reads_back_as(written, cell, band))
+        .unwrap_or_else(|| format!("{value}"))
+}
+
+fn reads_back_as(written: &str, cell: Cell, band: Band) -> bool {
+    let Some(number) = read_typed(written, cell) else {
+        return false;
+    };
+    match cell {
+        Cell::Frequency => Frequency::from_hertz(number).is_ok_and(|read| read == band.frequency),
+        Cell::Gain => BandGain::from_decibels(number).is_ok_and(|read| read == band.gain),
+        Cell::Q => Q::from_units(number).is_ok_and(|read| read == band.q),
+    }
+}
 
 pub fn read_typed(typed: &str, cell: Cell) -> Option<f64> {
     let typed = typed.trim();

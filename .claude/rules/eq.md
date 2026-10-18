@@ -274,7 +274,14 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the rate; drawn *with* the preamp; the peak beside it is what the bands reach before it, what
   *Fit* sets from. All at `RootView::curve_rate` (negotiated rate, 48 kHz with none open).
 - **One shared `Field` and an `Editing { row, cell }` cursor edit every cell.** Enter commits;
-  escape and an outside press cancel; a value outside its newtype's bounds is refused into the
+  escape and an outside press cancel; tab (the field losing focus any other way: `field::Blurred`,
+  `RootView::figure_left`) takes what was typed, and cancels where the value is refused. A cell opens
+  holding the shortest text that reads back as the band's own value (`written_exactly`: at least
+  0 decimals of hertz, 2 of dB, 3 of Q), so Enter on an untouched cell changes nothing, and the field
+  is loaded with `Field::open_with` so ctrl-z in a cell cannot reach the last cell's text
+  (`enter_on_an_equaliser_cell_nothing_was_typed_into_keeps_the_band_exactly`,
+  `undo_in_an_equaliser_cell_cannot_reach_the_value_of_the_cell_before`,
+  `tab_out_of_an_equaliser_cell_takes_what_was_typed_and_closes_it`); a value outside its newtype's bounds is refused into the
   notice naming the limit. `equaliser::read_typed`: unit in any case (`Hz`, `kHz`, `k`, `dB`); a
   comma grouping threes in hertz (`1,000`) is thousands, any other comma is `read_number`'s decimal
   (`1,5 kHz`).

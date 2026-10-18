@@ -156,12 +156,28 @@ impl Edit {
         self.history.close();
     }
 
+    pub(crate) fn start_over(&mut self, content: String) {
+        self.history = History::default();
+        self.content = content;
+        let end = self.content.len();
+        self.selection = end..end;
+        self.reversed = false;
+    }
+
     pub(crate) fn replace(&mut self, range: Range<usize>, text: &str) {
         self.edited(Span::Composing, range, text);
     }
 
+    pub(crate) fn end_the_composing(&mut self) {
+        self.history.close();
+    }
+
     pub(crate) fn insert(&mut self, text: &str) {
-        self.edited(Span::Typing, self.selection.clone(), text);
+        self.type_over(self.selection.clone(), text);
+    }
+
+    pub(crate) fn type_over(&mut self, range: Range<usize>, text: &str) {
+        self.edited(Span::Typing, range, text);
         if text.contains(char::is_whitespace) {
             self.history.close();
         }
@@ -795,6 +811,51 @@ mod tests {
 
         assert!(edit.undo());
         assert_eq!(edit.content(), "dark ");
+    }
+
+    #[test]
+    fn a_key_typed_over_everything_is_its_own_step_though_the_keys_before_it_were_typed_the_same_way()
+     {
+        let mut edit = Edit::default();
+        for key in ["d", "a", "r", "k"] {
+            edit.type_over(edit.selection(), key);
+        }
+        edit.select_all();
+        edit.type_over(edit.selection(), "x");
+        assert_eq!(edit.content(), "x");
+
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "dark");
+
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "");
+    }
+
+    #[test]
+    fn a_preedit_begun_after_the_last_one_ended_is_a_step_of_its_own() {
+        let mut edit = typed("dark ");
+        edit.replace(5..5, "k");
+        edit.end_the_composing();
+        edit.move_to(0);
+        edit.replace(0..0, "j");
+        assert_eq!(edit.content(), "jdark k");
+
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "dark k");
+
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "dark ");
+    }
+
+    #[test]
+    fn content_started_over_has_nothing_to_take_back() {
+        let mut edit = typed("dark");
+        edit.start_over("side".to_owned());
+
+        assert_eq!(edit.content(), "side");
+        assert_eq!(edit.cursor(), 4);
+        assert!(!edit.undo());
+        assert!(!edit.redo());
     }
 
     #[test]

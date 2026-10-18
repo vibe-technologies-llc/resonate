@@ -57,7 +57,7 @@ use crate::{
         browser::{self, ArtistShows, OpenedRecord},
         chrome,
         dropping::{FolderStanding, Incoming, TakingIn},
-        field::{Caught, Field, Submitted},
+        field::{Blurred, Caught, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis},
@@ -1032,6 +1032,8 @@ impl RootView {
             this.figure_given(window, cx);
         })
         .detach();
+        cx.subscribe(&figure, |this, _, _: &Blurred, cx| this.figure_left(cx))
+            .detach();
 
         let looking = cx.new(|cx| Field::new(LOOKING_PLACEHOLDER, window, cx));
         cx.subscribe_in(&looking, window, |this, _, _: &Submitted, _window, cx| {
@@ -1443,6 +1445,59 @@ impl RootView {
             cx,
         );
         cx.notify();
+    }
+
+    pub(crate) fn with_playlist_entries(
+        &mut self,
+        playlist: PlaylistId,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, Vec<PlaylistEntry>, &mut Context<Self>) + 'static,
+    ) {
+        if let Some(held) = self.library.read(cx).held_entries_of(playlist) {
+            then(self, held, cx);
+            return;
+        }
+        let library = self.library.read(cx).catalog();
+
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { library.playlist_entries(playlist, None) })
+                .await;
+            let _ = this.update(cx, |this, cx| match read {
+                Ok(entries) => then(this, entries, cx),
+                Err(error) => {
+                    tracing::error!(%error, playlist = playlist.get(), "a playlist could not be read");
+                    toast::tell(toast::could_not("read that playlist", &error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn play_the_playlist(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
+        self.with_playlist_entries(playlist, cx, move |this, entries, cx| {
+            this.plays_in_order(cx);
+            this.play_playlist(playlist, &entries, 0, true, cx);
+        });
+    }
+
+    pub(crate) fn shuffle_the_playlist(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
+        self.with_playlist_entries(playlist, cx, move |this, entries, cx| {
+            this.play_playlist(playlist, &entries, somewhere_in(entries.len()), true, cx);
+            this.send(Command::SetShuffle(true), cx);
+        });
+    }
+
+    pub(crate) fn queue_the_playlist(
+        &mut self,
+        playlist: PlaylistId,
+        at: Placement,
+        cx: &mut Context<Self>,
+    ) {
+        self.with_playlist_entries(playlist, cx, move |this, entries, cx| {
+            this.queue(&entries, at, cx);
+        });
     }
 
     pub(crate) fn play_playlist(
@@ -2621,8 +2676,8 @@ impl RootView {
 
     pub(crate) fn lifted_into(&mut self, lifted: &Lifted, into: LiftedTo, cx: &mut Context<Self>) {
         match &lifted.lift {
-            Lift::Tracks(tracks) => self.landed(tracks, into, cx),
-            Lift::Album(album) => {
+            Lift::Tracks(run) => self.landed(run.tracks(), into, cx),
+            Lift::Album(album, _) => {
                 let library = self.library.read(cx).catalog();
                 let asked = whole_of(Selection::Album(*album));
                 cx.spawn(async move |this, cx| {

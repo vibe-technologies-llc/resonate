@@ -14,12 +14,6 @@ are in [ROADMAP.md](ROADMAP.md).
   still copies the whole file, twice for one with a second name
 
 ## Window
-- [M] *Play*, *Shuffle*, *Next* or *Last* on a playlist from the index reads it whole on the
-  window's thread (`entries_of` → `Library::playlist_entries`), a smart one running its query over
-  the catalog; the tracks heading already does this on the background executor
-- [M] Every visible track row copies the whole selected run each frame (`Lifted::tracks` deep-copies
-  into an `Arc` and formats): after Ctrl-A on a 2 000-track page scrolling stutters; the queue
-  shares an `Arc<[Cut]>`
 - [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
   row on the window's thread; Statistics' *play from here* reads a track a query
 

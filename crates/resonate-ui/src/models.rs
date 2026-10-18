@@ -3060,17 +3060,8 @@ impl LibraryModel {
         self.instead.as_deref()
     }
 
-    pub fn entries_of(&self, id: PlaylistId) -> Vec<PlaylistEntry> {
-        if self.opened == Some(id) && self.narrowing().is_none() {
-            return self.entries.to_vec();
-        }
-        match self.library.playlist_entries(id, None) {
-            Ok(entries) => entries,
-            Err(error) => {
-                tracing::warn!(%error, playlist = id.get(), "a playlist could not be read");
-                Vec::new()
-            }
-        }
+    pub fn held_entries_of(&self, id: PlaylistId) -> Option<Vec<PlaylistEntry>> {
+        (self.opened == Some(id) && self.narrowing().is_none()).then(|| self.entries.to_vec())
     }
 
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {

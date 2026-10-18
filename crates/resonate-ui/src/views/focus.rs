@@ -1,7 +1,11 @@
 use std::cell::RefCell;
 
 use ahash::{AHashMap, AHashSet};
-use gpui::{App, FocusHandle, SharedString, Window};
+use gpui::{App, ClickEvent, FocusHandle, SharedString, Window};
+
+pub(crate) fn by_the_pointer(click: &ClickEvent) -> bool {
+    matches!(click, ClickEvent::Mouse(_))
+}
 
 #[derive(Default)]
 pub(crate) struct Controls {
