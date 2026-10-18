@@ -37,7 +37,7 @@ pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};
 
 pub use crate::{
     artwork::{Drawing, Likeness, Raster, decode_cover},
-    boxes::{BoxKind, BoxLayout, Faststart, TopLevelBox, read as probe_boxes},
+    boxes::{BoxKind, BoxLayout, Faststart, TopLevelBox},
     cue::{
         CueFile, CueSheet, CueStamp, CueStart, CueTrack, CueTrackKind,
         DEEPEST_FOLDER_A_SHEET_NAMES, Naming as CueNaming, folder_named as the_folder_a_cue_names,

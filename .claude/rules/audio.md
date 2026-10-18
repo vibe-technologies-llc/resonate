@@ -41,9 +41,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   fallback's gain.
 - **Matroska length: the segment's, counted as well as read** (symphonia leaves `duration` unset).
   `Segment::duration` keeps the declaration while clusters stay within it; the count is a deliberate
-  lower bound, and too-long declarations are detectable only for the first `A_OPUS`/`A_FLAC`/
-  `A_VORBIS` track. **Vorbis packet length is named by the previous packet** (`vorbis::Windows`).
-  Matroska seeks are approximate (ms ticks).
+  lower bound, read from at most `MAX_ELEMENTS_COUNTED` cluster children in total (past it the tally
+  is lost like a walk cut short), and too-long declarations are detectable only for the first
+  `A_OPUS`/`A_FLAC`/ `A_VORBIS` track. **Vorbis packet length is named by the previous packet**
+  (`vorbis::Windows`). Matroska seeks are approximate (ms ticks).
 - **Opus: `opus-rs`, registered beside symphonia's decoders** (symphonia 0.6 demuxes Opus, decodes
   none). **Billed at 48 kHz whatever the container says** (`opus::rate_of`; ffmpeg writes the input's
   rate as Matroska `SamplingFrequency`). `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` read as ReplayGain 5 dB
@@ -67,17 +68,22 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   decodes as 32-bit float** (`container::representable`); declared depth stays 64.
 - **This build drops every priming itself** (`AudioDecoderOptions::gapless(false)`); only
   `MediaInfo::playable` trims. `container::priming` prefers `Track::delay`/`padding`/`num_frames`,
-  else the box scan (`iTunSMPB`, else the first non-empty `elst`) or an iTunes MP3 `COMM` note
-  (`Priming::behind_a_decoder_delay` adds `MP3_DECODER_DELAY` to delay, subtracts it from padding).
-  **`playable` = decoded frames, possibly open-ended;** `duration` = playable count (seek bar,
-  `mpris:length`, `heard.rs`). `Priming` holds the count as `Option`: a reader can name a delay
-  without a length and the priming must still go. **Fragmented MP4 length is in the fragments, not
-  `moov`** (`mvex/mehd`, else the first `sidx`: `Movie::fragmented_length`).
+  else the box scan (`iTunSMPB`, else the first run of `elst` entries that continue one another in
+  media time, within a tick; an empty edit or a jump elsewhere ends it, so a spliced M4A plays its
+  first stretch alone) or an iTunes MP3 `COMM` note (`Priming::behind_a_decoder_delay` adds
+  `MP3_DECODER_DELAY` to delay, subtracts it from padding). **`playable` = decoded frames, possibly
+  open-ended;** `duration` = playable count (seek bar, `mpris:length`, `heard.rs`). `Priming` holds
+  the count as `Option`: a reader can name a delay without a length and the priming must still go.
+  **Fragmented MP4 length is in the fragments, not `moov`** (`mvex/mehd`, else the top-level `sidx`
+  boxes added up, one a DASH segment, those naming the sound track's id or else the first one's:
+  `Movie::fragmented_length`; the walk goes on past `MAX_CHILD_BOXES` top-level boxes once a `sidx`
+  is seen, `MAX_INDEX_ROUNDS` times).
 - **MP3 naming no length is counted where bitrate moves.** symphonia reckons a stream with no
   Xing/Info count and no VBRI from its first sixteen frames (off by half for VBR);
-  `mpa::counted_frames` (`Prescan::buffered`, whole sources only) walks every frame header, leaving
-  streams whose header names frames, and constant rate, to the reader. A seek past the reader's
-  shorter reckoning lands on its last frame and decodes on.
+  `mpa::counted_frames` (`Prescan::buffered`, whole sources only) walks every frame header (at most
+  `MOST_FRAMES_WALKED`, past which the reader's reckoning stands), leaving streams whose header
+  names frames, and constant rate, to the reader. A seek past the reader's shorter reckoning lands
+  on its last frame and decodes on.
 - **MPEG audio and ADTS seek from marks, not from the first frame** (`framed::Framed` wraps
   symphonia's `MpaReader` and `AdtsReader`). A seek walks frame headers itself (`Framing::walk`) from
   the latest of: a mark at least `Framing::LEAD` short of the target (MPEG: room for the bit
@@ -523,13 +529,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   engine-moving call via `Shared::settle`: zbus emits `PropertiesChanged` by calling the getter the
   moment a setter returns `Ok`, so a setter returning first announced the value just changed away
   from.
-- **The inspector never rereads the playing file.** The engine samples `Decoder::last_packet` through
-  a `ProfileBuilder` and publishes a `StreamDigest`; `resonate-ui` renders it without
-  `resonate-codec`. Only the box layout reopens the source, so `inspected` answers `None` where
-  `probe_boxes` fails rather than failing a track that would have decoded. A profile holds at most
-  `MAX_WINDOWS` points whatever a packet claims to span. `Player::analyse` decodes the playing row
-  whole on the window's background executor, only while the analysis pane is in front
-  (`analysis.md`).
+- **The inspector never rereads the playing file.** The engine samples `Decoder::last_packet`
+  through a `ProfileBuilder` and publishes a `StreamDigest`; `resonate-ui` renders it without
+  `resonate-codec`. The box layout is read by the open's own prescan (`Prescan::buffered`, whole
+  sources only; `Decoder::layout`, `StreamReport::layout`), so a track opens its source once and one
+  that is not a whole seekable source has no layout. A profile holds at most `MAX_WINDOWS` points
+  whatever a packet claims to span. `Player::analyse` decodes the playing row whole on the window's
+  background executor, only while the analysis pane is in front (`analysis.md`).
 - **What is heard is tapped where written, read back by where the graph has got to.** `Tapping` sits
   on `Output` beside the ring and gets exactly the frames `RingProducer` took (after equaliser, gain,
   dither; before the ring's trim) as f32 left and right at the sink's rate, **stored at unity**:

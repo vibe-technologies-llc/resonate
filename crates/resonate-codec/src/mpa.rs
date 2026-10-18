@@ -14,6 +14,7 @@ use crate::{
 const MPEG_SYNC: u8 = 0xff;
 const MPEG_SYNC_HIGH: u8 = 0xe0;
 const HEADER_BYTES: u64 = 4;
+const MOST_FRAMES_WALKED: u64 = 1 << 23;
 
 const BITRATES_MPEG_ONE_LAYER_ONE: [u32; 15] = [
     0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448,
@@ -241,6 +242,10 @@ impl FrameHeader {
 }
 
 pub(crate) fn counted_frames<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Frames> {
+    counted_within(source, MOST_FRAMES_WALKED)
+}
+
+fn counted_within<S: Read + Seek + ?Sized>(source: &mut S, most_frames: u64) -> Option<Frames> {
     let start = past_id3(source)?;
     let end = source.seek(SeekFrom::End(0)).ok()?;
     let first = header_at(source, start)?;
@@ -254,7 +259,7 @@ pub(crate) fn counted_frames<S: Read + Seek + ?Sized>(source: &mut S) -> Option<
     if is_constant(source, audio_from, end, first) {
         return None;
     }
-    Some(Frames(walked(source, audio_from, end, first.stream)))
+    walked(source, audio_from, end, first.stream, most_frames).map(Frames)
 }
 
 enum Opening {
@@ -378,10 +383,21 @@ fn is_constant<S: Read + Seek + ?Sized>(
     })
 }
 
-fn walked<S: Read + Seek + ?Sized>(source: &mut S, from: u64, end: u64, stream: Stream) -> u64 {
+fn walked<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    from: u64,
+    end: u64,
+    stream: Stream,
+    most_frames: u64,
+) -> Option<u64> {
     let mut at = from;
     let mut counted = 0_u64;
+    let mut steps = 0_u64;
     while at.saturating_add(HEADER_BYTES) <= end {
+        steps += 1;
+        if steps > most_frames {
+            return None;
+        }
         let header = match header_at(source, at).filter(|header| header.stream == stream) {
             Some(header) => header,
             None if is_a_trailer(source, at) => break,
@@ -396,7 +412,7 @@ fn walked<S: Read + Seek + ?Sized>(source: &mut S, from: u64, end: u64, stream: 
         counted = counted.saturating_add(header.samples());
         at = header.next(at);
     }
-    counted
+    Some(counted)
 }
 
 fn resynced<S: Read + Seek + ?Sized>(
@@ -484,6 +500,18 @@ mod tests {
         file.extend(frames(AT_128, AT_128_LENGTH, 20));
 
         assert_eq!(counted(file), Some(Frames(80 * 1_152)));
+    }
+
+    #[test]
+    fn a_stream_of_more_frames_than_the_walk_will_read_is_left_to_the_reader() {
+        let mut file = frames(AT_32, AT_32_LENGTH, 40);
+        file.extend(frames(AT_320, AT_320_LENGTH, 60));
+
+        assert_eq!(counted_within(&mut Cursor::new(file.clone()), 99), None);
+        assert_eq!(
+            counted_within(&mut Cursor::new(file), 100),
+            Some(Frames(100 * 1_152))
+        );
     }
 
     #[test]

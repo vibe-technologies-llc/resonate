@@ -50,6 +50,7 @@ pub(crate) struct Prescan {
     pub(crate) caf: Option<Overflow>,
     pub(crate) wavpack: Coding,
     pub(crate) mpeg_frames: Option<Frames>,
+    pub(crate) layout: Option<boxes::BoxLayout>,
     pub(crate) encoder_gain: ReplayGain,
 }
 
@@ -65,6 +66,7 @@ impl Prescan {
             wavpack: wavpack::read_coding(source).or(segment.wavpack),
             segment,
             mpeg_frames: None,
+            layout: None,
             encoder_gain: mpa::encoder_gain(source),
         }
     }
@@ -81,6 +83,7 @@ impl Prescan {
             .ok()
             .and_then(|_| mpa::counted_frames(&mut window));
         window.rewind_the_source();
+        found.layout = boxes::read_layout(source);
 
         found
     }

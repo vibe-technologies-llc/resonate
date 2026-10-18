@@ -326,7 +326,7 @@ pub fn probe_stream(sources: &Sources, location: &MediaLocation) -> Result<Strea
         info,
         tags: raw,
         profile,
-        layout: boxes::read(sources, location)?,
+        layout: coded.prescan.layout.take(),
     })
 }
 

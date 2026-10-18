@@ -24,9 +24,8 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
   `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the main decoder
   misses them: a click at every mono/stereo switch of a low-bitrate podcast
-- [M] A fragmented MP4 sized from `sidx` counts the first top-level `sidx` alone (one a segment in
-  DASH files), and only the first non-empty edit-list entry is honoured, so a spliced M4A stops at
-  its first edit
+- [M] A spliced M4A whose edit list jumps in media time (a cut, a reorder) plays only its first
+  stretch: the playable window is one `FrameSpan`, so the later edits have nowhere to go
 - [S] A whole-file lyric sheet beside a cue-cut file is weighed on its title alone: `Wanted` has no
   whole-file length or artist, so its `[length:]` and `[ar:]` are not checked against the file
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:

@@ -4,13 +4,9 @@ use std::{
     num::NonZeroU32,
 };
 
-use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate};
+use resonate_core::{FrameSpan, Frames, SampleRate};
 
-use crate::{
-    Error, Result,
-    chapters::{ChapterStart, MOST_CHAPTERS, Marked, named},
-    source::Sources,
-};
+use crate::chapters::{ChapterStart, MOST_CHAPTERS, Marked, named};
 
 const HEADER: u64 = 8;
 const LARGE_HEADER: u64 = 16;
@@ -20,6 +16,8 @@ const MAX_TOP_LEVEL_BOXES: usize = 256;
 const MAX_CHILD_BOXES: usize = 256;
 const MAX_LEAF_BYTES: u64 = 1 << 16;
 const MAX_EDIT_ENTRIES: usize = 64;
+const EDIT_ROUNDING_TICKS: u64 = 1;
+const MAX_INDEX_ROUNDS: usize = 64;
 const MAX_TIME_TO_SAMPLE_ENTRIES: usize = 8_191;
 
 const VERSION_AND_FLAGS: u64 = 4;
@@ -33,6 +31,7 @@ const EDIT_ENTRY_BYTES: usize = 12;
 const WIDE_EDIT_ENTRY_BYTES: usize = 20;
 const TIME_TO_SAMPLE_ENTRY_BYTES: usize = 8;
 const FRAGMENT_DURATION_AT: usize = 4;
+const INDEX_REFERENCE_AT: usize = 4;
 const INDEX_TIMESCALE_AT: usize = 8;
 const INDEX_COUNT_AT: usize = 22;
 const WIDE_INDEX_COUNT_AT: usize = 30;
@@ -148,17 +147,23 @@ pub struct BoxLayout {
     pub faststart: Option<Faststart>,
 }
 
-pub fn read(sources: &Sources, location: &MediaLocation) -> Result<Option<BoxLayout>> {
-    let mut media = sources.open(location)?;
-    let Some(len) = media.stream.byte_len() else {
-        return Ok(None);
-    };
-    media.stream.rewind().map_err(|source| Error::Io {
-        location: location.clone(),
-        source,
-    })?;
+pub(crate) fn read_layout<S: Read + Seek + ?Sized>(source: &mut S) -> Option<BoxLayout> {
+    let origin = source.stream_position().ok()?;
+    let found = layout_of(source);
+    if source.seek(SeekFrom::Start(origin)).is_err() {
+        tracing::debug!("an ISO-BMFF layout scan could not restore the stream position");
+    }
+    found
+}
 
-    Ok(walk(media.stream.as_mut(), len).filter(starts_with_file_type))
+fn layout_of<S: Read + Seek + ?Sized>(source: &mut S) -> Option<BoxLayout> {
+    let len = source.seek(SeekFrom::End(0)).ok()?;
+    let head = read_at::<8, S>(source, 0)?;
+    if head[4..] != FTYP.as_bytes() {
+        return None;
+    }
+
+    walk(source, len).filter(starts_with_file_type)
 }
 
 fn starts_with_file_type(layout: &BoxLayout) -> bool {
@@ -339,7 +344,8 @@ fn scan_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Movie> {
             .or_else(|| edit_priming(source, moov, trak, media, decoded))
             .filter(|held| held.fits_within(decoded)),
         sound_check: free_form(source, moov, SOUND_CHECK_ITEM),
-        fragmented: extended_length(source, moov).or_else(|| indexed_length(source, &top)),
+        fragmented: extended_length(source, moov)
+            .or_else(|| indexed_length(source, &top, end, trak)),
         chapters: chapter_track(source, moov, trak)
             .filter(|marked| !marked.is_empty())
             .or_else(|| nero_chapters(source, moov))
@@ -537,8 +543,65 @@ fn extended_length<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Opt
     })
 }
 
-fn indexed_length<S: Read + Seek + ?Sized>(source: &mut S, top: &[Child]) -> Option<Ticks> {
-    let sidx = top.iter().find(|held| held.kind == SIDX)?.body;
+fn indexed_length<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    top: &[Child],
+    end: u64,
+    sound: Extent,
+) -> Option<Ticks> {
+    let sound = track_id(source, sound);
+    let mut indexes = index_boxes(source, top, end);
+    let followed = sound
+        .filter(|wanted| indexes.iter().any(|held| held.reference == *wanted))
+        .or_else(|| indexes.first().map(|held| held.reference))?;
+    indexes.retain(|held| held.reference == followed);
+
+    let timescale = indexes.first()?.timescale;
+    let mut ticks = 0_u64;
+    for held in &indexes {
+        ticks = ticks.checked_add(rescaled(held.ticks, held.timescale, timescale)?)?;
+    }
+
+    (ticks > 0).then_some(Ticks { ticks, timescale })
+}
+
+struct Index {
+    reference: u32,
+    timescale: NonZeroU32,
+    ticks: u64,
+}
+
+fn index_boxes<S: Read + Seek + ?Sized>(source: &mut S, top: &[Child], end: u64) -> Vec<Index> {
+    let mut seen = top.to_vec();
+    if seen.iter().any(|held| held.kind == SIDX) {
+        for _ in 0..MAX_INDEX_ROUNDS {
+            let Some(last) = seen
+                .last()
+                .filter(|_| seen.len().is_multiple_of(MAX_CHILD_BOXES))
+            else {
+                break;
+            };
+            let more = children(
+                source,
+                Extent {
+                    at: last.body.end,
+                    end,
+                },
+            );
+            if more.is_empty() {
+                break;
+            }
+            seen.extend(more);
+        }
+    }
+
+    seen.iter()
+        .filter(|held| held.kind == SIDX)
+        .filter_map(|held| index_of(source, held.body))
+        .collect()
+}
+
+fn index_of<S: Read + Seek + ?Sized>(source: &mut S, sidx: Extent) -> Option<Index> {
     let bytes = leaf(source, sidx)?;
     let timescale = NonZeroU32::new(be32(&bytes, INDEX_TIMESCALE_AT)?)?;
     let count_at = match *bytes.first()? {
@@ -555,7 +618,11 @@ fn indexed_length<S: Read + Seek + ?Sized>(source: &mut S, top: &[Child]) -> Opt
         ticks = ticks.checked_add(u64::from(be32(&bytes, at + 4)?))?;
     }
 
-    (ticks > 0).then_some(Ticks { ticks, timescale })
+    Some(Index {
+        reference: be32(&bytes, INDEX_REFERENCE_AT)?,
+        timescale,
+        ticks,
+    })
 }
 
 fn sound_track<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Option<Extent> {
@@ -633,27 +700,41 @@ fn edit_priming<S: Read + Seek + ?Sized>(
     let version = *bytes.first()?;
     let entries = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MAX_EDIT_ENTRIES);
 
+    let mut run: Option<(u32, u64)> = None;
     for entry in 0..entries {
         let (segment, media_time) = edit_entry(&bytes, version, entry)?;
-        let Ok(delay) = u32::try_from(media_time) else {
+        let Ok(start) = u32::try_from(media_time) else {
+            if run.is_some() {
+                break;
+            }
             continue;
         };
 
-        let playable = rescaled(segment, movie.timescale, media.timescale)?;
-        let whole = decoded.unwrap_or(media.frames);
-        return Some(Priming {
-            delay,
-            padding: u32::try_from(
-                whole
-                    .saturating_sub(u64::from(delay))
-                    .saturating_sub(playable),
-            )
-            .unwrap_or(u32::MAX),
-            playable: Some(Frames(playable)),
-        });
+        let length = rescaled(segment, movie.timescale, media.timescale)?;
+        match run {
+            None => run = Some((start, length)),
+            Some((delay, playable)) => {
+                let continues_at = u64::from(delay).saturating_add(playable);
+                if u64::from(start).abs_diff(continues_at) > EDIT_ROUNDING_TICKS {
+                    break;
+                }
+                run = Some((delay, playable.saturating_add(length)));
+            }
+        }
     }
 
-    None
+    let (delay, playable) = run?;
+    let whole = decoded.unwrap_or(media.frames);
+    Some(Priming {
+        delay,
+        padding: u32::try_from(
+            whole
+                .saturating_sub(u64::from(delay))
+                .saturating_sub(playable),
+        )
+        .unwrap_or(u32::MAX),
+        playable: Some(Frames(playable)),
+    })
 }
 
 fn edit_entry(bytes: &[u8], version: u8, entry: usize) -> Option<(u64, i64)> {
@@ -873,7 +954,7 @@ mod tests {
     }
 
     fn layout(scratch: &Scratch) -> Option<BoxLayout> {
-        read(&Sources::local(), &MediaLocation::local(&scratch.path)).expect("a readable file")
+        read_layout(&mut std::fs::File::open(&scratch.path).expect("a readable file"))
     }
 
     #[test]
@@ -1005,6 +1086,27 @@ mod tests {
         full_atom(b"hdlr", 0, &payload)
     }
 
+    fn track_header(id: u32) -> Vec<u8> {
+        let mut payload = vec![0; 8];
+        payload.extend_from_slice(&id.to_be_bytes());
+        full_atom(b"tkhd", 0, &payload)
+    }
+
+    fn sound_track_numbered(id: u32) -> Vec<u8> {
+        let stbl = atom(b"stbl", &time_to_sample(&[]));
+        let mdia = atom(
+            b"mdia",
+            &[
+                header_atom(b"mdhd", RATE, 0),
+                handler(b"soun"),
+                atom(b"minf", &stbl),
+            ]
+            .concat(),
+        );
+
+        atom(b"trak", &[track_header(id), mdia].concat())
+    }
+
     fn track(handled: &[u8; 4], edits: &[Vec<u8>], samples: &[(u32, u32)]) -> Vec<u8> {
         let stbl = atom(b"stbl", &time_to_sample(samples));
         let minf = atom(b"minf", &stbl);
@@ -1103,6 +1205,44 @@ mod tests {
         .expect("an edit list the reader can act on");
 
         assert_eq!(held.delay, PRIMING);
+    }
+
+    #[test]
+    fn edits_that_continue_one_another_are_one_stretch_of_music() {
+        let half = MUSIC / 2;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (half, PRIMING as i32),
+                (MUSIC - half, (PRIMING + half) as i32),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(held.delay, PRIMING);
+        assert_eq!(held.padding, REMAINDER);
+        assert_eq!(
+            held.window().and_then(FrameSpan::frames),
+            Some(Frames(u64::from(MUSIC)))
+        );
+    }
+
+    #[test]
+    fn a_stretch_ends_where_the_next_edit_jumps_elsewhere() {
+        let half = MUSIC / 2;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (half, PRIMING as i32),
+                (half, (PRIMING + MUSIC) as i32),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(
+            held.window().and_then(FrameSpan::frames),
+            Some(Frames(u64::from(half)))
+        );
     }
 
     #[test]
@@ -1206,7 +1346,11 @@ mod tests {
     }
 
     fn index(timescale: u32, durations: &[u32]) -> Vec<u8> {
-        let mut payload = 1_u32.to_be_bytes().to_vec();
+        index_of_track(1, timescale, durations)
+    }
+
+    fn index_of_track(reference: u32, timescale: u32, durations: &[u32]) -> Vec<u8> {
+        let mut payload = reference.to_be_bytes().to_vec();
         payload.extend_from_slice(&timescale.to_be_bytes());
         payload.extend_from_slice(&[0; 8]);
         payload.extend_from_slice(&[0, 0]);
@@ -1236,6 +1380,65 @@ mod tests {
         assert_eq!(
             held.fragmented_length(SampleRate::HZ_48000),
             Some(Frames(168_000))
+        );
+    }
+
+    #[test]
+    fn every_segment_of_a_dash_file_adds_its_own_index() {
+        let held = fragmented(
+            &[],
+            &[
+                index(1_000, &[2_000]),
+                atom(b"moof", &[0; 8]),
+                atom(b"mdat", &[0; 8]),
+                index(1_000, &[1_500]),
+                atom(b"moof", &[0; 8]),
+                atom(b"mdat", &[0; 8]),
+                index(1_000, &[500, 1_000]),
+            ],
+        );
+
+        assert_eq!(
+            held.fragmented_length(SampleRate::HZ_48000),
+            Some(Frames(240_000))
+        );
+    }
+
+    #[test]
+    fn an_index_of_another_track_is_not_added_to_the_sound_tracks() {
+        let mut inside = header_atom(b"mvhd", RATE, 0);
+        inside.extend_from_slice(&sound_track_numbered(2));
+        inside.extend_from_slice(&sound_track_numbered(7));
+        let held = read_movie(&mut Cursor::new(
+            [
+                atom(b"ftyp", b"iso8mp41dash"),
+                atom(b"moov", &inside),
+                index_of_track(7, 1_000, &[9_000]),
+                index_of_track(2, 1_000, &[2_000]),
+                index_of_track(2, 1_000, &[1_000]),
+            ]
+            .concat(),
+        ));
+
+        assert_eq!(
+            held.fragmented_length(SampleRate::HZ_48000),
+            Some(Frames(144_000))
+        );
+    }
+
+    #[test]
+    fn a_dash_file_with_more_segments_than_one_walk_reads_is_still_added_up() {
+        let segments = MAX_CHILD_BOXES;
+        let held = fragmented(
+            &[],
+            &(0..segments)
+                .flat_map(|_| [index(1_000, &[1_000]), atom(b"mdat", &[0; 8])])
+                .collect::<Vec<_>>(),
+        );
+
+        assert_eq!(
+            held.fragmented_length(SampleRate::HZ_48000),
+            Some(Frames(48_000 * segments as u64))
         );
     }
 

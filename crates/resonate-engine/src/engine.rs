@@ -11,9 +11,7 @@ use resonate_audio::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
     StreamRequest, StreamState,
 };
-use resonate_codec::{
-    BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources, probe_boxes,
-};
+use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault, Span,
     StreamSpec, TrackHints, TrackId, Volume,
@@ -106,11 +104,12 @@ impl Unwrapped {
             Some(span) => Decoder::open_span(sources, &item.location, span)?,
             None => Decoder::open(sources, &item.location)?,
         };
+        let layout = decoder.layout().cloned();
         Ok(Self {
             decoder,
             info,
             hints: sources.hints(&item.location, item.span),
-            layout: inspected(sources, &item.location),
+            layout,
         })
     }
 }
@@ -3349,16 +3348,6 @@ fn tagged_or_measured(tags: ReplayGain, measured: MeasuredGain) -> ReplayGain {
         track_gain: measured.track,
         album_gain: measured.album,
         ..tags
-    }
-}
-
-fn inspected(sources: &Sources, location: &MediaLocation) -> Option<BoxLayout> {
-    match probe_boxes(sources, location) {
-        Ok(layout) => layout,
-        Err(error) => {
-            tracing::debug!(%error, "the box layout the inspector draws could not be read");
-            None
-        }
     }
 }
 

@@ -3,17 +3,20 @@ use std::{
     io::{self, Cursor, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
 };
 
 use resonate_codec::{
     Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags,
-    Holes, ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSet, TagSink,
-    TagSource, Writing, probe, probe_cover_art, probe_stream,
+    Holes, ImageFormat, LocalFiles, Media, MediaProvider, Picturing, Popularity, Rated, Sources,
+    TagEdit, TagField, TagSet, TagSink, TagSource, Writing, probe, probe_cover_art, probe_stream,
 };
 use resonate_core::{
     AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
-    SampleRate, StreamSpec,
+    SampleRate, SourceId, StreamSpec,
 };
 
 const RATE: u32 = 44_100;
@@ -1738,6 +1741,55 @@ fn an_iso_container_reports_the_order_its_boxes_were_written_in() {
         trailing.boxes.len() > 1,
         "the box walk found nothing to order"
     );
+}
+
+struct CountingFiles {
+    files: LocalFiles,
+    opens: AtomicUsize,
+}
+
+impl MediaProvider for CountingFiles {
+    fn source(&self) -> &SourceId {
+        self.files.source()
+    }
+
+    fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
+        self.opens.fetch_add(1, Ordering::Relaxed);
+        self.files.open(location)
+    }
+}
+
+fn counting_sources() -> (Sources, Arc<CountingFiles>) {
+    let counting = Arc::new(CountingFiles {
+        files: LocalFiles::default(),
+        opens: AtomicUsize::new(0),
+    });
+    (Sources::local().and(counting.clone()), counting)
+}
+
+#[test]
+fn an_iso_container_is_opened_once_and_its_box_layout_comes_with_it() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "once.m4a", &["-c:a", "alac"]) else {
+        return;
+    };
+    let location = MediaLocation::local(&path);
+
+    let (sources, counting) = counting_sources();
+    let (decoder, _) = Decoder::open(&sources, &location).expect("a real file opens");
+
+    assert_eq!(counting.opens.load(Ordering::Relaxed), 1);
+    assert!(
+        decoder
+            .layout()
+            .is_some_and(|layout| layout.boxes.len() > 1)
+    );
+
+    let (sources, counting) = counting_sources();
+    let report = probe_stream(&sources, &location).expect("a real file probes");
+
+    assert_eq!(counting.opens.load(Ordering::Relaxed), 1);
+    assert!(report.layout.is_some());
 }
 
 #[test]

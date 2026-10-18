@@ -68,6 +68,7 @@ const MAX_TITLE_BYTES: u64 = 4_096;
 const MAX_BIT_DEPTH: u64 = 64;
 const MAX_CLUSTERS: usize = 65_536;
 const MAX_BLOCKS: usize = 65_536;
+const MAX_ELEMENTS_COUNTED: usize = 1 << 18;
 const OPUS_CODEC_ID: &str = "A_OPUS";
 const FLAC_CODEC_ID: &str = "A_FLAC";
 const VORBIS_CODEC_ID: &str = "A_VORBIS";
@@ -139,6 +140,7 @@ impl Segment {
 struct Counted {
     ticks: Option<u64>,
     blocks: usize,
+    walked: usize,
     discarded: BTreeMap<u64, Duration>,
     discarding: Vec<u64>,
     tally: Tally,
@@ -437,6 +439,9 @@ fn count_clusters<S: Read + Seek + ?Sized>(
             reached_the_end = within == Some(next);
             break;
         }
+        if counted.is_over_budget() {
+            break;
+        }
     }
 
     if !reached_the_end {
@@ -457,6 +462,10 @@ fn read_cluster<S: Read + Seek + ?Sized>(
     let mut unsized_until = None;
 
     for _ in 0..MAX_BLOCKS {
+        if into.is_over_budget() {
+            break;
+        }
+        into.walked = into.walked.saturating_add(1);
         let Ok(starts) = source.stream_position() else {
             break;
         };
@@ -508,6 +517,10 @@ fn read_cluster<S: Read + Seek + ?Sized>(
 }
 
 impl Counted {
+    fn is_over_budget(&self) -> bool {
+        self.walked >= MAX_ELEMENTS_COUNTED
+    }
+
     fn forget_the_padding_after(&mut self, block: Option<Block>) {
         match block {
             None => self.discarded.clear(),
@@ -1747,6 +1760,30 @@ mod tests {
             Some(1_920)
         );
         assert_eq!(read_segment(&mut Cursor::new(head)).opus_samples, None);
+    }
+
+    #[test]
+    fn a_file_of_more_blocks_than_the_walk_will_read_leaves_the_count_unknown() {
+        const BLOCKS_A_CLUSTER: usize = 40_000;
+        let clusters = MAX_ELEMENTS_COUNTED / BLOCKS_A_CLUSTER + 2;
+        let block = opus_block(1, 0, CELT_20_MS);
+        let mut segment = element(
+            INFO,
+            &element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes()),
+        );
+        segment.extend_from_slice(&element(TRACKS, &track_entry(1, OPUS_CODEC_ID)));
+        for _ in 0..clusters {
+            let mut body = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+            body.extend_from_slice(&block.repeat(BLOCKS_A_CLUSTER));
+            segment.extend_from_slice(&element(CLUSTER, &body));
+        }
+        let mut bytes = element(EBML_HEADER, b"an ebml header");
+        bytes.extend_from_slice(&element(SEGMENT, &segment));
+
+        let found = read_segment(&mut Cursor::new(bytes));
+
+        assert_eq!(found.opus_samples, None);
+        assert_eq!(found.counted_track, Some(1));
     }
 
     const WAVPACK_HYBRID: u32 = 0x8;

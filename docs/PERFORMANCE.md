@@ -33,12 +33,10 @@ are in [ROADMAP.md](ROADMAP.md).
   needs the counting moved first
 
 ## Performance and scale
-- [M] Every track open opens its source twice, once more for the inspector's box layout
-  (`Unwrapped::inspected` → `probe_boxes`; `probe_stream` likewise), on the path before the first
-  sample: a second request a skip for a network provider
-- [M] Every open of a Matroska file walks every block of it (`count_clusters` caps per cluster and
-  in clusters, not in total), and of a VBR MP3 naming no length every frame header (`mpa::walked`),
-  scan and playback alike
+- [M] Every open of a Matroska file still reads every block header of it (up to
+  `MAX_ELEMENTS_COUNTED`), and of a VBR MP3 naming no length every frame header (up to
+  `MOST_FRAMES_WALKED`), scan and playback alike; a count persisted beside the catalog's duration
+  would spare playback the walk
 - [M] Queue edits are O(n) on the engine thread: `one_id_each` hashes every id an insert,
   `rows_changed` rehashes every location, a consumed play-next row is three `retain` passes, and
   `publish_queue` clones every row whenever the revision moves

@@ -18,6 +18,7 @@ use symphonia::core::{
 
 use crate::{
     AudioCodecId, CodecOp, CueFile, Error, FormatId, Result, Speakers, StreamTrackId, TagSet,
+    boxes::BoxLayout,
     container::{self, Opened},
     cue,
     dsd::{self, DSD_BLOCK_FRAMES, Packing},
@@ -423,6 +424,7 @@ pub struct Decoder {
     limit: Option<Frames>,
     last_packet: Option<PacketSpan>,
     spool: Option<Arc<Spool>>,
+    layout: Option<BoxLayout>,
 }
 
 impl Decoder {
@@ -518,6 +520,7 @@ impl Decoder {
     fn build(opened: Opened, location: &MediaLocation) -> Result<(Self, MediaInfo)> {
         let info = opened.media_info(location)?;
         let spool = opened.spool();
+        let layout = opened.layout();
 
         let (reading, timeline) = match opened {
             Opened::Dsd(held) => {
@@ -577,6 +580,7 @@ impl Decoder {
             limit: None,
             last_packet: None,
             spool,
+            layout,
         };
         decoder.open_on_the_music()?;
 
@@ -598,6 +602,10 @@ impl Decoder {
 
     pub fn info(&self) -> &MediaInfo {
         &self.info
+    }
+
+    pub fn layout(&self) -> Option<&BoxLayout> {
+        self.layout.as_ref()
     }
 
     pub fn settle_the_spool(&mut self) -> Option<&MediaInfo> {

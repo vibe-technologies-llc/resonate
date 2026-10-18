@@ -107,6 +107,13 @@ impl Opened {
         }
     }
 
+    pub(crate) fn layout(&self) -> Option<boxes::BoxLayout> {
+        match self {
+            Self::Coded(coded) => coded.prescan.layout.clone(),
+            Self::Dsd(_) => None,
+        }
+    }
+
     pub(crate) fn into_coded(self) -> Option<Coded> {
         match self {
             Self::Coded(coded) => Some(*coded),
