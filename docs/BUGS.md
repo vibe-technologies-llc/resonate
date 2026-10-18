@@ -48,9 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`tidy_the_roots_beside`) before any pairing could follow it: a hand move inside `~/Archive` is
   forgotten with its history by a poll's delivery scan, *Add folder* or `resonate scan ~/Music`, and
   refound as new
-- [M] An album's `tagged_tracks` is one file's raw `TRACKTOTAL`, a disc's count on a set (this
-  build's own writer writes it per disc), weighed against a release's whole count: a 12 + 10 deluxe
-  rip misses its 22-track pressing and lands strictly on the 12-track standard edition
 - [S] A file a sheet cuts, followed as it moved (`moves::cuts_moved`), is not refreshed from the rows
   the scan wrote at its new path: a sheet edited as the file moved keeps the gone rows' titles and
   index entries until the sheet's mtime brings a reprobe

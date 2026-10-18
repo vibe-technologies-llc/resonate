@@ -488,6 +488,8 @@ const MIGRATIONS: &[&str] = &[
          replace(path, rtrim(path, replace(path, '/', '')), '')
      ) VIRTUAL;
      CREATE INDEX tracks_by_file_name ON tracks(file_name COLLATE NOCASE);",
+    "ALTER TABLE tracks ADD COLUMN track_total INTEGER;
+     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

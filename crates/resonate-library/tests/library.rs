@@ -63,6 +63,7 @@ const ALBUM: &[u8; 4] = b"TALB";
 const ALBUM_SORT: &[u8; 4] = b"TSOA";
 const TITLE_SORT: &[u8; 4] = b"TSOT";
 const TRACK: &[u8; 4] = b"TRCK";
+const DISC: &[u8; 4] = b"TPOS";
 const YEAR: &[u8; 4] = b"TDRC";
 const GENRE: &[u8; 4] = b"TCON";
 const ISRC: &[u8; 4] = b"TSRC";
@@ -3862,6 +3863,61 @@ fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing
         Some(tree.path().join("Artist/Album/one.wav").as_path()),
         "a row two files could be was taken for one of them"
     );
+    Ok(())
+}
+
+fn deluxe_disc_tree(tree: &Tree, numbering: [(u32, &str); 5]) {
+    for (index, (disc, track)) in numbering.into_iter().enumerate() {
+        tree.write(
+            &format!("{index}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Song {index}"))
+                .text(ARTIST, "The Orbiters")
+                .text(ALBUM_ARTIST, "The Orbiters")
+                .text(ALBUM, "Orbits Deluxe")
+                .text(DISC, &format!("{disc}/2"))
+                .text(TRACK, track)
+                .build(),
+        );
+    }
+}
+
+fn asked_tracks_of_the_only_album(library: &Library) -> Result<Option<u32>> {
+    let albums = library.albums(&AlbumQuery::default())?;
+    let album = albums.first().expect("the rip was grouped");
+    Ok(library
+        .album_to_ask(album.id)?
+        .expect("the album is known")
+        .tagged_tracks)
+}
+
+#[test]
+fn a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to()
+-> Result<()> {
+    let tree = Tree::new();
+    deluxe_disc_tree(
+        &tree,
+        [(1, "1/3"), (1, "2/3"), (1, "3/3"), (2, "1/2"), (2, "2/2")],
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
+    Ok(())
+}
+
+#[test]
+fn a_set_numbered_straight_on_across_its_discs_is_asked_after_as_the_count_each_file_declares()
+-> Result<()> {
+    let tree = Tree::new();
+    deluxe_disc_tree(
+        &tree,
+        [(1, "1/5"), (1, "2/5"), (1, "3/5"), (2, "4/5"), (2, "5/5")],
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
     Ok(())
 }
 

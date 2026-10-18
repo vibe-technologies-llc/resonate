@@ -538,6 +538,7 @@ const THE_FILE_AS_IT_ARRIVED: &str = "UPDATE tracks SET
          tagged_artist = arrived.tagged_artist,
          named_by_its_stem = arrived.named_by_its_stem,
          packets = arrived.packets,
+         track_total = arrived.track_total,
          title_sort = arrived.title_sort,
          artist_sort = arrived.artist_sort,
          genre = arrived.genre,

@@ -1585,6 +1585,53 @@ pub(crate) fn album_if_due(
     found.map(|raw| raw.into_album(connection)).transpose()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DeclaredDisc {
+    total: u32,
+    first: Option<u32>,
+}
+
+fn declared_whole(connection: &Connection, album: i64) -> Result<Option<u32>> {
+    let discs = connection
+        .prepare_cached(
+            "SELECT coalesce(disc_number, 1) AS disc, max(track_total), min(track_number)
+               FROM tracks
+              WHERE album_id = ?1 AND track_total > 0
+              GROUP BY disc ORDER BY disc",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![album], |row| {
+                    Ok(DeclaredDisc {
+                        total: row.get(1)?,
+                        first: row.get(2)?,
+                    })
+                })
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(whole_count_of(&discs))
+}
+
+fn whole_count_of(discs: &[DeclaredDisc]) -> Option<u32> {
+    let [lowest, later @ ..] = discs else {
+        return None;
+    };
+    if later.is_empty() {
+        return Some(lowest.total);
+    }
+
+    let numbered_straight_on = later
+        .iter()
+        .any(|disc| disc.first.is_some_and(|first| first > 1));
+    if numbered_straight_on {
+        discs.iter().map(|disc| disc.total).max()
+    } else {
+        Some(discs.iter().map(|disc| disc.total).sum())
+    }
+}
+
 const PERFORMERS_WEIGHED_AT_MOST: i64 = 32;
 
 fn performers_of(connection: &Connection, album: i64) -> Result<Vec<String>> {
@@ -1655,7 +1702,7 @@ impl RawAlbumToAsk {
             group: self.group.as_deref().map(Mbid::new).transpose()?,
             barcode: self.barcode,
             catalog_number: self.catalog_number,
-            tagged_tracks: self.tagged_tracks,
+            tagged_tracks: declared_whole(connection, self.id)?.or(self.tagged_tracks),
             owner_mbid: owner_mbid_held(self.owner_mbid.as_deref()),
             performers,
             has_cover: self.has_cover,
@@ -2475,5 +2522,19 @@ mod tests {
         assert_eq!(folded_title("Echoes (Live) — Pt. 2"), "echoeslivept2");
         assert_eq!(folded_title("ÉCHOES"), "échoes");
         assert_eq!(folded_title("   "), "");
+    }
+
+    #[test]
+    fn a_count_declared_a_disc_at_a_time_adds_up_unless_the_numbers_run_straight_on() {
+        let disc = |total, first| DeclaredDisc {
+            total,
+            first: Some(first),
+        };
+
+        assert_eq!(whole_count_of(&[]), None);
+        assert_eq!(whole_count_of(&[disc(12, 1)]), Some(12));
+        assert_eq!(whole_count_of(&[disc(12, 1), disc(10, 1)]), Some(22));
+        assert_eq!(whole_count_of(&[disc(12, 1), disc(12, 1)]), Some(24));
+        assert_eq!(whole_count_of(&[disc(22, 1), disc(22, 13)]), Some(22));
     }
 }

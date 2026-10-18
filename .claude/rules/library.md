@@ -530,7 +530,13 @@ rows read via `Player::media` like any unscanned row.
   is a listener taking the name its audio was heard as, `analysis.md`). A rescan leaves every other
   enrichment column where it stood; the retagging rule below is the only scan write of
   `tracks.answered`. `asking_albums` hands `catalog_number`, `tagged_tracks` and the owner's
-  `artists.mbid` to `AlbumToAsk` beside the barcode.
+  `artists.mbid` to `AlbumToAsk` beside the barcode. **`AlbumToAsk::tagged_tracks` is the album's
+  whole declared count, read off each file's own `tracks.track_total`** (`enriched::declared_whole`),
+  not `albums.tagged_tracks` (the first file's, kept as the fallback for a row not yet reprobed): a
+  taggers' `TRACKTOTAL` is a disc's count on a set, so the per-disc maxima add up (12 + 10 = 22),
+  unless a later disc's numbers do not restart at 1 (numbered straight on: the largest declared is
+  the whole). The step adding the column marks scanned rows `probe_again`.
+  (`a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to`)
   (`a_rescan_leaves_every_enrichment_column_where_it_stood`)
 - **`tagged_title`, `tagged_artist` are what the *file* was read as: how a rescan tells retagging
   from identification.** Enrichment writes `tracks.title`, `tracks.artist` like the scan. The upsert
