@@ -41,9 +41,6 @@ are in [ROADMAP.md](ROADMAP.md).
   `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
 - [M] Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
   `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
-- [M] A playlist import missing a file rescans every catalog path and allocates a component vector
-  each (`reconnected_by_trailing_components`); `Library::playlists` runs a whole-catalog count per
-  smart playlist
 - [M] Retag's preview opens each file twice (`tags.read`, then `tags.rated`); the organise planner
   keeps every library path and folder listing for the whole run
 - [M] A WAVE import writes and `sync_all`s the whole uncompressed PCM before compressing and

@@ -13,10 +13,33 @@ pub fn device(path: &Path) -> Option<u64> {
     fs::metadata(path).ok().map(|metadata| metadata.dev())
 }
 
+#[derive(Default)]
+pub(crate) struct MountPoints(AHashSet<PathBuf>);
+
+impl MountPoints {
+    pub(crate) fn read() -> Self {
+        fs::read_to_string(MOUNT_TABLE)
+            .map(|table| Self::of(&table))
+            .unwrap_or_default()
+    }
+
+    fn of(table: &str) -> Self {
+        Self(mount_points_in(table).map(|(point, _)| point).collect())
+    }
+
+    pub(crate) fn hold(&self, directory: &Path) -> bool {
+        self.0.contains(directory)
+    }
+}
+
 pub fn is_mounted(volume: &Path) -> bool {
+    is_mounted_among(volume, &MountPoints::read())
+}
+
+pub(crate) fn is_mounted_among(volume: &Path, points: &MountPoints) -> bool {
     let inner = device(volume);
     let outer = volume.parent().and_then(device);
-    inner.is_some() && outer.is_some() && inner != outer
+    inner.is_some() && outer.is_some() && (inner != outer || points.hold(volume))
 }
 
 pub fn held(connection: &Connection) -> Result<Vec<PathBuf>> {
@@ -31,9 +54,10 @@ pub fn held(connection: &Connection) -> Result<Vec<PathBuf>> {
 }
 
 pub fn absent(connection: &Connection) -> Result<Vec<PathBuf>> {
+    let points = MountPoints::read();
     Ok(held(connection)?
         .into_iter()
-        .filter(|volume| !is_mounted(volume))
+        .filter(|volume| !is_mounted_among(volume, &points))
         .collect())
 }
 
@@ -87,11 +111,11 @@ pub fn listed_and_not_mounted() -> Vec<PathBuf> {
 }
 
 fn not_mounted_of(listed: &str, mounted: &str) -> Vec<PathBuf> {
-    let mounted: AHashSet<PathBuf> = mount_points_in(mounted).map(|(point, _)| point).collect();
+    let mounted = MountPoints::of(mounted);
     mount_points_in(listed)
         .map(|(point, _)| point)
         .filter(|point| point.is_absolute() && point != Path::new(THE_ROOT))
-        .filter(|point| !mounted.contains(point))
+        .filter(|point| !mounted.hold(point))
         .collect()
 }
 
@@ -277,6 +301,29 @@ mod tests {
         );
         assert_eq!(mount_point_above(Path::new("/home/me"), device), None);
         assert_eq!(mount_point_above(Path::new("/"), device), None);
+    }
+
+    #[test]
+    fn a_bind_mount_of_the_same_filesystem_is_mounted_where_the_table_lists_it_and_not_otherwise() {
+        let base = env::temp_dir().join(format!("resonate-binds-{}", process::id()));
+        let bound = base.join("Music");
+        fs::create_dir_all(&bound).expect("a writable temporary folder");
+        let listed = format!(
+            "/dev/nvme0n1p2 / btrfs rw 0 0\n/dev/nvme0n1p2 {} btrfs rw 0 0\n",
+            bound.display()
+        );
+
+        assert!(is_mounted_among(&bound, &MountPoints::of(&listed)));
+        assert!(!is_mounted_among(
+            &bound,
+            &MountPoints::of("/dev/sda1 / ext4 rw 0 0\n")
+        ));
+        assert!(!is_mounted_among(
+            &base.join("Gone"),
+            &MountPoints::of(&listed)
+        ));
+
+        fs::remove_dir_all(&base).expect("the temporary folder goes");
     }
 
     #[test]

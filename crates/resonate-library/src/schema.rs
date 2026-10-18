@@ -484,6 +484,12 @@ const MIGRATIONS: &[&str] = &[
      INSERT INTO release_track_isrcs (release_track_id, isrc)
      SELECT id, isrc FROM release_tracks WHERE isrc IS NOT NULL;",
     "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE tracks ADD COLUMN file_name TEXT GENERATED ALWAYS AS (
+         replace(path, rtrim(path, replace(path, '/', '')), '')
+     ) VIRTUAL;
+     CREATE INDEX tracks_by_file_name ON tracks(file_name COLLATE NOCASE);",
+    "ALTER TABLE tracks ADD COLUMN track_total INTEGER;
+     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -899,6 +905,18 @@ pub fn configure(connection: &Connection, role: Role) -> Result<()> {
             |context| {
                 let text: Option<String> = context.get(0)?;
                 Ok(text.map(|text| store::words_of(&text)))
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+    connection
+        .create_scalar_function(
+            store::LISTS_WORDS,
+            2,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| {
+                let list: Option<String> = context.get(0)?;
+                let words: String = context.get(1)?;
+                Ok(list.map(|list| store::lists_words(&list, &words)))
             },
         )
         .map_err(|source| Error::store(StoreOp::Open, source))?;

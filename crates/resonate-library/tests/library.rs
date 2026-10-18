@@ -63,6 +63,7 @@ const ALBUM: &[u8; 4] = b"TALB";
 const ALBUM_SORT: &[u8; 4] = b"TSOA";
 const TITLE_SORT: &[u8; 4] = b"TSOT";
 const TRACK: &[u8; 4] = b"TRCK";
+const DISC: &[u8; 4] = b"TPOS";
 const YEAR: &[u8; 4] = b"TDRC";
 const GENRE: &[u8; 4] = b"TCON";
 const ISRC: &[u8; 4] = b"TSRC";
@@ -3861,6 +3862,81 @@ fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing
         cuts[1].location.as_path(),
         Some(tree.path().join("Artist/Album/one.wav").as_path()),
         "a row two files could be was taken for one of them"
+    );
+    Ok(())
+}
+
+fn deluxe_disc_tree(tree: &Tree, numbering: [(u32, &str); 5]) {
+    for (index, (disc, track)) in numbering.into_iter().enumerate() {
+        tree.write(
+            &format!("{index}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Song {index}"))
+                .text(ARTIST, "The Orbiters")
+                .text(ALBUM_ARTIST, "The Orbiters")
+                .text(ALBUM, "Orbits Deluxe")
+                .text(DISC, &format!("{disc}/2"))
+                .text(TRACK, track)
+                .build(),
+        );
+    }
+}
+
+fn asked_tracks_of_the_only_album(library: &Library) -> Result<Option<u32>> {
+    let albums = library.albums(&AlbumQuery::default())?;
+    let album = albums.first().expect("the rip was grouped");
+    Ok(library
+        .album_to_ask(album.id)?
+        .expect("the album is known")
+        .tagged_tracks)
+}
+
+#[test]
+fn a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to()
+-> Result<()> {
+    let tree = Tree::new();
+    deluxe_disc_tree(
+        &tree,
+        [(1, "1/3"), (1, "2/3"), (1, "3/3"), (2, "1/2"), (2, "2/2")],
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
+    Ok(())
+}
+
+#[test]
+fn a_set_numbered_straight_on_across_its_discs_is_asked_after_as_the_count_each_file_declares()
+-> Result<()> {
+    let tree = Tree::new();
+    deluxe_disc_tree(
+        &tree,
+        [(1, "1/5"), (1, "2/5"), (1, "3/5"), (2, "4/5"), (2, "5/5")],
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
+    Ok(())
+}
+
+#[test]
+fn a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("Artist/Album/étude.wav", &Wav::new().frames(4_410).build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let sheet = tree.path().join("windows.m3u");
+    fs::write(&sheet, "#EXTM3U\r\nD:\\Music\\Artist\\Album\\ÉTUDE.WAV\r\n")
+        .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+
+    assert_eq!(imported.missing, 0);
+    assert_eq!(
+        library.playlist_cuts(imported.id)?[0].location.as_path(),
+        Some(tree.path().join("Artist/Album/étude.wav").as_path())
     );
     Ok(())
 }
@@ -7738,6 +7814,44 @@ fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
         "an unchanged rescan wrote rows"
     );
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 3);
+    Ok(())
+}
+
+#[test]
+fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<()> {
+    let (tree, library) = scanned_two_discs();
+    let before: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    tree.write("The Wall.cue", b"");
+    let stats = scan(&library, &options(&tree))?;
+    let during: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    assert_eq!(
+        stats.removed, 0,
+        "rows were pruned under a sheet that could not be read"
+    );
+    assert_eq!(
+        during, before,
+        "a sheet read as empty cost the files below it their cuts"
+    );
+
+    tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
+    scan(&library, &options(&tree))?;
+    let after: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    assert_eq!(after, before, "the cuts came back as new rows");
     Ok(())
 }
 
@@ -18959,6 +19073,83 @@ fn a_genre_tag_is_searchable() -> Result<()> {
 }
 
 #[test]
+fn a_whole_genre_is_asked_of_each_genre_a_track_lists_and_of_no_longer_name() -> Result<()> {
+    let tree = Tree::new();
+    for (name, genre) in [
+        ("Strings", "House; Disco"),
+        ("Brass", "Disco"),
+        ("Twang", "Rockabilly"),
+        ("Riff", "Rock"),
+    ] {
+        tree.write(
+            &format!("{name}.wav"),
+            &Wav::new().text(TITLE, name).text(GENRE, genre).build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(narrowed(&library, "genre:=House")?, vec!["Strings"]);
+    assert_eq!(
+        narrowed(&library, "genre:=Disco")?,
+        vec!["Brass", "Strings"]
+    );
+    assert_eq!(narrowed(&library, "genre:=Rock")?, vec!["Riff"]);
+    assert!(
+        narrowed(&library, "genre:=\"House Disco\"")?.is_empty(),
+        "two listed genres were read as the one name"
+    );
+    assert_eq!(
+        narrowed(&library, "genre:Rock")?,
+        vec!["Riff", "Twang"],
+        "a bare genre word stopped reaching the names it begins"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -> Result<()> {
+    let tree = Tree::new();
+    for number in 1..=TRACKS_OF_A_DECADE {
+        let genre = if number % 2 == 0 {
+            "House; Disco"
+        } else {
+            "Rockabilly"
+        };
+        tree.write(
+            &format!("{number:02}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Track {number:02}"))
+                .text(GENRE, genre)
+                .build(),
+        );
+    }
+    tree.write(
+        "rock.wav",
+        &Wav::new().text(TITLE, "Rock").text(GENRE, "Rock").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let suggestions = library.suggestions()?;
+    let texts = asked(&suggestions);
+
+    assert!(texts.contains(&"genre:=\"House\""), "{texts:?}");
+    assert!(texts.contains(&"genre:=\"Disco\""), "{texts:?}");
+    assert!(
+        texts.iter().all(|text| !text.contains(';')),
+        "a list of genres was offered as one: {texts:?}"
+    );
+
+    let house = suggestions
+        .iter()
+        .find(|suggestion| suggestion.query.text.as_deref() == Some("genre:=\"House\""))
+        .expect("House is offered");
+    assert_eq!(house.rows, u64::from(TRACKS_OF_A_DECADE / 2));
+    Ok(())
+}
+
+#[test]
 fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     assert!(narrowed(&library, "genre:psychedelic")?.is_empty());
@@ -18987,6 +19178,32 @@ fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
         narrowed(&library, "genre:psychedelic")?,
         vec!["A Pillow of Winds", "Fearless!", "One of These Days"],
         "the genres the reference gave the artist did not reach the tracks it made"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_smart_playlists_count_follows_the_catalog_it_is_counted_in() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("a.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let everything = library.save_query("Everything", &SavedQuery::default())?;
+
+    let before = library
+        .playlist(everything)?
+        .expect("the playlist is there");
+    assert_eq!(before.entries, 1);
+
+    tree.write("b.wav", &Wav::new().text(TITLE, "Dogs").build());
+    scan(&library, &options(&tree))?;
+
+    let after = library
+        .playlist(everything)?
+        .expect("the playlist is there");
+    assert_eq!(
+        after.entries, 2,
+        "a count kept through a scan that added a track"
     );
     Ok(())
 }
@@ -19161,7 +19378,7 @@ fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result
 
     let texts = asked(&suggestions);
     assert!(texts.contains(&"year:1990-1999"), "{texts:?}");
-    assert!(texts.contains(&"genre:\"Progressive Rock\""), "{texts:?}");
+    assert!(texts.contains(&"genre:=\"Progressive Rock\""), "{texts:?}");
     assert!(texts.contains(&"artist:=\"The Orbiters\""), "{texts:?}");
     assert!(texts.contains(&"plays:0"), "{texts:?}");
     Ok(())
@@ -23984,6 +24201,19 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
         .expect("the row followed the file");
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
+    assert_eq!(row.title, "Money", "the row kept the title it was heard as");
+    assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(
+        row.file_size,
+        fs::metadata(&after).expect("the file is there").len(),
+        "the row kept the size of the file before it was retagged"
+    );
+    assert_eq!(narrowed(&library, "money")?, vec!["Money"]);
+    assert_eq!(narrowed(&library, "artist:floyd")?, vec!["Money"]);
+    assert!(
+        narrowed(&library, "echoes")?.is_empty(),
+        "the index still held the title the file had before it moved"
+    );
     Ok(())
 }
 

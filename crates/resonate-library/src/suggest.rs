@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use ahash::AHashMap;
+use resonate_codec::LISTED_APART_BY;
 use resonate_core::AlbumId;
 use rusqlite::{Connection, Row, params};
 use smallvec::smallvec;
@@ -261,15 +262,16 @@ fn genres(inner: &Inner) -> Result<Vec<Candidate>> {
     let billed = inner.read(|connection| {
         let mut billed: AHashMap<String, Spelt> = AHashMap::new();
         for sql in [THE_GENRES_THE_FILES_NAME, THE_GENRES_THE_ARTISTS_WERE_GIVEN] {
-            for (name, rows) in named_and_counted(connection, sql, None)? {
-                let name = name.trim();
-                if name.is_empty() || !fits_in_a_phrase(name) || names_a_decade(name) {
-                    continue;
+            for (listed, rows) in named_and_counted(connection, sql, None)? {
+                for name in listed.split(LISTED_APART_BY).map(str::trim) {
+                    if name.is_empty() || !fits_in_a_phrase(name) || names_a_decade(name) {
+                        continue;
+                    }
+                    billed
+                        .entry(store::folded_letters(name))
+                        .or_default()
+                        .taking(name, u64::try_from(rows).unwrap_or_default());
                 }
-                billed
-                    .entry(store::folded_letters(name))
-                    .or_default()
-                    .taking(name, u64::try_from(rows).unwrap_or_default());
             }
         }
 
@@ -312,7 +314,7 @@ fn billed_as(name: &str) -> String {
 }
 
 fn a_genre(name: &str) -> Candidate {
-    let text = asking(smallvec![Condition::Word(one_word_or_a_phrase(
+    let text = asking(smallvec![Condition::Word(the_whole_name(
         Column::Genre,
         name,
     ))]);
@@ -451,18 +453,6 @@ fn asking(all: Conditions) -> Search {
         clauses: vec![Clause {
             any: smallvec![Asked { denied: false, all }],
         }],
-    }
-}
-
-fn one_word_or_a_phrase(column: Column, text: &str) -> Word {
-    Word {
-        column: Some(column),
-        text: text.to_owned(),
-        reach: if text.chars().any(char::is_whitespace) {
-            Reach::Phrase
-        } else {
-            Reach::Begins
-        },
     }
 }
 
@@ -620,15 +610,12 @@ mod tests {
     }
 
     #[test]
-    fn a_name_with_a_space_in_it_is_asked_for_as_a_phrase() {
+    fn a_genre_is_asked_for_as_the_whole_name_it_is() {
         assert_eq!(
-            one_word_or_a_phrase(Column::Genre, "progressive rock").reach,
-            Reach::Phrase
+            the_whole_name(Column::Genre, "progressive rock").reach,
+            Reach::Whole
         );
-        assert_eq!(
-            one_word_or_a_phrase(Column::Genre, "rock").reach,
-            Reach::Begins
-        );
+        assert_eq!(the_whole_name(Column::Genre, "rock").reach, Reach::Whole);
         assert_eq!(
             the_whole_name(Column::Artist, "Nirvana").reach,
             Reach::Whole

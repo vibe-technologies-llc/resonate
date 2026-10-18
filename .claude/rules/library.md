@@ -284,13 +284,18 @@ rows read via `Player::media` like any unscanned row.
   - A cue sheet that cannot be read (`scan::heard_sheet` answers `Heard::Unreadable`: an `io` error
     but `NotFound`, longer than `LARGEST_SHEET_ON_DISC`, or zero bytes, as a sheet read mid-rewrite):
     it claims nothing, but every row with a `sheet_modified` that `Known::cuts_in` finds on a file
-    beside it is kept and its file is not probed whole. A sheet that parses to nothing
-    (`Heard::Blank`) keeps nothing.
+    beside it or in a folder below within `DEEPEST_FOLDER_A_SHEET_NAMES` is kept and its file is not
+    probed whole (a file below goes into `claimed_from_above`, so its own folder's pass leaves it,
+    and a sheet of that folder's own does not recut it until the upper one reads again). A sheet that
+    parses to nothing (`Heard::Blank`) keeps nothing.
+    (`a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it`)
   - An *empty* folder is guarded only where seen as a volume: keeping every empty folder's rows kept
     `moves::follow_the_moved` from pairing any move out of a folder it emptied.
 - **A volume seen mounted is remembered; its rows are kept while it is not.** The walk notes a
-  directory whose `st_dev` differs from its parent's (root included, and a followed link into
-  another filesystem) as a volume. `volumes::settle` writes them to `volumes` after the prune and
+  directory whose `st_dev` differs from its parent's, or that `/proc/self/mounts` lists as a mount
+  point (`volumes::MountPoints`, read once a walk and a call to `absent`: a bind mount of the same
+  filesystem shares its parent's device), root included and a followed link into another
+  filesystem, as a volume. (`a_bind_mount_of_the_same_filesystem_is_mounted_where_the_table_lists_it_and_not_otherwise`) `volumes::settle` writes them to `volumes` after the prune and
   drops a row for one no longer mounted that no track and no playlist row sits under. A noted volume
   whose device is its parent's (empty mount point) or whose directory is gone keeps every row
   `Known::at_or_under` names as `Outcome::Kept` and is not walked; `tidy_the_roots_beside` and
@@ -477,7 +482,12 @@ rows read via `Player::media` like any unscanned row.
   unnamed, never in a transaction (`moves::to_be_heard` notes the paths on a read connection, the
   scan decodes lock-free, `follow_the_moved` pairs in the write). A pair goes through
   `organise::files_moved` (the old row takes the new path and keeps its id, so plays, listens,
-  favourite, enrichment, vault object, playlist rows, kept lyric and queue row follow);
+  favourite, enrichment, vault object, playlist rows, kept lyric and queue row follow). **The old
+  row is first refreshed from the arrived one** (`moves::refresh_from_the_arrival`, a one-row pair
+  only; the upsert's own retag and unchanged rules over the file's columns: size, mtime, tags, sort
+  names, the names and ids an answered row keeps unless the file was retagged), and indexed again
+  after `settle_the_album` (`store::reindex_the_track`), so a file retagged as it moved is found by
+  its new names (`a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested`);
   `settle_the_album` gathers into the old album via `enriched::gather` when the new folder's album
   holds nothing else and every moved row came from one album. **A cue track whose `INDEX 01` moved
   is the row it was** (`store::follow_a_cut_that_moved`, carrying its dependents, `CUT_FOLLOWERS`);
@@ -520,7 +530,13 @@ rows read via `Player::media` like any unscanned row.
   is a listener taking the name its audio was heard as, `analysis.md`). A rescan leaves every other
   enrichment column where it stood; the retagging rule below is the only scan write of
   `tracks.answered`. `asking_albums` hands `catalog_number`, `tagged_tracks` and the owner's
-  `artists.mbid` to `AlbumToAsk` beside the barcode.
+  `artists.mbid` to `AlbumToAsk` beside the barcode. **`AlbumToAsk::tagged_tracks` is the album's
+  whole declared count, read off each file's own `tracks.track_total`** (`enriched::declared_whole`),
+  not `albums.tagged_tracks` (the first file's, kept as the fallback for a row not yet reprobed): a
+  taggers' `TRACKTOTAL` is a disc's count on a set, so the per-disc maxima add up (12 + 10 = 22),
+  unless a later disc's numbers do not restart at 1 (numbered straight on: the largest declared is
+  the whole). The step adding the column marks scanned rows `probe_again`.
+  (`a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to`)
   (`a_rescan_leaves_every_enrichment_column_where_it_stood`)
 - **`tagged_title`, `tagged_artist` are what the *file* was read as: how a rescan tells retagging
   from identification.** Enrichment writes `tracks.title`, `tracks.artist` like the scan. The upsert
@@ -1275,9 +1291,12 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   a column (`artist:"Air"` holds *Air Supply*); `artist:=Air` is `Reach::Whole` (beside `Begins`,
   `Phrase`); `=` inside quotes is phrase text; `lyrics:` takes no whole name. `db::named` weighs it
   through the `words_of` SQL function: artist by id (`tracks.artist_id` or a `track_credits` member
-  of that name); album by billed or scanned title; title, and genre (track's or its artist's), by
-  the column behind the phrase's `INDEX_LOOKUP`. Never ranked: reaches the `WHERE` as a denial does.
-  `suggest.rs` artist mixes are whole names.
+  of that name); album by billed or scanned title; title by the column behind the phrase's
+  `INDEX_LOOKUP`; genre (track's or its artist's) by the same lookup, the track's column read as a
+  list (`store::lists_words`, the SQL `lists_words`: `genre:=House` holds `House; Disco`, cut on
+  `LISTED_APART_BY`, each item through `words_of`). Never ranked: reaches the `WHERE` as a denial
+  does. `suggest.rs` artist mixes and genre cards are whole names (`genre:="Rock"` holds no
+  *Rockabilly*); a genre list is tallied item by item, so no card is a list.
 - **`tracks_fts` holds the fold of a name; the query is folded with it.** Indexed: `folded_letters`
   of title, billed artist (with the album's owner beside it, read by `store::index_row` itself via
   `album_owner_of`, so scan, enrichment and every reindex write the album artist alike), album,
@@ -1553,7 +1572,11 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
 - **A playlist holds a list or fills itself from a query; both answer via `playlist_entries`.** A
   `playlist_queries` row = saved query: text, `SortOrder`, reading, row cap.
   `Library::playlist_entries` runs it instead of reading the table (queue, pane, MPRIS, sheet
-  writers see an ordinary playlist); listing counts are the query's. A query refuses with
+  writers see an ordinary playlist); listing counts are the query's, **measured once a minute and a
+  catalog move** (`Inner::measured_saved`: a `KeptMeasurements` under the rows stamp the suggestions
+  use, the music filters and `MEASUREMENTS_KEPT_FOR`, since `added:`/`played:` windows slide with
+  the clock), so listing every smart playlist is not a whole-catalog count apiece
+  (`a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves`). A query refuses with
   `Error::NotAList`: `add`, `remove_rows`, `move_rows`, `prune`, `sort_playlist`, `remove_matching`,
   `fold_doubles`, `copy_playlist` into it, keeping in order; rename, play, export, drop work.
   `Library::revise_query` rewrites text, sort, cap, reading in place, renaming in the same step
@@ -1699,7 +1722,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     `follow_symlinks` scan stored through its link), or lexical where the file is absent. A row
     naming a file nowhere on this machine is reconnected by trailing components: the one catalogued
     path whose last components agree with the most of the row's, at least two; a tie leaves the row
-    as written.
+    as written. The candidates are read off `tracks_by_file_name` (the generated `tracks.file_name`,
+    matched `COLLATE NOCASE`, so ASCII case only), one probe per distinct lost file name; a name
+    beyond ASCII alone scans the catalog once, lowercased by Unicode as the components are
+    (`a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it`).
   - **Windows rows**: backslash and no forward slash = a Windows path; `forward_separated` turns the
     separators, and `reads_back_as_itself` refuses a row it would turn (`AC\DC.wav` is written as an
     escaped `file://` URI). A literal backslash cannot stand in a `file://` URI or XSPF location

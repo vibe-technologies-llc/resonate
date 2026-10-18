@@ -8,7 +8,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
-    Codec, CoverArt, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
+    Codec, CoverArt, ImageFormat, LISTED_APART_BY, PacketDigest, ReplayGain, Sources, TagSet,
+    probe_cover_art,
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
@@ -1471,6 +1472,8 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
 
 pub(crate) const WORDS_OF: &str = "words_of";
 
+pub(crate) const LISTS_WORDS: &str = "lists_words";
+
 pub(crate) const SPREAD_OF: &str = "spread_of";
 
 const FIBONACCI_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -1486,6 +1489,11 @@ pub(crate) fn words_of(text: &str) -> String {
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+pub(crate) fn lists_words(list: &str, words: &str) -> bool {
+    list.split(LISTED_APART_BY)
+        .any(|listed| words_of(listed) == words)
 }
 
 pub(crate) fn marks_in(name: &str) -> usize {
@@ -2060,11 +2068,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
              genre, lyrics, release_title, asked, answered, named_by_its_stem, packets,
-             title_sort, artist_sort, numbered_by_its_stem
+             title_sort, artist_sort, numbered_by_its_stem, track_total
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37, ?38
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
@@ -2130,6 +2138,7 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              packets            = excluded.packets,
              title_sort         = excluded.title_sort,
              artist_sort        = excluded.artist_sort,
+             track_total        = excluded.track_total,
              genre              = excluded.genre,
              lyrics             = excluded.lyrics,
              probe_again        = 0,
@@ -2222,6 +2231,7 @@ fn track(
             named(record.tags.title_sort.as_deref()),
             named(record.tags.artist_sort.as_deref()),
             record.numbered_by_its_stem,
+            record.tags.track_total.map(i64::from),
         ],
         |row| {
             Ok(Stored {
@@ -2391,6 +2401,42 @@ pub(crate) fn reindex_the_tracks_of(tx: &Transaction<'_>, artist: i64) -> Result
     }
 
     Ok(())
+}
+
+pub(crate) fn reindex_the_track(tx: &Transaction<'_>, id: i64) -> Result<()> {
+    let held = tx
+        .query_row(
+            "SELECT t.title, t.artist, a.title, t.genre, t.artist_id
+               FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+              WHERE t.id = ?1",
+            params![id],
+            |row| {
+                Ok((
+                    Indexable {
+                        id,
+                        title: row.get(0)?,
+                        artist: row.get(1)?,
+                        album: row.get(2)?,
+                        genre: row.get(3)?,
+                    },
+                    row.get::<_, Option<i64>>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((track, artist)) = held else {
+        return Ok(());
+    };
+
+    index_row(
+        tx,
+        id,
+        &track.title,
+        track.artist.as_deref().unwrap_or_default(),
+        track.album.as_deref().unwrap_or_default(),
+        &indexed_genre_of(tx, track.genre.as_deref(), artist)?,
+    )
 }
 
 pub(crate) fn reindex_the_tracks_on(tx: &Transaction<'_>, album: i64) -> Result<()> {
