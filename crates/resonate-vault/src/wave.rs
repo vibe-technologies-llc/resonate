@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufWriter, Read, Seek, SeekFrom, Write},
+    io::{BufWriter, ErrorKind, Read, Write},
     path::Path,
 };
 
@@ -29,7 +29,6 @@ const SUBFORMAT_TAIL: [u8; 14] = [
 ];
 const WAVE_BITS: u16 = 32;
 const PACKED_A_READ_AT_A_TIME: usize = 1 << 20;
-const RIFF_SIZE_AT: u64 = 4;
 const RIFF_HEADER: u32 = 8;
 
 pub(crate) const LARGEST_PCM: u64 = u32::MAX as u64 - WIDEST_HEADER as u64;
@@ -41,34 +40,22 @@ pub(crate) fn outgrows_a_wave(frames: Frames, channels: ChannelCount) -> bool {
 pub(crate) const ARCHIVED_AT: i32 = 19;
 pub(crate) const PACKED_FRAME_BYTES: u64 = 8 << 20;
 const FORETOLD_FROM_BYTES: u64 = 32 << 20;
-const SLICES_FORETOLD_FROM: u64 = 4;
+const SLICES_HELD_AT_MOST: usize = 8;
 const SLICE_BYTES: usize = 2 << 20;
 const FORETOLD_HOPELESS_PAST: u64 = 8;
 
-pub(crate) struct Written {
+pub(crate) struct Tallied {
     pub(crate) key: VaultKey,
     pub(crate) frames: Frames,
     pub(crate) pcm_bytes: u64,
+    samples: Samples,
 }
 
-pub(crate) fn write(
-    decoder: &mut Decoder,
-    spec: StreamSpec,
-    speakers: Speakers,
-    into: &Path,
-    halt: Halt<'_>,
-) -> Result<Written> {
-    let file = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
-    let mut writer = BufWriter::new(file);
-
-    let header = header(spec, speakers, 0);
-    writer
-        .write_all(&header)
-        .map_err(|source| Error::io(VaultOp::Write, into, source))?;
-
+pub(crate) fn tally(decoder: &mut Decoder, spec: StreamSpec, halt: Halt<'_>) -> Result<Tallied> {
     let mut block = AudioBuffer::empty(spec);
     let mut bytes = Vec::new();
     let mut digest = Digest::default();
+    let mut samples = Samples::default();
     let mut frames = 0_u64;
     let mut pcm_bytes = 0_u64;
 
@@ -83,50 +70,235 @@ pub(crate) fn write(
 
         pcm::little_endian(&block, &mut bytes);
         digest.note(&bytes);
-        writer
-            .write_all(&bytes)
-            .map_err(|source| Error::io(VaultOp::Write, into, source))?;
+        samples.note(pcm_bytes, &bytes);
         frames += block.frames() as u64;
         pcm_bytes += bytes.len() as u64;
 
         if pcm_bytes > LARGEST_PCM {
-            return Ok(Written {
-                key: digest.settled(),
-                frames: Frames(frames),
-                pcm_bytes,
-            });
+            break;
         }
     }
 
-    if pcm_bytes % 2 == 1 {
-        writer
-            .write_all(&[0])
-            .map_err(|source| Error::io(VaultOp::Write, into, source))?;
-    }
-
-    let mut file = writer
-        .into_inner()
-        .map_err(|source| Error::io(VaultOp::Write, into, source.into_error()))?;
-    let declared = u32::try_from(pcm_bytes).unwrap_or(u32::MAX);
-    let riff = declared.saturating_add(header.len() as u32 - RIFF_HEADER);
-    let data_size_at = (header.len() - size_of::<u32>()) as u64;
-
-    patched(&mut file, into, RIFF_SIZE_AT, riff)?;
-    patched(&mut file, into, data_size_at, declared)?;
-    file.sync_all()
-        .map_err(|source| Error::io(VaultOp::Settle, into, source))?;
-
-    Ok(Written {
+    Ok(Tallied {
         key: digest.settled(),
         frames: Frames(frames),
         pcm_bytes,
+        samples,
     })
+}
+
+struct Samples {
+    stride: u64,
+    held: Vec<(u64, Vec<u8>)>,
+}
+
+impl Default for Samples {
+    fn default() -> Self {
+        Self {
+            stride: SLICE_BYTES as u64,
+            held: Vec::new(),
+        }
+    }
+}
+
+impl Samples {
+    fn note(&mut self, mut at: u64, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            let window = at / self.stride;
+            let within = at % self.stride;
+            let skipped = if within >= SLICE_BYTES as u64 {
+                self.stride - within
+            } else {
+                match self.held.last() {
+                    Some((last, _)) if *last == window => 0,
+                    _ if self.held.len() >= SLICES_HELD_AT_MOST => {
+                        self.thinned();
+                        continue;
+                    }
+                    _ => {
+                        self.held.push((window, Vec::with_capacity(SLICE_BYTES)));
+                        0
+                    }
+                }
+            };
+            if skipped > 0 {
+                let skipped = usize::try_from(skipped)
+                    .unwrap_or(usize::MAX)
+                    .min(bytes.len());
+                at += skipped as u64;
+                bytes = &bytes[skipped..];
+                continue;
+            }
+            let Some((_, slice)) = self.held.last_mut() else {
+                return;
+            };
+            let room = SLICE_BYTES - within as usize;
+            let taken = room.min(bytes.len());
+            if slice.len() as u64 == within {
+                slice.extend_from_slice(&bytes[..taken]);
+            }
+            at += taken as u64;
+            bytes = &bytes[taken..];
+        }
+    }
+
+    fn thinned(&mut self) {
+        self.stride *= 2;
+        self.held.retain(|(window, _)| window % 2 == 0);
+        for (window, _) in &mut self.held {
+            *window /= 2;
+        }
+    }
+
+    fn whole_slices(&self) -> impl Iterator<Item = &[u8]> {
+        self.held
+            .iter()
+            .map(|(_, slice)| slice.as_slice())
+            .filter(|slice| slice.len() == SLICE_BYTES)
+    }
+}
+
+pub(crate) fn hopeless(tallied: &Tallied, smaller_than: u64) -> bool {
+    let length = tallied.pcm_bytes;
+    if length < FORETOLD_FROM_BYTES {
+        return false;
+    }
+
+    let mut sampled = 0_u64;
+    let mut packed = 0_u64;
+    for slice in tallied.samples.whole_slices() {
+        let Ok(squeezed) = zstd::bulk::compress(slice, ARCHIVED_AT) else {
+            return false;
+        };
+        sampled += SLICE_BYTES as u64;
+        packed += squeezed.len() as u64;
+    }
+    if sampled == 0 {
+        return false;
+    }
+
+    let foretold = u128::from(packed) * u128::from(length) / u128::from(sampled);
+    let beyond_doubt = u128::from(smaller_than) + u128::from(smaller_than / FORETOLD_HOPELESS_PAST);
+    foretold > beyond_doubt
+}
+
+struct Pcm<'a> {
+    decoder: &'a mut Decoder,
+    block: AudioBuffer,
+    pending: Vec<u8>,
+    taken: usize,
+    seen: u64,
+    tallied: u64,
+    drained: bool,
+    differed: bool,
+    failure: Option<Error>,
+}
+
+impl Pcm<'_> {
+    fn refill(&mut self) -> std::io::Result<()> {
+        self.pending.clear();
+        self.taken = 0;
+        let status = match self.decoder.next_block(&mut self.block) {
+            Ok(status) => status,
+            Err(source) => {
+                self.failure = Some(Error::codec(VaultOp::Read, source));
+                return Err(ErrorKind::Other.into());
+            }
+        };
+        if status == DecodeStatus::EndOfStream {
+            self.drained = true;
+            if self.seen != self.tallied {
+                self.differed = true;
+                return Err(ErrorKind::UnexpectedEof.into());
+            }
+            if self.tallied % 2 == 1 {
+                self.pending.push(0);
+            }
+            return Ok(());
+        }
+
+        pcm::little_endian(&self.block, &mut self.pending);
+        self.seen += self.pending.len() as u64;
+        if self.seen > self.tallied {
+            self.differed = true;
+            return Err(ErrorKind::InvalidData.into());
+        }
+        Ok(())
+    }
+}
+
+impl Read for Pcm<'_> {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        while self.taken == self.pending.len() {
+            if self.drained {
+                return Ok(0);
+            }
+            self.refill()?;
+        }
+        let taken = into.len().min(self.pending.len() - self.taken);
+        into[..taken].copy_from_slice(&self.pending[self.taken..self.taken + taken]);
+        self.taken += taken;
+        Ok(taken)
+    }
+}
+
+pub(crate) struct Packing<'a> {
+    pub(crate) spec: StreamSpec,
+    pub(crate) speakers: Speakers,
+    pub(crate) tallied: &'a Tallied,
+    pub(crate) into: &'a Path,
+    pub(crate) smaller_than: Option<u64>,
+}
+
+pub(crate) fn pack(decoder: &mut Decoder, packing: Packing<'_>, halt: Halt<'_>) -> Result<Packed> {
+    let Packing {
+        spec,
+        speakers,
+        tallied,
+        into,
+        smaller_than,
+    } = packing;
+    let declared = u32::try_from(tallied.pcm_bytes).unwrap_or(u32::MAX);
+    let header = header(spec, speakers, declared);
+    let length = header.len() as u64 + tallied.pcm_bytes + tallied.pcm_bytes % 2;
+
+    let mut pcm = Pcm {
+        decoder,
+        block: AudioBuffer::empty(spec),
+        pending: header,
+        taken: 0,
+        seen: 0,
+        tallied: tallied.pcm_bytes,
+        drained: false,
+        differed: false,
+        failure: None,
+    };
+    let packed = packed_in_frames(
+        Unpacked {
+            reading: &mut pcm,
+            length,
+            from: into,
+        },
+        into,
+        smaller_than,
+        PACKED_FRAME_BYTES,
+        halt,
+    );
+
+    if pcm.differed {
+        return Ok(Packed::Differed);
+    }
+    match pcm.failure.take() {
+        Some(failure) => Err(failure),
+        None => packed,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Packed {
     Within,
     NoSmaller,
+    Differed,
 }
 
 struct Counted<W> {
@@ -146,15 +318,7 @@ impl<W: Write> Write for Counted<W> {
     }
 }
 
-pub(crate) fn compressed(
-    from: &Path,
-    into: &Path,
-    smaller_than: Option<u64>,
-    halt: Halt<'_>,
-) -> Result<Packed> {
-    compressed_in_frames(from, into, smaller_than, PACKED_FRAME_BYTES, halt)
-}
-
+#[cfg(test)]
 pub(crate) fn compressed_in_frames(
     from: &Path,
     into: &Path,
@@ -241,38 +405,6 @@ pub(crate) fn packed_in_frames<R: Read>(
     Ok(Packed::Within)
 }
 
-pub(crate) fn hopeless(from: &Path, smaller_than: u64) -> Result<bool> {
-    let read = |source| Error::io(VaultOp::Read, from, source);
-    let mut source = File::open(from).map_err(read)?;
-    let length = source.metadata().map_err(read)?.len();
-    if length < FORETOLD_FROM_BYTES {
-        return Ok(false);
-    }
-
-    let mut slice = vec![0_u8; SLICE_BYTES];
-    let mut sampled = 0_u64;
-    let mut packed = 0_u64;
-    for at in (0..SLICES_FORETOLD_FROM).map(|slice| length / SLICES_FORETOLD_FROM * slice) {
-        source.seek(SeekFrom::Start(at)).map_err(read)?;
-        source.read_exact(&mut slice).map_err(read)?;
-        let squeezed = zstd::bulk::compress(&slice, ARCHIVED_AT)
-            .map_err(|source| Error::io(VaultOp::Write, from, source))?;
-        sampled += SLICE_BYTES as u64;
-        packed += squeezed.len() as u64;
-    }
-
-    let foretold = u128::from(packed) * u128::from(length) / u128::from(sampled);
-    let beyond_doubt = u128::from(smaller_than) + u128::from(smaller_than / FORETOLD_HOPELESS_PAST);
-    Ok(foretold > beyond_doubt)
-}
-
-fn patched(file: &mut File, path: &Path, at: u64, value: u32) -> Result<()> {
-    file.seek(SeekFrom::Start(at))
-        .map_err(|source| Error::io(VaultOp::Write, path, source))?;
-    file.write_all(&value.to_le_bytes())
-        .map_err(|source| Error::io(VaultOp::Write, path, source))
-}
-
 fn header(spec: StreamSpec, speakers: Speakers, data_bytes: u32) -> Vec<u8> {
     let count = spec.channel_count().get();
     let channels = u16::from(count);
@@ -345,7 +477,9 @@ mod tests {
             .collect();
         fs::write(&from, &noise).expect("a noisy file");
 
-        let packed = compressed(&from, &into, Some(CEILING), Halt::NEVER).expect("a compression");
+        let packed =
+            compressed_in_frames(&from, &into, Some(CEILING), PACKED_FRAME_BYTES, Halt::NEVER)
+                .expect("a compression");
 
         assert_eq!(packed, Packed::NoSmaller);
         let written = fs::metadata(&into).map_or(0, |held| held.len());
@@ -356,32 +490,74 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
     }
 
-    #[test]
-    fn a_compression_foretold_to_lose_by_its_slices_is_hopeless_and_one_that_may_win_is_not() {
-        const HELD: usize = 40 << 20;
+    fn tallied_over(bytes: &[u8]) -> Tallied {
+        let mut samples = Samples::default();
+        for (at, piece) in bytes.chunks(4096 * 8).enumerate() {
+            samples.note((at * 4096 * 8) as u64, piece);
+        }
+        Tallied {
+            key: VaultKey::of([0; 16]),
+            frames: Frames(0),
+            pcm_bytes: bytes.len() as u64,
+            samples,
+        }
+    }
 
-        let folder = env::temp_dir().join(format!("resonate-wave-foretold-{}", process::id()));
-        fs::create_dir_all(&folder).expect("a scratch folder");
-        let noise_at = folder.join("noise.wav");
-        let hush_at = folder.join("hush.wav");
-        let mut state = 0x9e37_79b9_u32;
-        let noise: Vec<u8> = (0..HELD)
+    fn noise(len: usize, mut state: u32) -> Vec<u8> {
+        (0..len)
             .map(|_| {
                 state ^= state << 13;
                 state ^= state >> 17;
                 state ^= state << 5;
                 state as u8
             })
-            .collect();
-        fs::write(&noise_at, &noise).expect("a noisy file");
-        fs::write(&hush_at, vec![0_u8; HELD]).expect("a quiet file");
+            .collect()
+    }
 
-        assert!(hopeless(&noise_at, HELD as u64 / 2).expect("a forecast"));
-        assert!(!hopeless(&noise_at, HELD as u64 * 2).expect("a forecast"));
-        assert!(!hopeless(&hush_at, HELD as u64 / 2).expect("a forecast"));
-        let small_at = folder.join("small.wav");
-        fs::write(&small_at, &noise[..SLICE_BYTES]).expect("a small file");
-        assert!(!hopeless(&small_at, 1).expect("a file too small to foretell"));
-        let _ = fs::remove_dir_all(&folder);
+    #[test]
+    fn a_compression_foretold_to_lose_by_its_slices_is_hopeless_and_one_that_may_win_is_not() {
+        const HELD: usize = 40 << 20;
+
+        let noisy = tallied_over(&noise(HELD, 0x9e37_79b9));
+        let hushed = tallied_over(&vec![0_u8; HELD]);
+        let small = tallied_over(&noise(SLICE_BYTES, 0x9e37_79b9));
+
+        assert!(hopeless(&noisy, HELD as u64 / 2));
+        assert!(!hopeless(&noisy, HELD as u64 * 2));
+        assert!(!hopeless(&hushed, HELD as u64 / 2));
+        assert!(!hopeless(&small, 1));
+    }
+
+    #[test]
+    fn the_slices_a_stream_is_foretold_by_are_spread_over_all_of_it_whatever_its_length() {
+        const WINDOWS: usize = 40;
+
+        let mut pcm = Vec::new();
+        for window in 0..WINDOWS {
+            pcm.extend(std::iter::repeat_n(window as u8, SLICE_BYTES));
+        }
+        let tallied = tallied_over(&pcm);
+
+        let firsts: Vec<u8> = tallied
+            .samples
+            .whole_slices()
+            .map(|slice| slice[0])
+            .collect();
+
+        assert!(firsts.len() >= SLICES_HELD_AT_MOST / 2, "{firsts:?}");
+        assert!(firsts.len() <= SLICES_HELD_AT_MOST, "{firsts:?}");
+        assert_eq!(firsts[0], 0);
+        assert!(
+            firsts
+                .last()
+                .is_some_and(|last| usize::from(*last) >= WINDOWS / 2),
+            "{firsts:?}"
+        );
+        assert!(
+            tallied
+                .samples
+                .whole_slices()
+                .all(|slice| slice.iter().all(|byte| *byte == slice[0]))
+        );
     }
 }

@@ -129,6 +129,32 @@ impl MediaProvider for DropsFrom {
     }
 }
 
+struct Changing {
+    source: SourceId,
+    first: Vec<u8>,
+    later: Vec<u8>,
+    opened: AtomicU32,
+}
+
+impl MediaProvider for Changing {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _location: &MediaLocation) -> resonate_codec::Result<Media> {
+        let opening = self.opened.fetch_add(1, Ordering::Relaxed);
+        let bytes = if opening == 0 {
+            &self.first
+        } else {
+            &self.later
+        };
+        Ok(Media {
+            stream: Box::new(Reading::new(Cursor::new(bytes.clone()))),
+            hint: Some(FormatHint::Extension("wav".into())),
+        })
+    }
+}
+
 struct Flipping {
     held: Cursor<Vec<u8>>,
     flag: Arc<AtomicBool>,
@@ -545,6 +571,79 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
         .map(|sample| f32::from(*sample as i16) / 32_768.0)
         .collect();
     assert_eq!(read, wanted);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let first = tree.write("first.wav", &floating(&samples));
+    let second = tree.write("second.wav", &floating(&samples));
+    let vault = tree.vault();
+    let staging = vault.root().join("staging");
+
+    let landed = kept(&vault, &Sources::local(), &MediaLocation::local(&first));
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o500)).expect("a closed staging");
+    let again = vault.keep(&Taking {
+        sources: &Sources::local(),
+        location: &MediaLocation::local(&second),
+        span: None,
+        renewing: false,
+        foretold: None,
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).expect("restored");
+
+    let Ok(Keeping::Kept(again)) = again else {
+        panic!("{again:?}");
+    };
+    assert!(again.deduped);
+    assert_eq!(again.key, landed.key);
+    assert_eq!(again.path, landed.path);
+}
+
+#[test]
+fn a_wave_whose_source_changes_between_being_weighed_and_being_packed_is_refused_and_leaves_nothing()
+ {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let vault = tree.vault();
+    let source = SourceId::new("share").expect("a lowercase name");
+    let location = MediaLocation::new(source.clone(), "changing/one");
+    let sources = Sources::local().and(Arc::new(Changing {
+        source,
+        first: floating(&samples),
+        later: floating(&samples[..samples.len() / 2]),
+        opened: AtomicU32::new(0),
+    }));
+
+    let keeping = vault.keep(&Taking {
+        sources: &sources,
+        location: &location,
+        span: None,
+        renewing: false,
+        foretold: None,
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+
+    assert!(
+        matches!(keeping, Ok(Keeping::Refused(Refusal::NotValidated))),
+        "{keeping:?}"
+    );
+    for folder in ["staging", "audio"] {
+        assert_eq!(
+            fs::read_dir(vault.root().join(folder))
+                .expect("a vault folder")
+                .count(),
+            0,
+            "{folder}"
+        );
+    }
 }
 
 #[test]

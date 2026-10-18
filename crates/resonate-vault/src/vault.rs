@@ -437,11 +437,14 @@ impl Vault {
             Form::Wave if outgrows_a_wave => Keeping::Refused(Refusal::TooLarge),
             Form::Wave => self.kept_as_wave(
                 weighing,
+                taking,
                 &mut decoder,
-                info.spec,
-                speakers,
-                codec,
-                taking.halt,
+                Encoding {
+                    spec: info.spec,
+                    speakers,
+                    bits,
+                    codec,
+                },
             )?,
             Form::Flac => match self.foretold_flac(taking, weighing, &mut decoder, &info, bits)? {
                 Foretold::Settled(kept) => kept,
@@ -909,12 +912,16 @@ impl Vault {
     fn kept_as_wave(
         &self,
         weighing: Weighing,
+        taking: &Taking<'_>,
         decoder: &mut Decoder,
-        spec: StreamSpec,
-        speakers: Speakers,
-        codec: Codec,
-        halt: Halt<'_>,
+        encoding: Encoding,
     ) -> Result<Keeping> {
+        let Encoding {
+            spec,
+            speakers,
+            codec,
+            ..
+        } = encoding;
         let format = if spec.format.is_float() {
             SampleFormat::F32
         } else {
@@ -923,39 +930,28 @@ impl Vault {
         decoder.set_output_format(format);
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
-        let staging = self.staged(WAVE_EXTENSION)?;
-        let written = match wave::write(decoder, spec, speakers, &staging, halt) {
-            Ok(written) => written,
-            Err(error) => {
-                self.discard(&staging)?;
-                return Err(error);
-            }
-        };
-
-        if written.pcm_bytes > wave::LARGEST_PCM {
-            self.discard(&staging)?;
+        let tallied = wave::tally(decoder, spec, taking.halt)?;
+        if tallied.pcm_bytes > wave::LARGEST_PCM {
             return Ok(Keeping::Refused(Refusal::TooLarge));
         }
-        if written.frames == Frames::ZERO {
-            self.discard(&staging)?;
+        if tallied.frames == Frames::ZERO {
             return Ok(Keeping::Refused(Refusal::Empty));
         }
 
-        let target = self.object_path(written.key, &compressed_name(WAVE_EXTENSION));
+        let target = self.object_path(tallied.key, &compressed_name(WAVE_EXTENSION));
         if target.is_file() && !weighing.renewing {
-            self.discard(&staging)?;
             let bytes = self.sized(&target)?;
             if !weighing.fits(bytes) {
                 return Ok(Keeping::Refused(Refusal::NoSmaller));
             }
             return Ok(Keeping::Kept(Kept {
-                key: written.key,
+                key: tallied.key,
                 form: Form::Wave,
                 bytes,
                 was: bytes,
                 path: target,
                 spec,
-                frames: written.frames,
+                frames: tallied.frames,
                 codec,
                 deduped: true,
                 replaced: false,
@@ -965,24 +961,31 @@ impl Vault {
         }
 
         if let Some(ceiling) = weighing.smaller_than
-            && wave::hopeless(&staging, ceiling)?
+            && wave::hopeless(&tallied, ceiling)
         {
             return Ok(Keeping::Refused(Refusal::NoSmaller));
         }
+        let mut again = reopened(taking, format)?;
         let packed = self.staged(&compressed_name(WAVE_EXTENSION))?;
-        if wave::compressed(&staging, &packed, weighing.smaller_than, halt)?
-            == wave::Packed::NoSmaller
-        {
-            return Ok(Keeping::Refused(Refusal::NoSmaller));
+        let packing = wave::Packing {
+            spec,
+            speakers,
+            tallied: &tallied,
+            into: &packed,
+            smaller_than: weighing.smaller_than,
+        };
+        match wave::pack(&mut again, packing, taking.halt)? {
+            wave::Packed::Within => {}
+            wave::Packed::NoSmaller => return Ok(Keeping::Refused(Refusal::NoSmaller)),
+            wave::Packed::Differed => return Ok(Keeping::Refused(Refusal::NotValidated)),
         }
 
-        self.discard(&staging)?;
         let went_in = Heard {
-            key: written.key,
-            frames: written.frames,
+            key: tallied.key,
+            frames: tallied.frames,
             speakers,
         };
-        let holds = held_unless_halted(self.read_back_packed(&packed, Some(format), halt))?
+        let holds = held_unless_halted(self.read_back_packed(&packed, Some(format), taking.halt))?
             .is_some_and(|read| went_in.held_by(read));
         if !holds {
             return Ok(Keeping::Refused(Refusal::NotValidated));
@@ -990,13 +993,13 @@ impl Vault {
         let landing = self.landed_or_standing(&packed, &target, weighing)?;
 
         Ok(landing.kept(Kept {
-            key: written.key,
+            key: tallied.key,
             form: Form::Wave,
             path: target,
             bytes: 0,
             was: 0,
             spec,
-            frames: written.frames,
+            frames: tallied.frames,
             codec,
             deduped: false,
             replaced: false,
@@ -1435,6 +1438,17 @@ fn read_back_through(
     let (mut decoder, info) = Decoder::open(sources, &location)
         .map_err(|source| Error::codec(VaultOp::Verify, source))?;
     pcm_of(&mut decoder, &info, format, halt)
+}
+
+fn reopened(taking: &Taking<'_>, format: SampleFormat) -> Result<Decoder> {
+    let opened = match taking.span {
+        Some(span) => Decoder::open_span(taking.sources, taking.location, span),
+        None => Decoder::open(taking.sources, taking.location),
+    };
+    let (mut decoder, _) = opened.map_err(|source| Error::codec(VaultOp::Read, source))?;
+    decoder.refuse_holes();
+    decoder.set_output_format(format);
+    Ok(decoder)
 }
 
 const fn flac_depth(bits: u8) -> (SampleFormat, u8) {
