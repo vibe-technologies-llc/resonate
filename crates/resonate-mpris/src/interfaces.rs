@@ -7,7 +7,7 @@ use resonate_engine::{
     ArtRead, Command, Placement, Player, PlayerState, QueueItem, StreamDigest, TrackState,
     unclaimed_id,
 };
-use zbus::{ObjectPath, OwnedVariant, Variant, fdo, interface};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
     Heard, Host, Opened,
@@ -484,6 +484,17 @@ impl OwnInterface {
     #[zbus(property)]
     fn sleep(&self) -> Sleep {
         sleep_status(self.shared.player.state().sleeping)
+    }
+
+    #[zbus(property(emits_changed_signal = "false"))]
+    fn play_order(&self) -> Vec<OwnedObjectPath> {
+        self.shared
+            .player
+            .queued()
+            .rows
+            .iter()
+            .map(|item| track_path(item.id))
+            .collect()
     }
 
     #[zbus(property)]

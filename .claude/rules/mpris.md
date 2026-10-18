@@ -27,7 +27,7 @@ the client a second `resonate` reaches a first through.
 - **A location whose source is not in `Host::sources` is refused**; `SupportedUriSchemes` is built
   from the same list; `SupportedMimeTypes` is the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets our own interface** `org.resonate.Player1`, same object path:
-  `SetSleep`, `Sleep`, `PlayingNext`, `AddTracks`, `Relocate`. `Relocate(a(ss))` takes `(from, to)`
+  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`. `Relocate(a(ss))` takes `(from, to)`
   URI pairs in landing order = one `Command::Relocate`; `Running::relocate` sends `MOVES_A_CALL`
   (4096) per call (moves compose) to stay under the bus's message limit. The poll diffs the
   *published pair*, not the `Asleep` behind it (`left` ticks continuously).
@@ -39,7 +39,9 @@ the client a second `resonate` reaches a first through.
 property changes. **The list is the queue unshuffled, not the play order** (`Queued::listed`: the
 unshuffled order with rows queued next after the row heard), so shuffling moves nothing on the bus
 and play-order positions never reach a client; ids are found by id, not position
-(`a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it`). Ids:
+(`a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it`). The order it does play
+in is `org.resonate.Player1`'s `PlayOrder` (`ao`, `Queued::rows` as paths, heard rows first), read on
+demand and never announced. Ids:
 `/org/resonate/track/…`, `/org/resonate/playlist/…` (spec reserves `/org/mpris`).
 
 - **Moves announced edit by edit where possible.** `tracklist::change` keys rows by id, holds the

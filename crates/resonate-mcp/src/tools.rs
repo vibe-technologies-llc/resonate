@@ -253,7 +253,9 @@ impl Tool {
             Self::Queue => "List the running player's queue in list order, each row with the \
                             queue_id remove_from_queue takes, marking the row being played. \
                             The list is the queue unshuffled; with shuffle true the next song \
-                            is not the row after the playing one."
+                            is not the row after the playing one, and each row says in \
+                            play_position where in the order the player plays them it comes, \
+                            from 0, the rows already heard first."
                 .to_owned(),
             Self::AddToQueue => format!(
                 "Add tracks to the running player's queue: either catalog track_ids from \

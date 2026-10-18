@@ -36,6 +36,7 @@ const RELOCATE: &str = "Relocate";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
 const PLAYING_NEXT: &str = "PlayingNext";
+const PLAY_ORDER: &str = "PlayOrder";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
 const PLAY_PAUSE: &str = "PlayPause";
@@ -308,6 +309,18 @@ impl Running {
     pub fn queued(&self) -> Result<Vec<TrackId>> {
         Ok(self
             .tracks()?
+            .iter()
+            .filter_map(|path| track_of(path.as_str()))
+            .collect())
+    }
+
+    pub fn play_order(&self) -> Result<Vec<TrackId>> {
+        let paths: Vec<OwnedObjectPath> = self
+            .proxy(OWN_INTERFACE)?
+            .get_property(PLAY_ORDER)
+            .map_err(|source| Error::bus(BusOp::Read, source))?;
+
+        Ok(paths
             .iter()
             .filter_map(|path| track_of(path.as_str()))
             .collect())

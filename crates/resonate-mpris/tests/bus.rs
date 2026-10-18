@@ -1105,6 +1105,26 @@ fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
 
     unannounced(&signals, "TrackListReplaced", SETTLE);
     assert_eq!(harness.tracks(), listed, "a shuffle moved the track list");
+
+    let played_in: Vec<OwnedObjectPath> = harness
+        .proxy(RESONATE)
+        .get_property("PlayOrder")
+        .expect("PlayOrder is readable");
+    let drawn: Vec<String> = harness
+        .player
+        .queue()
+        .iter()
+        .map(|item| format!("/org/resonate/track/{}", item.id.get()))
+        .collect();
+    assert_eq!(
+        played_in
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        drawn,
+        "the play order the bus gave is not the order the engine plays in"
+    );
+    assert_ne!(played_in, listed, "a shuffle left the play order as listed");
 }
 
 #[test]

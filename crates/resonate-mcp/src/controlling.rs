@@ -42,6 +42,8 @@ pub trait Controlling {
 
     fn queued(&self) -> resonate_mpris::Result<Vec<TrackId>>;
 
+    fn play_order(&self) -> resonate_mpris::Result<Vec<TrackId>>;
+
     fn described(&self, rows: &[TrackId]) -> resonate_mpris::Result<Vec<Described>>;
 
     fn queue(&self, rows: &[Row], queueing: Queueing) -> resonate_mpris::Result<usize>;
@@ -165,6 +167,10 @@ impl Controlling for Running {
 
     fn queued(&self) -> resonate_mpris::Result<Vec<TrackId>> {
         Running::queued(self)
+    }
+
+    fn play_order(&self) -> resonate_mpris::Result<Vec<TrackId>> {
+        Running::play_order(self)
     }
 
     fn described(&self, rows: &[TrackId]) -> resonate_mpris::Result<Vec<Described>> {

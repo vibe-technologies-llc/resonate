@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use resonate_core::{TrackId, Volume};
 use resonate_engine::{Placement, Until};
@@ -136,15 +136,24 @@ pub(crate) fn set_volume(player: &dyn Controlling, volume: Volume) -> Result<Val
 pub(crate) fn queue(player: &dyn Controlling, most: usize) -> Result<Value> {
     let queued = player.queued()?;
     let playing = player.metadata()?.map(|described| described.track);
+    let shuffle = player.shuffle()?;
+    let play_positions = if shuffle {
+        positions_in(&player.play_order().unwrap_or_default())
+    } else {
+        HashMap::new()
+    };
     let listed: Vec<Value> = player
         .described(&queued[..most.min(queued.len())])?
         .iter()
         .map(|described| {
             let mut row = written::row(described);
-            if Some(described.track) == playing
-                && let Value::Object(fields) = &mut row
-            {
-                fields.insert("playing".to_owned(), Value::Bool(true));
+            if let Value::Object(fields) = &mut row {
+                if Some(described.track) == playing {
+                    fields.insert("playing".to_owned(), Value::Bool(true));
+                }
+                if let Some(position) = play_positions.get(&described.track) {
+                    fields.insert("play_position".to_owned(), json!(position));
+                }
             }
             row
         })
@@ -154,9 +163,17 @@ pub(crate) fn queue(player: &dyn Controlling, most: usize) -> Result<Value> {
         "player": player.name(),
         "rows": queued.len(),
         "playing_row": queued.iter().position(|track| Some(*track) == playing),
-        "shuffle": player.shuffle()?,
+        "shuffle": shuffle,
         "queue": listed,
     })))
+}
+
+fn positions_in(order: &[TrackId]) -> HashMap<TrackId, usize> {
+    order
+        .iter()
+        .enumerate()
+        .map(|(position, track)| (*track, position))
+        .collect()
 }
 
 pub(crate) fn add(player: &dyn Controlling, library: &Library, adding: &Adding) -> Result<Value> {
