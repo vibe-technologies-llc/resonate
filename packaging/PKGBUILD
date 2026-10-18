@@ -61,6 +61,7 @@ package() {
     "$pkgdir/usr/share/metainfo/org.resonate.Resonate.metainfo.xml"
 
   install -Dm644 -t "$pkgdir/usr/share/man/man1" "$generated"/*.1
+  install -Dm644 -t "$pkgdir/usr/share/man/man5" packaging/resonate-config.toml.5
   install -Dm644 "$generated/$_pkgname.bash" \
     "$pkgdir/usr/share/bash-completion/completions/$_pkgname"
   install -Dm644 "$generated/_$_pkgname" "$pkgdir/usr/share/zsh/site-functions/_$_pkgname"

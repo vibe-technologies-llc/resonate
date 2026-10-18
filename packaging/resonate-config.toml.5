@@ -1,0 +1,369 @@
+.TH RESONATE-CONFIG.TOML 5 "" "resonate" "File Formats"
+.SH NAME
+resonate-config.toml \- the settings file of resonate(1)
+.SH SYNOPSIS
+.I $XDG_CONFIG_HOME/resonate/config.toml
+.br
+.I \-\-config FILE
+.SH DESCRIPTION
+The settings file is TOML.
+A key that is absent takes its default, a command-line flag naming the same setting wins over the
+file for one run, and a key that is not listed below is ignored with a warning.
+A value that will not read costs its own key alone: the key stays at its default, a warning says
+which, and every other key is read.
+A file that is not valid TOML is refused.
+.PP
+The window and several subcommands write this file back (the settings pane, resonate\-eq, the
+sign-ins).
+They edit it in place, so comments and the order of keys survive, and they leave the file readable
+by its owner alone, since it can hold secrets.
+A running window or player reads the file once, when it starts: a change made to the file, or by a
+subcommand, is heard by the next start.
+.PP
+A path is a string.
+Blank is the same as absent, and a leading
+.B ~
+is the home folder.
+A key marked
+.B secret
+is never printed in a log or by the debug output.
+Every request resonate makes says only
+.IR resonate/<version> ,
+and a contact, a key or a token is sent only where it is typed into this file.
+.SH AUDIO OUTPUT
+.TP
+.B sink
+String. The node.name of the PipeWire sink to play to. Default: the graph's default sink.
+.TP
+.B quality
+String: fast, balanced, high or very-high. The resampler's quality. Default: high.
+.TP
+.B filter-phase
+String: linear, intermediate or minimum. The resampler filter's phase. Linear rings before a
+transient as well as after it, minimum only after it. Default: linear.
+.TP
+.B true-peak
+Boolean. Weigh the true peak of what the equaliser adds, so a boost is held under full scale rather
+than reaching the hard clamp. Default: true.
+.TP
+.B restore-lossy
+String: off, repair or extend. Repair the damage an MP3, AAC or Vorbis encoder leaves under its
+cutoff, or repair and rebuild the treble it cut away above it. Default: off.
+.TP
+.B dither
+String: none, rectangular or triangular. The dither covering a word length the output is too short
+to hold. Default: triangular.
+.TP
+.B noise-shaping
+String: flat, lipshitz or threshold. The curve the dither noise is shaped by. Default: threshold.
+.TP
+.B replay-gain
+String: off, track or album. Which ReplayGain tags level the volume. Default: off.
+.TP
+.B replay-gain-pre-amp
+Number of decibels, from \-20 to 20. Added to every level ReplayGain sets. Default: 0.
+.TP
+.B replay-gain-untagged
+Number of decibels, from \-20 to 20. Applied to a track that carries no ReplayGain tags. Default: 0.
+.TP
+.B bit-perfect
+Boolean. Switch the graph to the source's rate when it can, instead of resampling to the rate it
+already runs at. Default: true.
+.TP
+.B force-graph-rate
+Boolean. Make the graph run at the rate chosen rather than leave it to the other clients on it.
+Default: true.
+.TP
+.B dop
+Boolean. Hand DSD to the device as DoP; off, it is decimated to PCM. Default: false.
+.TP
+.B dsd-like-pcm
+Boolean. Decimate DSD to the level of PCM; off, a DSD master plays some 6 dB quieter than the same
+music in PCM. Default: false.
+.TP
+.B device-volume
+Boolean. Turn the device's own volume where it has one; off, the samples are scaled. Default: false.
+.TP
+.B volume
+Number from 0 to 1. The volume playback starts at. Default: 1.
+.TP
+.B buffer-ms
+Integer of milliseconds. How much audio is kept buffered ahead of the device. Default: 500.
+.TP
+.B bluetooth-wake
+Boolean. Keep Bluetooth headphones from cutting the start of the music: a paused device is woken
+ahead of it. Default: false.
+.TP
+.B bluetooth-lead-ms
+Integer of milliseconds, from 0 to 5000. How long before the music a Bluetooth device is woken.
+Default: 750.
+.TP
+.B bluetooth-awake-s
+Integer of seconds, from 0 to 10800. How long a paused Bluetooth device is held awake. Default: 300.
+.TP
+.B skip-repeats-queue
+Boolean. Next, under repeat of the track, repeats the queue; off, it keeps repeating the track.
+Default: true.
+.TP
+.B previous-restarts
+Boolean. Previous restarts the track playing once it is more than three seconds in; off, it
+always goes back a row.
+Default: true.
+.SH EQUALISER
+.TP
+.B equaliser
+Boolean. Whether the equaliser is on. Default: false.
+.TP
+.B equaliser-profile
+String or true. The kept profile every device without one of its own uses, or true for the device's
+own curve. Default: none.
+.TP
+.B equaliser-for
+Table. Maps a sink's node.name to the profile it uses, or to true for its own curve. A binding that
+names neither is ignored with a warning. Default: empty.
+.TP
+.B convolution
+Path. An impulse response convolved with the signal, for room correction. Default: none.
+.SH LIBRARY AND FILES
+.TP
+.B library
+Path. The library database. Default: $XDG_DATA_HOME/resonate/library.db.
+.TP
+.B vault
+Path. The managed vault, opened on the next start, which must exist. Default: none; a vault is made
+only where resonate\-vault is asked to.
+.TP
+.B inbox
+Path. A folder whose songs resonate treats as a provider and offers to wants. Default: none.
+.TP
+.B music-folder
+Path. The one ordinary folder new songs are copied into. Default: none.
+.TP
+.B file-dropped
+Boolean. File a song dropped on the window into the music folder by organise-as. Default: true.
+.TP
+.B organise-as
+String. The layout that files a song, from the fields {albumartist}, {artist}, {album}, {title},
+{year}, {disc}, {track} and {ext}, separated by /.
+Default: {albumartist}/{album}/{disc}{track} {title}.
+.TP
+.B music-extensions
+Array of strings. The audio extensions listings include, case-insensitive, with or without the dot.
+Absent is every extension the build scans, empty is none. Default: absent.
+.TP
+.B minimum-length-s
+Integer of seconds, from 0 to 600. Listings leave out a song shorter than this. Default: 0.
+.TP
+.B history-kept
+String forever, or a whole number of days. Listens and skipped time older than this are forgotten on
+each start. Default: forever.
+.TP
+.B resume
+Boolean. Start again with the queue, and the place in the song, that was left. Default: true.
+.SH ONLINE
+.TP
+.B online
+Boolean. False stops every network request. Default: true.
+.TP
+.B enrich-after-scan
+Boolean. Ask the reference about albums and artists once a scan has finished. Default: true.
+.TP
+.B study
+Boolean. Study each track a lookup finds: its spectrum, loudness and print. Default: true.
+.TP
+.B fetch-lyrics
+Boolean. Ask LRCLIB for the lyrics of a track as it plays. Default: true.
+.TP
+.B lyrics-language-from-locale
+Boolean. Choose among lyric sheets named by language by the locale. Default: false.
+.TP
+.B identify-by-sound
+Boolean. Let a lookup recognise a track by its sound when its tags name nothing. Default: false.
+.TP
+.B contact
+String, secret. A contact address sent with requests to services that ask for one. Default: none.
+.TP
+.B hosted-services
+Boolean. Let a blank or absent hifi-api and monochrome fall back to the hosted services. Default:
+false.
+.TP
+.B acoustid-key
+String, secret. An AcoustID application key. Default: none.
+.TP
+.B audd-token
+String, secret. An AudD token. Default: none.
+.TP
+.B listenbrainz-token
+String, secret. A ListenBrainz token that scrobbles what is heard. Default: none.
+.TP
+.B lastfm-key
+String, secret. The key of a Last.fm API account registered by the listener. Default: none.
+.TP
+.B lastfm-secret
+String, secret. The shared secret of that account. Default: none.
+.TP
+.B lastfm-session
+String, secret. The session resonate\-lastfm writes. All three Last.fm keys are needed before
+anything is scrobbled. Default: none.
+.TP
+.B listen-from
+String: desktop, microphone, or a node.name. What resonate\-listen listens to. Default: desktop.
+.TP
+.B listen-for
+Integer of seconds, from 4 to 60. How long it listens for. Default: 12.
+.SH SOURCES
+.TP
+.B subsonic
+String. The address of a Subsonic server. Default: none.
+.TP
+.B subsonic-user
+String. The Subsonic account. Default: none.
+.TP
+.B subsonic-password
+String, secret. The Subsonic account's password. Default: none.
+.TP
+.B tidal-client-id
+String. The client TIDAL's sign-in needs. Default: none.
+.TP
+.B tidal-client-secret
+String, secret. That client's secret. Default: none.
+.TP
+.B tidal-refresh-token
+String, secret. Written by resonate\-tidal, and rewritten when TIDAL rotates it. Default: none.
+.TP
+.B hifi-api
+String. The address of a TIDAL-compatible server of the listener's. Default: none.
+.TP
+.B monochrome
+String. The address of a Monochrome server of the listener's. Default: none.
+.SH DEVICES
+.TP
+.B sync
+Boolean. Keep devices in step. Off whenever online is off, unless sync-nearby-only is on.
+Default: true.
+.TP
+.B sync-nearby-only
+Boolean. Use no server: devices sync only on the same network. Default: false.
+.TP
+.B sync-server
+String. The sync server's address. Blank is the hosted server. Default: blank.
+.TP
+.B sync-server-certificate
+Path. A PEM certificate trusted beside the system roots, for a server of the listener's. Default:
+none.
+.TP
+.B sync-key
+String, secret. The pairing code, minted and written on the first start that syncs. Default: none.
+.TP
+.B sync-device
+String. The name other devices see. Default: Linux.
+.TP
+.B sync-songs
+Array of strings: favourites, playlists, everything. Which songs travel to other devices without
+being asked for; empty is only on request. Default: empty.
+.TP
+.B discord
+Boolean. Tell Discord what is playing. Default: false.
+.TP
+.B discord-app
+String of 17 to 20 digits. The Discord application id; nothing is shown without it. Default: none.
+.TP
+.B discord-shows
+String: application, track or album. How much of what is playing is said. Default: album.
+.TP
+.B discord-art
+String: cover, icon or none. The picture shown. Default: cover.
+.TP
+.B discord-icon
+String. The name of the asset shown as the icon. Default: none.
+.TP
+.B discord-progress
+Boolean. Show how far into the track it is. Default: true.
+.TP
+.B discord-paused
+Boolean. Keep showing the track while it is paused. Default: false.
+.SH WINDOW
+.TP
+.B theme
+String: resonate, midnight, graphite, amoled, plum, rose-pine, rose-pine-moon, catppuccin-mocha,
+catppuccin-macchiato, catppuccin-frappe, nord, gruvbox-dark, tokyo-night, dracula, one-dark or
+solarized-dark. Default: resonate.
+.TP
+.B accent
+String: mauve, blue, teal, green, amber, peach or red. The accent colour. Default: the theme's own.
+.TP
+.B text-size
+String: small, medium or large. Default: medium.
+.TP
+.B notify
+Boolean. Raise a desktop notification when the track changes. Default: true.
+.TP
+.B minimise-button
+Boolean. Draw the window's minimise button. Default: true.
+.TP
+.B maximise-button
+Boolean. Draw the window's maximise button. Default: true.
+.TP
+.B scroll-volume
+Boolean. The wheel over the player changes the volume. Default: true.
+.TP
+.B mouse-navigation
+Boolean. The mouse's back and forward buttons navigate. Default: true.
+.TP
+.B scrollbars
+String: shown, auto-hide or hidden. A boolean still reads, true as shown and false as hidden.
+Default: auto-hide.
+.TP
+.B artists-drawn
+String: grid or list. Default: grid.
+.TP
+.B spectrum-tilt
+String: flat, pink or steep. The spectrum's slope in decibels per octave. Default: pink.
+.TP
+.B spectrum-floor
+String: 60, 78 or 96, in decibels under full scale. Default: 78.
+.TP
+.B spectrum-bands
+String: thirds, sixths or twelfths of an octave. Default: sixths.
+.TP
+.B spectrum-falls
+String: slowly, middling or quickly. How fast the bars fall back. Default: middling.
+.TP
+.B suggestions-tab
+Boolean. Show the Suggestions tab. Default: true.
+.TP
+.B missing-tab
+Boolean. Show the Missing tab. Default: false.
+.TP
+.B tab-counts
+Boolean. Count the rows beside each tab's name. Default: false.
+.TP
+.B remember-tab
+Boolean. Open on the tab last used; off, last-tab is removed. Default: true.
+.TP
+.B last-tab
+String naming a tab: albums, artists, tracks, statistics, queue, playlists, favourites,
+suggestions, missing, lyrics, inspector, visualiser, analysis or settings. Written by the window.
+.TP
+.B remember-window-size
+Boolean. Open at the size last used; off, window-size is removed. Default: true.
+.TP
+.B window-size
+String WIDTHxHEIGHT in pixels, from 720x520 to 8192x8192. Written by the window.
+.TP
+.B remember-settings-category
+Boolean. Open settings on the category last used; off, last-settings-category is removed.
+Default: true.
+.TP
+.B last-settings-category
+String: output, processing, equaliser, library, filters, online, sync, desktop, appearance or
+about. Written by the window.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/resonate/config.toml
+The settings file.
+.TP
+.I $XDG_DATA_HOME/resonate/
+The library, the vault, the kept equaliser profiles and the sync ledger.
+.SH SEE ALSO
+.BR resonate (1)

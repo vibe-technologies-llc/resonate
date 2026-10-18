@@ -3,6 +3,8 @@ use std::{fs, path::PathBuf};
 const DESKTOP_ENTRY: &str = "resonate.desktop";
 const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
+const CONFIG_MAN_PAGE: &str = "resonate-config.toml.5";
+const PACKAGE_RECIPES: [&str; 3] = ["PKGBUILD", "resonate.spec", FLATPAK_MANIFEST];
 
 fn packaging(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -30,6 +32,18 @@ fn element<'a>(document: &'a str, opening: &str, closing: &str) -> Option<&'a st
     let after = &document[document.find(opening)? + opening.len()..];
 
     after.find(closing).map(|end| &after[..end])
+}
+
+#[test]
+fn every_package_installs_the_manual_of_the_settings_file() {
+    packaging(CONFIG_MAN_PAGE);
+
+    for recipe in PACKAGE_RECIPES {
+        assert!(
+            packaging(recipe).contains(CONFIG_MAN_PAGE),
+            "{recipe} does not install {CONFIG_MAN_PAGE}"
+        );
+    }
 }
 
 #[test]

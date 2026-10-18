@@ -115,8 +115,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is only said not to
   be heard by a running window or player, not delivered to it; `tidal`, `lastfm` and `sync --join`
   do not even say so
-- [M] `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI
-  alone
 
 ## Equaliser and DSP
 - [M] With `true-peak` off nothing weighs what the equaliser adds: a zero preamp under boosts

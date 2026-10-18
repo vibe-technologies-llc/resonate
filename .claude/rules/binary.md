@@ -169,6 +169,15 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   and left out fails to compile), `<withheld>` for every token, password, key and `contact`
   (`no_key_holding_a_secret_or_the_contact_is_printed_by_debug`).
 
+- **A hand-editor reads `resonate-config.toml(5)`** (`packaging/resonate-config.toml.5`, installed by
+  every package): one `.TP` entry per key with its type, accepted spellings and default. A key added
+  to `ConfigKey` without an entry, or an entry for a key that is gone, fails
+  `every_setting_the_file_reads_is_documented_in_its_man_page_and_nothing_else_is`; the entries for
+  enum-valued keys must name every spelling the setting takes
+  (`the_man_page_gives_every_spelling_a_setting_takes`,
+  `the_man_page_names_every_tab_and_settings_category_the_file_remembers`). Defaults and wording are
+  written by hand, so a changed default is changed there too.
+
 **Keys whose rule is not obvious**
 
 - **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`,
