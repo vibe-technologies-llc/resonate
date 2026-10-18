@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use parking_lot::RwLock;
+use parking_lot::{Condvar, Mutex, RwLock};
 use resonate_audio::{NodeName, SinkId, SinkInfo, StreamVolume, Words};
 use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
 use resonate_core::{
@@ -207,6 +207,28 @@ pub struct Published {
     pub sinks: Arc<RwLock<Arc<[SinkInfo]>>>,
     pub tap: Arc<RwLock<Tapped>>,
     pub listening: Arc<AtomicBool>,
+    pub first_survey: Arc<FirstSurvey>,
+}
+
+#[derive(Default)]
+pub struct FirstSurvey {
+    answered: Mutex<bool>,
+    landed: Condvar,
+}
+
+impl FirstSurvey {
+    pub(crate) fn answered(&self) {
+        *self.answered.lock() = true;
+        self.landed.notify_all();
+    }
+
+    pub fn waited_for(&self, within: Duration) -> bool {
+        let mut answered = self.answered.lock();
+        let _ = self
+            .landed
+            .wait_while_for(&mut answered, |answered| !*answered, within);
+        *answered
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

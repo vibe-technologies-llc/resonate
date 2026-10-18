@@ -820,10 +820,10 @@ impl Engine {
         let found = surveyor.enumerate_sinks(SINK_TIMEOUT);
         let stale_sinks = found.is_err();
         *published.sinks.write() = found.unwrap_or_default().into();
+        published.first_survey.answered();
         let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
         let opener = backend.opener();
         let streaming = Streaming::start(Arc::clone(&opener));
-        *published.settings.write() = Arc::new(OutputSettings::of(&config));
 
         Self {
             config,

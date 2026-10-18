@@ -4648,6 +4648,45 @@ fn a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup() -> Resul
 }
 
 #[test]
+fn a_player_answers_before_its_first_survey_and_says_when_that_survey_has_landed() -> Result<()> {
+    const A_GLANCE: Duration = Duration::from_millis(50);
+
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let (open_the_gate, gate) = unbounded::<()>();
+    graph.lock().survey_gate = Some(gate);
+
+    let (answer, answered) = unbounded();
+    thread::spawn(move || {
+        let _ = answer.send(Player::with_backend(config(), move |_| {
+            Ok(Box::new(backend))
+        }));
+    });
+    let player = answered
+        .recv_timeout(PATIENCE)
+        .expect("the player to answer while its first survey is out")?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    assert!(
+        player.sinks_once_surveyed(A_GLANCE).is_empty(),
+        "the sink list was published before the survey answered"
+    );
+
+    graph.lock().survey_gate = None;
+    drop(open_the_gate);
+
+    assert_eq!(player.sinks_once_surveyed(PATIENCE).len(), 1);
+    wait_for(&player, playing, "the row loaded before the survey to play");
+    Ok(())
+}
+
+#[test]
 fn a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);

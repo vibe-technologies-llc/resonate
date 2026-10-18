@@ -67,8 +67,8 @@ pub use crate::{
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     sleep::{Asleep, Until},
     state::{
-        Event, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, Seeks,
-        StreamDigest, TrackState, TransportState,
+        Event, FirstSurvey, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published,
+        Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
 };

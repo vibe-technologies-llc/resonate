@@ -331,7 +331,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Sinks are enumerated mid-stream on their own thread** (`Surveying`, a `resonate-sinks` thread
   holding the backend's `Surveyor`), so the engine never waits on the graph. One survey in flight; a
   change announced meanwhile leaves the flag set and the landing answer asks again. No thread:
-  enumerate in line only while no stream is open, under `SINK_TIMEOUT`.
+  enumerate in line only while no stream is open, under `SINK_TIMEOUT`. **`Player::new` answers
+  before the first survey:** the engine thread publishes the settings and answers, then surveys in
+  line before it takes a command, so a window opens without waiting on the graph while the first
+  `Load` still binds from a surveyed list (commands wait in the channel). A reader taking the list
+  once waits on `Published::first_survey` through `Player::sinks_once_surveyed` (the binary's
+  `confirm_sink`); the window polls the list and needs no wait.
 - **A bind reads the published sink list; only an announcement refreshes it.** `select_sink` runs on
   every track change, non-in-place seek, settings change and renegotiation; enumerating there would
   put a `SINK_TIMEOUT` before each against a daemon that stopped answering. A list with no announced

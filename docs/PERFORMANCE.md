@@ -3,11 +3,6 @@
 Cost: work done more often, in more memory or on a thread it should not be on. Format and ordering
 are in [ROADMAP.md](ROADMAP.md).
 
-## Playback and output
-- [M] `Player::new` waits on the first sink survey (`SINK_TIMEOUT`, 2 s) before answering: the binary's
-  `confirm_sink` and the window's sink list read it once at start, so answering early needs a
-  survey-settled signal they wait on
-
 ## Tagging
 - [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
@@ -39,9 +34,13 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Every open of a Matroska file walks every block of it (`count_clusters` caps per cluster and
   in clusters, not in total), and of a VBR MP3 naming no length every frame header (`mpa::walked`),
   scan and playback alike
-- [M] Queue edits are O(n) on the engine thread: `one_id_each` hashes every id an insert,
+- [L] Queue edits are O(n) on the engine thread: `one_id_each` hashes every id an insert,
   `rows_changed` rehashes every location, a consumed play-next row is three `retain` passes, and
-  `publish_queue` clones every row whenever the revision moves
+  `publish_queue` clones every row (a `PathBuf` allocation each) whenever the revision moves. The
+  publish dominates and cannot shrink while `Queued::rows` is an owned `Vec<QueueItem>` in play
+  order: rows shared across publishes (an `Arc` a row, or a persistent vector) reach every reader of
+  `Queued::rows` in resonate-ui, -mpris, -mcp, -mobile and the binary; the stamps are order-dependent
+  SipHash, so they cannot be kept incrementally either
 - [M] A non-local source's read allocates and zeroes up to 1 MiB, then copies it twice
   (`serve_the_reads`); vault playback goes through it
 - [M] The convolver works complex FFTs on real input (twice the memory and multiply-adds), stores a
