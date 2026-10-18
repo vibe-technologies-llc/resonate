@@ -2591,7 +2591,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = starting::one_window_at_a_time();
     if let Some(window) = Running::a_window().ok().flatten() {
         warn_of_settings_left_behind(&cli);
-        return handed_to(&window, &cli.files);
+        return handed_to(&window, &cli.files, &mpris::tuning_of(&cli));
     }
     let places = resonate_ui::Places {
         config: settings_path(&cli)?,
@@ -2770,13 +2770,6 @@ fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
         ("--config", cli.config.is_some()),
         ("--library", cli.library.is_some()),
         ("--vault", cli.vault.is_some()),
-        ("--sink", cli.sink.is_some()),
-        ("--quality", cli.quality.is_some()),
-        ("--filter-phase", cli.filter_phase.is_some()),
-        ("--dither", cli.dither.is_some()),
-        ("--noise-shaping", cli.noise_shaping.is_some()),
-        ("--bit-perfect", cli.bit_perfect),
-        ("--no-bit-perfect", cli.no_bit_perfect),
     ]
     .into_iter()
     .filter_map(|(flag, given)| given.then_some(flag))
@@ -2795,7 +2788,15 @@ fn warn_of_settings_left_behind(cli: &Cli) {
 }
 
 #[cfg(feature = "ui")]
-fn handed_to(window: &Running, arguments: &[OsString]) -> Result<()> {
+fn handed_to(
+    window: &Running,
+    arguments: &[OsString],
+    tuning: &[(resonate_mpris::Tunable, String)],
+) -> Result<()> {
+    if let Err(error) = window.tune(tuning) {
+        tracing::warn!(%error, "the window already open did not take the settings given");
+        told!("the window already open did not take the settings given for this run");
+    }
     let rows: Vec<_> = queue_items(arguments)
         .into_iter()
         .map(|item| (item.location, item.span))
@@ -3261,21 +3262,60 @@ mod tests {
         };
 
         assert!(left_behind(&["resonate", "a.flac"]).is_empty());
+        assert!(left_behind(&["resonate", "--sink", "alsa_output.usb", "a.flac"]).is_empty());
         assert_eq!(
             left_behind(&[
                 "resonate",
+                "--config",
+                "c.toml",
+                "--library",
+                "l.db",
+                "--vault",
+                "v"
+            ]),
+            ["--config", "--library", "--vault"]
+        );
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launch_handed_to_a_window_carries_the_settings_the_window_can_take() {
+        use resonate_mpris::Tunable;
+
+        let tuning = |arguments: &[&str]| {
+            let cli = Cli::try_parse_from(arguments.iter().copied()).expect("a launch");
+            mpris::tuning_of(&cli)
+        };
+
+        assert!(tuning(&["resonate", "a.flac"]).is_empty());
+        assert_eq!(
+            tuning(&[
+                "resonate",
                 "--sink",
                 "alsa_output.usb",
-                "--bit-perfect",
                 "--quality",
-                "high",
+                "very-high",
+                "--filter-phase",
+                "minimum",
+                "--dither",
+                "none",
+                "--noise-shaping",
+                "lipshitz",
+                "--no-bit-perfect",
                 "a.flac"
             ]),
-            ["--sink", "--quality", "--bit-perfect"]
+            [
+                (Tunable::Sink, "alsa_output.usb".to_owned()),
+                (Tunable::Quality, "very-high".to_owned()),
+                (Tunable::FilterPhase, "minimum".to_owned()),
+                (Tunable::Dither, "none".to_owned()),
+                (Tunable::NoiseShaping, "lipshitz".to_owned()),
+                (Tunable::BitPerfect, "false".to_owned()),
+            ]
         );
         assert_eq!(
-            left_behind(&["resonate", "--config", "c.toml", "--library", "l.db"]),
-            ["--config", "--library"]
+            tuning(&["resonate", "--bit-perfect"]),
+            [(Tunable::BitPerfect, "true".to_owned())]
         );
     }
 

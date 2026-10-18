@@ -10,7 +10,7 @@ use resonate_engine::{
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
-    Heard, Host, Opened,
+    Heard, Host, Opened, Tunable, Tuned,
     art::Pictures,
     service,
     track::{
@@ -467,6 +467,17 @@ impl OwnInterface {
             at: Placement::At(at),
             play: play_the_first,
         })
+    }
+
+    fn tune(&self, settings: Vec<(String, String)>) -> fdo::Result<()> {
+        for (name, value) in &settings {
+            let refused = || fdo::Error::InvalidArgs(format!("{name} cannot be set to {value}"));
+            let setting = Tunable::named(name).ok_or_else(refused)?;
+            if self.shared.host.tune(setting, value) == Tuned::Refused {
+                return Err(refused());
+            }
+        }
+        Ok(())
     }
 
     fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {

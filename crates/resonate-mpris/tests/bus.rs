@@ -27,7 +27,7 @@ use resonate_engine::{
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
-    Queueing, ROWS_A_CALL, Running, Seeking, Session,
+    Queueing, ROWS_A_CALL, Running, Seeking, Session, Tunable, Tuned,
 };
 use zbus::{
     OwnedObjectPath, OwnedVariant,
@@ -353,6 +353,7 @@ struct Desktop {
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
+    tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
     catalog: Catalog,
     headsets: bool,
 }
@@ -395,6 +396,14 @@ impl Host for Desktop {
         Opened::Accepted
     }
 
+    fn tune(&self, setting: Tunable, value: &str) -> Tuned {
+        if value == UNTUNABLE {
+            return Tuned::Refused;
+        }
+        self.tuned.lock().push((setting, value.to_owned()));
+        Tuned::Applied
+    }
+
     fn heard(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<Heard> {
         self.catalog
             .lock()
@@ -413,6 +422,7 @@ impl Host for Desktop {
 }
 
 const HELD_IDS_FROM: u64 = 4_242;
+const UNTUNABLE: &str = "nonsense";
 
 struct Shelf {
     rows: Mutex<Vec<PlaylistInfo>>,
@@ -497,6 +507,7 @@ struct Harness {
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
+    tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
     catalog: Catalog,
     shelf: Arc<Shelf>,
     mpris: Option<Mpris>,
@@ -538,11 +549,13 @@ impl Harness {
         let quit = Arc::new(AtomicBool::new(false));
         let raised = Arc::new(AtomicBool::new(false));
         let opened = Arc::new(Mutex::new(Vec::new()));
+        let tuned = Arc::new(Mutex::new(Vec::new()));
         let catalog: Catalog = Arc::new(Mutex::new(Vec::new()));
         let host = Desktop {
             quit: Arc::clone(&quit),
             raised: Arc::clone(&raised),
             opened: Arc::clone(&opened),
+            tuned: Arc::clone(&tuned),
             catalog: Arc::clone(&catalog),
             headsets,
         };
@@ -563,6 +576,7 @@ impl Harness {
             quit,
             raised,
             opened,
+            tuned,
             catalog,
             shelf,
             mpris: Some(mpris),
@@ -1125,6 +1139,33 @@ fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
         "the play order the bus gave is not the order the engine plays in"
     );
     assert_ne!(played_in, listed, "a shuffle left the play order as listed");
+}
+
+#[test]
+fn settings_handed_over_the_bus_reach_the_host_and_one_it_refuses_is_an_error() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let running = Running::named(&PlayerName::new(harness.name().as_str()))
+        .expect("the bus answers")
+        .expect("the player is on the bus");
+
+    running
+        .tune(&[
+            (Tunable::Quality, "very-high".to_owned()),
+            (Tunable::BitPerfect, "true".to_owned()),
+        ])
+        .expect("the host takes the settings");
+    let refused = running.tune(&[(Tunable::Dither, UNTUNABLE.to_owned())]);
+
+    assert_eq!(
+        *harness.tuned.lock(),
+        [
+            (Tunable::Quality, "very-high".to_owned()),
+            (Tunable::BitPerfect, "true".to_owned()),
+        ]
+    );
+    assert!(refused.is_err(), "a value the host refused was accepted");
 }
 
 #[test]

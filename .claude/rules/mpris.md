@@ -27,10 +27,14 @@ the client a second `resonate` reaches a first through.
 - **A location whose source is not in `Host::sources` is refused**; `SupportedUriSchemes` is built
   from the same list; `SupportedMimeTypes` is the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets our own interface** `org.resonate.Player1`, same object path:
-  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`. `Relocate(a(ss))` takes `(from, to)`
+  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`, `Tune`. `Relocate(a(ss))` takes `(from, to)`
   URI pairs in landing order = one `Command::Relocate`; `Running::relocate` sends `MOVES_A_CALL`
-  (4096) per call (moves compose) to stay under the bus's message limit. The poll diffs the
-  *published pair*, not the `Asleep` behind it (`left` ticks continuously).
+  (4096) per call (moves compose) to stay under the bus's message limit.
+  The poll diffs the *published pair*, not the `Asleep` behind it (`left` ticks continuously).
+  `Tune(a(ss))` hands a launch's settings flags to the window it hands files to: `Tunable::name`
+  and a value spelled as the flag spells it, each asked of `Host::tune` (the binary maps it to the
+  `Command::Set…` the pane would send, for this run only; the settings file is untouched); a name or
+  value the host refuses is `InvalidArgs` and the settings before it stay applied.
 
 ## The track list
 

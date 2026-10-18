@@ -109,8 +109,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   different networks meet only through a self-hosted `resonate-server`
 
 ## Command line and bus
-- [S] A launch handing files to an open window warns that its settings flags are left behind; the
-  hand-off could carry them
+- [S] A launch handing files to an open window carries `--sink`, `--quality`, `--filter-phase`,
+  `--dither`, `--noise-shaping` and `--bit-perfect` but still leaves `--config`, `--library` and
+  `--vault` behind (the window's catalog and file stay its own)
 - [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is only said not to
   be heard by a running window or player, not delivered to it; `tidal`, `lastfm` and `sync --join`
   do not even say so

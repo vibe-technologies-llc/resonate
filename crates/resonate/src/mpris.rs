@@ -6,14 +6,20 @@ use std::{
     },
 };
 
+use clap::ValueEnum;
 use crossbeam_channel::{Receiver, Sender};
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId};
-use resonate_engine::{Command, Placement, Player, QueueItem, Unclaimed};
+use resonate_engine::{Command, NodeName, Placement, Player, QueueItem, Unclaimed};
 use resonate_library::Library;
-use resonate_mpris::{Heard, Host, Mpris, Opened};
+use resonate_mpris::{Heard, Host, Mpris, Opened, Tunable, Tuned};
 
-use crate::{names_a_sheet, playlists::Collection, sheet_items};
+use crate::{
+    cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
+    names_a_sheet,
+    playlists::Collection,
+    sheet_items,
+};
 
 const IDENTITY: &str = "Resonate";
 const DESKTOP_ENTRY: &str = "resonate";
@@ -186,6 +192,69 @@ impl Host for Desktop {
     fn held_as(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<TrackId> {
         held_as(self.library.as_deref()?, location, span)
     }
+
+    fn tune(&self, setting: Tunable, value: &str) -> Tuned {
+        let Some(command) = tuning_command(setting, value) else {
+            return Tuned::Refused;
+        };
+
+        match self.player.send(command) {
+            Ok(()) => Tuned::Applied,
+            Err(error) => {
+                tracing::warn!(%error, "a setting handed over the session bus did not reach the engine");
+                Tuned::Refused
+            }
+        }
+    }
+}
+
+fn tuning_command(setting: Tunable, value: &str) -> Option<Command> {
+    Some(match setting {
+        Tunable::Sink => Command::SetSink(Some(NodeName::new(value))),
+        Tunable::Quality => Command::SetQuality(spelled::<QualityArg>(value)?.into()),
+        Tunable::FilterPhase => Command::SetFilterPhase(spelled::<FilterPhaseArg>(value)?.into()),
+        Tunable::Dither => Command::SetDither(spelled::<DitherArg>(value)?.into()),
+        Tunable::NoiseShaping => {
+            Command::SetNoiseShaping(spelled::<NoiseShapingArg>(value)?.into())
+        }
+        Tunable::BitPerfect => Command::SetBitPerfect(value.parse().ok()?),
+    })
+}
+
+fn spelled<Choice: ValueEnum>(value: &str) -> Option<Choice> {
+    Choice::from_str(value, false).ok()
+}
+
+#[cfg(feature = "ui")]
+pub(crate) fn tuning_of(cli: &crate::cli::Cli) -> Vec<(Tunable, String)> {
+    let mut tuning = Vec::new();
+    if let Some(sink) = &cli.sink {
+        tuning.push((Tunable::Sink, sink.clone()));
+    }
+    if let Some(quality) = cli.quality {
+        tuning.push((Tunable::Quality, name_of(quality)));
+    }
+    if let Some(phase) = cli.filter_phase {
+        tuning.push((Tunable::FilterPhase, name_of(phase)));
+    }
+    if let Some(dither) = cli.dither {
+        tuning.push((Tunable::Dither, name_of(dither)));
+    }
+    if let Some(shaping) = cli.noise_shaping {
+        tuning.push((Tunable::NoiseShaping, name_of(shaping)));
+    }
+    if cli.bit_perfect || cli.no_bit_perfect {
+        tuning.push((Tunable::BitPerfect, cli.bit_perfect.to_string()));
+    }
+    tuning
+}
+
+#[cfg(feature = "ui")]
+fn name_of<Choice: ValueEnum>(choice: Choice) -> String {
+    choice
+        .to_possible_value()
+        .map(|spelling| spelling.get_name().to_owned())
+        .unwrap_or_default()
 }
 
 pub(crate) fn held_as(
@@ -277,6 +346,53 @@ mod tests {
                     .strip_suffix("</mediatype>")
             })
             .collect()
+    }
+
+    #[test]
+    fn a_setting_handed_over_the_bus_becomes_the_command_that_sets_it_or_is_refused() {
+        assert!(matches!(
+            tuning_command(Tunable::Quality, "very-high"),
+            Some(Command::SetQuality(resonate_engine::Quality::VeryHigh))
+        ));
+        assert!(matches!(
+            tuning_command(Tunable::FilterPhase, "minimum"),
+            Some(Command::SetFilterPhase(
+                resonate_engine::FilterPhase::Minimum
+            ))
+        ));
+        assert!(matches!(
+            tuning_command(Tunable::Dither, "none"),
+            Some(Command::SetDither(resonate_engine::DitherKind::None))
+        ));
+        assert!(matches!(
+            tuning_command(Tunable::NoiseShaping, "lipshitz"),
+            Some(Command::SetNoiseShaping(
+                resonate_engine::NoiseShaping::Lipshitz
+            ))
+        ));
+        assert!(matches!(
+            tuning_command(Tunable::BitPerfect, "true"),
+            Some(Command::SetBitPerfect(true))
+        ));
+        assert!(matches!(
+            tuning_command(Tunable::Sink, "alsa_output.usb"),
+            Some(Command::SetSink(Some(_)))
+        ));
+
+        assert!(tuning_command(Tunable::Quality, "ultra").is_none());
+        assert!(tuning_command(Tunable::BitPerfect, "maybe").is_none());
+    }
+
+    #[test]
+    fn every_setting_the_bus_takes_is_spelled_as_its_flag_spells_it() {
+        for setting in Tunable::ALL {
+            assert_eq!(Tunable::named(setting.name()), Some(setting));
+        }
+        assert_eq!(
+            spelled::<QualityArg>("very-high"),
+            Some(QualityArg::VeryHigh)
+        );
+        assert_eq!(spelled::<QualityArg>("VeryHigh"), None);
     }
 
     #[test]

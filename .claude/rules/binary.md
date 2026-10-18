@@ -34,6 +34,13 @@ paths:
   `--bring-back`; a name matching nothing is `Error::NothingNamed`. All live in `favourites.rs` and
   `wanting.rs`, over the calls MCP's edits make.
 
+- **A launch handed to an open window carries its engine flags.** `launch` finds the window by
+  `Running::a_window`, sends `--sink`, `--quality`, `--filter-phase`, `--dither`, `--noise-shaping`
+  and `--bit-perfect`/`--no-bit-perfect` over `Tune` (`mpris::tuning_of`, `Desktop::tune`) before the
+  files, and says on stderr that `--config`, `--library` and `--vault` are ignored, since the window's
+  settings file and catalog are open already; a window too old for `Tune` is said not to have taken
+  the settings.
+
 ## Reading a file argument
 
 One reader for URIs: `resonate-core::MediaLocation::{from_uri, to_uri}` (in core because bus and
