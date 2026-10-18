@@ -129,6 +129,81 @@ impl MediaProvider for DropsFrom {
     }
 }
 
+struct Changing {
+    source: SourceId,
+    first: Vec<u8>,
+    later: Vec<u8>,
+    opened: AtomicU32,
+}
+
+impl MediaProvider for Changing {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _location: &MediaLocation) -> resonate_codec::Result<Media> {
+        let opening = self.opened.fetch_add(1, Ordering::Relaxed);
+        let bytes = if opening == 0 {
+            &self.first
+        } else {
+            &self.later
+        };
+        Ok(Media {
+            stream: Box::new(Reading::new(Cursor::new(bytes.clone()))),
+            hint: Some(FormatHint::Extension("wav".into())),
+        })
+    }
+}
+
+struct Flipping {
+    held: Cursor<Vec<u8>>,
+    flag: Arc<AtomicBool>,
+    at_byte: u64,
+    armed: bool,
+}
+
+impl Read for Flipping {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        if self.armed && self.held.position() >= self.at_byte {
+            self.flag.store(true, Ordering::Relaxed);
+        }
+        self.held.read(into)
+    }
+}
+
+impl Seek for Flipping {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.held.seek(to)
+    }
+}
+
+struct FlipsOnOpen {
+    source: SourceId,
+    bytes: Vec<u8>,
+    flag: Arc<AtomicBool>,
+    opened: AtomicU32,
+    flips_from: u32,
+}
+
+impl MediaProvider for FlipsOnOpen {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _location: &MediaLocation) -> resonate_codec::Result<Media> {
+        let opening = self.opened.fetch_add(1, Ordering::Relaxed);
+        Ok(Media {
+            stream: Box::new(Reading::new(Flipping {
+                held: Cursor::new(self.bytes.clone()),
+                flag: Arc::clone(&self.flag),
+                at_byte: self.bytes.len() as u64 / 2,
+                armed: opening >= self.flips_from,
+            })),
+            hint: Some(FormatHint::Extension("wav".into())),
+        })
+    }
+}
+
 fn signal(frames: usize) -> Vec<i32> {
     let mut held = Vec::with_capacity(frames * usize::from(CHANNELS));
     let mut state = 0x1234_5678_u32;
@@ -498,6 +573,79 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
     assert_eq!(read, wanted);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let first = tree.write("first.wav", &floating(&samples));
+    let second = tree.write("second.wav", &floating(&samples));
+    let vault = tree.vault();
+    let staging = vault.root().join("staging");
+
+    let landed = kept(&vault, &Sources::local(), &MediaLocation::local(&first));
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o500)).expect("a closed staging");
+    let again = vault.keep(&Taking {
+        sources: &Sources::local(),
+        location: &MediaLocation::local(&second),
+        span: None,
+        renewing: false,
+        foretold: None,
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).expect("restored");
+
+    let Ok(Keeping::Kept(again)) = again else {
+        panic!("{again:?}");
+    };
+    assert!(again.deduped);
+    assert_eq!(again.key, landed.key);
+    assert_eq!(again.path, landed.path);
+}
+
+#[test]
+fn a_wave_whose_source_changes_between_being_weighed_and_being_packed_is_refused_and_leaves_nothing()
+ {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let vault = tree.vault();
+    let source = SourceId::new("share").expect("a lowercase name");
+    let location = MediaLocation::new(source.clone(), "changing/one");
+    let sources = Sources::local().and(Arc::new(Changing {
+        source,
+        first: floating(&samples),
+        later: floating(&samples[..samples.len() / 2]),
+        opened: AtomicU32::new(0),
+    }));
+
+    let keeping = vault.keep(&Taking {
+        sources: &sources,
+        location: &location,
+        span: None,
+        renewing: false,
+        foretold: None,
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+
+    assert!(
+        matches!(keeping, Ok(Keeping::Refused(Refusal::NotValidated))),
+        "{keeping:?}"
+    );
+    for folder in ["staging", "audio"] {
+        assert_eq!(
+            fs::read_dir(vault.root().join(folder))
+                .expect("a vault folder")
+                .count(),
+            0,
+            "{folder}"
+        );
+    }
+}
+
 #[test]
 fn a_location_served_out_of_memory_is_kept_like_any_other() {
     let tree = Tree::new();
@@ -856,6 +1004,57 @@ fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
         "{mid_copy:?}"
     );
     assert!(!vault.failed_itself(&mid_copy), "{mid_copy}");
+}
+
+#[test]
+fn a_cancel_is_heard_while_a_source_is_decoded_for_its_digest_and_while_it_is_copied_as_it_came() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let source = SourceId::new("share").expect("a lowercase name");
+    let location = MediaLocation::new(source.clone(), "long/one");
+    let flag = Arc::new(AtomicBool::new(false));
+    let flipping = |flips_from: u32| {
+        flag.store(false, Ordering::Relaxed);
+        let provider = Arc::new(FlipsOnOpen {
+            source: source.clone(),
+            bytes: past_what_a_wave_holds(),
+            flag: Arc::clone(&flag),
+            opened: AtomicU32::new(0),
+            flips_from,
+        });
+        let sources = Sources::local().and(Arc::clone(&provider) as Arc<dyn MediaProvider>);
+        (provider, sources)
+    };
+    let taken = |sources: &Sources| {
+        vault.keep(&Taking {
+            sources,
+            location: &location,
+            span: None,
+            renewing: false,
+            foretold: None,
+            replacing: None,
+            halt: Halt::on(&flag),
+        })
+    };
+
+    let (never, sources) = flipping(u32::MAX);
+    assert!(matches!(taken(&sources), Ok(Keeping::Kept(_))));
+    let opened_to_keep = never.opened.load(Ordering::Relaxed);
+
+    let (_, sources) = flipping(0);
+    let mid_decode = taken(&sources);
+    assert!(matches!(mid_decode, Err(Error::Halted)), "{mid_decode:?}");
+
+    let (_, sources) = flipping(opened_to_keep - 1);
+    let mid_copy = taken(&sources);
+    assert!(matches!(mid_copy, Err(Error::Halted)), "{mid_copy:?}");
+
+    assert_eq!(
+        fs::read_dir(vault.root().join("staging"))
+            .expect("the staging folder")
+            .count(),
+        0
+    );
 }
 
 #[test]

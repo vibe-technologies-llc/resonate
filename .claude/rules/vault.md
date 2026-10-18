@@ -53,12 +53,22 @@ engine, library, `ureq` (CI `refuse`).
   `vault_objects_by_sound`); a sound two objects share foretells nothing.
 - **`Form::Wave`**: PCM FLAC cannot hold (`SampleFormat::F32`, > 24 bits, > 96 kHz). Canonical
   `fmt `+`data` WAVE, zstd at `ARCHIVED_AT` (19). Over `LARGEST_PCM` (RIFF ceiling): refused before
-  staging where the source declares its length (`wave::outgrows_a_wave`), then `kept_whole`.
-  `wave::compressed` gives up (`Packed::NoSmaller`) when output reaches the source's weight. **Passes
-  are foretold**: past `FORETOLD_FROM_BYTES` (32 MiB) `wave::hopeless` compresses four `SLICE_BYTES`
-  (2 MiB) slices and scales; over an eighth past the source's weight: `NoSmaller` before the pass.
-  **The pass is a run of zstd frames**, one per `PACKED_FRAME_BYTES` (8 MiB) of WAVE, each pledged
-  its length: any zstd reader sees one stream, `Unpacking` finds frame starts.
+  decoding where the source declares its length (`wave::outgrows_a_wave`), else `wave::tally` stops
+  at the ceiling, then `kept_whole`. **Two passes, no uncompressed copy ever written.** `wave::tally`
+  decodes once, hashing the PCM into the key and counting frames and bytes (and holding evenly spread
+  `SLICE_BYTES` samples, `Samples`), so a dedup hit is decided before anything is staged
+  (`a_wave_already_in_the_vault_is_deduped_before_anything_is_staged`). A miss reopens the source
+  (`reopened`, span included) and `wave::pack` streams the decoder through `Pcm`, a `Read` yielding
+  the header (sizes exact from the tally) and the PCM, straight into `packed_in_frames`. A source
+  that decodes to other bytes the second time is `Packed::Differed`, `Refusal::NotValidated`, nothing
+  left behind (`a_wave_whose_source_changes_between_being_weighed_and_being_packed_is_refused_and_leaves_nothing`).
+  `packed_in_frames` gives up (`Packed::NoSmaller`) when output reaches the source's weight. **Passes
+  are foretold**: past `FORETOLD_FROM_BYTES` (32 MiB) `wave::hopeless` compresses the whole
+  `SLICE_BYTES` (2 MiB) samples the tally kept (4 to 8, their windows' stride doubling and odd ones
+  dropped as the stream grows, so they stay spread over all of it) and scales; over an eighth past
+  the source's weight: `NoSmaller` before the pass. **The pass is a run of zstd frames**, one per
+  `PACKED_FRAME_BYTES` (8 MiB) of WAVE, each pledged its length: any zstd reader sees one stream,
+  `Unpacking` finds frame starts.
 - **`Form::Kept`**: source bytes where re-encoding loses something or costs more: lossy codec, DSD,
   over 8 channels, re-encode no smaller. Tag containers *around* the audio go without touching a
   frame; `bare::bare` decides by the container symphonia opened:
@@ -98,7 +108,7 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 
 `VaultKey`: 16 bytes as 32 lowercase hex letters, fanned two deep. `Flac`/`Wave`: MD5 of decoded
 interleaved PCM (FLAC's STREAMINFO digest, so `metaflac` agrees); `Kept`, covers: MD5 of stored
-bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder. **A staging
+bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder, a failing sync after the rename being a warning (the object is there, so the keep is reported landed rather than failed and left unreferenced) (`an_object_whose_folder_could_not_be_synced_after_the_rename_is_reported_landed`). **A staging
 file is held by its writer, which is how it is swept**: `Vault::staged` creates it `Held`
 (`rust-style.md`); `Vault::open` removes those `writer::writer_of` reads as gone
 (`Sweeping::WhatCrashed`); `Vault::sweep_the_staging` (`--prune`) also takes files not named by a
@@ -215,8 +225,8 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
   catalog rows; the plan is re-sorted to request order. `landed_or_standing` decides and renames
   under one lock. First error stops every worker; a panicking one is `Error::Stopped`.
 - **A cancel is heard inside a row.** `Taking::halt` is a `Halt` over the import's cancel flag
-  (`Halt::NEVER` for a delivery); `wave::write` and `flac::encode` look each decoded block,
-  `wave::compressed` each read, answering `Error::Halted` with the staged file discarded. `keep_one`
+  (`Halt::NEVER` for a delivery); `wave::tally` and `flac::encode` look each decoded block,
+  `packed_in_frames` each read, `pcm_of` each decoded block (read-back, the dedup decode of `foretold_flac`, `kept_whole`'s weighing) and the `copied` loop each read, answering `Error::Halted` with the staged file discarded; a read-back's failure is `NotValidated` but its `Halted` is never swallowed into one (`held_unless_halted`) (`a_cancel_is_heard_while_a_source_is_decoded_for_its_digest_and_while_it_is_copied_as_it_came`). `keep_one`
   answers a halted keep as no outcome: not counted, stamped or passed over, weighed whole next import
   (`a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging`).
 - **An import yields cores to what plays.** `ImportProgress::hold_to` lets the first *n* workers draw
