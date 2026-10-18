@@ -162,6 +162,7 @@ fn row() -> Value {
 fn queue_row() -> Value {
     let mut properties = row_properties();
     properties.push(("playing", flag()));
+    properties.push(("play_position", whole()));
     object(properties, &["queue_id"])
 }
 

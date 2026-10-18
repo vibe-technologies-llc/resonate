@@ -24,6 +24,23 @@ paths:
   with a gone file `Library::retire` drops even on an unmounted drive (the one place a scan keeps
   them). A folder holding nothing gone says it named none of the three.
 
+- **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
+  <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
+  on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
+  it, and a name two rows answer is `Error::SeveralNamed` rather than a guess; an artist is
+  `artist_named`. `wants --add|--remove <TITLE>` and `missing --dismiss <TITLE>` /
+  `--dismiss-release <TITLE>` (narrowed by `--artist` and `--album`) name a release track the same
+  way, but act on every row the name folds to, since a want is undone by `--remove` and a dismissal by
+  `--bring-back`; a name matching nothing is `Error::NothingNamed`. All live in `favourites.rs` and
+  `wanting.rs`, over the calls MCP's edits make.
+
+- **A launch handed to an open window carries its engine flags.** `launch` finds the window by
+  `Running::a_window`, sends `--sink`, `--quality`, `--filter-phase`, `--dither`, `--noise-shaping`
+  and `--bit-perfect`/`--no-bit-perfect` over `Tune` (`mpris::tuning_of`, `Desktop::tune`) before the
+  files, and says on stderr that `--config`, `--library` and `--vault` are ignored, since the window's
+  settings file and catalog are open already; a window too old for `Tune` is said not to have taken
+  the settings.
+
 ## Reading a file argument
 
 One reader for URIs: `resonate-core::MediaLocation::{from_uri, to_uri}` (in core because bus and
@@ -68,6 +85,12 @@ them no type). Decoders: `audio.md`.
 - **Hang-up leaves, like an interrupt.** `signals::ASKING_TO_LEAVE` = `SIGINT`, `SIGTERM`, `SIGHUP`,
   watched by `quit_when_told` and `cancel_when_told`; a hang-up also tells `said` nobody reads where
   stdout is a terminal (`tests/signals.rs`).
+- **A headless pass's watch is `signals::cancelling_on`**, which takes the signals and what to do
+  on a second one, so `cancel_when_told` is that over `ASKING_TO_LEAVE` and `leave`, and the tests
+  drive it with `SIGUSR1`, a stand-in `leaving` and `exit_code_after` (128 + the signal number); a
+  dropped `Interrupting` closes the watch whether or not a signal came
+  (`the_first_signal_cancels_the_pass_and_a_second_leaves_with_its_number`,
+  `a_pass_no_signal_interrupts_answers_its_summary_through_until_told`).
 - **One signal silences the graph though the front end never answers.** `signals.rs` asks the front
   end to quit, leaves anyway after `DRAINS_WITHIN`; the farewell thread sends `Command::Stop` after
   `SILENCED_AFTER`, so a wedged window is not *heard* for the whole drain.
@@ -151,6 +174,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **`Config`'s `Debug` prints no secret:** hand-written over an exhaustive destructuring (a key added
   and left out fails to compile), `<withheld>` for every token, password, key and `contact`
   (`no_key_holding_a_secret_or_the_contact_is_printed_by_debug`).
+- **A hand-editor reads `resonate-config.toml(5)`** (`packaging/resonate-config.toml.5`, installed by
+  every package): one `.TP` entry per key with its type, accepted spellings and default. A key added
+  to `ConfigKey` without an entry, or an entry for a key that is gone, fails
+  `every_setting_the_file_reads_is_documented_in_its_man_page_and_nothing_else_is`; the entries for
+  enum-valued keys must name every spelling the setting takes
+  (`the_man_page_gives_every_spelling_a_setting_takes`,
+  `the_man_page_names_every_tab_and_settings_category_the_file_remembers`). Defaults and wording are
+  written by hand, so a changed default is changed there too.
 
 **Keys whose rule is not obvious**
 
@@ -234,6 +265,12 @@ rewritten value is replaced in place, decor carried over (`replaced_in_place`). 
 written as the figure it is (`settings::as_typed`): 70 % is `volume = 0.7`. `File::apply` takes a
 batch of `SettingChange`s through one `config::edit`, writing only if something moved; a setting the
 file cannot say (a non-UTF-8 folder) is `SettingNotStored` while the rest land.
+
+**A subcommand's write is not heard by a player already running.** A window or `resonate play` reads
+`config.toml` once at start and nothing tells it of a change, so `resonate eq` compares the file
+before and after and, when it moved, lists the players on the bus (`Running::listed`) and says they
+keep the settings they started with (`equaliser::kept_by_running`); with none running, or no bus,
+it says nothing.
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and

@@ -1462,6 +1462,7 @@ fn replay_gain(text: &str) -> Option<ReplayGainMode> {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeSet,
         env, process,
         sync::atomic::{AtomicU64, Ordering},
     };
@@ -1476,6 +1477,169 @@ mod tests {
         match refusals.into_iter().next() {
             Some(error) => Err(error),
             None => Ok(config),
+        }
+    }
+
+    const CONFIG_MAN_PAGE: &str = include_str!("../../../packaging/resonate-config.toml.5");
+
+    fn documented_keys() -> BTreeSet<&'static str> {
+        CONFIG_MAN_PAGE
+            .lines()
+            .zip(CONFIG_MAN_PAGE.lines().skip(1))
+            .filter(|(before, _)| *before == ".TP")
+            .filter_map(|(_, entry)| entry.strip_prefix(".B "))
+            .collect()
+    }
+
+    fn entry_of(key: &str) -> String {
+        let opening = format!(".B {key}");
+        let mut lines = CONFIG_MAN_PAGE.lines().skip_while(|line| *line != opening);
+        lines.next();
+        lines
+            .take_while(|line| !line.starts_with(".TP") && !line.starts_with(".SH"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn spelled_by<Choice: clap::ValueEnum>() -> Vec<String> {
+        Choice::value_variants()
+            .iter()
+            .filter_map(Choice::to_possible_value)
+            .map(|spelling| spelling.get_name().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn every_setting_the_file_reads_is_documented_in_its_man_page_and_nothing_else_is() {
+        let read: BTreeSet<&str> = ConfigKey::ALL.into_iter().map(ConfigKey::as_str).collect();
+
+        assert_eq!(documented_keys(), read);
+    }
+
+    #[test]
+    fn the_man_page_gives_every_spelling_a_setting_takes() {
+        let spelled: [(ConfigKey, Vec<String>); 15] = [
+            (ConfigKey::Quality, spelled_by::<QualityArg>()),
+            (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
+            (ConfigKey::Dither, spelled_by::<DitherArg>()),
+            (ConfigKey::NoiseShaping, spelled_by::<NoiseShapingArg>()),
+            (
+                ConfigKey::RestoreLossy,
+                Restoration::ALL
+                    .map(|kind| kind.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::Theme,
+                Theme::ALL.map(|theme| theme.as_str().to_owned()).to_vec(),
+            ),
+            (
+                ConfigKey::Accent,
+                Accent::ALL
+                    .map(|accent| accent.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::TextSize,
+                TextSize::ALL.map(|size| size.as_str().to_owned()).to_vec(),
+            ),
+            (
+                ConfigKey::Scrollbars,
+                ScrollbarMode::ALL
+                    .map(|mode| mode.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::ArtistsDrawn,
+                ArtistsDrawn::ALL
+                    .map(|drawn| drawn.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::SpectrumTilt,
+                SpectrumTilt::ALL
+                    .map(|tilt| tilt.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::SpectrumFloor,
+                SpectrumFloor::ALL
+                    .map(|floor| floor.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::SpectrumBands,
+                SpectrumBands::ALL
+                    .map(|bands| bands.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::SpectrumFalls,
+                SpectrumFalls::ALL
+                    .map(|falls| falls.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::DiscordShows,
+                Shown::ALL.map(|shown| shown.as_str().to_owned()).to_vec(),
+            ),
+        ];
+
+        for (key, spellings) in &spelled {
+            let entry = entry_of(key.as_str());
+            for spelling in spellings {
+                assert!(
+                    entry.contains(spelling.as_str()),
+                    "{key} takes {spelling}, which its man page entry does not give"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_man_page_names_every_tab_and_settings_category_the_file_remembers() {
+        let tabs = entry_of(ConfigKey::LastTab.as_str());
+        let categories = entry_of(ConfigKey::LastSettingsCategory.as_str());
+
+        for tab_named in [
+            "albums",
+            "artists",
+            "tracks",
+            "statistics",
+            "queue",
+            "playlists",
+            "favourites",
+            "suggestions",
+            "missing",
+            "lyrics",
+            "inspector",
+            "visualiser",
+            "analysis",
+            "settings",
+        ] {
+            assert!(tab(tab_named).is_some());
+            assert!(
+                tabs.contains(tab_named),
+                "{tab_named} is not in the man page"
+            );
+        }
+        for category in [
+            "output",
+            "processing",
+            "equaliser",
+            "library",
+            "filters",
+            "online",
+            "sync",
+            "desktop",
+            "appearance",
+            "about",
+        ] {
+            assert!(settings_category(category).is_some());
+            assert!(
+                categories.contains(category),
+                "{category} is not in the man page"
+            );
         }
     }
 

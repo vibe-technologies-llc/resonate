@@ -50,6 +50,7 @@ install -Dm644 packaging/resonate.desktop %{buildroot}%{_datadir}/applications/r
 install -Dm644 packaging/resonate.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/resonate.svg
 install -Dm644 packaging/org.resonate.Resonate.metainfo.xml %{buildroot}%{_datadir}/metainfo/org.resonate.Resonate.metainfo.xml
 install -Dm644 -t %{buildroot}%{_mandir}/man1 "$generated"/*.1
+install -Dm644 -t %{buildroot}%{_mandir}/man5 packaging/resonate-config.toml.5
 install -Dm644 "$generated/resonate.bash" %{buildroot}%{_datadir}/bash-completion/completions/resonate
 install -Dm644 "$generated/_resonate" %{buildroot}%{_datadir}/zsh/site-functions/_resonate
 install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_completions.d/resonate.fish
@@ -62,6 +63,7 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 %{_datadir}/icons/hicolor/scalable/apps/resonate.svg
 %{_datadir}/metainfo/org.resonate.Resonate.metainfo.xml
 %{_mandir}/man1/resonate*.1*
+%{_mandir}/man5/resonate-config.toml.5*
 %{_datadir}/bash-completion/completions/resonate
 %{_datadir}/zsh/site-functions/_resonate
 %{_datadir}/fish/vendor_completions.d/resonate.fish

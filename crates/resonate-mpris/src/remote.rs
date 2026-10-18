@@ -8,7 +8,7 @@ use zbus::{
 };
 
 use crate::{
-    BusOp, Error, PlaylistInfo, PlaylistOrder, Result,
+    BusOp, Error, PlaylistInfo, PlaylistOrder, Result, Tunable,
     blocking::{Connection, Proxy, connection, fdo::DBusProxy},
     interfaces::OWN_INTERFACE,
     service::{BUS_NAME, OBJECT_PATH},
@@ -33,9 +33,11 @@ const ACTIVATE_PLAYLIST: &str = "ActivatePlaylist";
 const SET_SLEEP: &str = "SetSleep";
 const ADD_TRACKS: &str = "AddTracks";
 const RELOCATE: &str = "Relocate";
+const TUNE: &str = "Tune";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
 const PLAYING_NEXT: &str = "PlayingNext";
+const PLAY_ORDER: &str = "PlayOrder";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
 const PLAY_PAUSE: &str = "PlayPause";
@@ -313,6 +315,18 @@ impl Running {
             .collect())
     }
 
+    pub fn play_order(&self) -> Result<Vec<TrackId>> {
+        let paths: Vec<OwnedObjectPath> = self
+            .proxy(OWN_INTERFACE)?
+            .get_property(PLAY_ORDER)
+            .map_err(|source| Error::bus(BusOp::Read, source))?;
+
+        Ok(paths
+            .iter()
+            .filter_map(|path| track_of(path.as_str()))
+            .collect())
+    }
+
     pub fn described(&self, rows: &[TrackId]) -> Result<Vec<Described>> {
         if rows.is_empty() {
             return Ok(Vec::new());
@@ -391,6 +405,20 @@ impl Running {
                 .map_err(|source| Error::bus(BusOp::Call, source))?;
         }
         Ok(())
+    }
+
+    pub fn tune(&self, settings: &[(Tunable, String)]) -> Result<()> {
+        if settings.is_empty() {
+            return Ok(());
+        }
+        let pairs: Vec<(&str, &str)> = settings
+            .iter()
+            .map(|(setting, value)| (setting.name(), value.as_str()))
+            .collect();
+
+        self.proxy(OWN_INTERFACE)?
+            .call::<_, _, ()>(TUNE, &(pairs,))
+            .map_err(|source| Error::bus(BusOp::Call, source))
     }
 
     fn told(&self, interface: &'static str, method: &'static str) -> Result<()> {

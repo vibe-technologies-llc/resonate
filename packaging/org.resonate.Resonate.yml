@@ -58,6 +58,7 @@ modules:
         install -Dm644 LICENSE /app/share/licenses/resonate/LICENSE
         install -Dm644 COPYRIGHT /app/share/licenses/resonate/COPYRIGHT
         install -Dm644 -t /app/share/man/man1 "$generated"/*.1
+        install -Dm644 -t /app/share/man/man5 packaging/resonate-config.toml.5
         install -Dm644 "$generated/resonate.bash" /app/share/bash-completion/completions/resonate
         install -Dm644 "$generated/_resonate" /app/share/zsh/site-functions/_resonate
         install -Dm644 "$generated/resonate.fish" /app/share/fish/vendor_completions.d/resonate.fish

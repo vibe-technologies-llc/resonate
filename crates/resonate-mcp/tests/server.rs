@@ -149,6 +149,7 @@ struct Standing {
     position: Duration,
     volume: Volume,
     shuffle: bool,
+    play_order: Option<Vec<TrackId>>,
     playlists: Vec<PlaylistInfo>,
     asleep: Option<Asleep>,
     calls: Vec<Call>,
@@ -165,6 +166,7 @@ impl Default for Standing {
             position: Duration::from_millis(61_500),
             volume: Volume::MAX,
             shuffle: false,
+            play_order: None,
             playlists: Vec::new(),
             asleep: None,
             calls: Vec::new(),
@@ -302,6 +304,14 @@ impl Controlling for Handle {
 
     fn queued(&self) -> resonate_mpris::Result<Vec<TrackId>> {
         Ok(self.0.borrow().rows.iter().map(|row| row.track).collect())
+    }
+
+    fn play_order(&self) -> resonate_mpris::Result<Vec<TrackId>> {
+        let standing = self.0.borrow();
+        Ok(standing
+            .play_order
+            .clone()
+            .unwrap_or_else(|| standing.rows.iter().map(|row| row.track).collect()))
     }
 
     fn described(&self, rows: &[TrackId]) -> resonate_mpris::Result<Vec<Described>> {
@@ -1205,7 +1215,48 @@ fn a_shuffled_queue_says_its_list_is_not_the_order_it_plays_in() {
 
     assert_eq!(queue["shuffle"], true);
     assert!(described.contains("unshuffled"), "{described}");
-    assert!(!described.contains("in play order"), "{described}");
+    assert!(described.contains("play_position"), "{described}");
+}
+
+#[test]
+fn a_shuffled_queue_gives_each_row_the_place_it_plays_at() {
+    let (players, _) = Fake::with(Standing {
+        rows: (1..=3).map(|id| row(id, "Row")).collect(),
+        playing: Some(1),
+        shuffle: true,
+        play_order: Some(vec![track_id(2), track_id(3), track_id(1)]),
+        ..Standing::default()
+    });
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    let queue = called(&server, "show_queue", json!({}));
+    let places: Vec<&Value> = queue["queue"]
+        .as_array()
+        .expect("the rows")
+        .iter()
+        .map(|row| &row["play_position"])
+        .collect();
+
+    assert_eq!(places, [2, 0, 1]);
+}
+
+#[test]
+fn an_unshuffled_queue_leaves_the_play_position_out() {
+    let (players, _) = Fake::with(Standing {
+        rows: (1..=2).map(|id| row(id, "Row")).collect(),
+        ..Standing::default()
+    });
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    let queue = called(&server, "show_queue", json!({}));
+
+    assert!(queue["queue"][0].get("play_position").is_none());
 }
 
 #[test]

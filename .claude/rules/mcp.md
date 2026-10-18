@@ -87,7 +87,11 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   so it answers once handed over, resolving the name via the playlists the *player* offers.
 - **`show_queue` describes only what it lists**: `GetTracksMetadata` for the first `limit` rows.
   The rows are the MPRIS `Tracks` list, the queue unshuffled, never play order (`mpris.md`), so the
-  answer carries `shuffle` and the tool and resource descriptions say so.
+  answer carries `shuffle` and the tool and resource descriptions say so. Under shuffle each row also
+  carries `play_position`, its place from 0 in the order the player plays (the rows already heard
+  first), read from `Controlling::play_order` (`org.resonate.Player1`'s `PlayOrder`); absent when
+  unshuffled, and a player too old to have the property leaves it out rather than failing the
+  listing (`a_shuffled_queue_gives_each_row_the_place_it_plays_at`).
 
 ## What a model may change
 

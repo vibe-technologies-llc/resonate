@@ -10,6 +10,8 @@ mod discord;
 mod equaliser;
 mod error;
 mod favourites;
+#[cfg(test)]
+mod fixtures;
 mod info;
 mod input;
 mod lastfm;
@@ -38,6 +40,7 @@ mod sync;
 mod table;
 mod vault;
 mod vocabulary;
+mod wanting;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -233,14 +236,27 @@ fn run() -> Result<()> {
                 ..EnrichOptions::default()
             },
         ),
-        Some(Sub::Wants) => wants(&open_library(&cli, &config)?),
+        Some(Sub::Wants(args)) => wanting::run(&open_library(&cli, &config)?, args),
         Some(Sub::Sync(args)) => synced(&cli, &config, args),
         Some(Sub::Missing {
             artist,
             read_the_rest,
             bring_back,
+            dismiss,
+            dismiss_release,
+            album,
         }) => {
             let library = open_library(&cli, &config)?;
+            if let Some(title) = dismiss {
+                let narrowing = wanting::Narrowing {
+                    artist: artist.as_deref(),
+                    album: album.as_deref(),
+                };
+                return wanting::dismiss(&library, title, narrowing);
+            }
+            if let Some(title) = dismiss_release {
+                return wanting::dismiss_release(&library, title, artist.as_deref());
+            }
             if *bring_back {
                 said!("{}", brought_back(library.bring_back_dismissed()?));
             }
@@ -317,7 +333,7 @@ fn run() -> Result<()> {
         Some(Sub::Stats { window, top }) => {
             stats::print(&open_library(&cli, &config)?, *window, top.get())
         }
-        Some(Sub::Favourites(wanted)) => favourites::print(&open_library(&cli, &config)?, wanted),
+        Some(Sub::Favourites(wanted)) => favourites::run(&open_library(&cli, &config)?, wanted),
         Some(Sub::Suggest { save }) => {
             suggest::print(&open_library(&cli, &config)?, save.as_deref())
         }
@@ -2579,7 +2595,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = starting::one_window_at_a_time();
     if let Some(window) = Running::a_window().ok().flatten() {
         warn_of_settings_left_behind(&cli);
-        return handed_to(&window, &cli.files);
+        return handed_to(&window, &cli.files, &mpris::tuning_of(&cli));
     }
     let places = resonate_ui::Places {
         config: settings_path(&cli)?,
@@ -2758,13 +2774,6 @@ fn settings_left_behind(cli: &Cli) -> Vec<&'static str> {
         ("--config", cli.config.is_some()),
         ("--library", cli.library.is_some()),
         ("--vault", cli.vault.is_some()),
-        ("--sink", cli.sink.is_some()),
-        ("--quality", cli.quality.is_some()),
-        ("--filter-phase", cli.filter_phase.is_some()),
-        ("--dither", cli.dither.is_some()),
-        ("--noise-shaping", cli.noise_shaping.is_some()),
-        ("--bit-perfect", cli.bit_perfect),
-        ("--no-bit-perfect", cli.no_bit_perfect),
     ]
     .into_iter()
     .filter_map(|(flag, given)| given.then_some(flag))
@@ -2783,7 +2792,15 @@ fn warn_of_settings_left_behind(cli: &Cli) {
 }
 
 #[cfg(feature = "ui")]
-fn handed_to(window: &Running, arguments: &[OsString]) -> Result<()> {
+fn handed_to(
+    window: &Running,
+    arguments: &[OsString],
+    tuning: &[(resonate_mpris::Tunable, String)],
+) -> Result<()> {
+    if let Err(error) = window.tune(tuning) {
+        tracing::warn!(%error, "the window already open did not take the settings given");
+        told!("the window already open did not take the settings given for this run");
+    }
     let rows: Vec<_> = queue_items(arguments)
         .into_iter()
         .map(|item| (item.location, item.span))
@@ -3119,7 +3136,7 @@ mod tests {
     use resonate_core::SourceId;
 
     use super::*;
-    use crate::cli::RepeatArg;
+    use crate::{cli::RepeatArg, fixtures::silent_wave};
 
     #[test]
     fn a_queue_that_finished_with_every_track_failed_is_no_success() {
@@ -3249,21 +3266,60 @@ mod tests {
         };
 
         assert!(left_behind(&["resonate", "a.flac"]).is_empty());
+        assert!(left_behind(&["resonate", "--sink", "alsa_output.usb", "a.flac"]).is_empty());
         assert_eq!(
             left_behind(&[
                 "resonate",
+                "--config",
+                "c.toml",
+                "--library",
+                "l.db",
+                "--vault",
+                "v"
+            ]),
+            ["--config", "--library", "--vault"]
+        );
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launch_handed_to_a_window_carries_the_settings_the_window_can_take() {
+        use resonate_mpris::Tunable;
+
+        let tuning = |arguments: &[&str]| {
+            let cli = Cli::try_parse_from(arguments.iter().copied()).expect("a launch");
+            mpris::tuning_of(&cli)
+        };
+
+        assert!(tuning(&["resonate", "a.flac"]).is_empty());
+        assert_eq!(
+            tuning(&[
+                "resonate",
                 "--sink",
                 "alsa_output.usb",
-                "--bit-perfect",
                 "--quality",
-                "high",
+                "very-high",
+                "--filter-phase",
+                "minimum",
+                "--dither",
+                "none",
+                "--noise-shaping",
+                "lipshitz",
+                "--no-bit-perfect",
                 "a.flac"
             ]),
-            ["--sink", "--quality", "--bit-perfect"]
+            [
+                (Tunable::Sink, "alsa_output.usb".to_owned()),
+                (Tunable::Quality, "very-high".to_owned()),
+                (Tunable::FilterPhase, "minimum".to_owned()),
+                (Tunable::Dither, "none".to_owned()),
+                (Tunable::NoiseShaping, "lipshitz".to_owned()),
+                (Tunable::BitPerfect, "false".to_owned()),
+            ]
         );
         assert_eq!(
-            left_behind(&["resonate", "--config", "c.toml", "--library", "l.db"]),
-            ["--config", "--library"]
+            tuning(&["resonate", "--bit-perfect"]),
+            [(Tunable::BitPerfect, "true".to_owned())]
         );
     }
 
@@ -3805,34 +3861,6 @@ mod tests {
         assert_eq!(asked.roots, vec![PathBuf::from("/music")]);
     }
 
-    fn silent_wave(seconds_tenths: u32) -> Vec<u8> {
-        const CHANNELS: u16 = 2;
-        const BITS: u16 = 16;
-        const RATE: u32 = 44_100;
-
-        let block_align = CHANNELS * BITS / 8;
-        let frames = RATE / 10 * seconds_tenths;
-        let data = vec![0_u8; frames as usize * usize::from(block_align)];
-        let mut format = Vec::new();
-        format.extend_from_slice(&1_u16.to_le_bytes());
-        format.extend_from_slice(&CHANNELS.to_le_bytes());
-        format.extend_from_slice(&RATE.to_le_bytes());
-        format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
-        format.extend_from_slice(&block_align.to_le_bytes());
-        format.extend_from_slice(&BITS.to_le_bytes());
-
-        let mut body = b"WAVE".to_vec();
-        for (id, payload) in [(b"fmt ", format.as_slice()), (b"data", data.as_slice())] {
-            body.extend_from_slice(id);
-            body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-            body.extend_from_slice(payload);
-        }
-        let mut file = b"RIFF".to_vec();
-        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        file.extend_from_slice(&body);
-        file
-    }
-
     #[test]
     fn forgetting_a_folder_inside_a_root_drops_the_tracks_gone_from_it_and_keeps_the_rest() {
         let root = env::temp_dir().join(format!("resonate-forget-{}", process::id()));
@@ -3875,6 +3903,25 @@ mod tests {
             "a present file or one outside the folder lost its row"
         );
         assert_eq!(the_root, Forgotten::Root);
+    }
+
+    #[test]
+    fn a_pass_no_signal_interrupts_answers_its_summary_through_until_told() {
+        let root = fixtures::scratch("until-told");
+        fs::write(root.join("a.wav"), silent_wave(1)).expect("a track");
+        let library = Library::open_in_memory().expect("a catalog");
+        library.add_root(&root).expect("a root");
+
+        let summary = until_told(
+            library
+                .scan(fixtures::scan_of(&root))
+                .expect("a scan under way"),
+        )
+        .expect("a summary");
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert_eq!(summary.stats.added, 1);
+        assert!(!summary.cancelled);
     }
 
     #[test]

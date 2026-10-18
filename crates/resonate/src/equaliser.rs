@@ -1,10 +1,11 @@
-use std::{path::Path, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
 use resonate_core::{SampleRate, eq::Profile};
 use resonate_engine::NodeName;
 use resonate_eq::{
     Binding, Catalogue, Corrected, DeviceId, Kept, ProfileName, Store, search, suggest,
 };
+use resonate_mpris::Running;
 use resonate_pipewire::PipeWire;
 
 use crate::{
@@ -36,8 +37,55 @@ fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
 }
 
 pub fn run(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
-    let store = Store::at(config::equaliser_dir()?);
     let settings = crate::settings_path(cli)?;
+    let before = fs::read(&settings).ok();
+
+    performed(cli, config, wanted, &settings)?;
+
+    if fs::read(&settings).ok() != before {
+        say_running_players_keep_their_settings(&running_players());
+    }
+    Ok(())
+}
+
+fn running_players() -> Vec<String> {
+    match Running::listed() {
+        Ok(players) => players
+            .iter()
+            .map(|player| player.name().to_string())
+            .collect(),
+        Err(error) => {
+            tracing::debug!(%error, "the session bus was not asked which players are running");
+            Vec::new()
+        }
+    }
+}
+
+fn say_running_players_keep_their_settings(players: &[String]) {
+    if let Some(told) = kept_by_running(players) {
+        said!("{told}");
+    }
+}
+
+fn kept_by_running(players: &[String]) -> Option<String> {
+    let (first, rest) = players.split_first()?;
+
+    Some(if rest.is_empty() {
+        format!(
+            "{first} is running and keeps the settings it started with; it hears this once it \
+             is started again"
+        )
+    } else {
+        format!(
+            "{} are running and keep the settings they started with; they hear this once they \
+             are started again",
+            players.join(", ")
+        )
+    })
+}
+
+fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Result<()> {
+    let store = Store::at(config::equaliser_dir()?);
     let bound = wanted.r#for.as_deref().map(NodeName::new);
 
     if let Some(text) = wanted.find.as_deref() {
@@ -50,31 +98,31 @@ pub fn run(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
         return list(&store, config);
     }
     if let Some(name) = wanted.forget.as_deref() {
-        return forget(&store, &settings, config, name);
+        return forget(&store, settings, config, name);
     }
     if wanted.forget_own {
-        return forget_own(&store, &settings, config, bound.as_ref());
+        return forget_own(&store, settings, config, bound.as_ref());
     }
     if let Some(from) = wanted.import.as_deref() {
-        return import(&store, &settings, bound.as_ref(), wanted, from);
+        return import(&store, settings, bound.as_ref(), wanted, from);
     }
     if let Some(device) = wanted.fetch.as_deref() {
-        return fetch(&store, &settings, config, bound.as_ref(), wanted, device);
+        return fetch(&store, settings, config, bound.as_ref(), wanted, device);
     }
     if let Some(to) = wanted.export.as_deref() {
         return export(&store, config, bound.as_ref(), wanted, to);
     }
     if wanted.unbind {
-        return unbind(&settings, bound.as_ref());
+        return unbind(settings, bound.as_ref());
     }
     if let Some(name) = wanted.profile.as_deref() {
-        return bind(&store, &settings, bound.as_ref(), name);
+        return bind(&store, settings, bound.as_ref(), name);
     }
     if wanted.own {
-        return bound_as(&settings, bound.as_ref(), &Binding::Own);
+        return bound_as(settings, bound.as_ref(), &Binding::Own);
     }
     if wanted.on || wanted.off {
-        config::store(&settings, ConfigKey::Equaliser, wanted.on)?;
+        config::store(settings, ConfigKey::Equaliser, wanted.on)?;
         said!("equaliser: {}", switched(wanted.on));
         return Ok(());
     }
@@ -673,6 +721,25 @@ mod tests {
             panic!("{arguments:?} was refused: {parsed:?}");
         };
         wanted
+    }
+
+    #[test]
+    fn a_running_player_is_told_to_keep_the_settings_it_started_with_and_none_is_no_remark() {
+        let one = kept_by_running(&["org.mpris.MediaPlayer2.resonate".to_owned()]);
+        let two = kept_by_running(&[
+            "org.mpris.MediaPlayer2.resonate".to_owned(),
+            "org.mpris.MediaPlayer2.resonate.instance7".to_owned(),
+        ]);
+
+        assert_eq!(
+            one.as_deref(),
+            Some(
+                "org.mpris.MediaPlayer2.resonate is running and keeps the settings it started \
+                 with; it hears this once it is started again"
+            )
+        );
+        assert!(two.is_some_and(|told| told.contains("are running and keep the settings they")));
+        assert_eq!(kept_by_running(&[]), None);
     }
 
     #[test]

@@ -713,6 +713,7 @@ pub struct EqArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("marking").args(["add", "remove"])))]
 pub struct FavouritesArgs {
     #[arg(long, help = "List the favourite tracks and nothing else")]
     pub tracks: bool,
@@ -722,6 +723,62 @@ pub struct FavouritesArgs {
 
     #[arg(long, help = "List the favourite artists and nothing else")]
     pub artists: bool,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Mark the track, album or artist of this name a favourite, whichever of --tracks,                 --albums and --artists says it is. Repeat it for several"
+    )]
+    pub add: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Take the track, album or artist of this name off the favourites. Repeat it for                 several"
+    )]
+    pub remove: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "ARTIST",
+        requires = "marking",
+        help = "Narrow a track or album named by --add or --remove to this artist's, where                 several share the name"
+    )]
+    pub by: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("wanting").args(["add", "remove"])))]
+pub struct WantsArgs {
+    #[arg(
+        long,
+        value_name = "TITLE",
+        help = "Want the release track of this title that the catalog holds no file for, as the                 window's Missing pane does. It lists the same ones `missing` does"
+    )]
+    pub add: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "TITLE",
+        help = "Stop wanting the track of this title; a delivery already kept stays"
+    )]
+    pub remove: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        requires = "wanting",
+        help = "Narrow --add or --remove to the tracks of this artist"
+    )]
+    pub artist: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "TITLE",
+        requires = "wanting",
+        help = "Narrow --add or --remove to the tracks of the album of this title"
+    )]
+    pub album: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -753,8 +810,11 @@ pub enum Sub {
         albums: Option<NonZeroUsize>,
     },
 
-    #[command(about = "List the release tracks marked wanted, with what a provider has delivered")]
-    Wants,
+    #[command(
+        about = "List the release tracks marked wanted, with what a provider has delivered, or \
+                 want one or stop wanting it"
+    )]
+    Wants(WantsArgs),
 
     #[command(
         about = "Show this device's pairing code and the devices it synchronises with; join \
@@ -771,7 +831,8 @@ pub enum Sub {
         #[arg(
             long,
             value_name = "NAME",
-            help = "List only the tracks and releases of the artist with this name"
+            help = "List only the tracks and releases of the artist with this name, or narrow \
+                    --dismiss and --dismiss-release to them"
         )]
         artist: Option<String>,
 
@@ -789,6 +850,32 @@ pub enum Sub {
                     pane"
         )]
         bring_back: bool,
+
+        #[arg(
+            long,
+            value_name = "TITLE",
+            conflicts_with_all = ["bring_back", "read_the_rest", "dismiss_release"],
+            help = "Dismiss the missing track of this title from the Missing pane, and list \
+                    nothing; --bring-back lists it again"
+        )]
+        dismiss: Option<String>,
+
+        #[arg(
+            long,
+            value_name = "TITLE",
+            conflicts_with_all = ["bring_back", "read_the_rest", "dismiss"],
+            help = "Dismiss the release of this title that a held artist has and the catalog \
+                    does not, and list nothing"
+        )]
+        dismiss_release: Option<String>,
+
+        #[arg(
+            long,
+            value_name = "TITLE",
+            requires = "dismiss",
+            help = "Narrow --dismiss to the tracks of the album of this title"
+        )]
+        album: Option<String>,
     },
 
     #[command(

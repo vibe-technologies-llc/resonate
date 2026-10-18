@@ -8,6 +8,48 @@ pub enum Opened {
     Refused,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Tuned {
+    Applied,
+    Refused,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Tunable {
+    Sink,
+    Quality,
+    FilterPhase,
+    Dither,
+    NoiseShaping,
+    BitPerfect,
+}
+
+impl Tunable {
+    pub const ALL: [Self; 6] = [
+        Self::Sink,
+        Self::Quality,
+        Self::FilterPhase,
+        Self::Dither,
+        Self::NoiseShaping,
+        Self::BitPerfect,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sink => "sink",
+            Self::Quality => "quality",
+            Self::FilterPhase => "filter-phase",
+            Self::Dither => "dither",
+            Self::NoiseShaping => "noise-shaping",
+            Self::BitPerfect => "bit-perfect",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|setting| setting.name() == name)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Heard {
     pub plays: u32,
@@ -64,6 +106,10 @@ pub trait Host: Send + Sync + 'static {
 
     fn held_as(&self, _location: &MediaLocation, _span: Option<FrameSpan>) -> Option<TrackId> {
         None
+    }
+
+    fn tune(&self, _setting: Tunable, _value: &str) -> Tuned {
+        Tuned::Refused
     }
 }
 

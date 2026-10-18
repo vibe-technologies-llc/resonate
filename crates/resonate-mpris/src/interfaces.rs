@@ -7,10 +7,10 @@ use resonate_engine::{
     ArtRead, Command, Placement, Player, PlayerState, QueueItem, StreamDigest, TrackState,
     unclaimed_id,
 };
-use zbus::{ObjectPath, OwnedVariant, Variant, fdo, interface};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
-    Heard, Host, Opened,
+    Heard, Host, Opened, Tunable, Tuned,
     art::Pictures,
     service,
     track::{
@@ -469,6 +469,17 @@ impl OwnInterface {
         })
     }
 
+    fn tune(&self, settings: Vec<(String, String)>) -> fdo::Result<()> {
+        for (name, value) in &settings {
+            let refused = || fdo::Error::InvalidArgs(format!("{name} cannot be set to {value}"));
+            let setting = Tunable::named(name).ok_or_else(refused)?;
+            if self.shared.host.tune(setting, value) == Tuned::Refused {
+                return Err(refused());
+            }
+        }
+        Ok(())
+    }
+
     fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {
         let moved = moved
             .iter()
@@ -484,6 +495,17 @@ impl OwnInterface {
     #[zbus(property)]
     fn sleep(&self) -> Sleep {
         sleep_status(self.shared.player.state().sleeping)
+    }
+
+    #[zbus(property(emits_changed_signal = "false"))]
+    fn play_order(&self) -> Vec<OwnedObjectPath> {
+        self.shared
+            .player
+            .queued()
+            .rows
+            .iter()
+            .map(|item| track_path(item.id))
+            .collect()
     }
 
     #[zbus(property)]

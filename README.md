@@ -186,8 +186,10 @@ resonate scan <roots>             # walk directories into the library, then look
 resonate roots                    # the roots a bare `scan` walks
 resonate forget <roots>           # drop roots and every track scanned from them
 resonate enrich                   # ask MusicBrainz about what has not been asked lately
-resonate missing                  # the release tracks the library holds no file for
-resonate wants                    # the tracks marked wanted, and where a delivery landed
+resonate missing                  # the release tracks the library holds no file for;
+                                  #   --dismiss, --dismiss-release put one away
+resonate wants                    # the tracks marked wanted, and where a delivery landed;
+                                  #   --add, --remove want a missing track or stop
 resonate poll                     # ask the registered providers for what is wanted
 resonate tidal                    # sign in to TIDAL: approve a code, keep the refresh token
 resonate tag                      # the tags that would be written back to say what the lookup
@@ -201,7 +203,8 @@ resonate playlists                # the playlists the library holds
 resonate playlist <name>          # play one, add to it, order it, export it, save a query as one
 resonate import <sheets>          # read M3U, PLS and XSPF in
 resonate stats                    # what was played and listened to most
-resonate favourites               # the tracks, albums and artists marked a favourite
+resonate favourites               # the tracks, albums and artists marked a favourite;
+                                  #   --tracks --add <title> marks one, --remove takes it off
 resonate suggest                  # the playlists the catalog suggests making out of what it holds
 ```
 

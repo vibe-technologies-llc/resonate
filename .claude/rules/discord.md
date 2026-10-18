@@ -59,6 +59,15 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
   - Bar: `start = now - position`, `end = start + length`; absent when `discord-progress` is off
     or paused. Pause clears the activity unless `discord-paused`.
   - Text cut to `LONGEST_TEXT`, padded to Discord's two-character minimum.
+- **The link is `Showing`, apart from the player.** `Publisher` reads the playing track and works
+  out the wanted `Activity`; `Showing::show(app, wanted, now)` owns the connection (`Link`), takes the
+  clock as an argument and finds Discord through an injected `Find` (`Session::find` in the build),
+  so backoff, a changed application, an application Discord does not know and a lost connection are
+  driven against a fake Discord on a socket with no sleeping
+  (`a_discord_nobody_answers_is_asked_again_ever_later_up_to_a_ceiling`,
+  `a_changed_application_clears_the_old_one_and_connects_again_under_the_new_id`,
+  `an_application_discord_does_not_know_is_waited_out_until_the_id_changes`,
+  `a_lost_connection_is_made_again_after_the_first_wait_and_what_is_wanted_sent_afresh`).
 - **Paced**: ticks every second; sends only on change (text, assets, bar appearing/going, start
   moving over `DRIFT_ALLOWED`: a seek), never within `SENDS_APART` of the last (Discord: five per
   twenty seconds); a change inside the window goes when it ends.
