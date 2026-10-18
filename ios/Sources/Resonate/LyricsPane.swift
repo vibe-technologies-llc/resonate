@@ -10,10 +10,12 @@ struct LyricsPane: View {
 
     let track: Track?
     let compact: Bool
+    let addLyrics: (() -> Void)?
 
-    init(track: Track?, compact: Bool = false) {
+    init(track: Track?, compact: Bool = false, addLyrics: (() -> Void)? = nil) {
         self.track = track
         self.compact = compact
+        self.addLyrics = addLyrics
         _stage = State(initialValue: LyricStage())
     }
 
@@ -32,15 +34,20 @@ struct LyricsPane: View {
             } else if features.lyricsLoading || sheet == nil {
                 looking
             } else {
-                ContentUnavailableView(
-                    "No lyrics",
-                    systemImage: "quote.bubble",
-                    description: Text(
+                ContentUnavailableView {
+                    Label("No lyrics", systemImage: "quote.bubble")
+                } description: {
+                    Text(
                         features.online
                             ? "No lyrics found for this song"
                             : "No saved lyrics. Enable online features to look them up, or add an LRC beside the song."
                     )
-                )
+                } actions: {
+                    if let addLyrics {
+                        Button("Add lyrics…", systemImage: "text.badge.plus", action: addLyrics)
+                            .buttonStyle(.glass)
+                    }
+                }
             }
         }
         .task(id: track?.id) {

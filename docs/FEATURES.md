@@ -52,8 +52,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] Destructive edits on iOS have no undo: swipe, menu and `onDelete` removal from the queue,
   *Forget* on a per-output curve, and swiping down on the tag editor, *Add songs* and the filter
   sheet drops what was typed; a *Mixed* tag field cannot be cleared (blank reads as unchanged)
-- [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
-  caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

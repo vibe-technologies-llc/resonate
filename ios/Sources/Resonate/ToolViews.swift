@@ -3,13 +3,14 @@ import SwiftUI
 
 struct LyricsView: View {
     @Environment(Library.self) private var library
+    @State private var writing: LyricWriting?
     let chosen: Track?
 
     var body: some View {
         let features = library.features
         let track = chosen ?? library.playingTrack
         let sheet = features.lyrics?.trackId == track?.id ? features.lyrics : nil
-        LyricsPane(track: track, compact: false)
+        LyricsPane(track: track, compact: false, addLyrics: track.map { song in { writing = LyricWriting(track: song) } })
             .safeAreaInset(edge: .bottom) {
                 if let sheet, !sheet.lines.isEmpty {
                     LyricAttribution(sheet: sheet)
@@ -19,10 +20,70 @@ struct LyricsView: View {
             .navigationTitle(track?.shownTitle ?? "Lyrics")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if features.online, let track {
-                    Button("Refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
+                if let track {
+                    Menu {
+                        if features.online {
+                            Button("Refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
+                        }
+                        Button("Add lyrics…", systemImage: "text.badge.plus") {
+                            writing = LyricWriting(track: track)
+                        }
+                    } label: {
+                        Label("Lyrics options", systemImage: "ellipsis")
+                    }
                 }
             }
+            .sheet(item: $writing) { LyricWriter(track: $0.track) }
+    }
+}
+
+struct LyricWriting: Identifiable {
+    let track: Track
+    var id: UInt64 { track.id }
+}
+
+struct LyricWriter: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    let track: Track
+
+    var body: some View {
+        let blank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        NavigationStack {
+            Form {
+                Section {
+                    TextEditor(text: $text)
+                        .font(.body.monospaced())
+                        .frame(minHeight: 240)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Lyrics")
+                    PasteButton(payloadType: String.self) { pasted in
+                        guard let first = pasted.first else { return }
+                        Task { @MainActor in text = first }
+                    }
+                } header: {
+                    Text(track.shownTitle)
+                } footer: {
+                    Text("Type or paste the words. Lines timed as LRC, such as [01:23.45], are followed as the song plays; plain lines are shown as they are.")
+                }
+            }
+            .navigationTitle("Lyrics")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        library.features.keepLyricText(track.id, text)
+                        dismiss()
+                    }
+                    .disabled(blank)
+                }
+            }
+        }
+        .interactiveDismissDisabled(!blank)
     }
 }
 

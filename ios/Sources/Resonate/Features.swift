@@ -1023,10 +1023,28 @@ final class Features {
     }
 
     func keepLyricText(_ id: UInt64, _ text: String) {
+        lyricRequest += 1
+        let request = lyricRequest
+        let before = lyrics?.trackId == id ? lyrics : nil
+        lyricsLoading = true
         work { [weak self] native in
-            try await Work.aside { try native.keepLyricText(id: id, text: text) }
-            self?.loadLyrics(id)
+            defer { if request == self?.lyricRequest { self?.lyricsLoading = false } }
+            let sheet = try await Work.aside {
+                try native.keepLyricText(id: id, text: text)
+                return try native.lyrics(id: id, refresh: false)
+            }
+            guard let self else { return }
+            if request == lyricRequest { lyrics = sheet }
+            library.notice(Self.told(kept: sheet, over: before))
         }
+    }
+
+    private static func told(kept sheet: LyricSheet?, over before: LyricSheet?) -> String {
+        guard let sheet, !sheet.lines.isEmpty else { return "Those lyrics could not be read" }
+        if let before, !before.lines.isEmpty, sheet == before {
+            return "The lyrics this song has are as detailed, so they stay"
+        }
+        return "Lyrics kept"
     }
 
     func songTags(_ ids: [UInt64]) async throws -> [SongTags] {

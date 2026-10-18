@@ -842,6 +842,14 @@ while offered), and following returns `HANDS_OFF` after the last touch. VoiceOve
 `LyricLineElement` per line (its text, its time, selected while lit, activating it seeks), framed
 where the line is drawn, and three-finger scrolling turns a page.
 
+**A song is given lyrics by hand** (`LyricWriter`, `ToolViews.swift`): the Lyrics page's *No
+lyrics* state offers *Add lyrics…* and its toolbar menu (*Refresh* while online, then *Add
+lyrics…*) opens the same sheet: a monospaced editor with a
+`PasteButton` (no pasteboard prompt), plain text or LRC, kept through `Features.keepLyricText`
+(`keep_lyric_text`), which reads the sheet back and says what happened: kept, unreadable, or left
+alone where the song's lyrics are as detailed (the boundary keeps a sheet only over a less detailed
+one). Typing makes the sheet refuse a swipe down, so what was typed is not dropped.
+
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
 track change, pause or drift past 250 ms takes the position as is): the position is extrapolated
 per display frame from the 250 ms poll's reading, never held between polls, and never read from
@@ -857,7 +865,7 @@ tighter gutters, no chrome. Ink follows the system's legibility settings (`Lyric
 Increase Contrast or Reduce Transparency the unlit ink is the lit ink, unsung words sit at 70 % and
 no line stands below 85 %; otherwise a sheet with nothing lit (unsynced, or the song not playing)
 stands at `ADRIFT` 0.8 over the 0.5 muted ink, since 0.45 over it read at 22 %. `LyricsView` adds
-the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
+the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution` badge.
 
 ## Artwork and details
 
