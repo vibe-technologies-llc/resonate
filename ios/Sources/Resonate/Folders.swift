@@ -64,6 +64,27 @@ struct FileStamp: Sendable {
     }
 }
 
+final class DocumentsWatch {
+    private let source: any DispatchSourceFileSystemObject
+
+    init?(changed: @escaping @Sendable () -> Void) {
+        let descriptor = Darwin.open(Folders.documentsFolder.path, O_EVTONLY | O_CLOEXEC)
+        guard descriptor >= 0 else { return nil }
+        source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: .write,
+            queue: .global(qos: .utility)
+        )
+        source.setEventHandler(handler: changed)
+        source.setCancelHandler { Darwin.close(descriptor) }
+        source.resume()
+    }
+
+    deinit {
+        source.cancel()
+    }
+}
+
 enum FolderFailure: Swift.Error, LocalizedError {
     case unknownFolder(String)
     case notAFolderUri(String)

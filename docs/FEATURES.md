@@ -43,9 +43,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## iOS parity
 - [L] Neither phone has the vault: the managed archive is built on desktop paths
-- [M] iOS never rescans on its own: a scan starts from a button or pull to refresh, so a song
-  dropped into Documents through Files (`UIFileSharingEnabled`) or a folder gaining files appears
-  only once the listener asks; missing files, by contrast, are hidden at every foregrounding
 - [M] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
   file and the retry starts again, a large FLAC included
 - [M] iOS is built universal (`UIDeviceFamily` 1 and 2, four iPad orientations, multitasking) with no

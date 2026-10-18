@@ -276,6 +276,21 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   so it walks under a `ScanStop` flag; removing a folder stops its walk. A root it cannot list fails the scan (`FolderFailure.unreadable`); a subfolder it cannot list is counted and named in the tally, and the missing-song pass after a scan runs only when the scan failed nowhere and read everything, so an offline File Provider folder never hides its songs as missing. The scan's notice
   gives its reasons: the first unreadable song and why, and the covers and lyrics sheets that
   could not be kept, with the first of those.
+- **The folders are read again on their own** (`Library.rescanUnasked`): every granted folder and
+  Documents once the catalog has been read at a launch in the foreground and whenever the scene comes
+  forward after `.background`, and Documents alone 2 s after its listing last changed while the scene
+  is active (`DocumentsWatch`, a vnode `.write` source on the folder, which a song dropped in over
+  Files or Finder moves; Resonate's own writes there move it too and cost a walk of stamps). The
+  scans join the listener's chain (`QueuedScan`, `asked: false`), so organise and the scans before
+  them keep their order; one runs at a time, a folder already queued is not queued again, and asks
+  arriving meanwhile coalesce into one more pass (`owedRescan`, `RescanScope`). Such a scan compares
+  each answer with the catalog shown (`KnownDocuments`, built on `Work.aside`): an unchanged song
+  keeps no cover or lyrics sheet again and counts for nothing, so a pass that finds nothing new shows
+  no line, reads no catalog and tells nothing; the live line appears with the first new or changed
+  song and a notice counts them (*Found N new or changed songs*). It never runs the missing-song pass,
+  which coming forward already runs; a failing root is told once per distinct text. A listener's scan
+  asked for a folder an unasked one holds turns that one into the listener's (queued), or queues
+  behind it (running), so a rescan always keeps covers and sheets afresh.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
   (a route report asked while another is reading is the one applied, carrying any rebind owed), reports the route to Rust,
   pauses on an interruption (resuming when the system says so, whether it began while playing or loading, as `Library.pause` pauses both) and when the old route disappears,

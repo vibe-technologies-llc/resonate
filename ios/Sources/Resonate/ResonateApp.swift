@@ -411,7 +411,7 @@ struct StatusBanner: View {
     var body: some View {
         let arrival: AnyTransition = reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
         VStack(spacing: 8) {
-            if library.scanning {
+            if library.scanShown {
                 ScanProgress()
                     .transition(arrival)
             }
@@ -426,7 +426,7 @@ struct StatusBanner: View {
             }
         }
         .motion(.smooth, calm: Self.fade, value: library.status)
-        .motion(.smooth, calm: Self.fade, value: library.scanning)
+        .motion(.smooth, calm: Self.fade, value: library.scanShown)
         .motion(.smooth, calm: Self.fade, value: library.features.syncActivity == nil)
     }
 }

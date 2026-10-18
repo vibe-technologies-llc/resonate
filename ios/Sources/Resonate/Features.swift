@@ -517,6 +517,7 @@ final class Features {
             }
         }
         guard wasAway else { return }
+        library.rescanUnasked(.everything)
         guard syncRuns else {
             Task { [weak self] in await self?.library.forgetMissing() }
             return

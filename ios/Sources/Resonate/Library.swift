@@ -139,6 +139,7 @@ final class Library {
     private static let pollBackgroundPlaying: Duration = .milliseconds(500)
     private static let pollBackgroundIdle: Duration = .seconds(2)
     private static let noticeLasts: Duration = .seconds(6)
+    private static let documentsSettleFor: Duration = .seconds(2)
 
     nonisolated static var supportFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -184,6 +185,7 @@ final class Library {
     private(set) var playingNext: Range<Int>?
     var status: StatusMessage?
     var scanning = false
+    private(set) var scanTold = false
     private(set) var erasing = false
     private(set) var erasedLeaving: ErasureLeftovers?
     var scanned = 0
@@ -220,7 +222,12 @@ final class Library {
     @ObservationIgnored private let enqueue: AsyncStream<NativeAction>.Continuation
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var scanTask: Task<Void, Never>?
-    @ObservationIgnored private var queuedScans: [String] = []
+    @ObservationIgnored private var queuedScans: [QueuedScan] = []
+    @ObservationIgnored private var unaskedRescan: Task<Void, Never>?
+    @ObservationIgnored private var owedRescan: RescanScope?
+    @ObservationIgnored private var unaskedScanFailure: String?
+    @ObservationIgnored private var documentsWatch: DocumentsWatch?
+    @ObservationIgnored private var documentsSettle: Task<Void, Never>?
     @ObservationIgnored private var scanningFolder: String?
     @ObservationIgnored private var scanStopped = false
     @ObservationIgnored private var queryRequest = 0
@@ -285,7 +292,11 @@ final class Library {
                 waiting.removeAll()
                 nowPlaying.start(opened)
                 features.initialize(opened)
-                Task { await refresh() }
+                watchDocuments()
+                Task {
+                    await refresh()
+                    if UIApplication.shared.applicationState != .background { rescanUnasked(.everything) }
+                }
                 await poll(opened)
             } catch {
                 guard let self else { return }
@@ -806,6 +817,8 @@ final class Library {
         updatePreferences { var next = $0; next.equaliser = curve; return next }
     }
 
+    var scanShown: Bool { scanning && (scanTold || scanned > 0) }
+
     var catalogEmpty: Bool { catalogRead && allTracks.isEmpty && !scanning }
     var filtering: Bool { filter != defaultTrackFilter() }
 
@@ -975,7 +988,7 @@ final class Library {
     }
 
     func removeFolder(_ folder: MusicFolder) {
-        queuedScans.removeAll { $0 == folder.id }
+        queuedScans.removeAll { $0.folder == folder.id }
         if scanningFolder == folder.id { scanStopped = true }
         let folders = folders
         Task { [weak self] in
@@ -1023,18 +1036,76 @@ final class Library {
 
     func stopScanning() {
         queuedScans.removeAll()
+        owedRescan = nil
         guard let scanningFolder else { return }
         scanStopped = true
         folders.stopScanning(scanningFolder)
     }
 
     func scan(_ id: String) {
-        guard !queuedScans.contains(id), scanningFolder != id else { return }
-        queuedScans.append(id)
+        guard !queuedScans.contains(QueuedScan(folder: id, asked: true)), scanningFolder != id || !scanTold else { return }
+        if let unasked = queuedScans.firstIndex(of: QueuedScan(folder: id, asked: false)) {
+            queuedScans[unasked] = QueuedScan(folder: id, asked: true)
+            return
+        }
+        chainScan(QueuedScan(folder: id, asked: true))
+    }
+
+    func rescanUnasked(_ scope: RescanScope) {
+        guard !erasing, catalogRead else { return }
+        guard unaskedRescan == nil else {
+            owedRescan = owedRescan.map { $0.joined(with: scope) } ?? scope
+            return
+        }
+        unaskedRescan = Task { [weak self] in
+            var next: RescanScope? = scope
+            while let scope = next, !Task.isCancelled {
+                guard let self else { return }
+                await rescanFolders(scope)
+                next = owedRescan
+                owedRescan = nil
+            }
+            self?.unaskedRescan = nil
+        }
+    }
+
+    private func rescanFolders(_ scope: RescanScope) async {
+        let roots: [String]
+        switch scope {
+        case .everything:
+            await remeasureFolders()
+            roots = folderList.filter(\.readable).map(\.id)
+        case .documents:
+            roots = [Folders.local]
+        }
+        for root in roots where !queuedScans.contains(where: { $0.folder == root }) {
+            chainScan(QueuedScan(folder: root, asked: false))
+        }
+        await scanTask?.value
+    }
+
+    private func chainScan(_ queued: QueuedScan) {
+        queuedScans.append(queued)
         let previous = scanTask
         scanTask = Task { [weak self] in
             await previous?.value
-            await self?.walk(id)
+            await self?.walk(queued.folder)
+        }
+    }
+
+    private func watchDocuments() {
+        documentsWatch = DocumentsWatch { [weak self] in
+            Task { @MainActor in self?.documentsChanged() }
+        }
+    }
+
+    private func documentsChanged() {
+        guard features.foreground, !erasing else { return }
+        documentsSettle?.cancel()
+        documentsSettle = Task { [weak self] in
+            try? await Task.sleep(for: Self.documentsSettleFor)
+            guard !Task.isCancelled else { return }
+            self?.rescanUnasked(.documents)
         }
     }
 
@@ -1048,23 +1119,27 @@ final class Library {
     }
 
     private func walk(_ id: String) async {
-        guard let queued = queuedScans.firstIndex(of: id) else { return }
-        queuedScans.remove(at: queued)
+        guard let queued = queuedScans.firstIndex(where: { $0.folder == id }) else { return }
+        let asked = queuedScans.remove(at: queued).asked
         guard let native = try? await player() else { return }
         let folders = folders
         let tally = Tally()
+        let shown = asked ? nil : allTracks
 
         scanning = true
+        scanTold = asked
         scanned = 0
         scanStopped = false
         scanningFolder = id
         defer {
             scanningFolder = nil
             scanning = false
+            scanTold = false
         }
         var failure: (any Swift.Error)?
         do {
             try await Work.aside { [weak self] in
+                let known = shown.map(KnownDocuments.init)
                 let covers = FolderCovers(folders: folders, native: native, tally: tally)
                 defer { covers.flush() }
                 try folders.scan(id, skipped: { path, reason in tally.skipped(path, reason) }) { document in
@@ -1075,6 +1150,7 @@ final class Library {
                             size: document.size,
                             modifiedMs: document.modifiedMs
                         )
+                        if let known, known.holds(track) { return }
                         if let read = tally.indexed() { Task { @MainActor in self?.reached(read) } }
                         covers.add(track.id, cover: document.cover, named: document.name)
                         if let lyrics = document.lyrics, let bytes = folders.companion(lyrics, sidecar: true) {
@@ -1092,6 +1168,10 @@ final class Library {
         } catch {
             failure = error
         }
+        guard asked else {
+            await settleUnasked(tally, failure: failure)
+            return
+        }
         await refresh()
         await features.reloadOpenPlaylist()
         if !scanStopped, failure == nil, tally.complete { await forgetMissing() }
@@ -1101,6 +1181,27 @@ final class Library {
             report(failure)
         } else {
             notice(scanStopped ? tally.stoppedSummary : tally.summary)
+        }
+    }
+
+    private func settleUnasked(_ tally: Tally, failure: (any Swift.Error)?) async {
+        if tally.count > 0 {
+            await refresh()
+            await features.reloadOpenPlaylist()
+            features.scanned()
+        }
+        await remeasureFolders()
+        if let failure {
+            let text = explained(failure)
+            if text != unaskedScanFailure { report(failure) }
+            unaskedScanFailure = text
+            return
+        }
+        unaskedScanFailure = nil
+        if scanStopped {
+            notice(tally.stoppedSummary)
+        } else if tally.count > 0 {
+            notice(tally.foundSummary)
         }
     }
 
@@ -1292,6 +1393,10 @@ final class Library {
             }
             polling?.cancel()
             queuedScans.removeAll()
+            owedRescan = nil
+            unaskedRescan?.cancel()
+            documentsSettle?.cancel()
+            documentsWatch = nil
             scanTask?.cancel()
             if let scanningFolder {
                 scanStopped = true
@@ -1357,6 +1462,35 @@ enum RepeatMode: CaseIterable {
         case .all: "All songs"
         case .one: "This song"
         }
+    }
+}
+
+struct QueuedScan: Equatable {
+    let folder: String
+    let asked: Bool
+}
+
+enum RescanScope {
+    case everything
+    case documents
+
+    func joined(with other: RescanScope) -> RescanScope {
+        self == .documents && other == .documents ? .documents : .everything
+    }
+}
+
+struct KnownDocuments {
+    private let byUri: [String: Track]
+
+    init(_ rows: [Track]) {
+        byUri = Dictionary(rows.map { ($0.uri, $0) }, uniquingKeysWith: { kept, _ in kept })
+    }
+
+    func holds(_ track: Track) -> Bool {
+        guard var known = byUri[track.uri] else { return false }
+        known.favourite = track.favourite
+        known.queueId = track.queueId
+        return known == track
     }
 }
 
@@ -1447,8 +1581,16 @@ final class Tally: @unchecked Sendable {
         }
     }
 
+    var count: Int {
+        lock.withLock { read }
+    }
+
     var summary: String {
         lock.withLock { "Read \(counted(read, "song"))" + trouble }
+    }
+
+    var foundSummary: String {
+        lock.withLock { "Found \(counted(read, "new or changed song"))" + trouble }
     }
 
     var stoppedSummary: String {
