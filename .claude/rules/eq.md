@@ -332,6 +332,15 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   it back as it was (`a_curve_kept_as_text_reads_back_as_the_same_curve`). Both phones store that
   text under `equaliser-curve` and the name under `equaliser-curve-name`, in the `playback` suite or
   `SharedPreferences`.
+- **The named presets are one table both phones read**: `equaliser_presets` answers Flat, Bass
+  boost, Bass only, Bass cut, Vocals, Warm, Bright, Rock and Electronic in that order, each a name,
+  a line saying what it does and its curve: Flat the default curve (no bands, no name), the rest ten
+  octave bands named for the preset. Boosted presets lower the preamp for headroom, except Bass
+  only, which raises the three lowest octaves and leaves every other band and the preamp at 0 dB
+  (`every_preset_is_a_named_octave_curve_and_only_bass_only_boosts_without_lowering_the_preamp`).
+  A phone keeps only each preset's icon, keyed by name. A curve is shown as a preset where its name
+  is the preset's, or as Flat where it has no gain anywhere; editing a band or the preamp clears the
+  name.
 - **Ten octave bands are a migration and a layout, not the model**: `ten_band_curve(preamp, gains)`
   is ten peaking bands at `EQUALISER_CENTRES` (31.25 Hz to 16 kHz) with Q √2, a non-finite level
   flat, the rest held to the bounds; `ten_band_gains` answers the gains only for a curve of exactly

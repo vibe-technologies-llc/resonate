@@ -7,6 +7,69 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate_android/model.dart';
 import 'package:resonate_android/settings.dart';
 
+const centres = [
+  31.25,
+  62.5,
+  125.0,
+  250.0,
+  500.0,
+  1000.0,
+  2000.0,
+  4000.0,
+  8000.0,
+  16000.0,
+];
+
+RowData preset(String name, String detail, double preamp, List<double> gains) =>
+    {
+      'name': name,
+      'detail': detail,
+      'curve': {
+        'name': gains.isEmpty ? '' : name,
+        'preampDb': preamp,
+        'bands': [
+          for (var i = 0; i < gains.length; i++)
+            {
+              'filter': 'PEAKING',
+              'frequencyHz': centres[i],
+              'gainDb': gains[i],
+              'q': 1.4142135,
+            },
+        ],
+      },
+    };
+
+final presets = [
+  preset('Flat', 'An uncoloured starting point.', 0, []),
+  preset('Bass boost', 'More weight and punch in the low end.', -6, [
+    4, 4, 2, 0, -1, -1, 0, 0, 0, 0,
+  ]),
+  preset(
+    'Bass only',
+    'More bass. Mids, treble and output gain stay unchanged.',
+    0,
+    [4, 4, 2, 0, 0, 0, 0, 0, 0, 0],
+  ),
+  preset('Bass cut', 'Less rumble, with the rest left clear.', 0, [
+    -5, -4, -3, -1, 0, 0, 0, 0, 0, 0,
+  ]),
+  preset('Vocals', 'Bring voices and lead instruments forward.', -5, [
+    -2, -1, 0, 1, 2, 3, 3, 1, 0, -1,
+  ]),
+  preset('Warm', 'Fuller lows and a softer top end.', -5, [
+    2, 3, 2, 1, 0, 0, -1, -2, -2, -2,
+  ]),
+  preset('Bright', 'A little more sparkle and detail.', -5, [
+    -1, -1, 0, 0, 0, 1, 2, 3, 3, 2,
+  ]),
+  preset('Rock', 'Punchy lows, crisp guitars and drums.', -5, [
+    3, 2, 0, -1, -2, 0, 2, 3, 3, 2,
+  ]),
+  preset('Electronic', 'Deep bass with a lively, open top end.', -6, [
+    4, 3, 1, 0, -2, -1, 1, 2, 3, 3,
+  ]),
+];
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('resonate/eq-test');
@@ -34,19 +97,9 @@ void main() {
                   'preampAtMostDb': 24.0,
                   'gainAtMostDb': 24.0,
                 },
-                'frequencies': [
-                  31.25,
-                  62.5,
-                  125.0,
-                  250.0,
-                  500.0,
-                  1000.0,
-                  2000.0,
-                  4000.0,
-                  8000.0,
-                  16000.0,
-                ],
+                'frequencies': centres,
                 'response': [0.0, 0.0],
+                'presets': presets,
               };
             case 'fittedPreamp':
               return -6.25;

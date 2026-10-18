@@ -987,7 +987,20 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
 
 ## The equaliser
 
-- **The curve is drawn and shaped on a graph** (`EqualiserGraph.swift`, in `SoundSettingsView`):
+- **The page leads with the presets, as Android's does** (`SoundSettingsView`): the switch, then
+  `EqualiserPresetGrid`, a grid of capsules of the boundary's `equaliser_presets` (`eq.md`'s *The
+  phones*; only the SF Symbol is iOS's, `EqualiserPreset.mark`), the chosen one in the accent and its
+  line under the grid. A preset replaces the curve and switches the equaliser on. *Adjust sound*
+  chooses *Sliders* (the default) or *Advanced* and holds *Reset curve*. Sliders are
+  `EqualiserSliders`: a `BandGainSlider` per gain band, named by its audible range (Sub-bass to Air,
+  `EqualiserUnits.range`) over its frequency, reading its signed gain live and committing on release (switching the equaliser on),
+  reaching ±12 dB or the band's own gain where more; a gainless band is a row whose *Edit* opens it in
+  Advanced. A curve with no bands shows ten flat octave sliders, the bands made by the first edit.
+  Advanced holds the graph, *Add a band* and the inspector below. *Output gain* is the preamp slider
+  and *Fit the preamp*. Every band, preamp or fit edit clears the curve's name, so a moved preset or
+  AutoEq curve no longer reads as one; a preset or a correction loaded names it.
+- **The curve is drawn and shaped on a graph** (`EqualiserGraph.swift`, in `SoundSettingsView`'s
+  *Advanced*):
   log frequency 20 Hz to 20 kHz across, decibels up, gridlines every 5 dB with 0 dB marked and the
   edges labelled, 100, 1k and 10k labelled among fainter decade lines. The span is ±15 dB widened in
   5 dB steps to hold the response and the handles, at most ±30 (a pass filter's floor is clipped),
@@ -1007,9 +1020,9 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   cannot linger.
 - **The selected band's inspector** is a section below: type (all eight kinds), frequency, gain
   (gain kinds only) and Q, each typed (committed on return) or stepped (a semitone, 0.5 dB, a sixth
-  of an octave of Q), and Delete. Then the preamp slider, *Fit the preamp* (`fitted_preamp` on
-  `Work.aside` at the stream's rate, committed as a preamp move is; off with no bands), *Add a band*
-  (1 kHz) and *Reset*, which
+  of an octave of Q), and Delete. *Fit the preamp* asks `fitted_preamp` on `Work.aside` at the
+  stream's rate and commits it as a preamp move is; it is off with no bands. *Add a band* adds a
+  peaking band at 1 kHz; *Reset* in *Adjust sound*
   confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each
   handle as an adjustable element, labelled with its number, kind and frequency, valued with its
   gain and Q: swiping steps the gain 0.5 dB (Q, for a gainless kind), activating selects it.

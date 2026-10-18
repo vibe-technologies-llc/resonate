@@ -385,7 +385,10 @@ struct SoundSettingsView: View {
     @State private var model = ""
     @State private var pending: PendingProfile?
     @State private var choosingFile = false
+    @State private var advanced = false
     private static let limits = equaliserLimits()
+    private static let presets = equaliserPresets()
+    private static let octaves = tenBandCurve(preampDb: 0, gainsDb: [])
     private static let addedHz: Float = 1000
     private static let settle: Duration = .seconds(1)
     private static let searchSettles: Duration = .milliseconds(350)
@@ -417,31 +420,72 @@ struct SoundSettingsView: View {
                         ? "This curve is kept for this output and comes back whenever it plays. Other outputs use their own curve or the shared one."
                         : "This curve is shared by every output without a curve of its own.")
                 }
+                let preset = Self.presets.first { $0.name == curve.presetName }
                 Section {
-                    EqualiserGraph(
-                        curve: curve,
-                        response: response.decibels,
-                        limits: Self.limits,
-                        selected: $selected,
-                        holding: $holding,
-                        edit: { draft = $0 },
-                        commit: { commit($0) },
-                        add: { add($0, to: curve) },
-                        discard: { draft = nil }
-                    )
-                    .frame(height: 280)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+                    EqualiserPresetGrid(presets: Self.presets, chosen: preset?.name, choose: apply)
+                } header: {
+                    Text("Presets")
                 } footer: {
-                    Text("Tap the graph to add a band. Drag a point to move it, and pinch to widen or narrow the band it holds or the one selected.")
+                    Text(preset?.detail ?? "Your own sound. Adjust the sliders to make it yours.")
                 }
-                if let selected, curve.bands.indices.contains(selected) {
-                    BandInspector(
-                        band: curve.bands[selected],
-                        number: selected + 1,
-                        limits: Self.limits,
-                        change: { commit(curve.replacing(selected, with: $0)) },
-                        delete: { remove(selected, from: curve) }
-                    )
+                Section {
+                    Picker("Adjust sound", selection: $advanced) {
+                        Text("Sliders").tag(false)
+                        Text("Advanced").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Button("Reset curve", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
+                        .disabled(curve == .flat)
+                } header: {
+                    Text("Adjust sound")
+                } footer: {
+                    Text(advanced ? "Select a band below or drag a point on the graph." : "Slide left to reduce, right to boost.")
+                }
+                if advanced {
+                    Section {
+                        EqualiserGraph(
+                            curve: curve,
+                            response: response.decibels,
+                            limits: Self.limits,
+                            selected: $selected,
+                            holding: $holding,
+                            edit: { draft = $0 },
+                            commit: { edited($0) },
+                            add: { add($0, to: curve) },
+                            discard: { draft = nil }
+                        )
+                        .frame(height: 280)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+                        Button("Add a band", systemImage: "plus") {
+                            add(EqualiserBand(filter: .peaking, frequencyHz: Self.addedHz, gainDb: 0, q: EqualiserUnits.addedQ), to: curve)
+                        }
+                        .disabled(curve.bands.count >= Int(Self.limits.bandsAtMost))
+                    } footer: {
+                        Text("Tap the graph to add a band. Drag a point to move it, and pinch to widen or narrow the band it holds or the one selected.")
+                    }
+                    if let selected, curve.bands.indices.contains(selected) {
+                        BandInspector(
+                            band: curve.bands[selected],
+                            number: selected + 1,
+                            limits: Self.limits,
+                            change: { edited(curve.replacing(selected, with: $0)) },
+                            delete: { remove(selected, from: curve) }
+                        )
+                    }
+                } else {
+                    let shaped = sliding(curve)
+                    Section {
+                        EqualiserSliders(
+                            curve: shaped,
+                            limits: Self.limits,
+                            change: { index, gain in slide(index, to: gain, in: shaped) },
+                            open: { index in
+                                selected = index
+                                advanced = true
+                            }
+                        )
+                    }
                 }
                 Section {
                     LevelSlider(
@@ -451,16 +495,12 @@ struct SoundSettingsView: View {
                     ) { gain in
                         var next = curve
                         next.preampDb = gain
-                        commit(next)
+                        edited(next)
                     }
                     Button("Fit the preamp", systemImage: "arrow.up.to.line") { fit(curve) }
                         .disabled(curve.bands.isEmpty)
-                    Button("Add a band", systemImage: "plus") {
-                        add(EqualiserBand(filter: .peaking, frequencyHz: Self.addedHz, gainDb: 0, q: EqualiserUnits.addedQ), to: curve)
-                    }
-                    .disabled(curve.bands.count >= Int(Self.limits.bandsAtMost))
-                    Button("Reset curve", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
-                        .disabled(curve == .flat)
+                } header: {
+                    Text("Output gain")
                 } footer: {
                     Text("Fit the preamp sets it from the curve's own peak, so the loudest part of it reaches full scale and no further.")
                 }
@@ -560,11 +600,36 @@ struct SoundSettingsView: View {
                 let fitted = try await Work.aside { try fittedPreamp(curve: curve, rateHz: asked) }
                 var next = curve
                 next.preampDb = fitted
-                commit(next)
+                edited(next)
             } catch {
                 library.report(error)
             }
         }
+    }
+
+    private func apply(_ preset: EqualiserPreset) {
+        selected = nil
+        commit(preset.curve, switchingOn: true)
+    }
+
+    private func edited(_ curve: EqualiserCurve, switchingOn: Bool = false) {
+        var next = curve
+        next.name = ""
+        commit(next, switchingOn: switchingOn)
+    }
+
+    private func sliding(_ curve: EqualiserCurve) -> EqualiserCurve {
+        guard curve.bands.isEmpty else { return curve }
+        var octaves = Self.octaves
+        octaves.preampDb = curve.preampDb
+        return octaves
+    }
+
+    private func slide(_ index: Int, to gain: Float, in curve: EqualiserCurve) {
+        guard curve.bands.indices.contains(index) else { return }
+        var band = curve.bands[index]
+        band.gainDb = gain
+        edited(curve.replacing(index, with: band), switchingOn: true)
     }
 
     private func add(_ band: EqualiserBand, to curve: EqualiserCurve) {
@@ -572,7 +637,7 @@ struct SoundSettingsView: View {
         var next = curve
         next.bands.append(band)
         selected = next.bands.count - 1
-        commit(next, switchingOn: true)
+        edited(next, switchingOn: true)
     }
 
     private func remove(_ index: Int, from curve: EqualiserCurve) {
@@ -580,7 +645,7 @@ struct SoundSettingsView: View {
         var next = curve
         next.bands.remove(at: index)
         selected = nil
-        commit(next)
+        edited(next)
     }
 
     private func replace(with curve: EqualiserCurve) {

@@ -82,6 +82,95 @@ pub struct EqualiserCurve {
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct EqualiserPreset {
+    pub name: String,
+    pub detail: String,
+    pub curve: EqualiserCurve,
+}
+
+type OctaveGains = [f32; EQUALISER_CENTRES.len()];
+
+struct Preset {
+    name: &'static str,
+    detail: &'static str,
+    preamp_db: f32,
+    octaves: Option<OctaveGains>,
+}
+
+const PRESETS: [Preset; 9] = [
+    Preset {
+        name: "Flat",
+        detail: "An uncoloured starting point.",
+        preamp_db: 0.0,
+        octaves: None,
+    },
+    Preset {
+        name: "Bass boost",
+        detail: "More weight and punch in the low end.",
+        preamp_db: -6.0,
+        octaves: Some([4.0, 4.0, 2.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]),
+    },
+    Preset {
+        name: "Bass only",
+        detail: "More bass. Mids, treble and output gain stay unchanged.",
+        preamp_db: 0.0,
+        octaves: Some([4.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    },
+    Preset {
+        name: "Bass cut",
+        detail: "Less rumble, with the rest left clear.",
+        preamp_db: 0.0,
+        octaves: Some([-5.0, -4.0, -3.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    },
+    Preset {
+        name: "Vocals",
+        detail: "Bring voices and lead instruments forward.",
+        preamp_db: -5.0,
+        octaves: Some([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 3.0, 1.0, 0.0, -1.0]),
+    },
+    Preset {
+        name: "Warm",
+        detail: "Fuller lows and a softer top end.",
+        preamp_db: -5.0,
+        octaves: Some([2.0, 3.0, 2.0, 1.0, 0.0, 0.0, -1.0, -2.0, -2.0, -2.0]),
+    },
+    Preset {
+        name: "Bright",
+        detail: "A little more sparkle and detail.",
+        preamp_db: -5.0,
+        octaves: Some([-1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 2.0]),
+    },
+    Preset {
+        name: "Rock",
+        detail: "Punchy lows, crisp guitars and drums.",
+        preamp_db: -5.0,
+        octaves: Some([3.0, 2.0, 0.0, -1.0, -2.0, 0.0, 2.0, 3.0, 3.0, 2.0]),
+    },
+    Preset {
+        name: "Electronic",
+        detail: "Deep bass with a lively, open top end.",
+        preamp_db: -6.0,
+        octaves: Some([4.0, 3.0, 1.0, 0.0, -2.0, -1.0, 1.0, 2.0, 3.0, 3.0]),
+    },
+];
+
+impl Preset {
+    fn offered(&self) -> EqualiserPreset {
+        let curve = self
+            .octaves
+            .map_or_else(EqualiserCurve::default, |gains| EqualiserCurve {
+                name: self.name.to_owned(),
+                ..EqualiserCurve::ten_bands(self.preamp_db, &gains)
+            });
+        EqualiserPreset {
+            name: self.name.to_owned(),
+            detail: self.detail.to_owned(),
+            curve,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct EqualiserImport {
     pub curve: EqualiserCurve,
     pub passed_over: u32,
@@ -280,6 +369,11 @@ pub fn equaliser_limits() -> EqualiserLimits {
 #[uniffi::export]
 pub fn equaliser_frequencies() -> Vec<f64> {
     EQUALISER_CENTRES.to_vec()
+}
+
+#[uniffi::export]
+pub fn equaliser_presets() -> Vec<EqualiserPreset> {
+    PRESETS.iter().map(Preset::offered).collect()
 }
 
 #[uniffi::export]
@@ -585,6 +679,57 @@ mod tests {
         assert_eq!(migrated.bands[1].gain_db, GAIN_AT_MOST_DB);
         assert_eq!(migrated.bands[9].gain_db, 0.0);
         assert!(migrated.profile().is_ok());
+    }
+
+    #[test]
+    fn every_preset_is_a_named_octave_curve_and_only_bass_only_boosts_without_lowering_the_preamp()
+    {
+        let presets = equaliser_presets();
+        let names: Vec<&str> = presets.iter().map(|preset| preset.name.as_str()).collect();
+        let flat = &presets[0];
+        let bass_only = presets
+            .iter()
+            .find(|preset| preset.name == "Bass only")
+            .expect("a Bass only preset");
+        let bass_only_gains = ten_band_gains(bass_only.curve.clone()).expect("octave bands");
+
+        assert_eq!(
+            names,
+            [
+                "Flat",
+                "Bass boost",
+                "Bass only",
+                "Bass cut",
+                "Vocals",
+                "Warm",
+                "Bright",
+                "Rock",
+                "Electronic"
+            ]
+        );
+        assert_eq!(flat.curve, EqualiserCurve::default());
+        assert_eq!(bass_only.curve.preamp_db, 0.0);
+        assert!(bass_only_gains[..3].iter().all(|&gain| gain > 0.0));
+        assert!(bass_only_gains[3..].iter().all(|&gain| gain == 0.0));
+        for preset in &presets[1..] {
+            let gains = ten_band_gains(preset.curve.clone()).expect("octave bands");
+            let boosts = gains.iter().any(|&gain| gain > 0.0);
+
+            assert_eq!(preset.curve.name, preset.name);
+            assert!(
+                preset.curve.profile().is_ok(),
+                "{} is a valid curve",
+                preset.name
+            );
+            assert!(!preset.detail.is_empty());
+            if boosts && preset.name != "Bass only" {
+                assert!(
+                    preset.curve.preamp_db < 0.0,
+                    "{} boosts without headroom",
+                    preset.name
+                );
+            }
+        }
     }
 
     #[test]

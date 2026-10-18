@@ -140,6 +140,12 @@ internal fun flutterValue(value: Any?): Any? =
                 "clamped" to flutterValue(value.`clamped`),
                 "converted" to flutterValue(value.`converted`),
             )
+        is EqualiserPreset ->
+            mapOf(
+                "name" to flutterValue(value.`name`),
+                "detail" to flutterValue(value.`detail`),
+                "curve" to flutterValue(value.`curve`),
+            )
         is EqualiserLimits ->
             mapOf(
                 "bandsAtMost" to flutterValue(value.`bandsAtMost`),

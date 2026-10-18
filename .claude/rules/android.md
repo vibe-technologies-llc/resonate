@@ -363,7 +363,8 @@ open collection rows resolve current metadata by catalog id so favourite changes
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
-Android routes; no UI implies a per-device binding. Android opens on nine named presets and
+Android routes; no UI implies a per-device binding. Android opens on the boundary's nine named
+presets (`equaliser_presets`, handed over in `equaliserInfo`; `eq.md`'s *The phones*) and
 frequency sliders labelled by their audible range, with live signed gain values. Selecting a
 preset enables the equaliser and stores its name and curve through the existing preferences;
 boosted presets lower the preamp to leave headroom, except Bass only: it raises the three lowest

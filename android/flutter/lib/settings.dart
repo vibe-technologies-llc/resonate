@@ -985,91 +985,23 @@ String _eqRange(double hertz) => switch (hertz) {
   _ => 'Air',
 };
 
-class _EqualiserPreset {
-  const _EqualiserPreset(
-    this.name,
-    this.detail,
-    this.icon,
-    this.preamp,
-    this.gains,
-  );
-  final String name;
-  final String detail;
-  final IconData icon;
-  final double preamp;
-  final List<double> gains;
-}
-
-const _equaliserPresets = [
-  _EqualiserPreset(
-    'Flat',
-    'An uncoloured starting point.',
-    Icons.horizontal_rule_rounded,
-    0,
-    [],
-  ),
-  _EqualiserPreset(
-    'Bass boost',
-    'More weight and punch in the low end.',
-    Icons.speaker_rounded,
-    -6,
-    [4, 4, 2, 0, -1, -1, 0, 0, 0, 0],
-  ),
-  _EqualiserPreset(
-    'Bass only',
-    'More bass. Mids, treble and output gain stay unchanged.',
-    Icons.speaker_group_rounded,
-    0,
-    [4, 4, 2, 0, 0, 0, 0, 0, 0, 0],
-  ),
-  _EqualiserPreset(
-    'Bass cut',
-    'Less rumble, with the rest left clear.',
-    Icons.waves_rounded,
-    0,
-    [-5, -4, -3, -1, 0, 0, 0, 0, 0, 0],
-  ),
-  _EqualiserPreset(
-    'Vocals',
-    'Bring voices and lead instruments forward.',
-    Icons.mic_none_rounded,
-    -5,
-    [-2, -1, 0, 1, 2, 3, 3, 1, 0, -1],
-  ),
-  _EqualiserPreset(
-    'Warm',
-    'Fuller lows and a softer top end.',
-    Icons.wb_sunny_outlined,
-    -5,
-    [2, 3, 2, 1, 0, 0, -1, -2, -2, -2],
-  ),
-  _EqualiserPreset(
-    'Bright',
-    'A little more sparkle and detail.',
-    Icons.auto_awesome_outlined,
-    -5,
-    [-1, -1, 0, 0, 0, 1, 2, 3, 3, 2],
-  ),
-  _EqualiserPreset(
-    'Rock',
-    'Punchy lows, crisp guitars and drums.',
-    Icons.music_note_rounded,
-    -5,
-    [3, 2, 0, -1, -2, 0, 2, 3, 3, 2],
-  ),
-  _EqualiserPreset(
-    'Electronic',
-    'Deep bass with a lively, open top end.',
-    Icons.graphic_eq_rounded,
-    -6,
-    [4, 3, 1, 0, -2, -1, 1, 2, 3, 3],
-  ),
-];
+const _presetIcons = {
+  'Flat': Icons.horizontal_rule_rounded,
+  'Bass boost': Icons.speaker_rounded,
+  'Bass only': Icons.speaker_group_rounded,
+  'Bass cut': Icons.waves_rounded,
+  'Vocals': Icons.mic_none_rounded,
+  'Warm': Icons.wb_sunny_outlined,
+  'Bright': Icons.auto_awesome_outlined,
+  'Rock': Icons.music_note_rounded,
+  'Electronic': Icons.graphic_eq_rounded,
+};
 
 class _EqualiserPaneState extends State<EqualiserPane> {
   RowData _limits = {};
   List<double> _frequencies = [];
   List<double> _responseDb = [];
+  List<RowData> _presets = [];
   RowData? _draft;
   int? _selected;
   bool _holding = false;
@@ -1095,6 +1027,7 @@ class _EqualiserPaneState extends State<EqualiserPane> {
           .map(decimal)
           .toList();
       _responseDb = (answer['response'] as List? ?? []).map(decimal).toList();
+      _presets = rows(answer['presets']);
     });
   }
 
@@ -1222,17 +1155,8 @@ class _EqualiserPaneState extends State<EqualiserPane> {
     };
   }
 
-  void _applyPreset(_EqualiserPreset preset) {
-    _replaceCurve(
-      preset.gains.isEmpty
-          ? {'name': '', 'preampDb': 0.0, 'bands': []}
-          : _tenBandCurve(
-              gains: preset.gains,
-              name: preset.name,
-              preamp: preset.preamp,
-            ),
-      enableIfOff: true,
-    );
+  void _applyPreset(RowData preset) {
+    _replaceCurve(row(preset['curve']), enableIfOff: true);
   }
 
   void _changeBand(RowData curve, int index, RowData band) {
@@ -1333,8 +1257,8 @@ class _EqualiserPaneState extends State<EqualiserPane> {
             : '${shown['name'] ?? ''}'.isNotEmpty
             ? '${shown['name']}'
             : 'Custom';
-        final preset = _equaliserPresets
-            .where((item) => item.name == name)
+        final preset = _presets
+            .where((item) => item['name'] == name)
             .firstOrNull;
         final scheme = Theme.of(context).colorScheme;
         return ListView(
@@ -1366,21 +1290,25 @@ class _EqualiserPaneState extends State<EqualiserPane> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final item in _equaliserPresets)
+                for (final item in _presets)
                   ChoiceChip(
-                    avatar: Icon(item.icon, size: 18),
-                    label: Text(item.name),
+                    avatar: Icon(
+                      _presetIcons[item['name']] ?? Icons.equalizer_rounded,
+                      size: 18,
+                    ),
+                    label: Text('${item['name']}'),
                     selected: preset == item,
                     showCheckmark: false,
-                    tooltip: item.detail,
+                    tooltip: '${item['detail']}',
                     onSelected: (_) => _applyPreset(item),
                   ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
-              preset?.detail ??
-                  'Your own sound. Adjust the sliders to make it yours.',
+              preset != null
+                  ? '${preset['detail']}'
+                  : 'Your own sound. Adjust the sliders to make it yours.',
               style: Theme.of(context).textTheme.bodyMedium
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),

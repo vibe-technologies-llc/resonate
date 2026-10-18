@@ -424,6 +424,7 @@ class FlutterBridge(
                         "frequencies" to equaliserFrequencies(),
                         "gains" to curve?.let { tenBandGains(it) },
                         "response" to response,
+                        "presets" to flutterValue(equaliserPresets()),
                     )
                 }
             "openUrl" -> {

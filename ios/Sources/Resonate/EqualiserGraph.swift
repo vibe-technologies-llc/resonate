@@ -37,6 +37,11 @@ extension EqualiserCurve {
         return bands.isEmpty ? "Flat" : "Custom curve · \(counted(bands.count, "band"))"
     }
 
+    var presetName: String {
+        let flat = preampDb == 0 && bands.allSatisfy { $0.filter.usesGain && $0.gainDb == 0 }
+        return flat ? "Flat" : name
+    }
+
     func level(of band: EqualiserBand) -> Float {
         band.filter.usesGain ? band.gainDb + preampDb : preampDb
     }
@@ -45,6 +50,115 @@ extension EqualiserCurve {
         var next = self
         if next.bands.indices.contains(index) { next.bands[index] = band }
         return next
+    }
+}
+
+extension EqualiserPreset {
+    var mark: String {
+        switch name {
+        case "Flat": "minus"
+        case "Bass boost": "speaker.wave.3"
+        case "Bass only": "hifispeaker"
+        case "Bass cut": "water.waves"
+        case "Vocals": "music.mic"
+        case "Warm": "sun.max"
+        case "Bright": "sparkles"
+        case "Rock": "guitars"
+        case "Electronic": "waveform"
+        default: "slider.horizontal.3"
+        }
+    }
+}
+
+struct EqualiserPresetGrid: View {
+    let presets: [EqualiserPreset]
+    let chosen: String?
+    let choose: (EqualiserPreset) -> Void
+    @ScaledMetric private var narrowest: CGFloat = 112
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: narrowest), spacing: 8)], spacing: 8) {
+            ForEach(presets, id: \.name) { preset in
+                let isChosen = preset.name == chosen
+                Button {
+                    choose(preset)
+                } label: {
+                    Label(preset.name, systemImage: preset.mark)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
+                        .background(isChosen ? Color.worn : Color.primary.opacity(0.08), in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(preset.detail)
+                .accessibilityAddTraits(isChosen ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+struct EqualiserSliders: View {
+    let curve: EqualiserCurve
+    let limits: EqualiserLimits
+    let change: (Int, Float) -> Void
+    let open: (Int) -> Void
+
+    var body: some View {
+        ForEach(Array(curve.bands.enumerated()), id: \.offset) { index, band in
+            if band.filter.usesGain {
+                BandGainSlider(band: band, limits: limits) { change(index, $0) }
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(EqualiserUnits.hertz(band.frequencyHz))
+                        Text(band.filter.label).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Edit") { open(index) }
+                }
+            }
+        }
+    }
+}
+
+struct BandGainSlider: View {
+    let band: EqualiserBand
+    let limits: EqualiserLimits
+    let commit: (Float) -> Void
+    @State private var editing: Float?
+    private static let shownAtLeastDb: Float = 12
+
+    var body: some View {
+        let hertz = EqualiserUnits.hertz(band.frequencyHz)
+        let range = EqualiserUnits.range(of: band.frequencyHz)
+        let reach = min(limits.gainAtMostDb, max(Self.shownAtLeastDb, abs(band.gainDb)))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(range).font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(EqualiserUnits.decibels(editing ?? band.gainDb))
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.worn)
+            }
+            Text(band.filter == .peaking ? hertz : "\(hertz) · \(band.filter.label)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            CommittingSlider(
+                title: "\(hertz) \(range)",
+                value: band.gainDb,
+                range: -reach...reach,
+                step: EqualiserUnits.gainStep,
+                editing: $editing,
+                spoken: { String(format: "%+.1f decibels", Double($0)) },
+                commit: commit
+            )
+        }
     }
 }
 
@@ -62,6 +176,20 @@ enum EqualiserUnits {
 
     static func decibels(_ gain: Float) -> String {
         String(format: "%+.1f dB", gain)
+    }
+
+    static func range(of hertz: Float) -> String {
+        switch hertz {
+        case ..<60: "Sub-bass"
+        case ..<180: "Bass"
+        case ..<400: "Warmth"
+        case ..<900: "Low mids"
+        case ..<1800: "Mids"
+        case ..<3500: "Vocals"
+        case ..<6000: "Presence"
+        case ..<12000: "Treble"
+        default: "Air"
+        }
     }
 
     static func q(_ q: Float) -> String {
