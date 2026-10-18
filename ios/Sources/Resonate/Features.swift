@@ -75,6 +75,7 @@ final class Features {
     var online: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
+    private(set) var listenedCovers = ListenedCovers()
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
     private(set) var statisticsDays: UInt32?
@@ -940,10 +941,12 @@ final class Features {
             let detail = try await Work.aside {
                 try native.listeningDetail(days: days, limit: shown, utcOffsetSeconds: offset)
             }
+            let covers = try await Work.aside { ListenedCovers.of(detail, from: native) }
             let breakdown = try await Work.aside { try native.libraryBreakdown() }
             guard let self, request == statisticsRequest else { return }
             if statistics != found { statistics = found }
             if listeningDetail != detail { listeningDetail = detail }
+            if listenedCovers != covers { listenedCovers = covers }
             if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
             statisticsDays = days
         }, finally: { [weak self] in

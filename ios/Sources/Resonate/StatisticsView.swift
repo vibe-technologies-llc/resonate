@@ -100,8 +100,9 @@ struct StatisticsView: View {
             Section("Most listened albums") {
                 ForEach(shown(albums, .albums), id: \.key) { album in
                     NavigationLink(value: Destination.album(album.key)) {
-                        ListenedToRow(item: album)
+                        CollectionRow(track: cover(of: album, in: \.albums), title: album.name, detail: album.heard)
                     }
+                    .collectionActions(.album(album.key), artist: album.by)
                 }
                 more(albums.count, .albums)
             }
@@ -114,15 +115,20 @@ struct StatisticsView: View {
             Section("Most listened artists") {
                 ForEach(shown(artists, .artists), id: \.key) { artist in
                     NavigationLink(value: Destination.artist(artist.name)) {
-                        ListenedToRow(item: artist)
+                        CollectionRow(track: cover(of: artist, in: \.artists), title: artist.name, detail: artist.heard, circle: true)
                     }
+                    .collectionActions(.artist(artist.name))
                 }
                 more(artists.count, .artists)
             }
         }
     }
 
-    static func spoken(_ milliseconds: UInt64) -> String {
+    private func cover(of listened: ListenedTo, in kind: KeyPath<ListenedCovers, [String: UInt64]>) -> Track? {
+        library.features.listenedCovers[keyPath: kind][listened.key].flatMap(library.artworkTrack)
+    }
+
+    nonisolated static func spoken(_ milliseconds: UInt64) -> String {
         let minutes = Int(milliseconds / 60_000)
         let hours = minutes / 60
         let rest = minutes % 60
@@ -241,24 +247,26 @@ struct StatisticsTiles: View {
     }
 }
 
-struct ListenedToRow: View {
-    let item: ListenedTo
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(item.name)
-                .lineLimit(1)
-            Text(detail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
+extension ListenedTo {
+    var heard: String {
+        let heard = "\(counted(Int(plays), "play")) · \(StatisticsView.spoken(listenedMs))"
+        return by.isEmpty ? heard : "\(by) · \(heard)"
     }
+}
 
-    private var detail: String {
-        let heard = "\(counted(Int(item.plays), "play")) · \(StatisticsView.spoken(item.listenedMs))"
-        return item.by.isEmpty ? heard : "\(item.by) · \(heard)"
+struct ListenedCovers: Equatable, Sendable {
+    var albums: [String: UInt64] = [:]
+    var artists: [String: UInt64] = [:]
+
+    nonisolated static func of(_ detail: ListeningDetail, from native: MobilePlayer) -> ListenedCovers {
+        var covers = ListenedCovers()
+        for album in detail.albums {
+            if let hit = try? native.album(key: album.key) { covers.albums[album.key] = hit.artworkTrack }
+        }
+        for artist in detail.artists {
+            if let played = try? native.mostPlayedBy(name: artist.name, limit: 1).first { covers.artists[artist.key] = played.id }
+        }
+        return covers
     }
 }
 

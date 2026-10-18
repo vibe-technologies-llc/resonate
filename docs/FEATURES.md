@@ -69,8 +69,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] A failed `MobilePlayer` open is final on iOS until relaunch: `serveActions` drops every
   action through `try? await player()` after the one banner, and nothing offers to open the catalog
   again
-- [S] Statistics' most listened albums and artists on iOS are bare `NavigationLink`s
-  (`ListenedToRow`, no cover), without the menu and swipe every other `CollectionRow` carries
 - [S] The iOS lock-screen cover is the 384 px `.card` image whatever size the system asks
   (`NowPlaying.artwork`'s handler ignores it), so it is upscaled about 2.5× on a 3× phone
 - [S] Songs landed from other devices into the iOS Documents folder are in the device backup though

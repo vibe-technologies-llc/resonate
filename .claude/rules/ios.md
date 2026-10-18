@@ -527,7 +527,9 @@ every route change (a pair of headphones at the same rate included), not from th
   heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
   selects a bar of to read its time and plays; most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
-  `Destination.artist(name)`); and the library in shares (`library_breakdown`: formats, sample
+  `Destination.artist(name)`, each a `CollectionRow` with the collection's menu and swipe, its cover
+  found with the statistics on `Work.aside`, `ListenedCovers`: an album's `album(key)` artwork song,
+  an artist's most played song); and the library in shares (`library_breakdown`: formats, sample
   rates, genres, decades, as bars of the library's songs, independent of the period). With no
   counted play the listening parts give way to *No plays yet* and the library shares remain.
 - **Recently played** is a Suggestions mix and a *Last played* sort (`TrackOrder.played`).
