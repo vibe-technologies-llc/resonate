@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_audio::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
-    StreamRequest, StreamState,
+    StreamRequest, StreamState, StreamVolume,
 };
 use resonate_codec::{
     BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources, probe_boxes,
@@ -452,6 +452,7 @@ impl Output {
                 went_without: Frames::ZERO,
                 device_turned: attenuator == Attenuator::Device,
                 device_muted: attenuator.hears_the_mute_of(sink),
+                stream_volume: StreamVolume::Unity,
             },
             plan,
             chain,
@@ -2998,6 +2999,10 @@ impl Engine {
                     if spec != output.plan.stream {
                         renegotiated = Some(spec);
                     }
+                }
+                StreamEvent::VolumeChanged(volume) => {
+                    output.status.stream_volume = volume;
+                    output.status.hears(output.plan.mode);
                 }
                 StreamEvent::Drained if output.tail == Tail::Asked => output.tail = Tail::Played,
                 StreamEvent::Drained => {}

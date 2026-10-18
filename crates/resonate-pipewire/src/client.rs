@@ -48,6 +48,7 @@ use crate::{
         parse_rate, parse_route, route_change, running_rate, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
+    props::StreamLevels,
 };
 
 type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
@@ -1529,15 +1530,21 @@ fn build_stream(
         .param_changed({
             let events = events.clone();
             let packed = Arc::clone(&packed);
-            move |_stream, _source, id, param| {
-                if id != sys::SPA_PARAM_Format {
-                    return;
+            let mut levels = StreamLevels::default();
+            move |_stream, _source, id, param| match id {
+                sys::SPA_PARAM_Format => {
+                    let Some(taken) = param.and_then(negotiated) else {
+                        return;
+                    };
+                    packed.store(taken.word.is_packed(), Ordering::Relaxed);
+                    let _ = events.try_send(taken.changed());
                 }
-                let Some(taken) = param.and_then(negotiated) else {
-                    return;
-                };
-                packed.store(taken.word.is_packed(), Ordering::Relaxed);
-                let _ = events.try_send(taken.changed());
+                sys::SPA_PARAM_Props => {
+                    if let Some(heard) = param.and_then(|param| levels.absorb(param)) {
+                        let _ = events.try_send(StreamEvent::VolumeChanged(heard));
+                    }
+                }
+                _ => {}
             }
         })
         .register()

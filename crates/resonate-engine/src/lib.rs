@@ -29,7 +29,7 @@ pub use resonate_audio::{
     AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
     LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, SinkChange, SinkFormats,
     SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock, StreamCommand, StreamEvent,
-    StreamRequest, StreamState, Surveyor, Words,
+    StreamRequest, StreamState, StreamVolume, Surveyor, Words,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,

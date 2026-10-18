@@ -29,8 +29,8 @@ use resonate_engine::{
     PreviousRestarts, Profile, Q, Quality, QueueItem, Reading, RepeatMode, ReplayGainMode,
     Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats, SinkId,
     SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamClock,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words,
-    stamp_of,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Until,
+    Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -3474,6 +3474,59 @@ fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result
                 .is_some_and(|output| output.mode == OutputMode::BitPerfect)
         },
         "the chip to say bit-perfect once the graph runs at the stream's rate",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_another_client_turned_or_muted_is_not_called_bit_perfect_until_it_is_whole_again()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let heard_as = |mode: OutputMode| {
+        move |player: &Player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == mode)
+        }
+    };
+
+    for volume in [StreamVolume::Scaled, StreamVolume::Muted] {
+        tell_the_stream(&graph, |_| {}, StreamEvent::VolumeChanged(volume));
+        wait_for(
+            &player,
+            |player| {
+                player
+                    .state()
+                    .output
+                    .is_some_and(|output| output.stream_volume == volume)
+            },
+            "the engine to hear the stream's own volume",
+        );
+        let status = player.state().output.expect("an output status");
+        assert!(status.scaled_by_the_stream());
+        assert_eq!(status.mode, OutputMode::Converted);
+        assert_eq!(graph.lock().opens, 1, "the stream's own volume reopened it");
+    }
+
+    tell_the_stream(
+        &graph,
+        |_| {},
+        StreamEvent::VolumeChanged(StreamVolume::Unity),
+    );
+    wait_for(
+        &player,
+        heard_as(OutputMode::BitPerfect),
+        "the chip to say bit-perfect once the stream is back at unity",
     );
     Ok(())
 }

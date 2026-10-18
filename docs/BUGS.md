@@ -7,8 +7,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Between `param_changed` and the engine's rebuild (up to a poll tick) the callback writes the
   ring in the requested layout into buffers of the negotiated one; the negotiated layout is rebuilt
   by count (`from_count`), so a 5.0 or 6.1 stream reads as changed and is rebuilt once
-- [M] The playback stream's own volume and mute are never read: one restored by the session manager
-  scales a stream still called bit-perfect
 
 ## Formats
 - [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second

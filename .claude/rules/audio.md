@@ -761,8 +761,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Bit-perfect is what the graph runs at, read every cycle, not what the stream opened at:** another
   client can hold the graph at a second rate after the stream opened. `StreamClock` carries
   `GraphTime::graph_rate` from the callback to `OutputStatus::graph_rate`; `OutputStatus::hears`
-  demotes the published `mode` to `Converted` wherever `converted_by_the_graph`. The plan is
-  untouched: `no_convert` and every reshape still read `OutputPlan::mode`.
+  demotes the published `mode` to `Converted` wherever `converted_by_the_graph`. **So is the
+  stream's own volume:** the session manager restores a saved per-stream volume and a desktop mixer
+  turns or mutes the stream, both as `Props` on the stream's node, and the engine's own volume never
+  goes there (it is the chain's, the ring's or the device's). `param_changed` reads every `Props`
+  into `StreamLevels` (`props.rs`; a pod naming one key keeps the others it named before) and sends
+  `StreamEvent::VolumeChanged(StreamVolume)` when the verdict moves; `scaled_by_the_stream` demotes
+  the mode the same way, without reopening. The plan is untouched: `no_convert` and every reshape
+  still read `OutputPlan::mode`.
 - **The callback fills the quantum the graph asked for, not the buffer handed over:**
   `pw_buffer.requested` = quantum in frames (`Cycle::asked_for`), clamped to the pool's room, falling
   back to all of it where the graph names nothing. Filling the whole pool buffer drained the ring
@@ -792,7 +798,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `tests/stream.rs` read `Error::Disconnected` from the first sink discovery as a skip. Other
   discovery failures fail; reconnect tests host their own daemon. A hosted daemon proves what the
   client reads and asks, not what flows: with no session manager nothing is linked, and WirePlumber is
-  not hosted because it would reach the real cards.
+  not hosted because it would reach the real cards. A hosted test playing the other client turns a
+  stream by its node's id (`the_playback_node`, read off `pw-cli ls Node`): the application name
+  is the client's as well as the node's, and `pw-cli` resolves a name to the client, which refuses
+  `set-param` yet exits zero.
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**

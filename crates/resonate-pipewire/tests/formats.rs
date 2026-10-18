@@ -9,7 +9,7 @@ use std::{
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use resonate_pipewire::{
     AudioSource, LatencyRequest, MediaRole, PipeWire, SinkChange, SinkInfo, StreamEvent,
-    StreamRequest, StreamState, Words,
+    StreamRequest, StreamState, StreamVolume, Words,
 };
 
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
@@ -348,6 +348,90 @@ fn a_sink_leaving_under_an_open_stream(folder: &Path) {
     assert!(
         others_still_listed,
         "the client stopped answering once a sink left"
+    );
+}
+
+fn the_playback_node(folder: &Path) -> Option<String> {
+    let listed = Command::new("pw-cli")
+        .args(["ls", "Node"])
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .output()
+        .ok()?;
+    let mut node = None;
+    for line in String::from_utf8_lossy(&listed.stdout).lines() {
+        if let Some(id) = line.trim().strip_prefix("id ") {
+            node = id.split(',').next().map(str::to_owned);
+        }
+        if line.contains("Stream/Output/Audio") {
+            return node;
+        }
+    }
+    None
+}
+
+fn turn_the_stream(folder: &Path, props: &str) -> bool {
+    let Some(node) = the_playback_node(folder) else {
+        return false;
+    };
+    Command::new("pw-cli")
+        .args(["set-param", node.as_str(), "Props", props])
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn a_stream_turned_by_another_client(folder: &Path) {
+    let pipewire = PipeWire::start("resonate-formats-test").expect("the hosted daemon answers");
+    let sinks = the_hosted_sinks(&pipewire);
+    let hosting = HOSTED[0];
+    let sink = named(&sinks, hosting.sink);
+    let stream = pipewire
+        .open(&request(sink, hosting.spec), Box::new(Silence))
+        .expect("the stream opens");
+    stream.set_active(true).expect("the stream activates");
+
+    let mut heard = Vec::new();
+    let mut heard_as = |wanted: StreamVolume| {
+        until(|| {
+            heard.extend(stream.events().try_iter());
+            heard.last_volume() == Some(wanted)
+        })
+    };
+    let turned = until(|| turn_the_stream(folder, "{ channelVolumes: [ 0.4, 0.4 ] }"));
+    let scaled = heard_as(StreamVolume::Scaled);
+    let muted = turn_the_stream(folder, "{ mute: true }") && heard_as(StreamVolume::Muted);
+    let whole = turn_the_stream(folder, "{ mute: false, channelVolumes: [ 1.0, 1.0 ] }")
+        && heard_as(StreamVolume::Unity);
+    let _ = stream.close();
+    let _ = pipewire.shutdown();
+
+    assert!(turned, "pw-cli could not turn the stream");
+    assert!(scaled, "a stream turned down was never heard as scaled");
+    assert!(muted, "a stream muted was never heard as muted");
+    assert!(whole, "a stream turned back to unity was never heard whole");
+}
+
+trait LastVolume {
+    fn last_volume(&self) -> Option<StreamVolume>;
+}
+
+impl LastVolume for Vec<StreamEvent> {
+    fn last_volume(&self) -> Option<StreamVolume> {
+        self.iter().rev().find_map(|event| match event {
+            StreamEvent::VolumeChanged(volume) => Some(*volume),
+            _ => None,
+        })
+    }
+}
+
+#[test]
+fn a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at_unity() {
+    hosted_as(
+        "a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at_unity",
+        "v",
+        a_stream_turned_by_another_client,
     );
 }
 
