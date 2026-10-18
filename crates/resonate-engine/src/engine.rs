@@ -2839,6 +2839,10 @@ impl Engine {
                     "the sink list moved while it was surveyed; the row waits for the next survey"
                 );
             }
+            Ok(()) if self.is_opening_a_stream() => {
+                tracing::debug!("the graph took the row; it is back once the stream opens");
+                self.unbound = None;
+            }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
                 self.unbound = None;
@@ -3066,8 +3070,10 @@ impl Engine {
     fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
         use resonate_audio::Error as Sink;
 
-        if matches!(error, Error::Sink(Sink::Disconnected))
-            && self.graph_lost.is_none()
+        if matches!(
+            error,
+            Error::Sink(Sink::Disconnected | Sink::OpenUnanswered)
+        ) && self.graph_lost.is_none()
             && self.track.is_some()
             && !self.graph_lost_again()
         {
@@ -3079,6 +3085,7 @@ impl Engine {
                 error,
                 Error::Sink(
                     Sink::Disconnected
+                        | Sink::OpenUnanswered
                         | Sink::LoopStopped
                         | Sink::Backend {
                             op: resonate_audio::Operation::Connect,

@@ -341,7 +341,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   Each `Output` is numbered (`Output::made`): a stream landing for an output since retired or rebound
   is closed (`close_unwanted`). **One open in flight, none asked while one is** (a stray's `Close`
   must reach the loop before the next `Open`). `wait_for_the_graph` does not let go while an open is
-  in flight or a row is opening, so an open refused `Disconnected` is read as the graph's.
+  in flight or a row is opening, so an open refused `Disconnected` is read as the graph's, and a
+  rebind that asked an open leaves `graph_lost` standing until the stream lands. **An open the
+  daemon never answers is the graph's, not the row's:** `Survey::open` past `STREAM_OPENED_WITHIN`
+  answers `OpenUnanswered` (`Disconnected` once the client knows the daemon gone), which
+  `parked_for_a_device` reads as the graph lost; read as `LoopStopped` it failed every queued row
+  five seconds apiece. The ask and the loop settle one `Awaiting` by compare-and-swap, so a stream
+  built after its asker gave up is closed on the loop rather than left playing as an orphan.
 - **The engine decides which device the stream is on and follows the default itself.** Playback
   streams carry `node.dont-move`, so WirePlumber never relinks them (its `follow-default-target`
   moved the stream while `OutputStatus::sink` named the old device). Every sink-list refresh ends in

@@ -4,9 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M] A stream open the daemon never answers is `LoopStopped` (`Survey::open` ignores `unanswered`),
-  not parked as the graph's: a hung daemon costs 5 s a queued row, and a late `Ok` leaves an orphan
-  stream until the next open
 - [M] Between `param_changed` and the engine's rebuild (up to a poll tick) the callback writes the
   ring in the requested layout into buffers of the negotiated one; the negotiated layout is rebuilt
   by count (`from_count`), so a 5.0 or 6.1 stream reads as changed and is rebuilt once

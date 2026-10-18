@@ -35,6 +35,9 @@ pub enum Error {
     #[error("the pipewire daemon is not connected")]
     Disconnected,
 
+    #[error("the pipewire daemon did not answer a stream open")]
+    OpenUnanswered,
+
     #[error("no audio sink is present in the graph")]
     NoSink,
 
@@ -71,6 +74,7 @@ impl From<Error> for resonate_audio::Error {
         match error {
             Error::LoopStopped => Self::LoopStopped,
             Error::Disconnected => Self::Disconnected,
+            Error::OpenUnanswered => Self::OpenUnanswered,
             Error::NoSink => Self::NoSink,
             Error::SinkGone { node } => Self::SinkGone { node },
             Error::StreamFailed { node, previous } => Self::StreamFailed { node, previous },

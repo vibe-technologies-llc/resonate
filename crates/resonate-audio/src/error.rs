@@ -28,6 +28,8 @@ pub enum Error {
     LoopStopped,
     #[error("the audio backend is disconnected")]
     Disconnected,
+    #[error("the audio backend did not answer a stream open")]
+    OpenUnanswered,
     #[error("no audio output is available")]
     NoSink,
     #[error("audio output {node} disappeared")]
