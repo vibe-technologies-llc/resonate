@@ -33,6 +33,16 @@ configuration: `xtool dev build -c release` goes with `app-intents.py -c release
 ## On a device
 
 ```bash
+python3 ios/install.py
+```
+
+One command does the whole run: it fetches the latest xtool AppImage from xtool's GitHub release
+(checked against the release's sha256 digest, kept in `~/.cache/resonate/`, downloaded again only
+when the release moves), checks that xtool is signed in and the `darwin` SDK is installed, builds
+the native library and the app in release (`-c debug` for debug), writes the App Intents metadata
+and installs with `xtool install` (`--udid` picks one of several iPhones). By hand, the same is:
+
+```bash
 xtool devices
 cd ios && xtool dev build && python3 app-intents.py && xtool install xtool/Resonate.app
 ```

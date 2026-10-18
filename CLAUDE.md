@@ -155,7 +155,8 @@ Invariants the layering protects (the rules files have the rest):
 - `python3 ios/build-native.py`, then `cd ios && xtool dev build && python3 app-intents.py --ipa`:
   the iOS staticlib, Swift bindings, app, its App Intents metadata (Siri, written on Linux in place of
   Xcode's step) and package; `xtool install xtool/Resonate.app` installs on an attached iPhone
-  (`run-ios` skill), never `xtool dev run`, which drops the metadata. Not in CI: the Darwin SDK comes
+  (`run-ios` skill), never `xtool dev run`, which drops the metadata. `python3 ios/install.py` does
+  it all in one run, fetching the latest xtool AppImage first. Not in CI: the Darwin SDK comes
   from the listener's Xcode download.
 
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the

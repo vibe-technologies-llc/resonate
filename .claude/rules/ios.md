@@ -45,7 +45,12 @@ nothing), which leaves a `.swiftconstvalues` per source under
 (`extract.actionsdata`, `version.json` naming tools version 27A266a) from them after
 `xtool dev build`, and with `--ipa` packs `xtool/Resonate.ipa`. `xtool dev run` and
 `xtool dev build --ipa` rebuild the bundle without it, so the app is installed with
-`xtool install xtool/Resonate.app`. The generator writes what Apple's processor writes for the
+`xtool install xtool/Resonate.app`. `ios/install.py [-c debug|release] [--udid]` is that whole run
+in one: it fetches the latest xtool AppImage from the GitHub release (refused unless it matches the
+release's sha256 digest; kept in `$XDG_CACHE_HOME/resonate` and fetched again only when the digest
+moves; asked as `resonate/<version>`), checks xtool's sign-in and the `darwin` SDK, then builds the
+native library, the app and the metadata in the configuration asked (release by default) and
+installs. The generator writes what Apple's processor writes for the
 same input, field for field, for what Resonate uses alone: `AppIntent`s with literal titles and
 descriptions and `String` parameters (`requestValueDialog` leaves no trace), a `perform()` returning
 a result with or without a dialog, `AudioPlaybackIntent` as the system protocol
