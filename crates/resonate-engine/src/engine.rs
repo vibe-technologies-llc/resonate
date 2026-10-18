@@ -468,6 +468,10 @@ impl Output {
         Frames::from_duration(FADED_OVER, self.plan.stream.rate)
     }
 
+    const fn can_fade(&self) -> bool {
+        matches!(self.plan.packing, Packing::Samples)
+    }
+
     fn quiet_within(&self) -> Duration {
         let behind = self.latency().to_duration(self.plan.stream.rate);
         (FADED_OVER + behind * 2).clamp(QUIET_WITHIN_AT_LEAST, QUIET_WITHIN_AT_MOST)
@@ -1469,7 +1473,8 @@ impl Engine {
         let lifting = output
             .sleep_lifted
             .is_some_and(|lifted| lifted.elapsed() < output.quiet_within());
-        if !playing || output.sleep_fading || lifting || !output.is_sounding() {
+        if !playing || output.sleep_fading || lifting || !output.is_sounding() || !output.can_fade()
+        {
             return;
         }
         output.sleep_fading = true;

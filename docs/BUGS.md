@@ -4,10 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M] An end-of-track or end-of-queue sleep on a DoP stream never fires: `fade_toward_sleep` fades a
-  `Silence::Marked` ring, which hushes at once without draining (`ring.rs` `fades` is false), so the
-  position freezes ten seconds short, the transport stays Playing all night (idle inhibit held) and
-  every Play re-silences after `quiet_within`
 - [M] A stream open the daemon never answers is `LoopStopped` (`Survey::open` ignores `unanswered`),
   not parked as the graph's: a hung daemon costs 5 s a queued row, and a late `Ok` leaves an orphan
   stream until the next open

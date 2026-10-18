@@ -7010,6 +7010,56 @@ fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() ->
 }
 
 #[test]
+fn an_end_of_track_timer_over_a_dop_stream_plays_the_track_out_and_pauses_on_the_next_row()
+-> Result<()> {
+    let named = SourceId::new("held").expect("a lowercase name");
+    let sources = Sources::local().and(Arc::new(InMemory {
+        source: named.clone(),
+        key: "tone.dsf".to_owned(),
+        bytes: dsf_tone(),
+    }));
+    let location = MediaLocation::new(named, "tone.dsf");
+    let row = |id| {
+        QueueItem::whole(
+            TrackId::new(id).expect("a non-zero track id"),
+            location.clone(),
+        )
+    };
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_176400], &[SampleFormat::S24])],
+        Arc::new(sources),
+        EngineConfig {
+            dop: true,
+            ..config()
+        },
+    )?;
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+        .wait_for(PATIENCE)?;
+    player.send(Command::Load {
+        items: vec![row(1), row(2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S24),
+        |player, _| paused(player) && plays(player, 2),
+        "the timer to play the DoP track out and cue the next row",
+    );
+
+    assert_eq!(
+        dozing(&player),
+        None,
+        "a timer that fired is still published"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
