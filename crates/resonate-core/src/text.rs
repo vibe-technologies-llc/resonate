@@ -47,6 +47,14 @@ impl TextEncoding {
         }
     }
 
+    pub const fn byte_order_mark(self) -> &'static [u8] {
+        match self {
+            Self::Utf16Le => &UTF16_LE_BOM,
+            Self::Utf16Be => &UTF16_BE_BOM,
+            Self::Utf8 | Self::Legacy(_) => &[],
+        }
+    }
+
     pub const fn unit_bytes(self) -> usize {
         match self {
             Self::Utf8 | Self::Legacy(_) => 1,
@@ -155,6 +163,22 @@ mod tests {
 
     fn legacy(text: &str, encoding: LegacyEncoding) -> Vec<u8> {
         encoded(text, TextEncoding::Legacy(encoding)).expect("the text has letters there")
+    }
+
+    #[test]
+    fn a_wide_encoding_names_the_mark_that_makes_its_bytes_read_back_as_it() {
+        for (encoding, little) in [
+            (TextEncoding::Utf16Le, true),
+            (TextEncoding::Utf16Be, false),
+        ] {
+            let mut written = encoding.byte_order_mark().to_vec();
+            written.extend(encoded("Écoute", encoding).expect("every letter fits"));
+
+            assert_eq!(written, utf16("Écoute", little));
+            assert_eq!(decoded(&written), ("Écoute".to_owned(), encoding));
+        }
+        assert!(TextEncoding::Utf8.byte_order_mark().is_empty());
+        assert!(TextEncoding::WINDOWS_1252.byte_order_mark().is_empty());
     }
 
     #[test]

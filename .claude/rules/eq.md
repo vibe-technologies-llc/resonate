@@ -160,7 +160,21 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 
 - **Profiles are files, not rows**: `$XDG_DATA_HOME/resonate/equaliser/<name>.txt`, EqualizerAPO
   text, hand-editable, readable by other players; `resonate play`/`resonate eq` work with no
-  catalog. A write stages, syncs, renames, syncs the folder (`settings::File` discipline).
+  catalog. **A save edits the text that stands rather than writing the model** (`apo::edited`): the
+  walk that reads a profile (`apo::walk`) names each line's role (`Preamp`, `Band(k)`, `Graphic`,
+  else `Other`), bands are aligned old to new by longest common run so an edit changes the lines it
+  moved (a band inserted or removed lands or goes beside its own comment), and every `Other` line
+  (comments, `Include:`, `Device:`, `If:`, a second device's lines, filters past `MAX_BANDS`)
+  stays where it was; a band given other channels is wrapped in `Channel:` lines that restore the
+  scope after it. The edit is read back and must equal the wanted profile, else one more try
+  states the preamp, else the model is written fresh (`apo::write`). A model nothing moved leaves
+  the file untouched. Line ending, UTF-8 mark and encoding are the file's own (`Standing`,
+  `text::encoded` plus `TextEncoding::byte_order_mark`; a letter the code page lacks falls to
+  UTF-8). **An import keeps the source's bytes whole** (`Kept::bytes`, `keep_read`,
+  `keep_own_read`); **an export is a save over the kept file the profile came from**
+  (`Store::export(profile, standing_in, to)`, `file_of`). Every write stages as
+  `.<name>.<pid>-<n>.new` (`naming::named_within`) under `writer::Held` beside its target and
+  renames, then syncs the folder; a save sweeps staged names whose writer is `Gone`.
   `ProfileName` ≤ `NAME_AT_MOST` (96) *bytes*, cut by `ProfileName::after` at the last letter they
   hold. `eq --import`/`--fetch` say when a kept name is replaced (`Store::holds`).
   `Store::names`/`owners` keep the first `PROFILES_AT_MOST` (256) by name.
@@ -229,6 +243,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   a tie of match and name length, so `suggest` takes the best-ranked measurer of the one device it
   found and `search` lists a device's rows best-ranked first; within a rank the index order stands
   (`a_device_several_measurers_cover_is_suggested_from_the_best_ranked_whatever_the_index_order`).
+  **A listener's measurer outranks the list**: `search_preferring`/`suggest_preferring` take the
+  name (case-folded) and rank it first among the rows that tie, `resonate eq --measurer` beside
+  `--find` or `--suggest`; a device it did not measure keeps the ranking and `--suggest` says so
+  (`a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
   `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is

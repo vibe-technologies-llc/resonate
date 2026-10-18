@@ -65,6 +65,7 @@ pub struct OutputStatus {
     pub latency: Frames,
     pub underruns: u64,
     pub went_without: Frames,
+    pub overs: u64,
     pub device_turned: bool,
     pub device_muted: bool,
     pub stream_volume: StreamVolume,

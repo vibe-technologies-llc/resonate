@@ -670,6 +670,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   for a boost or source is float): `measure::Measuring` decodes the row whole on a `resonate-peak`
   thread through a `TruePeakMeter`. `Track::peak` is a `Peak` (`Unasked`, `Measuring`,
   `Unmeasurable`) so a row that will not decode to its end is not decoded again per settings change.
+- **Samples past full scale are counted where nothing guards them.** With `true-peak` off a plan that
+  runs the chain ends it with `Overs` (`resonate-dsp`), a pass-through stage after gain counting
+  samples above unity beside the dither that would clamp them; `GainStage` counts its own per-sample
+  clamp. `Processor::overs` is the running count, `Chain::overs` their sum, banked per chain in
+  `Output::overs_of_retired_chains` so a retune keeps it, and `OutputStatus::overs` is the
+  total for the open stream (the inspector's *clamped samples*; a first sample warns once per
+  stream). It is plain integer arithmetic on the engine thread: no atomics, no allocation
+  (`a_boost_that_reaches_the_clamp_with_true_peak_off_is_counted_and_a_cut_is_not`).
 - **True-peak guard: a lookahead gain, not a clipper; touches nothing under the ceiling.** `TruePeak`
   (`resonate-dsp`) is pushed after gain, before dither, wherever `true-peak` is on and the plan
   converts, never on bit-perfect or repacked streams. It reads each frame oversampled by rate (`Sampling::at`: 4x under 96 kHz, 2x under 176.4 kHz,

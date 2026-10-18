@@ -9,8 +9,8 @@ use resonate_core::{
 };
 use resonate_dsp::{
     Chain, ChainBuilder, Convolver, Dither, DitherKind, Equaliser, FilterPhase, Front, GainConfig,
-    GainStage, Impulse, NoiseShaping, Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig,
-    Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
+    GainStage, Impulse, NoiseShaping, Overs, Quality, Remix, ReplayGainMode, Resampler,
+    ResamplerConfig, Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
 };
 
 use crate::{PreviousRestarts, SkipUnderRepeat, seed};
@@ -372,6 +372,8 @@ impl OutputPlan {
         }
         if self.true_peak {
             builder = builder.push(Box::new(TruePeak::new()));
+        } else if !self.is_transparent() {
+            builder = builder.push(Box::new(Overs::new()));
         }
         if let Some(depth) = self.dither_to {
             builder = builder.push(Box::new(Dither::new(

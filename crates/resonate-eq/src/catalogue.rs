@@ -130,12 +130,15 @@ pub struct Catalogue {
     words: Vec<Vec<String>>,
 }
 
-fn measurer_rank(measured_by: &str) -> usize {
+fn measurer_rank(measured_by: &str, preferred: Option<&str>) -> usize {
     let named = measured_by.trim().to_lowercase();
+    if preferred.is_some_and(|wanted| wanted.trim().to_lowercase() == named) {
+        return 0;
+    }
     MEASURERS_BEST_FIRST
         .iter()
         .position(|ranked| *ranked == named)
-        .unwrap_or(MEASURERS_BEST_FIRST.len())
+        .map_or(MEASURERS_BEST_FIRST.len() + 1, |at| at + 1)
 }
 
 fn folded(text: &str) -> String {
@@ -250,10 +253,10 @@ impl Catalogue {
         self.devices.get(found.at)
     }
 
-    fn measurer_rank_of(&self, at: usize) -> usize {
-        self.devices
-            .get(at)
-            .map_or(usize::MAX, |device| measurer_rank(&device.measured_by))
+    fn measurer_rank_of(&self, at: usize, preferred: Option<&str>) -> usize {
+        self.devices.get(at).map_or(usize::MAX, |device| {
+            measurer_rank(&device.measured_by, preferred)
+        })
     }
 
     pub fn get(&self, id: &DeviceId) -> Option<&Device> {
@@ -262,6 +265,14 @@ impl Catalogue {
 }
 
 pub fn search(catalogue: &Catalogue, typed: &str) -> Vec<Found> {
+    search_preferring(catalogue, typed, None)
+}
+
+pub fn search_preferring(
+    catalogue: &Catalogue,
+    typed: &str,
+    preferred: Option<&str>,
+) -> Vec<Found> {
     let wanted = words_of(typed);
     if wanted.is_empty() {
         return Vec::new();
@@ -286,8 +297,8 @@ pub fn search(catalogue: &Catalogue, typed: &str) -> Vec<Found> {
             })
             .then_with(|| {
                 catalogue
-                    .measurer_rank_of(one.1)
-                    .cmp(&catalogue.measurer_rank_of(other.1))
+                    .measurer_rank_of(one.1, preferred)
+                    .cmp(&catalogue.measurer_rank_of(other.1, preferred))
             })
     });
     hits.into_iter()
@@ -313,6 +324,14 @@ fn names_a_model(words: &[String]) -> bool {
 }
 
 pub fn suggest(catalogue: &Catalogue, description: &str) -> Option<Found> {
+    suggest_preferring(catalogue, description, None)
+}
+
+pub fn suggest_preferring(
+    catalogue: &Catalogue,
+    description: &str,
+    preferred: Option<&str>,
+) -> Option<Found> {
     let said = words_of(description);
     if said
         .iter()
@@ -348,8 +367,8 @@ pub fn suggest(catalogue: &Catalogue, description: &str) -> Option<Found> {
             .then_with(|| other.1.cmp(&one.1))
             .then_with(|| {
                 catalogue
-                    .measurer_rank_of(one.2)
-                    .cmp(&catalogue.measurer_rank_of(other.2))
+                    .measurer_rank_of(one.2, preferred)
+                    .cmp(&catalogue.measurer_rank_of(other.2, preferred))
             })
     });
     let top = best.first().copied()?;
@@ -533,6 +552,60 @@ mod tests {
             suggested_measurer(&catalogue, "Maker Thing 100").as_deref(),
             Some("Oratory1990")
         );
+    }
+
+    #[test]
+    fn a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking()
+     {
+        let catalogue = catalogue();
+        let chosen = |description: &str, preferred: Option<&str>| {
+            suggest_preferring(&catalogue, description, preferred)
+                .and_then(|found| catalogue.device(found))
+                .map(|device| device.measured_by.clone())
+        };
+
+        assert_eq!(
+            chosen("Jabra Elite 10", Some("oratory1990")).as_deref(),
+            Some("Rtings")
+        );
+        assert_eq!(
+            chosen("HIFIMAN Ananda", Some("  rtings ")).as_deref(),
+            chosen("HIFIMAN Ananda", Some("Rtings")).as_deref()
+        );
+        assert_eq!(
+            chosen("HIFIMAN Ananda", None).as_deref(),
+            Some("oratory1990")
+        );
+        assert_eq!(
+            chosen("HIFIMAN Ananda", Some("CRINACLE")).as_deref(),
+            Some("crinacle")
+        );
+
+        let covered_by_two = Catalogue::of(vec![
+            Device {
+                id: DeviceId::new("oratory1990/over-ear/Maker Thing 100").expect("a path"),
+                label: "Maker Thing 100".to_owned(),
+                measured_by: "oratory1990".to_owned(),
+                rig: None,
+            },
+            Device {
+                id: DeviceId::new("Rtings/over-ear/Maker Thing 100").expect("a path"),
+                label: "Maker Thing 100".to_owned(),
+                measured_by: "Rtings".to_owned(),
+                rig: None,
+            },
+        ]);
+        let measurers = |preferred: Option<&str>| {
+            search_preferring(&covered_by_two, "maker thing", preferred)
+                .into_iter()
+                .filter_map(|found| covered_by_two.device(found))
+                .map(|device| device.measured_by.as_str())
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(measurers(None), ["oratory1990", "Rtings"]);
+        assert_eq!(measurers(Some("rtings")), ["Rtings", "oratory1990"]);
+        assert_eq!(measurers(Some("nobody")), ["oratory1990", "Rtings"]);
     }
 
     #[test]

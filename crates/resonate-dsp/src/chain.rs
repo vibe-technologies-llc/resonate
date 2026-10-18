@@ -148,6 +148,12 @@ impl Chain {
         self.stages.iter().any(|stage| stage.is_ramping())
     }
 
+    pub fn overs(&self) -> u64 {
+        self.stages
+            .iter()
+            .fold(0, |counted, stage| counted.saturating_add(stage.overs()))
+    }
+
     fn copy(source: &[f64], destination: &mut [f64]) -> usize {
         let samples = source.len().min(destination.len());
         if let (Some(from), Some(into)) = (source.get(..samples), destination.get_mut(..samples)) {

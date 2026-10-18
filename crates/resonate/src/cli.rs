@@ -584,6 +584,7 @@ pub struct VaultArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("looking").args(["find", "suggest"]).multiple(true)))]
 pub struct EqArgs {
     #[arg(
         long,
@@ -683,6 +684,17 @@ pub struct EqArgs {
                 each is bound to"
     )]
     pub list: bool,
+
+    #[arg(
+        long,
+        value_name = "MEASURER",
+        requires = "looking",
+        help = "Prefer the correction this measurer made (oratory1990, crinacle, Rtings and so \
+                on, any case) beside --find or --suggest: its row comes first, or is the one \
+                suggested, where it measured the device, and the usual ranking of measurers \
+                stands where it did not"
+    )]
+    pub measurer: Option<String>,
 
     #[arg(
         long,

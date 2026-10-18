@@ -5,6 +5,7 @@ mod eq;
 mod error;
 mod fused;
 mod gain;
+mod overs;
 mod peak;
 mod phase;
 mod remix;
@@ -18,6 +19,7 @@ pub use crate::{
     eq::{Easing, Equaliser},
     error::{Error, RatioLimits, Result},
     gain::{GainConfig, GainStage, ReplayGainMode},
+    overs::Overs,
     peak::{TruePeak, TruePeakMeter},
     phase::FilterPhase,
     remix::Remix,
@@ -75,6 +77,10 @@ pub trait Processor: Send {
 
     fn is_ramping(&self) -> bool {
         false
+    }
+
+    fn overs(&self) -> u64 {
+        0
     }
 
     fn ease_equalisation(&mut self, _easing: Easing) {}

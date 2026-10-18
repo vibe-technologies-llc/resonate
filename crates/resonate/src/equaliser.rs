@@ -3,7 +3,8 @@ use std::{fs, path::Path, sync::Arc};
 use resonate_core::{SampleRate, eq::Profile};
 use resonate_engine::NodeName;
 use resonate_eq::{
-    Binding, Catalogue, Corrected, DeviceId, Kept, ProfileName, Store, search, suggest,
+    Binding, Catalogue, Corrected, DeviceId, Kept, ProfileName, Store, search_preferring,
+    suggest_preferring,
 };
 use resonate_mpris::Running;
 use resonate_pipewire::PipeWire;
@@ -89,10 +90,10 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     let bound = wanted.r#for.as_deref().map(NodeName::new);
 
     if let Some(text) = wanted.find.as_deref() {
-        return find(config, text);
+        return find(config, text, wanted.measurer.as_deref());
     }
     if wanted.suggest {
-        return suggested(cli, config);
+        return suggested(cli, config, wanted.measurer.as_deref());
     }
     if wanted.list {
         return list(&store, config);
@@ -208,7 +209,7 @@ fn import(
 ) -> Result<()> {
     if wanted.own {
         let kept = Store::read_in(from)?;
-        store.keep_own(sink.map(NodeName::as_str), &kept.profile)?;
+        store.keep_own_read(sink.map(NodeName::as_str), &kept)?;
         said!(
             "shaped {} from {}, {} bands",
             spoken_own(sink),
@@ -272,24 +273,33 @@ fn export(
     wanted: &EqArgs,
     to: &Path,
 ) -> Result<()> {
-    let (spoken, profile) = match wanted.profile.as_deref() {
+    let (spoken, profile, standing_in) = match wanted.profile.as_deref() {
         Some(name) => {
             let name = named(name)?;
-            (name.to_string(), store.read(&name)?)
+            let standing_in = store.path_of(&name);
+            (name.to_string(), store.read(&name)?, standing_in)
         }
-        None if wanted.own => (
-            spoken_own(sink),
-            Some(store.own(sink.map(NodeName::as_str))?),
-        ),
+        None if wanted.own => {
+            let owner = sink.map(NodeName::as_str);
+            (
+                spoken_own(sink),
+                Some(store.own(owner)?),
+                store.own_path(owner)?,
+            )
+        }
         None => {
             let (owner, binding) =
                 bound_to(config, sink).ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
-            (spoken_binding(binding), curve_of(store, owner, binding)?)
+            (
+                spoken_binding(binding),
+                curve_of(store, owner, binding)?,
+                store.file_of(owner.map(NodeName::as_str), binding)?,
+            )
         }
     };
     let profile = profile.ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
 
-    store.export(&profile, to)?;
+    store.export(&profile, Some(&standing_in), to)?;
     said!("wrote {spoken} to {}", to.display());
     Ok(())
 }
@@ -493,9 +503,9 @@ fn asked(config: &Config) -> Result<(Corrected, Arc<Catalogue>)> {
     Ok((corrections, catalogue))
 }
 
-fn find(config: &Config, text: &str) -> Result<()> {
+fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
     let (_, catalogue) = asked(config)?;
-    let hits = search(&catalogue, text);
+    let hits = search_preferring(&catalogue, text, measurer);
     if hits.is_empty() {
         said!("nothing measured answers to that");
         return Ok(());
@@ -514,7 +524,13 @@ fn find(config: &Config, text: &str) -> Result<()> {
     Ok(())
 }
 
-fn suggested(cli: &Cli, config: &Config) -> Result<()> {
+fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
+    let asked_for = asked_for?;
+    (asked_for.trim().to_lowercase() != chosen.trim().to_lowercase())
+        .then(|| format!("{asked_for} measured nothing for it: {chosen}'s is the best ranked"))
+}
+
+fn suggested(cli: &Cli, config: &Config, measurer: Option<&str>) -> Result<()> {
     let pipewire = PipeWire::start("Resonate")?;
     let sink = select_sink(
         pipewire.enumerate_sinks(SINK_TIMEOUT)?,
@@ -525,9 +541,14 @@ fn suggested(cli: &Cli, config: &Config) -> Result<()> {
     said!("sink:   {} ({})", sink.description, sink.name);
 
     let (_, catalogue) = asked(config)?;
-    match suggest(&catalogue, &sink.description).and_then(|found| catalogue.device(found)) {
+    match suggest_preferring(&catalogue, &sink.description, measurer)
+        .and_then(|found| catalogue.device(found))
+    {
         Some(device) => {
             said!("looks like: {}", device.shown());
+            if let Some(told) = measurer_missed(measurer, &device.measured_by) {
+                said!("{told}");
+            }
             said!(
                 "fetch it:   resonate eq --fetch \"{}\" --for {}",
                 device.id,
@@ -721,6 +742,43 @@ mod tests {
             panic!("{arguments:?} was refused: {parsed:?}");
         };
         wanted
+    }
+
+    #[test]
+    fn a_measurer_is_asked_for_beside_a_search_or_a_suggestion_and_nowhere_else() {
+        assert_eq!(
+            asked(&["--find", "hd 650", "--measurer", "Rtings"])
+                .measurer
+                .as_deref(),
+            Some("Rtings")
+        );
+        assert_eq!(
+            asked(&["--suggest", "--measurer", "crinacle"])
+                .measurer
+                .as_deref(),
+            Some("crinacle")
+        );
+
+        for refused in [
+            &["--measurer", "Rtings"][..],
+            &["--list", "--measurer", "Rtings"],
+            &["--fetch", "a/b/C", "--measurer", "Rtings"],
+        ] {
+            assert!(
+                Cli::try_parse_from(["resonate", "eq"].iter().chain(refused)).is_err(),
+                "{refused:?} was taken"
+            );
+        }
+    }
+
+    #[test]
+    fn a_measurer_that_did_not_measure_the_suggested_device_is_said_to_have_missed_it() {
+        assert_eq!(measurer_missed(None, "Rtings"), None);
+        assert_eq!(measurer_missed(Some(" rtings"), "Rtings"), None);
+        assert_eq!(
+            measurer_missed(Some("crinacle"), "Rtings").as_deref(),
+            Some("crinacle measured nothing for it: Rtings's is the best ranked")
+        );
     }
 
     #[test]

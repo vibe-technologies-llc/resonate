@@ -6573,6 +6573,61 @@ fn the_bytes_the_graph_is_handed_carry_the_correction() -> Result<()> {
     Ok(())
 }
 
+fn overs_after_playing(path: &Path, equaliser: Arc<Equalisation>, true_peak: bool) -> Result<u64> {
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player
+        .request(Command::SetTruePeak(true_peak))?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::SetEqualisation(equaliser))?
+        .wait_for(PATIENCE)?;
+    player.send(Command::Load {
+        items: vec![track(path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        |_, graph| graph.played.len() >= BLOCK_FRAMES * frame_bytes(SampleFormat::S16) * 8,
+        "a run of the tone to reach the graph",
+    );
+    let overs = player.state().output.map_or(0, |output| output.overs);
+    player.shutdown()?;
+    Ok(overs)
+}
+
+#[test]
+fn a_boost_that_reaches_the_clamp_with_true_peak_off_is_counted_and_a_cut_is_not() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let boosted = overs_after_playing(&path, equalised(vec![(1_000.0, 6.0, 0.3)]), false)?;
+    let cut = overs_after_playing(&path, equalised(vec![(1_000.0, -6.0, 0.3)]), false)?;
+
+    assert!(
+        boosted > 0,
+        "a +6 dB boost over a full-scale ramp clamped nothing"
+    );
+    assert_eq!(cut, 0, "a cut was counted as clamped");
+    Ok(())
+}
+
+#[test]
+fn with_true_peak_on_the_guard_leaves_nothing_to_clamp_and_so_nothing_to_count() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let guarded = overs_after_playing(&path, equalised(vec![(1_000.0, 6.0, 0.3)]), true)?;
+
+    assert_eq!(guarded, 0, "the guard let samples past full scale through");
+    Ok(())
+}
+
 #[test]
 fn the_equaliser_survives_a_track_change() -> Result<()> {
     let tree = Tree::new();
