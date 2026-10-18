@@ -1046,6 +1046,12 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `KeptPictures` weighs each against the last eight kept (`PICTURES_WEIGHED_AGAINST`), by pointer
   then bytes; `run` drops `Held::picture` from every write once its page is applied; the walk back
   reads each picture by id as a file first asks for it (`PicturesPutBack`).
+- **The record follows the file.** `retagged` and `retagged_fields` are keyed by path, so
+  `organise::files_moved` (organise's apply and its walk back, the scan's move pairing in
+  `moves::follow`) moves both to the new path beside `tracks.path`, a record the destination held
+  dropped first: a tag run organised or moved by hand afterwards is still put back
+  (`a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote`,
+  `a_tag_run_is_put_back_after_a_hand_move_the_scan_followed`).
 - **Rows are read a page at a time; a file is never split across two.** `retag::run` walks the
   catalog through `paged::Paging`: `ROWS_A_PAGE` (2 048) rows in path order past the last path
   handed out, the rows of the file a page ended in held back for the next, the page doubled where

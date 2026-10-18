@@ -2687,10 +2687,14 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut stale_offsets = prepared(tx, "DELETE FROM lyrics_ahead WHERE path = ?1")?;
     let mut stale_refusals = prepared(tx, "DELETE FROM lyrics_refused WHERE path = ?1")?;
     let mut stale_tracks = prepared(tx, "DELETE FROM tracks WHERE path = ?1")?;
+    let mut stale_retags = prepared(tx, "DELETE FROM retagged WHERE path = ?1")?;
+    let mut stale_retagged_fields = prepared(tx, "DELETE FROM retagged_fields WHERE path = ?1")?;
     let mut lyrics = prepared(tx, "UPDATE lyrics_kept SET path = ?2 WHERE path = ?1")?;
     let mut offsets = prepared(tx, "UPDATE lyrics_ahead SET path = ?2 WHERE path = ?1")?;
     let mut refusals = prepared(tx, "UPDATE lyrics_refused SET path = ?2 WHERE path = ?1")?;
     let mut tracks = prepared(tx, "UPDATE tracks SET path = ?2 WHERE path = ?1")?;
+    let mut retags = prepared(tx, "UPDATE retagged SET path = ?2 WHERE path = ?1")?;
+    let mut retagged_fields = prepared(tx, "UPDATE retagged_fields SET path = ?2 WHERE path = ?1")?;
     let mut entries = prepared(tx, "UPDATE playlist_entries SET path = ?2 WHERE path = ?1")?;
     let mut touched = prepared(
         tx,
@@ -2709,12 +2713,21 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
             &mut stale_offsets,
             &mut stale_refusals,
             &mut stale_tracks,
+            &mut stale_retags,
+            &mut stale_retagged_fields,
         ] {
             statement
                 .execute(params![to])
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
         }
-        for statement in [&mut lyrics, &mut offsets, &mut refusals, &mut tracks] {
+        for statement in [
+            &mut lyrics,
+            &mut offsets,
+            &mut refusals,
+            &mut tracks,
+            &mut retags,
+            &mut retagged_fields,
+        ] {
             statement
                 .execute(params![from, to])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;

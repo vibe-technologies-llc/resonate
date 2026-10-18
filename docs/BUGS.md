@@ -28,8 +28,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A landing on the closest pressing (`Fit::Wider`, `Fit::Narrower`) is written into the files as
   a match: a 14-track rip landed on a 12-track pressing gets `TRACKTOTAL=12` in tracks 13 and 14;
   the fit is not stored
-- [M] The tag undo record is keyed by path and does not follow organise or a hand-move, so *Put the
-  last run back* answers `Unreadable` for the whole library after the usual tag-then-organise
 
 ## Catalog
 - [M] A scan naming some roots tidies the rest by forgetting every path gone
