@@ -98,7 +98,7 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 
 `VaultKey`: 16 bytes as 32 lowercase hex letters, fanned two deep. `Flac`/`Wave`: MD5 of decoded
 interleaved PCM (FLAC's STREAMINFO digest, so `metaflac` agrees); `Kept`, covers: MD5 of stored
-bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder. **A staging
+bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder, a failing sync after the rename being a warning (the object is there, so the keep is reported landed rather than failed and left unreferenced) (`an_object_whose_folder_could_not_be_synced_after_the_rename_is_reported_landed`). **A staging
 file is held by its writer, which is how it is swept**: `Vault::staged` creates it `Held`
 (`rust-style.md`); `Vault::open` removes those `writer::writer_of` reads as gone
 (`Sweeping::WhatCrashed`); `Vault::sweep_the_staging` (`--prune`) also takes files not named by a

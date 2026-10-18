@@ -61,8 +61,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A cover's lossless JXL is read back from memory, not the staged file; a 16-bit PNG is
   quantised to 8 bits, an animated picture keeps its first frame and an ICC profile is dropped
   (compared against the same lossy decode, so it passes)
-- [S] A folder sync failing after the rename reports the keep failed though the object landed,
-  unreferenced until `--prune`
 - [L] The key is the PCM alone: two tracks of the same samples at another rate, count or mask
   (digital silence) share an object, and a standing object is taken on its size alone; needs a
   migration

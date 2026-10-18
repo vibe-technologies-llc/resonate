@@ -1256,11 +1256,12 @@ impl Vault {
         fs::create_dir_all(folder)
             .map_err(|source| Error::io(VaultOp::MakeFolder, folder, source))?;
         fs::rename(staging, target).map_err(|source| Error::io(VaultOp::Settle, target, source))?;
-        settled_folder(folder)?;
+        let landed = self.sized(target)?;
+        settled_folder(folder);
         if made && let Some(above) = folder.parent() {
-            settled_folder(above)?;
+            settled_folder(above);
         }
-        self.sized(target)
+        Ok(landed)
     }
 
     fn discard(&self, path: &Path) -> Result<()> {
@@ -1363,10 +1364,11 @@ fn staged_by(path: &Path) -> StagedBy {
     }
 }
 
-fn settled_folder(folder: &Path) -> Result<()> {
-    File::open(folder)
-        .and_then(|opened| opened.sync_all())
-        .map_err(|source| Error::io(VaultOp::Settle, folder, source))
+fn settled_folder(folder: &Path) {
+    let settled = File::open(folder).and_then(|opened| opened.sync_all());
+    if let Err(error) = settled {
+        tracing::warn!(folder = %folder.display(), %error, "an object landed but its folder could not be made durable");
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1581,6 +1583,31 @@ mod tests {
                 .count(),
             0
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_object_whose_folder_could_not_be_synced_after_the_rename_is_reported_landed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("resonate-vault-folder-{}", process::id()));
+        let vault = Vault::make(&root).expect("a vault");
+        let target = vault.object_path(VaultKey::of([7; 16]), FLAC_EXTENSION);
+        let folder = target.parent().expect("a fanout folder");
+        fs::create_dir_all(folder).expect("the folder");
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o300)).expect("write only");
+        let unreadable = File::open(folder).is_err();
+
+        let staging = vault.staged(FLAC_EXTENSION).expect("a staging file");
+        fs::write(&staging, b"an object").expect("a staged write");
+        let landed = vault.landed(&staging, &target);
+
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).expect("restored");
+        if unreadable {
+            assert_eq!(landed.expect("landed"), 9);
+            assert_eq!(fs::read(&target).expect("the object"), b"an object");
+        }
         let _ = fs::remove_dir_all(&root);
     }
 
