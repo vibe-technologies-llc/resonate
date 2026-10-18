@@ -951,6 +951,19 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn layout_left(&mut self, cx: &mut Context<Self>) {
+        let given = self.organising.read(cx).text().trim().to_owned();
+        if given == cx.global::<ResonateApp>().organise_as {
+            return;
+        }
+
+        match Layout::read(&given) {
+            Ok(_) => self.set_organise_as(given, cx),
+            Err(error) => self.report(toast::could_not("use that layout", &error), cx),
+        }
+        cx.notify();
+    }
+
     pub(crate) fn set_organise_as(&mut self, template: String, cx: &mut Context<Self>) {
         self.organising
             .update(cx, |organising, cx| organising.hold(template.clone(), cx));

@@ -563,8 +563,12 @@ is never named.
   tracks pane, Favourites and an opened suggestion compare against `RootView::playing_now`'s `track`,
   the library row `LibraryModel::track_of` weighs out of the queue row's location and span (a resumed
   queue is minted afresh by `Queue::restore`). What `track_of` read is held in `named`, the albums the
-  bar links to in `read_albums`, until `LibraryModel::reload` forgets both
-  (`a_queued_row_is_read_again_once_the_catalog_changes_under_it`).
+  bar links to in `read_albums`. `LibraryModel::reload` forgets the albums but keeps `named`, serving
+  what it held while one background batch (`queued_rows`, `name_what_is_held_again`; a newer reload
+  replaces the batch) reads every held row again and swaps in the ones that changed, so a redraw
+  after a reload reads nothing on the window's thread; only a row never read before is read where
+  it is drawn (`a_queued_row_is_read_again_once_the_catalog_changes_under_it`). Statistics' *play from
+  here* reads its tracks with one `held_tracks` batch (`Library::tracks_with_ids`).
 - **The row playing is the row a list is on, never a track id** (a file can be in a queue or playlist
   twice; an unscanned row has no `TrackId`). The queue draws `PlayerState::queue_position`; a playlist
   `PlayerState::loaded_position`, marked only while `Library::playing_playlist` names it, i.e. while
@@ -1274,8 +1278,13 @@ is never named.
   `RootView::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
   put back trimmed on enter); `contact_given` stores `Setting::Contact`, moves the global, reports it
   is sent from the next request (`online.md`); press outside = `leave_contact` (gives typed text if it
-  differs), escape = `put_back_contact`. Same pair for AcoustID key, AudD and ListenBrainz tokens,
-  Subsonic and TIDAL accounts, organise layout
+  differs), escape = `put_back_contact`. The field losing focus any other way (tab: `field::Blurred`)
+  takes what was typed through `contact_left` and kin without taking the caret back to the window
+  (`take_the_contact` is the one giving; `contact_given` adds the refocus); the typed folder adds
+  itself the same way and escape clears it first
+  (`tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back`). Same pair for
+  AcoustID key, AudD and ListenBrainz tokens, Subsonic and TIDAL accounts, organise layout (`layout_left`
+  keeps a valid one, reports a refused one)
   (`a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back`), ahead of
   the naming row in `dismiss_search`.
 - **A run of rows is dragged where it goes; the keyboard reaches one before moving it.**
@@ -1283,7 +1292,10 @@ is never named.
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
   and drop target; dropping a span on row `to` = the arrows' `Command::Move` (never a swap). Payload
   `Carried`; `Ghost` = first row's title plus how many more ride. `RootView::reach` is a `Reach`
-  (`Shift`, anchor, the row moved to; lives for the run). `up`/`down` move and collapse it (queue opens
+  (`Shift`, anchor, the row moved to; lives for the run, and a non-queue reach is let go of when the
+  rows under it are arranged another way: `Arrangement` = selection, sorting, playlist order and
+  reading, opened playlist's order, search sort, compared by `let_go_of_a_reach_the_rows_left` on
+  every library change and sort setter; `opening_an_album_lets_go_of_the_row_reached_in_the_listing_before`). `up`/`down` move and collapse it (queue opens
   on the playing row, playlist on its first); `shift-up`/`down` grow it; `home`/`end`; `pageup`/
   `pagedown` by `rows_a_page`; `ctrl-a` every row; `shift`-click every row between; `alt-up`/`alt-down`
   move what is reached; `enter` plays its first row; `delete` removes reached rows via `drop_rows`
@@ -1553,7 +1565,13 @@ is never named.
     tab stop, `Controls::holding`), shown by `in_focus` while one holds the caret
     (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`). A mark opening a card or menu
     where pressed goes through `in_the_pane_ring_at` (a canvas keeps its bottom-left corner;
-    `a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`).
+    `a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`); the ring wrappers `_at`
+    hand the caret back to the window as they open it, so the menu's arrows and `enter` answer. The
+    playback bar's sleep timer is `in_the_standing_ring_at` (`tab_reaches_the_sleep_timer_and_enter_opens_its_menu_and_sets_a_timer`).
+    A lyric line is a tab stop through `in_the_pane_ring_for_keys_at` (`ringed_for_keys`: the
+    `PressControl` action alone, so the line's own pointer click, guarded by `by_the_pointer`, stays the
+    seek): `enter` opens the line's menu, *Copy this line*, *Copy the whole sheet* and, on a timed
+    line, *Play from this line* (`tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it`).
   - **The seek and volume rails are tab stops of their own context**: `slider::rail` under `Control
     Rail`; `app::answering_on_a_rail` binds `right`/`up` to `RailOn` and `left`/`down` to `RailBack`,
     stepping a seek by `seek_step`, a volume by `VOLUME_STEP`

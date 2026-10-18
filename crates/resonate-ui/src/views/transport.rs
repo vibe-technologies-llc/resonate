@@ -5,8 +5,8 @@ use std::{
 
 use gpui::{
     Animation, AnimationElement, AnimationExt as _, AnyElement, App, Context, Corners, Div,
-    ElementId, FontWeight, MouseButton, MouseDownEvent, ObjectFit, Pixels, Point, ScrollWheelEvent,
-    SharedString, Stateful, Svg, Window, div, img, prelude::*, px, rgb,
+    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, ScrollWheelEvent, SharedString,
+    Stateful, Svg, Window, div, img, prelude::*, px, rgb,
 };
 use resonate_core::{
     AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
@@ -488,15 +488,14 @@ impl RootView {
                         .text_color(rgb(theme::accent())),
                 )
             })
-            .names(sleeping_says(sleeping))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    cx.stop_propagation();
-                    let menu = sleep_menu(event.position, sleeping);
-                    this.open_a_menu(menu, cx);
-                }),
-            );
+            .names(sleeping_says(sleeping));
+
+        let control = self.in_the_standing_ring_at(
+            "sleep",
+            control,
+            move |this, at, cx| this.open_a_menu(sleep_menu(at, sleeping), cx),
+            cx,
+        );
 
         menu::opens_a_menu(control, move |_, at, _| sleep_menu(at, sleeping), cx)
     }

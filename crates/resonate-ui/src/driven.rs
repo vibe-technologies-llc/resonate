@@ -228,7 +228,15 @@ impl Driven {
         folder: &Folder,
         corrections: Corrected,
     ) -> Self {
-        Self::built(cx, library, folder, corrections, None, None)
+        Self::built(
+            cx,
+            library,
+            folder,
+            corrections,
+            None,
+            None,
+            Lyricists::unsourced(),
+        )
     }
 
     pub(crate) fn reaching(
@@ -244,6 +252,19 @@ impl Driven {
             Corrected::uncorrected(),
             Some(reaching),
             None,
+            Lyricists::unsourced(),
+        )
+    }
+
+    pub(crate) fn singing(cx: &mut TestAppContext, library: Arc<Library>, folder: &Folder) -> Self {
+        Self::built(
+            cx,
+            library,
+            folder,
+            Corrected::uncorrected(),
+            None,
+            None,
+            Lyricists::local(),
         )
     }
 
@@ -260,6 +281,7 @@ impl Driven {
             Corrected::uncorrected(),
             None,
             Some(Arc::new(fingerprinters)),
+            Lyricists::unsourced(),
         )
     }
 
@@ -270,6 +292,7 @@ impl Driven {
         corrections: Corrected,
         reaching: Option<Reaching>,
         recognising: Option<Arc<Fingerprinters>>,
+        lyricists: Lyricists,
     ) -> Self {
         let (reference, register) = match reaching {
             Some(Reaching {
@@ -294,7 +317,7 @@ impl Driven {
             cx.set_global(ResonateApp {
                 player: unplugged_player(),
                 library,
-                lyricists: Arc::new(Lyricists::unsourced()),
+                lyricists: Arc::new(lyricists),
                 fingerprinters: Arc::clone(&fingerprinters),
                 corrections: Arc::new(corrections),
                 settings: Arc::new(Ephemeral),
@@ -531,13 +554,19 @@ impl Driven {
 #[cfg(test)]
 mod tests {
     use gpui::BorrowAppContext as _;
+    use resonate_core::Span;
     use resonate_engine::Placement;
+    use resonate_library::{Direction, SortOrder};
 
     use super::*;
     use crate::{
         Pane, Selection,
         equaliser::{Cell as BandCell, Editing},
-        views::{settings::curve::Plot, visualiser::Showing},
+        views::{
+            reorder::{Listed, Shift},
+            settings::curve::Plot,
+            visualiser::Showing,
+        },
     };
 
     fn catalog() -> Arc<Library> {
@@ -1159,6 +1188,69 @@ mod tests {
     }
 
     #[gpui::test]
+    fn tab_reaches_the_sleep_timer_and_enter_opens_its_menu_and_sets_a_timer(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&files);
+
+        assert!(
+            tabbed_onto(&mut driven, "sleep"),
+            "tab never reached the sleep timer"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "enter opened no menu on the sleep timer"
+        );
+
+        driven.cx.simulate_keystrokes("down enter");
+        driven.until(|root, cx| root.player.read(cx).state().sleeping.is_some());
+        assert!(driven.read(|root, _| root.menu.is_none()));
+    }
+
+    #[gpui::test]
+    fn tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        std::fs::write(
+            folder.path().join("one.lrc"),
+            "[00:00.50]first words\n[00:03.00]second words\n",
+        )
+        .expect("a sidecar beside the track");
+        let mut driven = Driven::singing(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
+        driven.until(|root, cx| root.lyrics.read(cx).text().len() == 2);
+
+        assert!(
+            tabbed_onto_the_pane(&mut driven, "lyric-1"),
+            "tab never reached the second lyric line"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "enter opened no menu on the lyric line"
+        );
+
+        let sought = driven.read(|root, cx| root.player.read(cx).state().seeks);
+
+        driven.cx.simulate_keystrokes("down down down enter");
+        driven.settle();
+        assert!(driven.read(|root, _| root.menu.is_none()));
+        driven.until(|root, cx| root.player.read(cx).state().seeks != sought);
+    }
+
+    #[gpui::test]
     fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
         cx: &mut TestAppContext,
     ) {
@@ -1702,12 +1794,43 @@ mod tests {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library.update(cx, |model, cx| model.reload(cx));
         });
+        let held = driven.read(|root, cx| root.library.read(cx).names_held());
+        assert_eq!(held, 1, "a reload emptied the names the queue draws from");
 
-        assert_eq!(
-            titled(&mut driven).as_deref(),
-            Some("Echoes"),
-            "the queue kept the row as it was first read"
-        );
+        let began = Instant::now();
+        while titled(&mut driven).as_deref() != Some("Echoes") {
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "the queue kept the row as it was first read"
+            );
+            driven.settle();
+            thread::sleep(FRAME);
+        }
+    }
+
+    #[gpui::test]
+    fn what_was_heard_most_is_read_back_in_the_order_it_is_listed(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let ids: Vec<_> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(|track| track.id)
+            .rev()
+            .collect();
+        let driven = Driven::opened_in(cx, library, &folder);
+
+        let read: Vec<_> = driven
+            .root
+            .read_with(&driven.cx, |root, cx| {
+                root.library.read(cx).held_tracks(&ids)
+            })
+            .iter()
+            .map(|track| track.id)
+            .collect();
+
+        assert_eq!(read, ids);
     }
 
     #[gpui::test]
@@ -1790,6 +1913,232 @@ mod tests {
             driven.read(|root, cx| root.contact.read(cx).text().to_owned()),
             "me@example.test"
         );
+    }
+
+    fn showing_settings(driven: &mut Driven, category: SettingsCategory) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Settings, cx);
+            root.settings_category = category;
+            cx.notify();
+        });
+        driven.settle();
+    }
+
+    fn typed_into(
+        driven: &mut Driven,
+        field: fn(&RootView) -> &Entity<crate::views::field::Field>,
+        text: &str,
+    ) {
+        driven.focus(field);
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            let field = field(root.read(cx)).clone();
+            field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
+        });
+    }
+
+    #[gpui::test]
+    fn tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Online);
+
+        typed_into(&mut driven, |root| &root.contact, "me@example.test");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.contact.clone()),
+            "me@example.test"
+        );
+        assert!(
+            !driven.cx.update(|window, cx| {
+                let root = driven.root.read(cx);
+                root.contact.read(cx).is_focused(window)
+            }),
+            "the contact kept the caret"
+        );
+        assert!(
+            !driven.cx.update(|window, cx| {
+                let root = driven.root.read(cx);
+                window.focused(cx).is_some_and(|held| held == root.focus)
+            }),
+            "the window took the caret back from the next stop"
+        );
+
+        showing_settings(&mut driven, SettingsCategory::Recognition);
+
+        typed_into(&mut driven, |root| &root.acoustid, "a-key");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.acoustid_key.clone()),
+            "a-key"
+        );
+
+        typed_into(&mut driven, |root| &root.audd, "an-audd");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.audd_token.clone()),
+            "an-audd"
+        );
+
+        showing_settings(&mut driven, SettingsCategory::Scrobbling);
+
+        typed_into(&mut driven, |root| &root.listenbrainz, "a-token");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.listenbrainz_token.clone()),
+            "a-token"
+        );
+    }
+
+    #[gpui::test]
+    fn tab_out_of_the_filing_layout_keeps_a_valid_one_and_escape_puts_it_back(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Library);
+        let filed_as = |driven: &mut Driven| {
+            driven.read(|_, cx| cx.global::<ResonateApp>().organise_as.clone())
+        };
+        let before = filed_as(&mut driven);
+
+        typed_into(&mut driven, |root| &root.organising, "{artist}/{title}");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        assert_eq!(filed_as(&mut driven), "{artist}/{title}");
+
+        typed_into(&mut driven, |root| &root.organising, "{album}/{title}");
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        assert_eq!(filed_as(&mut driven), "{artist}/{title}");
+        assert_ne!(before, "{artist}/{title}");
+    }
+
+    #[gpui::test]
+    fn tab_out_of_the_typed_folder_adds_it_and_escape_discards_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let kept = Folder::new();
+        let dropped = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        showing_settings(&mut driven, SettingsCategory::Library);
+
+        typed_into(
+            &mut driven,
+            |root| &root.typed_root,
+            &dropped.path().display().to_string(),
+        );
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.typed_root.read(cx).text().to_owned()),
+            ""
+        );
+
+        typed_into(
+            &mut driven,
+            |root| &root.typed_root,
+            &kept.path().display().to_string(),
+        );
+        driven.cx.simulate_keystrokes("tab");
+        driven.until(|root, cx| root.library.read(cx).roots().len() == 1);
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).roots().to_vec()),
+            vec![kept.path().to_path_buf()]
+        );
+    }
+
+    fn reached_in_the_tracks(driven: &mut Driven, row: usize) {
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.reach_at(Shift::Listing(Listed::Tracks), row, false, cx);
+            });
+        });
+        driven.settle();
+    }
+
+    fn reach_in_the_tracks(driven: &mut Driven) -> Option<Span> {
+        driven.read(|root, _| root.reaching(Shift::Listing(Listed::Tracks)))
+    }
+
+    #[gpui::test]
+    fn opening_an_album_lets_go_of_the_row_reached_in_the_listing_before(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Meddle")]);
+        folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Other")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .into_iter()
+            .find_map(|track| track.album_id)
+            .expect("an album the tags named");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
+        reached_in_the_tracks(&mut driven, 2);
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(2)));
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.opened(Selection::Album(album), cx));
+        });
+        driven.settle();
+
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+    }
+
+    #[gpui::test]
+    fn an_order_or_reading_change_lets_go_of_the_row_reached_so_it_names_no_other_song(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
+        reached_in_the_tracks(&mut driven, 1);
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.library
+                    .update(cx, |library, cx| library.order_tracks(SortOrder::Title, cx));
+            });
+        });
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+
+        reached_in_the_tracks(&mut driven, 1);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.library.update(cx, |library, cx| {
+                    library.read_tracks(Direction::Descending, cx)
+                });
+            });
+        });
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+
+        reached_in_the_tracks(&mut driven, 1);
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(1)));
     }
 
     #[gpui::test]

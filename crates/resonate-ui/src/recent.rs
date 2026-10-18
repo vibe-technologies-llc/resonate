@@ -31,6 +31,10 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
         self.held.contains_key(key)
     }
 
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.held.iter().map(|(key, held)| (key, &held.value))
+    }
+
     pub(crate) fn peek(&self, key: &K) -> Option<&V> {
         self.held.get(key).map(|held| &held.value)
     }

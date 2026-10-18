@@ -8,10 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
   still copies the whole file, twice for one with a second name
 
-## Window
-- [M] Each reload empties the queue's name cache and the redraw then reads SQLite for every uncached
-  row on the window's thread; Statistics' *play from here* reads a track a query
-
 ## Android
 - [S] The lyrics pane builds every line in a non-lazy `Column` and rebuilds all of them on each
   4 Hz frame while it is open, a blur filter per line away from the read one

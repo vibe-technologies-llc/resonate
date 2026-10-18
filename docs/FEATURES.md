@@ -131,8 +131,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [M] The sleep timer is a mouse-down handler outside the focus ring with no key: a keyboard-only
-  session cannot set one; seeking to or copying a lyric line is pointer-only too
+- [S] A lyric line reached by tab is not scrolled into view (a synced sheet follows playback, so
+  the lines near the playing one are in view; an unsynced sheet is not followed)
 - [M] An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row

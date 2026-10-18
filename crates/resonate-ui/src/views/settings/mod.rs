@@ -788,6 +788,38 @@ impl RootView {
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let handle = self.the_pane_handle_of(&mut control, cx);
+        Self::ringed(&handle, control, press, cx)
+            .focus(|control| control.opacity(1.0))
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    }
+
+    pub(crate) fn in_the_pane_ring_for_keys_at(
+        &self,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, Point<Pixels>, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let (mut control, corner) = Self::marking_its_corner(control);
+        let handle = self.the_pane_handle_of(&mut control, cx);
+
+        Self::ringed_for_keys(
+            &handle,
+            control,
+            move |this, window, cx| {
+                window.focus(&this.focus);
+                press(this, corner.get(), cx);
+            },
+            cx,
+        )
+        .focus(|control| control.opacity(1.0))
+    }
+
+    fn the_pane_handle_of(
+        &self,
+        control: &mut Stateful<Div>,
+        cx: &mut Context<Self>,
+    ) -> FocusHandle {
         let named = control
             .interactivity()
             .element_id
@@ -795,10 +827,7 @@ impl RootView {
             .map_or_else(SharedString::default, |id| {
                 SharedString::from(id.to_string())
             });
-        let handle = self.controls.at(named, cx);
-        Self::ringed(&handle, control, press, cx)
-            .focus(|control| control.opacity(1.0))
-            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        self.controls.at(named, cx)
     }
 
     pub(crate) fn in_the_pane_ring_at(
@@ -807,6 +836,39 @@ impl RootView {
         press: impl Fn(&mut Self, Point<Pixels>, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let (control, corner) = Self::marking_its_corner(control);
+
+        self.in_the_pane_ring(
+            control,
+            move |this, window, cx| {
+                window.focus(&this.focus);
+                press(this, corner.get(), cx);
+            },
+            cx,
+        )
+    }
+
+    pub(crate) fn in_the_standing_ring_at(
+        &self,
+        named: &'static str,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, Point<Pixels>, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let (control, corner) = Self::marking_its_corner(control);
+
+        self.in_the_standing_ring(
+            named,
+            control,
+            move |this, window, cx| {
+                window.focus(&this.focus);
+                press(this, corner.get(), cx);
+            },
+            cx,
+        )
+    }
+
+    fn marking_its_corner(control: Stateful<Div>) -> (Stateful<Div>, Rc<Cell<Point<Pixels>>>) {
         let corner = Rc::new(Cell::new(Point::default()));
         let held = Rc::clone(&corner);
         let control = control.relative().child(
@@ -818,11 +880,7 @@ impl RootView {
             .inset_0(),
         );
 
-        self.in_the_pane_ring(
-            control,
-            move |this, _, cx| press(this, corner.get(), cx),
-            cx,
-        )
+        (control, corner)
     }
 
     pub(crate) fn ringed(
@@ -833,6 +891,21 @@ impl RootView {
     ) -> Stateful<Div> {
         let clicked = press.clone();
 
+        Self::ringed_for_keys(handle, control, press, cx).on_click(cx.listener(
+            move |this, click: &ClickEvent, window, cx| {
+                if by_the_pointer(click) {
+                    clicked(this, window, cx);
+                }
+            },
+        ))
+    }
+
+    pub(crate) fn ringed_for_keys(
+        handle: &FocusHandle,
+        control: Stateful<Div>,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         control
             .track_focus(handle)
             .key_context(CONTROL_CONTEXT)
@@ -847,11 +920,6 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {
-                if by_the_pointer(click) {
-                    clicked(this, window, cx);
-                }
-            }))
     }
 
     fn choices<T: Choice>(

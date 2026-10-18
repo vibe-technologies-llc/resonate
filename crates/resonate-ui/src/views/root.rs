@@ -26,8 +26,9 @@ use resonate_engine::{
     RepeatMode, Unclaimed, stamp_of,
 };
 use resonate_library::{
-    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
-    SavedQuery, SortOrder, TokenHeld, Track, TrackQuery, is_a_followed_link,
+    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, RowOrder, SavedQuery, SortOrder, TokenHeld, Track, TrackQuery,
+    is_a_followed_link,
 };
 
 use crate::{
@@ -48,7 +49,7 @@ use crate::{
     format,
     icons::{self, Icon},
     listening::ListenModel,
-    models::{Picture, Scale},
+    models::{Picture, Scale, Sorting},
     motion,
     settings::SettingsWriter,
     theme,
@@ -242,6 +243,15 @@ struct Wayback {
     at: LeftAt,
     named: SharedString,
     left_by: Leaving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Arrangement {
+    selection: Selection,
+    sorting: Sorting,
+    playlists: (PlaylistOrder, Direction),
+    opened_rows: (RowOrder, Direction),
+    search: (SortOrder, Direction),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -646,6 +656,7 @@ pub struct RootView {
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
+    arranged_as: Arrangement,
     waiting_for_the_results: bool,
     landed_by_a_jump: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
@@ -778,6 +789,16 @@ impl RootView {
                 cx,
             )
         });
+        let arranged_as = Arrangement {
+            selection: library.read(cx).selection(),
+            sorting: library.read(cx).sorting(),
+            playlists: (
+                library.read(cx).playlist_order(),
+                library.read(cx).playlist_reading(),
+            ),
+            opened_rows: (RowOrder::default(), Direction::default()),
+            search: (SortOrder::default(), SortOrder::default().reads()),
+        };
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
         let visualiser = cx.new(|cx| Visualiser::new(player.clone(), cx));
         let reaching = cx.global::<ResonateApp>().online.enabled;
@@ -807,6 +828,7 @@ impl RootView {
         .detach();
         cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
+            this.let_go_of_a_reach_the_rows_left(cx);
             let relocated = library.update(cx, |model, _| model.take_relocations());
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
@@ -873,6 +895,8 @@ impl RootView {
             this.contact_given(window, cx);
         })
         .detach();
+        cx.subscribe(&contact, |this, _, _: &Blurred, cx| this.contact_left(cx))
+            .detach();
 
         let acoustid = cx.new(|cx| {
             let mut field = Field::new(ACOUSTID_PLACEHOLDER, window, cx).masked();
@@ -881,6 +905,10 @@ impl RootView {
         });
         cx.subscribe_in(&acoustid, window, |this, _, _: &Submitted, window, cx| {
             this.acoustid_key_given(window, cx);
+        })
+        .detach();
+        cx.subscribe(&acoustid, |this, _, _: &Blurred, cx| {
+            this.acoustid_key_left(cx)
         })
         .detach();
 
@@ -893,6 +921,8 @@ impl RootView {
             this.audd_token_given(window, cx);
         })
         .detach();
+        cx.subscribe(&audd, |this, _, _: &Blurred, cx| this.audd_token_left(cx))
+            .detach();
 
         let listenbrainz = cx.new(|cx| {
             let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx).masked();
@@ -906,6 +936,10 @@ impl RootView {
                 this.listenbrainz_token_given(window, cx);
             },
         )
+        .detach();
+        cx.subscribe(&listenbrainz, |this, _, _: &Blurred, cx| {
+            this.listenbrainz_token_left(cx)
+        })
         .detach();
 
         let subsonic = Account::fields(&online, window, cx);
@@ -1014,9 +1048,15 @@ impl RootView {
             this.layout_given(window, cx);
         })
         .detach();
+        cx.subscribe(&organising, |this, _, _: &Blurred, cx| this.layout_left(cx))
+            .detach();
 
         let typed_root = cx.new(|cx| Field::new(TYPED_ROOT_PLACEHOLDER, window, cx));
         cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
+            this.root_typed(window, cx);
+        })
+        .detach();
+        cx.subscribe_in(&typed_root, window, |this, _, _: &Blurred, window, cx| {
             this.root_typed(window, cx);
         })
         .detach();
@@ -1187,6 +1227,7 @@ impl RootView {
             record: None,
             left_at: AHashMap::new(),
             reach: None,
+            arranged_as,
             waiting_for_the_results: false,
             landed_by_a_jump: None,
             reached_unseen: Rc::default(),
@@ -1670,6 +1711,7 @@ impl RootView {
             Some(kept) => library.keep_playlist_in_order(playlist, Some(kept), cx),
             None => library.sort_playlist(playlist, order, reading, cx),
         });
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
@@ -1717,11 +1759,13 @@ impl RootView {
     pub(crate) fn sort_a_search(&mut self, sort: SortOrder, cx: &mut Context<Self>) {
         self.query_sort = sort;
         self.query_reading = sort.reads();
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
     pub(crate) fn read_a_search(&mut self, reading: Direction, cx: &mut Context<Self>) {
         self.query_reading = reading;
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
@@ -1785,6 +1829,19 @@ impl RootView {
     }
 
     fn contact_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_contact(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn contact_left(&mut self, cx: &mut Context<Self>) {
+        if self.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
+            self.take_the_contact(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_contact(&mut self, cx: &mut Context<Self>) {
         let given = self.contact.read(cx).text().trim().to_owned();
         self.contact
             .update(cx, |contact, cx| contact.hold(given.clone(), cx));
@@ -1797,11 +1854,22 @@ impl RootView {
         };
         self.store(&Setting::Contact(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
+    }
+
+    fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_acoustid_key(cx);
         window.focus(&self.focus);
         cx.notify();
     }
 
-    fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn acoustid_key_left(&mut self, cx: &mut Context<Self>) {
+        if self.acoustid.read(cx).text().trim() != cx.global::<ResonateApp>().online.acoustid_key {
+            self.take_the_acoustid_key(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_acoustid_key(&mut self, cx: &mut Context<Self>) {
         let given = self.acoustid.read(cx).text().trim().to_owned();
         self.acoustid
             .update(cx, |key, cx| key.hold(given.clone(), cx));
@@ -1814,8 +1882,6 @@ impl RootView {
         };
         self.store(&Setting::AcoustidKey(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     pub(crate) fn leave_acoustid_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1837,6 +1903,19 @@ impl RootView {
     }
 
     fn audd_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_audd_token(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn audd_token_left(&mut self, cx: &mut Context<Self>) {
+        if self.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
+            self.take_the_audd_token(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_audd_token(&mut self, cx: &mut Context<Self>) {
         let given = self.audd.read(cx).text().trim().to_owned();
         self.audd
             .update(cx, |token, cx| token.hold(given.clone(), cx));
@@ -1849,8 +1928,6 @@ impl RootView {
         };
         self.store(&Setting::AuddToken(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     pub(crate) fn leave_audd_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1872,6 +1949,21 @@ impl RootView {
     }
 
     fn listenbrainz_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_listenbrainz_token(cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn listenbrainz_token_left(&mut self, cx: &mut Context<Self>) {
+        if self.listenbrainz.read(cx).text().trim()
+            != cx.global::<ResonateApp>().online.listenbrainz_token
+        {
+            self.take_the_listenbrainz_token(cx);
+            cx.notify();
+        }
+    }
+
+    fn take_the_listenbrainz_token(&mut self, cx: &mut Context<Self>) {
         let given = self.listenbrainz.read(cx).text().trim().to_owned();
         self.listenbrainz
             .update(cx, |token, cx| token.hold(given.clone(), cx));
@@ -1887,8 +1979,6 @@ impl RootView {
         self.store(&Setting::ListenbrainzToken(given.clone()), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.check_the_listenbrainz_token(given, cx);
-        window.focus(&self.focus);
-        cx.notify();
     }
 
     fn check_the_listenbrainz_token(&mut self, token: String, cx: &mut Context<Self>) {
@@ -2117,6 +2207,29 @@ impl RootView {
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 library.move_in_playlist(playlist, rows, to, cx);
             }),
+        }
+    }
+
+    fn arrangement(&self, cx: &App) -> Arrangement {
+        let library = self.library.read(cx);
+
+        Arrangement {
+            selection: library.selection(),
+            sorting: library.sorting(),
+            playlists: (library.playlist_order(), library.playlist_reading()),
+            opened_rows: (self.row_order, self.row_reading),
+            search: (self.query_sort, self.query_reading),
+        }
+    }
+
+    fn let_go_of_a_reach_the_rows_left(&mut self, cx: &App) {
+        let arranged_as = self.arrangement(cx);
+        if arranged_as == self.arranged_as {
+            return;
+        }
+        self.arranged_as = arranged_as;
+        if self.reach.is_some_and(|reach| reach.shift != Shift::Queue) {
+            self.reach = None;
         }
     }
 
@@ -3706,6 +3819,8 @@ impl RootView {
             return;
         }
         if self.typed_root.read(cx).is_focused(window) {
+            self.typed_root
+                .update(cx, |typed, cx| typed.hold(String::new(), cx));
             self.leave_typed_root(window, cx);
             return;
         }

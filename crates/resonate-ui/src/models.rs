@@ -827,6 +827,7 @@ pub struct LibraryModel {
     _warming: Task<()>,
     warmed: bool,
     named: Recent<TrackId, Named>,
+    _naming_again: Task<()>,
     read_albums: Recent<AlbumId, Option<Album>>,
     counted: Option<Listen>,
     _load: Task<()>,
@@ -1043,6 +1044,7 @@ impl LibraryModel {
             _warming: Task::ready(()),
             warmed: false,
             named: Recent::new(NAMES_HELD),
+            _naming_again: Task::ready(()),
             read_albums: Recent::new(ALBUMS_HELD),
             counted: None,
             _load: Task::ready(()),
@@ -3894,15 +3896,20 @@ impl LibraryModel {
     }
 
     pub fn held_tracks(&self, ids: &[TrackId]) -> Vec<Track> {
-        ids.iter()
-            .filter_map(|id| match self.library.track(*id) {
-                Ok(held) => held,
-                Err(error) => {
-                    tracing::warn!(%error, "a track could not be read by id");
-                    None
-                }
-            })
-            .collect()
+        let mut read: AHashMap<TrackId, Track> = match self.library.tracks_with_ids(ids) {
+            Ok(read) => read.into_iter().map(|track| (track.id, track)).collect(),
+            Err(error) => {
+                tracing::warn!(%error, "the tracks could not be read by id");
+                AHashMap::new()
+            }
+        };
+
+        ids.iter().filter_map(|id| read.remove(id)).collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn names_held(&self) -> usize {
+        self.named.entries().count()
     }
 
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
@@ -4054,14 +4061,69 @@ impl LibraryModel {
 
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.forget_what_the_catalog_may_have_changed();
+        self.name_what_is_held_again(cx);
         self.read(Wanted::Everything, cx);
     }
 
     fn forget_what_the_catalog_may_have_changed(&mut self) {
         self.covers.forget_where(Option::is_none);
         self.portraits.forget_where(Option::is_none);
-        self.named.forget_where(|_| true);
         self.read_albums.forget_where(|_| true);
+    }
+
+    fn name_what_is_held_again(&mut self, cx: &mut Context<Self>) {
+        let held: Vec<(QueueItem, Option<Track>)> = self
+            .named
+            .entries()
+            .map(|(id, named)| {
+                let item = QueueItem {
+                    id: *id,
+                    location: named.location.clone(),
+                    span: named.span,
+                };
+                (item, named.track.clone())
+            })
+            .collect();
+        if held.is_empty() {
+            return;
+        }
+
+        let library = Arc::clone(&self.library);
+        self._naming_again = cx.spawn(async move |this, cx| {
+            let (held, read) = cx
+                .background_executor()
+                .spawn(async move {
+                    let items: Vec<QueueItem> = held.iter().map(|(item, _)| item.clone()).collect();
+                    let read = queued_rows(&library, &items);
+                    (held, read)
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                let mut changed = false;
+                for ((item, before), track) in held.into_iter().zip(read) {
+                    let standing = this
+                        .named
+                        .peek(&item.id)
+                        .is_some_and(|now| now.names(&item) && now.track == before);
+                    if standing && track != before {
+                        this.named.insert(
+                            item.id,
+                            Named {
+                                location: item.location,
+                                span: item.span,
+                                track,
+                            },
+                        );
+                        changed = true;
+                    }
+                }
+                if changed {
+                    this.revision = this.revision.wrapping_add(1);
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
     }
 
     pub fn reload_playlists(&mut self, cx: &mut Context<Self>) {
@@ -5667,6 +5729,32 @@ impl Named {
     fn names(&self, item: &QueueItem) -> bool {
         self.location == item.location && self.span == item.span
     }
+}
+
+pub(crate) fn queued_rows(library: &Library, rows: &[QueueItem]) -> Vec<Option<Track>> {
+    let ids: Vec<TrackId> = rows.iter().map(|item| item.id).collect();
+    let by_id: AHashMap<TrackId, Track> = match library.tracks_with_ids(&ids) {
+        Ok(read) => read.into_iter().map(|track| (track.id, track)).collect(),
+        Err(error) => {
+            tracing::warn!(%error, "the queued tracks could not be read by id");
+            AHashMap::new()
+        }
+    };
+
+    rows.iter()
+        .map(|item| match by_id.get(&item.id) {
+            Some(track) if track.location == item.location => Some(track.clone()),
+            _ => queued_at(library, item),
+        })
+        .collect()
+}
+
+fn queued_at(library: &Library, item: &QueueItem) -> Option<Track> {
+    library
+        .track_at(item.location.as_path()?, item.span)
+        .inspect_err(|error| tracing::warn!(%error, "a queued track could not be read by path"))
+        .ok()
+        .flatten()
 }
 
 fn held_at(rows: &[ListedRow], row: usize) -> Option<usize> {

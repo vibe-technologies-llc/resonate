@@ -20,7 +20,7 @@ pub(crate) mod playlists;
 pub(crate) mod plot;
 mod pointed;
 mod queue;
-mod reorder;
+pub(crate) mod reorder;
 mod root;
 mod scrollbar;
 mod search;
