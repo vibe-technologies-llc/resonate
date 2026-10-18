@@ -39,10 +39,10 @@ pub use crate::{
         Planned, Portrayed, Pressings, Previewed, RootWaiting, Selection, Tone,
     },
     settings::{
-        Asking, Bindings, CaretBlink, Ephemeral, HandedOff, Online, Places, Present, Registering,
-        Setting, SettingChange, SettingKey, Settings, SettingsCategory, Sourcing, Stored,
-        Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
-        Tabs, Unkept, WindowButtons, WindowSize,
+        Asking, Bindings, CaretBlink, Continuing, Ephemeral, HandedOff, Online, Places, Present,
+        Registering, Setting, SettingChange, SettingKey, Settings, SettingsCategory, Sourcing,
+        Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
+        Syncing, Tabs, Unkept, WindowButtons, WindowSize,
     },
     views::{Pane, RootView},
 };

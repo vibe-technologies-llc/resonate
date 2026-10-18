@@ -186,6 +186,18 @@ like a delivery (`filed::landed_beside`) and its root scanned; with no music fol
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
   roots (a private CA, the tests' self-signed server).
 
+## The desktop continues a handoff
+
+- **A handoff names the song and the place in it** (`Handoff::{rows, at, position}`: the queue, the
+  row playing and the time into it). The desktop (`continuing`) resolves the rows from `at` on and,
+  where the row playing is held here, turns `position` into frames at that file's rate
+  (`Frames::from_duration`); a row not held here, or no rate for it, continues from the start of
+  the first song that is. The window (`Syncing::continue_from` answers `Continuing { cuts, at }`)
+  and `resonate sync --handoff` (`Handed`, `Opening::place`) load the songs, autoplaying, and then
+  send `Command::Seek(at)`, which the engine keeps as the place to open at; a seek that fails
+  is logged and the song plays from its start. The phones do the same through `Command::Resume`
+  (`resonate-mobile`'s `continue_from`).
+
 ## The desktop follows its settings
 
 - **The settings file is the one way to reconfigure.** `sync::start` returns a `Syncing` over a

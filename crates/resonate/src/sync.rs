@@ -13,12 +13,12 @@ use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "sync")]
 use parking_lot::Mutex;
 #[cfg(feature = "sync")]
-use resonate_core::{PlaylistId, Recording, SyncedSongs};
+use resonate_core::{Frames, PlaylistId, Recording, SampleRate, SyncedSongs};
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
 #[cfg(feature = "sync")]
-use resonate_library::{Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist};
+use resonate_library::{Cut, Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist};
 #[cfg(feature = "sync")]
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
@@ -625,7 +625,7 @@ pub(crate) fn asked(
     settings: &Path,
     library: Option<Arc<Library>>,
     asked: Asked<'_>,
-) -> Result<Option<Vec<QueueItem>>> {
+) -> Result<Option<Handed>> {
     match asked {
         Asked::Join(code) => {
             let key = SyncKey::from_code(code).map_err(Error::Sync)?;
@@ -798,23 +798,63 @@ fn transferred(sync: &Sync, asked: &[Recording]) -> usize {
 }
 
 #[cfg(feature = "sync")]
-fn handed_off(library: &Library, handoff: &Handoff) -> Result<Vec<QueueItem>> {
-    let mut minting = Unclaimed::beside(&[]);
-    let mut items = Vec::new();
-    let first = usize::try_from(handoff.at).unwrap_or_default();
-    for recording in handoff.rows.iter().skip(first) {
+pub(crate) struct Handed {
+    pub(crate) items: Vec<QueueItem>,
+    pub(crate) at: Frames,
+}
+
+#[cfg(feature = "sync")]
+fn continuing(
+    library: &Library,
+    rows: &[Recording],
+    first: u32,
+    position: Duration,
+) -> resonate_library::Result<(Vec<Cut>, Frames)> {
+    let first = usize::try_from(first).unwrap_or_default();
+    let mut cuts = Vec::new();
+    let mut handed_row_held = false;
+    for (row, recording) in rows.iter().enumerate().skip(first) {
         if let Some(cut) = library.resolve_recording(recording)? {
-            items.push(QueueItem {
-                id: minting.mint(),
-                location: cut.location,
-                span: cut.span,
-            });
+            handed_row_held |= row == first;
+            cuts.push(cut);
         }
     }
-    if items.is_empty() {
+
+    let at = cuts
+        .first()
+        .filter(|_| handed_row_held)
+        .and_then(|cut| rate_of(library, cut))
+        .map_or(Frames(0), |rate| Frames::from_duration(position, rate));
+    Ok((cuts, at))
+}
+
+#[cfg(feature = "sync")]
+fn rate_of(library: &Library, cut: &Cut) -> Option<SampleRate> {
+    let path = cut.location.as_path()?;
+    library
+        .track_at(path, cut.span)
+        .ok()
+        .flatten()
+        .map(|track| track.spec.rate)
+}
+
+#[cfg(feature = "sync")]
+fn handed_off(library: &Library, handoff: &Handoff) -> Result<Handed> {
+    let (cuts, at) = continuing(library, &handoff.rows, handoff.at, handoff.position)?;
+    if cuts.is_empty() {
         return Err(Error::NothingHandedOff(handoff.device.to_string().into()));
     }
-    Ok(items)
+
+    let mut minting = Unclaimed::beside(&[]);
+    let items = cuts
+        .into_iter()
+        .map(|cut| QueueItem {
+            id: minting.mint(),
+            location: cut.location,
+            span: cut.span,
+        })
+        .collect();
+    Ok(Handed { items, at })
 }
 
 #[cfg(all(feature = "sync", feature = "ui"))]
@@ -906,8 +946,8 @@ impl resonate_ui::Syncing for Service {
         self.with(Vec::new(), <Running as resonate_ui::Syncing>::handed_off)
     }
 
-    fn continue_from(&self, device: &str) -> Vec<resonate_library::Cut> {
-        self.with(Vec::new(), |running| {
+    fn continue_from(&self, device: &str) -> resonate_ui::Continuing {
+        self.with(resonate_ui::Continuing::default(), |running| {
             resonate_ui::Syncing::continue_from(running, device)
         })
     }
@@ -1024,24 +1064,24 @@ impl resonate_ui::Syncing for Running {
             .collect()
     }
 
-    fn continue_from(&self, device: &str) -> Vec<resonate_library::Cut> {
+    fn continue_from(&self, device: &str) -> resonate_ui::Continuing {
         let Some(device) = self.named(device) else {
-            return Vec::new();
+            return resonate_ui::Continuing::default();
         };
         let Some(handoff) = self
             .handoffs()
             .into_iter()
             .find(|handoff| handoff.device == device.id)
         else {
-            return Vec::new();
+            return resonate_ui::Continuing::default();
         };
-        let first = usize::try_from(handoff.at).unwrap_or_default();
-        handoff
-            .rows
-            .iter()
-            .skip(first)
-            .filter_map(|recording| self.library.resolve_recording(recording).ok().flatten())
-            .collect()
+        match continuing(&self.library, &handoff.rows, handoff.at, handoff.position) {
+            Ok((cuts, at)) => resonate_ui::Continuing { cuts, at },
+            Err(error) => {
+                tracing::debug!(%error, "what another device was playing could not be resolved");
+                resonate_ui::Continuing::default()
+            }
+        }
     }
 }
 
@@ -1185,5 +1225,60 @@ mod tests {
         assert_eq!(unmoved, 0);
         assert!(moved);
         assert_eq!(after_a_bad_file, 1);
+    }
+
+    fn heard(title: &str) -> Recording {
+        Recording {
+            mbid: None,
+            title: title.to_owned(),
+            artist: "Artist".to_owned(),
+            album: "Album".to_owned(),
+            length: Some(Duration::from_millis(100)),
+        }
+    }
+
+    fn held_song() -> (PathBuf, Library) {
+        use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_wave};
+
+        let folder = scratch("sync-continuing");
+        fs::write(
+            folder.join("held.wav"),
+            tagged_wave(&[(TITLE, "Held"), (ARTIST, "Artist"), (ALBUM, "Album")]),
+        )
+        .expect("a song");
+        let library = scanned(&folder);
+        (folder, library)
+    }
+
+    #[test]
+    fn a_handoff_carries_its_place_in_the_song_only_when_that_song_is_held_here() {
+        let (folder, library) = held_song();
+        let rows = [heard("Missing"), heard("Held")];
+        let five_seconds = Duration::from_secs(5);
+
+        let whole = continuing(&library, &rows[1..], 0, five_seconds).expect("resolved");
+        let behind_a_missing_one = continuing(&library, &rows, 0, five_seconds).expect("resolved");
+        let from_the_held_one = continuing(&library, &rows, 1, five_seconds).expect("resolved");
+        let with_no_place_given = continuing(&library, &rows, 0, Duration::ZERO).expect("resolved");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(whole.0.len(), 1);
+        assert_eq!(whole.1, Frames(5 * 44_100));
+        assert_eq!(behind_a_missing_one.0.len(), 1);
+        assert_eq!(behind_a_missing_one.1, Frames(0));
+        assert_eq!(from_the_held_one.1, Frames(5 * 44_100));
+        assert_eq!(with_no_place_given.1, Frames(0));
+    }
+
+    #[test]
+    fn a_handoff_of_songs_none_of_which_is_held_continues_from_nothing() {
+        let (folder, library) = held_song();
+
+        let nothing =
+            continuing(&library, &[heard("Missing")], 0, Duration::from_secs(5)).expect("resolved");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(nothing.0.is_empty());
+        assert_eq!(nothing.1, Frames(0));
     }
 }

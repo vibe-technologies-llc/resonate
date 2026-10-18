@@ -19,7 +19,7 @@ use gpui::{
     canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
-    AlbumId, ArtistsDrawn, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
+    AlbumId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
 };
 use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
@@ -31,8 +31,8 @@ use resonate_library::{
 };
 
 use crate::{
-    Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp, Selection,
-    Setting, SettingChange, SettingKey, Tabs, WindowSize,
+    Continuing, Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp,
+    Selection, Setting, SettingChange, SettingKey, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
@@ -1417,7 +1417,7 @@ impl RootView {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
             return;
         };
-        let cuts = syncing.continue_from(device);
+        let Continuing { cuts, at } = syncing.continue_from(device);
         if cuts.is_empty() {
             self.report(
                 Notice::Trouble(format!("Nothing {device} was playing is in this library")),
@@ -1444,6 +1444,9 @@ impl RootView {
             },
             cx,
         );
+        if at != Frames::default() {
+            self.send(Command::Seek(at), cx);
+        }
         cx.notify();
     }
 

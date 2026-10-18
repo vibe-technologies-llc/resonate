@@ -13,9 +13,9 @@ use crossbeam_channel::Sender;
 use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, PlaylistId, Presence, ScrollbarMode, Shown,
-    Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize,
-    Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Frames, Icon, Pictured, PlaylistId, Presence, ScrollbarMode,
+    Shown, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs,
+    TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -920,6 +920,12 @@ pub struct HandedOff {
     pub songs: usize,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Continuing {
+    pub cuts: Vec<Cut>,
+    pub at: Frames,
+}
+
 pub trait Syncing: Send + Sync {
     fn shown(&self) -> SyncShown;
 
@@ -937,7 +943,7 @@ pub trait Syncing: Send + Sync {
 
     fn handed_off(&self) -> Vec<HandedOff>;
 
-    fn continue_from(&self, device: &str) -> Vec<Cut>;
+    fn continue_from(&self, device: &str) -> Continuing;
 }
 
 #[derive(Clone, Debug, PartialEq)]

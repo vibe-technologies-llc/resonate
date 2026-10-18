@@ -1372,7 +1372,8 @@ is never named.
   within seconds (`sync.md`); a reset never forgets the code. `SyncStanding::Waiting` is the
   service not yet running (just switched on, or another Resonate holds the catalog's sync). The `Syncing` seam on `Stored` (absent without the `sync` feature) answers the rest: a
   playlist's menu offers *Fetch N missing songs from* each online device and *Keep its songs here*;
-  the queue heading offers *Continue from* up to two devices whose last queue holds songs.
+  the queue heading offers *Continue from* up to two devices whose last queue holds songs, which
+  loads them and seeks to the place the other device was at (`Continuing::at`).
 - **Discord = two Desktop groups; they write a global before a file.** *Discord* (switch, application
   id) and *What Discord shows* (text, picture, icon, bar, pause). Each control changes
   `ResonateApp::presence`, stores its `Setting`, hands the whole `Presence` to `Present::follow`. Id and

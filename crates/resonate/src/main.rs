@@ -1794,8 +1794,10 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         config,
         items,
         Some(library),
-        whole.then_some(found.id),
-        None,
+        Opening {
+            playing: whole.then_some(found.id),
+            ..Opening::default()
+        },
         &wanted.transport,
     )
 }
@@ -2049,8 +2051,10 @@ fn play(
         config,
         items,
         library,
-        None,
-        asleep.and_then(sleep::Sleep::until),
+        Opening {
+            asleep: asleep.and_then(sleep::Sleep::until),
+            ..Opening::default()
+        },
         transport,
     )
 }
@@ -2163,7 +2167,7 @@ fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> {
         sync::Asked::Join(_) | sync::Asked::Leave => None,
         _ => Some(Arc::new(open_library(cli, config)?)),
     };
-    let Some(items) = reloading::delivering(&settings, Some(Reloadable::Sync), || {
+    let Some(handed) = reloading::delivering(&settings, Some(Reloadable::Sync), || {
         sync::asked(config, &settings, library.clone(), asked)
     })?
     else {
@@ -2174,7 +2178,17 @@ fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> {
         repeat: None,
         volume: None,
     };
-    play_queue(cli, config, items, library, None, None, &transport)
+    play_queue(
+        cli,
+        config,
+        handed.items,
+        library,
+        Opening {
+            place: handed.at,
+            ..Opening::default()
+        },
+        &transport,
+    )
 }
 
 #[cfg(not(feature = "sync"))]
@@ -2182,15 +2196,26 @@ fn synced(_cli: &Cli, _config: &Config, _args: &SyncArgs) -> Result<()> {
     Err(Error::SyncOff)
 }
 
+#[derive(Default)]
+struct Opening {
+    playing: Option<PlaylistId>,
+    asleep: Option<Until>,
+    place: Frames,
+}
+
 fn play_queue(
     cli: &Cli,
     config: &Config,
     items: Vec<QueueItem>,
     library: Option<Arc<Library>>,
-    playing: Option<PlaylistId>,
-    asleep: Option<Until>,
+    opening: Opening,
     transport: &TransportArgs,
 ) -> Result<()> {
+    let Opening {
+        playing,
+        asleep,
+        place,
+    } = opening;
     let sources = playing_from(library.as_deref());
     let mut engine = engine_config(cli, config);
     if let Some(percent) = transport.volume {
@@ -2206,6 +2231,11 @@ fn play_queue(
     };
     for command in set_out(transport, items, start_at) {
         player.send(command)?;
+    }
+    if place != Frames::default()
+        && let Err(error) = player.send(Command::Seek(place))
+    {
+        tracing::warn!(%error, "the place the other device was at could not be reached");
     }
     if let Some(library) = library.as_ref() {
         library.set_playing_playlist(playing.map(|playlist| Playing { playlist, queue }));

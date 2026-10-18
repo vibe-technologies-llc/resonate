@@ -93,7 +93,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
 - [M] Saved-query playlists stay on the device they were saved on; only lists travel
-- [S] A handoff continues from the song the other device was on, not from its place in that song
 - [S] A song from another device is refused where no music folder is set; an open vault does not
   keep it
 - [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
