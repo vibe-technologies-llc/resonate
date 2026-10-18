@@ -1559,7 +1559,13 @@ is never named.
     tab stop, `Controls::holding`), shown by `in_focus` while one holds the caret
     (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`). A mark opening a card or menu
     where pressed goes through `in_the_pane_ring_at` (a canvas keeps its bottom-left corner;
-    `a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`).
+    `a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`); the ring wrappers `_at`
+    hand the caret back to the window as they open it, so the menu's arrows and `enter` answer. The
+    playback bar's sleep timer is `in_the_standing_ring_at` (`tab_reaches_the_sleep_timer_and_enter_opens_its_menu_and_sets_a_timer`).
+    A lyric line is a tab stop through `in_the_pane_ring_for_keys_at` (`ringed_for_keys`: the
+    `PressControl` action alone, so the line's own pointer click, guarded by `by_the_pointer`, stays the
+    seek): `enter` opens the line's menu, *Copy this line*, *Copy the whole sheet* and, on a timed
+    line, *Play from this line* (`tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it`).
   - **The seek and volume rails are tab stops of their own context**: `slider::rail` under `Control
     Rail`; `app::answering_on_a_rail` binds `right`/`up` to `RailOn` and `left`/`down` to `RailBack`,
     stepping a seek by `seek_step`, a volume by `VOLUME_STEP`

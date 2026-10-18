@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, Canvas, Context, Div, Font, FontWeight, HighlightStyle, Hsla,
-    LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent, SharedString, StyledText,
+    AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, Font, FontWeight, HighlightStyle,
+    Hsla, LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent, SharedString, StyledText,
     canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
@@ -15,6 +15,7 @@ use crate::{
     lyrics::{Asked, Heard, Look, Measures, Reading, rising},
     motion, theme,
     views::{
+        focus::by_the_pointer,
         hint::{self, Names},
         kit::{self, Tone},
         menu::{self, Menu},
@@ -559,30 +560,54 @@ impl RootView {
             );
 
         let Some(at) = line.at else {
+            let offered = words.clone();
+            let lit = self.in_the_pane_ring_for_keys_at(
+                drawn.id(("lyric", line.index)),
+                move |this, where_at, cx| {
+                    let menu = this.copies_a_lyric(where_at, &offered, cx);
+                    this.open_a_menu(menu, cx);
+                },
+                cx,
+            );
             return row
                 .child(carried.child(menu::opens_a_menu(
-                    drawn.id(("lyric", line.index)),
+                    lit,
                     move |this, where_at, cx| this.copies_a_lyric(where_at, &words, cx),
                     cx,
                 )))
                 .into_any_element();
         };
 
-        let sung = menu::opens_a_menu(
+        let offer = move |this: &RootView,
+                          where_at: Point<Pixels>,
+                          words: &SharedString,
+                          cx: &Context<RootView>| {
+            this.copies_a_lyric(where_at, words, cx).apart().does(
+                Icon::Lyrics,
+                SEEK_TO_IT,
+                move |this, _, cx| this.seek_to_the_words(at, cx),
+            )
+        };
+        let offered = words.clone();
+        let lit = self.in_the_pane_ring_for_keys_at(
             drawn
                 .id(("lyric", line.index))
                 .cursor_pointer()
                 .hover(|line| line.bg(theme::tinted(theme::text(), 0x0e)))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.seek_to_the_words(at, cx);
+                .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {
+                    if by_the_pointer(click) {
+                        this.seek_to_the_words(at, cx);
+                    }
                 })),
             move |this, where_at, cx| {
-                this.copies_a_lyric(where_at, &words, cx).apart().does(
-                    Icon::Lyrics,
-                    SEEK_TO_IT,
-                    move |this, _, cx| this.seek_to_the_words(at, cx),
-                )
+                let menu = offer(this, where_at, &offered, cx);
+                this.open_a_menu(menu, cx);
             },
+            cx,
+        );
+        let sung = menu::opens_a_menu(
+            lit,
+            move |this, where_at, cx| offer(this, where_at, &words, cx),
             cx,
         );
 

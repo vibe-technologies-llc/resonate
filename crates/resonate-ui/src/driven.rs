@@ -228,7 +228,15 @@ impl Driven {
         folder: &Folder,
         corrections: Corrected,
     ) -> Self {
-        Self::built(cx, library, folder, corrections, None, None)
+        Self::built(
+            cx,
+            library,
+            folder,
+            corrections,
+            None,
+            None,
+            Lyricists::unsourced(),
+        )
     }
 
     pub(crate) fn reaching(
@@ -244,6 +252,19 @@ impl Driven {
             Corrected::uncorrected(),
             Some(reaching),
             None,
+            Lyricists::unsourced(),
+        )
+    }
+
+    pub(crate) fn singing(cx: &mut TestAppContext, library: Arc<Library>, folder: &Folder) -> Self {
+        Self::built(
+            cx,
+            library,
+            folder,
+            Corrected::uncorrected(),
+            None,
+            None,
+            Lyricists::local(),
         )
     }
 
@@ -260,6 +281,7 @@ impl Driven {
             Corrected::uncorrected(),
             None,
             Some(Arc::new(fingerprinters)),
+            Lyricists::unsourced(),
         )
     }
 
@@ -270,6 +292,7 @@ impl Driven {
         corrections: Corrected,
         reaching: Option<Reaching>,
         recognising: Option<Arc<Fingerprinters>>,
+        lyricists: Lyricists,
     ) -> Self {
         let (reference, register) = match reaching {
             Some(Reaching {
@@ -294,7 +317,7 @@ impl Driven {
             cx.set_global(ResonateApp {
                 player: unplugged_player(),
                 library,
-                lyricists: Arc::new(Lyricists::unsourced()),
+                lyricists: Arc::new(lyricists),
                 fingerprinters: Arc::clone(&fingerprinters),
                 corrections: Arc::new(corrections),
                 settings: Arc::new(Ephemeral),
@@ -1162,6 +1185,69 @@ mod tests {
             driven.read(|root, _| root.pane == Pane::Albums),
             "enter on the sidebar's albums did not open them"
         );
+    }
+
+    #[gpui::test]
+    fn tab_reaches_the_sleep_timer_and_enter_opens_its_menu_and_sets_a_timer(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&files);
+
+        assert!(
+            tabbed_onto(&mut driven, "sleep"),
+            "tab never reached the sleep timer"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "enter opened no menu on the sleep timer"
+        );
+
+        driven.cx.simulate_keystrokes("down enter");
+        driven.until(|root, cx| root.player.read(cx).state().sleeping.is_some());
+        assert!(driven.read(|root, _| root.menu.is_none()));
+    }
+
+    #[gpui::test]
+    fn tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        std::fs::write(
+            folder.path().join("one.lrc"),
+            "[00:00.50]first words\n[00:03.00]second words\n",
+        )
+        .expect("a sidecar beside the track");
+        let mut driven = Driven::singing(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
+        driven.until(|root, cx| root.lyrics.read(cx).text().len() == 2);
+
+        assert!(
+            tabbed_onto_the_pane(&mut driven, "lyric-1"),
+            "tab never reached the second lyric line"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "enter opened no menu on the lyric line"
+        );
+
+        let sought = driven.read(|root, cx| root.player.read(cx).state().seeks);
+
+        driven.cx.simulate_keystrokes("down down down enter");
+        driven.settle();
+        assert!(driven.read(|root, _| root.menu.is_none()));
+        driven.until(|root, cx| root.player.read(cx).state().seeks != sought);
     }
 
     #[gpui::test]
