@@ -284,8 +284,11 @@ rows read via `Player::media` like any unscanned row.
   - A cue sheet that cannot be read (`scan::heard_sheet` answers `Heard::Unreadable`: an `io` error
     but `NotFound`, longer than `LARGEST_SHEET_ON_DISC`, or zero bytes, as a sheet read mid-rewrite):
     it claims nothing, but every row with a `sheet_modified` that `Known::cuts_in` finds on a file
-    beside it is kept and its file is not probed whole. A sheet that parses to nothing
-    (`Heard::Blank`) keeps nothing.
+    beside it or in a folder below within `DEEPEST_FOLDER_A_SHEET_NAMES` is kept and its file is not
+    probed whole (a file below goes into `claimed_from_above`, so its own folder's pass leaves it,
+    and a sheet of that folder's own does not recut it until the upper one reads again). A sheet that
+    parses to nothing (`Heard::Blank`) keeps nothing.
+    (`a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it`)
   - An *empty* folder is guarded only where seen as a volume: keeping every empty folder's rows kept
     `moves::follow_the_moved` from pairing any move out of a folder it emptied.
 - **A volume seen mounted is remembered; its rows are kept while it is not.** The walk notes a

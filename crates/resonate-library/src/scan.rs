@@ -18,9 +18,9 @@ use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
-    Codec, CueFile, CueNaming, CueSheet, MediaInfo, Scanned, Sources, TagSet,
-    mend_a_cut_short_write, names_a_cut_short_write, probe_scanned, read_cue, the_best_a_cue_names,
-    the_folder_a_cue_names, the_one_a_cue_names,
+    Codec, CueFile, CueNaming, CueSheet, DEEPEST_FOLDER_A_SHEET_NAMES, MediaInfo, Scanned, Sources,
+    TagSet, mend_a_cut_short_write, names_a_cut_short_write, probe_scanned, read_cue,
+    the_best_a_cue_names, the_folder_a_cue_names, the_one_a_cue_names,
 };
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::params;
@@ -323,6 +323,18 @@ impl Stored {
     }
 }
 
+struct Cut {
+    file: PathBuf,
+    placed: Placed,
+    rows: Vec<TrackId>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Placed {
+    Beside,
+    Below,
+}
+
 #[derive(Default)]
 struct Known {
     rows: BTreeMap<String, Vec<Stored>>,
@@ -387,21 +399,35 @@ impl Known {
         self.rows.get(path).map_or(&[], Vec::as_slice)
     }
 
-    fn cuts_in(&self, folder: &Path) -> Vec<(PathBuf, Vec<TrackId>)> {
+    fn cuts_in(&self, folder: &Path) -> Vec<Cut> {
         let Some(text) = folder.to_str() else {
             return Vec::new();
         };
         let (from, past) = walked_from(text);
         self.rows
             .range(from..past)
-            .filter(|(file, _)| Path::new(file.as_str()).parent() == Some(folder))
             .filter_map(|(file, rows)| {
+                let file = PathBuf::from(file);
+                let folders_below = file
+                    .parent()?
+                    .strip_prefix(folder)
+                    .ok()?
+                    .components()
+                    .count();
                 let cut: Vec<TrackId> = rows
                     .iter()
                     .filter(|held| held.sheet_modified.is_some())
                     .map(|held| held.id)
                     .collect();
-                (!cut.is_empty()).then(|| (PathBuf::from(file), cut))
+                (folders_below <= DEEPEST_FOLDER_A_SHEET_NAMES && !cut.is_empty()).then_some(Cut {
+                    placed: if folders_below == 0 {
+                        Placed::Beside
+                    } else {
+                        Placed::Below
+                    },
+                    file,
+                    rows: cut,
+                })
             })
             .collect()
     }
@@ -1066,7 +1092,7 @@ fn directory_of(
             Heard::Sheet(sheet) => sheet,
             Heard::Blank => continue,
             Heard::Unreadable => {
-                if !keep_the_cuts_in(walking, folder, &mut claimed) {
+                if !keep_the_cuts_in(walking, folder, &mut claimed, claimed_from_above) {
                     return Ok(false);
                 }
                 continue;
@@ -1527,10 +1553,18 @@ fn unheard(path: &Path, error: &io::Error) -> Heard {
     Heard::Unreadable
 }
 
-fn keep_the_cuts_in(walking: &Walking<'_>, folder: &Path, claimed: &mut AHashSet<PathBuf>) -> bool {
-    for (file, ids) in walking.known.cuts_in(folder) {
-        claimed.insert(file);
-        if !ids
+fn keep_the_cuts_in(
+    walking: &Walking<'_>,
+    folder: &Path,
+    claimed: &mut AHashSet<PathBuf>,
+    claimed_from_above: &mut AHashSet<PathBuf>,
+) -> bool {
+    for Cut { file, placed, rows } in walking.known.cuts_in(folder) {
+        match placed {
+            Placed::Beside => claimed.insert(file),
+            Placed::Below => claimed_from_above.insert(file),
+        };
+        if !rows
             .into_iter()
             .all(|id| walking.work.send(Job::Unread(id)).is_ok())
         {

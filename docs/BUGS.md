@@ -56,9 +56,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   rip misses its 22-track pressing and lands strictly on the 12-track standard edition
 - [M] A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read
   in `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
-- [S] A cue sheet the scan cannot read keeps only the cut rows of files beside it
-  (`Known::cuts_in`): rows of a file it cut from a folder below are pruned with their history
-  until the sheet reads again
 
 ## Window
 - [M] A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which

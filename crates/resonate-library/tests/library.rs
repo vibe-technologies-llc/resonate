@@ -7742,6 +7742,44 @@ fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
 }
 
 #[test]
+fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<()> {
+    let (tree, library) = scanned_two_discs();
+    let before: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    tree.write("The Wall.cue", b"");
+    let stats = scan(&library, &options(&tree))?;
+    let during: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    assert_eq!(
+        stats.removed, 0,
+        "rows were pruned under a sheet that could not be read"
+    );
+    assert_eq!(
+        during, before,
+        "a sheet read as empty cost the files below it their cuts"
+    );
+
+    tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
+    scan(&library, &options(&tree))?;
+    let after: Vec<_> = library
+        .tracks(&TrackQuery::default())?
+        .iter()
+        .map(|row| row.id)
+        .collect();
+
+    assert_eq!(after, before, "the cuts came back as new rows");
+    Ok(())
+}
+
+#[test]
 fn a_file_a_sheet_above_it_cuts_is_left_where_it_stands() -> Result<()> {
     let (tree, library) = scanned_two_discs();
 
