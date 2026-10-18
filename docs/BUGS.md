@@ -22,9 +22,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Tagging
-- [M] A write back staged in the spool folder (`written_back_from_elsewhere`, the track's folder
-  refusing a new file) keeps no whole copy beside the track: a crash part way leaves the track torn
-  with nothing to finish it, and the staged copy under `/var/tmp` swept by nothing
 - [M] A landing on the closest pressing (`Fit::Wider`, `Fit::Narrower`) is written into the files as
   a match: a 14-track rip landed on a 12-track pressing gets `TRACKTOTAL=12` in tracks 13 and 14;
   the fit is not stored

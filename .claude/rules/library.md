@@ -979,7 +979,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Taken::still_stands` before the rename: an edit another program made meanwhile answers
   `Error::ChangedWhileWritten`. A folder the listener may not create in does not refuse a file they
   may write: `landed_from_elsewhere` stages under the spool's folders (`/var/tmp`, replaced by
-  `TMPDIR`; then the temp dir) and writes back through `written_back`. The copy is a clone
+  `TMPDIR`; then the temp dir) as `.<name>.<pid>-<n>.resonate-staged` and writes it back into the
+  track's own inode. **A copy kept outside the track's folder names its track:** before the write
+  back `WholeCopy::kept_elsewhere` appends the stood record and then the track's canonical path
+  (FNV-1a check, `AWAY_MAGIC` last) and renames it `.resonate-whole` in the spool; a write back
+  failing part way renames it `.resonate-torn` there. Every write and every scan first runs
+  `mend_what_was_written_back_from_elsewhere` over the spool folders: a dead writer's staged copy is
+  swept, a dead writer's or torn whole copy is finished over the track its record names (only where
+  its file name is the one the copy's name carries, and under the same `Stood::standing` guard), a
+  damaged or mismatched record writes nothing and the copy goes, a copy with no such record is not
+  this build's to touch (`a_track_torn_by_a_dead_writer_is_finished_from_the_whole_copy_kept_outside_its_folder`,
+  `only_a_dead_writers_copy_staged_outside_the_tracks_folder_is_swept`). The copy is a clone
   (`cloned_beside`, `FICLONE`) where the filesystem shares extents. **Where it cannot clone, an edit
   the tag's own room holds lands in the file itself**: `landed_in_place` has lofty write into an
   `Overlay` (4 KiB in-memory pages); `Overlay::land` writes back only differing pages and
