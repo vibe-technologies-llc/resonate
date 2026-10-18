@@ -595,6 +595,14 @@ struct ScanProgress: View {
     }
 }
 
+extension StatusMessage.Offer {
+    var title: String {
+        switch self {
+        case .openCatalog: "Try again"
+        }
+    }
+}
+
 struct StatusCard: View {
     @Environment(Library.self) private var library
     @Environment(\.dynamicTypeSize) private var textSize
@@ -614,6 +622,13 @@ struct StatusCard: View {
                 .contentShape(Rectangle())
                 .onTapGesture { expanded.toggle() }
             Spacer(minLength: 0)
+            if let offer = message.offer {
+                Button(offer.title) { library.perform(offer) }
+                    .font(.footnote.weight(.semibold))
+                    .buttonStyle(.borderless)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+            }
             Button("Dismiss") { library.dismissStatus() }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.borderless)

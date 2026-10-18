@@ -139,6 +139,7 @@ struct ResonateShortcuts: AppShortcutsProvider {
 enum Spoken {
     static func player(of library: Library) async throws -> MobilePlayer {
         library.start()
+        library.openAgain()
         return try await library.player()
     }
 

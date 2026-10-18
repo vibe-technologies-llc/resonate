@@ -12,9 +12,14 @@ struct StatusMessage: Equatable {
         case failure
     }
 
+    enum Offer {
+        case openCatalog
+    }
+
     let text: String
     let kind: Kind
     let serial: Int
+    var offer: Offer?
 }
 
 @MainActor
@@ -264,7 +269,6 @@ final class Library {
 
     func start() {
         guard polling == nil else { return }
-        let folder = support.path
         let documents = folders
         let support = support
         Task.detached(priority: .utility) { Backup.leaveOutDerived(in: support) }
@@ -272,6 +276,20 @@ final class Library {
             let measured = await documents.refreshed()
             self?.folderList = measured
         }
+        open()
+    }
+
+    func openAgain() {
+        guard native == nil, openingFailure != nil, !erasing else { return }
+        if status?.offer == .openCatalog { dismissStatus() }
+        open()
+    }
+
+    private func open() {
+        let folder = support.path
+        let documents = folders
+        let support = support
+        openingFailure = nil
         polling = Task { [weak self] in
             do {
                 let opened = try await Work.inOrder {
@@ -305,7 +323,7 @@ final class Library {
                 openingFailure = error
                 waiting.forEach { $0.resume(throwing: error) }
                 waiting.removeAll()
-                report(error)
+                show(explained(error), as: .failure, offering: .openCatalog)
             }
         }
     }
@@ -1404,10 +1422,16 @@ final class Library {
         status = nil
     }
 
-    private func show(_ text: String, as kind: StatusMessage.Kind) {
+    func perform(_ offer: StatusMessage.Offer) {
+        switch offer {
+        case .openCatalog: openAgain()
+        }
+    }
+
+    private func show(_ text: String, as kind: StatusMessage.Kind, offering offer: StatusMessage.Offer? = nil) {
         if kind == .notice, status?.kind == .failure { return }
         statusSerial += 1
-        let shown = StatusMessage(text: text, kind: kind, serial: statusSerial)
+        let shown = StatusMessage(text: text, kind: kind, serial: statusSerial, offer: offer)
 
         status = shown
         AccessibilityNotification.Announcement(text).post()

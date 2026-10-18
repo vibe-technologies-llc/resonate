@@ -139,7 +139,14 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   the journals' recovery at launch and the joining of an enrichment pass or a download on erasing run on `Work.aside`, never the main actor.
 - **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
   6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` (the boundary's cause sentence, `mobile.md`'s *A failure is told by its cause*) is shown once per distinct text per
-  song, and a poll failure once until that part of polling recovers, so a dismissal holds. The
+  song, and a poll failure once until that part of polling recovers, so a dismissal holds.
+  **A catalog that would not open is asked again, never given up on**: the failure's banner offers
+  *Try again* (`StatusMessage.offer`, `.openCatalog`, a button beside Dismiss), and coming forward
+  after `.background` and every Siri intent ask too (`Library.openAgain`, which does nothing while
+  the player is open, an open is under way or erasing runs); each opens a fresh `MobilePlayer`
+  (`Library.open`) with `openingFailure` cleared first, so `player()` callers wait for that attempt,
+  and a success runs the whole start (preferences, Now Playing, `Features.initialize`, the catalog,
+  the poll). Actions sent while it is closed are dropped, as before, since the banner says why. The
   snapshot, the queue read and the save are three parts of a tick, each failing and recovering on
   its own: a queue or save that fails never discards the snapshot already taken (which holds the
   engine's failure), a queue that cannot be read is not asked again until its revision moves, and
@@ -1043,7 +1050,8 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   Siri's own *pause*, *skip* and *go back* reach the remote commands, so there is no intent for them.
 - **An intent opens the player itself.** A background launch connects no scene, so no `onAppear`
   runs: `ResonateApp.init` makes the `Library` and registers it with `AppDependencyManager`, each
-  intent takes it as a `@Dependency` and calls `start()` (which runs once) before
+  intent takes it as a `@Dependency` and calls `start()` (which runs once) and `openAgain()` (where
+  an earlier open failed) before
   `player()`, and plays through the same `Library.play`/`shuffle`/`resume` as a tap, so activation
   and the lock screen follow. Tracks are read whole, page by page, on `Work.aside`
   (`Library.everyPage`), the snapshot on `Work.inOrder`.
