@@ -245,6 +245,12 @@ written as the figure it is (`settings::as_typed`): 70 % is `volume = 0.7`. `Fil
 batch of `SettingChange`s through one `config::edit`, writing only if something moved; a setting the
 file cannot say (a non-UTF-8 folder) is `SettingNotStored` while the rest land.
 
+**A subcommand's write is not heard by a player already running.** A window or `resonate play` reads
+`config.toml` once at start and nothing tells it of a change, so `resonate eq` compares the file
+before and after and, when it moved, lists the players on the bus (`Running::listed`) and says they
+keep the settings they started with (`equaliser::kept_by_running`); with none running, or no bus,
+it says nothing.
+
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and
 `resonate eq` cannot overwrite each other; no lock file left); sweeps what a killed writer left

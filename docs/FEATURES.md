@@ -113,8 +113,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   only the unshuffled list, so a model cannot read the order a shuffled queue plays in
 - [S] A launch handing files to an open window warns that its settings flags are left behind; the
   hand-off could carry them
-- [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is not heard by a
-  running window or player, and nothing says so
+- [M] A setting a subcommand writes (`resonate eq --profile`, `--on`, `--unbind`) is only said not to
+  be heard by a running window or player, not delivered to it; `tidal`, `lastfm` and `sync --join`
+  do not even say so
 - [M] `config.toml`'s 89 keys are documented nowhere a hand-editor reads; man pages cover the CLI
   alone
 
