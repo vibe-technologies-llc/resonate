@@ -1007,7 +1007,9 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   cannot linger.
 - **The selected band's inspector** is a section below: type (all eight kinds), frequency, gain
   (gain kinds only) and Q, each typed (committed on return) or stepped (a semitone, 0.5 dB, a sixth
-  of an octave of Q), and Delete. Then the preamp slider, *Add a band* (1 kHz) and *Reset*, which
+  of an octave of Q), and Delete. Then the preamp slider, *Fit the preamp* (`fitted_preamp` on
+  `Work.aside` at the stream's rate, committed as a preamp move is; off with no bands), *Add a band*
+  (1 kHz) and *Reset*, which
   confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each
   handle as an adjustable element, labelled with its number, kind and frequency, valued with its
   gain and Q: swiping steps the gain 0.5 dB (Q, for a gainless kind), activating selects it.

@@ -1107,25 +1107,36 @@ class _EqualiserPaneState extends State<EqualiserPane> {
 
   RowData _displayed(RowData prefsCurve) => _draft ?? prefsCurve;
 
+  List<RowData> _wireBands(RowData curve) => _eqBands(curve)
+      .map(
+        (band) => {
+          'filter': _eqFilterValue(band['filter']),
+          'frequencyHz': decimal(band['frequencyHz']),
+          'gainDb': decimal(band['gainDb']),
+          'q': decimal(band['q']),
+        },
+      )
+      .toList();
+
   void _commitCurve(RowData curve, {bool enableIfOff = false}) {
-    final bands = _eqBands(curve)
-        .map(
-          (band) => {
-            'filter': _eqFilterValue(band['filter']),
-            'frequencyHz': decimal(band['frequencyHz']),
-            'gainDb': decimal(band['gainDb']),
-            'q': decimal(band['q']),
-          },
-        )
-        .toList();
     widget.model.call('equaliser', {
       'name': '${curve['name'] ?? ''}',
       'preamp': decimal(curve['preampDb']),
-      'bands': bands,
+      'bands': _wireBands(curve),
     });
     if (enableIfOff && widget.model.preferences['equaliserEnabled'] != true) {
       widget.model.call('preferences', {'equaliserEnabled': true});
     }
+  }
+
+  Future<void> _fitPreamp(RowData shown) async {
+    final fitted = await widget.model.call('fittedPreamp', {
+      'name': '${shown['name'] ?? ''}',
+      'preamp': decimal(shown['preampDb']),
+      'bands': _wireBands(shown),
+    });
+    if (!mounted || fitted is! num) return;
+    _replaceCurve({...shown, 'name': '', 'preampDb': fitted.toDouble()});
   }
 
   void _addBand(RowData displayed, double hertz, double gainDb) {
@@ -1573,6 +1584,21 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                         'name': '',
                         'preampDb': _eqTidyDb(value),
                       }),
+                    ),
+                    TextButton.icon(
+                      onPressed: shownBands.isEmpty
+                          ? null
+                          : () => _fitPreamp(shown),
+                      icon: const Icon(
+                        Icons.vertical_align_top_rounded,
+                        size: 18,
+                      ),
+                      label: const Text('Fit the preamp'),
+                    ),
+                    Text(
+                      "Set the preamp from the curve's own peak, so the loudest part of it reaches full scale and no further.",
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ],
                 ),

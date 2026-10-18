@@ -373,7 +373,10 @@ Editing a band or the preamp clears that preset name. An empty flat curve shows 
 the bands only on a completed edit. An AutoEq or imported profile keeps its filters, frequencies,
 Q and preamp; its gain-bearing bands get sliders without being converted to the octave layout.
 Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
-gain and Q. Preamp and bands remain independent of the enable switch; confirmed reset removes
+gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the bridge's
+`fittedPreamp` (the boundary's `fitted_preamp` at the stream rate, off the main thread) and commits
+the answer as a preamp edit, clearing the preset name; it is off with no bands. Preamp and bands
+remain independent of the enable switch; confirmed reset removes
 every band and returns the preamp to zero without changing that switch. The drawn response is the
 stage's arithmetic at the stream rate (48 kHz with nothing open, so the graph never reads empty);
 the native boundary validates the whole curve before sending any commands, and sends only fields

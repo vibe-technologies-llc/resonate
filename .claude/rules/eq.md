@@ -315,6 +315,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `Profile::response` with the preamp, at the stream rate (48 kHz where none is given) over core's
   `sweep` (log-spaced 20 Hz to 20 kHz, points held to 2..=2048), so point *i* sits at
   `20 · 1000^(i/(n-1))` Hz (`the_drawn_response_of_one_band_is_the_biquad_the_stage_runs`).
+- ***Fit the preamp* is the desktop's fit**: `fitted_preamp(curve, rate)` is
+  `Profile::fitted_preamp` (so `peak_db`, the bands' loudest point before the preamp, centres
+  weighed beside the sweep) at the stream rate (48 kHz where none is given), held to the phone's
+  `PREAMP_AT_MOST_DB`; a curve that only cuts fits 0 dB. Both phones offer it beside the preamp
+  slider and keep no peak arithmetic of their own
+  (`the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does`).
 - **An import becomes editable bands, and says what it gave up**: `parse_eq_profile` (pasted or
   file text) and `auto_eq_profile` answer `EqualiserImport`: every `on`, every-channel filter is a
   band (an `OFF` filter is dropped, it never sounded); a channel-limited filter is passed over and

@@ -453,12 +453,16 @@ struct SoundSettingsView: View {
                         next.preampDb = gain
                         commit(next)
                     }
+                    Button("Fit the preamp", systemImage: "arrow.up.to.line") { fit(curve) }
+                        .disabled(curve.bands.isEmpty)
                     Button("Add a band", systemImage: "plus") {
                         add(EqualiserBand(filter: .peaking, frequencyHz: Self.addedHz, gainDb: 0, q: EqualiserUnits.addedQ), to: curve)
                     }
                     .disabled(curve.bands.count >= Int(Self.limits.bandsAtMost))
                     Button("Reset curve", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
                         .disabled(curve == .flat)
+                } footer: {
+                    Text("Fit the preamp sets it from the curve's own peak, so the loudest part of it reaches full scale and no further.")
                 }
                 HeadphoneCorrectionSection(model: $model, current: curve, choose: { ask(.device($0)) }, search: search)
                 ProfileImportSection(paste: paste, choose: { choosingFile = true })
@@ -545,6 +549,21 @@ struct SoundSettingsView: View {
             next.equaliser = curve
             if switchingOn { next.equaliserEnabled = true }
             return next
+        }
+    }
+
+    private func fit(_ curve: EqualiserCurve) {
+        let rate = library.clock.outputRate
+        let asked: UInt32? = rate > 0 ? rate : nil
+        Task {
+            do {
+                let fitted = try await Work.aside { try fittedPreamp(curve: curve, rateHz: asked) }
+                var next = curve
+                next.preampDb = fitted
+                commit(next)
+            } catch {
+                library.report(error)
+            }
         }
     }
 

@@ -376,24 +376,7 @@ class FlutterBridge(
                 }
             "equaliser" ->
                 library.updatePreferences { current ->
-                    val bands =
-                        (args["bands"] as? List<*>)?.map { item ->
-                            val band = item as Map<*, *>
-                            val filterName =
-                                (band["filter"] as? String)?.uppercase() ?: "PEAKING"
-                            val filter =
-                                try {
-                                    EqualiserFilter.valueOf(filterName)
-                                } catch (_: IllegalArgumentException) {
-                                    EqualiserFilter.PEAKING
-                                }
-                            EqualiserBand(
-                                filter,
-                                (band["frequencyHz"] as Number).toFloat(),
-                                (band["gainDb"] as Number).toFloat(),
-                                (band["q"] as Number).toFloat(),
-                            )
-                        }
+                    val bands = bands(args)
                     val name = args["name"] as? String ?: current.equaliser.name
                     val preamp =
                         (args["preamp"] as? Number)?.toFloat()
@@ -410,6 +393,17 @@ class FlutterBridge(
                                     preampDb = (args["preamp"] as Number).toFloat()
                                 )
                     )
+                }
+            "fittedPreamp" ->
+                return withContext(Dispatchers.Default) {
+                    val rate = library.snapshot.value?.outputRate?.takeIf { it != 0u }
+                    val curve =
+                        EqualiserCurve(
+                            text("name"),
+                            (args["preamp"] as Number).toFloat(),
+                            bands(args).orEmpty(),
+                        )
+                    fittedPreamp(curve, rate).toDouble()
                 }
             "equaliserInfo" ->
                 return withContext(Dispatchers.Default) {
@@ -507,6 +501,24 @@ class FlutterBridge(
         }
         return null
     }
+
+    private fun bands(args: Map<*, *>): List<EqualiserBand>? =
+        (args["bands"] as? List<*>)?.map { item ->
+            val band = item as Map<*, *>
+            val filterName = (band["filter"] as? String)?.uppercase() ?: "PEAKING"
+            val filter =
+                try {
+                    EqualiserFilter.valueOf(filterName)
+                } catch (_: IllegalArgumentException) {
+                    EqualiserFilter.PEAKING
+                }
+            EqualiserBand(
+                filter,
+                (band["frequencyHz"] as Number).toFloat(),
+                (band["gainDb"] as Number).toFloat(),
+                (band["q"] as Number).toFloat(),
+            )
+        }
 
     private fun provider(args: Map<*, *>) =
         DownloadAccount(

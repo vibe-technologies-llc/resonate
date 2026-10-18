@@ -48,8 +48,8 @@ pub use crate::{
     documents::{Documents, audio_extensions},
     equaliser::{
         EqualiserBand, EqualiserCurve, EqualiserFilter, EqualiserImport, EqualiserLimits,
-        equaliser_frequencies, equaliser_limits, equaliser_text, parse_eq_profile, response_curve,
-        ten_band_curve, ten_band_gains,
+        equaliser_frequencies, equaliser_limits, equaliser_text, fitted_preamp, parse_eq_profile,
+        response_curve, ten_band_curve, ten_band_gains,
     },
     error::{Error, Result, StoreOp},
     playback::{

@@ -48,6 +48,8 @@ void main() {
                 ],
                 'response': [0.0, 0.0],
               };
+            case 'fittedPreamp':
+              return -6.25;
             case 'equaliser':
               preferences = {
                 ...preferences,
@@ -261,6 +263,33 @@ void main() {
       'preampDb': -4.0,
       'bands': importedBands,
     });
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('fit the preamp asks the native peak and keeps every band', (
+    tester,
+  ) async {
+    preferences['equaliser'] = {
+      'name': 'My headphones',
+      'preampDb': 2.0,
+      'bands': importedBands,
+    };
+    await mount(tester);
+    final fit = find.widgetWithText(TextButton, 'Fit the preamp');
+    await tester.scrollUntilVisible(
+      fit,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    calls.clear();
+    await tester.tap(fit);
+    await tester.pumpAndSettle();
+    final asked = calls.firstWhere((call) => call.method == 'fittedPreamp');
+    expect(row(asked.arguments)['preamp'], 2.0);
+    expect(rows(row(asked.arguments)['bands']), hasLength(2));
+    final curve = row(preferences['equaliser']);
+    expect(curve['preampDb'], -6.25);
+    expect(curve['bands'], importedBands);
     expect(tester.takeException(), isNull);
   });
 

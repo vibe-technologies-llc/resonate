@@ -58,9 +58,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   though sync seals its records: neither matters under free signing, both before any distribution
 - [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
   caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
-- [M] The phones' equaliser has no *Fit the preamp*: `resonate-mobile` exports no peak of the curve,
-  so an AutoEq or boosted curve clips until the preamp is lowered by eye, where the desktop fits it
-  from `peak_db`
 - [S] TIDAL sign-in on iOS has no Cancel: `authorizeTidal` blocks in `finish_tidal_authorization`
   until the code is approved or lapses, and the button stays disabled throughout, though the seam
   cancels on `Ok(None)`

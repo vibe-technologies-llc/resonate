@@ -310,6 +310,15 @@ pub fn response_curve(
 }
 
 #[uniffi::export]
+pub fn fitted_preamp(curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32> {
+    let profile = curve.profile()?;
+    let rate = rate_hz.map_or(Ok(FITTED_AT), SampleRate::new)?;
+    let fitted = profile.fitted_preamp(rate).decibels() as f32;
+
+    Ok(fitted.max(-PREAMP_AT_MOST_DB))
+}
+
+#[uniffi::export]
 pub fn equaliser_text(curve: EqualiserCurve) -> Result<String> {
     Ok(resonate_eq::write_profile(&curve.profile()?))
 }
@@ -395,6 +404,45 @@ mod tests {
         );
         assert!(matches!(
             response_curve(shaped, 64, Some(7)),
+            Err(Error::Domain(_))
+        ));
+    }
+
+    #[test]
+    fn the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does() {
+        let boosted = EqualiserCurve {
+            name: String::new(),
+            preamp_db: 3.0,
+            bands: vec![peaking(1000.0, 6.0, 1.0), peaking(8000.0, -4.0, 2.0)],
+        };
+        let narrow = curve(vec![peaking(5_000.0, 12.0, 40.0)]);
+        let cut = curve(vec![peaking(1000.0, -6.0, 1.0)]);
+        let towering = curve(vec![peaking(1000.0, 24.0, 0.5), peaking(1100.0, 24.0, 0.5)]);
+
+        let fitted = fitted_preamp(boosted.clone(), None).expect("a valid curve");
+        let at_96 = fitted_preamp(boosted.clone(), Some(96_000)).expect("a valid curve");
+        let desktop = boosted
+            .profile()
+            .expect("a valid curve")
+            .fitted_preamp(SampleRate::new(96_000).expect("a rate"));
+
+        assert!((fitted + 6.0).abs() < 0.05, "fitted at {fitted} dB");
+        assert_eq!(at_96, desktop.decibels() as f32);
+        assert!(
+            (fitted_preamp(narrow, None).expect("a valid curve") + 12.0).abs() < 0.05,
+            "a narrow peak between the drawn points is still weighed"
+        );
+        assert_eq!(fitted_preamp(cut, None).expect("a valid curve"), 0.0);
+        assert_eq!(
+            fitted_preamp(towering, None).expect("a valid curve"),
+            -PREAMP_AT_MOST_DB
+        );
+        assert_eq!(
+            fitted_preamp(EqualiserCurve::default(), None).expect("a flat curve"),
+            0.0
+        );
+        assert!(matches!(
+            fitted_preamp(boosted, Some(7)),
             Err(Error::Domain(_))
         ));
     }
