@@ -216,7 +216,7 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRAT
   under one lock. First error stops every worker; a panicking one is `Error::Stopped`.
 - **A cancel is heard inside a row.** `Taking::halt` is a `Halt` over the import's cancel flag
   (`Halt::NEVER` for a delivery); `wave::write` and `flac::encode` look each decoded block,
-  `wave::compressed` each read, answering `Error::Halted` with the staged file discarded. `keep_one`
+  `wave::compressed` each read, `pcm_of` each decoded block (read-back, the dedup decode of `foretold_flac`, `kept_whole`'s weighing) and the `copied` loop each read, answering `Error::Halted` with the staged file discarded; a read-back's failure is `NotValidated` but its `Halted` is never swallowed into one (`held_unless_halted`) (`a_cancel_is_heard_while_a_source_is_decoded_for_its_digest_and_while_it_is_copied_as_it_came`). `keep_one`
   answers a halted keep as no outcome: not counted, stamped or passed over, weighed whole next import
   (`a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging`).
 - **An import yields cores to what plays.** `ImportProgress::hold_to` lets the first *n* workers draw

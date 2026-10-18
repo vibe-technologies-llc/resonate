@@ -623,8 +623,8 @@ impl Vault {
                 }
                 Ok(digest.settled() == key)
             }
-            Form::Flac => Ok(read_back(path, None)?.key == key),
-            Form::Wave => Ok(self.read_back_packed(path, None)?.key == key),
+            Form::Flac => Ok(read_back(path, None, Halt::NEVER)?.key == key),
+            Form::Wave => Ok(self.read_back_packed(path, None, Halt::NEVER)?.key == key),
         }
     }
 
@@ -679,7 +679,7 @@ impl Vault {
             wave::PACKED_FRAME_BYTES,
             Halt::NEVER,
         )?;
-        if self.read_back_packed(&staging, None)?.key != key {
+        if self.read_back_packed(&staging, None, Halt::NEVER)?.key != key {
             return Ok(Reframing::NotHeld);
         }
 
@@ -810,7 +810,7 @@ impl Vault {
             return Ok(Foretold::Unforetold);
         };
 
-        let heard = pcm_of(decoder, info, Some(format))?;
+        let heard = pcm_of(decoder, info, Some(format), taking.halt)?;
         if heard.key != declared {
             return Ok(Foretold::Misdeclared);
         }
@@ -902,6 +902,7 @@ impl Vault {
             spec,
             codec,
             format,
+            halt,
         )
     }
 
@@ -981,9 +982,8 @@ impl Vault {
             frames: written.frames,
             speakers,
         };
-        let holds = self
-            .read_back_packed(&packed, Some(format))
-            .is_ok_and(|read| went_in.held_by(read));
+        let holds = held_unless_halted(self.read_back_packed(&packed, Some(format), halt))?
+            .is_some_and(|read| went_in.held_by(read));
         if !holds {
             return Ok(Keeping::Refused(Refusal::NotValidated));
         }
@@ -1013,13 +1013,14 @@ impl Vault {
         unread: Option<Decoder>,
     ) -> Result<Keeping> {
         let went_in = match unread {
-            Some(mut decoder) => pcm_of(&mut decoder, info, None),
+            Some(mut decoder) => pcm_of(&mut decoder, info, None, taking.halt),
             None => Decoder::open(taking.sources, taking.location)
                 .map_err(|source| Error::codec(VaultOp::Verify, source))
-                .and_then(|(mut decoder, info)| pcm_of(&mut decoder, &info, None)),
+                .and_then(|(mut decoder, info)| pcm_of(&mut decoder, &info, None, taking.halt)),
         };
         let went_in = match went_in {
             Ok(went_in) => went_in,
+            Err(Error::Halted) => return Err(Error::Halted),
             Err(Error::Codec { source, op }) if source.is_out_of_reach() => {
                 return Err(Error::Codec { op, source });
             }
@@ -1117,6 +1118,7 @@ impl Vault {
         }
         let mut buffer = vec![0_u8; COPY_BYTES];
         loop {
+            taking.halt.heard()?;
             let read = rest
                 .read(&mut buffer)
                 .map_err(|source| Error::source(taking.location, source))?;
@@ -1134,7 +1136,7 @@ impl Vault {
         if held == 0 {
             return Ok(None);
         }
-        let came_out = read_back(&staging, None).ok();
+        let came_out = held_unless_halted(read_back(&staging, None, taking.halt))?;
         Ok(Some(Copied {
             staging,
             key: digest.settled(),
@@ -1154,9 +1156,11 @@ impl Vault {
         spec: StreamSpec,
         codec: Codec,
         format: SampleFormat,
+        halt: Halt<'_>,
     ) -> Result<Keeping> {
         let Heard { key, frames, .. } = went_in;
-        let holds = read_back(staging, Some(format)).is_ok_and(|read| went_in.held_by(read));
+        let holds = held_unless_halted(read_back(staging, Some(format), halt))?
+            .is_some_and(|read| went_in.held_by(read));
         if !holds {
             self.discard(staging)?;
             return Ok(Keeping::Refused(Refusal::NotValidated));
@@ -1217,9 +1221,14 @@ impl Vault {
         }
     }
 
-    fn read_back_packed(&self, path: &Path, format: Option<SampleFormat>) -> Result<Heard> {
+    fn read_back_packed(
+        &self,
+        path: &Path,
+        format: Option<SampleFormat>,
+        halt: Halt<'_>,
+    ) -> Result<Heard> {
         let sources = Sources::local().and(Arc::new(VaultFiles::over(self)));
-        read_back_through(&sources, path, format)
+        read_back_through(&sources, path, format, halt)
     }
 
     fn object_path(&self, key: VaultKey, extension: &str) -> PathBuf {
@@ -1405,19 +1414,27 @@ impl Heard {
     }
 }
 
-fn read_back(path: &Path, format: Option<SampleFormat>) -> Result<Heard> {
-    read_back_through(&Sources::local(), path, format)
+fn read_back(path: &Path, format: Option<SampleFormat>, halt: Halt<'_>) -> Result<Heard> {
+    read_back_through(&Sources::local(), path, format, halt)
+}
+
+fn held_unless_halted(read: Result<Heard>) -> Result<Option<Heard>> {
+    match read {
+        Err(Error::Halted) => Err(Error::Halted),
+        read => Ok(read.ok()),
+    }
 }
 
 fn read_back_through(
     sources: &Sources,
     path: &Path,
     format: Option<SampleFormat>,
+    halt: Halt<'_>,
 ) -> Result<Heard> {
     let location = MediaLocation::local(path);
     let (mut decoder, info) = Decoder::open(sources, &location)
         .map_err(|source| Error::codec(VaultOp::Verify, source))?;
-    pcm_of(&mut decoder, &info, format)
+    pcm_of(&mut decoder, &info, format, halt)
 }
 
 const fn flac_depth(bits: u8) -> (SampleFormat, u8) {
@@ -1428,7 +1445,12 @@ const fn flac_depth(bits: u8) -> (SampleFormat, u8) {
     }
 }
 
-fn pcm_of(decoder: &mut Decoder, info: &MediaInfo, format: Option<SampleFormat>) -> Result<Heard> {
+fn pcm_of(
+    decoder: &mut Decoder,
+    info: &MediaInfo,
+    format: Option<SampleFormat>,
+    halt: Halt<'_>,
+) -> Result<Heard> {
     let format = format.unwrap_or_else(|| {
         let bits = info
             .bits_per_coded_sample
@@ -1453,6 +1475,7 @@ fn pcm_of(decoder: &mut Decoder, info: &MediaInfo, format: Option<SampleFormat>)
     let mut frames = 0_u64;
 
     loop {
+        halt.heard()?;
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Verify, source))?;

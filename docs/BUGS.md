@@ -56,8 +56,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   marked; after a header press the edge stays on another song
 
 ## Later: The vault
-- [M] A cancel is not heard while a row is read back, decoded for dedup, or kept as it came
-  (`pcm_of` and the `copied` loop take no `Halt`): a multi-gigabyte DSD keep runs to its end
 - [M] A cover's lossless JXL is read back from memory, not the staged file; a 16-bit PNG is
   quantised to 8 bits, an animated picture keeps its first frame and an ICC profile is dropped
   (compared against the same lossy decode, so it passes)
