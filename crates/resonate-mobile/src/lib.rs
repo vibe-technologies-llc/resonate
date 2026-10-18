@@ -284,11 +284,15 @@ impl MobilePlayer {
     }
 
     pub fn load(&self, ids: Vec<u64>, start_at: u32, autoplay: bool) -> Result<()> {
-        let items: Vec<QueueItem> = ids
+        let items: Vec<QueueItem> = self
+            .catalog
+            .tracks_by_id(&ids)?
             .into_iter()
-            .map(|id| {
-                let track = self.catalog.track(id)?;
-                Ok(QueueItem::whole(TrackId::new(id)?, location(&track.uri)?))
+            .map(|track| {
+                Ok(QueueItem::whole(
+                    TrackId::new(track.id)?,
+                    location(&track.uri)?,
+                ))
             })
             .collect::<Result<Vec<_>>>()?;
         if !autoplay {
@@ -409,7 +413,7 @@ impl MobilePlayer {
                 .and_then(|item| {
                     document_uri(&item.location)
                         .ok()
-                        .and_then(|uri| self.catalog.track_uri(&uri).ok())
+                        .and_then(|uri| self.catalog.kept_track_uri(&uri).ok())
                         .map(|mut track| {
                             track.queue_id = Some(item.id.get());
                             track
@@ -460,18 +464,21 @@ impl MobilePlayer {
     }
 
     pub fn save(&self) -> Result<()> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
-        let state = player.state();
-        let queue = player.queued();
-        let place = SavedPlace {
-            revision: queue.revision,
-            row: state.queue_position.unwrap_or(0) as u32,
-            position_ms: state.current.map_or(0, |track| {
-                track.position.to_duration(track.source.rate).as_millis() as u64
-            }),
-        };
         let mut saved = self.saved.lock();
+        let (place, rows) = {
+            let held = self.player.lock();
+            let player = held.as_ref().ok_or(Error::Closed)?;
+            let state = player.state();
+            let queue = player.queued();
+            let place = SavedPlace {
+                revision: queue.revision,
+                row: state.queue_position.unwrap_or(0) as u32,
+                position_ms: state.current.map_or(0, |track| {
+                    track.position.to_duration(track.source.rate).as_millis() as u64
+                }),
+            };
+            (place, queue.rows)
+        };
         if saved.as_ref() == Some(&place) {
             return Ok(());
         }
@@ -481,19 +488,12 @@ impl MobilePlayer {
         {
             self.catalog.save_place(place.row, place.position_ms)?;
         } else {
-            self.catalog.save_queue(
-                &queue
-                    .rows
-                    .iter()
-                    .map(|item| {
-                        self.catalog
-                            .track_uri(&document_uri(&item.location)?)
-                            .map(|track| track.id)
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-                place.row,
-                place.position_ms,
-            )?;
+            let uris = rows
+                .iter()
+                .map(|item| document_uri(&item.location))
+                .collect::<Result<Vec<_>>>()?;
+            self.catalog
+                .save_queue(&self.catalog.ids_at(&uris)?, place.row, place.position_ms)?;
         }
         *saved = Some(place);
         Ok(())
@@ -518,10 +518,7 @@ impl MobilePlayer {
     pub(crate) fn resume_saved(&self) -> Result<()> {
         let (ids, at, position) = self.catalog.resume()?;
         if !ids.is_empty() {
-            let tracks = ids
-                .into_iter()
-                .map(|id| self.catalog.track(id))
-                .collect::<Result<Vec<_>>>()?;
+            let tracks = self.catalog.tracks_by_id(&ids)?;
             let rate = tracks
                 .get(at as usize)
                 .or_else(|| tracks.first())

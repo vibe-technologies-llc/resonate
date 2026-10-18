@@ -75,6 +75,13 @@ Nothing the transport needs waits on the catalog's one connection. `snapshot` co
 events, state and queue under the player lock and reads the catalog after releasing it (and
 `store_counting` takes the connection only with something to store), so a long catalog hold delays
 the poll alone, never play, pause or seek (`a_snapshot_waiting_on_the_catalog_does_not_hold_up_the_transport`).
+A steady tick takes no catalog lock at all: the playing row's `Track` is kept with the URI and the
+catalog revision it was read at (`Catalog::kept_track_uri`), read again only when either moves
+(`a_snapshot_keeps_the_playing_song_until_the_catalog_moves`). `save` copies the place and rows
+under the player lock and turns URIs into ids after releasing it. A run of rows by URI or id
+(`tracks_at`, `ids_at`, `tracks_by_id`: the queue read, a save, `load`, the resumption at open) is
+read `ROWS_READ_PER_HOLD` (256) to a hold, so a whole-library queue lets a snapshot or a favourite
+in between (`rows_read_across_several_holds_keep_the_order_asked`).
 The long holds themselves are short: the search index is read in pages of 2 000 rows with the lock
 taken per page (stamped with the revision read before the first, so a write between pages makes the
 next ask rebuild), and a playlist file or a link's matches take the lock per song over the

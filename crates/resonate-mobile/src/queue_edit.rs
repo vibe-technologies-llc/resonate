@@ -730,6 +730,45 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_keeps_the_playing_song_until_the_catalog_moves() {
+        let harness = Harness::new();
+        harness.resumed("ab", 0, 0);
+
+        let before = harness.player.snapshot().expect("a snapshot");
+        let again = harness.player.snapshot().expect("a snapshot");
+        harness
+            .player
+            .catalog
+            .upsert(Track {
+                title: "Renamed".into(),
+                ..harness.song('a').clone()
+            })
+            .expect("a retag");
+        let after = harness.player.snapshot().expect("a snapshot");
+
+        assert_eq!(
+            before.current.map(|track| track.title),
+            again.current.map(|track| track.title)
+        );
+        assert_eq!(
+            after.current.map(|track| track.title).as_deref(),
+            Some("Renamed")
+        );
+    }
+
+    #[test]
+    fn a_saved_queue_resumes_in_its_order_at_its_row() {
+        let harness = Harness::new();
+        harness.resumed("cab", 1, 0);
+
+        harness.player.save().expect("a save");
+        let (ids, row, _) = harness.player.catalog.resume().expect("a saved queue");
+
+        assert_eq!(ids, harness.ids("cab"));
+        assert_eq!(row, 1);
+    }
+
+    #[test]
     fn a_snapshot_waiting_on_the_catalog_does_not_hold_up_the_transport() {
         let harness = Harness::new();
         harness.resumed("ab", 0, 0);

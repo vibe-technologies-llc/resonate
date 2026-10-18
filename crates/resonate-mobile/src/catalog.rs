@@ -13,8 +13,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{naming::named_within, writer::Held};
 use rusqlite::{
-    Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags, hooks::Action,
-    params,
+    CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
+    hooks::Action, params,
 };
 
 use crate::{Error, Result, StoreOp, Track};
@@ -124,7 +124,16 @@ pub(crate) struct Catalog(
     pub(crate) Mutex<Connection>,
     Arc<AtomicU64>,
     pub(crate) Mutex<HashMap<(i64, i64), i64>>,
+    Mutex<Option<KeptTrack>>,
 );
+
+struct KeptTrack {
+    uri: String,
+    revision: u64,
+    track: Track,
+}
+
+const ROWS_READ_PER_HOLD: usize = 256;
 
 impl Catalog {
     pub(crate) fn open(path: &Path) -> Result<Self> {
@@ -200,6 +209,7 @@ impl Catalog {
             Mutex::new(connection),
             revision,
             Mutex::new(HashMap::new()),
+            Mutex::new(None),
         ))
     }
 
@@ -281,20 +291,68 @@ impl Catalog {
             .ok_or(Error::UnknownTrack)
     }
 
+    pub(crate) fn kept_track_uri(&self, uri: &str) -> Result<Track> {
+        let revision = self.revision();
+        let mut kept = self.3.lock();
+        if let Some(kept) = kept
+            .as_ref()
+            .filter(|kept| kept.revision == revision && kept.uri == uri)
+        {
+            return Ok(kept.track.clone());
+        }
+        let track = self.track_uri(uri)?;
+        *kept = Some(KeptTrack {
+            uri: uri.to_owned(),
+            revision,
+            track: track.clone(),
+        });
+        Ok(track)
+    }
+
     pub(crate) fn tracks_at(&self, uris: &[String]) -> Result<Vec<Track>> {
-        let connection = self.0.lock();
-        let mut query = connection
-            .prepare_cached("SELECT * FROM documents WHERE uri = ?1")
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        uris.iter()
-            .map(|uri| {
-                query
-                    .query_row([uri], read)
-                    .optional()
-                    .map_err(|source| Error::store(StoreOp::Read, source))?
-                    .ok_or(Error::UnknownTrack)
-            })
-            .collect()
+        self.each_in_holds(
+            uris,
+            "SELECT * FROM documents WHERE uri = ?1",
+            |query, uri| query.query_row([uri], read),
+        )
+    }
+
+    pub(crate) fn ids_at(&self, uris: &[String]) -> Result<Vec<u64>> {
+        self.each_in_holds(
+            uris,
+            "SELECT id FROM documents WHERE uri = ?1",
+            |query, uri| query.query_row([uri], |row| row.get::<_, i64>(0).map(|id| id as u64)),
+        )
+    }
+
+    pub(crate) fn tracks_by_id(&self, ids: &[u64]) -> Result<Vec<Track>> {
+        self.each_in_holds(ids, "SELECT * FROM documents WHERE id = ?1", |query, id| {
+            query.query_row([*id as i64], read)
+        })
+    }
+
+    fn each_in_holds<Key, Row>(
+        &self,
+        keys: &[Key],
+        sql: &str,
+        mut asked: impl FnMut(&mut CachedStatement<'_>, &Key) -> rusqlite::Result<Row>,
+    ) -> Result<Vec<Row>> {
+        let mut rows = Vec::with_capacity(keys.len());
+        for held in keys.chunks(ROWS_READ_PER_HOLD) {
+            let connection = self.0.lock();
+            let mut query = connection
+                .prepare_cached(sql)
+                .map_err(|source| Error::store(StoreOp::Read, source))?;
+            for key in held {
+                rows.push(
+                    asked(&mut query, key)
+                        .optional()
+                        .map_err(|source| Error::store(StoreOp::Read, source))?
+                        .ok_or(Error::UnknownTrack)?,
+                );
+            }
+        }
+        Ok(rows)
     }
 
     pub(crate) fn favourite(&self, id: u64, favourite: bool) -> Result<()> {
@@ -524,6 +582,47 @@ mod tests {
         );
         drop(reopened);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rows_read_across_several_holds_keep_the_order_asked() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let songs = (0..ROWS_READ_PER_HOLD * 2 + 3)
+            .map(|at| {
+                catalog
+                    .upsert(Track {
+                        uri: format!("content://music/{at}.flac"),
+                        name: format!("{at}.flac"),
+                        title: format!("{at}"),
+                        ..Track::default()
+                    })
+                    .expect("an indexed document")
+            })
+            .rev()
+            .collect::<Vec<_>>();
+        let uris = songs
+            .iter()
+            .map(|song| song.uri.clone())
+            .collect::<Vec<_>>();
+        let ids = songs.iter().map(|song| song.id).collect::<Vec<_>>();
+
+        let read = catalog.tracks_at(&uris).expect("rows by uri");
+        let numbered = catalog.ids_at(&uris).expect("ids by uri");
+        let found = catalog.tracks_by_id(&ids).expect("rows by id");
+
+        assert_eq!(read.iter().map(|song| song.id).collect::<Vec<_>>(), ids);
+        assert_eq!(numbered, ids);
+        assert_eq!(
+            found
+                .iter()
+                .map(|song| song.uri.clone())
+                .collect::<Vec<_>>(),
+            uris
+        );
+        assert!(matches!(
+            catalog.ids_at(&["content://music/none.flac".into()]),
+            Err(Error::UnknownTrack)
+        ));
     }
 }
 
