@@ -229,6 +229,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   a tie of match and name length, so `suggest` takes the best-ranked measurer of the one device it
   found and `search` lists a device's rows best-ranked first; within a rank the index order stands
   (`a_device_several_measurers_cover_is_suggested_from_the_best_ranked_whatever_the_index_order`).
+  **A listener's measurer outranks the list**: `search_preferring`/`suggest_preferring` take the
+  name (case-folded) and rank it first among the rows that tie, `resonate eq --measurer` beside
+  `--find` or `--suggest`; a device it did not measure keeps the ranking and `--suggest` says so
+  (`a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
   `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is
