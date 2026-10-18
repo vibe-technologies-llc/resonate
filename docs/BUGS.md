@@ -35,11 +35,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
 
-## Keyboard and accessibility
-- [M] The keyboard reach keeps its row through `opened` and an order or reading change: after
-  reaching row 19, *Go to album* on a 10-track album and Enter plays its last track with nothing
-  marked; after a header press the edge stays on another song
-
 ## Later: The vault
 - [M] A cover's lossless JXL is read back from memory, not the staged file; a 16-bit PNG is
   quantised to 8 bits, an animated picture keeps its first frame and an ICC profile is dropped

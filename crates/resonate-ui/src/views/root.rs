@@ -26,8 +26,9 @@ use resonate_engine::{
     RepeatMode, Unclaimed, stamp_of,
 };
 use resonate_library::{
-    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
-    SavedQuery, SortOrder, TokenHeld, Track, TrackQuery, is_a_followed_link,
+    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, RowOrder, SavedQuery, SortOrder, TokenHeld, Track, TrackQuery,
+    is_a_followed_link,
 };
 
 use crate::{
@@ -48,7 +49,7 @@ use crate::{
     format,
     icons::{self, Icon},
     listening::ListenModel,
-    models::{Picture, Scale},
+    models::{Picture, Scale, Sorting},
     motion,
     settings::SettingsWriter,
     theme,
@@ -242,6 +243,15 @@ struct Wayback {
     at: LeftAt,
     named: SharedString,
     left_by: Leaving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Arrangement {
+    selection: Selection,
+    sorting: Sorting,
+    playlists: (PlaylistOrder, Direction),
+    opened_rows: (RowOrder, Direction),
+    search: (SortOrder, Direction),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -646,6 +656,7 @@ pub struct RootView {
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
+    arranged_as: Arrangement,
     waiting_for_the_results: bool,
     landed_by_a_jump: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
@@ -778,6 +789,16 @@ impl RootView {
                 cx,
             )
         });
+        let arranged_as = Arrangement {
+            selection: library.read(cx).selection(),
+            sorting: library.read(cx).sorting(),
+            playlists: (
+                library.read(cx).playlist_order(),
+                library.read(cx).playlist_reading(),
+            ),
+            opened_rows: (RowOrder::default(), Direction::default()),
+            search: (SortOrder::default(), SortOrder::default().reads()),
+        };
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
         let visualiser = cx.new(|cx| Visualiser::new(player.clone(), cx));
         let reaching = cx.global::<ResonateApp>().online.enabled;
@@ -807,6 +828,7 @@ impl RootView {
         .detach();
         cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
+            this.let_go_of_a_reach_the_rows_left(cx);
             let relocated = library.update(cx, |model, _| model.take_relocations());
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
@@ -1205,6 +1227,7 @@ impl RootView {
             record: None,
             left_at: AHashMap::new(),
             reach: None,
+            arranged_as,
             waiting_for_the_results: false,
             landed_by_a_jump: None,
             reached_unseen: Rc::default(),
@@ -1685,6 +1708,7 @@ impl RootView {
             Some(kept) => library.keep_playlist_in_order(playlist, Some(kept), cx),
             None => library.sort_playlist(playlist, order, reading, cx),
         });
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
@@ -1732,11 +1756,13 @@ impl RootView {
     pub(crate) fn sort_a_search(&mut self, sort: SortOrder, cx: &mut Context<Self>) {
         self.query_sort = sort;
         self.query_reading = sort.reads();
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
     pub(crate) fn read_a_search(&mut self, reading: Direction, cx: &mut Context<Self>) {
         self.query_reading = reading;
+        self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
@@ -2178,6 +2204,29 @@ impl RootView {
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 library.move_in_playlist(playlist, rows, to, cx);
             }),
+        }
+    }
+
+    fn arrangement(&self, cx: &App) -> Arrangement {
+        let library = self.library.read(cx);
+
+        Arrangement {
+            selection: library.selection(),
+            sorting: library.sorting(),
+            playlists: (library.playlist_order(), library.playlist_reading()),
+            opened_rows: (self.row_order, self.row_reading),
+            search: (self.query_sort, self.query_reading),
+        }
+    }
+
+    fn let_go_of_a_reach_the_rows_left(&mut self, cx: &App) {
+        let arranged_as = self.arrangement(cx);
+        if arranged_as == self.arranged_as {
+            return;
+        }
+        self.arranged_as = arranged_as;
+        if self.reach.is_some_and(|reach| reach.shift != Shift::Queue) {
+            self.reach = None;
         }
     }
 

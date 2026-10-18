@@ -531,13 +531,19 @@ impl Driven {
 #[cfg(test)]
 mod tests {
     use gpui::BorrowAppContext as _;
+    use resonate_core::Span;
     use resonate_engine::Placement;
+    use resonate_library::{Direction, SortOrder};
 
     use super::*;
     use crate::{
         Pane, Selection,
         equaliser::{Cell as BandCell, Editing},
-        views::{settings::curve::Plot, visualiser::Showing},
+        views::{
+            reorder::{Listed, Shift},
+            settings::curve::Plot,
+            visualiser::Showing,
+        },
     };
 
     fn catalog() -> Arc<Library> {
@@ -1935,6 +1941,87 @@ mod tests {
             driven.read(|root, cx| root.library.read(cx).roots().to_vec()),
             vec![kept.path().to_path_buf()]
         );
+    }
+
+    fn reached_in_the_tracks(driven: &mut Driven, row: usize) {
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.reach_at(Shift::Listing(Listed::Tracks), row, false, cx);
+            });
+        });
+        driven.settle();
+    }
+
+    fn reach_in_the_tracks(driven: &mut Driven) -> Option<Span> {
+        driven.read(|root, _| root.reaching(Shift::Listing(Listed::Tracks)))
+    }
+
+    #[gpui::test]
+    fn opening_an_album_lets_go_of_the_row_reached_in_the_listing_before(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Meddle")]);
+        folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Other")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .into_iter()
+            .find_map(|track| track.album_id)
+            .expect("an album the tags named");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
+        reached_in_the_tracks(&mut driven, 2);
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(2)));
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.opened(Selection::Album(album), cx));
+        });
+        driven.settle();
+
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+    }
+
+    #[gpui::test]
+    fn an_order_or_reading_change_lets_go_of_the_row_reached_so_it_names_no_other_song(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
+        reached_in_the_tracks(&mut driven, 1);
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.library
+                    .update(cx, |library, cx| library.order_tracks(SortOrder::Title, cx));
+            });
+        });
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+
+        reached_in_the_tracks(&mut driven, 1);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.library.update(cx, |library, cx| {
+                    library.read_tracks(Direction::Descending, cx)
+                });
+            });
+        });
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
+
+        reached_in_the_tracks(&mut driven, 1);
+        driven.settle();
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(1)));
     }
 
     #[gpui::test]

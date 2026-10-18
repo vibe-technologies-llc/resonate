@@ -1288,7 +1288,10 @@ is never named.
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
   and drop target; dropping a span on row `to` = the arrows' `Command::Move` (never a swap). Payload
   `Carried`; `Ghost` = first row's title plus how many more ride. `RootView::reach` is a `Reach`
-  (`Shift`, anchor, the row moved to; lives for the run). `up`/`down` move and collapse it (queue opens
+  (`Shift`, anchor, the row moved to; lives for the run, and a non-queue reach is let go of when the
+  rows under it are arranged another way: `Arrangement` = selection, sorting, playlist order and
+  reading, opened playlist's order, search sort, compared by `let_go_of_a_reach_the_rows_left` on
+  every library change and sort setter; `opening_an_album_lets_go_of_the_row_reached_in_the_listing_before`). `up`/`down` move and collapse it (queue opens
   on the playing row, playlist on its first); `shift-up`/`down` grow it; `home`/`end`; `pageup`/
   `pagedown` by `rows_a_page`; `ctrl-a` every row; `shift`-click every row between; `alt-up`/`alt-down`
   move what is reached; `enter` plays its first row; `delete` removes reached rows via `drop_rows`
