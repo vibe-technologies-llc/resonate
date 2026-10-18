@@ -24,6 +24,16 @@ paths:
   with a gone file `Library::retire` drops even on an unmounted drive (the one place a scan keeps
   them). A folder holding nothing gone says it named none of the three.
 
+- **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
+  <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
+  on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
+  it, and a name two rows answer is `Error::SeveralNamed` rather than a guess; an artist is
+  `artist_named`. `wants --add|--remove <TITLE>` and `missing --dismiss <TITLE>` /
+  `--dismiss-release <TITLE>` (narrowed by `--artist` and `--album`) name a release track the same
+  way, but act on every row the name folds to, since a want is undone by `--remove` and a dismissal by
+  `--bring-back`; a name matching nothing is `Error::NothingNamed`. All live in `favourites.rs` and
+  `wanting.rs`, over the calls MCP's edits make.
+
 ## Reading a file argument
 
 One reader for URIs: `resonate-core::MediaLocation::{from_uri, to_uri}` (in core because bus and

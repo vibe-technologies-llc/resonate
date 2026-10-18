@@ -10,6 +10,8 @@ mod discord;
 mod equaliser;
 mod error;
 mod favourites;
+#[cfg(test)]
+mod fixtures;
 mod info;
 mod input;
 mod lastfm;
@@ -38,6 +40,7 @@ mod sync;
 mod table;
 mod vault;
 mod vocabulary;
+mod wanting;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -233,14 +236,27 @@ fn run() -> Result<()> {
                 ..EnrichOptions::default()
             },
         ),
-        Some(Sub::Wants) => wants(&open_library(&cli, &config)?),
+        Some(Sub::Wants(args)) => wanting::run(&open_library(&cli, &config)?, args),
         Some(Sub::Sync(args)) => synced(&cli, &config, args),
         Some(Sub::Missing {
             artist,
             read_the_rest,
             bring_back,
+            dismiss,
+            dismiss_release,
+            album,
         }) => {
             let library = open_library(&cli, &config)?;
+            if let Some(title) = dismiss {
+                let narrowing = wanting::Narrowing {
+                    artist: artist.as_deref(),
+                    album: album.as_deref(),
+                };
+                return wanting::dismiss(&library, title, narrowing);
+            }
+            if let Some(title) = dismiss_release {
+                return wanting::dismiss_release(&library, title, artist.as_deref());
+            }
             if *bring_back {
                 said!("{}", brought_back(library.bring_back_dismissed()?));
             }
@@ -317,7 +333,7 @@ fn run() -> Result<()> {
         Some(Sub::Stats { window, top }) => {
             stats::print(&open_library(&cli, &config)?, *window, top.get())
         }
-        Some(Sub::Favourites(wanted)) => favourites::print(&open_library(&cli, &config)?, wanted),
+        Some(Sub::Favourites(wanted)) => favourites::run(&open_library(&cli, &config)?, wanted),
         Some(Sub::Suggest { save }) => {
             suggest::print(&open_library(&cli, &config)?, save.as_deref())
         }
@@ -3115,7 +3131,7 @@ mod tests {
     use resonate_core::SourceId;
 
     use super::*;
-    use crate::cli::RepeatArg;
+    use crate::{cli::RepeatArg, fixtures::silent_wave};
 
     #[test]
     fn a_queue_that_finished_with_every_track_failed_is_no_success() {
@@ -3799,34 +3815,6 @@ mod tests {
         assert!(!asked.incremental);
         assert!(asked.follow_symlinks);
         assert_eq!(asked.roots, vec![PathBuf::from("/music")]);
-    }
-
-    fn silent_wave(seconds_tenths: u32) -> Vec<u8> {
-        const CHANNELS: u16 = 2;
-        const BITS: u16 = 16;
-        const RATE: u32 = 44_100;
-
-        let block_align = CHANNELS * BITS / 8;
-        let frames = RATE / 10 * seconds_tenths;
-        let data = vec![0_u8; frames as usize * usize::from(block_align)];
-        let mut format = Vec::new();
-        format.extend_from_slice(&1_u16.to_le_bytes());
-        format.extend_from_slice(&CHANNELS.to_le_bytes());
-        format.extend_from_slice(&RATE.to_le_bytes());
-        format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
-        format.extend_from_slice(&block_align.to_le_bytes());
-        format.extend_from_slice(&BITS.to_le_bytes());
-
-        let mut body = b"WAVE".to_vec();
-        for (id, payload) in [(b"fmt ", format.as_slice()), (b"data", data.as_slice())] {
-            body.extend_from_slice(id);
-            body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-            body.extend_from_slice(payload);
-        }
-        let mut file = b"RIFF".to_vec();
-        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        file.extend_from_slice(&body);
-        file
     }
 
     #[test]

@@ -124,6 +124,42 @@ impl fmt::Display for ArtistName {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Given(Box<str>);
+
+impl Given {
+    pub fn new(text: &str) -> Self {
+        Self(text.into())
+    }
+}
+
+impl fmt::Display for Given {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Named {
+    Track,
+    Album,
+    MissingTrack,
+    WantedTrack,
+    UnheldRelease,
+}
+
+impl fmt::Display for Named {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Track => "track",
+            Self::Album => "album",
+            Self::MissingTrack => "missing track",
+            Self::WantedTrack => "wanted track",
+            Self::UnheldRelease => "release not held",
+        })
+    }
+}
+
 impl ConfigKey {
     pub const ALL: [Self; 97] = [
         Self::Sink,
@@ -474,6 +510,15 @@ pub enum Error {
 
     #[error("the catalog holds no artist named {0}")]
     NoSuchArtist(ArtistName),
+
+    #[error("the catalog holds no {kind} named {given}")]
+    NothingNamed { kind: Named, given: Given },
+
+    #[error("{given} names {held} rows of the catalog; --by names the artist whose it is")]
+    SeveralNamed { given: Given, held: usize },
+
+    #[error("--add and --remove take one of --tracks, --albums or --artists to say what they name")]
+    MarkNeedsOneKind,
 
     #[error("nothing is playing on the session bus, so there is nothing to share")]
     NothingPlaying,
