@@ -685,6 +685,7 @@ pub(crate) struct Inner {
     renamed: Arc<Mutex<Renamed>>,
     spellings: Mutex<Option<KeptVocabulary>>,
     suggested: Mutex<Option<KeptSuggestions>>,
+    measured: Mutex<Option<KeptMeasurements>>,
     playing: Mutex<Option<Playing>>,
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
@@ -721,6 +722,23 @@ struct KeptVocabulary {
     stamp: CatalogStamp,
     spellings: Arc<Spellings>,
 }
+
+struct KeptMeasurements {
+    stamp: CatalogStamp,
+    filters: MusicFilters,
+    kept_at: Instant,
+    by_query: AHashMap<SavedQuery, Measured>,
+}
+
+impl KeptMeasurements {
+    fn holds(&self, stamp: CatalogStamp, filters: MusicFilters) -> bool {
+        self.stamp.still_holds_at(stamp)
+            && self.filters == filters
+            && self.kept_at.elapsed() < MEASUREMENTS_KEPT_FOR
+    }
+}
+
+const MEASUREMENTS_KEPT_FOR: Duration = Duration::from_secs(60);
 
 struct KeptSuggestions {
     stamp: CatalogStamp,
@@ -1019,6 +1037,37 @@ impl Inner {
         self.stamped_by(&self.written)
     }
 
+    pub(crate) fn measured_saved(&self, saved: &SavedQuery) -> Result<Measured> {
+        let stamp = self.rows_stamp();
+        let filters = *self.music_filters.lock();
+        if let Some(kept) = self
+            .measured
+            .lock()
+            .as_ref()
+            .filter(|kept| kept.holds(stamp, filters))
+            .and_then(|kept| kept.by_query.get(saved))
+        {
+            return Ok(*kept);
+        }
+
+        let measured = measured(self, &TrackQuery::from(saved))?;
+        let mut kept = self.measured.lock();
+        match kept.as_mut().filter(|kept| kept.holds(stamp, filters)) {
+            Some(kept) => {
+                kept.by_query.insert(saved.clone(), measured);
+            }
+            None => {
+                *kept = Some(KeptMeasurements {
+                    stamp,
+                    filters,
+                    kept_at: Instant::now(),
+                    by_query: AHashMap::from_iter([(saved.clone(), measured)]),
+                });
+            }
+        }
+        Ok(measured)
+    }
+
     fn plans_stamp(&self) -> CatalogStamp {
         self.stamped_by(&self.planned)
     }
@@ -1309,6 +1358,7 @@ impl Library {
     pub fn filter_music(&self, filters: MusicFilters) {
         *self.inner.music_filters.lock() = filters;
         *self.inner.suggested.lock() = None;
+        *self.inner.measured.lock() = None;
     }
 
     pub fn deliver_into(&self, folder: Option<DeliveryFolder>) {
@@ -1475,6 +1525,7 @@ impl Library {
                 renamed,
                 spellings: Mutex::new(None),
                 suggested: Mutex::new(None),
+                measured: Mutex::new(None),
                 playing: Mutex::new(None),
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
@@ -7614,6 +7665,45 @@ mod tests {
                     if found == elsewhere && expected == schema::SCHEMA_FINGERPRINT
             ),
             "a catalog written to another schema opened rather than being refused"
+        );
+    }
+
+    #[test]
+    fn a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let saved = SavedQuery::default();
+
+        library
+            .inner
+            .measured_saved(&saved)
+            .expect("an empty catalog is measured");
+        let first = library
+            .inner
+            .measured
+            .lock()
+            .as_ref()
+            .map(|kept| kept.kept_at);
+        library
+            .inner
+            .measured_saved(&saved)
+            .expect("the same query is measured again");
+        let second = library
+            .inner
+            .measured
+            .lock()
+            .as_ref()
+            .map(|kept| kept.kept_at);
+
+        assert!(first.is_some());
+        assert_eq!(
+            first, second,
+            "the second measure counted the catalog again"
+        );
+
+        library.filter_music(MusicFilters::default());
+        assert!(
+            library.inner.measured.lock().is_none(),
+            "a change of the music filters kept the counts made under the old ones"
         );
     }
 

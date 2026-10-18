@@ -3866,6 +3866,26 @@ fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing
 }
 
 #[test]
+fn a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("Artist/Album/étude.wav", &Wav::new().frames(4_410).build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let sheet = tree.path().join("windows.m3u");
+    fs::write(&sheet, "#EXTM3U\r\nD:\\Music\\Artist\\Album\\ÉTUDE.WAV\r\n")
+        .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+
+    assert_eq!(imported.missing, 0);
+    assert_eq!(
+        library.playlist_cuts(imported.id)?[0].location.as_path(),
+        Some(tree.path().join("Artist/Album/étude.wav").as_path())
+    );
+    Ok(())
+}
+
+#[test]
 fn a_sheet_that_names_one_file_twice_keeps_both_rows() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("doubled.m3u8");
@@ -19102,6 +19122,32 @@ fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
         narrowed(&library, "genre:psychedelic")?,
         vec!["A Pillow of Winds", "Fearless!", "One of These Days"],
         "the genres the reference gave the artist did not reach the tracks it made"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_smart_playlists_count_follows_the_catalog_it_is_counted_in() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("a.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let everything = library.save_query("Everything", &SavedQuery::default())?;
+
+    let before = library
+        .playlist(everything)?
+        .expect("the playlist is there");
+    assert_eq!(before.entries, 1);
+
+    tree.write("b.wav", &Wav::new().text(TITLE, "Dogs").build());
+    scan(&library, &options(&tree))?;
+
+    let after = library
+        .playlist(everything)?
+        .expect("the playlist is there");
+    assert_eq!(
+        after.entries, 2,
+        "a count kept through a scan that added a track"
     );
     Ok(())
 }

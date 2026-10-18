@@ -1566,7 +1566,11 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
 - **A playlist holds a list or fills itself from a query; both answer via `playlist_entries`.** A
   `playlist_queries` row = saved query: text, `SortOrder`, reading, row cap.
   `Library::playlist_entries` runs it instead of reading the table (queue, pane, MPRIS, sheet
-  writers see an ordinary playlist); listing counts are the query's. A query refuses with
+  writers see an ordinary playlist); listing counts are the query's, **measured once a minute and a
+  catalog move** (`Inner::measured_saved`: a `KeptMeasurements` under the rows stamp the suggestions
+  use, the music filters and `MEASUREMENTS_KEPT_FOR`, since `added:`/`played:` windows slide with
+  the clock), so listing every smart playlist is not a whole-catalog count apiece
+  (`a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves`). A query refuses with
   `Error::NotAList`: `add`, `remove_rows`, `move_rows`, `prune`, `sort_playlist`, `remove_matching`,
   `fold_doubles`, `copy_playlist` into it, keeping in order; rename, play, export, drop work.
   `Library::revise_query` rewrites text, sort, cap, reading in place, renaming in the same step
@@ -1712,7 +1716,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     `follow_symlinks` scan stored through its link), or lexical where the file is absent. A row
     naming a file nowhere on this machine is reconnected by trailing components: the one catalogued
     path whose last components agree with the most of the row's, at least two; a tie leaves the row
-    as written.
+    as written. The candidates are read off `tracks_by_file_name` (the generated `tracks.file_name`,
+    matched `COLLATE NOCASE`, so ASCII case only), one probe per distinct lost file name; a name
+    beyond ASCII alone scans the catalog once, lowercased by Unicode as the components are
+    (`a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it`).
   - **Windows rows**: backslash and no forward slash = a Windows path; `forward_separated` turns the
     separators, and `reads_back_as_itself` refuses a row it would turn (`AC\DC.wav` is written as an
     escaped `file://` URI). A literal backslash cannot stand in a `file://` URI or XSPF location

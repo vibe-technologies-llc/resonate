@@ -1393,38 +1393,7 @@ fn reconnected_by_trailing_components(
         return Ok(lost.iter().map(|_| None).collect());
     }
 
-    let mut held: HashMap<String, Vec<(Vec<String>, PathBuf, u32)>> = HashMap::new();
-    inner.read(|connection| {
-        let mut statement = connection
-            .prepare("SELECT path, min(sample_rate) FROM tracks GROUP BY path")
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        let mut rows = statement
-            .query([])
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-        while let Some(row) = rows
-            .next()
-            .map_err(|source| Error::store(StoreOp::Query, source))?
-        {
-            let path = PathBuf::from(
-                row.get::<_, String>(0)
-                    .map_err(|source| Error::store(StoreOp::Query, source))?,
-            );
-            let trailing = trailing_components(&path);
-            let Some(name) = trailing
-                .first()
-                .filter(|name| file_names.contains(name.as_str()))
-            else {
-                continue;
-            };
-            let rate = row
-                .get::<_, u32>(1)
-                .map_err(|source| Error::store(StoreOp::Query, source))?;
-            held.entry(name.clone())
-                .or_default()
-                .push((trailing, path, rate));
-        }
-        Ok(())
-    })?;
+    let held = inner.read(|connection| held_named(connection, &file_names))?;
 
     Ok(lost
         .into_iter()
@@ -1452,6 +1421,59 @@ fn reconnected_by_trailing_components(
                 .flatten()
         })
         .collect())
+}
+
+type HeldNamed = HashMap<String, Vec<(Vec<String>, PathBuf, u32)>>;
+
+fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldNamed> {
+    let mut held = HeldNamed::new();
+    let (plain, beyond_ascii): (Vec<&str>, Vec<&str>) =
+        names.iter().copied().partition(|name| name.is_ascii());
+
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT path, min(sample_rate) FROM tracks
+              WHERE file_name = ?1 COLLATE NOCASE GROUP BY path",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    for name in plain {
+        let rows = statement
+            .query_map(params![name], paths_with_rates)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        for (path, rate) in rows {
+            held.entry(name.to_owned())
+                .or_default()
+                .push((trailing_components(&path), path, rate));
+        }
+    }
+    drop(statement);
+
+    if beyond_ascii.is_empty() {
+        return Ok(held);
+    }
+    let mut statement = connection
+        .prepare("SELECT path, min(sample_rate) FROM tracks GROUP BY path")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map([], paths_with_rates)
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    for row in rows {
+        let (path, rate) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_lowercase());
+        if let Some(name) = name.filter(|name| beyond_ascii.contains(&name.as_str())) {
+            held.entry(name)
+                .or_default()
+                .push((trailing_components(&path), path, rate));
+        }
+    }
+    Ok(held)
+}
+
+fn paths_with_rates(row: &SqlRow<'_>) -> rusqlite::Result<(PathBuf, u32)> {
+    Ok((PathBuf::from(row.get::<_, String>(0)?), row.get(1)?))
 }
 
 fn first_catalogued(connection: &Connection, named: &[PathBuf]) -> Result<Option<Catalogued>> {
@@ -1525,7 +1547,7 @@ fn filled(inner: &Inner, mut found: Playlist) -> Result<Playlist> {
         return Ok(found);
     };
 
-    let measured = db::measured(inner, &TrackQuery::from(query))?;
+    let measured = inner.measured_saved(query)?;
     let (entries, duration) = (measured.rows, measured.length);
     found.entries = entries;
     found.duration = duration;

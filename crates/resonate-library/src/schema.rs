@@ -484,6 +484,10 @@ const MIGRATIONS: &[&str] = &[
      INSERT INTO release_track_isrcs (release_track_id, isrc)
      SELECT id, isrc FROM release_tracks WHERE isrc IS NOT NULL;",
     "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE tracks ADD COLUMN file_name TEXT GENERATED ALWAYS AS (
+         replace(path, rtrim(path, replace(path, '/', '')), '')
+     ) VIRTUAL;
+     CREATE INDEX tracks_by_file_name ON tracks(file_name COLLATE NOCASE);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
