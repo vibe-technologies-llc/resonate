@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    iter, mem,
+    mem,
     sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_audio::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
-    StreamRequest, StreamState,
+    StreamRequest, StreamState, StreamVolume,
 };
 use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
@@ -31,6 +31,7 @@ use crate::{
     ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
     streaming::{Asked, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
+    turns::Turns,
 };
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -42,8 +43,6 @@ const EVENTS_A_PASS_HELD_INLINE: usize = 4;
 
 type Drained = SmallVec<[StreamEvent; EVENTS_A_PASS_HELD_INLINE]>;
 const CHAIN_BLOCK: usize = 1024;
-const TURNS_REMEMBERED: usize = 8;
-const ONE_LEVEL_WITHIN: f32 = 1e-5;
 const MIN_RING_FRAMES: u64 = 8_192;
 const BLOCKS_A_RING_HOLDS: u64 = 2;
 const LARGEST_RING: u64 = 64 * 1024 * 1024;
@@ -59,6 +58,23 @@ const QUIET_WITHIN_AT_MOST: Duration = Duration::from_millis(400);
 const SLEEP_FADES_OVER: Duration = Duration::from_secs(10);
 const PULLED_WITHIN: Duration = Duration::from_millis(250);
 const OPENING_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReadBy {
+    PlanAlone,
+    Resampler,
+    Dither,
+}
+
+impl ReadBy {
+    const fn reaches_into(self, plan: &OutputPlan) -> bool {
+        match self {
+            Self::PlanAlone => false,
+            Self::Resampler => plan.resamples(),
+            Self::Dither => plan.dithers(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filled {
@@ -435,6 +451,7 @@ impl Output {
                 went_without: Frames::ZERO,
                 device_turned: attenuator == Attenuator::Device,
                 device_muted: attenuator.hears_the_mute_of(sink),
+                stream_volume: StreamVolume::Unity,
             },
             plan,
             chain,
@@ -465,6 +482,10 @@ impl Output {
 
     fn fade(&self) -> Frames {
         Frames::from_duration(FADED_OVER, self.plan.stream.rate)
+    }
+
+    const fn can_fade(&self) -> bool {
+        matches!(self.plan.packing, Packing::Samples)
     }
 
     fn quiet_within(&self) -> Duration {
@@ -694,7 +715,7 @@ pub struct Engine {
     failures: usize,
     renegotiations: u8,
     sounded: Option<(SinkId, Instant)>,
-    turned: VecDeque<Gain>,
+    turned: Turns,
     muted: bool,
     answers: Vec<Answer>,
     openings_begun: u64,
@@ -798,10 +819,10 @@ impl Engine {
         let found = surveyor.enumerate_sinks(SINK_TIMEOUT);
         let stale_sinks = found.is_err();
         *published.sinks.write() = found.unwrap_or_default().into();
+        published.first_survey.answered();
         let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
         let opener = backend.opener();
         let streaming = Streaming::start(Arc::clone(&opener));
-        *published.settings.write() = Arc::new(OutputSettings::of(&config));
 
         Self {
             config,
@@ -842,7 +863,7 @@ impl Engine {
             failures: 0,
             renegotiations: 0,
             sounded: None,
-            turned: VecDeque::with_capacity(TURNS_REMEMBERED),
+            turned: Turns::new(),
             muted: false,
             answers: Vec::new(),
             openings_begun: 0,
@@ -1329,23 +1350,26 @@ impl Engine {
             }
             Command::SetSink(sink) => {
                 self.config.sink = sink;
+                if self.stays_on_the_bound_device() {
+                    return Ok(());
+                }
                 self.rebind_where_it_stands()
             }
             Command::SetQuality(quality) => {
                 self.config.quality = quality;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetFilterPhase(phase) => {
                 self.config.filter_phase = phase;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetDither(dither) => {
                 self.config.dither = dither;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Dither)
             }
             Command::SetRestoration(restoration) => {
                 self.config.restoration = restoration;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetTruePeak(on) => {
                 self.config.true_peak = on;
@@ -1358,7 +1382,7 @@ impl Engine {
             }
             Command::SetNoiseShaping(shaping) => {
                 self.config.noise_shaping = shaping;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetReplayGain(mode) => {
                 self.config.replay_gain = mode;
@@ -1370,7 +1394,7 @@ impl Engine {
             }
             Command::SetConvolution(impulse) => {
                 self.config.convolution = impulse;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
@@ -1468,7 +1492,8 @@ impl Engine {
         let lifting = output
             .sleep_lifted
             .is_some_and(|lifted| lifted.elapsed() < output.quiet_within());
-        if !playing || output.sleep_fading || lifting || !output.is_sounding() {
+        if !playing || output.sleep_fading || lifting || !output.is_sounding() || !output.can_fade()
+        {
             return;
         }
         output.sleep_fading = true;
@@ -2043,17 +2068,46 @@ impl Engine {
         self.rebind_where_it_stands()
     }
 
-    fn keeps_its_stream(&self) -> bool {
-        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
-            return false;
-        };
-        if output.plan.stream != output.status.negotiated {
-            return false;
+    fn rebind_where_the_plan_moves(&mut self, read_by: ReadBy) -> Result<()> {
+        if self.keeps_its_plan(read_by) {
+            return Ok(());
         }
-        let Some(sink) = self.bound_sink() else {
+        self.rebind_where_it_stands()
+    }
+
+    fn keeps_its_plan(&self, read_by: ReadBy) -> bool {
+        let (Some(output), Some(wanted)) = (self.output.as_ref(), self.plan_wanted_now()) else {
             return false;
         };
-        let wanted = plan_output(track.decoded(), &sink, &self.config, track.replay_gain);
+        !read_by.reaches_into(&output.plan) && wanted.renders_alike(&output.plan)
+    }
+
+    fn stays_on_the_bound_device(&self) -> bool {
+        let Some(output) = self.output.as_ref() else {
+            return false;
+        };
+        chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
+            .is_some_and(|sink| sink.id == output.sink && sink.name == output.bound)
+    }
+
+    fn plan_wanted_now(&self) -> Option<OutputPlan> {
+        let (track, output) = (self.track.as_ref()?, self.output.as_ref()?);
+        if output.plan.stream != output.status.negotiated {
+            return None;
+        }
+        let sink = self.bound_sink()?;
+        Some(plan_output(
+            track.decoded(),
+            &sink,
+            &self.config,
+            track.replay_gain,
+        ))
+    }
+
+    fn keeps_its_stream(&self) -> bool {
+        let (Some(output), Some(wanted)) = (self.output.as_ref(), self.plan_wanted_now()) else {
+            return false;
+        };
         let capacity = ring_capacity(
             self.config.buffer,
             wanted.stream,
@@ -2389,11 +2443,7 @@ impl Engine {
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };
-        let ours = self.heard_volume().to_gain();
-        let echoed = iter::once(&ours)
-            .chain(&self.turned)
-            .any(|turned| (turned.get() - heard.get()).abs() < ONE_LEVEL_WITHIN);
-        if echoed {
+        if self.turned.echo(heard, self.heard_volume().to_gain()) {
             return;
         }
         tracing::debug!(%heard, "the device's volume was turned from elsewhere; the slider follows it");
@@ -2414,10 +2464,7 @@ impl Engine {
             tracing::warn!(%error, "the device's volume could not be turned");
             return;
         }
-        if self.turned.len() == TURNS_REMEMBERED {
-            self.turned.pop_front();
-        }
-        self.turned.push_back(gain);
+        self.turned.sent(gain);
     }
 
     fn mute_the_device(&self, muted: bool) -> Result<()> {
@@ -2647,6 +2694,14 @@ impl Engine {
         self.streaming.as_ref().is_some_and(Streaming::is_in_flight)
     }
 
+    fn waits_on_a_stream(&self) -> bool {
+        self.is_opening_a_stream()
+            || self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.stream.is_none())
+    }
+
     fn promote(&mut self) {
         if let Some((made, opened)) = self.streaming.as_mut().and_then(Streaming::answered) {
             self.land_the_stream(made, opened);
@@ -2793,7 +2848,7 @@ impl Engine {
     }
 
     fn wait_for_the_graph(&mut self, since: Instant) {
-        if self.opening.is_some() || self.is_opening_a_stream() {
+        if self.opening.is_some() || self.waits_on_a_stream() {
             return;
         }
         let Some(at) = self.row_the_graph_let_go() else {
@@ -2832,6 +2887,10 @@ impl Engine {
                 tracing::debug!(
                     "the sink list moved while it was surveyed; the row waits for the next survey"
                 );
+            }
+            Ok(()) if self.waits_on_a_stream() => {
+                tracing::debug!("the graph took the row; it is back once the stream opens");
+                self.unbound = None;
             }
             Ok(()) => {
                 tracing::info!("the graph is back; the row plays on from where it was heard");
@@ -2939,6 +2998,10 @@ impl Engine {
                     if spec != output.plan.stream {
                         renegotiated = Some(spec);
                     }
+                }
+                StreamEvent::VolumeChanged(volume) => {
+                    output.status.stream_volume = volume;
+                    output.status.hears(output.plan.mode);
                 }
                 StreamEvent::Drained if output.tail == Tail::Asked => output.tail = Tail::Played,
                 StreamEvent::Drained => {}
@@ -3060,8 +3123,10 @@ impl Engine {
     fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
         use resonate_audio::Error as Sink;
 
-        if matches!(error, Error::Sink(Sink::Disconnected))
-            && self.graph_lost.is_none()
+        if matches!(
+            error,
+            Error::Sink(Sink::Disconnected | Sink::OpenUnanswered)
+        ) && self.graph_lost.is_none()
             && self.track.is_some()
             && !self.graph_lost_again()
         {
@@ -3073,6 +3138,7 @@ impl Engine {
                 error,
                 Error::Sink(
                     Sink::Disconnected
+                        | Sink::OpenUnanswered
                         | Sink::LoopStopped
                         | Sink::Backend {
                             op: resonate_audio::Operation::Connect,

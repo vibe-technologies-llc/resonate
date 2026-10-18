@@ -17,6 +17,7 @@ mod state;
 mod streaming;
 mod surveying;
 mod tap;
+mod turns;
 
 pub use resonate_analysis::{
     Analysis, AnalysisOp, Cutoff, ENVELOPE_LANES, Envelope, Error as AnalysisError, Examined,
@@ -28,7 +29,7 @@ pub use resonate_audio::{
     AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
     LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, SinkChange, SinkFormats,
     SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock, StreamCommand, StreamEvent,
-    StreamRequest, StreamState, Surveyor, Words,
+    StreamRequest, StreamState, StreamVolume, Surveyor, Words,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,
@@ -66,8 +67,8 @@ pub use crate::{
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     sleep::{Asleep, Until},
     state::{
-        Event, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, Seeks,
-        StreamDigest, TrackState, TransportState,
+        Event, FirstSurvey, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published,
+        Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
 };

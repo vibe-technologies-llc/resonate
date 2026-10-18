@@ -3,8 +3,8 @@ use std::{
     time::Duration,
 };
 
-use parking_lot::RwLock;
-use resonate_audio::{NodeName, SinkId, SinkInfo, Words};
+use parking_lot::{Condvar, Mutex, RwLock};
+use resonate_audio::{NodeName, SinkId, SinkInfo, StreamVolume, Words};
 use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
 use resonate_core::{
     AppliedGain, FrameSpan, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
@@ -67,6 +67,7 @@ pub struct OutputStatus {
     pub went_without: Frames,
     pub device_turned: bool,
     pub device_muted: bool,
+    pub stream_volume: StreamVolume,
 }
 
 impl OutputStatus {
@@ -75,8 +76,12 @@ impl OutputStatus {
             .is_some_and(|graph| graph != self.negotiated.rate)
     }
 
+    pub fn scaled_by_the_stream(&self) -> bool {
+        self.stream_volume != StreamVolume::Unity
+    }
+
     pub(crate) fn hears(&mut self, planned: OutputMode) {
-        self.mode = match self.converted_by_the_graph() {
+        self.mode = match self.converted_by_the_graph() || self.scaled_by_the_stream() {
             true => OutputMode::Converted,
             false => planned,
         };
@@ -202,6 +207,28 @@ pub struct Published {
     pub sinks: Arc<RwLock<Arc<[SinkInfo]>>>,
     pub tap: Arc<RwLock<Tapped>>,
     pub listening: Arc<AtomicBool>,
+    pub first_survey: Arc<FirstSurvey>,
+}
+
+#[derive(Default)]
+pub struct FirstSurvey {
+    answered: Mutex<bool>,
+    landed: Condvar,
+}
+
+impl FirstSurvey {
+    pub(crate) fn answered(&self) {
+        *self.answered.lock() = true;
+        self.landed.notify_all();
+    }
+
+    pub fn waited_for(&self, within: Duration) -> bool {
+        let mut answered = self.answered.lock();
+        let _ = self
+            .landed
+            .wait_while_for(&mut answered, |answered| !*answered, within);
+        *answered
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

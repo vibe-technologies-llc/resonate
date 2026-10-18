@@ -286,6 +286,31 @@ impl OutputPlan {
             && self.true_peak == other.true_peak
     }
 
+    pub fn renders_alike(&self, other: &Self) -> bool {
+        self.stream == other.stream
+            && self.mode == other.mode
+            && self.packing == other.packing
+            && self.remix == other.remix
+            && self.restoration == other.restoration
+            && self.resample == other.resample
+            && self.equalisation == other.equalisation
+            && convolves_alike(self.convolution.as_ref(), other.convolution.as_ref())
+            && self.dither_to == other.dither_to
+            && (self.dither_to.is_none() || self.shaping == other.shaping)
+            && self.gain == other.gain
+            && self.rounds == other.rounds
+            && self.decoded_as == other.decoded_as
+            && self.true_peak == other.true_peak
+    }
+
+    pub const fn resamples(&self) -> bool {
+        self.resample.is_some()
+    }
+
+    pub const fn dithers(&self) -> bool {
+        self.dither_to.is_some()
+    }
+
     pub fn build_chain(
         &self,
         source: StreamSpec,

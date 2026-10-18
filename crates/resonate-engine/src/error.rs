@@ -206,7 +206,9 @@ const fn cause_at_the_sink(sink: &resonate_audio::Error) -> Cause {
             op: resonate_audio::Operation::Format,
             ..
         } => Cause::DeviceRefused,
-        Sink::Backend { .. } | Sink::LoopStopped | Sink::Disconnected => Cause::SoundServer,
+        Sink::Backend { .. } | Sink::LoopStopped | Sink::Disconnected | Sink::OpenUnanswered => {
+            Cause::SoundServer
+        }
     }
 }
 

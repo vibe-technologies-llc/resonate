@@ -23,13 +23,14 @@ use resonate_core::{
 };
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
-    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, GraphTime,
-    HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, Opener,
-    OutputMode, Placement, PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q,
-    QueueItem, Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange,
-    SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
-    SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    Surveyor, Tapped, Until, Words, stamp_of,
+    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
+    GraphTime, HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
+    NoiseShaping, Opener, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
+    PreviousRestarts, Profile, Q, Quality, QueueItem, Reading, RepeatMode, ReplayGainMode,
+    Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats, SinkId,
+    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamClock,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Until,
+    Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -162,6 +163,7 @@ struct Graph {
     turned: Vec<(SinkId, Gain)>,
     muted: Vec<(SinkId, bool)>,
     away: bool,
+    unanswering: bool,
     clock: Option<Arc<StreamClock>>,
     survey_gate: Option<Receiver<()>>,
 }
@@ -260,6 +262,9 @@ impl Opener for FakeSink {
             let mut graph = self.graph.lock();
             if graph.away {
                 return Err(SinkError::Disconnected);
+            }
+            if graph.unanswering {
+                return Err(SinkError::OpenUnanswered);
             }
             graph.opens += 1;
             graph.requests.push(request.clone());
@@ -1945,6 +1950,46 @@ fn a_skip_the_graph_refuses_before_the_engine_has_noticed_it_gone_waits_for_it_t
 }
 
 #[test]
+fn a_skip_onto_a_daemon_that_never_answers_the_open_waits_for_it_rather_than_failing_the_row()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let third = tree.write("third.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    graph.lock().unanswering = true;
+    let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+    thread::sleep(A_SHORT_DOZE);
+    neither_failed_nor_finished(&player);
+    assert!(plays(&player, 2), "{}", transport(&player));
+
+    graph.lock().unanswering = false;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the second row to play once the daemon answers",
+    );
+    neither_failed_nor_finished(&player);
+    Ok(())
+}
+
+#[test]
 fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_keep_the_track()
 -> Result<()> {
     let tree = Tree::new();
@@ -2317,7 +2362,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         served: Arc::default(),
     }));
     let (player, graph) = player_over(
-        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])],
         Arc::new(sources),
     )?;
     player.send(Command::Load {
@@ -2341,7 +2386,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         "a seek on a stream that cannot seek answered {refused:?}"
     );
     player
-        .request(Command::SetDither(DitherKind::None))?
+        .request(Command::SetQuality(Quality::Fast))?
         .wait_for(PATIENCE)?;
     assert_eq!(
         graph.lock().opens,
@@ -3433,6 +3478,59 @@ fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result
     Ok(())
 }
 
+#[test]
+fn a_stream_another_client_turned_or_muted_is_not_called_bit_perfect_until_it_is_whole_again()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let heard_as = |mode: OutputMode| {
+        move |player: &Player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == mode)
+        }
+    };
+
+    for volume in [StreamVolume::Scaled, StreamVolume::Muted] {
+        tell_the_stream(&graph, |_| {}, StreamEvent::VolumeChanged(volume));
+        wait_for(
+            &player,
+            |player| {
+                player
+                    .state()
+                    .output
+                    .is_some_and(|output| output.stream_volume == volume)
+            },
+            "the engine to hear the stream's own volume",
+        );
+        let status = player.state().output.expect("an output status");
+        assert!(status.scaled_by_the_stream());
+        assert_eq!(status.mode, OutputMode::Converted);
+        assert_eq!(graph.lock().opens, 1, "the stream's own volume reopened it");
+    }
+
+    tell_the_stream(
+        &graph,
+        |_| {},
+        StreamEvent::VolumeChanged(StreamVolume::Unity),
+    );
+    wait_for(
+        &player,
+        heard_as(OutputMode::BitPerfect),
+        "the chip to say bit-perfect once the stream is back at unity",
+    );
+    Ok(())
+}
+
 fn ticking_at(hz: u32) -> GraphTime {
     GraphTime {
         delay: 0,
@@ -3524,6 +3622,71 @@ fn a_setting_that_leaves_the_stream_as_it_was_does_not_reopen_it() -> Result<()>
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect)
+    );
+    Ok(())
+}
+
+#[test]
+fn choosing_the_bound_device_or_a_setting_the_plan_does_not_read_leaves_the_stream_open()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let device = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+    let bound = device.name.clone();
+
+    let (player, graph) = player(vec![device])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetSink(Some(bound)))?;
+    answered(&player, Command::SetSink(None))?;
+    answered(&player, Command::SetQuality(Quality::Fast))?;
+    answered(&player, Command::SetFilterPhase(FilterPhase::Minimum))?;
+    answered(&player, Command::SetDither(DitherKind::Rectangular))?;
+    answered(&player, Command::SetRestoration(Restoration::Extend))?;
+    answered(&player, Command::SetNoiseShaping(NoiseShaping::Lipshitz))?;
+    answered(&player, Command::SetConvolution(None))?;
+    thread::sleep(A_SHORT_DOZE);
+
+    assert_eq!(
+        graph.lock().opens,
+        1,
+        "a setting the open plan does not read reopened the stream"
+    );
+    assert!(playing(&player));
+    assert_eq!(
+        player.state().output.map(|output| output.mode),
+        Some(OutputMode::BitPerfect)
+    );
+    Ok(())
+}
+
+#[test]
+fn changing_the_quality_a_resampled_track_is_converted_at_reopens_its_stream() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetQuality(Quality::Fast))?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S32),
+        |_, graph| graph.opens == 2,
+        "the stream to reopen around the faster resampler",
     );
     Ok(())
 }
@@ -4481,6 +4644,45 @@ fn a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup() -> Resul
         },
         "the named device to take over once it turned up, and the graph to be asked for it",
     );
+    Ok(())
+}
+
+#[test]
+fn a_player_answers_before_its_first_survey_and_says_when_that_survey_has_landed() -> Result<()> {
+    const A_GLANCE: Duration = Duration::from_millis(50);
+
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let (open_the_gate, gate) = unbounded::<()>();
+    graph.lock().survey_gate = Some(gate);
+
+    let (answer, answered) = unbounded();
+    thread::spawn(move || {
+        let _ = answer.send(Player::with_backend(config(), move |_| {
+            Ok(Box::new(backend))
+        }));
+    });
+    let player = answered
+        .recv_timeout(PATIENCE)
+        .expect("the player to answer while its first survey is out")?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    assert!(
+        player.sinks_once_surveyed(A_GLANCE).is_empty(),
+        "the sink list was published before the survey answered"
+    );
+
+    graph.lock().survey_gate = None;
+    drop(open_the_gate);
+
+    assert_eq!(player.sinks_once_surveyed(PATIENCE).len(), 1);
+    wait_for(&player, playing, "the row loaded before the survey to play");
     Ok(())
 }
 
@@ -7010,6 +7212,56 @@ fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() ->
 }
 
 #[test]
+fn an_end_of_track_timer_over_a_dop_stream_plays_the_track_out_and_pauses_on_the_next_row()
+-> Result<()> {
+    let named = SourceId::new("held").expect("a lowercase name");
+    let sources = Sources::local().and(Arc::new(InMemory {
+        source: named.clone(),
+        key: "tone.dsf".to_owned(),
+        bytes: dsf_tone(),
+    }));
+    let location = MediaLocation::new(named, "tone.dsf");
+    let row = |id| {
+        QueueItem::whole(
+            TrackId::new(id).expect("a non-zero track id"),
+            location.clone(),
+        )
+    };
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_176400], &[SampleFormat::S24])],
+        Arc::new(sources),
+        EngineConfig {
+            dop: true,
+            ..config()
+        },
+    )?;
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+        .wait_for(PATIENCE)?;
+    player.send(Command::Load {
+        items: vec![row(1), row(2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S24),
+        |player, _| paused(player) && plays(player, 2),
+        "the timer to play the DoP track out and cue the next row",
+    );
+
+    assert_eq!(
+        dozing(&player),
+        None,
+        "a timer that fired is still published"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
@@ -8010,6 +8262,77 @@ fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -
         &player,
         |player| heard_near(player, 0.4),
         "the slider to follow the device turned from the desktop",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_the_mute_alone()
+-> Result<()> {
+    let (player, graph) = {
+        let tree = Tree::new();
+        let source = pcm(16, FRAMES);
+        let path = tree.write("track.wav", &source.file);
+        let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
+        let player = Player::with_backend(handing_the_volume_over(true), move |_| {
+            Ok(Box::new(backend))
+        })?;
+        player.send(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?;
+        wait_for(&player, playing, "the stream to open");
+        (player, graph)
+    };
+    let dragged: Vec<Volume> = (0..32)
+        .map(|step| Volume::new(0.2 + step as f32 * 0.015).expect("in range"))
+        .collect();
+    let rounded_to_a_step = |volume: Volume| {
+        let sent = volume.to_gain().to_decibels().get();
+        Decibels::new((sent / 1.5).round() * 1.5)
+            .expect("a finite level")
+            .to_gain()
+            .get()
+    };
+
+    for volume in &dragged {
+        answered(&player, Command::SetVolume(*volume))?;
+    }
+    answered(&player, Command::SetVolume(Volume::MUTE))?;
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[0]));
+    });
+    let enumerated = graph.lock().enumerations;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the device again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert_eq!(
+        player.state().volume,
+        Volume::MUTE,
+        "the device's rounded echo of the drag's first turn cleared the mute"
+    );
+
+    answered(&player, Command::SetVolume(dragged[31]))?;
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[31]));
+    });
+    let enumerated = graph.lock().enumerations;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the device again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert!(
+        heard_near(&player, dragged[31].get()),
+        "the device's rounded echo snapped the slider to {}",
+        player.state().volume.get()
     );
     Ok(())
 }

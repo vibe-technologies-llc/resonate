@@ -514,7 +514,11 @@ fn confirm_sink(player: &Player, wanted: Option<&NodeName>) {
     let Some(wanted) = wanted else {
         return;
     };
-    if player.sinks().iter().any(|sink| sink.name == *wanted) {
+    if player
+        .sinks_once_surveyed(SINK_TIMEOUT)
+        .iter()
+        .any(|sink| sink.name == *wanted)
+    {
         return;
     }
     tracing::warn!(

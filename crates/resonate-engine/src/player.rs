@@ -80,10 +80,11 @@ impl Player {
                 .spawn(move || {
                     match open(&config) {
                         Ok(backend) => {
+                            *published.settings.write() = Arc::new(OutputSettings::of(&config));
+                            let _ = ready.send(Ok(()));
                             let engine = Engine::new(
                                 config, sources, backend, requests, announce, published,
                             );
-                            let _ = ready.send(Ok(()));
                             engine.run();
                         }
                         Err(error) => {
@@ -172,6 +173,13 @@ impl Player {
 
     pub fn sinks(&self) -> Arc<[SinkInfo]> {
         Arc::clone(&self.published.sinks.read())
+    }
+
+    pub fn sinks_once_surveyed(&self, within: Duration) -> Arc<[SinkInfo]> {
+        if !self.published.first_survey.waited_for(within) {
+            tracing::debug!(?within, "the first sink survey had not answered in time");
+        }
+        self.sinks()
     }
 
     pub fn digest(&self) -> Option<Arc<StreamDigest>> {

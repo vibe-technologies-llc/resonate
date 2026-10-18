@@ -118,6 +118,14 @@ pub enum StreamCommand {
     Close,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StreamVolume {
+    #[default]
+    Unity,
+    Scaled,
+    Muted,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamEvent {
     StateChanged {
@@ -133,6 +141,7 @@ pub enum StreamEvent {
         spec: StreamSpec,
         words: Words,
     },
+    VolumeChanged(StreamVolume),
     Drained,
 }
 

@@ -309,8 +309,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `build_chain_after` builds the stages behind. A restoration switched under a resampler or
   convolver still rebinds; a volume or ReplayGain change never does.
 - **A setting asking for the stream already open does not reopen it** (`Engine::keeps_its_stream`:
-  what `plan_output` would open now against the open plan's stream, packing and `ring_capacity`).
-  Graph rate is not weighed (`clock.force-rate` pins the graph: switching it still reopens).
+  what `plan_output` would open now against the open plan's stream, packing and `ring_capacity`;
+  `SetBitPerfect`, `SetDop`, `SetBuffer`). **A setting the open plan does not read leaves it
+  alone** (`Engine::keeps_its_plan`): quality, filter phase, dither, restoration, noise shaping and
+  convolution are weighed by `OutputPlan::renders_alike` (shaping only under a dither), and where
+  the chain reads the setting itself when it is built (`ReadBy::reaches_into`: quality and phase under a
+  resampler, the dither's kind under a dither) the plan alone cannot say, so it reopens. Choosing
+  the device the stream is already on (`stays_on_the_bound_device`, by `chosen_sink`, named or
+  followed default alike) reopens nothing. Graph rate is not weighed (`clock.force-rate` pins the
+  graph and is set as the stream opens: switching it still reopens).
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the settled spec; `downgrade` hands it to `plan_for` as
   target, written into `OutputPlan::stream` whole (writing the source's channels back made the two
@@ -330,7 +337,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Sinks are enumerated mid-stream on their own thread** (`Surveying`, a `resonate-sinks` thread
   holding the backend's `Surveyor`), so the engine never waits on the graph. One survey in flight; a
   change announced meanwhile leaves the flag set and the landing answer asks again. No thread:
-  enumerate in line only while no stream is open, under `SINK_TIMEOUT`.
+  enumerate in line only while no stream is open, under `SINK_TIMEOUT`. **`Player::new` answers
+  before the first survey:** the engine thread publishes the settings and answers, then surveys in
+  line before it takes a command, so a window opens without waiting on the graph while the first
+  `Load` still binds from a surveyed list (commands wait in the channel). A reader taking the list
+  once waits on `Published::first_survey` through `Player::sinks_once_surveyed` (the binary's
+  `confirm_sink`); the window polls the list and needs no wait.
 - **A bind reads the published sink list; only an announcement refreshes it.** `select_sink` runs on
   every track change, non-in-place seek, settings change and renegotiation; enumerating there would
   put a `SINK_TIMEOUT` before each against a daemon that stopped answering. A list with no announced
@@ -347,7 +359,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   Each `Output` is numbered (`Output::made`): a stream landing for an output since retired or rebound
   is closed (`close_unwanted`). **One open in flight, none asked while one is** (a stray's `Close`
   must reach the loop before the next `Open`). `wait_for_the_graph` does not let go while an open is
-  in flight or a row is opening, so an open refused `Disconnected` is read as the graph's.
+  in flight or a row is opening, so an open refused `Disconnected` is read as the graph's, and a
+  rebind leaves `graph_lost` standing until its stream lands (`waits_on_a_stream`: an output still
+  priming asks its open later, so letting go there billed the open's refusal to the row). **An open the
+  daemon never answers is the graph's, not the row's:** `Survey::open` past `STREAM_OPENED_WITHIN`
+  answers `OpenUnanswered` (`Disconnected` once the client knows the daemon gone), which
+  `parked_for_a_device` reads as the graph lost; read as `LoopStopped` it failed every queued row
+  five seconds apiece. The ask and the loop settle one `Awaiting` by compare-and-swap, so a stream
+  built after its asker gave up is closed on the loop rather than left playing as an orphan.
 - **The engine decides which device the stream is on and follows the default itself.** Playback
   streams carry `node.dont-move`, so WirePlumber never relinks them (its `follow-default-target`
   moved the stream while `OutputStatus::sink` named the old device). Every sink-list refresh ends in
@@ -477,7 +496,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   reads the two fields `advance` decides it from, and the fade treats a wrap as the end of the queue
   like the last row of a non-repeating one. Every `QueueFinished` (`Engine::finish_the_queue`: end of
   `skip`, `remove`, `fail`) disarms an end-of-queue timer, so the next load is not paused unasked. **Fades out over the last `SLEEP_FADES_OVER`**;
-  cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. Outlives
+  cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. **A DoP
+  stream is not faded toward sleep** (`Output::can_fade`): its ring cannot ramp and goes quiet at
+  once without draining, so the position froze short of the end the timer waited for; it plays to
+  the edge and pauses there. Outlives
   track change, seek, pause, new load. Due while a row opens, it pauses the opening. Delay capped at
   `LONGEST_SLEEP` so a huge value cannot overflow an `Instant`.
 - **A skip under repeat-track repeats the queue, unless told otherwise.** `Command::Next` and
@@ -735,9 +757,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   adapter's software volume), **keeping balance and mute**. **The slider starts where the device is**
   (`Volume::heard_at`) and follows a device turned from the desktop: a `Route` is not re-sent when
   volume moves, so the device's `info` saying `PARAMS` changed enumerates again (`SinkChange::Turned`,
-  `follow_the_devices_volume`). The engine's own sends echo back the same way: `Engine::turned`
-  remembers the last `TURNS_REMEMBERED` (8) gains, a reading within `ONE_LEVEL_WITHIN` of any is an
-  echo. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
+  `follow_the_devices_volume`). The engine's own sends echo back the same way: `Turns` (`turns.rs`)
+  remembers the last `TURNS_REMEMBERED` (8) gains and every one sent within `ECHOES_ARRIVE_WITHIN`
+  (2 s, at most `TURNS_HELD_AT_MOST`), so a fast drag's early echoes still arrive known; a reading
+  within `A_DEVICES_HALF_STEP_DB` (0.75 dB, half a coarse hardware step) of any is an echo, since a
+  device rounds what it is sent to its own steps (silence matches silence alone). Read as turned
+  elsewhere, an echo snapped the slider and cleared the mute. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
 - **Stream latency is counted in the stream's frames, converted where the graph tick rate is
   known.** `pw_time.delay` is in `pw_time.rate` (graph clock), not the stream's. The `process`
   callback holds the only consistent delay/rate snapshot: it builds a `GraphTime` and publishes
@@ -747,8 +772,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Bit-perfect is what the graph runs at, read every cycle, not what the stream opened at:** another
   client can hold the graph at a second rate after the stream opened. `StreamClock` carries
   `GraphTime::graph_rate` from the callback to `OutputStatus::graph_rate`; `OutputStatus::hears`
-  demotes the published `mode` to `Converted` wherever `converted_by_the_graph`. The plan is
-  untouched: `no_convert` and every reshape still read `OutputPlan::mode`.
+  demotes the published `mode` to `Converted` wherever `converted_by_the_graph`. **So is the
+  stream's own volume:** the session manager restores a saved per-stream volume and a desktop mixer
+  turns or mutes the stream, both as `Props` on the stream's node, and the engine's own volume never
+  goes there (it is the chain's, the ring's or the device's). `param_changed` reads every `Props`
+  into `StreamLevels` (`props.rs`; a pod naming one key keeps the others it named before) and sends
+  `StreamEvent::VolumeChanged(StreamVolume)` when the verdict moves; `scaled_by_the_stream` demotes
+  the mode the same way, without reopening. The plan is untouched: `no_convert` and every reshape
+  still read `OutputPlan::mode`.
 - **The callback fills the quantum the graph asked for, not the buffer handed over:**
   `pw_buffer.requested` = quantum in frames (`Cycle::asked_for`), clamped to the pool's room, falling
   back to all of it where the graph names nothing. Filling the whole pool buffer drained the ring
@@ -778,7 +809,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `tests/stream.rs` read `Error::Disconnected` from the first sink discovery as a skip. Other
   discovery failures fail; reconnect tests host their own daemon. A hosted daemon proves what the
   client reads and asks, not what flows: with no session manager nothing is linked, and WirePlumber is
-  not hosted because it would reach the real cards.
+  not hosted because it would reach the real cards. A hosted test playing the other client turns a
+  stream by its node's id (`the_playback_node`, read off `pw-cli ls Node`): the application name
+  is the client's as well as the node's, and `pw-cli` resolves a name to the client, which refuses
+  `set-param` yet exits zero.
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**

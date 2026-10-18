@@ -5,13 +5,13 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
 use libspa::{
     param::{
         ParamInfoFlags, ParamType,
@@ -48,6 +48,7 @@ use crate::{
         parse_rate, parse_route, route_change, running_rate, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
+    props::StreamLevels,
 };
 
 type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
@@ -110,6 +111,34 @@ struct OpenRequest {
     source: Box<dyn AudioSource>,
     slots: StreamSlots,
     reply: Sender<Result<()>>,
+    awaiting: Awaiting,
+}
+
+#[derive(Clone, Default)]
+struct Awaiting(Arc<AtomicU8>);
+
+impl Awaiting {
+    const WAITED_ON: u8 = 0;
+    const KEPT: u8 = 1;
+    const GIVEN_UP: u8 = 2;
+
+    fn kept(&self) -> bool {
+        self.settle(Self::KEPT)
+    }
+
+    fn given_up(&self) -> bool {
+        self.settle(Self::GIVEN_UP)
+    }
+
+    fn is_given_up(&self) -> bool {
+        self.0.load(Ordering::Acquire) == Self::GIVEN_UP
+    }
+
+    fn settle(&self, into: u8) -> bool {
+        self.0
+            .compare_exchange(Self::WAITED_ON, into, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
 }
 
 enum Request {
@@ -440,6 +469,7 @@ impl Survey {
         let (events, incoming) = bounded(256);
         let clock = Arc::new(StreamClock::default());
         let (reply, outcome) = bounded(1);
+        let awaiting = Awaiting::default();
 
         self.commands
             .send(Request::Open(Box::new(OpenRequest {
@@ -451,12 +481,18 @@ impl Survey {
                     events,
                 },
                 reply,
+                awaiting: awaiting.clone(),
             })))
             .map_err(|_| Error::LoopStopped)?;
 
-        outcome
-            .recv_timeout(STREAM_OPENED_WITHIN)
-            .map_err(|_| Error::LoopStopped)??;
+        match outcome.recv_timeout(STREAM_OPENED_WITHIN) {
+            Ok(opened) => opened?,
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::LoopStopped),
+            Err(RecvTimeoutError::Timeout) if awaiting.given_up() => {
+                return Err(self.unanswered_open());
+            }
+            Err(RecvTimeoutError::Timeout) => outcome.recv().map_err(|_| Error::LoopStopped)??,
+        }
 
         let control = self.commands.clone();
         Ok(SinkStream::new(
@@ -477,6 +513,14 @@ impl Survey {
     fn unanswered(&self) -> Error {
         if self.connected.load(Ordering::Acquire) {
             Error::LoopStopped
+        } else {
+            Error::Disconnected
+        }
+    }
+
+    fn unanswered_open(&self) -> Error {
+        if self.connected.load(Ordering::Acquire) {
+            Error::OpenUnanswered
         } else {
             Error::Disconnected
         }
@@ -1399,13 +1443,22 @@ fn open_stream(
         source,
         slots,
         reply,
+        awaiting,
     } = open;
+    if awaiting.is_given_up() {
+        return Ok(());
+    }
 
     let outcome = build_stream(core, &request, target.as_ref(), source, &slots);
     match outcome {
-        Ok(stream) => {
+        Ok(stream) if awaiting.kept() => {
             active.borrow_mut().replace(stream);
             let _ = reply.send(Ok(()));
+            Ok(())
+        }
+        Ok(abandoned) => {
+            tracing::debug!("a stream opened after its asker gave up waiting is closed");
+            let _ = abandoned.stream.disconnect();
             Ok(())
         }
         Err(error) => {
@@ -1477,15 +1530,21 @@ fn build_stream(
         .param_changed({
             let events = events.clone();
             let packed = Arc::clone(&packed);
-            move |_stream, _source, id, param| {
-                if id != sys::SPA_PARAM_Format {
-                    return;
+            let mut levels = StreamLevels::default();
+            move |_stream, _source, id, param| match id {
+                sys::SPA_PARAM_Format => {
+                    let Some(taken) = param.and_then(negotiated) else {
+                        return;
+                    };
+                    packed.store(taken.word.is_packed(), Ordering::Relaxed);
+                    let _ = events.try_send(taken.changed());
                 }
-                let Some(taken) = param.and_then(negotiated) else {
-                    return;
-                };
-                packed.store(taken.word.is_packed(), Ordering::Relaxed);
-                let _ = events.try_send(taken.changed());
+                sys::SPA_PARAM_Props => {
+                    if let Some(heard) = param.and_then(|param| levels.absorb(param)) {
+                        let _ = events.try_send(StreamEvent::VolumeChanged(heard));
+                    }
+                }
+                _ => {}
             }
         })
         .register()
@@ -1605,6 +1664,20 @@ fn stream_state(state: &pipewire::stream::StreamState) -> StreamState {
 mod tests {
     use super::*;
     use crate::{HardwareVolume, Plugged};
+
+    #[test]
+    fn a_stream_its_asker_gave_up_on_is_not_kept_and_one_kept_is_still_waited_for() {
+        let abandoned = Awaiting::default();
+        let answered = Awaiting::default();
+
+        assert!(abandoned.given_up());
+        assert!(abandoned.is_given_up());
+        assert!(!abandoned.kept());
+
+        assert!(answered.kept());
+        assert!(!answered.given_up());
+        assert!(!answered.is_given_up());
+    }
 
     #[test]
     fn a_daemon_gone_by_reset_or_abort_is_as_lost_as_one_gone_by_a_broken_pipe() {
