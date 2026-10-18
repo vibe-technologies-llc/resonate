@@ -549,10 +549,13 @@ every route change (a pair of headphones at the same rate included), not from th
   catalog change (`Library.refresh`) or a favourite asks again without the settle.
 - **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
   Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
-  `.searchSuggestions` offers completions while typing and, on an empty field, the last ten searches
-  (`UserDefaults` suite `library-features`, key `recent-searches`, shared with the Search tab: a
-  search kept merges into what is stored, and each tab re-reads it on appearing), kept when a search
-  is submitted or one of its results opened. Searching spans the catalog: filters shape browsing
+  completions as a row of glass capsules heading the results (`SearchCompletions`, at most five,
+  read from the answer on screen, so the row changes only as the results do); `.searchSuggestions`
+  offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
+  key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
+  each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
+  Completions are never `.searchSuggestions` while typing: that overlay sat over the results and
+  moved with every answer. Searching spans the catalog: filters shape browsing
   only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
   are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
   `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
@@ -564,8 +567,8 @@ every route change (a pair of headphones at the same rate included), not from th
   (`Navigation.searchPlace`), one field for both: typing sets `tabSearch.text` always and
   `Features.onlineQuery` only in Online, and choosing Online hands it the text, so a library search
   never reaches the network. Your library shows the Songs results (Top, *See all* pushing the full
-  list, *Did you mean*, reads, completions) and, under five songs, "Search online for “…”", which
-  switches scope. With no text the page lists the recent searches and a hint; Online with online
+  list, *Did you mean*, reads, the completions' row) and, under five songs, "Search online for “…”",
+  which switches scope; the tab has no `.searchSuggestions`. With no text the page lists the recent searches and a hint; Online with online
   features off shows why, with Open Settings. Library tools' Online search switches to this tab
   in Online (`Navigation.searchOnline`); there is no destination of its own.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first

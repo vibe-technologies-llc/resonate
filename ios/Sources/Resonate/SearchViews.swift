@@ -221,25 +221,48 @@ struct SearchReadings: View {
 }
 
 struct SearchSuggestions: View {
-    private static let completionsShown = 5
-
     let search: SearchModel
-    var offersRecents = true
 
     var body: some View {
-        if search.query.isEmpty {
-            if offersRecents, !search.recents.isEmpty {
-                Section("Recent searches") {
-                    ForEach(search.recents, id: \.self) { recent in
-                        Label(recent, systemImage: "clock.arrow.circlepath").searchCompletion(recent)
-                    }
-                    Button("Clear recent searches", role: .destructive) { search.forgetRecents() }
+        if search.query.isEmpty, !search.recents.isEmpty {
+            Section("Recent searches") {
+                ForEach(search.recents, id: \.self) { recent in
+                    Label(recent, systemImage: "clock.arrow.circlepath").searchCompletion(recent)
                 }
+                Button("Clear recent searches", role: .destructive) { search.forgetRecents() }
             }
-        } else {
-            ForEach(search.offeredCompletions.prefix(Self.completionsShown), id: \.self) { completion in
-                Label(completion, systemImage: "magnifyingglass").searchCompletion(completion)
+        }
+    }
+}
+
+struct SearchCompletions: View {
+    private static let shown = 5
+
+    let search: SearchModel
+
+    var body: some View {
+        let completions = Array(search.offeredCompletions.prefix(Self.shown))
+        if !completions.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(completions, id: \.self) { completion in
+                        Button { search.text = completion } label: {
+                            Label(completion, systemImage: "magnifyingglass")
+                                .font(.subheadline)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .glassEffect(.regular.interactive(), in: .capsule)
+                                .touchTarget()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Search for \(completion)")
+                    }
+                }
+                .padding(.horizontal, 16)
             }
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
         }
     }
 }

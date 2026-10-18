@@ -41,9 +41,6 @@ struct SearchTab: View {
         .searchScopes($navigation.searchPlace) {
             ForEach(SearchPlace.allCases) { Text($0.rawValue).tag($0) }
         }
-        .searchSuggestions {
-            if place == .library { SearchSuggestions(search: search, offersRecents: false) }
-        }
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .onSubmit(of: .search) { remember(search) }
@@ -126,6 +123,7 @@ struct LibraryFindings: View {
     let searchOnline: () -> Void
 
     var body: some View {
+        SearchCompletions(search: search)
         SearchResults(search: search, scope: Binding(get: { .top }, set: { seeAll = $0 }))
         if search.hasAnswer, search.found.trackCount < Self.few {
             Section {

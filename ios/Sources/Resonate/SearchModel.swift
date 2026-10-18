@@ -54,7 +54,7 @@ final class SearchModel {
     var matchedNothing: Bool { hasAnswer && found.trackCount == 0 }
 
     var offeredCompletions: [String] {
-        let typed = query.searchFolded
+        let typed = answered.searchFolded
         return found.completions.filter { completion in
             let folded = completion.searchFolded
             return folded != typed && folded.hasPrefix(typed)

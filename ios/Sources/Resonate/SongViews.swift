@@ -35,6 +35,7 @@ struct SongsView: View {
         @Bindable var search = library.songSearch
         List {
             if search.isAsked {
+                SearchCompletions(search: search).themedRows()
                 SearchResults(search: search, scope: $scope).themedRows()
             } else {
                 Section {
