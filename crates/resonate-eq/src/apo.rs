@@ -377,7 +377,30 @@ fn device_scope(line: &str, first_named: &mut Option<String>) -> DeviceScope {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Role {
+    Other,
+    Preamp,
+    Band(usize),
+    Graphic,
+}
+
+struct Walked {
+    reading: Reading,
+    roles: Vec<Role>,
+}
+
+fn marked(roles: &mut [Role], role: Role) {
+    if let Some(slot) = roles.last_mut() {
+        *slot = role;
+    }
+}
+
 pub fn read(text: &str) -> Result<Reading> {
+    Ok(walk(text)?.reading)
+}
+
+fn walk(text: &str) -> Result<Walked> {
     if text.len() > LARGEST_PROFILE {
         return Err(Error::TooLarge {
             op: EqOp::Parse,
@@ -395,8 +418,10 @@ pub fn read(text: &str) -> Result<Reading> {
     let mut scope = Scope::Reaching(ChannelSet::EVERY);
     let mut first_device = None;
     let mut another_device = false;
+    let mut roles = Vec::new();
 
     for line in text.lines() {
+        roles.push(Role::Other);
         let line = line.trim_start_matches('\u{feff}').trim();
         if line.is_empty() || line.starts_with(COMMENT) {
             continue;
@@ -446,6 +471,7 @@ pub fn read(text: &str) -> Result<Reading> {
         if folded.starts_with(PREAMP) {
             match preamp_of(line) {
                 Some(read) if reaching.is_every() => {
+                    marked(&mut roles, Role::Preamp);
                     if read.moved {
                         tracing::debug!(line, "a preamp past what this build holds");
                         clamped += 1;
@@ -468,7 +494,10 @@ pub fn read(text: &str) -> Result<Reading> {
 
         if folded.starts_with(graphic::LEADER) {
             match graphic::target_of(line) {
-                Some(read) if reaching.is_every() && target.is_none() => target = Some(read),
+                Some(read) if reaching.is_every() && target.is_none() => {
+                    marked(&mut roles, Role::Graphic);
+                    target = Some(read);
+                }
                 _ => {
                     tracing::debug!(line, "a graphic curve this build could not take");
                     passed_over += 1;
@@ -497,6 +526,7 @@ pub fn read(text: &str) -> Result<Reading> {
                     tracing::debug!(line, "a filter past what this build holds, held to it");
                     clamped += 1;
                 }
+                marked(&mut roles, Role::Band(bands.len()));
                 bands.push(Band {
                     channels: reaching,
                     ..taken.band
@@ -513,6 +543,13 @@ pub fn read(text: &str) -> Result<Reading> {
         }
     }
 
+    if target.is_some() {
+        for role in &mut roles {
+            if matches!(role, Role::Band(_)) {
+                *role = Role::Other;
+            }
+        }
+    }
     let profile = match target {
         Some(target) => {
             passed_over += bands.len();
@@ -524,11 +561,14 @@ pub fn read(text: &str) -> Result<Reading> {
         }
         None => Profile::new(preamp.unwrap_or(Preamp::NONE), bands)?,
     };
-    Ok(Reading {
-        profile,
-        passed_over,
-        approximated,
-        clamped,
+    Ok(Walked {
+        reading: Reading {
+            profile,
+            passed_over,
+            approximated,
+            clamped,
+        },
+        roles,
     })
 }
 
@@ -544,9 +584,24 @@ pub(crate) fn spelled_hertz(frequency: Frequency) -> String {
     }
 }
 
+fn spelled_band(band: &Band) -> String {
+    format!(
+        "{} {} Fc {} Hz Gain {:.3} dB Q {:.3}",
+        if band.on { "ON" } else { "OFF" },
+        spelling_of(band.kind),
+        spelled_hertz(band.frequency),
+        band.gain.decibels(),
+        band.q.units(),
+    )
+}
+
+fn spelled_preamp(preamp: Preamp) -> String {
+    format!("{:.3} dB", preamp.decibels())
+}
+
 pub fn write(profile: &Profile) -> String {
     let mut text = String::new();
-    let _ = writeln!(text, "Preamp: {:.3} dB", profile.preamp().decibels());
+    let _ = writeln!(text, "Preamp: {}", spelled_preamp(profile.preamp()));
     if let Some(target) = profile.target() {
         let _ = writeln!(text, "{}", graphic::spelled(target));
         return text;
@@ -558,18 +613,241 @@ pub fn write(profile: &Profile) -> String {
             scope = band.channels;
             let _ = writeln!(text, "Channel: {}", spelled_channels(scope));
         }
-        let _ = writeln!(
-            text,
-            "Filter {}: {} {} Fc {} Hz Gain {:.3} dB Q {:.3}",
-            position + 1,
-            if band.on { "ON" } else { "OFF" },
-            spelling_of(band.kind),
-            spelled_hertz(band.frequency),
-            band.gain.decibels(),
-            band.q.units(),
-        );
+        let _ = writeln!(text, "Filter {}: {}", position + 1, spelled_band(band));
     }
     text
+}
+
+fn indentation_of(line: &str) -> &str {
+    let indent = line.len() - line.trim_start().len();
+    line.get(..indent).unwrap_or_default()
+}
+
+fn label_of(line: &str) -> &str {
+    line.split_once(':').map_or(line, |(label, _)| label)
+}
+
+fn channel_line(channels: ChannelSet) -> String {
+    format!("Channel: {}", spelled_channels(channels))
+}
+
+fn replaced_filter(line: &str, old: &Band, new: &Band) -> Vec<String> {
+    let filter = format!("{}: {}", label_of(line), spelled_band(new));
+    if new.channels == old.channels {
+        return vec![filter];
+    }
+    vec![
+        channel_line(new.channels),
+        filter,
+        channel_line(old.channels),
+    ]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fate {
+    Kept,
+    Replaced(usize),
+    Dropped,
+}
+
+struct Alignment {
+    fates: Vec<Fate>,
+    inserted_after: Vec<Vec<usize>>,
+    inserted_first: Vec<usize>,
+}
+
+fn matched_pairs(old: &[Band], new: &[Band]) -> Vec<(usize, usize)> {
+    let mut longest = vec![vec![0_usize; new.len() + 1]; old.len() + 1];
+    for (k, one) in old.iter().enumerate().rev() {
+        for (j, other) in new.iter().enumerate().rev() {
+            let below = longest[k + 1][j].max(longest[k][j + 1]);
+            longest[k][j] = if one == other {
+                below.max(longest[k + 1][j + 1] + 1)
+            } else {
+                below
+            };
+        }
+    }
+
+    let mut pairs = Vec::new();
+    let (mut k, mut j) = (0, 0);
+    while k < old.len() && j < new.len() {
+        if old[k] == new[j] && longest[k][j] == longest[k + 1][j + 1] + 1 {
+            pairs.push((k, j));
+            k += 1;
+            j += 1;
+        } else if longest[k + 1][j] >= longest[k][j + 1] {
+            k += 1;
+        } else {
+            j += 1;
+        }
+    }
+    pairs
+}
+
+fn aligned(old: &[Band], new: &[Band]) -> Alignment {
+    let mut alignment = Alignment {
+        fates: vec![Fate::Dropped; old.len()],
+        inserted_after: vec![Vec::new(); old.len()],
+        inserted_first: Vec::new(),
+    };
+
+    let mut pairs = matched_pairs(old, new);
+    pairs.push((old.len(), new.len()));
+    let (mut behind_old, mut behind_new) = (0, 0);
+    for (k, j) in pairs {
+        let olds = behind_old..k;
+        let news = behind_new..j;
+        let paired = olds.len().min(news.len());
+        for offset in 0..paired {
+            alignment.fates[behind_old + offset] = Fate::Replaced(behind_new + offset);
+        }
+        let unplaced = news.start + paired..news.end;
+        match (
+            olds.end.checked_sub(1).filter(|_| !olds.is_empty()),
+            behind_old.checked_sub(1),
+        ) {
+            (Some(last), _) | (None, Some(last)) => {
+                alignment.inserted_after[last].extend(unplaced);
+            }
+            (None, None) => alignment.inserted_first.extend(unplaced),
+        }
+        if k < old.len() {
+            alignment.fates[k] = Fate::Kept;
+        }
+        behind_old = k + 1;
+        behind_new = j + 1;
+    }
+    alignment
+}
+
+fn inserted_lines(new: &[Band], placed: &[usize], standing: ChannelSet) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut scope = standing;
+    for &at in placed {
+        let Some(band) = new.get(at) else {
+            continue;
+        };
+        if band.channels != scope {
+            scope = band.channels;
+            lines.push(channel_line(scope));
+        }
+        lines.push(format!("Filter {}: {}", at + 1, spelled_band(band)));
+    }
+    if scope != standing {
+        lines.push(channel_line(standing));
+    }
+    lines
+}
+
+pub fn edited(original: &str, wanted: &Profile) -> Option<String> {
+    let Walked { reading, roles } = walk(original).ok()?;
+    if reading.profile == *wanted {
+        return Some(original.to_owned());
+    }
+
+    [false, true].into_iter().find_map(|stated| {
+        let text = revised(original, &roles, &reading.profile, wanted, stated)?;
+        let read = read_profile(&text).ok()?;
+        (read == *wanted).then_some(text)
+    })
+}
+
+fn revised(
+    original: &str,
+    roles: &[Role],
+    before: &Profile,
+    wanted: &Profile,
+    preamp_stated: bool,
+) -> Option<String> {
+    let ending = if original.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let read_bands: &[Band] = if before.target().is_some() {
+        &[]
+    } else {
+        before.bands()
+    };
+    let wanted_bands: &[Band] = if wanted.target().is_some() {
+        &[]
+    } else {
+        wanted.bands()
+    };
+    let preamp_moved = preamp_stated || before.preamp() != wanted.preamp();
+    let target_moved = before.target() != wanted.target();
+    let alignment = aligned(read_bands, wanted_bands);
+
+    let mut kept: Vec<String> = Vec::new();
+    let mut preamp_placed = false;
+    for (line, role) in original.lines().zip(roles) {
+        match *role {
+            Role::Other => kept.push(line.to_owned()),
+            Role::Preamp if !preamp_moved => kept.push(line.to_owned()),
+            Role::Preamp if !preamp_placed => {
+                preamp_placed = true;
+                kept.push(format!(
+                    "{}: {}",
+                    label_of(line),
+                    spelled_preamp(wanted.preamp())
+                ));
+            }
+            Role::Preamp => {}
+            Role::Graphic => match wanted.target() {
+                Some(_) if !target_moved => kept.push(line.to_owned()),
+                Some(target) => kept.push(format!(
+                    "{}{}",
+                    indentation_of(line),
+                    graphic::spelled(target)
+                )),
+                None => {}
+            },
+            Role::Band(at) => {
+                let old = read_bands.get(at)?;
+                if at == 0 {
+                    kept.extend(inserted_lines(
+                        wanted_bands,
+                        &alignment.inserted_first,
+                        old.channels,
+                    ));
+                }
+                match alignment.fates.get(at)? {
+                    Fate::Kept => kept.push(line.to_owned()),
+                    Fate::Replaced(with) => {
+                        kept.extend(replaced_filter(line, old, wanted_bands.get(*with)?));
+                    }
+                    Fate::Dropped => {}
+                }
+                kept.extend(inserted_lines(
+                    wanted_bands,
+                    alignment.inserted_after.get(at)?,
+                    old.channels,
+                ));
+            }
+        }
+    }
+
+    let mut text: Vec<String> = Vec::new();
+    if preamp_moved && !roles.contains(&Role::Preamp) {
+        text.push(format!("Preamp: {}", spelled_preamp(wanted.preamp())));
+    }
+    if let Some(target) = wanted.target()
+        && !roles.contains(&Role::Graphic)
+    {
+        text.push(graphic::spelled(target));
+    }
+    if read_bands.is_empty() {
+        let everywhere: Vec<usize> = (0..wanted_bands.len()).collect();
+        text.extend(inserted_lines(wanted_bands, &everywhere, ChannelSet::EVERY));
+    }
+    text.extend(kept);
+
+    let mut joined = text.join(ending);
+    if original.is_empty() || original.ends_with('\n') {
+        joined.push_str(ending);
+    }
+    Some(joined)
 }
 
 pub fn write_profile(profile: &Profile) -> String {
@@ -913,5 +1191,198 @@ mod tests {
         assert_eq!(reading.passed_over, 0);
         assert_eq!(reading.profile.bands().len(), 1);
         assert_eq!(reading.profile.preamp().decibels(), -3.0);
+    }
+
+    const ANNOTATED: &str = "# measured on a rig\n\
+                             Include: shared.txt\n\
+                             Device: Mine\n\
+                             Preamp: -3 dB\n\
+                             Preamp: -1 dB\n\
+                             # the low end\n\
+                             Filter 1: ON LSC Fc 105 Hz Gain 6.4 dB Q 0.70\n\
+                             If: 1 > 0\n\
+                             # the presence\n\
+                             Filter 2: ON PK Fc 2000 Hz Gain -2 dB Q 1.4\n\
+                             Device: Another Headphone\n\
+                             Preamp: -9 dB\n";
+
+    fn lines_of(text: &str) -> Vec<&str> {
+        text.lines().collect()
+    }
+
+    #[test]
+    fn a_profile_unchanged_is_handed_back_as_the_text_it_was_read_from() {
+        let read = read_profile(ANNOTATED).expect("a readable profile");
+
+        assert_eq!(edited(ANNOTATED, &read).as_deref(), Some(ANNOTATED));
+        let crlf = ANNOTATED.replace('\n', "\r\n");
+        assert_eq!(edited(&crlf, &read).as_deref(), Some(crlf.as_str()));
+    }
+
+    #[test]
+    fn a_band_moved_is_the_only_line_rewritten_and_the_rest_of_the_file_stays_as_it_was() {
+        let read = read_profile(ANNOTATED).expect("a readable profile");
+        let mut moved = read.clone();
+        moved.band_mut(1).expect("a second band").gain =
+            BandGain::from_decibels(-4.5).expect("in range");
+
+        let text = edited(ANNOTATED, &moved).expect("it edits");
+
+        let mut wanted = lines_of(ANNOTATED);
+        let replaced = "Filter 2: ON PK Fc 2000 Hz Gain -4.500 dB Q 1.400";
+        wanted[9] = replaced;
+        assert_eq!(lines_of(&text), wanted);
+        assert_eq!(read_profile(&text).ok(), Some(moved));
+    }
+
+    #[test]
+    fn a_preamp_changed_replaces_the_first_line_that_summed_into_it_and_drops_the_rest() {
+        let read = read_profile(ANNOTATED).expect("a readable profile");
+        let mut quieter = read.clone();
+        quieter.set_preamp(Preamp::from_decibels(-5.0).expect("in range"));
+
+        let text = edited(ANNOTATED, &quieter).expect("it edits");
+
+        assert!(text.contains("Preamp: -5.000 dB\n"));
+        assert!(!text.contains("Preamp: -1 dB"));
+        assert!(
+            text.contains("Preamp: -9 dB"),
+            "another device's preamp was touched"
+        );
+        assert_eq!(read_profile(&text).ok(), Some(quieter));
+    }
+
+    #[test]
+    fn a_band_added_lands_beside_the_last_filter_and_one_removed_takes_only_its_own_line() {
+        let read = read_profile(ANNOTATED).expect("a readable profile");
+        let mut added = read.clone();
+        added
+            .push(band(BandKind::Peaking, 8_000.0, 3.0, 2.0))
+            .expect("room for a band");
+        let mut removed = read.clone();
+        removed.remove(0);
+
+        let grown = edited(ANNOTATED, &added).expect("it edits");
+        let shrunk = edited(ANNOTATED, &removed).expect("it edits");
+
+        let filters: Vec<&str> = lines_of(&grown)
+            .into_iter()
+            .filter(|line| line.starts_with("Filter"))
+            .collect();
+        assert_eq!(filters.len(), 3);
+        assert_eq!(
+            filters[2],
+            "Filter 3: ON PK Fc 8000 Hz Gain 3.000 dB Q 2.000"
+        );
+        assert_eq!(
+            lines_of(&grown)[10],
+            filters[2],
+            "it did not follow the last filter"
+        );
+        assert_eq!(read_profile(&grown).ok(), Some(added));
+
+        assert!(!shrunk.contains("Filter 1:"));
+        assert!(
+            shrunk.contains("# the low end"),
+            "a comment went with the band"
+        );
+        assert_eq!(read_profile(&shrunk).ok(), Some(removed));
+    }
+
+    #[test]
+    fn a_band_inserted_between_two_keeps_each_comment_beside_the_filter_it_introduced() {
+        let read = read_profile(ANNOTATED).expect("a readable profile");
+        let mut grown = read.clone();
+        grown
+            .push(band(BandKind::Peaking, 500.0, 1.0, 1.0))
+            .expect("room for a band");
+        let mut between = Profile::new(
+            read.preamp(),
+            vec![read.bands()[0], grown.bands()[2], read.bands()[1]],
+        )
+        .expect("three bands");
+        between.set_preamp(read.preamp());
+
+        let text = edited(ANNOTATED, &between).expect("it edits");
+
+        let at = |needle: &str| text.lines().position(|line| line.contains(needle));
+        assert!(at("# the low end") < at("Fc 105 Hz"));
+        assert!(at("Fc 105 Hz") < at("Fc 500 Hz"));
+        assert!(at("Fc 500 Hz") < at("# the presence").map(|presence| presence + 1));
+        assert!(at("# the presence") < at("Fc 2000 Hz"));
+        assert_eq!(read_profile(&text).ok(), Some(between));
+    }
+
+    #[test]
+    fn a_band_given_other_channels_is_wrapped_in_channel_lines_that_restore_the_scope() {
+        let text = "Channel: L\nFilter 1: ON PK Fc 100 Hz Gain 3 dB Q 1\n\
+                    Channel: all\nFilter 2: ON PK Fc 200 Hz Gain 3 dB Q 1\n";
+        let read = read_profile(text).expect("a readable profile");
+        let mut moved = read.clone();
+        moved.band_mut(0).expect("a band").channels = ChannelSet::EVERY;
+        moved.band_mut(1).expect("a band").channels = ChannelSet::of(&[1]).expect("a channel");
+
+        let edited = edited(text, &moved).expect("it edits");
+
+        assert_eq!(read_profile(&edited).ok(), Some(moved));
+    }
+
+    #[test]
+    fn filters_past_the_bands_a_profile_holds_and_lines_no_band_reads_stay_in_the_file() {
+        let mut long = String::from("Include: shared.txt\n");
+        for at in 0..MAX_BANDS + 3 {
+            let _ = writeln!(
+                long,
+                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                at + 1,
+                100 + at
+            );
+        }
+        let read = read_profile(&long).expect("a readable profile");
+        let mut louder = read.clone();
+        louder.band_mut(0).expect("a band").gain = BandGain::from_decibels(2.0).expect("in range");
+
+        let text = edited(&long, &louder).expect("it edits");
+
+        assert_eq!(text.lines().count(), long.lines().count());
+        assert!(text.starts_with("Include: shared.txt\n"));
+        assert!(text.contains(&format!(
+            "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+            MAX_BANDS + 3,
+            100 + MAX_BANDS + 2
+        )));
+        assert_eq!(read_profile(&text).ok(), Some(louder));
+    }
+
+    #[test]
+    fn a_profile_with_no_preamp_or_bands_in_its_text_gains_them_at_the_top() {
+        let text = "# nothing yet\nInclude: shared.txt\n";
+        let wanted = Profile::new(
+            Preamp::from_decibels(-2.0).expect("in range"),
+            vec![band(BandKind::Peaking, 1_000.0, 2.0, 1.0)],
+        )
+        .expect("one band");
+
+        let edited = edited(text, &wanted).expect("it edits");
+
+        assert!(edited.starts_with("Preamp: -2.000 dB\nFilter 1: "));
+        assert!(edited.ends_with("# nothing yet\nInclude: shared.txt\n"));
+        assert_eq!(read_profile(&edited).ok(), Some(wanted));
+    }
+
+    #[test]
+    fn a_graphic_curve_edited_into_bands_gives_up_its_line_and_the_bands_take_its_place() {
+        let text = "# AutoEq\nPreamp: -4 dB\nGraphicEQ: 100 3; 1000 -2; 10000 1\n";
+        let mut read = read_profile(text).expect("a readable profile");
+        assert!(read.target().is_some());
+        read.push(band(BandKind::Peaking, 500.0, 1.0, 1.0))
+            .expect("room");
+        assert!(read.target().is_none());
+
+        let edited = edited(text, &read).expect("it edits");
+
+        assert!(!edited.contains("GraphicEQ"));
+        assert!(edited.contains("# AutoEq"));
+        assert_eq!(read_profile(&edited).ok(), Some(read));
     }
 }

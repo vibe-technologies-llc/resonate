@@ -59,6 +59,13 @@ impl Curve {
         }
     }
 
+    fn file(&self, store: &Store) -> resonate_eq::Result<PathBuf> {
+        match self {
+            Self::Kept(name) => Ok(store.path_of(name)),
+            Self::Own(owner) => store.own_path(owner.as_ref().map(NodeName::as_str)),
+        }
+    }
+
     fn keep(&self, store: &Store, profile: &Profile) -> resonate_eq::Result<()> {
         match self {
             Self::Kept(name) => store.keep(name, profile).map(|_| ()),
@@ -770,7 +777,11 @@ impl EqualiserModel {
         self._exported = cx.spawn(async move |this, cx| {
             let written = cx
                 .background_executor()
-                .spawn(async move { Store::at(folder).export(&profile, &to) })
+                .spawn(async move {
+                    let store = Store::at(folder);
+                    let standing_in = curve.file(&store)?;
+                    store.export(&profile, Some(&standing_in), &to)
+                })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {

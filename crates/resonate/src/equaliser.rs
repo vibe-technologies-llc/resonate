@@ -209,7 +209,7 @@ fn import(
 ) -> Result<()> {
     if wanted.own {
         let kept = Store::read_in(from)?;
-        store.keep_own(sink.map(NodeName::as_str), &kept.profile)?;
+        store.keep_own_read(sink.map(NodeName::as_str), &kept)?;
         said!(
             "shaped {} from {}, {} bands",
             spoken_own(sink),
@@ -273,24 +273,33 @@ fn export(
     wanted: &EqArgs,
     to: &Path,
 ) -> Result<()> {
-    let (spoken, profile) = match wanted.profile.as_deref() {
+    let (spoken, profile, standing_in) = match wanted.profile.as_deref() {
         Some(name) => {
             let name = named(name)?;
-            (name.to_string(), store.read(&name)?)
+            let standing_in = store.path_of(&name);
+            (name.to_string(), store.read(&name)?, standing_in)
         }
-        None if wanted.own => (
-            spoken_own(sink),
-            Some(store.own(sink.map(NodeName::as_str))?),
-        ),
+        None if wanted.own => {
+            let owner = sink.map(NodeName::as_str);
+            (
+                spoken_own(sink),
+                Some(store.own(owner)?),
+                store.own_path(owner)?,
+            )
+        }
         None => {
             let (owner, binding) =
                 bound_to(config, sink).ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
-            (spoken_binding(binding), curve_of(store, owner, binding)?)
+            (
+                spoken_binding(binding),
+                curve_of(store, owner, binding)?,
+                store.file_of(owner.map(NodeName::as_str), binding)?,
+            )
         }
     };
     let profile = profile.ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
 
-    store.export(&profile, to)?;
+    store.export(&profile, Some(&standing_in), to)?;
     said!("wrote {spoken} to {}", to.display());
     Ok(())
 }

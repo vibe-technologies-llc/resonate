@@ -1,12 +1,20 @@
 use std::{
     collections::BinaryHeap,
+    ffi::OsStr,
     fmt::Write as _,
     fs,
     io::{Read, Write as _},
     path::{Path, PathBuf},
+    process,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
-use resonate_core::{eq::Profile, text};
+use resonate_core::{
+    eq::Profile,
+    naming::{self, NAME_BYTES_AT_MOST},
+    text::{self, TextEncoding, UTF8_BOM},
+    writer::{self, Held, Writer},
+};
 
 use crate::{EqOp, Error, Result, StoreOp, apo};
 
@@ -15,8 +23,8 @@ pub const NAME_AT_MOST: usize = 96;
 pub const PROFILES_AT_MOST: usize = 256;
 pub const OWN_FOLDER: &str = "own";
 
-const STAGED_EXTENSION: &str = "txt.new";
-const FILE_NAME_AT_MOST: usize = 255;
+const STAGED_SUFFIX: &str = ".new";
+const HIDDEN: &str = ".";
 const EVERY_OTHER_DEVICE: &str = "every-other-device";
 const A_DEVICE: &str = "device-";
 
@@ -80,6 +88,41 @@ pub struct Kept {
     pub passed_over: usize,
     pub approximated: usize,
     pub clamped: usize,
+    pub bytes: Vec<u8>,
+}
+
+struct Standing {
+    text: String,
+    encoding: TextEncoding,
+    marked_as_utf8: bool,
+}
+
+impl Standing {
+    fn of(bytes: Vec<u8>) -> Self {
+        let (text, encoding) = text::decoded(&bytes);
+        let marked_as_utf8 = encoding == TextEncoding::Utf8 && bytes.starts_with(&UTF8_BOM);
+        Self {
+            text,
+            encoding,
+            marked_as_utf8,
+        }
+    }
+
+    fn spelling(&self, text: &str) -> Vec<u8> {
+        let Some(body) = text::encoded(text, self.encoding) else {
+            tracing::debug!(
+                encoding = %self.encoding,
+                "a profile with a letter its code page lacks is kept as UTF-8"
+            );
+            return text.as_bytes().to_vec();
+        };
+        let mark: &[u8] = if self.marked_as_utf8 {
+            &UTF8_BOM
+        } else {
+            self.encoding.byte_order_mark()
+        };
+        [mark, &body].concat()
+    }
 }
 
 pub struct Store {
@@ -125,7 +168,7 @@ impl Store {
         Ok(the_least(names, &self.folder))
     }
 
-    fn text_of(path: &Path) -> Result<Option<String>> {
+    fn bytes_of(path: &Path) -> Result<Option<Vec<u8>>> {
         let file = match fs::File::open(path) {
             Ok(file) => file,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -142,7 +185,11 @@ impl Store {
                 limit: apo::LARGEST_PROFILE,
             });
         }
-        Ok(Some(text::decoded(&bytes).0))
+        Ok(Some(bytes))
+    }
+
+    fn text_of(path: &Path) -> Result<Option<String>> {
+        Ok(Self::bytes_of(path)?.map(|bytes| text::decoded(&bytes).0))
     }
 
     pub fn read(&self, name: &ProfileName) -> Result<Option<Profile>> {
@@ -155,30 +202,64 @@ impl Store {
 
     pub fn keep(&self, name: &ProfileName, profile: &Profile) -> Result<PathBuf> {
         let path = self.path_of(name);
-        Self::staged(&path, profile)?;
+        Self::revised(&path, profile)?;
         Ok(path)
     }
 
-    fn staged(path: &Path, profile: &Profile) -> Result<()> {
+    pub fn keep_read(&self, name: &ProfileName, kept: &Kept) -> Result<PathBuf> {
+        let path = self.path_of(name);
+        Self::staged(&path, &kept.bytes)?;
+        Ok(path)
+    }
+
+    fn rendered(over: Option<&Path>, profile: &Profile) -> Vec<u8> {
+        let standing = over
+            .and_then(|path| Self::bytes_of(path).ok().flatten())
+            .map(Standing::of);
+        match standing {
+            Some(standing) => match apo::edited(&standing.text, profile) {
+                Some(edited) => standing.spelling(&edited),
+                None => apo::write(profile).into_bytes(),
+            },
+            None => apo::write(profile).into_bytes(),
+        }
+    }
+
+    fn revised(path: &Path, profile: &Profile) -> Result<()> {
+        let rendered = Self::rendered(Some(path), profile);
+        if Self::bytes_of(path).ok().flatten().as_deref() == Some(rendered.as_slice()) {
+            return Ok(());
+        }
+        Self::staged(path, &rendered)
+    }
+
+    fn staged(path: &Path, bytes: &[u8]) -> Result<()> {
         if let Some(folder) = path.parent() {
             fs::create_dir_all(folder).map_err(Self::failed(folder, StoreOp::Write))?;
+            sweep_staged_in(folder);
         }
-        let staged = path.with_extension(STAGED_EXTENSION);
-        Self::written_and_synced(&staged, path, apo::write(profile).as_bytes())
-            .map_err(Self::failed(path, StoreOp::Write))
+        let staged = staging_name_for(path);
+        Self::written_and_synced(&staged, path, bytes).map_err(Self::failed(path, StoreOp::Write))
     }
 
     fn written_and_synced(staged: &Path, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-        let mut file = fs::File::create(staged)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-
-        fs::rename(staged, path)?;
-        match path.parent() {
-            Some(folder) => fs::File::open(folder)?.sync_all(),
-            None => Ok(()),
+        let landed = Held::made(staged).and_then(|held| {
+            let mut file = held.file();
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            fs::rename(staged, path)?;
+            match path
+                .parent()
+                .filter(|folder| !folder.as_os_str().is_empty())
+            {
+                Some(folder) => fs::File::open(folder)?.sync_all(),
+                None => Ok(()),
+            }
+        });
+        if landed.is_err() {
+            let _ = fs::remove_file(staged);
         }
+        landed
     }
 
     pub fn own_path(&self, device: Option<&str>) -> Result<PathBuf> {
@@ -202,8 +283,21 @@ impl Store {
 
     pub fn keep_own(&self, device: Option<&str>, profile: &Profile) -> Result<PathBuf> {
         let path = self.own_path(device)?;
-        Self::staged(&path, profile)?;
+        Self::revised(&path, profile)?;
         Ok(path)
+    }
+
+    pub fn keep_own_read(&self, device: Option<&str>, kept: &Kept) -> Result<PathBuf> {
+        let path = self.own_path(device)?;
+        Self::staged(&path, &kept.bytes)?;
+        Ok(path)
+    }
+
+    pub fn file_of(&self, owner: Option<&str>, binding: &Binding) -> Result<PathBuf> {
+        match binding {
+            Binding::Profile(name) => Ok(self.path_of(name)),
+            Binding::Own => self.own_path(owner),
+        }
     }
 
     pub fn owners(&self) -> Result<Vec<Option<String>>> {
@@ -246,7 +340,7 @@ impl Store {
     }
 
     pub fn read_in(from: &Path) -> Result<Kept> {
-        let Some(text) = Self::text_of(from)? else {
+        let Some(bytes) = Self::bytes_of(from)? else {
             return Err(Error::Store {
                 path: from.to_path_buf(),
                 op: StoreOp::Read,
@@ -254,7 +348,7 @@ impl Store {
             });
         };
 
-        let reading = apo::read(&text)?;
+        let reading = apo::read(&text::decoded(&bytes).0)?;
         if reading.profile.is_transparent() && reading.profile.target().is_none() {
             return Err(Error::NotAProfile {
                 path: from.to_path_buf(),
@@ -266,6 +360,7 @@ impl Store {
             passed_over: reading.passed_over,
             approximated: reading.approximated,
             clamped: reading.clamped,
+            bytes,
         })
     }
 
@@ -286,12 +381,53 @@ impl Store {
     pub fn import(&self, from: &Path, called: Option<&ProfileName>) -> Result<(ProfileName, Kept)> {
         let kept = Self::read_in(from)?;
         let name = Self::name_for_import(from, called);
-        self.keep(&name, &kept.profile)?;
+        self.keep_read(&name, &kept)?;
         Ok((name, kept))
     }
 
-    pub fn export(&self, profile: &Profile, to: &Path) -> Result<()> {
-        fs::write(to, apo::write(profile)).map_err(Self::failed(to, StoreOp::Write))
+    pub fn export(&self, profile: &Profile, standing_in: Option<&Path>, to: &Path) -> Result<()> {
+        let rendered = Self::rendered(standing_in, profile);
+        let staged = staging_name_for(to);
+        Self::written_and_synced(&staged, to, &rendered).map_err(Self::failed(to, StoreOp::Write))
+    }
+}
+
+fn staging_name_for(path: &Path) -> PathBuf {
+    static STAGED: AtomicU64 = AtomicU64::new(0);
+
+    let stamped = format!(
+        ".{}-{}{STAGED_SUFFIX}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    );
+    let name = path.file_name().unwrap_or_else(|| OsStr::new("profile"));
+    path.with_file_name(naming::named_within(HIDDEN, name, stamped))
+}
+
+fn stamp_of_staged(name: &str) -> Option<u32> {
+    let stamped = name.strip_prefix(HIDDEN)?.strip_suffix(STAGED_SUFFIX)?;
+    let (_, tail) = stamped.rsplit_once('.')?;
+    let (pid, counter) = tail.split_once('-')?;
+    counter.parse::<u64>().ok()?;
+    pid.parse().ok()
+}
+
+fn sweep_staged_in(folder: &Path) {
+    let Ok(walked) = fs::read_dir(folder) else {
+        return;
+    };
+    for entry in walked.flatten() {
+        let path = entry.path();
+        let Some(stamp) = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .and_then(stamp_of_staged)
+        else {
+            continue;
+        };
+        if writer::writer_of(&path, stamp) == Writer::Gone {
+            let _ = fs::remove_file(&path);
+        }
     }
 }
 
@@ -337,8 +473,8 @@ fn stem_for_a_device(device: &str) -> Result<String> {
         }
     }
 
-    let staged_length = stem.len() + 1 + STAGED_EXTENSION.len();
-    if device.is_empty() || staged_length > FILE_NAME_AT_MOST {
+    let file_length = stem.len() + 1 + EXTENSION.len();
+    if device.is_empty() || file_length > NAME_BYTES_AT_MOST {
         return Err(Error::DeviceNotNameable);
     }
     Ok(stem)
@@ -662,7 +798,10 @@ mod tests {
         fs::create_dir_all(&folder).expect("a writable folder");
         let to = folder.join("exported.txt");
 
-        scratch.store.export(&profile(), &to).expect("it writes");
+        scratch
+            .store
+            .export(&profile(), None, &to)
+            .expect("it writes");
         let text = fs::read_to_string(&to).expect("it reads back");
 
         assert!(text.starts_with("Preamp:"), "{text}");
@@ -750,7 +889,9 @@ mod tests {
             Err(Error::DeviceNotNameable)
         ));
         assert!(matches!(
-            scratch.store.own_path(Some(&"/".repeat(FILE_NAME_AT_MOST))),
+            scratch
+                .store
+                .own_path(Some(&"/".repeat(NAME_BYTES_AT_MOST))),
             Err(Error::DeviceNotNameable)
         ));
     }
@@ -846,5 +987,253 @@ mod tests {
 
         let staged = scratch.store.path_of(&name).with_extension("txt.new");
         assert!(!staged.exists(), "the staged file outlived the rename");
+    }
+
+    const ANNOTATED: &str = "# a hand-edited profile\r\n\
+                             Include: shared.txt\r\n\
+                             Preamp: -6.1 dB\r\n\
+                             # the low end\r\n\
+                             Filter 1: ON LSC Fc 105 Hz Gain 6.4 dB Q 0.70\r\n";
+
+    fn folder_entries(store: &Store) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(store.folder())
+            .expect("a folder")
+            .flatten()
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn placed(scratch: &Scratch, name: &ProfileName, bytes: &[u8]) -> PathBuf {
+        fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
+        let path = scratch.store.path_of(name);
+        fs::write(&path, bytes).expect("a writable folder");
+        path
+    }
+
+    fn louder() -> Profile {
+        let mut louder = profile();
+        louder.band_mut(0).expect("a band").gain = BandGain::from_decibels(7.0).expect("in range");
+        louder
+    }
+
+    #[test]
+    fn a_profile_kept_over_a_hand_edited_file_changes_the_lines_it_moved_and_nothing_else() {
+        let scratch = Scratch::new();
+        let name = named("hand edited");
+        let path = placed(&scratch, &name, ANNOTATED.as_bytes());
+
+        scratch.store.keep(&name, &louder()).expect("it keeps");
+
+        assert_eq!(
+            fs::read_to_string(&path).expect("it reads"),
+            ANNOTATED
+                .replace("Gain 6.4 dB", "Gain 7.000 dB")
+                .replace(" Q 0.70", " Q 0.700")
+        );
+        assert_eq!(scratch.store.read(&name).expect("it reads"), Some(louder()));
+    }
+
+    #[test]
+    fn a_profile_kept_unchanged_leaves_its_file_untouched() {
+        let scratch = Scratch::new();
+        let name = named("hand edited");
+        let path = placed(&scratch, &name, ANNOTATED.as_bytes());
+        let read = scratch.store.read(&name).expect("it reads").expect("kept");
+
+        scratch.store.keep(&name, &read).expect("it keeps");
+
+        assert_eq!(fs::read(&path).expect("it reads"), ANNOTATED.as_bytes());
+        assert_eq!(folder_entries(&scratch.store), ["hand edited.txt"]);
+    }
+
+    #[test]
+    fn a_file_in_a_wide_or_legacy_encoding_is_kept_in_it() {
+        let scratch = Scratch::new();
+        let body = "# Écoute\nPreamp: -6.1 dB\nFilter 1: ON LSC Fc 105 Hz Gain 6.4 dB Q 0.70\n";
+
+        for (label, encoding, bom) in [
+            ("sixteen little", TextEncoding::Utf16Le, true),
+            ("sixteen big", TextEncoding::Utf16Be, true),
+            ("windows", TextEncoding::WINDOWS_1252, false),
+        ] {
+            let name = named(label);
+            let mut bytes = encoding.byte_order_mark().to_vec();
+            bytes.extend(text::encoded(body, encoding).expect("every letter fits"));
+            let path = placed(&scratch, &name, &bytes);
+
+            scratch.store.keep(&name, &louder()).expect("it keeps");
+
+            let kept = fs::read(&path).expect("it reads");
+            let (decoded, found) = text::decoded(&kept);
+            assert_eq!(found, encoding, "{label}");
+            assert_eq!(
+                kept.starts_with(encoding.byte_order_mark()) && bom,
+                bom,
+                "{label}"
+            );
+            assert!(decoded.contains("# Écoute"), "{label}");
+            assert!(decoded.contains("Gain 7.000 dB"), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_file_with_a_utf8_mark_keeps_the_mark() {
+        let scratch = Scratch::new();
+        let name = named("marked");
+        let mut bytes = UTF8_BOM.to_vec();
+        bytes.extend_from_slice(ANNOTATED.as_bytes());
+        let path = placed(&scratch, &name, &bytes);
+
+        scratch.store.keep(&name, &louder()).expect("it keeps");
+
+        assert!(fs::read(&path).expect("it reads").starts_with(&UTF8_BOM));
+    }
+
+    #[test]
+    fn text_with_a_letter_its_code_page_lacks_is_kept_as_utf8_rather_than_lost() {
+        let scratch = Scratch::new();
+        let name = named("latin");
+        let path = placed(&scratch, &name, b"# caf\xe9\nPreamp: -6.1 dB\n");
+        let mut with_a_letter = profile();
+        with_a_letter.set_preamp(Preamp::from_decibels(-3.0).expect("in range"));
+
+        scratch.store.keep(&name, &with_a_letter).expect("it keeps");
+
+        assert!(
+            text::decoded(&fs::read(&path).expect("it reads"))
+                .0
+                .contains("Preamp")
+        );
+    }
+
+    #[test]
+    fn an_import_keeps_the_file_it_read_comments_and_all() {
+        let scratch = Scratch::new();
+        let source = scratch.store.folder().join("elsewhere.txt");
+        fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
+        fs::write(&source, ANNOTATED).expect("a writable folder");
+
+        let (name, kept) = scratch.store.import(&source, None).expect("it imports");
+
+        assert_eq!(
+            fs::read_to_string(scratch.store.path_of(&name)).expect("it reads"),
+            ANNOTATED
+        );
+        assert_eq!(kept.bytes, ANNOTATED.as_bytes());
+    }
+
+    #[test]
+    fn an_import_over_a_profile_of_that_name_replaces_it_whole_rather_than_editing_it() {
+        let scratch = Scratch::new();
+        let name = named("elsewhere");
+        placed(&scratch, &name, b"# the old one\nPreamp: -1 dB\n");
+        let source = scratch.store.folder().join("elsewhere.txt.src");
+        fs::write(&source, ANNOTATED).expect("a writable folder");
+
+        scratch
+            .store
+            .import(&source, Some(&name))
+            .expect("it imports");
+
+        assert_eq!(
+            fs::read_to_string(scratch.store.path_of(&name)).expect("it reads"),
+            ANNOTATED
+        );
+    }
+
+    #[test]
+    fn an_export_is_the_kept_text_where_nothing_moved_and_is_staged_beside_its_target() {
+        let scratch = Scratch::new();
+        let name = named("hand edited");
+        let kept = placed(&scratch, &name, ANNOTATED.as_bytes());
+        let to = scratch.store.folder().join("out.txt");
+        let read = scratch.store.read(&name).expect("it reads").expect("kept");
+
+        scratch
+            .store
+            .export(&read, Some(&kept), &to)
+            .expect("it exports");
+
+        assert_eq!(fs::read(&to).expect("it reads"), ANNOTATED.as_bytes());
+        assert_eq!(
+            folder_entries(&scratch.store),
+            ["hand edited.txt", "out.txt"]
+        );
+
+        scratch
+            .store
+            .export(&louder(), None, &to)
+            .expect("it exports");
+
+        assert_eq!(
+            fs::read_to_string(&to).expect("it reads"),
+            apo::write(&louder())
+        );
+        assert_eq!(
+            folder_entries(&scratch.store),
+            ["hand edited.txt", "out.txt"]
+        );
+    }
+
+    #[test]
+    fn two_writers_stage_under_names_of_their_own_and_a_dead_ones_leftover_is_swept() {
+        let scratch = Scratch::new();
+        let name = named("shared");
+        let path = scratch.store.path_of(&name);
+        fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
+
+        let first = staging_name_for(&path);
+        let second = staging_name_for(&path);
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), path.parent());
+
+        let dead = scratch.store.folder().join(".shared.txt.999999999-0.new");
+        fs::write(&dead, "half").expect("a writable folder");
+        let living = scratch
+            .store
+            .folder()
+            .join(format!(".other.txt.{}-77.new", process::id()));
+        fs::write(&living, "half").expect("a writable folder");
+
+        scratch.store.keep(&name, &profile()).expect("it keeps");
+
+        assert!(!dead.exists(), "a dead writer's leftover stayed");
+        assert!(living.exists(), "a living writer's file was taken");
+        assert_eq!(
+            folder_entries(&scratch.store),
+            [
+                format!(".other.txt.{}-77.new", process::id()),
+                "shared.txt".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_staged_name_for_a_file_at_the_name_limit_still_fits_the_filesystem() {
+        let scratch = Scratch::new();
+        let device = "x".repeat(NAME_BYTES_AT_MOST - A_DEVICE.len() - 1 - EXTENSION.len());
+
+        let kept = scratch
+            .store
+            .keep_own(Some(&device), &profile())
+            .expect("a device whose file fits keeps its curve");
+
+        assert_eq!(kept.file_name().map(OsStr::len), Some(NAME_BYTES_AT_MOST));
+        let staged = staging_name_for(&kept);
+        assert!(staged.file_name().expect("a name").len() <= NAME_BYTES_AT_MOST);
+        assert_eq!(
+            scratch.store.own(Some(&device)).expect("it reads"),
+            profile()
+        );
+    }
+
+    #[test]
+    fn the_staged_name_carries_the_pid_that_a_sweep_asks_after() {
+        assert_eq!(stamp_of_staged(".shared.txt.4242-17.new"), Some(4242));
+        assert_eq!(stamp_of_staged("shared.txt"), None);
+        assert_eq!(stamp_of_staged(".shared.txt.new"), None);
+        assert_eq!(stamp_of_staged(".a.b.7-x.new"), None);
     }
 }

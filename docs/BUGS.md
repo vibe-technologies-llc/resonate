@@ -46,9 +46,8 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Equaliser and DSP
-- [M] Saving or exporting a profile rewrites it from the parsed model: comments, `Include:`,
-  `Device:`, `If:`, filters past 32 and the original text encoding are lost; `export` is a bare
-  `fs::write`; two writers stage to one fixed `.txt.new`
+- [S] A profile of more than 32 filters keeps the ones past 32 in its text, so removing a band
+  from it brings the 33rd into play at the next read
 
 ## Search
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
