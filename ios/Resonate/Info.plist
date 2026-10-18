@@ -110,7 +110,7 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

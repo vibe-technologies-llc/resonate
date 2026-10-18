@@ -5,6 +5,7 @@ infoPath: Resonate/Info.plist
 iconPath: Resonate/Icon.png
 entitlementsPath: Resonate/Resonate.entitlements
 resources:
+  - Resonate/PrivacyInfo.xcprivacy
   - Generated/icons/IconMauve.png
   - Generated/icons/IconMauve@2x.png
   - Generated/icons/IconMauve@3x.png

@@ -70,6 +70,19 @@ unrestricted `com.apple.security.` namespace, so no provisioning-profile capabil
 Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust library builds for
 `aarch64-apple-ios` on stable.
 
+## Privacy manifest and export
+
+`Resonate/PrivacyInfo.xcprivacy` is copied to the bundle root by `xtool.yml`'s `resources`. It
+declares no tracking, no tracking domains and no collected data: nothing leaves the phone for
+Resonate's own keeping (the sync server holds only sealed records, `sync.md`), and every other
+request (lookups, recognition, scrobbling, providers) serves the listener's ask or the listener's
+own account. Its required-reason APIs are what the app and the Rust library call:
+`UserDefaults` (CA92.1, the app's own suites) and file timestamps (`contentModificationDate` in a
+scan, `stat`/`fstat` in the library: C617.1 for the app's container, 3B52.1 for the folders the
+listener granted). Nothing reads boot time or disk space; a new call into one of Apple's
+required-reason categories adds its reason here. `ITSAppUsesNonExemptEncryption` is true, since
+sync seals its records and talks QUIC (TLS) of its own.
+
 ## Shape of the app
 
 - **`Library`** (`@MainActor @Observable`) owns the one `MobilePlayer`. Transport, favourite and
