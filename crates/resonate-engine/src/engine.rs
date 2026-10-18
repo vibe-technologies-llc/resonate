@@ -2694,6 +2694,14 @@ impl Engine {
         self.streaming.as_ref().is_some_and(Streaming::is_in_flight)
     }
 
+    fn waits_on_a_stream(&self) -> bool {
+        self.is_opening_a_stream()
+            || self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.stream.is_none())
+    }
+
     fn promote(&mut self) {
         if let Some((made, opened)) = self.streaming.as_mut().and_then(Streaming::answered) {
             self.land_the_stream(made, opened);
@@ -2840,7 +2848,7 @@ impl Engine {
     }
 
     fn wait_for_the_graph(&mut self, since: Instant) {
-        if self.opening.is_some() || self.is_opening_a_stream() {
+        if self.opening.is_some() || self.waits_on_a_stream() {
             return;
         }
         let Some(at) = self.row_the_graph_let_go() else {
@@ -2880,7 +2888,7 @@ impl Engine {
                     "the sink list moved while it was surveyed; the row waits for the next survey"
                 );
             }
-            Ok(()) if self.is_opening_a_stream() => {
+            Ok(()) if self.waits_on_a_stream() => {
                 tracing::debug!("the graph took the row; it is back once the stream opens");
                 self.unbound = None;
             }

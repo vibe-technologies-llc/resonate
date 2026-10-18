@@ -349,7 +349,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   is closed (`close_unwanted`). **One open in flight, none asked while one is** (a stray's `Close`
   must reach the loop before the next `Open`). `wait_for_the_graph` does not let go while an open is
   in flight or a row is opening, so an open refused `Disconnected` is read as the graph's, and a
-  rebind that asked an open leaves `graph_lost` standing until the stream lands. **An open the
+  rebind leaves `graph_lost` standing until its stream lands (`waits_on_a_stream`: an output still
+  priming asks its open later, so letting go there billed the open's refusal to the row). **An open the
   daemon never answers is the graph's, not the row's:** `Survey::open` past `STREAM_OPENED_WITHIN`
   answers `OpenUnanswered` (`Disconnected` once the client knows the daemon gone), which
   `parked_for_a_device` reads as the graph lost; read as `LoopStopped` it failed every queued row
