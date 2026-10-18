@@ -101,8 +101,13 @@ is never named.
   snapshots (`UNDO_DEPTH` 128, content at most `LONGEST_CONTENT` 16 KiB, cut at a character
   boundary), coalescing consecutive edits of the same `edit::Span` (`Typing`, `Removing`,
   `Composing`; not `resonate-core::Span`) *and* resuming from the selection the last left. Paste, cut,
-  clear are `Span::Discrete`; whitespace closes a typing run. **An edit changing nothing is no step**
-  (`Edit::edited`). History lives only as long as the run; the three keys bind under `SEARCH_CONTEXT`;
+  clear are `Span::Discrete`; whitespace closes a typing run. **A key typed arrives through
+  `replace_text_in_range` and is `Span::Typing` (`Edit::type_over`), so it resumes only from the
+  selection the last left and a letter typed over `ctrl-a` is a step of its own; only a replacement
+  while a preedit is marked is `Span::Composing`, and a preedit begun with nothing marked starts a
+  step (`Edit::end_the_composing`), as the commit ends one.** `Field::open_with` loads a field another
+  owner reuses (the equaliser's figure) through `Edit::start_over`, so undo cannot reach the text of
+  the last use. **An edit changing nothing is no step** (`Edit::edited`). History lives only as long as the run; the three keys bind under `SEARCH_CONTEXT`;
   outside the field they walk a playlist edit.
 - **The window names itself; a negated binding is dead without it.** Root div carries
   `key_context(WINDOW_CONTEXT)`: stack `["Resonate"]` at rest, `["Resonate", "Search"]` in a field.
@@ -1251,6 +1256,14 @@ is never named.
   its playlist (skipped while a search narrows). The index's sort icon sits with icon-only Import and
   New playlist in the heading's right actions and reveals the ORDER and READS choices; none of this
   survives the run.
+- **A playlist pressed from the index is read off the window's thread.** *Play*, *Shuffle*, *Next*
+  and *Last* (index row, cover, menu) go through `RootView::with_playlist_entries`: an opened,
+  unnarrowed playlist answers from the snapshot at once (`LibraryModel::held_entries_of`), any other is
+  read by `Library::playlist_entries` on the background executor, a smart one running its query there,
+  and a failure is a toast and a log line. `play_the_playlist`, `shuffle_the_playlist` and
+  `queue_the_playlist` do their sending in the continuation, so shuffle is turned off or on only when
+  the rows are in hand
+  (`a_playlist_that_is_not_opened_is_read_off_the_windows_thread_and_an_opened_one_is_at_hand`).
 - **One `Field` names every playlist.** `RootView::name` serves the pane's new-and-rename row and the
   picker's *or a new one*, one open at a time (`name_a_playlist` closes the picker, `hold_for_a_playlist`
   the naming row). It emits `Submitted` on enter; `RootView::name_given` decides from whichever is open:
@@ -1282,7 +1295,10 @@ is never named.
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
   cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`) through `reorder::liftable`; a row
-  standing in the reach carries every loaded row of the reach. `reorder::takes_a_lift` makes targets of
+  standing in the reach carries every loaded row of the reach as a `reorder::Run`: the page's own
+  `Arc<[Track]>` and a `Span`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
+  frame, and the ghost's title is worked out only when a drag begins
+  (`a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song`). `reorder::takes_a_lift` makes targets of
   a queue row (`Placement::At`), an opened playlist's row (`LiftedTo::PlaylistAt`:
   `Library::insert_into_playlist`, one undoable edit), the queue pane's body and empty queue
   (`Placement::Queued`), the playback bar's queue button, and a list playlist's index row, card and
@@ -1520,6 +1536,11 @@ is never named.
   `.tab_stop(true)` and `key_context(CONTROL_CONTEXT)` (`RootView::ringed`): `space`/`enter` bound under
   it fire the control's own `on_action`; escape lets go; every window binding that carried `!Search`
   carries `!Search && !Control`; `tab`/`shift-tab` bind with no predicate. Focus is drawn as hover is.
+  - **A press by key is the action's alone.** gpui 0.2.2 also turns the key-up on a focused element
+    with click listeners into a `ClickEvent::Keyboard`, so every `on_click` beside a `PressControl`
+    action (`ringed`, `in_the_ring_at`, `option_in_the_ring`, the device and root rows) answers only
+    `focus::by_the_pointer`; `space`/`enter` would otherwise press twice (a switch flips back, Next
+    skips two). The driven tests send the key-up as well (`enter_pressed_and_released_on_next_skips_one_song_not_two`).
   - **A tab stop is the handle's, not the element's.** gpui applies an element's `.tab_stop(true)` only
     to a handle it made itself, so `Controls::at` and `Field::new` make their handles tab stops.
   - `RootView::content` opens each pane frame with `Controls::opening`, keeping the handles the frame

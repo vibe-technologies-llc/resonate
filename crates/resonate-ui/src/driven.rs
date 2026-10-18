@@ -536,6 +536,7 @@ mod tests {
     use super::*;
     use crate::{
         Pane, Selection,
+        equaliser::{Cell as BandCell, Editing},
         views::{settings::curve::Plot, visualiser::Showing},
     };
 
@@ -612,6 +613,121 @@ mod tests {
                 .read(|root, cx| root.equaliser.read(cx).shown_bands())
                 .is_empty(),
             "a right press on the band left it standing"
+        );
+    }
+
+    fn with_a_band_at(driven: &mut Driven, hertz: f64) {
+        driven.click("tab-settings");
+        driven.click("category-Equaliser");
+        let curve = driven.bounds_of("equaliser-curve");
+        driven.click_at(point(
+            curve.origin.x + curve.size.width * 0.3,
+            curve.origin.y + curve.size.height * 0.3,
+        ));
+        let taken = driven.root.update(&mut driven.cx, |root, cx| {
+            let editing = Editing {
+                row: 0,
+                cell: BandCell::Frequency,
+            };
+            root.equaliser
+                .update(cx, |model, cx| model.take(editing, &format!("{hertz}"), cx))
+        });
+        assert!(taken, "the band refused {hertz} Hz");
+        driven.settle();
+    }
+
+    fn the_bands(driven: &mut Driven) -> Vec<resonate_core::eq::Band> {
+        driven.read(|root, cx| root.equaliser.read(cx).shown_bands())
+    }
+
+    #[gpui::test]
+    fn enter_on_an_equaliser_cell_nothing_was_typed_into_keeps_the_band_exactly(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_a_band_at(&mut driven, 1059.46);
+        let before = the_bands(&mut driven);
+
+        driven.click("band-frequency-0");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        assert_eq!(the_bands(&mut driven), before);
+        assert!(driven.read(|root, cx| root.equaliser.read(cx).editing().is_none()));
+    }
+
+    #[gpui::test]
+    fn undo_in_an_equaliser_cell_cannot_reach_the_value_of_the_cell_before(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_a_band_at(&mut driven, 1059.46);
+        driven.click("band-frequency-0");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.click("band-gain-0");
+        driven.cx.simulate_keystrokes("ctrl-z");
+        driven.settle();
+
+        let (held, written) = driven.read(|root, cx| {
+            let editing = Editing {
+                row: 0,
+                cell: BandCell::Gain,
+            };
+            (
+                root.figure.read(cx).text().to_owned(),
+                root.equaliser.read(cx).written(editing),
+            )
+        });
+        assert_eq!(held, written);
+    }
+
+    #[gpui::test]
+    fn tab_out_of_an_equaliser_cell_takes_what_was_typed_and_closes_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_a_band_at(&mut driven, 1059.46);
+
+        driven.click("band-frequency-0");
+        driven.cx.simulate_keystrokes("ctrl-a");
+        driven.cx.simulate_input("2000");
+        driven.cx.simulate_keystrokes("tab");
+        driven.settle();
+
+        let frequency = the_bands(&mut driven)[0].frequency;
+        assert_eq!(
+            frequency,
+            resonate_core::eq::Frequency::from_hertz(2000.0).expect("a frequency")
+        );
+        assert!(
+            driven.read(|root, cx| root.equaliser.read(cx).editing().is_none()),
+            "the cell stayed open after tab left it"
+        );
+    }
+
+    #[gpui::test]
+    fn a_letter_typed_over_everything_in_a_field_is_undone_to_the_text_it_replaced(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.focus(|root| &root.search);
+        driven.cx.simulate_input("dark");
+        driven.cx.simulate_keystrokes("ctrl-a");
+        driven.cx.simulate_input("x");
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "x"
+        );
+
+        driven.cx.simulate_keystrokes("ctrl-z");
+
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "dark"
         );
     }
 
@@ -699,6 +815,77 @@ mod tests {
         driven.click("menu-entry-0");
 
         driven.until(|root, cx| !root.player.read(cx).state().shuffle);
+    }
+
+    fn playlist_holding_the_first_song(library: &Library) -> resonate_core::PlaylistId {
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .remove(0);
+        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        library
+            .add_to_playlist(playlist, &[resonate_library::Cut::of(&track)])
+            .expect("a row put in");
+        playlist
+    }
+
+    #[gpui::test]
+    fn the_play_in_a_playlists_menu_queues_what_the_playlist_holds(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let playlist = playlist_holding_the_first_song(&library);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            let menu = crate::views::playlists::playlist_menu(
+                point(px(200.0), px(200.0)),
+                playlist,
+                false,
+                cx,
+            );
+            root.open_a_menu(menu, cx);
+        });
+        driven.click("menu-entry-0");
+
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+    }
+
+    #[gpui::test]
+    fn a_playlist_that_is_not_opened_is_read_off_the_windows_thread_and_an_opened_one_is_at_hand(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let playlist = playlist_holding_the_first_song(&library);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let seen = std::rc::Rc::new(std::cell::Cell::new(None));
+        let ask = |driven: &mut Driven| {
+            let seen = std::rc::Rc::clone(&seen);
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.with_playlist_entries(playlist, cx, move |_, entries, _| {
+                    seen.set(Some(entries.len()));
+                });
+            });
+        };
+
+        ask(&mut driven);
+        assert_eq!(
+            seen.get(),
+            None,
+            "the playlist was read on the window's thread"
+        );
+        let waiting = std::rc::Rc::clone(&seen);
+        driven.until(move |_, _| waiting.get() == Some(1));
+
+        seen.set(None);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Playlists, cx);
+            root.show_playlist(Some(playlist), cx);
+        });
+        driven.until(|root, cx| root.library.read(cx).opened() == Some(playlist));
+        ask(&mut driven);
+
+        assert_eq!(seen.get(), Some(1), "an opened playlist was not at hand");
     }
 
     #[gpui::test]
@@ -886,6 +1073,42 @@ mod tests {
             driven.read(|root, _| root.menu.is_some()),
             "enter opened no menu"
         );
+    }
+
+    fn pressed_and_released(driven: &mut Driven, key: &str) {
+        let keystroke = gpui::Keystroke::parse(key).expect("a key to press");
+        driven.cx.simulate_keystrokes(key);
+        driven.cx.simulate_event(gpui::KeyUpEvent { keystroke });
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn enter_pressed_and_released_on_next_skips_one_song_not_two(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let files = [
+            folder.tone("one.wav", 5),
+            folder.tone("two.wav", 5),
+            folder.tone("three.wav", 5),
+        ];
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&files);
+        let queue = driven.queue();
+
+        assert!(
+            tabbed_onto(&mut driven, "next"),
+            "tab never reached the next button"
+        );
+        pressed_and_released(&mut driven, "enter");
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .state()
+                .current
+                .is_some_and(|current| current.id != queue[0])
+        });
+
+        let current = driven.read(|root, cx| root.player.read(cx).state().current.map(|c| c.id));
+        assert_eq!(current, Some(queue[1]), "one press of next skipped two");
     }
 
     #[gpui::test]

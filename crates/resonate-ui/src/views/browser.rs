@@ -10,7 +10,7 @@ use gpui::{
     ObjectFit, Pixels, Point, SharedString, Stateful, Window, anchored, deferred, div, hsla, img,
     point, prelude::*, px, rgb, uniform_list,
 };
-use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
+use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, AlbumFound, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut,
@@ -1090,10 +1090,11 @@ impl RootView {
         let lifted = match plays {
             Plays::AsTheListingIsDrawn { in_an_album: false } => {
                 let rows = self.acting_on(Shift::Listing(Listed::Tracks), index);
-                Lifted::tracks(tracks.get(rows.range()).unwrap_or(slice::from_ref(track)))
+                let held = tracks.get(rows.range()).is_some();
+                Lifted::tracks(tracks, if held { rows } else { Span::one(index) })
             }
             Plays::AsTheListingIsDrawn { in_an_album: true } | Plays::TheseRows => {
-                Lifted::track(track)
+                Lifted::tracks(tracks, Span::one(index))
             }
         };
         let row = reorder::liftable(row, lifted);

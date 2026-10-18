@@ -18,8 +18,8 @@ mod tidal;
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point, SharedString,
-    Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
+    AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
+    SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::Appearance;
 use resonate_library::DEFAULT_LAYOUT;
@@ -40,6 +40,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
+        focus::by_the_pointer,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
@@ -763,7 +764,11 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, _, window, cx| clicked(this, window, cx)))
+            .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {
+                if by_the_pointer(click) {
+                    clicked(this, window, cx);
+                }
+            }))
     }
 
     pub(crate) fn in_the_ring(
@@ -842,7 +847,11 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, _, window, cx| clicked(this, window, cx)))
+            .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {
+                if by_the_pointer(click) {
+                    clicked(this, window, cx);
+                }
+            }))
     }
 
     fn choices<T: Choice>(
@@ -896,7 +905,11 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, _, window, cx| clicked(this, window, cx)))
+            .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {
+                if by_the_pointer(click) {
+                    clicked(this, window, cx);
+                }
+            }))
     }
 
     pub(crate) fn dress(&self, dressed: Appearance, cx: &mut Context<Self>) {

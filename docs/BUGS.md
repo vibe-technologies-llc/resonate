@@ -61,20 +61,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   until the sheet reads again
 
 ## Window
-- [M] A key typed into a field arrives through `replace_text_in_range` as `Span::Composing`, which
-  joins any next composing edit whatever the selection: undo takes back the whole session, and
-  ctrl-a then a letter then undo empties the field with the old text out of reach
 - [M] Typing anywhere to search drops text an input method composes until a field is focused; the
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
 ## Equaliser and DSP
-- [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
-  1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`, which
-  pushes an undo step, so ctrl-z in a cell reaches the last cell's value and Enter writes it
-- [M] Tab out of an open equaliser cell moves the caret on, commits nothing and leaves the cell
-  drawn open (`leave_figure` answers only while the figure holds focus); a press outside no longer
-  closes it; the Online and Library fields share the shape
 - [M] Saving or exporting a profile rewrites it from the parsed model: comments, `Include:`,
   `Device:`, `If:`, filters past 32 and the original text encoding are lost; `export` is a bare
   `fs::write`; two writers stage to one fixed `.txt.new`
@@ -88,10 +79,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
 
 ## Keyboard and accessibility
-- [M] Enter or Space on a ringed control presses it twice: `PressControl` fires on key-down and gpui
-  0.2.2 turns the key-up on a focused element with click listeners into a `ClickEvent::Keyboard` for
-  `on_click` (`div.rs`); Next skips two, a switch flips back. The driven tests dispatch key-down
-  only
+- [M] Tab out of an Online or Library field (contact, AcoustID key, AudD or ListenBrainz token, typed
+  folder, filing layout) commits nothing and leaves the typed text unsaved: only a press outside
+  commits (`leave_contact` and kin answer while the field holds focus), and each `*_given` refocuses
+  the window, so a `Blurred` handler needs a variant that settles without taking the caret back
 - [M] The keyboard reach keeps its row through `opened` and an order or reading change: after
   reaching row 19, *Go to album* on a 10-track album and Enter plays its last track with nothing
   marked; after a header press the edge stays on another song

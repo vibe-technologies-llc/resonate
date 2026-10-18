@@ -1709,24 +1709,14 @@ impl RootView {
                         .child(control("play-saved", id, Icon::Play, PLAY_HINT).on_click(
                             cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                let entries = this.library.read(cx).entries_of(id);
-                                this.plays_in_order(cx);
-                                this.play_playlist(id, &entries, 0, true, cx);
+                                this.play_the_playlist(id, cx);
                             }),
                         ))
                         .child(
                             control("shuffle-saved", id, Icon::Shuffle, SHUFFLE_HINT).on_click(
                                 cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
-                                    let entries = this.library.read(cx).entries_of(id);
-                                    this.play_playlist(
-                                        id,
-                                        &entries,
-                                        somewhere_in(entries.len()),
-                                        true,
-                                        cx,
-                                    );
-                                    this.send(Command::SetShuffle(true), cx);
+                                    this.shuffle_the_playlist(id, cx);
                                 }),
                             ),
                         )
@@ -1734,16 +1724,14 @@ impl RootView {
                             control("next-saved", id, Icon::QueueNext, PLAYLIST_NEXT_HINT)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
-                                    let entries = this.library.read(cx).entries_of(id);
-                                    this.queue(&entries, Placement::Next, cx);
+                                    this.queue_the_playlist(id, Placement::Next, cx);
                                 })),
                         )
                         .child(
                             control("last-saved", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
-                                    let entries = this.library.read(cx).entries_of(id);
-                                    this.queue(&entries, Placement::Queued, cx);
+                                    this.queue_the_playlist(id, Placement::Queued, cx);
                                 })),
                         )
                         .when(playlist.query.is_none(), |controls| {
@@ -1961,9 +1949,7 @@ impl RootView {
             ))
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.plays_in_order(cx);
-                let entries = this.library.read(cx).entries_of(id);
-                this.play_playlist(id, &entries, 0, true, cx);
+                this.play_the_playlist(id, cx);
             }))
     }
 
@@ -2043,17 +2029,13 @@ fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
 pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
     let menu = Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, _, cx| {
-            let entries = this.library.read(cx).entries_of(id);
-            this.plays_in_order(cx);
-            this.play_playlist(id, &entries, 0, true, cx);
+            this.play_the_playlist(id, cx);
         })
         .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, _, cx| {
-            let entries = this.library.read(cx).entries_of(id);
-            this.queue(&entries, Placement::Next, cx);
+            this.queue_the_playlist(id, Placement::Next, cx);
         })
         .does(Icon::QueueLast, menu::ADD_TO_QUEUE, move |this, _, cx| {
-            let entries = this.library.read(cx).entries_of(id);
-            this.queue(&entries, Placement::Queued, cx);
+            this.queue_the_playlist(id, Placement::Queued, cx);
         })
         .apart()
         .does(pin_icon(pinned), pin_label(pinned), move |this, _, cx| {

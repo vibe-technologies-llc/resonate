@@ -48,6 +48,8 @@ actions!(
 
 pub(crate) struct Submitted;
 
+pub(crate) struct Blurred;
+
 pub(crate) struct Caught(pub(crate) String);
 
 const MASK: char = '•';
@@ -194,6 +196,7 @@ impl Field {
         self.holds_focus = false;
         self.lit = false;
         self.blink = Task::ready(());
+        cx.emit(Blurred);
         cx.notify();
     }
 
@@ -272,6 +275,12 @@ impl Field {
 
     pub(crate) fn hold(&mut self, text: String, cx: &mut Context<Self>) {
         self.edit.set_content(text);
+        self.marked = None;
+        self.touched(cx);
+    }
+
+    pub(crate) fn open_with(&mut self, text: String, cx: &mut Context<Self>) {
+        self.edit.start_over(text);
         self.marked = None;
         self.touched(cx);
     }
@@ -458,6 +467,8 @@ fn utf16_of(text: &str, offset: usize) -> usize {
 
 impl EventEmitter<Submitted> for Field {}
 
+impl EventEmitter<Blurred> for Field {}
+
 impl EventEmitter<Caught> for Field {}
 
 impl Focusable for Field {
@@ -582,7 +593,13 @@ impl EntityInputHandler for Field {
         cx: &mut Context<Self>,
     ) {
         let target = self.target_of(range);
-        self.edit.replace(target, &one_line(text));
+        let text = one_line(text);
+        if self.marked.is_some() {
+            self.edit.replace(target, &text);
+            self.edit.end_the_composing();
+        } else {
+            self.edit.type_over(target, &text);
+        }
         self.marked = None;
         self.touched(cx);
     }
@@ -597,6 +614,9 @@ impl EntityInputHandler for Field {
     ) {
         let target = self.target_of(range);
         let start = target.start;
+        if self.marked.is_none() {
+            self.edit.end_the_composing();
+        }
         self.edit.replace(target, text);
 
         self.marked = (!text.is_empty()).then(|| start..start + text.len());

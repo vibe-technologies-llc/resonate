@@ -4,8 +4,8 @@ use std::{
 };
 
 use gpui::{
-    Context, Div, ElementId, PathPromptOptions, SharedString, Stateful, Window, div, prelude::*,
-    px, rgb,
+    ClickEvent, Context, Div, ElementId, PathPromptOptions, SharedString, Stateful, Window, div,
+    prelude::*, px, rgb,
 };
 use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{
@@ -18,6 +18,7 @@ use crate::{
     icons::{self, Icon},
     theme, toast,
     views::{
+        focus::by_the_pointer,
         kit::{self, EndsInAnEllipsis as _, Press},
         listing,
         root::RootView,
@@ -343,8 +344,10 @@ impl RootView {
                     cx.stop_propagation();
                 }),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.ask_to_forget_the_folder(clicked.clone(), cx);
+            .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {
+                if by_the_pointer(click) {
+                    this.ask_to_forget_the_folder(clicked.clone(), cx);
+                }
             }))
     }
 

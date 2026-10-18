@@ -1,4 +1,4 @@
-use std::{slice, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, Bounds, Context, Div, DragMoveEvent, IntoElement, Pixels, Point, Render,
@@ -193,37 +193,55 @@ pub(crate) struct Carried {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lift {
-    Tracks(Arc<[Track]>),
-    Album(AlbumId),
+    Tracks(Run),
+    Album(AlbumId, SharedString),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Run {
+    page: Arc<[Track]>,
+    rows: Span,
+}
+
+impl Run {
+    pub(crate) fn tracks(&self) -> &[Track] {
+        self.page.get(self.rows.range()).unwrap_or_default()
+    }
+
+    fn title(&self) -> SharedString {
+        match self.tracks() {
+            [one] => one.title.clone().into(),
+            [first, ..] => format!("{} and {} more", first.title, self.rows.rows() - 1).into(),
+            [] => SharedString::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lifted {
     pub(crate) lift: Lift,
-    pub(crate) title: SharedString,
 }
 
 impl Lifted {
-    pub(crate) fn track(track: &Track) -> Self {
-        Self::tracks(slice::from_ref(track))
-    }
-
-    pub(crate) fn tracks(tracks: &[Track]) -> Self {
-        let title = match tracks {
-            [one] => one.title.clone(),
-            [first, ..] => format!("{} and {} more", first.title, tracks.len() - 1),
-            [] => String::new(),
-        };
+    pub(crate) fn tracks(page: &Arc<[Track]>, rows: Span) -> Self {
         Self {
-            lift: Lift::Tracks(Arc::from(tracks)),
-            title: SharedString::from(title),
+            lift: Lift::Tracks(Run {
+                page: Arc::clone(page),
+                rows,
+            }),
         }
     }
 
     pub(crate) fn album(album: AlbumId, title: &str) -> Self {
         Self {
-            lift: Lift::Album(album),
-            title: SharedString::from(title.to_owned()),
+            lift: Lift::Album(album, SharedString::from(title.to_owned())),
+        }
+    }
+
+    pub(crate) fn title(&self) -> SharedString {
+        match &self.lift {
+            Lift::Tracks(run) => run.title(),
+            Lift::Album(_, title) => title.clone(),
         }
     }
 }
@@ -231,7 +249,7 @@ impl Lifted {
 pub(crate) fn liftable(listed: Stateful<Div>, lifted: Lifted) -> Stateful<Div> {
     listed.on_drag(lifted, |lifted, under, _, cx| {
         cx.new(|_| Ghost {
-            title: lifted.title.clone(),
+            title: lifted.title(),
             beside: None,
             under,
         })
@@ -490,11 +508,48 @@ impl RootView {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::SystemTime};
+
     use gpui::{Bounds, SharedString, point, px, size};
     use proptest::prelude::*;
-    use resonate_core::Span;
+    use resonate_core::{
+        ChannelLayout, MediaLocation, SampleFormat, SampleRate, Span, StreamSpec, TrackId,
+    };
+    use resonate_library::{Codec, Track};
 
-    use super::{DRAGGING_EDGE, Reach, Shift, Step, Toward, beside, toward_an_edge};
+    use super::{DRAGGING_EDGE, Lift, Lifted, Reach, Shift, Step, Toward, beside, toward_an_edge};
+
+    fn song(id: u64) -> Track {
+        Track {
+            id: TrackId::new(id).expect("a valid id"),
+            location: MediaLocation::local(format!("/music/{id}.flac")),
+            title: format!("Song {id}"),
+            artist: None,
+            artist_id: None,
+            album_id: None,
+            track_number: None,
+            disc_number: None,
+            duration: None,
+            spec: StreamSpec::new(
+                SampleRate::HZ_44100,
+                ChannelLayout::Stereo,
+                SampleFormat::S16,
+            ),
+            codec: Codec::Flac,
+            replay_gain: Default::default(),
+            file_size: 0,
+            modified: SystemTime::UNIX_EPOCH,
+            added: SystemTime::UNIX_EPOCH,
+            plays: 0,
+            played: None,
+            span: None,
+            favourite: None,
+            genre: None,
+            hidden: false,
+            alternatives: 0,
+            delivered: false,
+        }
+    }
 
     fn a_list_and_a_span() -> impl Strategy<Value = (usize, Span)> {
         (1usize..12)
@@ -514,6 +569,22 @@ mod tests {
         let at = rows.landing(to);
         moved.splice(at..at, taken);
         moved
+    }
+
+    #[test]
+    fn a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song() {
+        let page: Arc<[Track]> = (1..=4).map(song).collect();
+
+        let lifted = Lifted::tracks(&page, Span::between(1, 3));
+        let Lift::Tracks(run) = &lifted.lift else {
+            unreachable!("tracks were lifted");
+        };
+
+        assert_eq!(Arc::strong_count(&page), 2);
+        assert_eq!(run.tracks().len(), 3);
+        assert_eq!(run.tracks()[0].title, "Song 2");
+        assert_eq!(lifted.title(), "Song 2 and 2 more");
+        assert_eq!(Lifted::tracks(&page, Span::one(0)).title(), "Song 1");
     }
 
     #[test]
