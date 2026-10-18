@@ -3902,6 +3902,25 @@ mod tests {
     }
 
     #[test]
+    fn a_pass_no_signal_interrupts_answers_its_summary_through_until_told() {
+        let root = fixtures::scratch("until-told");
+        fs::write(root.join("a.wav"), silent_wave(1)).expect("a track");
+        let library = Library::open_in_memory().expect("a catalog");
+        library.add_root(&root).expect("a root");
+
+        let summary = until_told(
+            library
+                .scan(fixtures::scan_of(&root))
+                .expect("a scan under way"),
+        )
+        .expect("a summary");
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert_eq!(summary.stats.added, 1);
+        assert!(!summary.cancelled);
+    }
+
+    #[test]
     fn a_pass_whose_files_failed_answers_an_error_so_the_command_exits_1() {
         assert!(none_failed(PassKind::Organise, 0).is_ok());
         assert!(matches!(

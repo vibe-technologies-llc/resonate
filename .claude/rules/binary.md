@@ -85,6 +85,12 @@ them no type). Decoders: `audio.md`.
 - **Hang-up leaves, like an interrupt.** `signals::ASKING_TO_LEAVE` = `SIGINT`, `SIGTERM`, `SIGHUP`,
   watched by `quit_when_told` and `cancel_when_told`; a hang-up also tells `said` nobody reads where
   stdout is a terminal (`tests/signals.rs`).
+- **A headless pass's watch is `signals::cancelling_on`**, which takes the signals and what to do
+  on a second one, so `cancel_when_told` is that over `ASKING_TO_LEAVE` and `leave`, and the tests
+  drive it with `SIGUSR1`, a stand-in `leaving` and `exit_code_after` (128 + the signal number); a
+  dropped `Interrupting` closes the watch whether or not a signal came
+  (`the_first_signal_cancels_the_pass_and_a_second_leaves_with_its_number`,
+  `a_pass_no_signal_interrupts_answers_its_summary_through_until_told`).
 - **One signal silences the graph though the front end never answers.** `signals.rs` asks the front
   end to quit, leaves anyway after `DRAINS_WITHIN`; the farewell thread sends `Command::Stop` after
   `SILENCED_AFTER`, so a wedged window is not *heard* for the whole drain.
@@ -168,7 +174,6 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **`Config`'s `Debug` prints no secret:** hand-written over an exhaustive destructuring (a key added
   and left out fails to compile), `<withheld>` for every token, password, key and `contact`
   (`no_key_holding_a_secret_or_the_contact_is_printed_by_debug`).
-
 - **A hand-editor reads `resonate-config.toml(5)`** (`packaging/resonate-config.toml.5`, installed by
   every package): one `.TP` entry per key with its type, accepted spellings and default. A key added
   to `ConfigKey` without an entry, or an entry for a key that is gone, fails

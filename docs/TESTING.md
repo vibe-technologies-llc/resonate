@@ -93,8 +93,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `landed_or_standing` exists for it
 - [S] TIDAL's `slow_down` is untested; the hosted hifi path's hosts are constants no fake server can
   stand in for, so it runs only live
-- [M] Discord's `Publisher::show` (backoff, application change, reconnect) and the signal paths
-  beyond `play` and `mcp`'s SIGHUP (`until_told`, a second signal's 128+n) are untested
+- [S] `signals::relay` (a window's or `play`'s second signal) and `leave_when_told` (the Last.fm
+  password prompt) are tested only through their terminal: a second signal's 128+n and the farewell
+  thread's `Stop` are not driven
 - [M] The Output and Processing settings panes have no test pressing their controls
 - [M] `transport.rs`'s
   `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once when

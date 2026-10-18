@@ -81,17 +81,21 @@ pub fn scratch(name: &str) -> PathBuf {
     folder
 }
 
+pub fn scan_of(root: &Path) -> ScanOptions {
+    ScanOptions {
+        roots: vec![root.to_path_buf()],
+        incremental: true,
+        follow_symlinks: false,
+        extract_cover_art: false,
+        workers: NonZeroUsize::MIN,
+    }
+}
+
 pub fn scanned(root: &Path) -> Library {
     let library = Library::open_in_memory().expect("a catalog");
     library.add_root(root).expect("a root");
     library
-        .scan(ScanOptions {
-            roots: vec![root.to_path_buf()],
-            incremental: true,
-            follow_symlinks: false,
-            extract_cover_art: false,
-            workers: NonZeroUsize::MIN,
-        })
+        .scan(scan_of(root))
         .and_then(PassHandle::join)
         .expect("a scan");
     library

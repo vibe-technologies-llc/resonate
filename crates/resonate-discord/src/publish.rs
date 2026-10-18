@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     thread,
     time::{Duration, Instant, SystemTime},
@@ -43,10 +43,8 @@ impl Running {
             player,
             releases,
             presence,
-            link: Link::Closed { retry_at: None },
+            showing: Showing::finding_with(Box::new(Session::find)),
             covered: None,
-            answered_last: None,
-            waits: RETRY_AFTER_AT_FIRST,
         };
         let spawned = thread::Builder::new()
             .name("resonate-discord".to_owned())
@@ -108,12 +106,19 @@ enum Link {
     },
 }
 
+type Find = Box<dyn Fn(AppId, Option<&Path>) -> Result<(Session, PathBuf), Error> + Send>;
+
 struct Publisher {
     player: Arc<Player>,
     releases: Arc<dyn Releases>,
     presence: Arc<RwLock<Presence>>,
-    link: Link,
+    showing: Showing,
     covered: Option<CachedCover>,
+}
+
+struct Showing {
+    find: Find,
+    link: Link,
     answered_last: Option<PathBuf>,
     waits: Duration,
 }
@@ -127,23 +132,80 @@ impl Publisher {
                 Err(RecvTimeoutError::Disconnected) => break,
             }
         }
-        self.farewell();
+        self.showing.farewell();
     }
 
     fn tick(&mut self) {
         let presence = self.presence.read().clone();
         let Some(app) = presence.app.filter(|_| presence.active()) else {
-            self.farewell();
+            self.showing.farewell();
             return;
         };
         let wanted = self
             .playing(&presence)
             .and_then(|playing| Activity::of(&presence, &playing, SystemTime::now()));
-        self.show(app, wanted);
+        self.showing.show(app, wanted, Instant::now());
     }
 
-    fn show(&mut self, app: AppId, wanted: Option<Activity>) {
-        let now = Instant::now();
+    fn playing(&mut self, presence: &Presence) -> Option<Playing> {
+        let state = self.player.state();
+        let current = state.current?;
+        let paused = match state.playback {
+            PlaybackState::Playing | PlaybackState::Buffering => false,
+            PlaybackState::Paused => true,
+            PlaybackState::Idle | PlaybackState::Stopped => return None,
+        };
+        let digest = self
+            .player
+            .digest()
+            .filter(|digest| digest.track == current.id)?;
+        let tags = &digest.info.tags;
+        let pictures_a_cover =
+            presence.pictured == Pictured::Cover && presence.shown != Shown::Application;
+        let cover = if pictures_a_cover {
+            self.cover(current.id, &digest)
+        } else {
+            None
+        };
+        let rate = current.source.rate;
+
+        Some(Playing {
+            title: named(tags.title.as_deref())
+                .or_else(|| digest.location.stem().map(|stem| stem.into_owned()))
+                .unwrap_or_default(),
+            artist: named(tags.artist.as_deref()),
+            album: named(tags.album.as_deref()),
+            cover,
+            position: current.position.to_duration(rate),
+            duration: current.duration.map(|duration| duration.to_duration(rate)),
+            paused,
+        })
+    }
+
+    fn cover(&mut self, track: TrackId, digest: &StreamDigest) -> Option<Cover> {
+        cover_for(
+            self.releases.as_ref(),
+            &mut self.covered,
+            track,
+            &digest.location,
+            digest.span,
+            &digest.info.tags,
+            Instant::now(),
+        )
+    }
+}
+
+impl Showing {
+    fn finding_with(find: Find) -> Self {
+        Self {
+            find,
+            link: Link::Closed { retry_at: None },
+            answered_last: None,
+            waits: RETRY_AFTER_AT_FIRST,
+        }
+    }
+
+    fn show(&mut self, app: AppId, wanted: Option<Activity>, now: Instant) {
         match self.link {
             Link::Open { app: open, .. } if open != app => self.farewell(),
             Link::Unknown { app: refused } if refused != app => {
@@ -157,7 +219,7 @@ impl Publisher {
             if wanted.is_none() || retry_at.is_some_and(|at| now < at) {
                 return;
             }
-            match Session::find(app, self.answered_last.as_deref()) {
+            match (self.find)(app, self.answered_last.as_deref()) {
                 Ok((session, path)) => {
                     tracing::info!("showing what is playing on Discord");
                     self.answered_last = Some(path);
@@ -226,53 +288,6 @@ impl Publisher {
             tracing::debug!(%error, "the presence could not be cleared; Discord clears it as the socket closes");
         }
         self.link = Link::Closed { retry_at: None };
-    }
-
-    fn playing(&mut self, presence: &Presence) -> Option<Playing> {
-        let state = self.player.state();
-        let current = state.current?;
-        let paused = match state.playback {
-            PlaybackState::Playing | PlaybackState::Buffering => false,
-            PlaybackState::Paused => true,
-            PlaybackState::Idle | PlaybackState::Stopped => return None,
-        };
-        let digest = self
-            .player
-            .digest()
-            .filter(|digest| digest.track == current.id)?;
-        let tags = &digest.info.tags;
-        let pictures_a_cover =
-            presence.pictured == Pictured::Cover && presence.shown != Shown::Application;
-        let cover = if pictures_a_cover {
-            self.cover(current.id, &digest)
-        } else {
-            None
-        };
-        let rate = current.source.rate;
-
-        Some(Playing {
-            title: named(tags.title.as_deref())
-                .or_else(|| digest.location.stem().map(|stem| stem.into_owned()))
-                .unwrap_or_default(),
-            artist: named(tags.artist.as_deref()),
-            album: named(tags.album.as_deref()),
-            cover,
-            position: current.position.to_duration(rate),
-            duration: current.duration.map(|duration| duration.to_duration(rate)),
-            paused,
-        })
-    }
-
-    fn cover(&mut self, track: TrackId, digest: &StreamDigest) -> Option<Cover> {
-        cover_for(
-            self.releases.as_ref(),
-            &mut self.covered,
-            track,
-            &digest.location,
-            digest.span,
-            &digest.info.tags,
-            Instant::now(),
-        )
     }
 }
 
@@ -356,13 +371,354 @@ fn refusals_carried(sent: Option<&Sent>, wanted: Option<&Activity>) -> u32 {
 #[cfg(test)]
 mod tests {
     use std::{
-        path::Path,
-        sync::atomic::{AtomicUsize, Ordering},
+        env, fs,
+        net::Shutdown,
+        os::unix::net::{UnixListener, UnixStream},
+        process,
+        sync::{
+            atomic::{AtomicU32, AtomicUsize, Ordering},
+            mpsc,
+        },
     };
 
+    use parking_lot::Mutex;
     use resonate_core::{AppId, Frames};
+    use serde_json::{Value, json};
 
     use super::*;
+    use crate::frame::{Opcode, read_frame, write_frame};
+
+    const FIRST_APP: &str = "1234567890123456789";
+    const SECOND_APP: &str = "9876543210987654321";
+    const HEARD_WITHIN: Duration = Duration::from_secs(5);
+    static FOLDERS: AtomicU32 = AtomicU32::new(0);
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Said {
+        Handshake {
+            connection: usize,
+            client_id: String,
+        },
+        Activity {
+            connection: usize,
+            details: Option<String>,
+        },
+    }
+
+    struct FakeDiscord {
+        folder: PathBuf,
+        heard: mpsc::Receiver<Said>,
+        streams: Arc<Mutex<Vec<UnixStream>>>,
+    }
+
+    impl FakeDiscord {
+        fn socket_in(folder: &Path) -> PathBuf {
+            folder.join("discord-ipc-0")
+        }
+
+        fn folder() -> PathBuf {
+            let folder = env::temp_dir().join(format!(
+                "resonate-publish-{}-{}",
+                process::id(),
+                FOLDERS.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&folder).expect("a folder");
+            folder
+        }
+
+        fn listening_in(folder: PathBuf) -> Self {
+            let listener = UnixListener::bind(Self::socket_in(&folder)).expect("bound");
+            let (said, heard) = mpsc::channel();
+            let streams = Arc::new(Mutex::new(Vec::new()));
+            let kept = Arc::clone(&streams);
+            thread::spawn(move || {
+                for (connection, stream) in listener.incoming().enumerate() {
+                    let Ok(mut stream) = stream else {
+                        break;
+                    };
+                    kept.lock()
+                        .push(stream.try_clone().expect("a second handle"));
+                    let said = said.clone();
+                    thread::spawn(move || serve(connection, &mut stream, &said));
+                }
+            });
+            Self {
+                folder,
+                heard,
+                streams,
+            }
+        }
+
+        fn hear(&self) -> Said {
+            self.heard
+                .recv_timeout(HEARD_WITHIN)
+                .expect("the fake Discord heard something")
+        }
+
+        fn hang_up(&self) {
+            for stream in self.streams.lock().iter() {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        }
+    }
+
+    impl Drop for FakeDiscord {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.folder);
+        }
+    }
+
+    fn serve(connection: usize, stream: &mut UnixStream, said: &mpsc::Sender<Said>) {
+        let Ok(handshake) = read_frame(stream) else {
+            return;
+        };
+        let body: Value = serde_json::from_slice(&handshake.body).expect("json");
+        let client_id = body["client_id"].as_str().unwrap_or_default().to_owned();
+        let _ = said.send(Said::Handshake {
+            connection,
+            client_id,
+        });
+        let ready = json!({ "cmd": "DISPATCH", "evt": "READY", "data": { "v": 1 } });
+        write_frame(
+            stream,
+            Opcode::Frame,
+            &serde_json::to_vec(&ready).expect("json"),
+        )
+        .expect("ready");
+
+        while let Ok(frame) = read_frame(stream) {
+            let body: Value = serde_json::from_slice(&frame.body).expect("json");
+            let details = body["args"]["activity"]["details"]
+                .as_str()
+                .map(str::to_owned);
+            let _ = said.send(Said::Activity {
+                connection,
+                details,
+            });
+        }
+    }
+
+    fn found_at(path: PathBuf, finds: &Arc<AtomicUsize>) -> Find {
+        let finds = Arc::clone(finds);
+        Box::new(move |app, _| {
+            finds.fetch_add(1, Ordering::Relaxed);
+            Session::open(&path, app).map(|session| (session, path.clone()))
+        })
+    }
+
+    fn app(digits: &str) -> AppId {
+        AppId::parse(digits).expect("a snowflake")
+    }
+
+    fn retry_at(showing: &Showing) -> Option<Instant> {
+        match showing.link {
+            Link::Closed { retry_at } => retry_at,
+            Link::Open { .. } | Link::Unknown { .. } => None,
+        }
+    }
+
+    fn is_open(showing: &Showing) -> bool {
+        matches!(showing.link, Link::Open { .. })
+    }
+
+    #[test]
+    fn a_discord_nobody_answers_is_asked_again_ever_later_up_to_a_ceiling() {
+        let folder = FakeDiscord::folder();
+        let finds = Arc::new(AtomicUsize::new(0));
+        let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
+        let wanted = || Some(activity("Echoes", 0));
+        let started = Instant::now();
+
+        showing.show(app(FIRST_APP), wanted(), started);
+        assert_eq!(finds.load(Ordering::Relaxed), 1);
+        assert_eq!(retry_at(&showing), Some(started + RETRY_AFTER_AT_FIRST));
+        assert_eq!(showing.waits, RETRY_AFTER_AT_FIRST * 2);
+
+        showing.show(app(FIRST_APP), wanted(), started + Duration::from_secs(1));
+        showing.show(app(FIRST_APP), None, started + RETRY_AFTER_AT_FIRST);
+        assert_eq!(
+            finds.load(Ordering::Relaxed),
+            1,
+            "Discord was asked before its wait ran out, or with nothing to show"
+        );
+
+        let mut asked_again = started;
+        for _ in 0..8 {
+            asked_again = retry_at(&showing).expect("a time to ask again");
+            showing.show(app(FIRST_APP), wanted(), asked_again);
+        }
+        assert_eq!(finds.load(Ordering::Relaxed), 9);
+        assert_eq!(showing.waits, RETRY_AFTER_AT_MOST);
+        assert_eq!(retry_at(&showing), Some(asked_again + RETRY_AFTER_AT_MOST));
+        fs::remove_dir_all(&folder).expect("the folder removed");
+    }
+
+    #[test]
+    fn a_discord_that_appears_is_reached_and_what_is_wanted_shown_at_once() {
+        let folder = FakeDiscord::folder();
+        let finds = Arc::new(AtomicUsize::new(0));
+        let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
+        let started = Instant::now();
+
+        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        let discord = FakeDiscord::listening_in(folder);
+        showing.show(
+            app(FIRST_APP),
+            Some(activity("Echoes", 0)),
+            started + RETRY_AFTER_AT_FIRST,
+        );
+
+        assert!(is_open(&showing));
+        assert_eq!(showing.waits, RETRY_AFTER_AT_FIRST);
+        assert_eq!(
+            discord.hear(),
+            Said::Handshake {
+                connection: 0,
+                client_id: FIRST_APP.to_owned()
+            }
+        );
+        assert_eq!(
+            discord.hear(),
+            Said::Activity {
+                connection: 0,
+                details: Some("Echoes".to_owned())
+            }
+        );
+    }
+
+    #[test]
+    fn a_changed_application_clears_the_old_one_and_connects_again_under_the_new_id() {
+        let discord = FakeDiscord::listening_in(FakeDiscord::folder());
+        let finds = Arc::new(AtomicUsize::new(0));
+        let mut showing =
+            Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
+        let started = Instant::now();
+
+        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        showing.show(
+            app(SECOND_APP),
+            Some(activity("Time", 0)),
+            started + SENDS_APART,
+        );
+
+        let mut heard: Vec<Said> = (0..5).map(|_| discord.hear()).collect();
+        heard.sort_by_key(|said| match said {
+            Said::Handshake { connection, .. } => (*connection, 0),
+            Said::Activity {
+                connection,
+                details,
+            } => (*connection, 1 + usize::from(details.is_none())),
+        });
+        assert_eq!(finds.load(Ordering::Relaxed), 2);
+        assert!(is_open(&showing));
+        assert_eq!(
+            heard,
+            [
+                Said::Handshake {
+                    connection: 0,
+                    client_id: FIRST_APP.to_owned()
+                },
+                Said::Activity {
+                    connection: 0,
+                    details: Some("Echoes".to_owned())
+                },
+                Said::Activity {
+                    connection: 0,
+                    details: None
+                },
+                Said::Handshake {
+                    connection: 1,
+                    client_id: SECOND_APP.to_owned()
+                },
+                Said::Activity {
+                    connection: 1,
+                    details: Some("Time".to_owned())
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_application_discord_does_not_know_is_waited_out_until_the_id_changes() {
+        let discord = FakeDiscord::listening_in(FakeDiscord::folder());
+        let finds = Arc::new(AtomicUsize::new(0));
+        let reaching = found_at(FakeDiscord::socket_in(&discord.folder), &finds);
+        let unknown = app(FIRST_APP);
+        let find: Find = Box::new(move |asked, answered| {
+            if asked == unknown {
+                return Err(Error::Closed { code: 4000 });
+            }
+            reaching(asked, answered)
+        });
+        let mut showing = Showing::finding_with(find);
+        let started = Instant::now();
+
+        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        assert!(matches!(showing.link, Link::Unknown { .. }));
+        showing.show(
+            app(FIRST_APP),
+            Some(activity("Echoes", 0)),
+            started + RETRY_AFTER_AT_MOST * 5,
+        );
+        assert!(matches!(showing.link, Link::Unknown { .. }));
+        assert_eq!(finds.load(Ordering::Relaxed), 0);
+
+        showing.show(
+            app(SECOND_APP),
+            Some(activity("Echoes", 0)),
+            started + RETRY_AFTER_AT_MOST * 6,
+        );
+
+        assert!(is_open(&showing));
+        assert_eq!(
+            discord.hear(),
+            Said::Handshake {
+                connection: 0,
+                client_id: SECOND_APP.to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn a_lost_connection_is_made_again_after_the_first_wait_and_what_is_wanted_sent_afresh() {
+        let discord = FakeDiscord::listening_in(FakeDiscord::folder());
+        let finds = Arc::new(AtomicUsize::new(0));
+        let mut showing =
+            Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
+        let started = Instant::now();
+        let wanted = || Some(activity("Echoes", 0));
+
+        showing.show(app(FIRST_APP), wanted(), started);
+        discord.hear();
+        discord.hear();
+        discord.hang_up();
+        let lost_at = started + SENDS_APART;
+        showing.show(app(FIRST_APP), wanted(), lost_at);
+
+        assert!(!is_open(&showing));
+        assert_eq!(retry_at(&showing), Some(lost_at + RETRY_AFTER_AT_FIRST));
+        showing.show(app(FIRST_APP), wanted(), lost_at + RETRY_AFTER_AT_FIRST / 2);
+        assert_eq!(finds.load(Ordering::Relaxed), 1);
+
+        showing.show(app(FIRST_APP), wanted(), lost_at + RETRY_AFTER_AT_FIRST);
+
+        assert!(is_open(&showing));
+        assert_eq!(finds.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            discord.hear(),
+            Said::Handshake {
+                connection: 1,
+                client_id: FIRST_APP.to_owned()
+            }
+        );
+        assert_eq!(
+            discord.hear(),
+            Said::Activity {
+                connection: 1,
+                details: Some("Echoes".to_owned())
+            }
+        );
+    }
 
     const RELEASE: &str = "0A7F4B1C-2D3E-4F50-8A6B-7C8D9E0F1A2B";
     const GROUP: &str = "11111111-2222-3333-4444-555555555555";
