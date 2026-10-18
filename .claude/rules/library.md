@@ -671,7 +671,12 @@ rows read via `Player::media` like any unscanned row.
   the top hit is strict but for count and names a group. `settle_group` → `closest_release` answers
   a pressing and a `Fit`: `Exact` (`track_count` = `declared_count`), else `Wider` (smallest
   pressing with more tracks than the album), else `Narrower` (widest with no more); earliest dated
-  among equals; `land_release` then runs on it. Rows the rip lacks are release rows with no
+  among equals; `land_release` then runs on it. **The fit is kept**: `albums.pressing_fit` (NULL
+  exact, `Fit::stored` otherwise) is written by every landing as its `enrich::Pressing` says:
+  `Fitted` from `settle_group` (`Exact` from a strict release hit, a pressing the listener chose,
+  `Library::land_release`), `AsHeld` from the album's own `albums.mbid` and a recording's release,
+  which keeps the stored fit where the id is the one landed and is exact otherwise, so a refresh
+  never turns a closest pressing into a match (`a_closest_pressing_is_kept_as_one_until_a_pressing_that_matches_lands`). Rows the rip lacks are release rows with no
   `track_id`, so `Album::missing` counts them and the Missing pane lists them. Only where no group
   pressing declares a count does `take_group` run `land_release_group`, deliberately thin
   (`albums.release_group`, `kind`, `date`, `year`, `disambiguation` coalesced; no `albums.mbid`, no
@@ -930,7 +935,13 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 - **A guess is never written: a name goes only where a lookup answered for its row.** `tracks.title`
   falls back to the stem, `albums.title` to whatever grouped the folder. `offered` gates track name
   and artist on `tracks.answered`; album name and its two totals on `albums.answered` (offering
-  `albums.release_title`, never `albums.title`); album artist, its id and sort name on the
+  `albums.release_title`, never `albums.title`); **a closest pressing is not written as a match**:
+  where `albums.pressing_fit` is set the totals and what names the pressing (`albums.mbid`,
+  catalog number, barcode) are withheld, the album name, release group, date and label still go,
+  so a 14-track rip on a 12-track pressing never reads `TRACKTOTAL=12` and the next enrichment
+  does not take the pressing's id off the files as the album's own
+  (`a_closest_pressing_names_the_album_but_never_its_totals_or_its_identity`,
+  `an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one`); album artist, its id and sort name on the
   *artist's* own `answered` (`land_release` never repoints `albums.artist_id`). Identifiers go
   whatever answered: `tracks.mbid`, `release_track_mbid`, `artist_mbid`, `isrc`, `albums.mbid`,
   `release_group`, what the tags declared about the pressing.

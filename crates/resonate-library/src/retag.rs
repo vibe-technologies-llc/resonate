@@ -305,6 +305,7 @@ pub(crate) struct TrackToTag {
     pub label: Option<String>,
     pub catalog_number: Option<String>,
     pub barcode: Option<String>,
+    pub pressing_fitted: bool,
     pub track_total: Option<u32>,
     pub disc_total: Option<u32>,
     pub popularity: Popularity,
@@ -501,6 +502,8 @@ fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
 
     if row.album_answered {
         offer(&mut offered, TagField::Album, row.album.as_deref());
+    }
+    if row.album_answered && !row.pressing_fitted {
         counted(&mut offered, TagField::TrackTotal, row.track_total);
         counted(&mut offered, TagField::DiscTotal, row.disc_total);
     }
@@ -525,23 +528,25 @@ fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
 
     offer(
         &mut offered,
-        TagField::MusicBrainzAlbumId,
-        row.album_mbid.as_deref(),
-    );
-    offer(
-        &mut offered,
         TagField::MusicBrainzReleaseGroupId,
         row.release_group.as_deref(),
     );
     offer(&mut offered, TagField::Date, row.date.as_deref());
     offer(&mut offered, TagField::Label, row.label.as_deref());
-    offer(
-        &mut offered,
-        TagField::CatalogNumber,
-        row.catalog_number.as_deref(),
-    );
-    offer(&mut offered, TagField::Barcode, row.barcode.as_deref());
+    if !row.pressing_fitted {
+        offer_the_pressing(&mut offered, row);
+    }
     offered
+}
+
+fn offer_the_pressing(into: &mut Vec<(TagField, String)>, row: &TrackToTag) {
+    offer(
+        into,
+        TagField::MusicBrainzAlbumId,
+        row.album_mbid.as_deref(),
+    );
+    offer(into, TagField::CatalogNumber, row.catalog_number.as_deref());
+    offer(into, TagField::Barcode, row.barcode.as_deref());
 }
 
 fn offer(into: &mut Vec<(TagField, String)>, field: TagField, value: Option<&str>) {
@@ -1371,6 +1376,7 @@ mod tests {
             label: None,
             catalog_number: None,
             barcode: None,
+            pressing_fitted: false,
             track_total: Some(6),
             disc_total: Some(1),
             popularity: Popularity::default(),
@@ -1491,6 +1497,48 @@ mod tests {
         let named = fields(&wanted(&row, &TagSet::default()));
         assert!(!named.contains(&TagField::Title), "{named:?}");
         assert!(!named.contains(&TagField::Artist), "{named:?}");
+    }
+
+    #[test]
+    fn a_closest_pressing_names_the_album_but_never_its_totals_or_its_identity() {
+        let fitted = TrackToTag {
+            pressing_fitted: true,
+            release_group: Some("5f2a8b8c-0d9e-4b1f-8a3c-6d7e8f9a0b1c".to_owned()),
+            catalog_number: Some("SHVL 795".to_owned()),
+            barcode: Some("077774638521".to_owned()),
+            track_number: Some(13),
+            ..row()
+        };
+
+        let withholding: Vec<TagField> = offered(&fitted)
+            .into_iter()
+            .map(|(field, _)| field)
+            .collect();
+        let matched: Vec<TagField> = offered(&TrackToTag {
+            pressing_fitted: false,
+            ..fitted.clone()
+        })
+        .into_iter()
+        .map(|(field, _)| field)
+        .collect();
+
+        for withheld in [
+            TagField::TrackTotal,
+            TagField::DiscTotal,
+            TagField::MusicBrainzAlbumId,
+            TagField::CatalogNumber,
+            TagField::Barcode,
+        ] {
+            assert!(!withholding.contains(&withheld), "{withheld:?} was offered");
+            assert!(matched.contains(&withheld), "{withheld:?} was not offered");
+        }
+        for kept in [
+            TagField::Album,
+            TagField::MusicBrainzReleaseGroupId,
+            TagField::TrackNumber,
+        ] {
+            assert!(withholding.contains(&kept), "{kept:?} was not offered");
+        }
     }
 
     #[test]

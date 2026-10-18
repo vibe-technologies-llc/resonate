@@ -9,7 +9,10 @@ use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
     AlbumMatch, ByArtist, Column, Credit, Error, Issued, Mbid, RecordingMatch, RecordingRelease,
-    Release, Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, linked::LENGTHS_AGREE_WITHIN,
+    Release, Result, Search, StoreOp,
+    enrich::{self, SOUNDTRACK},
+    enriched,
+    linked::LENGTHS_AGREE_WITHIN,
     spelt_alike, store,
 };
 
@@ -674,7 +677,13 @@ pub(crate) fn album_of_release(
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
     let album = AlbumId::new(id as u64)?;
-    enriched::land_release(tx, album, release, now)?;
+    enriched::land_release(
+        tx,
+        album,
+        release,
+        enrich::Pressing::Fitted(enrich::Fit::Exact),
+        now,
+    )?;
 
     Ok(album)
 }
