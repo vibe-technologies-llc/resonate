@@ -910,6 +910,10 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   ID and refresh token. Every provider is on until switched off. **The boundary races them**, so
   `every` is the desktop's registration order (Subsonic, TIDAL, hifi-api, Monochrome) and accounts
   are passed in it: the desktop has no order of the listener's, so neither does the phone.
+  *Sign in with TIDAL* shows the code and its link while `finish_tidal_authorization` waits on
+  `Work.aside`, with *Cancel sign-in* beside it: `cancelTidalAuthorization` calls
+  `cancel_tidal_authorization` (`mobile.md`'s *TIDAL sign-in*), frees the button at once and steps
+  `tidalRequest`, so whatever the cancelled attempt answers later is dropped.
 - **Accounts are one keychain item**: `download-accounts`, a JSON list of every provider's account
   (provider name, server, user, password, client ID, secret, refresh token); the switched-off
   providers are `download-providers-off` in `library-features`. The single account older builds

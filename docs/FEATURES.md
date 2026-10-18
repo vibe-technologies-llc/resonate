@@ -56,9 +56,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   though sync seals its records: neither matters under free signing, both before any distribution
 - [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
   caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
-- [S] TIDAL sign-in on iOS has no Cancel: `authorizeTidal` blocks in `finish_tidal_authorization`
-  until the code is approved or lapses, and the button stays disabled throughout, though the seam
-  cancels on `Ok(None)`
 - [S] iOS online search answers nothing under three characters (`OnlineAsked.chain`): *U2*, *XX* or
   a two-character CJK name cannot be searched, where the boundary and desktop have no floor
 - [S] The iOS lock-screen cover is the 384 px `.card` image whatever size the system asks

@@ -45,8 +45,15 @@ pub(crate) struct Downloads {
     next: AtomicU64,
     parkings: AtomicU64,
     offer_held_for: OfferHeldFor,
-    authorizing: Mutex<Option<(Client, Authorizing)>>,
+    authorizing: Mutex<Option<SigningIn>>,
+    sign_ins: AtomicU64,
     refreshed: Arc<Mutex<Option<String>>>,
+}
+
+struct SigningIn {
+    attempt: u64,
+    client: Client,
+    authorizing: Authorizing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -387,6 +394,46 @@ impl Downloads {
         for job in self.jobs.lock().values() {
             job.cancel();
         }
+    }
+
+    fn sign_in_asked(&self) -> u64 {
+        self.sign_ins.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    fn sign_in_began(&self, attempt: u64, client: Client, authorizing: Authorizing) {
+        let mut slot = self.authorizing.lock();
+        if self.sign_ins.load(Ordering::Acquire) == attempt {
+            *slot = Some(SigningIn {
+                attempt,
+                client,
+                authorizing,
+            });
+        }
+    }
+
+    fn cancel_sign_in(&self) {
+        self.sign_ins.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn signed_in(
+        &self,
+        signs_in: &dyn SignsIn,
+        unreached: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Option<String>> {
+        let SigningIn {
+            attempt,
+            client,
+            authorizing,
+        } = self
+            .authorizing
+            .lock()
+            .take()
+            .ok_or(Error::DownloadExpired)?;
+        let ended = || self.sign_ins.load(Ordering::Acquire) != attempt || unreached();
+        signs_in
+            .authorized(&client, &authorizing, &ended)
+            .map(|token| token.map(|token| token.into_string()))
+            .map_err(|source| failure_of(MusicProvider::Tidal, &source))
     }
 
     fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
@@ -788,6 +835,7 @@ impl MobilePlayer {
 
     pub fn authorize_tidal(&self, client_id: String, secret: String) -> Result<TidalAuthorization> {
         self.require_online()?;
+        let attempt = self.downloads.sign_in_asked();
         let client = Client {
             id: client_id,
             secret: (!secret.is_empty()).then_some(secret),
@@ -799,24 +847,20 @@ impl MobilePlayer {
             user_code: authorizing.user_code.clone(),
             verify_at: authorizing.verify_at.clone(),
         };
-        *self.downloads.authorizing.lock() = Some((client, authorizing));
+        self.downloads.sign_in_began(attempt, client, authorizing);
         Ok(request)
     }
 
     pub fn finish_tidal_authorization(&self) -> Result<Option<String>> {
         self.require_online()?;
-        let (client, authorizing) = self
-            .downloads
-            .authorizing
-            .lock()
-            .take()
-            .ok_or(Error::DownloadExpired)?;
-        resonate_tidal::TidalSignIn::at(resonate_tidal::Endpoints::tidal())
-            .authorized(&client, &authorizing, &|| {
-                !self.services.online.client().is_reaching()
-            })
-            .map(|token| token.map(|token| token.into_string()))
-            .map_err(|source| failure_of(MusicProvider::Tidal, &source))
+        self.downloads.signed_in(
+            &resonate_tidal::TidalSignIn::at(resonate_tidal::Endpoints::tidal()),
+            &|| !self.services.online.client().is_reaching(),
+        )
+    }
+
+    pub fn cancel_tidal_authorization(&self) {
+        self.downloads.cancel_sign_in();
     }
 
     pub fn refreshed_tidal_token(&self) -> Option<String> {
@@ -1326,5 +1370,82 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(cancelled_path);
+    }
+
+    fn unreached_tidal() -> resonate_tidal::TidalSignIn {
+        let unreached = unreached_address();
+        resonate_tidal::TidalSignIn::at(resonate_tidal::Endpoints {
+            auth: unreached.clone(),
+            device: unreached,
+            ..resonate_tidal::Endpoints::tidal()
+        })
+    }
+
+    fn waiting_for_a_code() -> Authorizing {
+        Authorizing::new(
+            "ABCDE".to_owned(),
+            "https://link.tidal.com/ABCDE".to_owned(),
+            Duration::from_secs(300),
+            Duration::from_secs(30),
+            "device".to_owned(),
+        )
+    }
+
+    fn tidal_client() -> Client {
+        Client {
+            id: "client".to_owned(),
+            secret: None,
+        }
+    }
+
+    #[test]
+    fn a_sign_in_cancelled_while_its_code_was_asked_for_is_never_waited_for() {
+        let downloads = Downloads::default();
+        let tidal = unreached_tidal();
+
+        let attempt = downloads.sign_in_asked();
+        downloads.cancel_sign_in();
+        downloads.sign_in_began(attempt, tidal_client(), waiting_for_a_code());
+        let answer = downloads.signed_in(&tidal, &|| false);
+
+        assert!(matches!(answer, Err(Error::DownloadExpired)));
+    }
+
+    #[test]
+    fn a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone() {
+        let downloads = Downloads::default();
+
+        let cancelled = downloads.sign_in_asked();
+        downloads.cancel_sign_in();
+        let again = downloads.sign_in_asked();
+        downloads.sign_in_began(again, tidal_client(), waiting_for_a_code());
+        downloads.sign_in_began(cancelled, tidal_client(), waiting_for_a_code());
+        let kept = downloads
+            .authorizing
+            .lock()
+            .as_ref()
+            .map(|signing| signing.attempt);
+
+        assert_eq!(kept, Some(again));
+    }
+
+    #[test]
+    fn a_cancel_ends_a_sign_in_waiting_for_its_code() {
+        let downloads = Downloads::default();
+        let tidal = unreached_tidal();
+
+        let attempt = downloads.sign_in_asked();
+        downloads.sign_in_began(attempt, tidal_client(), waiting_for_a_code());
+        let began = Instant::now();
+        let answer = thread::scope(|scope| {
+            scope.spawn(|| {
+                thread::sleep(Duration::from_millis(200));
+                downloads.cancel_sign_in();
+            });
+            downloads.signed_in(&tidal, &|| false)
+        });
+
+        assert!(matches!(answer, Ok(None)));
+        assert!(began.elapsed() < Duration::from_secs(5));
     }
 }

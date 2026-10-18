@@ -161,6 +161,16 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   the engine parks, not a blocked engine thread, and the late unit is disposed by its own thread.
 - **Elsewhere** (host tests): PipeWire through `Player::with_sources`.
 
+## TIDAL sign-in
+
+`authorize_tidal` asks TIDAL for a device code and `finish_tidal_authorization` waits for it on the
+caller's thread, as the seam's `SignsIn::authorized` does. Each `authorize_tidal` is an attempt
+numbered before anything is asked (`Downloads::sign_ins`); `cancel_tidal_authorization` moves the
+number on, so the wait's cancel (`Ok(None)`, heard within the seam's `LOOKED_AT_EVERY`) ends it, and
+an attempt cancelled while its code was still being asked never stores the code a later attempt
+would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone`,
+`a_cancel_ends_a_sign_in_waiting_for_its_code`).
+
 ## Reading document rows
 
 `catalog::read` takes a document row by position, the V1 and V2 columns in order; a migration only

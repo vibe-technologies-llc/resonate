@@ -397,6 +397,9 @@ struct ProviderFields: View {
             SecureField("Refresh token", text: $account.refreshToken)
             Button(features.tidalBusy ? "Waiting for TIDAL…" : "Sign in with TIDAL") { features.authorizeTidal(account.trimmed) }
                 .disabled(account.clientId.trimmingCharacters(in: .whitespaces).isEmpty || features.tidalBusy)
+            if features.tidalBusy {
+                Button("Cancel sign-in", role: .cancel) { features.cancelTidalAuthorization() }
+            }
             if let request = features.tidalAuthorization {
                 Text("Enter code: \(request.userCode)").font(.title3.weight(.semibold)).textSelection(.enabled)
                 Button("Open TIDAL authorization") {

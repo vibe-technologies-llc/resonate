@@ -138,6 +138,7 @@ final class Features {
     @ObservationIgnored private var lyricRequest = 0
     @ObservationIgnored private var playlistRequest = 0
     @ObservationIgnored private var searchRequest = 0
+    @ObservationIgnored private var tidalRequest = 0
     @ObservationIgnored private var onlinePending: Task<Void, Never>?
     @ObservationIgnored private var onlineAnswers = OnlineAnswers()
     @ObservationIgnored private var submitting: Task<Void, Never>?
@@ -1322,23 +1323,35 @@ final class Features {
     func authorizeTidal(_ account: DownloadAccount) {
         guard !tidalBusy else { return }
         tidalBusy = true
+        tidalRequest += 1
+        let request = tidalRequest
         work({ [weak self] native in
             let authorization = try await Work.aside {
                 try native.authorizeTidal(clientId: account.clientId, secret: account.clientSecret)
             }
-            self?.tidalAuthorization = authorization
-            guard let token = try await Work.aside({ try native.finishTidalAuthorization() }) else { return }
+            guard let self, tidalRequest == request else { return }
+            tidalAuthorization = authorization
+            let answer = try await Work.aside { try native.finishTidalAuthorization() }
+            guard let token = answer, tidalRequest == request else { return }
 
             var updated = account
             updated.refreshToken = token
 
-            guard let self else { return }
             try await keepProviderAccount(updated)
             library.notice("Signed in to TIDAL")
         }, finally: { [weak self] in
-            self?.tidalBusy = false
-            self?.tidalAuthorization = nil
+            guard let self, tidalRequest == request else { return }
+            tidalBusy = false
+            tidalAuthorization = nil
         })
+    }
+
+    func cancelTidalAuthorization() {
+        guard tidalBusy else { return }
+        tidalRequest += 1
+        tidalBusy = false
+        tidalAuthorization = nil
+        work { native in try await Work.aside { native.cancelTidalAuthorization() } }
     }
 
     func saveProviderAccount(_ account: DownloadAccount) {
