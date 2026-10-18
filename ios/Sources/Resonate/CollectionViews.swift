@@ -26,8 +26,6 @@ struct LibraryView: View {
         let asked = playlistsOnly ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
         let folded = asked.searchFolded
         let answered = !asked.isEmpty && shelfSearch.hasAnswer
-        let tracks = library.allTracks
-        let favourites = library.favouriteTracks
         let playlists = library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) }
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
@@ -46,17 +44,17 @@ struct LibraryView: View {
             }
             if playlistsOnly || shelf == .all || shelf == .playlists, folded.isEmpty || "favourites".contains(folded) {
                 NavigationLink(value: Destination.favourites) {
-                    PinnedFavouritesRow(count: favourites.count)
+                    FavouritesCountRow()
                 }
             }
             if !playlistsOnly, shelf == .all, folded.isEmpty {
                 Button {
-                    if library.filtering { library.setFilter(defaultTrackFilter()) }
+                    if library.filtering { library.setFilter(Library.everything) }
                     navigation.songsGrouping = .songs
                     navigation.paths[.songs] = []
                     navigation.tab = .songs
                 } label: {
-                    AllSongsRow(count: tracks.count)
+                    SongsCountRow()
                 }
                 .buttonStyle(.plain)
                 NavigationLink(value: Destination.suggestions) {
@@ -975,5 +973,21 @@ struct CollectionActions: ViewModifier {
 extension View {
     func collectionActions(_ source: CollectionSource, artist: String? = nil) -> some View {
         modifier(CollectionActions(source: source, artist: artist))
+    }
+}
+
+private struct FavouritesCountRow: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        PinnedFavouritesRow(count: library.favouriteTracks.count)
+    }
+}
+
+private struct SongsCountRow: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        AllSongsRow(count: library.catalogCount)
     }
 }

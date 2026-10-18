@@ -288,7 +288,7 @@ struct RefreshArtworkRow: View {
     var body: some View {
         let features = library.features
         let enrichment = features.enrichment
-        let songs = library.allTracks.count
+        let songs = library.catalogCount
         HStack {
             Button { confirming = true } label: {
                 ToolRow(

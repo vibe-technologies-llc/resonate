@@ -6,6 +6,10 @@ enum Work {
         label: "org.resonate.ordered",
         qos: .userInitiated
     )
+    private static let savingQueue = DispatchQueue(
+        label: "org.resonate.saving",
+        qos: .utility
+    )
     private static let libraryQueue = DispatchQueue(
         label: "org.resonate.library",
         qos: .userInitiated
@@ -43,6 +47,12 @@ enum Work {
 
     static func enqueueInOrder(_ body: @escaping @Sendable () -> Void) {
         orderedQueue.async(execute: body)
+    }
+
+    static func inSaving(_ body: @escaping @Sendable () throws -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            savingQueue.async { continuation.resume(with: Result { try body() }) }
+        }
     }
 
     static func inSession<Value: Sendable>(

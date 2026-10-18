@@ -40,6 +40,16 @@ final class PlayClock {
     }
 }
 
+@MainActor
+@Observable
+final class FavouriteFlag {
+    var on: Bool
+
+    init(_ on: Bool) {
+        self.on = on
+    }
+}
+
 struct FavouriteWrite: Equatable {
     let value: Bool
     let serial: Int
@@ -67,7 +77,13 @@ struct CatalogChanges: Sendable {
     let catalog: CatalogShown?
     let listedRuns: [LetterRun]?
 
-    init(_ rows: [Track], shown: [Track], listed: [Track]?, titled: Bool) {
+    init(_ read: [Track], writes: [UInt64: Bool], shown: [Track], listed: [Track]?, titled: Bool) {
+        let rows = writes.isEmpty ? read : read.map { row in
+            guard let value = writes[row.id], value != row.favourite else { return row }
+            var row = row
+            row.favourite = value
+            return row
+        }
         self.rows = rows
         catalog = rows == shown ? nil : CatalogShown(rows)
         listedRuns = listed.flatMap { listed in
@@ -81,6 +97,24 @@ enum PollPart: Hashable {
     case snapshot
     case queue
     case save
+}
+
+struct SongsListed: Sendable {
+    let rows: [Track]
+    let runs: [LetterRun]
+
+    init?(_ rows: [Track], shown: [Track], titled: Bool) {
+        guard rows != shown else { return nil }
+        self.rows = rows
+        runs = titled ? LetterRun.runs(of: rows, named: \.shownTitle) : []
+    }
+}
+
+struct CollectionsListed: Sendable {
+    let albums: [AlbumHit]
+    let artists: [ArtistHit]
+    let albumRuns: [LetterRun]
+    let artistRuns: [LetterRun]
 }
 
 struct QueueListed: Equatable {
@@ -164,14 +198,11 @@ final class Library {
     private(set) var tracksRead = false
     private(set) var catalogRead = false
     private(set) var catalogEpoch = 0
+    private(set) var catalogCount = 0
     private(set) var artworkTracks: [UInt64: Track] = [:]
-    private(set) var albums: [AlbumHit] = [] {
-        didSet { albumRuns = Self.runs(of: albums, in: collectionOrder) }
-    }
+    private(set) var albums: [AlbumHit] = []
     private(set) var albumRuns: [LetterRun] = []
-    private(set) var artists: [ArtistHit] = [] {
-        didSet { artistRuns = Self.runs(of: artists, in: collectionOrder) }
-    }
+    private(set) var artists: [ArtistHit] = []
     private(set) var artistRuns: [LetterRun] = []
     private(set) var collectionGeneration = 0
     var collectionOrder = CollectionOrder.alphabetical {
@@ -200,7 +231,8 @@ final class Library {
     var route: OutputRoute?
     var routeReading = RouteReading.unread
     var boundRoutes: [OutputRoute] = []
-    var filter: TrackFilter = defaultTrackFilter()
+    nonisolated static let everything = defaultTrackFilter()
+    var filter: TrackFilter = Library.everything
     var folderList: [MusicFolder] = [] {
         didSet {
             guard folderList != oldValue else { return }
@@ -211,7 +243,8 @@ final class Library {
     private(set) var currentQueueId: UInt64? {
         didSet { findPlayingRow() }
     }
-    private(set) var favouriteIds: Set<UInt64> = []
+    @ObservationIgnored private var favouriteIds: Set<UInt64> = []
+    @ObservationIgnored private var favouriteFlags: [UInt64: FavouriteFlag] = [:]
     private(set) var favouriteTracks: [Track] = [] {
         didSet { favouriteEpoch &+= 1 }
     }
@@ -227,6 +260,14 @@ final class Library {
     @ObservationIgnored private let actions: AsyncStream<NativeAction>
     @ObservationIgnored private let enqueue: AsyncStream<NativeAction>.Continuation
     @ObservationIgnored private var polling: Task<Void, Never>?
+    @ObservationIgnored private var queueReading: Task<Void, Never>?
+    @ObservationIgnored private var queueListed: QueueListed?
+    @ObservationIgnored private var queueUnreadable: QueueListed?
+    @ObservationIgnored private var queueReadAt = ContinuousClock.now
+    @ObservationIgnored private var volumeSending = false
+    @ObservationIgnored private var volumeOwed: Float?
+    @ObservationIgnored private var refreshing: Task<Void, Never>?
+    @ObservationIgnored private var refreshOwed = false
     @ObservationIgnored private var scanTask: Task<Void, Never>?
     @ObservationIgnored private var catalogWhole = false
     @ObservationIgnored private var catalogWaiting: [CheckedContinuation<Void, Never>] = []
@@ -293,11 +334,14 @@ final class Library {
         openingFailure = nil
         polling = Task { [weak self] in
             do {
-                let opened = try await Work.inOrder {
+                async let opening = Work.inOrder {
                     try MobilePlayer(folder: folder, documents: documents)
                 }
+                async let routed = Work.inSession { OutputRoute.current }
+                let opened = try await opening
+                let current = await routed
                 guard let self else { return }
-                route = await Work.inSession { OutputRoute.current }
+                route = current
                 boundRoutes = preferencesStore.boundRoutes()
                 let stored = preferencesStore.read(for: route)
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
@@ -344,64 +388,71 @@ final class Library {
 
     private func poll(_ native: MobilePlayer) async {
         var lastSaved = ContinuousClock.now
-        var listed: QueueListed?
-        var unreadable: QueueListed?
-        var readAt = ContinuousClock.now
+        queueListed = nil
+        queueUnreadable = nil
         while !Task.isCancelled {
             var wait = Self.pollBusy
-            let saving = lastSaved.duration(to: .now) >= Self.savedEvery
             let steeringAsked = steering.asked
             let steeringSettled = steering.settled
-            let queueAsked = queueSettling.asked
-            let queueSettled = queueSettling.settled
-            let known = listed
-            let refused = unreadable
+            if lastSaved.duration(to: .now) >= Self.savedEvery {
+                lastSaved = .now
+                save(native)
+            }
             do {
-                let (state, saved) = try await Work.inOrder {
-                    let state = try native.snapshot()
-                    let saved: Result<Void, any Swift.Error>? = saving ? Result { try native.save() } : nil
-                    return (state, saved)
-                }
-                if saving { lastSaved = .now }
+                let state = try await Work.inOrder { try native.snapshot() }
                 wait = pollInterval(foreground: features.foreground, state: state, analysing: features.analysisBusy)
-                let wanted = QueueListed(state)
-                let rows = wanted.isDue(after: refused ?? known, since: readAt) ? await Self.read(queueOf: native, shown: queue) : nil
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
-                let queueFresh = queueSettled && queueSettling.asked == queueAsked
 
                 pollFailures[.snapshot] = nil
                 if steeringFresh { steered = Steered() }
                 publish(steeringFresh ? state : steered.applied(to: state))
-                switch rows {
-                case .success(let read):
-                    pollFailures[.queue] = nil
-                    unreadable = nil
-                    if queueFresh {
-                        if let read { queue = read }
-                        listed = QueueListed(state)
-                        readAt = .now
-                    }
-                case .failure(let error):
-                    reportPolling(.queue, error)
-                    unreadable = QueueListed(state)
-                    readAt = .now
-                case nil:
-                    break
-                }
-                switch saved {
-                case .success:
-                    pollFailures[.save] = nil
-                case .failure(let error):
-                    reportPolling(.save, error)
-                case nil:
-                    break
-                }
+                listQueue(of: native, as: state)
                 nowPlaying.update(state)
                 await features.tick(native, state)
             } catch {
                 reportPolling(.snapshot, error)
             }
             await sleepBetweenPolls(wait)
+        }
+    }
+
+    private func save(_ native: MobilePlayer) {
+        Task {
+            do {
+                try await Work.inSaving { try native.save() }
+                pollFailures[.save] = nil
+            } catch {
+                reportPolling(.save, error)
+            }
+        }
+    }
+
+    private func listQueue(of native: MobilePlayer, as state: Snapshot) {
+        let wanted = QueueListed(state)
+        guard queueReading == nil, wanted.isDue(after: queueUnreadable ?? queueListed, since: queueReadAt) else { return }
+        let asked = queueSettling.asked
+        let settled = queueSettling.settled
+        let shown = queue
+
+        queueReading = Task {
+            let rows = await Self.read(queueOf: native, shown: shown)
+            queueReading = nil
+            switch rows {
+            case .success(let read):
+                pollFailures[.queue] = nil
+                queueUnreadable = nil
+                guard settled, queueSettling.asked == asked else {
+                    nudgePoll()
+                    return
+                }
+                if let read { queue = read }
+                queueListed = wanted
+                queueReadAt = .now
+            case .failure(let error):
+                reportPolling(.queue, error)
+                queueUnreadable = wanted
+                queueReadAt = .now
+            }
         }
     }
 
@@ -438,12 +489,21 @@ final class Library {
 
     private static func read(queueOf native: MobilePlayer, shown: [Track]) async -> Result<[Track]?, any Swift.Error> {
         do {
-            return .success(try await Work.aside {
+            return .success(try await Work.onScreen {
                 let read = try native.queue()
-                return read == shown ? nil : read
+                return Library.sameRows(read, shown) ? nil : read
             })
         } catch {
             return .failure(error)
+        }
+    }
+
+    nonisolated static func sameRows(_ read: [Track], _ shown: [Track]) -> Bool {
+        read.count == shown.count && zip(read, shown).allSatisfy { read, shown in
+            guard read.favourite != shown.favourite else { return read == shown }
+            var read = read
+            read.favourite = shown.favourite
+            return read == shown
         }
     }
 
@@ -553,12 +613,27 @@ final class Library {
     }
 
     func isFavourite(_ track: Track) -> Bool {
-        catalogIndex[track.id] != nil ? favouriteIds.contains(track.id) : track.favourite
+        guard catalogIndex[track.id] != nil else { return track.favourite }
+        return favouriteFlag(of: track.id).on
+    }
+
+    private func favouriteFlag(of id: UInt64) -> FavouriteFlag {
+        if let kept = favouriteFlags[id] { return kept }
+        let made = FavouriteFlag(favouriteIds.contains(id))
+        favouriteFlags[id] = made
+        return made
+    }
+
+    private func flagFavourites() {
+        for (id, flag) in favouriteFlags {
+            let on = favouriteIds.contains(id)
+            if flag.on != on { flag.on = on }
+        }
     }
 
     func track(_ id: UInt64) -> Track? {
-        if let playingTrack, playingTrack.id == id { return playingTrack }
         if let at = catalogIndex[id] { return allTracks[at] }
+        if let playingTrack, playingTrack.id == id { return playingTrack }
         return queue.first { $0.id == id }
             ?? features.playlistRows.first { $0.id == id }
             ?? features.statistics?.topTracks.first { $0.id == id }
@@ -569,11 +644,16 @@ final class Library {
         catalogIndex = catalog.index
         allTracks = catalog.rows
         artworkTracks = catalog.artwork
-        if favouriteIds != catalog.favouriteIds { favouriteIds = catalog.favouriteIds }
+        if catalogCount != catalog.rows.count { catalogCount = catalog.rows.count }
+        if favouriteIds != catalog.favouriteIds {
+            favouriteIds = catalog.favouriteIds
+            flagFavourites()
+        }
         if favouriteTracks != catalog.favourites { favouriteTracks = catalog.favourites }
     }
 
     private func keepFavourite(_ track: Track, at place: Int) {
+        favouriteFlags[track.id]?.on = track.favourite
         guard track.favourite else {
             favouriteIds.remove(track.id)
             if let at = favouriteTracks.firstIndex(where: { $0.id == track.id }) { favouriteTracks.remove(at: at) }
@@ -723,9 +803,13 @@ final class Library {
 
     func rereadQueue() async {
         guard let native = try? await player() else { return }
+        let shown = queue
         do {
-            let rows = try await Work.aside { try native.queue() }
-            if queueSettling.settled { queue = rows }
+            let rows = try await Work.onScreen {
+                let read = try native.queue()
+                return Library.sameRows(read, shown) ? nil : read
+            }
+            if queueSettling.settled, let rows { queue = rows }
         } catch {
             report(error)
         }
@@ -740,7 +824,7 @@ final class Library {
             } else if let done {
                 notice(done)
             }
-            Task { await rereadQueue() }
+            nudgePoll()
         }
     }
 
@@ -768,8 +852,8 @@ final class Library {
     }
 
     private func markFavourite(_ id: UInt64, _ favourite: Bool) {
-        func marked(_ rows: [Track]) -> [Track] {
-            guard rows.contains(where: { $0.id == id && $0.favourite != favourite }) else { return rows }
+        func marked(_ rows: [Track]) -> [Track]? {
+            guard rows.contains(where: { $0.id == id && $0.favourite != favourite }) else { return nil }
             return rows.map { row in
                 var row = row
                 if row.id == id { row.favourite = favourite }
@@ -783,18 +867,36 @@ final class Library {
             keepFavourite(marked, at: at)
         }
         if filter.favourites, !favourite { tracks = tracks.filter { $0.id != id } }
-        queue = marked(queue)
-        if snapshot?.current?.id == id { snapshot?.current?.favourite = favourite }
-        features.playlistRows = marked(features.playlistRows)
-        if let top = features.statistics?.topTracks { features.statistics?.topTracks = marked(top) }
+        if catalogIndex[id] == nil, let rows = marked(queue) { queue = rows }
+        if let rows = marked(features.playlistRows) { features.playlistRows = rows }
+        if let top = features.statistics?.topTracks, let rows = marked(top) { features.statistics?.topTracks = rows }
         if features.inspector?.track.id == id { features.inspector?.track.favourite = favourite }
+        guard snapshot?.current?.id == id else { return }
+        snapshot?.current?.favourite = favourite
         nowPlaying.favouriteChanged()
     }
 
     func setVolume(_ level: Float) {
         volume = level
-        preferencesStore.volume = level
-        request { try $0.setVolume(volume: level) }
+        guard !volumeSending else {
+            volumeOwed = level
+            return
+        }
+        send(volume: level)
+    }
+
+    private func send(volume level: Float) {
+        volumeSending = true
+        attempt({ try $0.setVolume(volume: level) }) { [self] failure in
+            volumeSending = false
+            if let failure { report(failure) }
+            if let owed = volumeOwed {
+                volumeOwed = nil
+                send(volume: owed)
+            } else {
+                preferencesStore.volume = level
+            }
+        }
     }
 
     func updatePreferences(_ change: @escaping @Sendable (PlaybackPreferences) -> PlaybackPreferences) {
@@ -845,8 +947,8 @@ final class Library {
 
     var scanShown: Bool { scanning && (scanTold || scanned > 0) }
 
-    var catalogEmpty: Bool { catalogRead && allTracks.isEmpty && !scanning }
-    var filtering: Bool { filter != defaultTrackFilter() }
+    var catalogEmpty: Bool { catalogRead && catalogCount == 0 && !scanning }
+    var filtering: Bool { filter != Self.everything }
 
     func artworkTrack(_ id: UInt64) -> Track? {
         artworkTracks[id]
@@ -859,10 +961,27 @@ final class Library {
     }
 
     func refresh() async {
+        if let refreshing {
+            refreshOwed = true
+            await refreshing.value
+            return
+        }
+        let reading = Task {
+            repeat {
+                refreshOwed = false
+                await readCatalog()
+            } while refreshOwed
+            refreshing = nil
+        }
+        refreshing = reading
+        await reading.value
+    }
+
+    private func readCatalog() async {
         guard let native = try? await player() else { return }
         catalogRequest += 1
         let request = catalogRequest
-        let everything = defaultTrackFilter()
+        let everything = Self.everything
 
         reloadCollections()
         if filtering {
@@ -874,7 +993,7 @@ final class Library {
         }
 
         do {
-            let first = try await Work.aside { try native.filteredTracks(filter: everything, offset: 0, limit: Library.page) }
+            let first = try await Work.onScreen { try native.filteredTracks(filter: everything, offset: 0, limit: Library.page) }
             guard request == catalogRequest else { return }
             if !catalogRead || first.count < Library.page {
                 await publishCatalog(first, request: request)
@@ -884,9 +1003,9 @@ final class Library {
                 return
             }
 
-            let rest = try await Work.aside { try Library.pages(native, everything, from: Library.page) }
+            let whole = try await Work.onScreen { first + (try Library.pages(native, everything, from: Library.page)) }
             guard request == catalogRequest else { return }
-            await publishCatalog(first + rest, request: request)
+            await publishCatalog(whole, request: request)
             caughtUpWithCatalog()
         } catch {
             report(error)
@@ -934,23 +1053,15 @@ final class Library {
         }
     }
 
-    private func settled(_ rows: [Track], request: Int) -> [Track] {
-        favouriteWrites = favouriteWrites.filter { ($0.value.answeredAfter ?? .max) >= request }
-        guard !favouriteWrites.isEmpty else { return rows }
-        return rows.map { row in
-            guard let write = favouriteWrites[row.id], write.value != row.favourite else { return row }
-            var row = row
-            row.favourite = write.value
-            return row
-        }
-    }
-
     private func publishCatalog(_ read: [Track], request: Int) async {
         let asked = catalogChanges(read, request: request)
         let writes = favouriteWrites
 
-        guard var changes = try? await Work.aside(asked), request == catalogRequest else { return }
-        if favouriteWrites != writes { changes = catalogChanges(read, request: request)() }
+        guard var changes = try? await Work.onScreen(asked), request == catalogRequest else { return }
+        if favouriteWrites != writes {
+            guard let again = try? await Work.onScreen(catalogChanges(read, request: request)), request == catalogRequest else { return }
+            changes = again
+        }
         if let catalog = changes.catalog { adopt(catalog) }
         catalogRead = true
         guard !filtering else { return }
@@ -966,11 +1077,12 @@ final class Library {
     }
 
     private func catalogChanges(_ read: [Track], request: Int) -> @Sendable () -> CatalogChanges {
-        let rows = settled(read, request: request)
+        favouriteWrites = favouriteWrites.filter { ($0.value.answeredAfter ?? .max) >= request }
+        let writes = favouriteWrites.mapValues(\.value)
         let shown = allTracks
         let listed = filtering ? nil : tracks
         let titled = filter.order == .title
-        return { CatalogChanges(rows, shown: shown, listed: listed, titled: titled) }
+        return { CatalogChanges(read, writes: writes, shown: shown, listed: listed, titled: titled) }
     }
 
     func reload(fresh: Bool = false) {
@@ -982,24 +1094,39 @@ final class Library {
         queryRequest += 1
         let request = queryRequest
         let query = filter
+        let titled = query.order == .title
         Task {
             guard let native = try? await player() else { return }
             do {
-                let first = try await Work.aside { try native.filteredTracks(filter: query, offset: 0, limit: Library.page) }
+                let shown = tracks
+                let (first, firstListed) = try await Work.onScreen {
+                    let first = try native.filteredTracks(filter: query, offset: 0, limit: Library.page)
+                    return (first, SongsListed(first, shown: shown, titled: titled))
+                }
                 guard request == queryRequest else { return }
                 if fresh || !tracksRead || first.count < Library.page {
-                    tracks = first
+                    if let firstListed { list(firstListed) }
                     tracksRead = true
                 }
                 guard first.count == Library.page else { return }
 
-                let rest = try await Work.aside { try Library.pages(native, query, from: Library.page) }
+                let listedBefore = tracks
+                let whole = try await Work.onScreen {
+                    SongsListed(first + (try Library.pages(native, query, from: Library.page)), shown: listedBefore, titled: titled)
+                }
                 guard request == queryRequest else { return }
-                tracks = first + rest
+                if let whole { list(whole) }
             } catch {
                 report(error)
             }
         }
+    }
+
+    private func list(_ listed: SongsListed) {
+        marking = true
+        tracks = listed.rows
+        marking = false
+        trackRuns = listed.runs
     }
 
     func reloadCollections() {
@@ -1010,10 +1137,21 @@ final class Library {
         Task {
             guard let native = try? await player() else { return }
             do {
-                let (albums, artists) = try await Work.aside { (try native.albums(order: order), try native.artists(order: order)) }
+                let listed = try await Work.onScreen {
+                    let albums = try native.albums(order: order)
+                    let artists = try native.artists(order: order)
+                    return CollectionsListed(
+                        albums: albums,
+                        artists: artists,
+                        albumRuns: Library.runs(of: albums, in: order),
+                        artistRuns: Library.runs(of: artists, in: order)
+                    )
+                }
                 guard request == collectionRequest else { return }
-                self.albums = albums
-                self.artists = artists
+                albums = listed.albums
+                artists = listed.artists
+                albumRuns = listed.albumRuns
+                artistRuns = listed.artistRuns
                 collectionGeneration += 1
             } catch {
                 report(error)
@@ -1034,7 +1172,7 @@ final class Library {
         }
     }
 
-    private static func runs(of albums: [AlbumHit], in order: CollectionOrder) -> [LetterRun] {
+    nonisolated private static func runs(of albums: [AlbumHit], in order: CollectionOrder) -> [LetterRun] {
         switch order {
         case .alphabetical: LetterRun.runs(of: albums, named: \.title)
         case .artist: LetterRun.runs(of: albums, named: \.artist)
@@ -1042,7 +1180,7 @@ final class Library {
         }
     }
 
-    private static func runs(of artists: [ArtistHit], in order: CollectionOrder) -> [LetterRun] {
+    nonisolated private static func runs(of artists: [ArtistHit], in order: CollectionOrder) -> [LetterRun] {
         switch order {
         case .alphabetical, .artist: LetterRun.runs(of: artists, named: \.name)
         case .year, .added, .plays: []
@@ -1451,7 +1589,8 @@ final class Library {
     }
 
     func save() {
-        request { try $0.save() }
+        guard let native else { return }
+        save(native)
     }
 
     func eraseEverything() {

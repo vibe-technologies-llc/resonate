@@ -146,10 +146,10 @@ func lit(_ text: String, by query: String, in column: SearchColumn) -> Attribute
     return shown
 }
 
-struct LetterRun: Identifiable {
+struct LetterRun: Identifiable, Equatable {
     static let indexedFrom = 40
 
-    let id: Int
+    let id: String
     let letter: String
     let rows: Range<Int>
     let indexed: Bool
@@ -158,14 +158,16 @@ struct LetterRun: Identifiable {
         guard rows.count >= indexedFrom else { return [] }
 
         var runs: [LetterRun] = []
-        var used = Set<String>()
+        var seen: [String: Int] = [:]
         var start = 0
         var current = letter(of: name(rows[0]))
         for index in 1...rows.count {
             let next = index < rows.count ? letter(of: name(rows[index])) : nil
             guard next != current else { continue }
 
-            runs.append(LetterRun(id: runs.count, letter: current, rows: start..<index, indexed: used.insert(current).inserted))
+            let before = seen[current, default: 0]
+            seen[current] = before + 1
+            runs.append(LetterRun(id: "\(current) \(before)", letter: current, rows: start..<index, indexed: before == 0))
             start = index
             if let next { current = next }
         }
