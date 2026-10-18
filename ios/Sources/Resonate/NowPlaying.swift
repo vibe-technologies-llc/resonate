@@ -1,11 +1,12 @@
 import AVFoundation
 import MediaPlayer
 import ResonateNative
+import Synchronization
 import UIKit
 
 @MainActor
 final class NowPlaying {
-    nonisolated private static let artworkEdge: CGFloat = 384
+    private static let scaleWithoutAScreen: CGFloat = 3
     private static let secondsPerMillisecond = 0.001
     private static let driftBeforeRewriteMs: Double = 1500
     private static let rateSettles: [Duration] = [.milliseconds(250), .milliseconds(750), .seconds(2)]
@@ -45,6 +46,8 @@ final class NowPlaying {
     private var resumeAfterInterruption = false
     private var artworkFor: (track: UInt64, revision: UInt64)?
     private var artwork: MPMediaItemArtwork?
+    private var lockScreen: LockScreenArtwork?
+    private var artworkTrack: Track?
     private var shown: Shown?
     private var written: Written?
     private var observers: [NSObjectProtocol] = []
@@ -365,12 +368,16 @@ final class NowPlaying {
             written = nil
             artworkFor = nil
             artwork = nil
+            lockScreen = nil
+            artworkTrack = nil
             enableCommands(for: nil)
             return
         }
         if artworkFor?.track != track.id || artworkFor?.revision != track.artRevision {
             artworkFor = (track.id, track.artRevision)
+            artworkTrack = track
             artwork = nil
+            lockScreen = nil
             loadArtwork(track)
         }
         let next = Shown(
@@ -434,27 +441,93 @@ final class NowPlaying {
     private func loadArtwork(_ track: Track) {
         let id = track.id
         let revision = track.artRevision
+        let scale = Self.screenScale
+        let asking: @MainActor (ArtworkBucket) -> Void = { [weak self] bucket in self?.fetchArtwork(bucket) }
         Task {
             guard let image = await library.features.artwork(track, bucket: .card) else { return }
-            let thumbnail = await Task.detached(priority: .utility) { Self.thumbnail(of: image) }.value
             guard artworkFor?.track == id, artworkFor?.revision == revision else { return }
-            artwork = Self.artwork(thumbnail)
+            let held = Self.lockScreenArtwork(image, scale: scale, asking: asking)
+            lockScreen = held
+            artwork = Self.artwork(held)
             rewrite()
         }
     }
 
-    nonisolated private static func thumbnail(of image: UIImage) -> UIImage {
-        let scale = min(1, artworkEdge / max(image.size.width, image.size.height, 1))
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-
-        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
+    private func fetchArtwork(_ bucket: ArtworkBucket) {
+        guard let track = artworkTrack, let held = lockScreen else { return }
+        let id = track.id
+        let revision = track.artRevision
+        let features = library.features
+        Task {
+            let image =
+                bucket.rawValue > ArtworkBucket.card.rawValue
+                ? await features.unkeptArtwork(track, bucket: bucket)
+                : await features.artwork(track, bucket: bucket)
+            guard let image, artworkFor?.track == id, artworkFor?.revision == revision, lockScreen === held else { return }
+            held.keep(image, for: bucket)
+            artwork = Self.artwork(held)
+            rewrite()
         }
     }
 
-    nonisolated private static func artwork(_ thumbnail: UIImage) -> MPMediaItemArtwork {
-        MPMediaItemArtwork(boundsSize: thumbnail.size) { @Sendable _ in thumbnail }
+    private static var screenScale: CGFloat {
+        UIApplication.shared.connectedScenes.lazy.compactMap { ($0 as? UIWindowScene)?.screen.scale }.first
+            ?? scaleWithoutAScreen
+    }
+
+    nonisolated private static func lockScreenArtwork(
+        _ card: UIImage,
+        scale: CGFloat,
+        asking: @escaping @MainActor (ArtworkBucket) -> Void
+    ) -> LockScreenArtwork {
+        LockScreenArtwork(first: card, bucket: .card, scale: scale) { @Sendable bucket in
+            Task { @MainActor in asking(bucket) }
+        }
+    }
+
+    nonisolated private static func artwork(_ held: LockScreenArtwork) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: held.bounds) { @Sendable size in held.image(for: size) }
+    }
+}
+
+final class LockScreenArtwork: Sendable {
+    private struct Held {
+        var images: [ArtworkBucket: UIImage]
+        var asked: Set<ArtworkBucket>
+    }
+
+    let bounds: CGSize
+    private let first: UIImage
+    private let scale: CGFloat
+    private let held: Mutex<Held>
+    private let wanted: @Sendable (ArtworkBucket) -> Void
+
+    init(first: UIImage, bucket: ArtworkBucket, scale: CGFloat, wanted: @escaping @Sendable (ArtworkBucket) -> Void) {
+        let largest = CGFloat(ArtworkBucket.full.rawValue)
+        let edge = max(first.size.width, first.size.height, 1)
+        bounds = CGSize(width: first.size.width * largest / edge, height: first.size.height * largest / edge)
+        self.first = first
+        self.scale = scale
+        self.wanted = wanted
+        held = Mutex(Held(images: [bucket: first], asked: [bucket]))
+    }
+
+    func image(for size: CGSize) -> UIImage {
+        let bucket = ArtworkBucket.fitting(points: max(size.width, size.height), scale: scale)
+        let (image, ask) = held.withLock { held -> (UIImage?, Bool) in
+            if let exact = held.images[bucket] { return (exact, false) }
+            return (Self.nearest(bucket, in: held.images), held.asked.insert(bucket).inserted)
+        }
+        if ask { wanted(bucket) }
+        return image ?? first
+    }
+
+    func keep(_ image: UIImage, for bucket: ArtworkBucket) {
+        held.withLock { $0.images[bucket] = image }
+    }
+
+    private static func nearest(_ bucket: ArtworkBucket, in images: [ArtworkBucket: UIImage]) -> UIImage? {
+        let larger = images.filter { $0.key.rawValue >= bucket.rawValue }.min { $0.key.rawValue < $1.key.rawValue }
+        return larger?.value ?? images.max { $0.key.rawValue < $1.key.rawValue }?.value
     }
 }

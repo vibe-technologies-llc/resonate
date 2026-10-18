@@ -309,8 +309,16 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
   (a route report asked while another is reading is the one applied, carrying any rebind owed), reports the route to Rust,
   pauses on an interruption (resuming when the system says so, whether it began while playing or loading, as `Library.pause` pauses both) and when the old route disappears,
-  and drives the remote commands and now-playing info (artwork bounded at 384 px, rendered at scale 1 off
-  the main actor). The category is set at start but the session is activated only on play
+  and drives the remote commands and now-playing info. **The lock screen's cover is
+  decoded at the size it asks**: the info carries the 384 px `.card` picture first, inside a
+  `LockScreenArtwork` (a `Mutex` of the pictures held per `ArtworkBucket`) whose
+  `MPMediaItemArtwork` handler, synchronous on a MediaPlayer queue, answers the bucket fitting the
+  asked size times the screen's scale from what is held, else the nearest held (the next larger,
+  else the largest), never waiting: a bucket not yet held is asked once, decoded in a task (one
+  above `.card` through `ArtworkCache.unkept`, so a 1024 px lock-screen picture never takes room
+  from row thumbnails in the shared cache), and the info is written again with a fresh
+  `MPMediaItemArtwork` over the same holder, so the system asks again and gets it. The bounds given
+  are the picture's shape at 1024 px. The category is set at start but the session is activated only on play
   (`activate()`), so opening Resonate never stops another app's audio; it is deactivated with
   `.notifyOthersOnDeactivation` when the transport turns stopped (Stop, the queue's end) or a sleep
   timer paused it (`releaseSessionIfDone`, on the transport's lane and only if nothing plays by
@@ -886,8 +894,11 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   must be decoded waits 300 ms of steady size, so a cover zooming between Now Playing's layouts
   does not decode at every bucket it passes. `ShownArtwork` (the last picture per song, for a view's first
   frame before it is measured) keeps 64 MiB. **Every ask names its bucket**: the
-  palette sample (32 by 32) reads the 192 px tile and the lock-screen artwork the 384 px card, never
-  the 1024 px full size, which cost about 4 MiB cached and evicted row thumbnails. A circular `ArtworkView`
+  palette sample (32 by 32) reads the 192 px tile and the lock-screen artwork the 384 px card first,
+  never the 1024 px full size into the cache, which cost about 4 MiB cached and evicted row
+  thumbnails: a lock-screen bucket above the card is decoded by `unkept` (the same picture lookup
+  and decode slots, nothing kept) and held only by `NowPlaying`'s `LockScreenArtwork` until the song
+  changes. A circular `ArtworkView`
   (`ArtworkView(track:corner:circle:)`, artist rows and headers) shows `artist_portrait` for the song's `artistMbid`
   first and falls back to the album's picture. It clips with the concrete shape
   (`ArtworkClip`: `.circle` or `.rect(cornerRadius:style:)`), never an `AnyShape`, which hides the

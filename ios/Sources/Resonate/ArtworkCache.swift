@@ -173,29 +173,49 @@ actor ArtworkCache {
         identifying: @escaping @Sendable () throws -> UInt64?,
         reading: @escaping @Sendable (UInt64) throws -> Data?
     ) async -> UIImage? {
-        let picture: UInt64?
-        if let known = songs.picture(of: request) {
-            picture = known
-        } else {
-            do {
-                try await lookups.acquire()
-            } catch {
-                return nil
-            }
-            let found: UInt64??
-            do {
-                found = try await Work.onScreen(identifying)
-            } catch {
-                found = nil
-            }
-            await lookups.release()
-
-            guard let found else { return nil }
-            picture = found
-            songs.keep(picture, for: request)
-        }
-        guard let picture else { return nil }
+        guard let picture = await picture(of: request, identifying: identifying) else { return nil }
         return await image(request.of(picture: picture)) { try reading(picture) }
+    }
+
+    func unkept(
+        _ request: ArtworkRequest,
+        identifying: @escaping @Sendable () throws -> UInt64?,
+        reading: @escaping @Sendable (UInt64) throws -> Data?
+    ) async -> UIImage? {
+        if let held = cached(request) { return held }
+        guard let picture = await picture(of: request, identifying: identifying) else { return nil }
+        do {
+            try await slots.acquire()
+        } catch {
+            return nil
+        }
+        let edge = request.bucket.rawValue
+        let decoded = try? await Work.onScreen { ArtworkDecoder.decoded(try reading(picture), edge: edge) }
+        await slots.release()
+        return decoded?.image
+    }
+
+    private func picture(
+        of request: ArtworkRequest,
+        identifying: @escaping @Sendable () throws -> UInt64?
+    ) async -> UInt64? {
+        if let known = songs.picture(of: request) { return known }
+        do {
+            try await lookups.acquire()
+        } catch {
+            return nil
+        }
+        let found: UInt64??
+        do {
+            found = try await Work.onScreen(identifying)
+        } catch {
+            found = nil
+        }
+        await lookups.release()
+
+        guard let found else { return nil }
+        songs.keep(found, for: request)
+        return found
     }
 
     func image(

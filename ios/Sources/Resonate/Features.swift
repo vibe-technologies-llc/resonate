@@ -812,6 +812,13 @@ final class Features {
         return await artworks.image(request, identifying: { try native.artworkPicture(id: id) }, reading: { try native.picture(picture: $0) })
     }
 
+    func unkeptArtwork(_ track: Track, bucket: ArtworkBucket) async -> UIImage? {
+        let id = track.id
+        let request = artworkRequest(track, bucket: bucket)
+        guard let native = try? await library.player() else { return nil }
+        return await artworks.unkept(request, identifying: { try native.artworkPicture(id: id) }, reading: { try native.picture(picture: $0) })
+    }
+
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
         let request = portraitRequest(mbid, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
