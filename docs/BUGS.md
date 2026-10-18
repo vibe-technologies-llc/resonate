@@ -31,12 +31,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] The tag undo record is keyed by path and does not follow organise or a hand-move, so *Put the
   last run back* answers `Unreadable` for the whole library after the usual tag-then-organise
 
-## Catalog
-- [M] A scan naming some roots tidies the rest by forgetting every path gone
-  (`tidy_the_roots_beside`) before any pairing could follow it: a hand move inside `~/Archive` is
-  forgotten with its history by a poll's delivery scan, *Add folder* or `resonate scan ~/Music`, and
-  refound as new
-
 ## Window
 - [M] Typing anywhere to search drops text an input method composes until a field is focused; the
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the

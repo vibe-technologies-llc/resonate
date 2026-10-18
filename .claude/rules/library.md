@@ -316,8 +316,15 @@ rows read via `Player::media` like any unscanned row.
   the result channel's receiver before any join, so blocked workers wake, the job channel closes
   under the walker, and the scan returns the `Walk` guard.
 - **A scan tidies every root, prunes only walked ones, and touches a root not there not at all.**
-  `tidy_the_roots_beside` handles registered roots not walked: reads their distinct paths
-  (`store::paths_under`), keeps those still there, hands the rest to `store::forget_paths`;
+  `tidy_the_roots_beside` handles registered roots not walked: reads their distinct paths and
+  sizes (`store::sized_files_under`), keeps those still there, hands the rest to
+  `store::forget_paths`, **except a path whose size an audio file nothing catalogues has**: that
+  may be a hand move no walk has paired yet, and forgetting it would cost its history, so it stays
+  for the root's own walk (`moves`, then the prune) to pair or forget. The look is a `read_dir`
+  of the root (`sizes_of_files_not_catalogued`, dot-names and system folders stepped over,
+  links not followed, `MAX_DEPTH`), made only where something is gone; a folder it cannot list
+  keeps every gone path of the root
+  (`a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can_pair_it`);
   `store::sweep_orphans` runs once at the end where anything went. A bare `resonate scan` walks
   every root. `is_there` guards both: a registered root whose directory is missing is dropped from
   the walk and stepped over by the tidy (an unmounted drive is not an empty one); a root named on

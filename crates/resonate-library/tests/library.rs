@@ -24299,6 +24299,50 @@ fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited
 }
 
 #[test]
+fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can_pair_it()
+-> Result<()> {
+    let named = Tree::new();
+    let beside = Tree::new();
+    named.write("one.wav", &Wav::new().frames(100).build());
+    let before = beside.write("old/Echoes.wav", &Wav::new().frames(4_410).build());
+    let deleted = beside.write("deleted.wav", &Wav::new().frames(9_973).build());
+    let library = Library::open_in_memory()?;
+    for tree in [&named, &beside] {
+        scan(&library, &options(tree))?;
+    }
+    let heard = library
+        .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
+        .expect("a counted play")
+        .track
+        .expect("the play was counted against a row");
+
+    let after = beside.path().join("new/Echoes.wav");
+    fs::create_dir_all(after.parent().expect("a folder")).expect("a writable folder");
+    fs::rename(&before, &after).expect("the file is moved by hand");
+    fs::remove_file(&deleted).expect("the file is taken away");
+    scan(&library, &options(&named))?;
+
+    assert!(
+        library.track_at(&before, None)?.is_some(),
+        "a tidy forgot a file that could have moved into the root it did not walk"
+    );
+    assert!(
+        library.track_at(&deleted, None)?.is_none(),
+        "a tidy kept a file nothing in its root could be the move of"
+    );
+
+    let stats = scan(&library, &options(&beside))?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(stats.added, 0);
+    let row = library.track_at(&after, None)?.expect("the row followed");
+    assert_eq!(row.id, heard.id);
+    assert_eq!(row.plays, 1);
+    assert!(library.track_at(&before, None)?.is_none());
+    Ok(())
+}
+
+#[test]
 fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does()
 -> Result<()> {
     const HEARD_FOR: Duration = Duration::from_secs(90);

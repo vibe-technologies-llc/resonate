@@ -1359,16 +1359,24 @@ pub fn sweep_orphans(tx: &Transaction<'_>) -> Result<()> {
         .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
-pub fn paths_under(connection: &Connection, root: i64) -> Result<Vec<PathBuf>> {
+pub fn sized_files_under(connection: &Connection, root: i64) -> Result<Vec<(PathBuf, i64)>> {
     let mut statement = connection
-        .prepare("SELECT DISTINCT path FROM tracks WHERE root_id = ?1 AND vault_key IS NULL")
+        .prepare(
+            "SELECT path, MAX(file_size) FROM tracks
+              WHERE root_id = ?1 AND vault_key IS NULL GROUP BY path",
+        )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let found = statement
-        .query_map(params![root], |row| row.get::<_, String>(0))
+        .query_map(params![root], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    Ok(found.into_iter().map(PathBuf::from).collect())
+    Ok(found
+        .into_iter()
+        .map(|(path, size)| (PathBuf::from(path), size))
+        .collect())
 }
 
 pub fn rooted_paths_at(

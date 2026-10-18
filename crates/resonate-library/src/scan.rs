@@ -787,10 +787,26 @@ fn tidy_the_roots_beside(
             continue;
         }
 
-        let gone: Vec<PathBuf> = inner
-            .read(|connection| store::paths_under(connection, root.id))?
+        let held = inner.read(|connection| store::sized_files_under(connection, root.id))?;
+        let gone: Vec<(PathBuf, i64)> = held
+            .iter()
+            .filter(|(path, _)| !path.exists() && !volumes::is_on_an_absent_one(path, &absent))
+            .cloned()
+            .collect();
+        if gone.is_empty() {
+            continue;
+        }
+
+        let catalogued: AHashSet<&Path> = held.iter().map(|(path, _)| path.as_path()).collect();
+        let could_have_moved = sizes_of_files_not_catalogued(&root.path, &catalogued);
+        let gone: Vec<PathBuf> = gone
             .into_iter()
-            .filter(|path| !path.exists() && !volumes::is_on_an_absent_one(path, &absent))
+            .filter(|(_, size)| {
+                could_have_moved
+                    .as_ref()
+                    .is_some_and(|sizes| !sizes.contains(size))
+            })
+            .map(|(path, _)| path)
             .collect();
         if gone.is_empty() {
             continue;
@@ -808,6 +824,37 @@ fn tidy_the_roots_beside(
         inner.write(store::sweep_orphans)?;
     }
     Ok(tidied)
+}
+
+fn sizes_of_files_not_catalogued(
+    root: &Path,
+    catalogued: &AHashSet<&Path>,
+) -> Option<AHashSet<i64>> {
+    let mut sizes = AHashSet::new();
+    let mut folders = vec![(root.to_path_buf(), 0_u8)];
+    while let Some((folder, depth)) = folders.pop() {
+        let entries = match fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::debug!(%error, path = %folder.display(), "a folder a tidy could not list");
+                return None;
+            }
+        };
+        for entry in entries {
+            let entry = entry.ok()?;
+            let kind = entry.file_type().ok()?;
+            let path = entry.path();
+            if is_passed_over(&path) {
+                continue;
+            }
+            if kind.is_dir() && depth < MAX_DEPTH.get() {
+                folders.push((path, depth + 1));
+            } else if kind.is_file() && is_audio(&path) && !catalogued.contains(path.as_path()) {
+                sizes.insert(i64::try_from(entry.metadata().ok()?.len()).ok()?);
+            }
+        }
+    }
+    Some(sizes)
 }
 
 struct Rooted<'a> {
