@@ -82,8 +82,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Catalog
-- [M] Deleting a track is `fs::remove_file`: no trash, its `.cue`, `.lrc` and emptied folder left
-  behind (organise prunes its own); its listens cascade away, shrinking statistics
+- [S] Deleting under Flatpak trashes into the sandbox's own `XDG_DATA_HOME`, not the
+  desktop's trash; the trash portal would
 - [M] A file whose name is not UTF-8 is counted `Unnamed` and never catalogued
 
 ## Providers and network

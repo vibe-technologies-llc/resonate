@@ -183,11 +183,11 @@ const OPEN_DOWNLOAD_HINT: &str = "Open the album this song is on";
 const KEEP_THE_TRACK_HINT: &str = keyed!("Keep the song", key!(leave));
 
 const DELETE_THE_TRACK_HINT: &str =
-    "Delete the file from disk and take the song out of the library";
+    "Move the file to the trash and take the song out of the library";
 
-const DELETED_FOR_GOOD: &str = "This can't be undone.";
+const MOVED_TO_THE_TRASH: &str = "Its plays stay in your statistics.";
 
-const A_CUT_GOES_WHOLE: &str = "It is cut from a file holding other tracks too, so the whole file goes, and every track cut from it.";
+const A_CUT_GOES_WHOLE: &str = "It is cut from a file holding other tracks too, so the whole file goes to the trash, and every track cut from it.";
 
 const NAME_PLACEHOLDER: &str = "Name the playlist, then press enter";
 
@@ -4693,7 +4693,7 @@ impl RootView {
                         div()
                             .text_color(rgb(theme::text()))
                             .font_weight(gpui::FontWeight::MEDIUM)
-                            .child(DELETED_FOR_GOOD),
+                            .child(MOVED_TO_THE_TRASH),
                     ),
             )
             .child(
@@ -5264,11 +5264,11 @@ impl Deleting {
     fn saying(&self) -> String {
         match &self.artist {
             Some(artist) => format!(
-                "“{}” by {artist} is deleted from disk and taken out of the library, its plays with it.",
+                "“{}” by {artist} is moved to the trash and taken out of the library.",
                 self.title
             ),
             None => format!(
-                "“{}” is deleted from disk and taken out of the library, its plays with it.",
+                "“{}” is moved to the trash and taken out of the library.",
                 self.title
             ),
         }

@@ -716,7 +716,9 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
     );
     let kept = tree.write("album/kept.wav", &Wav::new().text(TITLE, "kept").build());
 
+    let data = Tree::new();
     let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
     let track = all(&library)?
         .into_iter()
@@ -736,11 +738,132 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
     );
     assert!(!doomed.exists());
     assert!(kept.exists());
+    assert!(data.path().join("Trash/files/doomed.wav").is_file());
+    let info = fs::read_to_string(data.path().join("Trash/info/doomed.wav.trashinfo"))
+        .expect("a record of where the file came from");
+    let written = format!(
+        "[Trash Info]\nPath={}\nDeletionDate=",
+        doomed.display().to_string().replace(' ', "%20")
+    );
+    assert!(info.starts_with(&written), "{info}");
     assert_eq!(titles(&all(&library)?), vec!["kept"]);
     assert!(matches!(
         library.delete_tracks(&[track]),
         Err(Error::UnknownTrack(unknown)) if unknown == track
     ));
+    Ok(())
+}
+
+#[test]
+fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens()
+-> Result<()> {
+    const SHEET: &str =
+        "FILE \"song.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Song\"\n    INDEX 01 00:00:00\n";
+    const SHARED_SHEET: &str = "FILE \"x.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"X\"\n    INDEX 01 00:00:00\nFILE \"y.wav\" WAVE\n  TRACK 02 AUDIO\n    TITLE \"Y\"\n    INDEX 01 00:00:00\n";
+    let tree = Tree::new();
+    let data = Tree::new();
+    let song = tree.write("album/one/song.wav", &Wav::new().frames(44_100).build());
+    let lyrics = tree.write("album/one/song.lrc", b"[00:01.00]words");
+    let sheet = tree.write("album/one/song.cue", SHEET.as_bytes());
+    let note = tree.write("album/one/notes.txt", b"liner notes");
+    tree.write("album/two/x.wav", &Wav::new().frames(44_100).build());
+    tree.write("album/two/y.wav", &Wav::new().frames(22_050).build());
+    let shared = tree.write("album/two/both.cue", SHARED_SHEET.as_bytes());
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let song_row = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Song")
+        .expect("the sheet's row");
+    library.track_played(&song_row.location, song_row.span, Duration::ZERO)?;
+    let before = library.statistics(Window::Everything)?;
+
+    library.delete_tracks(&[song_row.id])?;
+
+    assert!(!song.exists() && !lyrics.exists() && !sheet.exists());
+    assert!(note.exists(), "a file that is not the song's was taken");
+    assert!(data.path().join("Trash/files/song.lrc").is_file());
+    assert!(data.path().join("Trash/files/song.cue").is_file());
+    assert!(
+        note.parent().expect("a folder").is_dir(),
+        "a folder still holding a file was removed"
+    );
+    let after = library.statistics(Window::Everything)?;
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+
+    let x = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "X")
+        .expect("the shared sheet's first row");
+    library.delete_tracks(&[x.id])?;
+    assert!(
+        shared.exists(),
+        "a sheet cutting another file too was taken"
+    );
+    assert!(tree.path().join("album/two").is_dir());
+
+    let emptied = tree.write("album/three/alone.wav", &Wav::new().frames(8_820).build());
+    scan(&library, &options(&tree))?;
+    let alone = library
+        .track_at(&emptied, None)?
+        .expect("the file was scanned");
+    library.delete_tracks(&[alone.id])?;
+    assert!(!tree.path().join("album/three").exists());
+    assert!(tree.path().is_dir(), "the root itself was pruned");
+    Ok(())
+}
+
+#[test]
+fn deleting_two_files_of_one_name_keeps_both_in_the_trash() -> Result<()> {
+    let tree = Tree::new();
+    let data = Tree::new();
+    tree.write("a/song.wav", &Wav::new().text(TITLE, "First").build());
+    tree.write("b/song.wav", &Wav::new().text(TITLE, "Second").build());
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let both: Vec<TrackId> = all(&library)?.iter().map(|track| track.id).collect();
+
+    let deleted = library.delete_tracks(&both)?;
+
+    assert_eq!(deleted.files, 2);
+    let held = |folder: &str| {
+        fs::read_dir(data.path().join("Trash").join(folder))
+            .expect("a trash folder")
+            .count()
+    };
+    assert_eq!(held("files"), 2);
+    assert_eq!(held("info"), 2);
+    Ok(())
+}
+
+#[test]
+fn a_file_with_no_trash_to_go_to_is_kept_with_its_row() -> Result<()> {
+    let tree = Tree::new();
+    let data = Tree::new();
+    let song = tree.write("song.wav", &Wav::new().text(TITLE, "Song").build());
+    let blocked = data.write("not-a-folder", b"");
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(blocked));
+    scan(&library, &options(&tree))?;
+    let track = all(&library)?[0].id;
+
+    let deleted = library.delete_tracks(&[track])?;
+
+    assert_eq!(
+        deleted,
+        Deleted {
+            tracks: 0,
+            files: 0,
+            kept: 1,
+        }
+    );
+    assert!(song.exists());
+    assert_eq!(all(&library)?.len(), 1);
     Ok(())
 }
 
@@ -21225,6 +21348,8 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
     assert_eq!(landed.len(), 1);
     assert_eq!(objects.len(), 1);
 
+    let data = Tree::new();
+    library.trash_into(Some(data.path().to_path_buf()));
     let deleted = library.delete_tracks(&landed)?;
 
     assert_eq!(deleted.tracks, 1);

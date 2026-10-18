@@ -690,6 +690,7 @@ pub(crate) struct Inner {
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
     delivering_into: Mutex<Option<DeliveryFolder>>,
+    trash_home: Mutex<Option<PathBuf>>,
     music_filters: Mutex<MusicFilters>,
 }
 
@@ -1351,6 +1352,10 @@ impl Library {
         self.inner.vault.as_ref()
     }
 
+    pub fn trash_into(&self, data_home: Option<PathBuf>) {
+        *self.inner.trash_home.lock() = data_home;
+    }
+
     pub fn music_filters(&self) -> MusicFilters {
         *self.inner.music_filters.lock()
     }
@@ -1530,6 +1535,7 @@ impl Library {
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
                 delivering_into: Mutex::new(None),
+                trash_home: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
             }),
         })
@@ -2176,24 +2182,38 @@ impl Library {
         })
     }
 
+    fn prune_the_emptied(&self, folders: &[PathBuf]) -> Result<()> {
+        let roots: AHashSet<PathBuf> = self.roots()?.into_iter().collect();
+        organise::prune_the_emptied(folders, &roots);
+        Ok(())
+    }
+
     pub fn delete_tracks(&self, tracks: &[TrackId]) -> Result<Deleted> {
         let _walk = self.walk_the_tree()?;
         let files = self
             .inner
             .read(|connection| deleted::files_of(connection, tracks))?;
 
+        let data_home = self.inner.trash_home.lock().clone();
         let mut done = Deleted::default();
         let mut gone = Vec::with_capacity(files.len());
+        let mut emptied = Vec::new();
         for path in files {
-            match deleted::removed(&path) {
+            let sidecars = deleted::sidecars_of(&path);
+            match deleted::removed(&path, data_home.as_deref()) {
                 Removal::Removed => {
                     done.files += 1;
+                    for sidecar in &sidecars {
+                        deleted::removed(sidecar, data_home.as_deref());
+                    }
+                    emptied.extend(path.parent().map(Path::to_path_buf));
                     gone.push(path);
                 }
                 Removal::AlreadyGone => gone.push(path),
                 Removal::Kept => done.kept += 1,
             }
         }
+        self.prune_the_emptied(&emptied)?;
 
         let forgotten = self
             .inner

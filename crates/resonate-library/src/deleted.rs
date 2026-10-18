@@ -1,14 +1,25 @@
 use std::{
     collections::BTreeSet,
+    ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use ahash::AHashSet;
+use resonate_codec::the_folder_a_cue_names;
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
-use crate::{Error, Result, StoreOp, alternatives, store};
+use crate::{Error, Result, StoreOp, TrashOp, alternatives, scan, store, trash};
+
+const LYRICS_EXTENSION: &str = "lrc";
+
+const LISTENS_KEPT_AS_UNHELD: &str =
+    "INSERT INTO unheld_listens (path, span_start, at, began, heard)
+     SELECT t.path, t.span_start, l.at, l.began, l.heard
+       FROM listens l JOIN tracks t ON t.id = l.track_id
+      WHERE t.path = ?1";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Deleted {
@@ -46,15 +57,83 @@ pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BT
     Ok(files)
 }
 
-pub(crate) fn removed(path: &Path) -> Removal {
-    match fs::remove_file(path) {
+pub(crate) fn removed(path: &Path, data_home: Option<&Path>) -> Removal {
+    match trash::send(path, data_home, SystemTime::now()) {
         Ok(()) => Removal::Removed,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
+        Err(Error::Trash {
+            op: TrashOp::Stat,
+            source,
+            ..
+        }) if source.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
         Err(error) => {
-            tracing::warn!(path = %path.display(), %error, "a file asked to be deleted could not be removed");
+            tracing::warn!(path = %path.display(), %error, "a file asked to be deleted could not be moved to the trash");
             Removal::Kept
         }
     }
+}
+
+pub(crate) fn sidecars_of(file: &Path) -> Vec<PathBuf> {
+    let Some(folder) = file.parent() else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let beside: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| !kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect();
+
+    let mut sidecars = lyrics_of(file, &beside);
+    sidecars.extend(
+        beside
+            .iter()
+            .filter(|candidate| scan::is_a_sheet(candidate))
+            .filter(|sheet| cuts_only(sheet, folder, file, &beside))
+            .cloned(),
+    );
+    sidecars
+}
+
+fn lyrics_of(file: &Path, beside: &[PathBuf]) -> Vec<PathBuf> {
+    let stem = file.file_stem();
+    let shared_with_another_song = beside
+        .iter()
+        .any(|other| other != file && scan::is_audio(other) && other.file_stem() == stem);
+    if shared_with_another_song {
+        return Vec::new();
+    }
+
+    beside
+        .iter()
+        .filter(|other| other.file_stem() == stem)
+        .filter(|other| {
+            other
+                .extension()
+                .and_then(OsStr::to_str)
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(LYRICS_EXTENSION))
+        })
+        .cloned()
+        .collect()
+}
+
+fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bool {
+    let Some(read) = scan::read_sheet(sheet) else {
+        return false;
+    };
+
+    let mut cuts_the_file = false;
+    for cut in &read.files {
+        if the_folder_a_cue_names(folder, &cut.named) != folder {
+            return false;
+        }
+        match scan::claimed_beside(&cut.named, beside) {
+            Some(claimed) if claimed == file => cuts_the_file = true,
+            Some(_) | None => return false,
+        }
+    }
+    cuts_the_file
 }
 
 pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Forgotten> {
@@ -77,6 +156,8 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         forgotten.vault_keys.extend(held);
 
+        tx.execute(LISTENS_KEPT_AS_UNHELD, params![named])
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
         tx.execute(
             "DELETE FROM wants
               WHERE offered = ?2

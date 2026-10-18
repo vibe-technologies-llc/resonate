@@ -1123,10 +1123,10 @@ is never named.
 - **A song in the queue is taken out from its menu wherever listed**: *Take out of the queue* while
   `RootView::is_in_the_queue` finds a row with the same location and span; `take_out_of_the_queue`
   drops every such row through `drop_rows`.
-- **A song is deleted from disk only through a dialogue saying it cannot be undone.** *Delete from
+- **A song leaves the disk only through a dialogue saying where it goes.** *Delete from
   disk…* (`Icon::Delete`) = `RootView::ask_to_delete` with a `Deleting` (track, title, artist, whether a
-  cut); `deletion_sheet` (`theme::confirm_width`) names the song, says the file goes with the plays,
-  that a cut takes its whole file and every cut from it, and that it cannot be undone. *Cancel*,
+  cut); `deletion_sheet` (`theme::confirm_width`) names the song, says the file goes to the trash and the
+  song leaves the library, that a cut takes its whole file and every cut from it. *Cancel*,
   escape, press outside keep the song; only *Delete* (`Tone::Destructive`) calls
   `LibraryModel::delete_track` = `Library::delete_tracks` on the edit chain. No key confirms, `enter`
   included. While open it is `something_stands_over_the_pane`

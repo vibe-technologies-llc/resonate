@@ -104,6 +104,14 @@ pub enum MoveOp {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TrashOp {
+    Stat,
+    MakeFolder,
+    Record,
+    Rename,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StoreOp {
     Open,
     LayOut,
@@ -169,6 +177,17 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+
+    #[error("{op:?} failed on {path} while moving it to the trash", path = path.display())]
+    Trash {
+        op: TrashOp,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("{path} has no trash to go to", path = path.display())]
+    NoTrashFor { path: PathBuf },
 
     #[error("the scanner could not start a thread")]
     ThreadSpawn {

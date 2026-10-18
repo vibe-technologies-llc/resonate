@@ -48,6 +48,7 @@ mod sung;
 mod supply;
 mod synced;
 mod take_in;
+mod trash;
 mod undo;
 mod unreplacing;
 mod vaulted;
@@ -91,7 +92,7 @@ pub use crate::{
     enriched::{COVERS_ASKED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, due_again, due_parameters},
     error::{
         EncodedColumn, Error, FieldName, KeyColumn, LayoutFault, MoveOp, OrderedColumn,
-        PlaylistName, Result, SchemaFingerprint, StoreOp, TagName,
+        PlaylistName, Result, SchemaFingerprint, StoreOp, TagName, TrashOp,
     },
     filed::DeliveryFolder,
     filters::{MinimumLength, MusicExtensions, MusicFilters},

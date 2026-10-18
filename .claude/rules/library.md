@@ -491,8 +491,8 @@ rows read via `Player::media` like any unscanned row.
   `organise::files_moved` (the old row takes the new path and keeps its id, so plays, listens,
   favourite, enrichment, vault object, playlist rows, kept lyric and queue row follow). **Each old
   row is first refreshed from the arrived one** (`moves::refresh_from_the_arrival`, a pair's
-  `followed` ids: one for a whole file, every cut of a file a sheet cuts; the upsert's own retag
-  and unchanged rules over the file's columns: size, mtime, tags, sort names, the names and ids an answered row keeps unless the file was retagged), and indexed again
+  `followed` ids: one for a whole file, every cut of a file a sheet cuts; the upsert's own retag and unchanged rules over the file's columns: size, mtime, tags, sort
+  names, the names and ids an answered row keeps unless the file was retagged), and indexed again
   after `settle_the_album` (`store::reindex_the_track`), so a file retagged as it moved is found by
   its new names (`a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested`);
   `settle_the_album` gathers into the old album via `enriched::gather` when the new folder's album
@@ -500,8 +500,8 @@ rows read via `Player::media` like any unscanned row.
   is the row it was** (`store::follow_a_cut_that_moved`, carrying its dependents, `CUT_FOLLOWERS`);
   **a file a sheet cuts is followed whole** (`cuts_moved`: same size, codec and cuts, every row
   refreshed and reindexed, so a sheet edited as the file moved gives its new titles;
-  `a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited_sheet_gives`).
-  `ScanStats::moved` counts rows followed; `added` leaves them out.
+  `a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited_sheet_gives`). `ScanStats::moved` counts rows followed;
+  `added` leaves them out.
 - **The count is the catalog's; a rescan leaves it.** `tracks.plays`, `tracks.played` are absent
   from the upsert's `DO UPDATE SET`. `Library::track_played` answers `None` where a non-local
   location has no row, **but the play is kept against the path.** `unheld_listens` holds path, span
@@ -1063,14 +1063,34 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 
 ## Deleting
 
-- **A deleted track takes its file, every row cut from it, its want and its vault object.**
+- **A deleted track goes to the trash with its own sidecars; its listens stay in the totals.**
   `Library::delete_tracks` (`deleted.rs`): `Walk` guard; distinct paths of the tracks
-  (`Error::UnknownTrack` for an unheld id); files removed (already gone = removed; refused: logged,
-  `Deleted::kept`, rows left). Per path gone, one transaction: drop `wants` naming a release row its
-  tracks fill or offering the path (else the next poll refetches it), drop every `tracks` row at it
-  (plays, listens, studies cascade), then `store::sweep_orphans` and `alternatives::settle`. A vault
-  object no row names leaves the vault; one that will not go waits for `prune_the_vault`. Nothing is
-  kept to put back. The window asks first (`ui.md`).
+  (`Error::UnknownTrack` for an unheld id); each file moved to the freedesktop trash
+  (`trash::send`, hand-written to the Trash spec, pure Rust; already gone = removed; refused:
+  logged, `Deleted::kept`, rows left). **No trash is no deletion**: a file that cannot be trashed
+  (`Error::Trash`, `Error::NoTrashFor`) is kept with its rows, never removed for good. The bin is
+  `$XDG_DATA_HOME/Trash` (else `~/.local/share/Trash`; `Library::trash_into` overrides the data
+  home, which tests set) where it is on the file's device, else `$topdir/.Trash-$uid` at the
+  file's mount point (the shared `$topdir/.Trash` is not used); folders `0700`; a name is
+  `named_within`-cut to leave room for `.trashinfo` and a discriminator (`name`, `name.1`, ...),
+  its `info/<name>.trashinfo` created `create_new` first and removed if the rename fails; `Path=`
+  percent-encoded (relative to `$topdir` there), `DeletionDate` the listener's local time.
+  **Sidecars go with the file that was removed** (`deleted::sidecars_of`): a `<stem>.lrc`
+  (any case) unless another audio file in the folder shares the stem, and a `.cue` in the same
+  folder every `FILE` of which names this file and no other (`scan::claimed_beside`); a sheet that
+  also cuts another file, names another folder or cannot be read stays. **The folders the files
+  left are pruned** up to, never including, a root, by `organise::prune_the_emptied` (only a
+  folder with nothing in it). Per path gone, one transaction: drop `wants` naming a release row
+  its tracks fill or offering the path (else the next poll refetches it), **copy the path's
+  `listens` into `unheld_listens`** (so `Statistics` plays and time stay; tracks, albums and
+  artists heard and the most-heard lists read `listens` alone and shrink; a file restored from the
+  trash and rescanned is credited again by `history::credit_the_unheld`), drop every `tracks`
+  row at it (plays, listens, studies cascade), then `store::sweep_orphans` and
+  `alternatives::settle`. A vault object no row names leaves the vault; one that will not go
+  waits for `prune_the_vault`. The window asks first (`ui.md`).
+  (`deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest`,
+  `deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens`,
+  `a_file_with_no_trash_to_go_to_is_kept_with_its_row`)
 
 ## Organising
 

@@ -2884,6 +2884,17 @@ fn prune(landed: &[Move], roots: &AHashSet<PathBuf>, progress: &OrganiseProgress
     }
 }
 
+pub(crate) fn prune_the_emptied(folders: &[PathBuf], roots: &AHashSet<PathBuf>) {
+    let mut deepest_first_of_each: Vec<&PathBuf> = folders.iter().collect();
+    deepest_first_of_each.sort_by(|one, other| deepest_first(one, other));
+    deepest_first_of_each.dedup();
+
+    let progress = OrganiseProgress::default();
+    for folder in deepest_first_of_each {
+        climb_out_of(folder, roots, &progress);
+    }
+}
+
 fn climb_out_of(folder: &Path, roots: &AHashSet<PathBuf>, progress: &OrganiseProgress) {
     let mut at = folder;
     while under_a_root(at, roots) {
