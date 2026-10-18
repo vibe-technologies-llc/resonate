@@ -835,30 +835,46 @@ standing, inset, inks and wipe; the sheet's offset), about 0.1 ms a frame.
 
 **The pane is drawn by Core Animation, never by SwiftUI views per frame** (`LyricLayers.swift`).
 `LyricLayers` is a `UIViewRepresentable` over `LyricLayerView`, whose own `CADisplayLink` asks the
-stage for each frame's scene and sets layer properties inside one action-free transaction: each
-line's text is typeset once (`LyricTypeset`, TextKit 1 at the column's width, bold at the pane's
-size and leading) and drawn once into a glyph mask over an ink layer, so a turn changes the ink
-layer's colour, the row's opacity and translation and the sheet layer's position, and the word sweep
-is two `CAShapeLayer`s (sung, and the blending letter) covering `enumerateEnclosingRects` of the
-wipe's UTF-16 range, rebuilt only when the range moves; the breath dots and the end mark are layers
-of their own. Nothing is laid out, diffed or drawn again in a frame: as SwiftUI views (a
-`TimelineView` rebuilding every row) the pane cost about 5 ms of a 120 Hz frame's 8 on the main
-thread, though two or three rows' bodies changed. `LyricLayout` places the rows once per sheet,
-width, height and measures (a row's breath room, padding, its side's column and the end mark), and
-hands every row's frame to the stage as its measurement (`measured`, `measuredSheet`), so
-`landing()` and the scroll bounds read the layer layout. A row more than a pane (at least 320 pt)
-beyond the pane's edges is hidden, and twice that far its glyphs are released, so a long sheet
-holds a few dozen masks at most. The edges dissolve through a `CAGradientLayer` mask; the
-arrival fades the pane layer.
+stage for each frame's scene and sets layer properties inside one action-free transaction, each
+only where it moved: each line's text is typeset once (`LyricTypeset`, TextKit 1 at the column's
+width, bold at the pane's size and leading) and drawn once into an alpha-only 8-bit glyph mask
+over an ink layer, so a turn changes the ink layer's colour, the row's opacity and translation and
+the sheet layer's position, and the word sweep is two `CAShapeLayer`s (sung, and the blending
+letter) covering `enumerateEnclosingRects` of the wipe's UTF-16 range, rebuilt only when the range
+moves; the breath dots and the end mark are layers of their own. **No text is set or drawn on the
+main thread**: a sheet is typeset on its own serial queue (`LyricGlyphs`, user-initiated) into
+`LyricShapes` for its sheet, width, measures, direction and caption size, the last four kept
+(`LyricShapesKept`), so opening Lyrics again (Now Playing's mode inserts the pane afresh each time,
+in the spring's first frame) typesets nothing, and a sheet not yet shaped shows nothing until it
+lands, inside the arrival's fade; a row's glyphs are drawn on the same queue as it nears the pane,
+those nearest the pane's middle asked first. A row is masked only while it turns or is swept: a
+plain row whose ink held for two frames, or when the link comes to rest, is drawn again in that ink
+(`LyricTypeset.tinted`, a fresh typesetting of the same text, never the shared one) and worn as the
+ink layer's contents with no mask, since every mask is a pass offscreen at every frame the field
+behind moves; only a swept row (its sung and blending letter over the ink) keeps group opacity.
+The `LyricTypeset`'s TextKit objects are used under its own lock, since glyphs are drawn off the
+main thread while the sweep reads its rectangles on it. Nothing is laid out, diffed or drawn again
+in a frame: as SwiftUI views (a `TimelineView` rebuilding every row) the pane cost about 5 ms of a
+120 Hz frame's 8 on the main thread, though two or three rows' bodies changed. `LyricLayout` places
+the shapes for the pane's height (a row's breath room, padding, its side's column and the end
+mark; a height change only moves the rows, and a width change shapes again), and hands every row's
+frame to the stage as its measurement (`measured`, `measuredSheet`), so `landing()` and the scroll
+bounds read the layer layout. A row more than a pane (at least 320 pt) beyond the pane's edges is
+hidden, and twice that far its glyphs are released, so a long sheet holds a few dozen masks at
+most. The edges dissolve through a `CAGradientLayer` mask (folding it into each row's opacity would
+fade a row of several lines as one); the arrival fades the pane layer.
 
 **The link's cadence follows the stage** (`LyricCadence`): while anything turns, a word-synced sheet
 plays (its sweep) or a hand holds or flings the sheet, it asks 120 Hz (80 at least); a line-synced
 sheet playing with nothing turning ticks at 20 Hz (`lineSyncedTick`) until a landed frame differs
 from what the turns aim at (`unfollowed`, which `isMoving` includes), so a line change starts within
 a tick; with nothing moving it pauses, and a `beat` bump (a frame landing, a drag beginning,
-*Follow*) wakes it through `updateUIView`. The lyrics alone ask 120 Hz, only while they move: a whole
-Now Playing held at 120 Hz (tried) dropped a frame at each of the field's redraws, since the field
-and every glass control over it composited again fit a 60 Hz frame and not a 120 Hz one.
+*Follow*) wakes it through `updateUIView`. The lyrics ask 120 Hz only while they move; the field
+behind them keeps its own rate (*Frame rate* under *The backdrop*), which it holds only while the
+pane over it stays cheap to composite. Each frame is drawn for the moment it is shown: the tick
+reads the link's `targetTimestamp` (at most 50 ms ahead), never the moment the callback happens to
+run, which wanders with the main thread's load, and a frame is never drawn for an earlier moment
+than the one before it.
 
 **Touch stays in SwiftUI**: a `DragGesture` (at least 10 pt, simultaneous with the cover's own
 dismissal) and a `SpatialTapGesture` on the representable feed the stage; a tap is resolved to a
@@ -881,7 +897,11 @@ one). Typing makes the sheet refuse a swipe down, so what was typed is not dropp
 `LyricClock` steers wall time toward the snapshot's position projected from when it was heard (a
 track change, pause or drift past 250 ms takes the position as is): the position is extrapolated
 per display frame from the 250 ms poll's reading, never held between polls, and never read from
-`Features.tick`. **The frame drawn is the frame of the tick drawing it**: `kept_lyric_frame` answers
+`Features.tick`. The pane's body never reads `PlayClock`: `LyricSetting` carries the clock and the
+playing song (`LyricHeard`), and `LyricLayerView` watches `positionMs` itself
+(`withObservationTracking`, renewed at each change) and draws at once, so a poll redraws a frame,
+not the pane's SwiftUI body; nor does it read the whole environment, the accent being resolved in
+values holding only the scheme and contrast. **The frame drawn is the frame of the tick drawing it**: `kept_lyric_frame` answers
 from the sheet Rust already holds (a lock and the arithmetic, no SQLite) on the main actor inside the
 tick, so the word sweep moves every display frame; only a sheet not yet held is asked on its own
 serial queue (`LyricFrameSource`), never `Work.inOrder`, one in flight and the latest owed, landing on

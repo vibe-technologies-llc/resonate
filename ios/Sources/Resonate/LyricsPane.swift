@@ -83,7 +83,6 @@ private struct LyricFollowing: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var phase
-    @Environment(\.self) private var environment
     @ScaledMetric(relativeTo: .title) private var fullWords: CGFloat = 32
     @ScaledMetric(relativeTo: .title2) private var compactWords: CGFloat = 28
     @State private var offersFollow = false
@@ -97,18 +96,19 @@ private struct LyricFollowing: View {
     let compact: Bool
 
     var body: some View {
-        let playback = LyricPlayback.of(library.snapshot, at: library.clock.positionMs, showing: track)
+        let heard = LyricHeard.of(library.snapshot, showing: track)
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
         let inks = LyricInks(
             scheme: scheme,
-            accent: Color.worn.resolve(in: environment),
+            accent: Color.worn.resolve(in: Self.resolving(scheme, contrast)),
             legibility: contrast == .increased || reduceTransparency ? .solid : .glass
         )
         let awake = visible && phase == .active
-        let sounding = playback?.playing == true && sheet.detail != .unsynced
+        let sounding = heard?.playing == true && sheet.detail != .unsynced
         let setting = LyricSetting(
             sheet: sheet,
-            playback: playback,
+            heard: heard,
+            clock: library.clock,
             native: library.native,
             measures: measures,
             inks: inks,
@@ -130,6 +130,13 @@ private struct LyricFollowing: View {
             }
             .overlay(alignment: .bottom) { follow }
             .animation(.easeInOut(duration: LyricPace.turn), value: offersFollow)
+    }
+
+    private static func resolving(_ scheme: ColorScheme, _ contrast: ColorSchemeContrast) -> EnvironmentValues {
+        var values = EnvironmentValues()
+        values.colorScheme = scheme
+        values._colorSchemeContrast = contrast
+        return values
     }
 
     private var hand: some Gesture {
@@ -423,15 +430,20 @@ struct LyricGlide {
     }
 }
 
+struct LyricHeard: Equatable {
+    let track: UInt64
+    let playing: Bool
+
+    static func of(_ snapshot: Snapshot?, showing track: Track?) -> LyricHeard? {
+        guard let snapshot, let current = snapshot.current, let track, current.id == track.id else { return nil }
+        return LyricHeard(track: current.id, playing: snapshot.transport == .playing)
+    }
+}
+
 struct LyricPlayback: Equatable {
     let track: UInt64
     let positionMs: UInt64
     let playing: Bool
-
-    static func of(_ snapshot: Snapshot?, at positionMs: UInt64, showing track: Track?) -> LyricPlayback? {
-        guard let snapshot, let current = snapshot.current, let track, current.id == track.id else { return nil }
-        return LyricPlayback(track: current.id, positionMs: positionMs, playing: snapshot.transport == .playing)
-    }
 }
 
 struct LyricClock {
@@ -832,8 +844,10 @@ final class LyricStage {
     private func took(_ landed: LyricFrame) -> Bool {
         let moved = frame.map(LyricLandmarks.init) != LyricLandmarks(landed)
 
+        if frame?.wipes != landed.wipes {
+            wipes = Dictionary(landed.wipes.map { (Int($0.line), $0) }) { kept, _ in kept }
+        }
         frame = landed
-        wipes = Dictionary(landed.wipes.map { (Int($0.line), $0) }) { kept, _ in kept }
         return moved
     }
 
