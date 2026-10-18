@@ -563,8 +563,12 @@ is never named.
   tracks pane, Favourites and an opened suggestion compare against `RootView::playing_now`'s `track`,
   the library row `LibraryModel::track_of` weighs out of the queue row's location and span (a resumed
   queue is minted afresh by `Queue::restore`). What `track_of` read is held in `named`, the albums the
-  bar links to in `read_albums`, until `LibraryModel::reload` forgets both
-  (`a_queued_row_is_read_again_once_the_catalog_changes_under_it`).
+  bar links to in `read_albums`. `LibraryModel::reload` forgets the albums but keeps `named`, serving
+  what it held while one background batch (`queued_rows`, `name_what_is_held_again`; a newer reload
+  replaces the batch) reads every held row again and swaps in the ones that changed, so a redraw
+  after a reload reads nothing on the window's thread; only a row never read before is read where
+  it is drawn (`a_queued_row_is_read_again_once_the_catalog_changes_under_it`). Statistics' *play from
+  here* reads its tracks with one `held_tracks` batch (`Library::tracks_with_ids`).
 - **The row playing is the row a list is on, never a track id** (a file can be in a queue or playlist
   twice; an unscanned row has no `TrackId`). The queue draws `PlayerState::queue_position`; a playlist
   `PlayerState::loaded_position`, marked only while `Library::playing_playlist` names it, i.e. while

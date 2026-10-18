@@ -16,6 +16,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::{
     Notice, ResonateApp, Selection, format,
     icons::Icon,
+    models::queued_rows,
     theme,
     views::{
         browser::{OPEN_ARTIST_HINT, ROW_CONTROLS},
@@ -189,32 +190,6 @@ fn queued_name(track: Option<Track>, player: &Player, item: &QueueItem) -> Strin
             .and_then(|info| info.tags.title.clone())
             .unwrap_or_else(|| format::stem(&item.location)),
     }
-}
-
-fn queued_rows(library: &Library, rows: &[QueueItem]) -> Vec<Option<Track>> {
-    let ids: Vec<TrackId> = rows.iter().map(|item| item.id).collect();
-    let by_id: AHashMap<TrackId, Track> = match library.tracks_with_ids(&ids) {
-        Ok(read) => read.into_iter().map(|track| (track.id, track)).collect(),
-        Err(error) => {
-            tracing::warn!(%error, "the queued tracks could not be read by id");
-            AHashMap::new()
-        }
-    };
-
-    rows.iter()
-        .map(|item| match by_id.get(&item.id) {
-            Some(track) if track.location == item.location => Some(track.clone()),
-            _ => queued_at(library, item),
-        })
-        .collect()
-}
-
-fn queued_at(library: &Library, item: &QueueItem) -> Option<Track> {
-    library
-        .track_at(item.location.as_path()?, item.span)
-        .inspect_err(|error| tracing::warn!(%error, "a queued track could not be read by path"))
-        .ok()
-        .flatten()
 }
 
 fn queued_cut(item: &QueueItem) -> Cut {

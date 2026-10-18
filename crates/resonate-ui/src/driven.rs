@@ -1794,12 +1794,43 @@ mod tests {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library.update(cx, |model, cx| model.reload(cx));
         });
+        let held = driven.read(|root, cx| root.library.read(cx).names_held());
+        assert_eq!(held, 1, "a reload emptied the names the queue draws from");
 
-        assert_eq!(
-            titled(&mut driven).as_deref(),
-            Some("Echoes"),
-            "the queue kept the row as it was first read"
-        );
+        let began = Instant::now();
+        while titled(&mut driven).as_deref() != Some("Echoes") {
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "the queue kept the row as it was first read"
+            );
+            driven.settle();
+            thread::sleep(FRAME);
+        }
+    }
+
+    #[gpui::test]
+    fn what_was_heard_most_is_read_back_in_the_order_it_is_listed(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let ids: Vec<_> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(|track| track.id)
+            .rev()
+            .collect();
+        let driven = Driven::opened_in(cx, library, &folder);
+
+        let read: Vec<_> = driven
+            .root
+            .read_with(&driven.cx, |root, cx| {
+                root.library.read(cx).held_tracks(&ids)
+            })
+            .iter()
+            .map(|track| track.id)
+            .collect();
+
+        assert_eq!(read, ids);
     }
 
     #[gpui::test]
