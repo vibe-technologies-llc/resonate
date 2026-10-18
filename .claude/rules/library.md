@@ -292,8 +292,10 @@ rows read via `Player::media` like any unscanned row.
   - An *empty* folder is guarded only where seen as a volume: keeping every empty folder's rows kept
     `moves::follow_the_moved` from pairing any move out of a folder it emptied.
 - **A volume seen mounted is remembered; its rows are kept while it is not.** The walk notes a
-  directory whose `st_dev` differs from its parent's (root included, and a followed link into
-  another filesystem) as a volume. `volumes::settle` writes them to `volumes` after the prune and
+  directory whose `st_dev` differs from its parent's, or that `/proc/self/mounts` lists as a mount
+  point (`volumes::MountPoints`, read once a walk and a call to `absent`: a bind mount of the same
+  filesystem shares its parent's device), root included and a followed link into another
+  filesystem, as a volume. (`a_bind_mount_of_the_same_filesystem_is_mounted_where_the_table_lists_it_and_not_otherwise`) `volumes::settle` writes them to `volumes` after the prune and
   drops a row for one no longer mounted that no track and no playlist row sits under. A noted volume
   whose device is its parent's (empty mount point) or whose directory is gone keeps every row
   `Known::at_or_under` names as `Outcome::Kept` and is not walked; `tidy_the_roots_beside` and

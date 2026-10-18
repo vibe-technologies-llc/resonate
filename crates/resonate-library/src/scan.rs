@@ -887,6 +887,7 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
     let root = &walking.root.path;
     let mut stack = vec![(root.clone(), 1_u8, root.parent().and_then(volumes::device))];
     let mut claimed_from_above = AHashSet::new();
+    let points = volumes::MountPoints::read();
 
     while let Some((directory, depth, outer)) = stack.pop() {
         if progress.is_cancelled() {
@@ -903,7 +904,7 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
             continue;
         }
         let device = volumes::device(&directory);
-        if device.is_some() && outer.is_some() && device != outer {
+        if device.is_some() && outer.is_some() && (device != outer || points.hold(&directory)) {
             mounted.push(directory.clone());
         } else if walking.known.is_a_volume(&directory) {
             tracing::warn!(path = %directory.display(), "keeping what the catalog holds on a volume that is not mounted");

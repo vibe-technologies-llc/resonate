@@ -51,8 +51,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] An album's `tagged_tracks` is one file's raw `TRACKTOTAL`, a disc's count on a set (this
   build's own writer writes it per disc), weighed against a release's whole count: a 12 + 10 deluxe
   rip misses its 22-track pressing and lands strictly on the 12-track standard edition
-- [M] A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read
-  in `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
 - [S] A file a sheet cuts, followed as it moved (`moves::cuts_moved`), is not refreshed from the rows
   the scan wrote at its new path: a sheet edited as the file moved keeps the gone rows' titles and
   index entries until the sheet's mtime brings a reprobe

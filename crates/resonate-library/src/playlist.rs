@@ -1648,9 +1648,10 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
         ))
     })?;
 
+    let points = volumes::MountPoints::read();
     let mut out_of_reach: Vec<PathBuf> = volumes
         .into_iter()
-        .filter(|volume| !volumes::is_mounted(volume))
+        .filter(|volume| !volumes::is_mounted_among(volume, &points))
         .collect();
     out_of_reach.extend(roots.into_iter().filter(|root| !root.is_dir()));
     out_of_reach.extend(volumes::listed_and_not_mounted());
