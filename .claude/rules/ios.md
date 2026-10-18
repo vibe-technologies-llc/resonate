@@ -9,7 +9,11 @@ paths:
 
 The iOS front end is SwiftUI, a SwiftPM package under `ios/` built, signed and installed from Linux
 with xtool (`xtool.yml`: bundle `org.resonate.ios`, `Resonate/Info.plist`, `Resonate/Icon.png`,
-`Resonate/Resonate.entitlements`). iOS 26 is the minimum, so the app draws with Liquid Glass and
+`Resonate/Resonate.entitlements`). **It is an iPhone app**: `Info.plist`'s `UIDeviceFamily` is 1
+alone and its orientation portrait, overriding xtool's universal default (1 and 2), since no view
+was laid out for an iPad's width or size classes; an iPad runs it as an iPhone app. xtool also
+writes `UISupportedInterfaceOrientations~ipad` with no way to leave it out, which iOS ignores
+without the iPad family. iOS 26 is the minimum, so the app draws with Liquid Glass and
 needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.22.2 or later; older builds miss Xcode 27's SDK),
 `zip` for `--ipa`, `rsvg-convert` (librsvg) for the accent icons, the `darwin` Swift SDK
 `xtool setup` builds from Xcode's `.xip`, the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
