@@ -319,7 +319,7 @@ final class EqualiserResponse {
 }
 
 struct EqualiserGraph: View {
-    let curve: EqualiserCurve
+    let given: EqualiserCurve
     let response: [Float]
     let limits: EqualiserLimits
     @Binding var selected: Int?
@@ -333,6 +333,7 @@ struct EqualiserGraph: View {
     private static let tapTravel: CGFloat = 8
     private static let handleSize: CGFloat = 26
     private static let smallestPinch: CGFloat = 0.05
+    private static let toldEvery: Duration = .milliseconds(50)
 
     private struct Held {
         let band: Int
@@ -356,6 +357,33 @@ struct EqualiserGraph: View {
     @State private var grabs = 0
     @State private var releases = 0
     @GestureState private var dragged = false
+    @State private var moving: EqualiserCurve?
+    @State private var toldAt = ContinuousClock.now
+    @State private var telling: Task<Void, Never>?
+
+    init(
+        curve: EqualiserCurve,
+        response: [Float],
+        limits: EqualiserLimits,
+        selected: Binding<Int?>,
+        holding: Binding<Bool>,
+        edit: @escaping (EqualiserCurve) -> Void,
+        commit: @escaping (EqualiserCurve) -> Void,
+        add: @escaping (EqualiserBand) -> Void,
+        discard: @escaping () -> Void
+    ) {
+        given = curve
+        self.response = response
+        self.limits = limits
+        _selected = selected
+        _holding = holding
+        self.edit = edit
+        self.commit = commit
+        self.add = add
+        self.discard = discard
+    }
+
+    private var curve: EqualiserCurve { moving ?? given }
 
     var body: some View {
         GeometryReader { geometry in
@@ -480,14 +508,46 @@ struct EqualiserGraph: View {
             band.q = min(max(band.q * factor, limits.qAtLeast), limits.qAtMost)
         }
         selected = index
-        commit(curve.replacing(index, with: band))
+        kept(curve.replacing(index, with: band))
+    }
+
+    private func told(_ next: EqualiserCurve) {
+        moving = next
+        let now = ContinuousClock.now
+        if toldAt.duration(to: now) >= Self.toldEvery {
+            toldAt = now
+            edit(next)
+            return
+        }
+        guard telling == nil else { return }
+        telling = Task {
+            try? await Task.sleep(for: Self.toldEvery)
+            telling = nil
+            guard let moving else { return }
+            toldAt = .now
+            edit(moving)
+        }
+    }
+
+    private func settled() {
+        telling?.cancel()
+        telling = nil
+        moving = nil
+    }
+
+    private func kept(_ next: EqualiserCurve) {
+        settled()
+        commit(next)
     }
 
     private func dragEnded() {
         guard let ended = touch else { return }
         touch = nil
         holding = pinched != nil
-        if case .band(let held) = ended, held.moved, pinched == nil { discard() }
+        if case .band(let held) = ended, held.moved, pinched == nil {
+            settled()
+            discard()
+        }
     }
 
     private func dragging(_ scale: EqualiserScale) -> some Gesture {
@@ -500,7 +560,7 @@ struct EqualiserGraph: View {
                 guard held.moved || travelled > 2 else { return }
                 held.moved = true
                 touch = .band(held)
-                edit(placed(held, at: value.location, scale: scale))
+                told(placed(held, at: value.location, scale: scale))
             }
             .onEnded { value in
                 defer {
@@ -510,7 +570,7 @@ struct EqualiserGraph: View {
                 switch touch {
                 case .band(let held):
                     releases += 1
-                    if held.moved, pinched == nil { commit(placed(held, at: value.location, scale: scale)) }
+                    if held.moved, pinched == nil { kept(placed(held, at: value.location, scale: scale)) }
                 case .empty(let start):
                     let travelled = hypot(value.location.x - start.x, value.location.y - start.y)
                     guard pinched == nil, travelled < Self.tapTravel else { return }
@@ -531,14 +591,14 @@ struct EqualiserGraph: View {
                     grabs += 1
                 }
                 guard let pinched else { return }
-                edit(narrowed(pinched, by: value.magnification))
+                told(narrowed(pinched, by: value.magnification))
             }
             .onEnded { value in
                 guard let ended = pinched else { return }
                 pinched = nil
                 holding = touch != nil
                 releases += 1
-                commit(narrowed(ended, by: value.magnification))
+                kept(narrowed(ended, by: value.magnification))
             }
     }
 

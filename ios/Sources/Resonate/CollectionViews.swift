@@ -587,7 +587,7 @@ struct CollectionQueueActions: View {
 
 struct AlbumDisc: Identifiable {
     let number: UInt32
-    let tracks: [Track]
+    var tracks: [Track]
 
     var id: UInt32 { number }
 
@@ -595,8 +595,8 @@ struct AlbumDisc: Identifiable {
         var discs: [AlbumDisc] = []
         for track in tracks {
             let number = track.discNumber ?? 1
-            if let last = discs.last, last.number == number {
-                discs[discs.count - 1] = AlbumDisc(number: number, tracks: last.tracks + [track])
+            if discs.last?.number == number {
+                discs[discs.count - 1].tracks.append(track)
             } else {
                 discs.append(AlbumDisc(number: number, tracks: [track]))
             }
@@ -606,8 +606,11 @@ struct AlbumDisc: Identifiable {
 }
 
 func sharedQuality(_ tracks: [Track]) -> String? {
-    guard let quality = tracks.first?.quality, !quality.isEmpty, tracks.allSatisfy({ $0.quality == quality }) else { return nil }
-    return quality
+    guard let first = tracks.first,
+        tracks.allSatisfy({ $0.codec == first.codec && $0.bits == first.bits && $0.rate == first.rate })
+    else { return nil }
+    let quality = first.quality
+    return quality.isEmpty ? nil : quality
 }
 
 struct ReadFailure: View {

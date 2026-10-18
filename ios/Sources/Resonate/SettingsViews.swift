@@ -154,11 +154,10 @@ struct SettingsView: View {
             ),
             SettingsEntry(
                 title: "Sleep timer",
-                detail: Self.sleepSummary(library.snapshot?.sleep, remaining: nil),
+                detail: "Pause playback after a while",
                 symbol: "moon",
                 keywords: "sound playback pause minutes end song queue",
-                opening: .sleepTimer,
-                available: library.playingTrack != nil
+                opening: .sleepTimer
             ),
         ]
     }
@@ -218,8 +217,7 @@ struct SettingsView: View {
             NavigationLink(value: destination) { row }
                 .disabled(!entry.available)
         case .sleepTimer:
-            Button { navigation.sleepTimer = true } label: { SleepTimerRow(entry: entry) }
-                .disabled(!entry.available)
+            SleepTimerButton(entry: entry)
         case .rescan:
             Button { library.rescan() } label: { row }
                 .disabled(!entry.available)
@@ -276,6 +274,17 @@ struct SettingsView: View {
             account?.lastfmSession.isEmpty == false ? "Last.fm" : nil,
         ].compactMap { $0 }
         return services.isEmpty ? "Share your listening with ListenBrainz or Last.fm" : services.joined(separator: " · ")
+    }
+}
+
+private struct SleepTimerButton: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let entry: SettingsEntry
+
+    var body: some View {
+        Button { navigation.sleepTimer = true } label: { SleepTimerRow(entry: entry) }
+            .disabled(library.playingTrack == nil)
     }
 }
 

@@ -295,7 +295,7 @@ struct SuggestedMixCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: open) {
                 MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: 16)
-                    .shadow(color: .black.opacity(0.18), radius: 10, y: 6)
+                    .background { HeaderShadow(outline: .rounded(16)) }
             }
             .buttonStyle(.plain)
             .accessibilityLabel(mix.title)
@@ -400,8 +400,9 @@ struct FilterSheet: View {
 
     nonisolated private static func distinct(_ names: [String]) -> [String] {
         var seen = Set<String>()
+        var folded = Set<String>()
         return names
-            .filter { !$0.isEmpty && seen.insert($0.searchFolded).inserted }
+            .filter { !$0.isEmpty && seen.insert($0).inserted && folded.insert($0.searchFolded).inserted }
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 }

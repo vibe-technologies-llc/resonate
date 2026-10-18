@@ -29,35 +29,21 @@ struct SongsView: View {
     @State private var scope = SearchScope.top
 
     var body: some View {
-        @Bindable var library = library
-        @Bindable var navigation = navigation
         let grouping = navigation.songsGrouping
         @Bindable var search = library.songSearch
-        List {
+        Group {
             if search.isAsked {
-                SearchCompletions(search: search).themedRows()
-                SearchResults(search: search, scope: $scope).themedRows()
-            } else {
-                Section {
-                    Picker("Show", selection: $navigation.songsGrouping) {
-                        ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    if grouping == .songs {
-                        FilterChips()
-                    } else {
-                        CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
-                    }
+                List {
+                    SearchCompletions(search: search).themedRows()
+                    SearchResults(search: search, scope: $scope).themedRows()
                 }
-                .listRowSeparator(.hidden)
-                .themedRows()
-                BrowsedMusic(grouping: grouping).themedRows()
+                .listStyle(.plain)
+                .id(SongsList.searched)
+            } else {
+                browsed(grouping: grouping)
+                    .id(SongsList.browsed)
             }
         }
-        .listStyle(.plain)
-        .listSectionIndexVisibility(.visible)
         .searchable(text: $search.text, prompt: "Search your music")
         .searchScopes($scope, activation: .onSearchPresentation) {
             ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
@@ -76,6 +62,36 @@ struct SongsView: View {
             }
         }
     }
+
+    private func browsed(grouping: Grouping) -> some View {
+        @Bindable var library = library
+        @Bindable var navigation = navigation
+        return List {
+            Section {
+                Picker("Show", selection: $navigation.songsGrouping) {
+                    ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                if grouping == .songs {
+                    FilterChips()
+                } else {
+                    CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
+                }
+            }
+            .listRowSeparator(.hidden)
+            .themedRows()
+            BrowsedMusic(grouping: grouping).themedRows()
+        }
+        .listStyle(.plain)
+        .listSectionIndexVisibility(.visible)
+    }
+}
+
+enum SongsList {
+    case searched
+    case browsed
 }
 
 struct BrowsedMusic: View {
@@ -106,7 +122,7 @@ struct BrowsedSongs: View {
             } description: {
                 Text("Change or reset the filters to see the rest of your library.")
             } actions: {
-                Button("Reset filters") { library.setFilter(defaultTrackFilter()) }
+                Button("Reset filters") { library.setFilter(Library.everything) }
                     .buttonStyle(.glass)
             }
             .listRowSeparator(.hidden)

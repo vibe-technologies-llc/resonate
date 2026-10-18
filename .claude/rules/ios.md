@@ -142,7 +142,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   never reads `snapshot` in the body that builds its rows (a row marks itself by `currentId`): the
   Songs list doing so re-diffed the whole library on every play and pause, in the frame Now
   Playing's cover began its spring; only the views that show the position (Now Playing
-  slider and times, sleep countdowns, the output page) read the clock, each in a view of its own (Settings' sleep row is `SleepTimerRow`, so the list and its search filter are not rebuilt each tick).
+  slider and times, sleep countdowns, the output page) read the clock, each in a view of its own (Settings' sleep row is `SleepTimerRow` inside `SleepTimerButton`, which alone reads whether a song is loaded, so the list and its search filter are rebuilt by neither a tick nor a song change).
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
@@ -477,10 +477,14 @@ every route change (a pair of headphones at the same rate included), not from th
   banded the player's list as it scrolled; it scrolls back to the playing row whenever the song
   changes. **The player's list is a window around the playing row** (`QueueParts`' `heardAtMost` 50
   and `aheadAtMost` 200), with a row naming the earlier and the further songs that opens the Queue
-  tab, which lists them all: a whole library queued from Songs is thousands of rows, and a `List`
+  tab: a whole library queued from Songs is thousands of rows, and a `List`
   holding them all set every one up and scrolled past the whole history to the playing row on the
   main thread, so the pane came in a beat after the cover landed (and, built earlier, swallowed
-  taps). In the player the list takes the full width
+  taps). The Queue tab is a window too, 1000 rows either side of the playing one
+  (`QueueSections.shownInTab`), each end a row that counts the rest and shows 1000 more when
+  tapped, so a song change re-sections a few thousand rows, never a whole library; rows are told
+  whether they play (`QueueRow.current`) rather than each reading `currentQueueId`, and the list
+  scrolls to the playing row only while it is on screen. In the player the list takes the full width
   (the player's gutter undone), since its rows carry their own insets;
   empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
@@ -541,7 +545,9 @@ every route change (a pair of headphones at the same rate included), not from th
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
-  the full list is rows.
+  the full list is rows. The *Favourites* and *All songs* rows read their counts in views of their
+  own (`FavouritesCountRow`, `SongsCountRow`, from `Library.catalogCount`), so a heart or a
+  catalog read never rebuilds the tab.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
   never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
@@ -681,7 +687,10 @@ every route change (a pair of headphones at the same rate included), not from th
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
   each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
   Completions are never `.searchSuggestions` while typing: that overlay sat over the results and
-  moved with every answer. Searching spans the catalog: filters shape browsing
+  moved with every answer. The results and the browsed music are two `List`s (`SongsList`), so a
+  search beginning or ending swaps one list for the other instead of deleting or inserting every
+  browsed row in one. A lit string is kept per text, query and column (`lit`, up to 4096), so a
+  redraw asks `highlights` across the boundary only for text it has not lit. Searching spans the catalog: filters shape browsing
   only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
   are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
   `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
@@ -1081,7 +1090,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   one-finger drag beginning within 32 pt of a handle moves it, frequency across and gain up (tidied
   to 0.1, 1 or 10 Hz by decade and to 0.1 dB); a pinch turns the Q of the held band, else the
   selected one; a tap on empty space adds a peaking band there (Q 1) and switches the equaliser on.
-  Grab and release are felt (`sensoryFeedback`). A drag the system cancels (a call, an alert) never
+  Grab and release are felt (`sensoryFeedback`). The graph draws a held handle from its own draft
+  at the display's rate and tells the page at most every 50 ms (`EqualiserGraph.toldEvery`, the
+  latest owed), so the page's sections are not rebuilt per touch event. A drag the system cancels (a call, an alert) never
   reaches `onEnded`; a `@GestureState` flag falling with a touch still held releases it and discards
   the draft, so the next touch starts clean. What a gesture moves is a draft drawn at once; the
   engine and the store hear the release, once, as the sliders did, and the draft gives way when the

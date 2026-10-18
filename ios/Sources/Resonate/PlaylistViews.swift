@@ -357,6 +357,23 @@ struct SongKeys: Sendable {
     }
 }
 
+@MainActor
+@Observable
+final class ChosenSongs {
+    private(set) var ids: [UInt64] = []
+    private(set) var held: Set<UInt64> = []
+
+    func toggle(_ id: UInt64) {
+        if let at = ids.firstIndex(of: id) {
+            ids.remove(at: at)
+            held.remove(id)
+        } else {
+            ids.append(id)
+            held.insert(id)
+        }
+    }
+}
+
 struct AddSongsSheet: View {
     private static let settles: Duration = .milliseconds(150)
 
@@ -364,8 +381,7 @@ struct AddSongsSheet: View {
     @Environment(\.dismiss) private var dismiss
     let id: UInt64
     @State private var search = ""
-    @State private var chosen: [UInt64] = []
-    @State private var chosenSet: Set<UInt64> = []
+    @State private var chosen = ChosenSongs()
     @State private var keyed = SongKeys.empty
     @State private var listed: [Track] = []
     @State private var keying = true
@@ -373,25 +389,7 @@ struct AddSongsSheet: View {
     var body: some View {
         NavigationStack {
             List(listed, id: \.id) { track in
-                let isChosen = chosenSet.contains(track.id)
-                Button {
-                    if let at = chosen.firstIndex(of: track.id) {
-                        chosen.remove(at: at)
-                        chosenSet.remove(track.id)
-                    } else {
-                        chosen.append(track.id)
-                        chosenSet.insert(track.id)
-                    }
-                } label: {
-                    HStack {
-                        CollectionRow(track: track, title: track.shownTitle, detail: track.shownArtist)
-                        Spacer()
-                        Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(.tint)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isChosen ? .isSelected : [])
+                ChoosableSong(track: track, chosen: chosen)
             }
             .overlay {
                 if keying || !library.catalogRead {
@@ -423,13 +421,12 @@ struct AddSongsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(chosen.count == 1 ? "Add 1 song" : "Add \(chosen.count) songs", role: .confirm) {
+                    AddChosenButton(chosen: chosen) {
                         let byId = Dictionary(keyed.tracks.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
-                        let picked = chosen.compactMap { byId[$0] }
+                        let picked = chosen.ids.compactMap { byId[$0] }
                         library.features.addToPlaylist(id, picked)
                         dismiss()
                     }
-                    .disabled(chosen.isEmpty)
                 }
             }
         }
@@ -437,6 +434,38 @@ struct AddSongsSheet: View {
 
     private static func folded(_ search: String) -> String {
         search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
+    }
+}
+
+struct ChoosableSong: View {
+    let track: Track
+    let chosen: ChosenSongs
+
+    var body: some View {
+        let isChosen = chosen.held.contains(track.id)
+        Button {
+            chosen.toggle(track.id)
+        } label: {
+            HStack {
+                CollectionRow(track: track, title: track.shownTitle, detail: track.shownArtist)
+                Spacer()
+                Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(.tint)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+}
+
+struct AddChosenButton: View {
+    let chosen: ChosenSongs
+    let add: () -> Void
+
+    var body: some View {
+        let count = chosen.ids.count
+        Button(count == 1 ? "Add 1 song" : "Add \(count) songs", role: .confirm, action: add)
+            .disabled(count == 0)
     }
 }
 

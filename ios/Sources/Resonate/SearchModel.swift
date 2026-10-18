@@ -127,7 +127,26 @@ extension String {
     }
 }
 
+private struct LitAsked: Hashable {
+    let text: String
+    let query: String
+    let column: SearchColumn
+}
+
+private let litKeptAtMost = 4096
+@MainActor private var litKept: [LitAsked: AttributedString] = [:]
+
+@MainActor
 func lit(_ text: String, by query: String, in column: SearchColumn) -> AttributedString {
+    let asked = LitAsked(text: text, query: query, column: column)
+    if let kept = litKept[asked] { return kept }
+    let shown = lighted(text, by: query, in: column)
+    if litKept.count >= litKeptAtMost { litKept.removeAll(keepingCapacity: true) }
+    litKept[asked] = shown
+    return shown
+}
+
+private func lighted(_ text: String, by query: String, in column: SearchColumn) -> AttributedString {
     var shown = AttributedString(text)
     let ranges = query.isEmpty ? [] : highlights(query: query, text: text, column: column)
     guard !ranges.isEmpty else { return shown }

@@ -267,16 +267,8 @@ struct VisualizerView: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        let samples = library.features.samples
         VStack(spacing: 20) {
-            if library.transport != .playing, samples.isEmpty {
-                ContentUnavailableView("Play a song to see its sound", systemImage: "waveform")
-            } else {
-                SignalPlot(values: samples, mirrored: true)
-                    .frame(maxWidth: .infinity, maxHeight: 320)
-                    .padding()
-                    .glassEffect(.regular, in: .rect(cornerRadius: 24))
-            }
+            LiveSignal()
             if let track = library.playingTrack {
                 Text(track.shownTitle).font(.headline)
                 Text(track.quality).font(.subheadline).foregroundStyle(.secondary)
@@ -288,6 +280,22 @@ struct VisualizerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { library.features.visualize(true) }
         .onDisappear { library.features.visualize(false) }
+    }
+}
+
+struct LiveSignal: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let samples = library.features.samples
+        if library.transport != .playing, samples.isEmpty {
+            ContentUnavailableView("Play a song to see its sound", systemImage: "waveform")
+        } else {
+            SignalPlot(values: samples, mirrored: true)
+                .frame(maxWidth: .infinity, maxHeight: 320)
+                .padding()
+                .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        }
     }
 }
 

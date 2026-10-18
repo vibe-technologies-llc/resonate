@@ -1067,6 +1067,7 @@ struct QueueList: View {
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let inPlayer: Bool
+    @State private var onScreen = false
 
     var body: some View {
         ScrollViewReader { scroller in
@@ -1078,11 +1079,17 @@ struct QueueList: View {
             .listStyle(.plain)
             .scrollContentBackground(inPlayer ? .hidden : .automatic)
             .environment(\.liftedField, inPlayer)
-            .onAppear { scroller.scrollTo(Self.playingRow, anchor: .top) }
+            .onAppear {
+                onScreen = true
+                scroller.scrollTo(Self.playingRow, anchor: .top)
+            }
+            .onDisappear { onScreen = false }
             .onChange(of: library.currentQueueId) {
+                guard onScreen else { return }
                 withAnimation(reduceMotion ? nil : .smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
             }
             .onChange(of: library.queue.isEmpty) {
+                guard onScreen else { return }
                 scroller.scrollTo(Self.playingRow, anchor: .top)
             }
         }
@@ -1093,12 +1100,15 @@ struct QueueSections: View {
     private static let heardFaded = 0.55
     private static let heardInPlayer = 50
     private static let aheadInPlayer = 200
+    private static let shownInTab = 1000
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let inPlayer: Bool
     let playingRowId: String
     @State private var edited = 0
+    @State private var heardInTab = Self.shownInTab
+    @State private var aheadInTab = Self.shownInTab
 
     var body: some View {
         let rows = library.queue
@@ -1113,21 +1123,21 @@ struct QueueSections: View {
                     rows: rows.count,
                     playing: playing,
                     next: library.playingNext,
-                    heardAtMost: inPlayer ? Self.heardInPlayer : nil,
-                    aheadAtMost: inPlayer ? Self.aheadInPlayer : nil
+                    heardAtMost: inPlayer ? Self.heardInPlayer : heardInTab,
+                    aheadAtMost: inPlayer ? Self.aheadInPlayer : aheadInTab
                 )
                 if playing > 0 {
                     Section {
                         QueueHeading(title: "History")
                         if parts.history.lowerBound > 0 {
-                            wholeQueue(parts.history.lowerBound == 1 ? "1 earlier song" : "\(parts.history.lowerBound) earlier songs")
+                            earlier(parts.history.lowerBound)
                         }
                         rowsOf(rows, parts.history).opacity(Self.heardFaded)
                     }
                 }
                 Section {
                     QueueHeading(title: "Now playing").id(playingRowId)
-                    QueueRow(row: rows[playing], edited: $edited)
+                    QueueRow(row: rows[playing], current: true, edited: $edited)
                 }
                 if !parts.next.isEmpty {
                     Section {
@@ -1143,17 +1153,56 @@ struct QueueSections: View {
                         rowsOf(rows, parts.rest)
                     }
                     if parts.beyond > 0 {
-                        wholeQueue(parts.beyond == 1 ? "1 more song" : "\(parts.beyond) more songs")
+                        further(parts.beyond)
                     }
                 }
             } else {
+                let shown = min(rows.count, inPlayer ? Self.aheadInPlayer : aheadInTab)
                 Section {
                     QueueHeading(title: "Up next")
-                    rowsOf(rows, 0..<rows.count)
+                    rowsOf(rows, 0..<shown)
+                    if rows.count > shown {
+                        further(rows.count - shown)
+                    }
                 }
             }
         }
         .sensoryFeedback(.selection, trigger: edited)
+    }
+
+    @ViewBuilder
+    private func earlier(_ count: Int) -> some View {
+        let title = count == 1 ? "1 earlier song" : "\(count) earlier songs"
+        if inPlayer {
+            wholeQueue(title)
+        } else {
+            moreRows(title) { heardInTab += Self.shownInTab }
+        }
+    }
+
+    @ViewBuilder
+    private func further(_ count: Int) -> some View {
+        let title = count == 1 ? "1 more song" : "\(count) more songs"
+        if inPlayer {
+            wholeQueue(title)
+        } else {
+            moreRows(title) { aheadInTab += Self.shownInTab }
+        }
+    }
+
+    private func moreRows(_ title: String, _ widen: @escaping () -> Void) -> some View {
+        Button(action: widen) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("Show").font(.footnote.weight(.semibold))
+            }
+            .secondaryInk()
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .accessibilityHint("Shows more of the queue")
     }
 
     private func wholeQueue(_ title: String) -> some View {
@@ -1176,7 +1225,7 @@ struct QueueSections: View {
 
     private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {
         ForEach(rows[range], id: \.queueId) { row in
-            QueueRow(row: row, edited: $edited)
+            QueueRow(row: row, current: false, edited: $edited)
         }
         .onMove { offsets, destination in
             guard let moved = offsets.first else { return }
@@ -1224,12 +1273,13 @@ struct QueueParts {
 struct QueueRow: View {
     @Environment(Library.self) private var library
     let row: Track
+    let current: Bool
     @Binding var edited: Int
     @State private var choosingPlaylist = false
 
     var body: some View {
         let favourite = library.isFavourite(row)
-        TrackRow(track: row, current: row.queueId == library.currentQueueId, ownsMenus: false) {
+        TrackRow(track: row, current: current, ownsMenus: false) {
             library.jump(to: row)
         }
         .swipeActions(edge: .trailing) {
