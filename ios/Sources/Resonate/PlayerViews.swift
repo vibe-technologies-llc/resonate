@@ -235,7 +235,7 @@ struct NowPlayingView: View {
             return
         }
         reshaping = true
-        withAnimation(Self.reshaping, completionCriteria: .logicallyComplete) {
+        withAnimation(Self.reshaping, completionCriteria: .removed) {
             mode = target
         } completion: {
             reshaping = false

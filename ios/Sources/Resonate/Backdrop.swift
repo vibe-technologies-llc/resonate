@@ -363,6 +363,7 @@ struct FieldSize: Equatable, Hashable {
 enum FieldPicture {
     private static let bytesPerPixel = 4
 
+    @concurrent
     static func rendered(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) async -> CGImage? {
         guard let encoded = encoded(by: gpu, uniforms, size: size) else { return nil }
 
@@ -620,8 +621,10 @@ final class AmbientField: NSObject {
             changed = true
         }
         guard changed else { return }
-        if toneChanged || latest == nil {
+        if latest == nil {
             drawNow()
+        } else if toneChanged {
+            draw(at: now)
         } else {
             owed = true
         }
@@ -725,7 +728,8 @@ final class AmbientField: NSObject {
             self.link = link
             return link
         }()
-        started.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+        let range = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+        if started.preferredFrameRateRange != range { started.preferredFrameRateRange = range }
     }
 
     @objc private func tick(_ link: CADisplayLink) {
@@ -838,6 +842,11 @@ final class BackdropMetalView: UIView {
         placeholder = layer
     }
 
+    private func keepPlaceholder() {
+        guard let size = FieldSize(bounds.size) else { return }
+        renderer.keepPlaceholder(aspect: size.aspect)
+    }
+
     private func retirePlaceholder() {
         guard let held = placeholder else { return }
         placeholder = nil
@@ -851,6 +860,8 @@ final class BackdropMetalView: UIView {
         if window != nil {
             drewLiveFrame = false
             showPlaceholder()
+        } else {
+            keepPlaceholder()
         }
         applyMotion()
     }
@@ -920,7 +931,9 @@ final class BackdropRenderer {
     private static let placeholderWidth = 96
 
     weak var library: Library?
-    var tone = BackdropTone.dark
+    var tone = BackdropTone.dark {
+        didSet { if tone != oldValue { kept = nil } }
+    }
     var playing = false
     var still = false
 
@@ -930,6 +943,8 @@ final class BackdropRenderer {
     private var speed = BackdropRenderer.restingSpeed
     private var energy: Float = 0
     private var lastFrame: CFTimeInterval?
+    private var kept: (aspect: Float, image: CGImage)?
+    private var keeping = false
 
     init(gpu: BackdropGPU, palette: Palette) {
         self.gpu = gpu
@@ -937,7 +952,7 @@ final class BackdropRenderer {
     }
 
     func show(_ palette: Palette) {
-        _ = blend.show(palette, at: CACurrentMediaTime())
+        if blend.show(palette, at: CACurrentMediaTime()) { kept = nil }
     }
 
     func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
@@ -966,9 +981,29 @@ final class BackdropRenderer {
     }
 
     func placeholder(aspect: Float, at moment: CFTimeInterval) -> CGImage? {
-        let height = max(Int((Float(Self.placeholderWidth) / max(aspect, 0.1)).rounded()), 1)
-        guard let size = FieldSize(CGSize(width: Self.placeholderWidth, height: height)) else { return nil }
+        if let kept, abs(kept.aspect - aspect) < Self.placeholderAspectsAlike { return kept.image }
+        guard let size = Self.placeholderSize(aspect: aspect) else { return nil }
         return FieldPicture.renderedNow(by: gpu, uniforms(at: moment, aspect: size.aspect), size: size)
+    }
+
+    func keepPlaceholder(aspect: Float) {
+        guard !keeping, let size = Self.placeholderSize(aspect: aspect) else { return }
+        keeping = true
+        let gpu = gpu
+        let uniforms = uniforms(at: CACurrentMediaTime(), aspect: size.aspect)
+        Task { [weak self] in
+            let image = await FieldPicture.rendered(by: gpu, uniforms, size: size)
+            guard let self else { return }
+            keeping = false
+            if let image { kept = (aspect, image) }
+        }
+    }
+
+    private static let placeholderAspectsAlike: Float = 0.01
+
+    private static func placeholderSize(aspect: Float) -> FieldSize? {
+        let height = max(Int((Float(placeholderWidth) / max(aspect, 0.1)).rounded()), 1)
+        return FieldSize(CGSize(width: placeholderWidth, height: height))
     }
 
     private func advance(by step: Float) {

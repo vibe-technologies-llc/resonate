@@ -16,7 +16,14 @@ final class AppearanceState {
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard
 
-    private(set) var accent: ResonateAccent?
+    private(set) var accent: ResonateAccent? {
+        didSet {
+            tint = Self.tint(of: accent)
+            ink = Self.ink(of: accent)
+        }
+    }
+    private(set) var tint = Color.accentColor
+    private(set) var ink = Color.white
     private(set) var iconRefused: String?
     @ObservationIgnored private var iconChange: Task<Void, Never>?
 
@@ -34,7 +41,10 @@ final class AppearanceState {
 
     private init() {
         let kept = settings.string(forKey: Self.accentKey)
-        accent = ResonateAccent.every.first { $0.name == kept }
+        let chosen = ResonateAccent.every.first { $0.name == kept }
+        accent = chosen
+        tint = Self.tint(of: chosen)
+        ink = Self.ink(of: chosen)
         themedBackground = settings.object(forKey: Self.backgroundKey) as? Bool ?? true
         movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? true
         backgroundStrength = settings.object(forKey: Self.strengthKey) as? Double ?? Self.defaultStrength
@@ -44,12 +54,12 @@ final class AppearanceState {
         }
     }
 
-    var tint: Color {
-        accent.map(Self.color) ?? Color.accentColor
+    private static func tint(of accent: ResonateAccent?) -> Color {
+        accent.map(color) ?? Color.accentColor
     }
 
-    var ink: Color {
-        accent.map(Self.ink(on:)) ?? .white
+    private static func ink(of accent: ResonateAccent?) -> Color {
+        accent.map(ink(on:)) ?? .white
     }
 
     static func ink(on accent: ResonateAccent) -> Color {

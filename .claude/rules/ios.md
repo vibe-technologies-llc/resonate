@@ -464,7 +464,9 @@ every route change (a pair of headphones at the same rate included), not from th
   build in the spring's first frame (the lyrics are layers, the queue a window); Lyrics to Up next crossfades at once, the cover staying put.
   **A mode change asks 120 Hz for its 0.8 s** (`FrameRateBoost`, a `CADisplayLink` that lets go once
   the time is up), and the field rests on the frame it shows while the cover moves
-  (`BackdropView(resting:)`, `.dormant`, so the renderer's capped step carries on without a jump):
+  (`BackdropView(resting:)`, `.dormant`, so the renderer's capped step carries on without a jump)
+  until the spring is removed (`completionCriteria: .removed`; logically complete ends while the
+  bounce still moves, and the field woke under it):
   left to the system, the spring ran at its default rate, and the field redrawing under the moving
   glass took the frames it needed. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
@@ -640,7 +642,7 @@ every route change (a pair of headphones at the same rate included), not from th
 - **The accent is the desktop's, chosen on Settings › Appearance › Accent colour** (`Appearance.swift`):
   *Resonate* (the default: the system accent and the packaged icon) or one of `ResonateAccent.every`,
   kept as `accent` in the `appearance` suite. `AppearanceState.shared` (`@Observable`) is read by
-  `.tint` at the root and the Now Playing cover and by `Color.worn`, which every view drawing the
+  `.tint` at the root and the Now Playing cover and by `Color.worn` (the tint and its ink are stored, made again only when the accent moves, so every read hands out the same colour and a view comparing it sees no change), which every view drawing the
   accent itself uses instead of `Color.accentColor` (that reads the asset catalog, never a tint set
   in code). An accent is drawn as its hex in dark mode and 28 % deeper in light, since the desktop's
   hexes are lit for dark grounds. Choosing one sets the alternate icon of its name
@@ -766,7 +768,7 @@ in; it never opens on another colour first.
   by a `CAMetalDisplayLink` on the main run loop, which hands each frame a drawable already acquired
   (two frames queued ahead) and its presentation time: an `MTKView` takes its drawable on the main
   thread and blocks there whenever the GPU is behind, which stalled every animation on the screen.
-  A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it renders the field at 96 pixels across into a texture at the current time (`BackdropRenderer.placeholder`), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
+  A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it renders the field at 96 pixels across into a texture at the current time (`BackdropRenderer.placeholder`; waiting on the GPU only the first time: leaving a window renders the next one off the main thread, `keepPlaceholder`, kept until the palette or tone moves), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
   leaves its window. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
@@ -804,7 +806,7 @@ in; it never opens on another colour first.
   background. The palette is built around the accent colour (re-sampled when the accent changes,
   crossfaded at 30 fps for its 1.2 s), `BackdropTone.ambient` (dark floor 0.05 with a range of 0.10
   to 0.32, light floor 0.96 down to 0.80, chroma and range scaled by the strength, so system labels
-  keep their contrast); a change of tone (light and dark) renders at once. The field's clock
+  keep their contrast); a change of tone (light and dark, or the strength slider) is drawn at once off the main thread (only a page's first picture is drawn synchronously), so dragging the strength stalls no frame, and the link's rate is set only when it moves. The field's clock
   advances only while it flows: Now Playing's cover, an inactive scene and the background freeze it
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
