@@ -2,6 +2,7 @@ use std::{
     cmp::min,
     fs::File,
     io::{self, Read, Seek, SeekFrom},
+    mem,
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
@@ -312,12 +313,15 @@ impl Sources {
 const LARGEST_READ_ASKED: usize = 1 << 20;
 
 enum Asked {
-    Read(usize),
+    Read { buffer: Vec<u8>, len: usize },
     Seek(SeekFrom),
 }
 
 enum Answered {
-    Read(io::Result<Vec<u8>>),
+    Read {
+        buffer: Vec<u8>,
+        read: io::Result<usize>,
+    },
     Seek(io::Result<u64>),
 }
 
@@ -328,6 +332,7 @@ struct Deadlined {
     seekable: bool,
     len: Option<u64>,
     stalled: bool,
+    spare: Vec<u8>,
 }
 
 impl Deadlined {
@@ -360,6 +365,7 @@ impl Deadlined {
             seekable,
             len,
             stalled: false,
+            spare: Vec::new(),
         })
     }
 
@@ -393,12 +399,10 @@ fn serve_the_reads(
 ) {
     while let Ok(asked) = asked.recv() {
         let answered = match asked {
-            Asked::Read(len) => {
-                let mut held = vec![0_u8; len];
-                Answered::Read(inner.read(&mut held).map(|read| {
-                    held.truncate(read);
-                    held
-                }))
+            Asked::Read { mut buffer, len } => {
+                buffer.resize(len, 0);
+                let read = inner.read(&mut buffer);
+                Answered::Read { buffer, read }
             }
             Asked::Seek(to) => Answered::Seek(inner.seek(to)),
         };
@@ -413,11 +417,15 @@ impl Read for Deadlined {
         if buf.is_empty() {
             return Ok(0);
         }
-        match self.ask(Asked::Read(buf.len().min(LARGEST_READ_ASKED)))? {
-            Answered::Read(read) => {
-                let read = read?;
-                let taken = min(read.len(), buf.len());
-                buf[..taken].copy_from_slice(&read[..taken]);
+        let asked = Asked::Read {
+            buffer: mem::take(&mut self.spare),
+            len: buf.len().min(LARGEST_READ_ASKED),
+        };
+        match self.ask(asked)? {
+            Answered::Read { buffer, read } => {
+                let taken = min(read?, buf.len());
+                buf[..taken].copy_from_slice(&buffer[..taken]);
+                self.spare = buffer;
                 Ok(taken)
             }
             Answered::Seek(_) => Err(stalled()),
@@ -429,7 +437,7 @@ impl Seek for Deadlined {
     fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
         match self.ask(Asked::Seek(to))? {
             Answered::Seek(landed) => landed,
-            Answered::Read(_) => Err(stalled()),
+            Answered::Read { .. } => Err(stalled()),
         }
     }
 }
@@ -683,5 +691,73 @@ mod tests {
             "the stalled read was waited on"
         );
         assert!(media.stream.seek(SeekFrom::Start(0)).is_err());
+    }
+
+    struct Bytes {
+        source: SourceId,
+        bytes: Vec<u8>,
+    }
+
+    impl MediaProvider for Bytes {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn open(&self, _: &MediaLocation) -> Result<Media> {
+            Ok(Media {
+                stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+                hint: None,
+            })
+        }
+    }
+
+    fn noise(len: usize) -> Vec<u8> {
+        let mut state = 0x2545_f491_u32;
+        (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state.to_le_bytes()[0]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_bytes_a_deadlined_stream_serves_are_the_bytes_the_source_held_whatever_the_buffer_asked_with()
+     {
+        let source = named("elsewhere");
+        let location = MediaLocation::new(source.clone(), "a track");
+        let bytes = noise((LARGEST_READ_ASKED * 5) / 2 + 7);
+        let sources = Sources::local().and(Arc::new(Bytes {
+            source,
+            bytes: bytes.clone(),
+        }));
+        let mut media = sources.open(&location).expect("the provider answers");
+
+        let mut served = Vec::new();
+        let mut sizes = [3_usize, 4096, LARGEST_READ_ASKED + 5, 1, 70_000]
+            .into_iter()
+            .cycle();
+        while served.len() < bytes.len() {
+            let mut buffer = vec![0xAA_u8; sizes.next().expect("cycled")];
+            let read = media.stream.read(&mut buffer).expect("it reads");
+            assert!(read > 0);
+            assert!(read <= buffer.len());
+            served.extend_from_slice(&buffer[..read]);
+        }
+        assert_eq!(served, bytes);
+
+        media
+            .stream
+            .seek(SeekFrom::Start(1000))
+            .expect("it seeks back");
+        let mut again = vec![0_u8; 20_000];
+        media.stream.read_exact(&mut again).expect("it reads again");
+        assert_eq!(again, bytes[1000..21_000]);
+
+        let mut rest = Vec::new();
+        media.stream.read_to_end(&mut rest).expect("it reads on");
+        assert_eq!(rest, bytes[21_000..]);
     }
 }

@@ -33,8 +33,6 @@ are in [ROADMAP.md](ROADMAP.md).
   order: rows shared across publishes (an `Arc` a row, or a persistent vector) reach every reader of
   `Queued::rows` in resonate-ui, -mpris, -mcp, -mobile and the binary; the stamps are order-dependent
   SipHash, so they cannot be kept incrementally either
-- [M] A non-local source's read allocates and zeroes up to 1 MiB, then copies it twice
-  (`serve_the_reads`); vault playback goes through it
 - [M] The convolver works complex FFTs on real input (twice the memory and multiply-adds), stores a
   mono response's spectrum once a channel, `%`s per partition, and `loudest_gain` allocates
   `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
