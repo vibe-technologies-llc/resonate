@@ -111,7 +111,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
   500 ms playing in the background (100 ms in the last 1.5 s of a playing song, so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s paused in the background,
   and saves every 5 s, as Android does, on a lane of its own (`Work.inSaving`), so a queue rewrite
-  never sits between a tap and the transport; the snapshot is published (the clock, the lock screen,
+  never sits between a tap and the transport (the save on leaving the foreground stays on the
+  transport's lane, after the edits queued before it); the snapshot is published (the clock, the lock screen,
   `Features.tick`) before the queue is read, and the queue is read in a task of its own
   (`listQueue`, one in flight), so a whole-library queue read never holds up the song a tap
   started. The queue is read
@@ -122,7 +123,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   the rows read are compared with those shown off the main actor (`Library.sameRows`, which ignores
   a row's `favourite`, since hearts read the catalog's flags), and an equal read assigns nothing. A
   queue edit wakes the poll when it is answered rather than reading the queue itself, so one edit
-  costs one read. `queue()` copies the rows under the player lock and reads their documents
+  costs one read; a refused edit reads the queue at once, so its optimistic change is put back. `queue()` copies the rows under the player lock and reads their documents
   afterwards, a few hundred to a catalog hold (`mobile.md`).
   Reads a page waits on (the queue, the catalog, the songs list, the albums and artists) run on
   `Work.onScreen` (user-initiated); `Work.aside` (utility) is for passes nobody watches. A refresh
@@ -150,9 +151,10 @@ sync seals its records and talks QUIC (TLS) of its own.
   A favourite flips everywhere at once (catalog, browser, queue, snapshot, open playlist, top
   tracks, Inspector) and flips back with a notice if the write fails; hearts read
   `isFavourite(_:)`, the catalog's live answer by id, so a stale `Track` value never shows a stale
-  heart; each catalog song's answer is an observed flag of its own (`FavouriteFlag`, made when a
-  row first asks), so a heart redraws the rows showing that song and nothing else, and a catalog
-  song's queue rows are not rewritten (only a song outside the catalog is). A catalog read that began before a favourite write was answered is published with that
+  heart; each song's answer is an observed flag of its own (`FavouriteFlag`, made when a row first
+  asks, seeded from the catalog or, for a song it does not yet hold, the row; a catalog read sets
+  the flags of the songs it holds), so a heart redraws the rows showing that song and nothing else,
+  and a catalog song's queue rows are not rewritten (only a song outside the catalog is). A catalog read that began before a favourite write was answered is published with that
   write laid over it (`favouriteWrites`, dropped once a read begun after the answer exists), so a
   heart tapped during a long refresh does not snap back. `Destination` carries song ids, never `Track` values, and `LiveSong` looks the song up
   when the page draws (`.lyrics(nil)` still means the playing song).

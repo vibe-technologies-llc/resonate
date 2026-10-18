@@ -932,10 +932,12 @@ final class BackdropRenderer {
 
     weak var library: Library?
     var tone = BackdropTone.dark {
-        didSet { if tone != oldValue { kept = nil } }
+        didSet { if tone != oldValue { forgetPlaceholder() } }
     }
     var playing = false
-    var still = false
+    var still = false {
+        didSet { if still != oldValue { forgetPlaceholder() } }
+    }
 
     private let gpu: BackdropGPU
     private var blend: FieldBlend
@@ -945,6 +947,7 @@ final class BackdropRenderer {
     private var lastFrame: CFTimeInterval?
     private var kept: (aspect: Float, image: CGImage)?
     private var keeping = false
+    private var keptLook = 0
 
     init(gpu: BackdropGPU, palette: Palette) {
         self.gpu = gpu
@@ -952,7 +955,12 @@ final class BackdropRenderer {
     }
 
     func show(_ palette: Palette) {
-        if blend.show(palette, at: CACurrentMediaTime()) { kept = nil }
+        if blend.show(palette, at: CACurrentMediaTime()) { forgetPlaceholder() }
+    }
+
+    private func forgetPlaceholder() {
+        kept = nil
+        keptLook += 1
     }
 
     func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
@@ -987,15 +995,17 @@ final class BackdropRenderer {
     }
 
     func keepPlaceholder(aspect: Float) {
-        guard !keeping, let size = Self.placeholderSize(aspect: aspect) else { return }
+        let now = CACurrentMediaTime()
+        guard !keeping, !blend.fading(at: now), let size = Self.placeholderSize(aspect: aspect) else { return }
         keeping = true
         let gpu = gpu
-        let uniforms = uniforms(at: CACurrentMediaTime(), aspect: size.aspect)
+        let look = keptLook
+        let uniforms = uniforms(at: now, aspect: size.aspect)
         Task { [weak self] in
             let image = await FieldPicture.rendered(by: gpu, uniforms, size: size)
             guard let self else { return }
             keeping = false
-            if let image { kept = (aspect, image) }
+            if let image, look == keptLook { kept = (aspect, image) }
         }
     }
 

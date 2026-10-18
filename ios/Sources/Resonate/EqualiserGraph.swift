@@ -357,6 +357,7 @@ struct EqualiserGraph: View {
     @State private var grabs = 0
     @State private var releases = 0
     @GestureState private var dragged = false
+    @GestureState private var pinchHeld = false
     @State private var moving: EqualiserCurve?
     @State private var toldAt = ContinuousClock.now
     @State private var telling: Task<Void, Never>?
@@ -401,6 +402,9 @@ struct EqualiserGraph: View {
         }
         .onChange(of: dragged) { _, now in
             if !now { dragEnded() }
+        }
+        .onChange(of: pinchHeld) { _, now in
+            if !now { pinchEnded() }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
         .sensoryFeedback(.selection, trigger: releases)
@@ -540,6 +544,14 @@ struct EqualiserGraph: View {
         commit(next)
     }
 
+    private func pinchEnded() {
+        guard pinched != nil else { return }
+        pinched = nil
+        holding = touch != nil
+        settled()
+        discard()
+    }
+
     private func dragEnded() {
         guard let ended = touch else { return }
         touch = nil
@@ -583,6 +595,7 @@ struct EqualiserGraph: View {
 
     private var pinching: some Gesture {
         MagnifyGesture()
+            .updating($pinchHeld) { _, state, _ in state = true }
             .onChanged { value in
                 if pinched == nil {
                     guard let band = heldBand ?? selected, curve.bands.indices.contains(band) else { return }

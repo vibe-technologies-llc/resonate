@@ -332,6 +332,8 @@ final class Library {
         let documents = folders
         let support = support
         openingFailure = nil
+        volumeSending = false
+        volumeOwed = nil
         polling = Task { [weak self] in
             do {
                 async let opening = Work.inOrder {
@@ -613,19 +615,18 @@ final class Library {
     }
 
     func isFavourite(_ track: Track) -> Bool {
-        guard catalogIndex[track.id] != nil else { return track.favourite }
-        return favouriteFlag(of: track.id).on
+        favouriteFlag(of: track).on
     }
 
-    private func favouriteFlag(of id: UInt64) -> FavouriteFlag {
-        if let kept = favouriteFlags[id] { return kept }
-        let made = FavouriteFlag(favouriteIds.contains(id))
-        favouriteFlags[id] = made
+    private func favouriteFlag(of track: Track) -> FavouriteFlag {
+        if let kept = favouriteFlags[track.id] { return kept }
+        let made = FavouriteFlag(catalogIndex[track.id] != nil ? favouriteIds.contains(track.id) : track.favourite)
+        favouriteFlags[track.id] = made
         return made
     }
 
     private func flagFavourites() {
-        for (id, flag) in favouriteFlags {
+        for (id, flag) in favouriteFlags where catalogIndex[id] != nil {
             let on = favouriteIds.contains(id)
             if flag.on != on { flag.on = on }
         }
@@ -821,6 +822,7 @@ final class Library {
             queueSettling.answer()
             if let failure {
                 report(failure)
+                Task { await rereadQueue() }
             } else if let done {
                 notice(done)
             }
@@ -866,6 +868,7 @@ final class Library {
             marked.favourite = favourite
             keepFavourite(marked, at: at)
         }
+        if let flag = favouriteFlags[id], flag.on != favourite { flag.on = favourite }
         if filter.favourites, !favourite { tracks = tracks.filter { $0.id != id } }
         if catalogIndex[id] == nil, let rows = marked(queue) { queue = rows }
         if let rows = marked(features.playlistRows) { features.playlistRows = rows }
@@ -1589,8 +1592,7 @@ final class Library {
     }
 
     func save() {
-        guard let native else { return }
-        save(native)
+        request { try $0.save() }
     }
 
     func eraseEverything() {

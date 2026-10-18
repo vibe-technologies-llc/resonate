@@ -67,6 +67,9 @@ struct ListenSheet: View {
             token = listening.auddToken
             listening.listen()
         }
+        .onChange(of: listening.auddToken) { kept, now in
+            if token == kept { token = now }
+        }
         .onDisappear { listening.stop() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { listening.stop() }
