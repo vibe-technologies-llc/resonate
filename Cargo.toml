@@ -80,7 +80,7 @@ rtrb = { version = "0.4.0", default-features = false, features = ["std"] }
 smallvec = { version = "1.16.3", default-features = false, features = ["union", "const_generics"] }
 unicode-segmentation = { version = "1.13.3", default-features = false }
 unicode-width = { version = "0.2.2", default-features = false }
-unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
+unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }
 encoding_rs = { version = "0.8.42", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
 tz-rs = { version = "0.7.3", default-features = false, features = ["std"] }
@@ -127,7 +127,7 @@ opus-rs = { version = "0.1.37", default-features = false, features = ["std", "he
 lofty = { version = "0.25.4", default-features = false, features = ["id3v2_compression_support"] }
 
 flacenc = { version = "0.5.1", default-features = false, features = ["par"] }
-zstd = { version = "0.14.2", default-features = false }
+zstd = { version = "0.14.3", default-features = false }
 zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
 jxl-oxide = { version = "0.12.6", default-features = false }
