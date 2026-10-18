@@ -56,10 +56,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   rip misses its 22-track pressing and lands strictly on the 12-track standard edition
 - [M] A bind mount of the same filesystem is no volume (`st_dev` alone; `/proc/self/mounts` is read
   in `volumes.rs` but not for this): unmounted, its root reads as files moved out and is pruned
-- [M] `listening_detail` cuts and buckets days at the phone's current UTC offset (`day * 86400 - offset`), and
-  the phones regroup those instants in the local calendar: under summer time every winter day starts
-  at 23:00 the day before, so the 1st of a month counts in the previous month and *Busiest day*
-  reads a day early; the phones must pass their zone or their day boundaries across the boundary
 - [S] A cue sheet the scan cannot read keeps only the cut rows of files beside it
   (`Known::cuts_in`): rows of a file it cut from a folder below are pruned with their history
   until the sheet reads again

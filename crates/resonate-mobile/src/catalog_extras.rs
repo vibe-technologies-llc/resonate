@@ -1,4 +1,10 @@
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
 use resonate_codec::MediaInfo;
+use resonate_core::Calendar;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::{
@@ -15,25 +21,65 @@ type StoredLyrics = (Option<String>, Option<String>, String);
 
 const MOST_LISTENED_AT_MOST: u32 = 100;
 
-const DAYS_SHOWN_AT_MOST: u32 = 366;
+const DAYS_SHOWN_AT_MOST: usize = 366;
 
-const SECONDS_A_DAY: i64 = 86_400;
+const SECONDS_A_QUARTER_HOUR: i64 = 900;
 
-const EVERY_DAY: i64 = -1;
-
-fn days_shown(days: u32) -> i64 {
+fn days_shown(days: u32) -> usize {
     if days == 0 {
-        EVERY_DAY
+        usize::MAX
     } else {
-        i64::from(DAYS_SHOWN_AT_MOST)
+        DAYS_SHOWN_AT_MOST
     }
+}
+
+pub(crate) fn the_listeners_calendar(time_zone: &str, utc_offset_seconds: i32) -> Calendar {
+    Calendar::named(time_zone)
+        .or_else(|| Calendar::fixed(utc_offset_seconds))
+        .unwrap_or_else(Calendar::utc)
+}
+
+#[derive(Clone, Copy, Default)]
+struct Heard {
+    plays: u64,
+    listened_ms: u64,
+}
+
+fn moment(seconds: i64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(seconds.max(0).unsigned_abs())
+}
+
+fn seconds_of(moment: SystemTime) -> u64 {
+    moment
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+fn by_day(quarters: &[(i64, Heard)], calendar: &Calendar, shown: usize) -> Vec<ListenedOnDay> {
+    let mut days: BTreeMap<i64, Heard> = BTreeMap::new();
+    for (quarter, heard) in quarters {
+        let day = calendar.day_of(moment(quarter.saturating_mul(SECONDS_A_QUARTER_HOUR)));
+        let held = days.entry(day).or_default();
+        held.plays = held.plays.saturating_add(heard.plays);
+        held.listened_ms = held.listened_ms.saturating_add(heard.listened_ms);
+    }
+
+    let skipped = days.len().saturating_sub(shown);
+    days.into_iter()
+        .skip(skipped)
+        .map(|(day, heard)| ListenedOnDay {
+            starts: seconds_of(calendar.midnight_of(day)),
+            plays: heard.plays,
+            listened_ms: heard.listened_ms,
+        })
+        .collect()
 }
 
 const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min(coalesce(nullif(d.album_artist, ''), d.artist)), count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.album_key != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY d.album_key ORDER BY listened DESC, count(*) DESC, min(d.album) COLLATE NOCASE LIMIT ?2";
 
 const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
 
-const LISTENING_BY_DAY: &str = "SELECT (l.began + ?2) / 86400 AS day, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY day ORDER BY day DESC LIMIT ?3";
+const LISTENING_BY_QUARTER_HOUR: &str = "SELECT l.began / ?2 AS quarter, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY quarter";
 
 const SHARES_SHOWN_AT_MOST: u32 = 8;
 
@@ -208,7 +254,7 @@ impl Catalog {
         &self,
         days: u32,
         limit: u32,
-        utc_offset_seconds: i32,
+        calendar: &Calendar,
     ) -> Result<ListeningDetail> {
         let connection = self.0.lock();
         let limit = limit.clamp(1, MOST_LISTENED_AT_MOST);
@@ -230,23 +276,22 @@ impl Catalog {
         };
         let albums = ranked(THE_ALBUMS_MOST_LISTENED_TO)?;
         let artists = ranked(THE_ARTISTS_MOST_LISTENED_TO)?;
-        let mut query = connection.prepare(LISTENING_BY_DAY).map_err(read_error)?;
-        let mut by_day = query
-            .query_map(
-                params![days, i64::from(utc_offset_seconds), days_shown(days)],
-                |row| {
-                    let day = row.get::<_, i64>(0)?;
-                    Ok(ListenedOnDay {
-                        starts: (day * SECONDS_A_DAY - i64::from(utc_offset_seconds)).max(0) as u64,
+        let mut query = connection
+            .prepare(LISTENING_BY_QUARTER_HOUR)
+            .map_err(read_error)?;
+        let quarters = query
+            .query_map(params![days, SECONDS_A_QUARTER_HOUR], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    Heard {
                         plays: row.get::<_, i64>(1)?.max(0) as u64,
                         listened_ms: row.get::<_, i64>(2)?.max(0) as u64,
-                    })
-                },
-            )
+                    },
+                ))
+            })
             .map_err(read_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)?;
-        by_day.reverse();
         let (songs_heard, first_heard) = connection
             .query_row(THE_SONGS_HEARD, [days], |row| {
                 Ok((
@@ -256,10 +301,13 @@ impl Catalog {
                 ))
             })
             .map_err(read_error)?;
+        drop(query);
+        drop(connection);
+
         Ok(ListeningDetail {
             albums,
             artists,
-            days: by_day,
+            days: by_day(&quarters, calendar, days_shown(days)),
             songs_heard,
             first_heard,
         })
@@ -333,11 +381,13 @@ pub(crate) fn unreferenced_picture_dropped(
 mod tests {
     use std::path::Path;
 
+    use resonate_core::{CivilDate, SECONDS_PER_DAY};
+
     use super::*;
     use crate::Track;
 
     #[test]
-    fn listening_detail_ranks_albums_and_artists_and_buckets_days_in_the_listeners_offset() {
+    fn listening_detail_ranks_albums_and_artists_and_buckets_days_in_the_listeners_calendar() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = |uri: &str, title: &str, artist: &str, album: &str| {
             catalog
@@ -386,8 +436,12 @@ mod tests {
                 .expect("a listen");
         }
 
-        let week = catalog.listening_detail(7, 10, 0).expect("a week");
-        let everything = catalog.listening_detail(0, 10, 0).expect("all time");
+        let week = catalog
+            .listening_detail(7, 10, &Calendar::utc())
+            .expect("a week");
+        let everything = catalog
+            .listening_detail(0, 10, &Calendar::utc())
+            .expect("all time");
 
         assert_eq!(week.albums.len(), 2);
         assert_eq!(week.albums[0].name, "Homogenic");
@@ -409,7 +463,7 @@ mod tests {
         assert_eq!(everything.days.len(), 3);
         assert_eq!(
             catalog
-                .listening_detail(0, 1, 0)
+                .listening_detail(0, 1, &Calendar::utc())
                 .expect("one ranked")
                 .albums
                 .len(),
@@ -441,7 +495,9 @@ mod tests {
         }
 
         let statistics = catalog.statistics(0).expect("the statistics");
-        let detail = catalog.listening_detail(0, 10, 0).expect("the detail");
+        let detail = catalog
+            .listening_detail(0, 10, &Calendar::utc())
+            .expect("the detail");
 
         assert_eq!(statistics.plays, 2);
         assert_eq!(statistics.listened_ms, 50_000);
@@ -488,7 +544,9 @@ mod tests {
             .expect("the song goes missing");
 
         let statistics = catalog.statistics(0).expect("the statistics");
-        let detail = catalog.listening_detail(0, 10, 0).expect("the detail");
+        let detail = catalog
+            .listening_detail(0, 10, &Calendar::utc())
+            .expect("the detail");
 
         assert_eq!(statistics.plays, 1);
         assert_eq!(statistics.listened_ms, 30_000);
@@ -521,17 +579,117 @@ mod tests {
                 .lock()
                 .execute(
                     "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, 1000, 1)",
-                    params![song, now - back * SECONDS_A_DAY],
+                    params![song, now - back * SECONDS_PER_DAY],
                 )
                 .expect("a listen");
         }
 
-        let everything = catalog.listening_detail(0, 10, 0).expect("all time");
-        let year = catalog.listening_detail(365, 10, 0).expect("a year");
+        let everything = catalog
+            .listening_detail(0, 10, &Calendar::utc())
+            .expect("all time");
+        let year = catalog
+            .listening_detail(365, 10, &Calendar::utc())
+            .expect("a year");
 
         assert!(everything.days.len() >= 500);
-        assert!(year.days.len() <= usize::try_from(DAYS_SHOWN_AT_MOST).expect("a small count"));
+        assert!(year.days.len() <= DAYS_SHOWN_AT_MOST);
         assert!(year.days.len() >= 365);
+    }
+
+    const LJUBLJANA: &str = "Europe/Ljubljana";
+    const SUMMER_IN_LJUBLJANA: i32 = 7_200;
+    const AN_HOUR: i64 = 3_600;
+    const THE_FIRST_OF_JANUARY_2024: i64 = 19_723;
+    const THE_FIRST_OF_JULY_2024: i64 = 19_905;
+
+    fn listened_at(catalog: &Catalog, moments: &[i64]) {
+        let song = catalog
+            .upsert(Track {
+                uri: "content://test/song.flac".into(),
+                name: "song.flac".into(),
+                ..Track::default()
+            })
+            .expect("a song")
+            .id as i64;
+        for began in moments {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, 60000, 1)",
+                    params![song, began],
+                )
+                .expect("a listen");
+        }
+    }
+
+    #[test]
+    fn a_winter_first_of_the_month_counts_in_its_month_while_the_phone_keeps_summer_time() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let ljubljana = the_listeners_calendar(LJUBLJANA, SUMMER_IN_LJUBLJANA);
+        let new_years_midnight = THE_FIRST_OF_JANUARY_2024 * SECONDS_PER_DAY - AN_HOUR;
+        let half_past_midnight = new_years_midnight + AN_HOUR / 2;
+        let half_past_eleven_at_night = new_years_midnight + 23 * AN_HOUR + AN_HOUR / 2;
+        let the_next_morning = new_years_midnight + 33 * AN_HOUR;
+        listened_at(
+            &catalog,
+            &[
+                half_past_midnight,
+                half_past_midnight + 60,
+                half_past_eleven_at_night,
+                the_next_morning,
+            ],
+        );
+
+        let detail = catalog
+            .listening_detail(0, 10, &ljubljana)
+            .expect("all time");
+        let busiest = detail
+            .days
+            .iter()
+            .max_by_key(|day| day.listened_ms)
+            .expect("a day heard");
+        let busiest_began = UNIX_EPOCH + Duration::from_secs(busiest.starts);
+
+        assert_eq!(detail.days.len(), 2);
+        assert_eq!(busiest.plays, 3);
+        assert_eq!(busiest.starts, new_years_midnight as u64);
+        assert_eq!(
+            ljubljana.date_at(busiest_began),
+            CivilDate {
+                year: 2024,
+                month: 1,
+                day: 1
+            }
+        );
+        assert_eq!(detail.days[1].plays, 1);
+    }
+
+    #[test]
+    fn a_summer_day_begins_at_the_summer_midnight_of_a_named_zone() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let ljubljana = the_listeners_calendar(LJUBLJANA, 0);
+        let summer_midnight = THE_FIRST_OF_JULY_2024 * SECONDS_PER_DAY - 2 * AN_HOUR;
+        listened_at(&catalog, &[summer_midnight + 60]);
+
+        let detail = catalog
+            .listening_detail(0, 10, &ljubljana)
+            .expect("all time");
+
+        assert_eq!(detail.days.len(), 1);
+        assert_eq!(detail.days[0].starts, summer_midnight as u64);
+    }
+
+    #[test]
+    fn a_zone_the_database_does_not_name_falls_back_to_the_phones_offset() {
+        assert_eq!(
+            the_listeners_calendar("Atlantis/Poseidonia", SUMMER_IN_LJUBLJANA),
+            Calendar::fixed(SUMMER_IN_LJUBLJANA).expect("a fixed offset is a zone")
+        );
+        assert_eq!(
+            the_listeners_calendar(LJUBLJANA, 0),
+            Calendar::named(LJUBLJANA).expect("the zone database names Ljubljana")
+        );
     }
 
     #[test]

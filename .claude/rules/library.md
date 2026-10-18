@@ -70,8 +70,18 @@ rows read via `Player::media` like any unscanned row.
   albums, artists heard and the most-heard lists read `listens` alone. All are bounded by
   `listens.at >= ?`. **A day is the listener's, not Greenwich's.** `listening_by_day` groups stamps
   by quarter hour in SQL (every offset and transition is whole quarters) and folds each into the day
-  `resonate_core::Calendar::local` says (zone from `TZ` or `/etc/localtime` on every call, UTC if
-  unreadable); `Day::at` = the calendar's midnight (23 or 25 hour days; `Calendar::midnight_of`).
+  `resonate_core::Calendar::local` says (jiff's system zone, from `TZ` or `/etc/localtime`, which
+  jiff reads again after five minutes; UTC if unreadable); `Day::at` = the calendar's midnight (23
+  or 25 hour days; `Calendar::midnight_of`). **A phone names its zone, never only its offset**:
+  `Calendar::named` reads an IANA identifier from the system database (on Android first the
+  `com.android.tzdata` module's `etc/tz/tzdata`, under `ANDROID_TZDATA_ROOT`, since jiff looks only
+  at the older `/system` and `/data` copies, which mainline updates no longer touch), else from the
+  copy of the database the phones bundle (`tzdb-bundle-always`): iOS's sandbox is not known to let
+  the zoneinfo folder be listed, and a stale bundled rule is better than a day cut at one offset all
+  year. The phones' `listening_detail` folds quarter hours into days the same way
+  (`catalog_extras::by_day`); a name neither database holds falls back to the offset the phone
+  passes beside it (`the_listeners_calendar`), so the screen still draws, cut as it was before
+  (`a_winter_first_of_the_month_counts_in_its_month_while_the_phone_keeps_summer_time`).
 - **History is kept as long as the listener says, never past what a service was told, and a service
   no longer signed in to holds nothing back.** Every open of the catalog by the binary first asks
   `Library::stop_telling` for each service whose settings hold no account: its `submissions` and

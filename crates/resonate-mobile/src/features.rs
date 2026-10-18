@@ -18,8 +18,8 @@ use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
 use crate::{
-    Error, MobilePlayer, Result, StoreOp, Track, documents::location, enrichment::Asking,
-    lyrics::KeptSheets,
+    Error, MobilePlayer, Result, StoreOp, Track, catalog_extras::the_listeners_calendar,
+    documents::location, enrichment::Asking, lyrics::KeptSheets,
 };
 
 pub(crate) struct Services {
@@ -244,10 +244,14 @@ impl MobilePlayer {
         &self,
         days: u32,
         limit: u32,
+        time_zone: String,
         utc_offset_seconds: i32,
     ) -> Result<ListeningDetail> {
-        self.catalog
-            .listening_detail(days, limit, utc_offset_seconds)
+        self.catalog.listening_detail(
+            days,
+            limit,
+            &the_listeners_calendar(&time_zone, utc_offset_seconds),
+        )
     }
 
     pub fn library_breakdown(&self) -> Result<LibraryBreakdown> {

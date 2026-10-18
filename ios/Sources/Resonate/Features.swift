@@ -936,11 +936,14 @@ final class Features {
         let request = statisticsRequest
         statisticsLoading = true
         work({ [weak self] native in
-            let offset = Int32(TimeZone.current.secondsFromGMT())
+            let zone = TimeZone.current
+            let identifier = zone.identifier
+            let offset = Int32(zone.secondsFromGMT())
             let shown = Features.rankedShown
             let found = try await Work.aside { try native.statistics(days: days) }
             let detail = try await Work.aside {
-                try native.listeningDetail(days: days, limit: shown, utcOffsetSeconds: offset)
+                try native.listeningDetail(
+                    days: days, limit: shown, timeZone: identifier, utcOffsetSeconds: offset)
             }
             let covers = try await Work.aside { ListenedCovers.of(detail, from: native) }
             let breakdown = try await Work.aside { try native.libraryBreakdown() }

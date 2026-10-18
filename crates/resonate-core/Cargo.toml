@@ -8,9 +8,15 @@ license.workspace = true
 bytemuck.workspace = true
 chardetng.workspace = true
 encoding_rs.workspace = true
+jiff.workspace = true
 thiserror.workspace = true
-tz-rs.workspace = true
 unicode-normalization.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jiff = { workspace = true, features = ["tzdb-bundle-always", "tzdb-concatenated"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+jiff = { workspace = true, features = ["tzdb-bundle-always"] }
 
 [dev-dependencies]
 proptest.workspace = true

@@ -418,10 +418,12 @@ four-minute threshold feeds the local history and statistics. History filters co
 the last week/month/year. Document playlists preserve repeated songs, use revision checks for
 position edits, and have bounded in-session undo; they never invent Linux paths.
 
-**Statistics beyond the totals are `listening_detail(days, limit, utc_offset_seconds)`** (`catalog_extras.rs`):
+**Statistics beyond the totals are `listening_detail(days, limit, time_zone, utc_offset_seconds)`** (`catalog_extras.rs`):
 the albums (by the catalog's `album_key`) and artists (by folded name) heard most in the window,
 ranked by heard time then plays, at most `MOST_LISTENED_AT_MOST` (100), and the listening per day
-(counted listens, a day cut at the caller's UTC offset, the latest `DAYS_SHOWN_AT_MOST` days oldest
+(counted listens, a day cut at the local midnight of the caller's IANA zone, each day as long as
+the clocks make it, the offset only where no database names the zone (`library.md`'s *A day is the
+listener's*), the latest `DAYS_SHOWN_AT_MOST` days oldest
 first, every day heard for all time (`days` 0), `ListenedOnDay.starts` the unix second that day began). Hidden songs and uncounted listens
 are left out of every total and day, as in `statistics(days)` (`plays`, `listened_ms`); `songs_heard` counts the distinct songs and `first_heard`
 is the earliest counted listen in the window. `library_breakdown()` is what the library holds

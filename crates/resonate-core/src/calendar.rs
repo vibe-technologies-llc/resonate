@@ -1,6 +1,9 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tz::TimeZone;
+use jiff::{
+    Timestamp,
+    tz::{Offset, TimeZone},
+};
 
 use crate::date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch};
 
@@ -11,19 +14,25 @@ pub struct Calendar {
 
 impl Calendar {
     pub fn local() -> Self {
-        TimeZone::local().map_or_else(|_| Self::utc(), |zone| Self { zone })
+        TimeZone::try_system().map_or_else(|_| Self::utc(), |zone| Self { zone })
     }
 
     pub fn utc() -> Self {
         Self {
-            zone: TimeZone::utc(),
+            zone: TimeZone::UTC,
         }
     }
 
     pub fn fixed(seconds_east_of_utc: i32) -> Option<Self> {
-        TimeZone::fixed(seconds_east_of_utc)
+        Offset::from_seconds(seconds_east_of_utc)
             .ok()
-            .map(|zone| Self { zone })
+            .map(|offset| Self {
+                zone: TimeZone::fixed(offset),
+            })
+    }
+
+    pub fn named(identifier: &str) -> Option<Self> {
+        zones::named(identifier).map(|zone| Self { zone })
     }
 
     pub fn day_of(&self, at: SystemTime) -> i64 {
@@ -53,9 +62,45 @@ impl Calendar {
     }
 
     fn offset_at(&self, seconds: i64) -> i64 {
-        self.zone
-            .find_local_time_type(seconds)
-            .map_or(0, |kind| i64::from(kind.ut_offset()))
+        Timestamp::from_second(seconds).map_or(0, |at| i64::from(self.zone.to_offset(at).seconds()))
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+mod zones {
+    use jiff::tz::{self, TimeZone};
+
+    pub(super) fn named(identifier: &str) -> Option<TimeZone> {
+        tz::db().get(identifier).ok()
+    }
+}
+
+#[cfg(target_os = "android")]
+mod zones {
+    use std::{env, path::PathBuf, sync::OnceLock};
+
+    use jiff::tz::{self, TimeZone, TimeZoneDatabase};
+
+    const TZDATA_ROOT_NAMED_BY: &str = "ANDROID_TZDATA_ROOT";
+    const THE_TZDATA_MODULE: &str = "/apex/com.android.tzdata";
+    const TZDATA_WITHIN_THE_ROOT: &str = "etc/tz/tzdata";
+
+    pub(super) fn named(identifier: &str) -> Option<TimeZone> {
+        the_tzdata_module()
+            .and_then(|zones| zones.get(identifier).ok())
+            .or_else(|| tz::db().get(identifier).ok())
+    }
+
+    fn the_tzdata_module() -> Option<&'static TimeZoneDatabase> {
+        static OPENED: OnceLock<Option<TimeZoneDatabase>> = OnceLock::new();
+
+        OPENED
+            .get_or_init(|| {
+                let root = env::var_os(TZDATA_ROOT_NAMED_BY)
+                    .map_or_else(|| PathBuf::from(THE_TZDATA_MODULE), PathBuf::from);
+                TimeZoneDatabase::from_concatenated_path(root.join(TZDATA_WITHIN_THE_ROOT)).ok()
+            })
+            .as_ref()
     }
 }
 
@@ -81,6 +126,9 @@ mod tests {
     const THE_LAST_SUNDAY_OF_OCTOBER_2024: i64 = 20_023;
     const SKIPPING_MIDNIGHT_INTO_SUMMER: &str = "<-04>4<-03>,M8.2.0/0,M5.2.0/0";
     const THE_SECOND_SUNDAY_OF_AUGUST_2018: i64 = 17_755;
+    const LJUBLJANA: &str = "Europe/Ljubljana";
+    const THE_FIRST_OF_JANUARY_2024: i64 = 19_723;
+    const THE_FIRST_OF_JULY_2024: i64 = 19_905;
 
     fn at(seconds: i64) -> SystemTime {
         moment(seconds)
@@ -88,7 +136,7 @@ mod tests {
 
     fn zoned(rule: &str) -> Calendar {
         Calendar {
-            zone: TimeZone::from_posix_tz(rule).expect("the fixture rule reads"),
+            zone: TimeZone::posix(rule).expect("the fixture rule reads"),
         }
     }
 
@@ -156,5 +204,31 @@ mod tests {
             skipping.day_of(began - Duration::from_secs(1)),
             THE_SECOND_SUNDAY_OF_AUGUST_2018 - 1
         );
+    }
+
+    #[test]
+    fn a_named_zone_begins_each_day_at_the_midnight_its_season_keeps() {
+        let ljubljana = Calendar::named(LJUBLJANA).expect("the zone database names Ljubljana");
+        let new_year = THE_FIRST_OF_JANUARY_2024 * SECONDS_PER_DAY;
+        let midsummer = THE_FIRST_OF_JULY_2024 * SECONDS_PER_DAY;
+
+        assert_eq!(
+            ljubljana.midnight_of(THE_FIRST_OF_JANUARY_2024),
+            at(new_year - AN_HOUR)
+        );
+        assert_eq!(
+            ljubljana.midnight_of(THE_FIRST_OF_JULY_2024),
+            at(midsummer - 2 * AN_HOUR)
+        );
+        assert_eq!(
+            ljubljana.day_of(at(new_year - AN_HOUR)),
+            THE_FIRST_OF_JANUARY_2024
+        );
+    }
+
+    #[test]
+    fn a_name_no_zone_answers_to_is_no_calendar() {
+        assert_eq!(Calendar::named("Atlantis/Poseidonia"), None);
+        assert_eq!(Calendar::named(""), None);
     }
 }

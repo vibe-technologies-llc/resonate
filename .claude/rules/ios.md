@@ -530,7 +530,7 @@ every route change (a pair of headphones at the same rate included), not from th
   (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
-  weeks for a year, months for all time, the day cut at the phone's offset; all time reads every day
+  weeks for a year, months for all time, the day cut at the midnight of the phone's zone, `TimeZone.current.identifier` with its offset as the fallback; all time reads every day
   heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
   selects a bar of to read its time and plays; most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists

@@ -332,7 +332,7 @@ fn how_long(nanos: i64) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::SampleFormat;
+    use resonate_core::{CivilDate, SampleFormat};
 
     use super::*;
     use crate::{Codec, Library};
@@ -342,6 +342,9 @@ mod tests {
     const A_FORTNIGHT: Duration = Duration::from_secs(14 * SECONDS_PER_DAY);
     const LATE_IN_A_UTC_DAY: Duration = Duration::from_secs(23 * 60 * 60);
     const TWO_HOURS_EAST: i32 = 2 * 60 * 60;
+    const LJUBLJANA: &str = "Europe/Ljubljana";
+    const AN_HOUR: u64 = 60 * 60;
+    const THE_FIRST_OF_JANUARY_2024: u64 = 19_723;
 
     fn counted_at(library: &Library, title: &str, listens: &[(Duration, Duration)]) {
         library
@@ -548,6 +551,42 @@ mod tests {
                 .iter()
                 .all(|day| east.midnight_of(east.day_of(day.at)) == day.at),
             "a day drawn east of Greenwich does not begin at its own midnight"
+        );
+    }
+
+    #[test]
+    fn a_winter_first_of_the_month_is_drawn_on_its_own_date_in_a_zone_keeping_summer_time() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let now = SystemTime::now();
+        let ljubljana = Calendar::named(LJUBLJANA).expect("the zone database names Ljubljana");
+        let new_years_midnight =
+            UNIX_EPOCH + Duration::from_secs(THE_FIRST_OF_JANUARY_2024 * SECONDS_PER_DAY - AN_HOUR);
+        let half_past_midnight = new_years_midnight + Duration::from_secs(AN_HOUR / 2);
+        counted_at(
+            &library,
+            "New Year",
+            &[(
+                now.duration_since(half_past_midnight)
+                    .expect("the new year began before now"),
+                A_MINUTE,
+            )],
+        );
+
+        let drawn = listening_by_day_in(library.inner(), Window::Everything, &ljubljana, now)
+            .expect("the catalog answers for every day");
+        let played = drawn
+            .iter()
+            .find(|day| day.plays > 0)
+            .expect("the new year's listen is drawn");
+
+        assert_eq!(played.at, new_years_midnight);
+        assert_eq!(
+            ljubljana.date_at(played.at),
+            CivilDate {
+                year: 2024,
+                month: 1,
+                day: 1
+            }
         );
     }
 

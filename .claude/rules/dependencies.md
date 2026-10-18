@@ -30,7 +30,7 @@ here, add it there.
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
-  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`) and `tz-rs` (`Calendar`).
+  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`) and `jiff` (`Calendar`).
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.
@@ -128,6 +128,11 @@ here, add it there.
   space's peer certificate, and the server tests' self-signed one. **`rustls-pki-types`** (`std`):
   PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
   for the provider QUIC needs. The wire is hand-encoded, so no serde.
+- **`jiff`**: `resonate-core`'s, the one zone database (`Calendar`): `std`, `tz-system` (the
+  desktop's zone, `Calendar::local`) and `tzdb-zoneinfo` (a zone by name from `/usr/share/zoneinfo`:
+  Linux, Flatpak, iOS). The phones add `tzdb-bundle-always`, and Android `tzdb-concatenated`, as
+  target dependencies (`library.md`'s *A day is the listener's*); the desktop bundles nothing, since
+  its system database is always there and updated with the system.
 - **`toml_edit`**, not `toml` (`display`, `parse`): the settings pane rewrites the listener's
   `config.toml`, and a value model loses comments, key order and spacing.
 
