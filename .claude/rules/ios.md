@@ -165,7 +165,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   is found when the queue or the playing row changes; the queue's sections iterate slices, never
   copies; `Features.foldedName(of:)` holds each playlist name folded; the add-songs sheet folds
   every song once off the main thread (showing a spinner, not the empty-library message, until it has) (`SongKeys`, keyed by `catalogEpoch`) and filters there 150 ms
-  after the last keystroke, as Favourites does with its own songs (keyed by `favouriteEpoch`, so a heart refolds nothing while no text is typed); the tag editor asks `tags_writable` once per song when it opens.
+  after the last keystroke, as Favourites does with its own songs (keyed by `favouriteEpoch`, so a heart refolds nothing while no text is typed); the tag editor asks `tags_writable` once per song when it opens, and a song menu's *Edit tags* asks it once per file kind (`Features.writableKinds`), since the answer is the kind's.
   Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
   hang), the keychain reads at launch (`Features.readSecrets`), a landing's `Folders.fresh` and `delete`,
   the journals' recovery at launch and the joining of an enrichment pass or a download on erasing run on `Work.aside`, never the main actor.
@@ -1078,11 +1078,13 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   interruption or an engine configuration change ends the clip with `MicrophoneFailure.interrupted`,
   never a short clip spending a try) (route changes are not reported to Rust meanwhile, so the rate the
   category moves costs no reopen of the output, only the one report on `endListening`),
-  taps `AVAudioEngine`'s input as a mono mix into a `ClipSink` (a `Mutex`, its tap block built
+  taps `AVAudioEngine`'s input as a mono mix into a `ClipSink` (the engine built, started and
+  stopped on `Work.inSession`, `OpenMicrophone`, since each is a call into the audio server) (a `Mutex`, its tap block built
   `nonisolated`) until 12 s are held or 3 s past that, and hands the samples and the input's rate to
   `recognise_heard`. `NowPlaying.endListening` puts back `.playback` and, with nothing playing,
   deactivates the session so another app's audio may resume.
-- **The AudD token** is the keychain's `audd-token`, typed in the sheet's *Recognition* section;
+- **The AudD token** is the keychain's `audd-token` (read on `Work.inSecrets` when Listen is first
+  made, and awaited before a clip is asked), typed in the sheet's *Recognition* section;
   blank, only Shazam is asked (`online.md`).
 
 ## The equaliser

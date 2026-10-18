@@ -75,6 +75,7 @@ final class Listening {
     @ObservationIgnored private unowned let library: Library
     @ObservationIgnored private let accounts = AccountStore()
     @ObservationIgnored private var running: Task<Void, Never>?
+    @ObservationIgnored private var tokenRead: Task<Void, Never>?
 
     private(set) var stage = ListenStage.idle
     private(set) var heard: [HeardSong] = []
@@ -85,7 +86,12 @@ final class Listening {
 
     init(library: Library) {
         self.library = library
-        auddToken = (try? accounts.readAuddToken()) ?? ""
+        auddToken = ""
+        let store = accounts
+        tokenRead = Task { [weak self] in
+            guard let token = try? await Work.inSecrets({ try store.readAuddToken() }) else { return }
+            self?.auddToken = token
+        }
     }
 
     func listen() {
@@ -228,6 +234,7 @@ final class Listening {
         }
         guard !Task.isCancelled else { return .stopped }
         asking()
+        await tokenRead?.value
         let token = auddToken
         let native: MobilePlayer
         do {
@@ -314,10 +321,45 @@ enum MicrophoneFailure: LocalizedError {
     }
 }
 
-@MainActor
-enum Microphone {
+final class OpenMicrophone: @unchecked Sendable {
     private static let lowestRate: Double = 8000
     private static let tapFrames: AVAudioFrameCount = 4096
+
+    let sink: ClipSink
+    let rate: Double
+    private let engine: AVAudioEngine
+    private let watching: [any NSObjectProtocol]
+
+    init(for seconds: TimeInterval) throws {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate >= Self.lowestRate, format.channelCount > 0 else { throw MicrophoneFailure.unavailable }
+
+        let sink = ClipSink(wanted: Int(format.sampleRate * seconds))
+        input.installTap(onBus: 0, bufferSize: Self.tapFrames, format: format, block: ClipSink.tap(into: sink))
+        self.engine = engine
+        self.sink = sink
+        rate = format.sampleRate
+        watching = sink.interruptions(of: engine)
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            close()
+            throw error
+        }
+    }
+
+    func close() {
+        watching.forEach { NotificationCenter.default.removeObserver($0) }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+    }
+}
+
+@MainActor
+enum Microphone {
     private static let graceSeconds: Double = 3
 
     static func allowed() async -> Bool {
@@ -330,32 +372,33 @@ enum Microphone {
 
     static func record(for seconds: TimeInterval, through session: NowPlaying) async throws -> HeardClip {
         try await session.beginListening()
-        defer { session.endListening() }
-
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate >= lowestRate, format.channelCount > 0 else { throw MicrophoneFailure.unavailable }
-
-        let sink = ClipSink(wanted: Int(format.sampleRate * seconds))
-        input.installTap(onBus: 0, bufferSize: tapFrames, format: format, block: ClipSink.tap(into: sink))
-        let watching = sink.interruptions(of: engine)
-        defer {
-            watching.forEach { NotificationCenter.default.removeObserver($0) }
-            input.removeTap(onBus: 0)
-            engine.stop()
+        let opened: OpenMicrophone
+        do {
+            opened = try await Work.inSession { Result { try OpenMicrophone(for: seconds) } }.get()
+        } catch {
+            session.endListening()
+            throw error
         }
-        engine.prepare()
-        try engine.start()
 
-        let givenUpAfter = seconds + graceSeconds
+        let heard: Result<[Float], any Swift.Error>
+        do {
+            heard = .success(try await filled(opened, within: seconds + graceSeconds))
+        } catch {
+            heard = .failure(error)
+        }
+        await Work.inSession { opened.close() }
+        session.endListening()
+        return HeardClip(samples: try heard.get(), rate: UInt32(opened.rate.rounded()))
+    }
+
+    private static func filled(_ opened: OpenMicrophone, within givenUpAfter: TimeInterval) async throws -> [Float] {
+        let sink = opened.sink
         let deadline = Task.detached {
             guard (try? await Task.sleep(for: .seconds(givenUpAfter))) != nil else { return }
             sink.finish()
         }
         defer { deadline.cancel() }
-        let samples = try await sink.filled()
-        return HeardClip(samples: samples, rate: UInt32(format.sampleRate.rounded()))
+        return try await sink.filled()
     }
 }
 

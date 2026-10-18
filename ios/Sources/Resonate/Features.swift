@@ -96,6 +96,7 @@ final class Features {
         didSet { foldedNames = Dictionary(playlists.map { ($0.id, $0.name.searchFolded) }, uniquingKeysWith: { kept, _ in kept }) }
     }
     @ObservationIgnored private var foldedNames: [UInt64: String] = [:]
+    @ObservationIgnored private var writableKinds: [String: Bool] = [:]
     var playlistRows: [Track] = []
     var openPlaylist: UInt64?
     var playlistToShow: UInt64?
@@ -1052,10 +1053,17 @@ final class Features {
         return try await Work.aside { try ids.map { try native.songTags(id: $0) } }
     }
 
+    private func writableKind(of name: String) -> Bool {
+        let kind = (name as NSString).pathExtension.lowercased()
+        if let known = writableKinds[kind] { return known }
+        guard let native = library.native else { return false }
+        let writable = native.tagsWritable(name: name)
+        writableKinds[kind] = writable
+        return writable
+    }
+
     func tagsWritable(_ track: Track) -> Bool {
-        guard library.native?.tagsWritable(name: track.name) == true,
-            let root = Folders.root(of: track.uri)
-        else { return false }
+        guard writableKind(of: track.name), let root = Folders.root(of: track.uri) else { return false }
         return library.folderList.first { $0.id == root }?.writable ?? false
     }
 
