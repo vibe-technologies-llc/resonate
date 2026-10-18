@@ -107,7 +107,9 @@ place, repeat, shuffle, volume or song moved (the position is read live), and it
 rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
 audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread. A later service
-waits for that cleanup before opening another. The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
+waits for that cleanup before opening another. The snapshot's `waiting` (`mobile.md`) becomes the status when it begins and is cleared when it
+ends, if still shown; the expanded player shows it in place of the format line.
+The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
 a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
 ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
 only when `Snapshot.queue_revision` moved, or `catalog_revision` moved and three seconds have passed

@@ -367,6 +367,7 @@ internal fun flutterValue(value: Any?): Any? =
                 "outputRate" to flutterValue(value.`outputRate`),
                 "underruns" to flutterValue(value.`underruns`),
                 "failure" to flutterValue(value.`failure`),
+                "waiting" to flutterValue(value.`waiting`),
                 "sleep" to flutterValue(value.`sleep`),
                 "sleepRemainingMs" to flutterValue(value.`sleepRemainingMs`),
                 "queueRevision" to flutterValue(value.`queueRevision`),

@@ -68,11 +68,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
-## Phones
-- [S] `snapshot` drains `Event::Waiting` (the output stopped, playback goes on once a device is
-  back) without telling it, so a phone whose route vanished shows a stalled player and no reason,
-  where the desktop says there is no device to play through
-
 ## Equaliser and DSP
 - [M] An equaliser cell opens holding `{:.0}` hertz and `{:.2}` dB: Enter on it untouched moves a
   1059.46 Hz band to 1059 Hz; the one shared figure `Field` is reloaded through `set_content`, which

@@ -223,6 +223,7 @@ class LibraryRepository(private val context: Context) {
         val queueReads = QueueReads()
         var saves = 0
         var failing: String? = null
+        var waiting: String? = null
         while (currentCoroutineContext().isActive) {
             try {
                 access.withLock {
@@ -230,6 +231,13 @@ class LibraryRepository(private val context: Context) {
                     features.tick(native, state)
                     mutableSnapshot.value = state
                     state.failure?.let { mutableStatus.value = it }
+                    if (state.waiting != waiting) {
+                        if (waiting != null && mutableStatus.value == waiting) {
+                            mutableStatus.value = null
+                        }
+                        waiting = state.waiting
+                        state.waiting?.let { mutableStatus.value = it }
+                    }
                     val now = SystemClock.elapsedRealtime()
                     if (queueReads.due(state.queueRevision, state.catalogRevision, now)) {
                         mutableQueue.value = native.queue()

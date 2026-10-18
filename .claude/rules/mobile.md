@@ -58,6 +58,14 @@ device read differently. `Error::Reference` displays `of_a_lookup` (what was ask
 so no variant prints an op with `{:?}`. The report text the phones show is `Finding::told` and
 `Container`'s `Display`, never a debug print.
 
+**A wait for a device is a state, not a failure.** `Event::Waiting` (the output went, the row is held
+at its frame and plays on once a device is there) becomes `Snapshot.waiting`, the desktop's toast
+sentence (`waits_for_a_device`: no speakers or headphones, or the device stopped playing, each
+*playing on once one is there*). It stands in every snapshot, a pause included, until an output is
+bound again or the transport stops (`waiting_is_over`), so a front end shows it while it is true and
+takes it down when playback goes on
+(`a_snapshot_says_there_is_no_device_to_play_through_until_the_transport_stops`).
+
 `snapshot` consumes (it drains engine events, takes the failure and counts listening), so a caller that
 only needs the transport asks `transport`, which reads the engine's state and nothing else.
 

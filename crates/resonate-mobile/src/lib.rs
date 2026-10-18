@@ -125,6 +125,8 @@ pub struct Snapshot {
     pub next_first: Option<u32>,
     #[uniffi(default)]
     pub next_count: u32,
+    #[uniffi(default)]
+    pub waiting: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -140,6 +142,7 @@ pub struct MobilePlayer {
     catalog: Arc<Catalog>,
     sources: Arc<Sources>,
     failure: Mutex<Option<String>>,
+    waiting: Mutex<Option<String>>,
     saved: Mutex<Option<SavedPlace>>,
     preferences: Mutex<PlaybackPreferences>,
     services: features::Services,
@@ -178,6 +181,7 @@ impl MobilePlayer {
             catalog,
             sources,
             failure: Mutex::new(None),
+            waiting: Mutex::new(None),
             saved: Mutex::new(None),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: features::Services::default(),
@@ -389,10 +393,13 @@ impl MobilePlayer {
             (events, player.state(), player.queued())
         };
         for event in events {
-            if let Some(told) = self.failure_told(&queue.rows, event) {
+            if let Some(told) = failure::waiting_told(&event) {
+                *self.waiting.lock() = Some(told);
+            } else if let Some(told) = self.failure_told(&queue.rows, event) {
                 *self.failure.lock() = Some(told);
             }
         }
+        let waiting = self.still_waiting(&state);
         self.count_listening(&state, &queue.rows)?;
         let current = state.current.and_then(|track| {
             queue
@@ -448,6 +455,7 @@ impl MobilePlayer {
             catalog_revision: self.catalog.revision(),
             next_first,
             next_count,
+            waiting,
         })
     }
 

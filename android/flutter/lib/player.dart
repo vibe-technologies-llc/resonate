@@ -562,7 +562,9 @@ class _NowPlayingState extends State<NowPlaying>
                                                   MainAxisAlignment.center,
                                               children: [
                                                 Icon(
-                                                  Icons.graphic_eq_rounded,
+                                                  model.waiting == null
+                                                      ? Icons.graphic_eq_rounded
+                                                      : Icons.volume_off_rounded,
                                                   size: 14,
                                                   color: Theme.of(context)
                                                       .colorScheme
@@ -571,7 +573,8 @@ class _NowPlayingState extends State<NowPlaying>
                                                 const SizedBox(width: 6),
                                                 Flexible(
                                                   child: Text(
-                                                    '${track['codec'] ?? ''} · ${decimal(track['rate']) / 1000} kHz${track['bits'] == null ? '' : ' · ${track['bits']} bit'}',
+                                                    model.waiting ??
+                                                        '${track['codec'] ?? ''} · ${decimal(track['rate']) / 1000} kHz${track['bits'] == null ? '' : ' · ${track['bits']} bit'}',
                                                     style: Theme.of(context)
                                                         .textTheme
                                                         .labelSmall,

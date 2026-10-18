@@ -147,6 +147,9 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   (`Library.open`) with `openingFailure` cleared first, so `player()` callers wait for that attempt,
   and a success runs the whole start (preferences, Now Playing, `Features.initialize`, the catalog,
   the poll). Actions sent while it is closed are dropped, as before, since the banner says why. The
+  snapshot's `waiting` (`mobile.md`) is shown as a failure when it begins and taken down when it
+  ends, if still shown; meanwhile `Library.waitingForADevice` puts it in Now Playing in place of the quality
+  line (`WaitingLine`), since the cover hides the banner. The
   snapshot, the queue read and the save are three parts of a tick, each failing and recovering on
   its own: a queue or save that fails never discards the snapshot already taken (which holds the
   engine's failure), a queue that cannot be read is not asked again until its revision moves, and

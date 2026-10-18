@@ -149,6 +149,7 @@ class PlayerModel extends ChangeNotifier {
   RowData get current => row(snapshot['current']);
   RowData get preferences => row(state['preferences']);
   bool get playing => ['PLAYING', 'LOADING'].contains(snapshot['transport']);
+  String? get waiting => snapshot['waiting'] as String?;
   bool get online => state['online'] == true;
   String? get notice => failure ?? state['status'] as String?;
   DateTime? _syncAskedAt;

@@ -188,6 +188,7 @@ final class Library {
     private(set) var playingTrack: Track?
     private(set) var loaded = false
     private(set) var playingNext: Range<Int>?
+    private(set) var waitingForADevice: String?
     var status: StatusMessage?
     var scanning = false
     private(set) var scanTold = false
@@ -457,6 +458,11 @@ final class Library {
         if let failure = state.failure, failure != shownFailure {
             shownFailure = failure
             show(failure, as: .failure)
+        }
+        if waitingForADevice != state.waiting {
+            if let ended = waitingForADevice, status?.text == ended { dismissStatus() }
+            waitingForADevice = state.waiting
+            if let begun = state.waiting { show(begun, as: .failure) }
         }
     }
 

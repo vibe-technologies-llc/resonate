@@ -267,6 +267,7 @@ mod tests {
                 catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
                 sources,
                 failure: Mutex::new(None),
+                waiting: Mutex::new(None),
                 saved: Mutex::new(None),
                 preferences: Mutex::new(PlaybackPreferences::default()),
                 services: Services::default(),
@@ -707,6 +708,25 @@ mod tests {
 
         let shown = harness.player.catalog.tracks("", 0, 10).expect("listed");
         assert!(shown.iter().any(|track| track.id == song.id));
+    }
+
+    #[test]
+    fn a_snapshot_says_there_is_no_device_to_play_through_until_the_transport_stops() {
+        let harness = Harness::new();
+        let told = "No speakers or headphones to play through — playing on once one is there";
+        harness.resumed("ab", 0, 0);
+
+        *harness.player.waiting.lock() = Some(told.to_owned());
+        let paused = harness.player.snapshot().expect("a snapshot");
+        let again = harness.player.snapshot().expect("a snapshot");
+        harness.player.stop().expect("a stop sent");
+        let stopped = harness.settled(|snapshot| matches!(snapshot.transport, Transport::Stopped));
+        let after = harness.player.snapshot().expect("a snapshot");
+
+        assert_eq!(paused.waiting.as_deref(), Some(told));
+        assert_eq!(again.waiting.as_deref(), Some(told));
+        assert_eq!(stopped.waiting, None);
+        assert_eq!(after.waiting, None);
     }
 
     #[test]

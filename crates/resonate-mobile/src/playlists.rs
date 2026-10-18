@@ -393,6 +393,7 @@ pub(crate) mod tests {
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources: Arc::new(Sources::local()),
             failure: Mutex::new(None),
+            waiting: Mutex::new(None),
             saved: Mutex::new(None),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: Services::default(),

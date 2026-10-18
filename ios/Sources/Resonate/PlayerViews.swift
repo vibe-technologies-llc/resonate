@@ -470,7 +470,11 @@ struct PlayerScrubber: View {
                 Text(clock(UInt64(shown)))
                     .accessibilityHidden(true)
                 Spacer()
-                QualityLine(track: library.playingTrack)
+                if let waiting = library.waitingForADevice {
+                    WaitingLine(text: waiting)
+                } else {
+                    QualityLine(track: library.playingTrack)
+                }
                 Spacer()
                 Text("-" + clock(UInt64(max(duration - shown, 0))))
                     .accessibilityHidden(true)
@@ -520,6 +524,22 @@ struct PlayerScrubber: View {
     private func commit(_ target: Double) {
         held = target
         library.seek(to: UInt64(target))
+    }
+}
+
+struct WaitingLine: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "speaker.slash")
+            .font(.caption2.weight(.semibold))
+            .nowPlayingInk()
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: .capsule)
     }
 }
 

@@ -1,9 +1,17 @@
-use resonate_engine::{Cause, CommandKind, Event, QueueItem};
+use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueItem};
 use resonate_library::{Error as Library, LookupOp};
 
 use crate::{MobilePlayer, documents::document_uri};
 
 impl MobilePlayer {
+    pub(crate) fn still_waiting(&self, state: &PlayerState) -> Option<String> {
+        let mut waiting = self.waiting.lock();
+        if waiting_is_over(state) {
+            *waiting = None;
+        }
+        waiting.clone()
+    }
+
     pub(crate) fn failure_told(&self, rows: &[QueueItem], event: Event) -> Option<String> {
         match event {
             Event::Failed { track, error } => {
@@ -26,6 +34,27 @@ impl MobilePlayer {
             }
             _ => None,
         }
+    }
+}
+
+pub(crate) fn waiting_told(event: &Event) -> Option<String> {
+    let Event::Waiting { track, error } = event else {
+        return None;
+    };
+    tracing::warn!(%error, %track, "playback waits for a device");
+    Some(waits_for_a_device(error.cause()).to_owned())
+}
+
+fn waiting_is_over(state: &PlayerState) -> bool {
+    state.output.is_some() || matches!(state.playback, PlaybackState::Idle | PlaybackState::Stopped)
+}
+
+const fn waits_for_a_device(cause: Cause) -> &'static str {
+    match cause {
+        Cause::NoDevice => {
+            "No speakers or headphones to play through — playing on once one is there"
+        }
+        _ => "The audio device stopped playing — playing on once one is there",
     }
 }
 
@@ -112,7 +141,7 @@ const fn plainly(cause: Cause) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::{MediaLocation, SourceId};
+    use resonate_core::{MediaLocation, SourceId, TrackId};
 
     use super::*;
 
@@ -130,6 +159,48 @@ mod tests {
             would_not_play(Cause::NoDevice, "Echoes"),
             "No speakers or headphones to play through"
         );
+    }
+
+    #[test]
+    fn a_device_waited_for_is_told_as_the_desktop_tells_it_and_nothing_else_is() {
+        let track = TrackId::new(1).expect("an id");
+        let none_there = Event::Waiting {
+            track,
+            error: resonate_engine::Error::Sink(resonate_audio::Error::NoSink),
+        };
+        let gone = Event::Waiting {
+            track,
+            error: resonate_engine::Error::Sink(resonate_audio::Error::SinkGone {
+                node: resonate_audio::SinkId::new(4),
+            }),
+        };
+        let failed = Event::Failed {
+            track,
+            error: resonate_engine::Error::Sink(resonate_audio::Error::NoSink),
+        };
+
+        assert_eq!(
+            waiting_told(&none_there).as_deref(),
+            Some("No speakers or headphones to play through — playing on once one is there")
+        );
+        assert_eq!(
+            waiting_told(&gone).as_deref(),
+            Some("The audio device stopped playing — playing on once one is there")
+        );
+        assert_eq!(waiting_told(&failed), None);
+    }
+
+    #[test]
+    fn a_wait_lasts_through_a_pause_and_ends_with_the_transport() {
+        let waiting_at = |playback| PlayerState {
+            playback,
+            ..PlayerState::default()
+        };
+
+        assert!(!waiting_is_over(&waiting_at(PlaybackState::Buffering)));
+        assert!(!waiting_is_over(&waiting_at(PlaybackState::Paused)));
+        assert!(waiting_is_over(&waiting_at(PlaybackState::Stopped)));
+        assert!(waiting_is_over(&waiting_at(PlaybackState::Idle)));
     }
 
     #[test]
