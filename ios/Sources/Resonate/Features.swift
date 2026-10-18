@@ -733,7 +733,11 @@ final class Features {
             let name = received.name
             var created: String?
             do {
-                let (uri, descriptor) = try await Work.aside { try folders.fresh(in: folder.id, named: name) }
+                let (uri, descriptor) = try await Work.aside {
+                    let made = try folders.fresh(in: folder.id, named: name)
+                    Backup.leaveOutLanded(made.uri, from: folders)
+                    return made
+                }
                 created = uri
                 settings.set(uri, forKey: Self.landingJournalKey)
                 _ = try await Work.aside { try native.syncReceive(id: received.id, descriptor: descriptor, uri: uri) }

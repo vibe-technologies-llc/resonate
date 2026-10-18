@@ -372,7 +372,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
   player is open): `sync-received` and `sync-staging` (songs other devices send, fetched again) and
   the catalog copy kept before a migration (`.before-v<N>`) are `isExcludedFromBackup`; the catalog
-  itself (favourites, playlists, listens) travels with the device's backup.
+  itself (favourites, playlists, listens) travels with the device's backup. A song landed from
+  another device into the app's own Documents (root `local`) is left out as it is created
+  (`Backup.leaveOutLanded`, beside `Folders.fresh` in `landReceived`), since a restore fetches it
+  again; one landed in a granted folder is the listener's file in another app's or iCloud's space
+  and is left as it is, and so is a song a download or the listener put in Documents. Songs landed
+  before this was done carry no mark: nothing tells them from the listener's own.
 
 The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search

@@ -368,6 +368,11 @@ final class Folders: Documents, @unchecked Sendable {
         return try body(files)
     }
 
+    func localFile(_ uri: String) -> URL? {
+        guard Self.root(of: uri) == Self.local, let (url, _) = try? resolved(uri) else { return nil }
+        return url
+    }
+
     static func root(of uri: String) -> String? {
         let opening = "\(scheme)://"
         guard uri.hasPrefix(opening) else { return nil }

@@ -18,6 +18,11 @@ enum Backup {
         }
     }
 
+    static func leaveOutLanded(_ uri: String, from folders: Folders) {
+        guard let url = folders.localFile(uri) else { return }
+        leaveOut(url)
+    }
+
     private static func leaveOut(_ url: URL) {
         var target = url
         var values = URLResourceValues()

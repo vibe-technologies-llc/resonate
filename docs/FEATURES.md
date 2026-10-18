@@ -56,9 +56,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   though sync seals its records: neither matters under free signing, both before any distribution
 - [S] iOS cannot give a song lyrics: `Features.keepLyricText` (over `keep_lyric_text`) has no
   caller, so *No lyrics* is fixed only by an `.lrc` placed beside the file through Files
-- [S] Songs landed from other devices into the iOS Documents folder are in the device backup though
-  a restore fetches them again: `landReceived` never sets `isExcludedFromBackup`, and `Backup`
-  covers only `sync-received`, `sync-staging` and the `.before-v` copies
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
