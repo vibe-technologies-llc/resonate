@@ -61,9 +61,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so
   do the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's
   depth
-- [M] Choosing the sink already bound, or changing quality, filter phase, dither, restoration, noise
-  shaping, convolution or forced rate on a track whose plan they leave alone, still fades out and
-  reopens: only `SetBitPerfect`, `SetDop` and `SetBuffer` ask `keeps_its_stream`
 - [L] Changing the equaliser is heard up to the buffer's depth later (half a second by default): the
   filters run ahead of a ring kept full; only a level can be trimmed where the graph pulls
 - [L] One playback stream and one capture stream only; concurrent playback streams unsupported

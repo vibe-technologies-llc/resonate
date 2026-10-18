@@ -303,8 +303,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `build_chain_after` builds the stages behind. A restoration switched under a resampler or
   convolver still rebinds; a volume or ReplayGain change never does.
 - **A setting asking for the stream already open does not reopen it** (`Engine::keeps_its_stream`:
-  what `plan_output` would open now against the open plan's stream, packing and `ring_capacity`).
-  Graph rate is not weighed (`clock.force-rate` pins the graph: switching it still reopens).
+  what `plan_output` would open now against the open plan's stream, packing and `ring_capacity`;
+  `SetBitPerfect`, `SetDop`, `SetBuffer`). **A setting the open plan does not read leaves it
+  alone** (`Engine::keeps_its_plan`): quality, filter phase, dither, restoration, noise shaping and
+  convolution are weighed by `OutputPlan::renders_alike` (shaping only under a dither), and where
+  the chain reads the setting itself when it is built (`ReadBy::reaches_into`: quality and phase under a
+  resampler, the dither's kind under a dither) the plan alone cannot say, so it reopens. Choosing
+  the device the stream is already on (`stays_on_the_bound_device`, by `chosen_sink`, named or
+  followed default alike) reopens nothing. Graph rate is not weighed (`clock.force-rate` pins the
+  graph and is set as the stream opens: switching it still reopens).
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the settled spec; `downgrade` hands it to `plan_for` as
   target, written into `OutputPlan::stream` whole (writing the source's channels back made the two

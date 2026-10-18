@@ -62,6 +62,23 @@ const PULLED_WITHIN: Duration = Duration::from_millis(250);
 const OPENING_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReadBy {
+    PlanAlone,
+    Resampler,
+    Dither,
+}
+
+impl ReadBy {
+    const fn reaches_into(self, plan: &OutputPlan) -> bool {
+        match self {
+            Self::PlanAlone => false,
+            Self::Resampler => plan.resamples(),
+            Self::Dither => plan.dithers(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filled {
     AsFarAsItGoes,
     ForNow,
@@ -1333,23 +1350,26 @@ impl Engine {
             }
             Command::SetSink(sink) => {
                 self.config.sink = sink;
+                if self.stays_on_the_bound_device() {
+                    return Ok(());
+                }
                 self.rebind_where_it_stands()
             }
             Command::SetQuality(quality) => {
                 self.config.quality = quality;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetFilterPhase(phase) => {
                 self.config.filter_phase = phase;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetDither(dither) => {
                 self.config.dither = dither;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::Dither)
             }
             Command::SetRestoration(restoration) => {
                 self.config.restoration = restoration;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetTruePeak(on) => {
                 self.config.true_peak = on;
@@ -1362,7 +1382,7 @@ impl Engine {
             }
             Command::SetNoiseShaping(shaping) => {
                 self.config.noise_shaping = shaping;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetReplayGain(mode) => {
                 self.config.replay_gain = mode;
@@ -1374,7 +1394,7 @@ impl Engine {
             }
             Command::SetConvolution(impulse) => {
                 self.config.convolution = impulse;
-                self.rebind_where_it_stands()
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
@@ -2048,17 +2068,46 @@ impl Engine {
         self.rebind_where_it_stands()
     }
 
-    fn keeps_its_stream(&self) -> bool {
-        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
-            return false;
-        };
-        if output.plan.stream != output.status.negotiated {
-            return false;
+    fn rebind_where_the_plan_moves(&mut self, read_by: ReadBy) -> Result<()> {
+        if self.keeps_its_plan(read_by) {
+            return Ok(());
         }
-        let Some(sink) = self.bound_sink() else {
+        self.rebind_where_it_stands()
+    }
+
+    fn keeps_its_plan(&self, read_by: ReadBy) -> bool {
+        let (Some(output), Some(wanted)) = (self.output.as_ref(), self.plan_wanted_now()) else {
             return false;
         };
-        let wanted = plan_output(track.decoded(), &sink, &self.config, track.replay_gain);
+        !read_by.reaches_into(&output.plan) && wanted.renders_alike(&output.plan)
+    }
+
+    fn stays_on_the_bound_device(&self) -> bool {
+        let Some(output) = self.output.as_ref() else {
+            return false;
+        };
+        chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
+            .is_some_and(|sink| sink.id == output.sink && sink.name == output.bound)
+    }
+
+    fn plan_wanted_now(&self) -> Option<OutputPlan> {
+        let (track, output) = (self.track.as_ref()?, self.output.as_ref()?);
+        if output.plan.stream != output.status.negotiated {
+            return None;
+        }
+        let sink = self.bound_sink()?;
+        Some(plan_output(
+            track.decoded(),
+            &sink,
+            &self.config,
+            track.replay_gain,
+        ))
+    }
+
+    fn keeps_its_stream(&self) -> bool {
+        let (Some(output), Some(wanted)) = (self.output.as_ref(), self.plan_wanted_now()) else {
+            return false;
+        };
         let capacity = ring_capacity(
             self.config.buffer,
             wanted.stream,

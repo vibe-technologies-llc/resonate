@@ -23,13 +23,14 @@ use resonate_core::{
 };
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
-    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, GraphTime,
-    HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, Opener,
-    OutputMode, Placement, PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q,
-    QueueItem, Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange,
-    SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
-    SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    Surveyor, Tapped, Until, Words, stamp_of,
+    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
+    GraphTime, HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
+    NoiseShaping, Opener, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
+    PreviousRestarts, Profile, Q, Quality, QueueItem, Reading, RepeatMode, ReplayGainMode,
+    Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats, SinkId,
+    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamClock,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words,
+    stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -2361,7 +2362,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         served: Arc::default(),
     }));
     let (player, graph) = player_over(
-        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])],
         Arc::new(sources),
     )?;
     player.send(Command::Load {
@@ -2385,7 +2386,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         "a seek on a stream that cannot seek answered {refused:?}"
     );
     player
-        .request(Command::SetDither(DitherKind::None))?
+        .request(Command::SetQuality(Quality::Fast))?
         .wait_for(PATIENCE)?;
     assert_eq!(
         graph.lock().opens,
@@ -3568,6 +3569,71 @@ fn a_setting_that_leaves_the_stream_as_it_was_does_not_reopen_it() -> Result<()>
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect)
+    );
+    Ok(())
+}
+
+#[test]
+fn choosing_the_bound_device_or_a_setting_the_plan_does_not_read_leaves_the_stream_open()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let device = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+    let bound = device.name.clone();
+
+    let (player, graph) = player(vec![device])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetSink(Some(bound)))?;
+    answered(&player, Command::SetSink(None))?;
+    answered(&player, Command::SetQuality(Quality::Fast))?;
+    answered(&player, Command::SetFilterPhase(FilterPhase::Minimum))?;
+    answered(&player, Command::SetDither(DitherKind::Rectangular))?;
+    answered(&player, Command::SetRestoration(Restoration::Extend))?;
+    answered(&player, Command::SetNoiseShaping(NoiseShaping::Lipshitz))?;
+    answered(&player, Command::SetConvolution(None))?;
+    thread::sleep(A_SHORT_DOZE);
+
+    assert_eq!(
+        graph.lock().opens,
+        1,
+        "a setting the open plan does not read reopened the stream"
+    );
+    assert!(playing(&player));
+    assert_eq!(
+        player.state().output.map(|output| output.mode),
+        Some(OutputMode::BitPerfect)
+    );
+    Ok(())
+}
+
+#[test]
+fn changing_the_quality_a_resampled_track_is_converted_at_reopens_its_stream() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetQuality(Quality::Fast))?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S32),
+        |_, graph| graph.opens == 2,
+        "the stream to reopen around the faster resampler",
     );
     Ok(())
 }
