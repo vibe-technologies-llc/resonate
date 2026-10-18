@@ -910,7 +910,7 @@ enum CollectionSource: Sendable {
         switch self {
         case .album(let key): try native.albumTracks(key: key)
         case .artist(let name): try native.artistTracks(name: name)
-        case .playlist(let id): try native.playlistTracks(id: id, offset: 0, limit: Library.page)
+        case .playlist(let id): try Library.everyPage { try native.playlistTracks(id: id, offset: $0, limit: Library.page) }
         }
     }
 }

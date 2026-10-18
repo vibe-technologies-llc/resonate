@@ -325,7 +325,7 @@ struct SuggestedMixCard: View {
         Task {
             do {
                 let native = try await library.player()
-                let tracks = try await Work.aside { try native.filteredTracks(filter: filter, offset: 0, limit: Library.page) }
+                let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) } }
                 guard !tracks.isEmpty else {
                     library.notice("Nothing in \(mix.title) yet")
                     return

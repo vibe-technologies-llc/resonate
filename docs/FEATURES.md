@@ -61,9 +61,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] The phones' equaliser has no *Fit the preamp*: `resonate-mobile` exports no peak of the curve,
   so an AutoEq or boosted curve clips until the preamp is lowered by eye, where the desktop fits it
   from `peak_db`
-- [S] A playlist row's Play, Shuffle, Play next and Add to queue (`CollectionSource.tracks`) and a
-  suggested mix's Play and Shuffle read one 500-row page: a larger playlist or *Never heard* acts on
-  its first 500 songs in name order, shuffle included, though the playlist page reads every page
 - [S] TIDAL sign-in on iOS has no Cancel: `authorizeTidal` blocks in `finish_tidal_authorization`
   until the code is approved or lapses, and the button stays disabled throughout, though the seam
   cancels on `Ok(None)`

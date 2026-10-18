@@ -447,8 +447,8 @@ every route change (a pair of headphones at the same rate included), not from th
 - **Every album, artist and playlist row acts on the whole collection** (`collectionActions`, a
   `CollectionSource`): a context menu with Play, Shuffle, Play next, Add to queue, Add to playlist
   and an album's Go to artist, and the song row's leading Play next / Add to queue swipe, its songs
-  read on `Work.aside` when the action is chosen (`album_tracks`, `artist_tracks`, the playlist's
-  first page). Lists, search results, shelves and the artist page's albums all carry it.
+  read on `Work.aside` when the action is chosen (`album_tracks`, `artist_tracks`, every page
+  of the playlist through `Library.everyPage`, as its page reads them). Lists, search results, shelves and the artist page's albums all carry it.
 - **One row per kind**: a collection is a `CollectionRow` (lit title, optional chevron) and a song a
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
@@ -586,7 +586,8 @@ every route change (a pair of headphones at the same rate included), not from th
   `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
   `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
   holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
-  play button and the context menu (Play, Shuffle, Show songs) play its first page at once.
+  play button and the context menu (Play, Shuffle, Show songs) play every song it holds, read
+  page by page (`Library.everyPage`), so *Never heard* shuffles the whole of it.
   `SuggestionsRow` wears a teal and blue sparkles tile.
 
 ## Search
@@ -1032,7 +1033,7 @@ the backdrop, the toolbar's refresh and the `LyricAttribution` badge.
   intent takes it as a `@Dependency` and calls `start()` (which runs once) before
   `player()`, and plays through the same `Library.play`/`shuffle`/`resume` as a tap, so activation
   and the lock screen follow. Tracks are read whole, page by page, on `Work.aside`
-  (`Spoken.every`), the snapshot on `Work.inOrder`.
+  (`Library.everyPage`), the snapshot on `Work.inOrder`.
 
 ## Checks
 

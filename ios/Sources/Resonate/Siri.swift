@@ -76,7 +76,7 @@ struct PlayFavouritesIntent: AudioPlaybackIntent {
         var favourites = defaultTrackFilter()
         favourites.favourites = true
         let chosen = favourites
-        let tracks = try await Work.aside { try Spoken.every { try native.filteredTracks(filter: chosen, offset: $0, limit: Library.page) } }
+        let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: chosen, offset: $0, limit: Library.page) } }
 
         guard !tracks.isEmpty else {
             return .result(dialog: "You have no favourite songs yet.")
@@ -144,20 +144,11 @@ enum Spoken {
 
     static func shuffleEverything(in library: Library, from native: MobilePlayer) async throws -> IntentDialog {
         let everything = defaultTrackFilter()
-        let tracks = try await Work.aside { try every { try native.filteredTracks(filter: everything, offset: $0, limit: Library.page) } }
+        let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: everything, offset: $0, limit: Library.page) } }
 
         guard !tracks.isEmpty else { return "Your library has no songs yet." }
         library.shuffle(tracks)
         return "Shuffling your library."
-    }
-
-    nonisolated static func every(_ page: (UInt32) throws -> [Track]) rethrows -> [Track] {
-        var found: [Track] = []
-        while true {
-            let read = try page(UInt32(found.count))
-            found += read
-            if read.count < Library.page { return found }
-        }
     }
 }
 
@@ -170,7 +161,7 @@ struct Wanted: Sendable {
         guard !folded.isEmpty else { return Wanted(tracks: [], announced: "") }
 
         if let playlist = try native.playlists().first(where: { $0.name.searchFolded == folded }) {
-            let tracks = try Spoken.every { try native.playlistTracks(id: playlist.id, offset: $0, limit: Library.page) }
+            let tracks = try Library.everyPage { try native.playlistTracks(id: playlist.id, offset: $0, limit: Library.page) }
             return Wanted(tracks: tracks, announced: "Playing your playlist \(playlist.name).")
         }
 

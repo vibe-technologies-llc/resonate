@@ -916,12 +916,7 @@ final class Features {
         let request = playlistRequest
         do {
             let (rows, found) = try await Work.aside {
-                var rows: [Track] = []
-                while true {
-                    let page = try native.playlistTracks(id: id, offset: UInt32(rows.count), limit: Library.page)
-                    rows += page
-                    if page.count < Library.page { break }
-                }
+                let rows = try Library.everyPage { try native.playlistTracks(id: id, offset: $0, limit: Library.page) }
                 return (rows, try native.playlists())
             }
             guard request == playlistRequest else { return }

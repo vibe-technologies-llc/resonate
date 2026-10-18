@@ -998,11 +998,15 @@ final class Library {
     }
 
     nonisolated private static func pages(_ native: MobilePlayer, _ filter: TrackFilter, from offset: UInt32) throws -> [Track] {
+        try everyPage { try native.filteredTracks(filter: filter, offset: offset + $0, limit: Library.page) }
+    }
+
+    nonisolated static func everyPage(_ page: (UInt32) throws -> [Track]) rethrows -> [Track] {
         var found: [Track] = []
         while true {
-            let page = try native.filteredTracks(filter: filter, offset: offset + UInt32(found.count), limit: Library.page)
-            found += page
-            if page.count < Library.page { return found }
+            let read = try page(UInt32(found.count))
+            found += read
+            if read.count < Library.page { return found }
         }
     }
 
