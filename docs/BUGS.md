@@ -21,16 +21,17 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   scales a stream still called bit-perfect
 
 ## Formats
-- [M] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps) go to a second
-  `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the main decoder
-  misses them: a click at every mono/stereo switch of a low-bitrate podcast
 - [M] A spliced M4A whose edit list jumps in media time (a cut, a reorder) plays only its first
   stretch: the playable window is one `FrameSpan`, so the later edits have nowhere to go
-- [S] A whole-file lyric sheet beside a cue-cut file is weighed on its title alone: `Wanted` has no
-  whole-file length or artist, so its `[length:]` and `[ar:]` are not checked against the file
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
+- [M · blocked: opus-rs] A stereo Opus stream's mono packets (libopus drops to mono near 16-24 kbps)
+  go to a second `OpusDecoder` (`opus.rs` `other`) whose state is minutes stale or empty, and the
+  main decoder misses them: a click, and band energies mispredicted for some frames, at every
+  mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
+  bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
+  mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Tagging
 - [M] A write back staged in the spool folder (`written_back_from_elsewhere`, the track's folder

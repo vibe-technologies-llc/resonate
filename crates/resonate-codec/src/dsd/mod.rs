@@ -411,6 +411,7 @@ pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> M
         ),
         speakers: layout.speakers,
         duration: Some(layout.frames()),
+        whole_file: None,
         encoder_delay: 0,
         encoder_padding: 0,
         playable: None,

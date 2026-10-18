@@ -704,6 +704,45 @@ mod tests {
         assert_eq!(lines, ["a cloud of eiderdown", "draws me"]);
     }
 
+    fn a_cut_of_the_meddle_file() -> (Tree, Wanted) {
+        let tree = Tree::new();
+        tree.write(
+            "Meddle.lrc",
+            "[ti:Meddle][ar:Pink Floyd][length:46:45]\n[00:01.00]one of these days\n\
+             [00:20.50]a cloud of eiderdown\n[00:30.00]draws me\n[00:40.00]overhead the albatross",
+        );
+        let mut wanted = a_cut(tree.track("Meddle.flac"), 20, Some(40));
+        wanted.album = Some("Meddle".to_owned());
+        wanted.artist = Some("Pink Floyd".to_owned());
+        wanted.duration = Some(Duration::from_secs(20));
+        (tree, wanted)
+    }
+
+    #[test]
+    fn a_whole_file_sheet_is_weighed_against_the_files_length_and_artist() {
+        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        wanted.file_duration = Some(Duration::from_secs(46 * 60 + 45));
+        wanted.file_artist = Some("Pink Floyd".to_owned());
+
+        assert!(found(&wanted).is_some());
+    }
+
+    #[test]
+    fn a_whole_file_sheet_running_to_another_length_than_the_file_is_passed_over() {
+        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        wanted.file_duration = Some(Duration::from_secs(23 * 60 + 31));
+
+        assert_eq!(found(&wanted), None);
+    }
+
+    #[test]
+    fn a_whole_file_sheet_by_another_artist_than_the_files_is_passed_over() {
+        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        wanted.file_artist = Some("Led Zeppelin".to_owned());
+
+        assert_eq!(found(&wanted), None);
+    }
+
     #[test]
     fn a_whole_file_sheet_headed_for_another_album_is_passed_over_for_every_row_cut_from_the_file()
     {

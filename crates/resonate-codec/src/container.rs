@@ -544,6 +544,7 @@ pub(crate) fn coded_info(
                 .or_else(|| prescan.segment_duration(spec.rate))
                 .map(|declared| declared.saturating_sub(carrying.declared_before_the_music(primed)))
         }),
+        whole_file: None,
         encoder_delay: track.delay.or(primed.map(|held| held.delay)).unwrap_or(0),
         encoder_padding: track
             .padding

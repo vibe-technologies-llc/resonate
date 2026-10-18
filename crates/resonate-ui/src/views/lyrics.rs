@@ -622,9 +622,12 @@ impl RootView {
     ) -> Option<Wanted> {
         let current = state.current?;
         let item = self.queued_row(state, cx)?;
-        let tags = digest
-            .filter(|digest| digest.track == current.id)
-            .map(|digest| &digest.info.tags);
+        let current_digest = digest.filter(|digest| digest.track == current.id);
+        let tags = current_digest.map(|digest| &digest.info.tags);
+        let file_artist = tags.and_then(|tags| tags.album_artist.clone());
+        let file_duration = current_digest
+            .and_then(|digest| digest.info.whole_file)
+            .map(|whole| whole.to_duration(current.source.rate));
         let title = tags.and_then(|tags| tags.title.clone());
         let artist = tags.and_then(|tags| tags.artist.clone());
         let album = tags.and_then(|tags| tags.album.clone());
@@ -654,6 +657,8 @@ impl RootView {
                 .duration
                 .map(|duration| duration.to_duration(current.source.rate))
                 .or(scanned_duration),
+            file_artist,
+            file_duration,
             carried,
         })
     }

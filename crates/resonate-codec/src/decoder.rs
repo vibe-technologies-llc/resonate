@@ -295,6 +295,7 @@ pub struct MediaInfo {
     pub spec: StreamSpec,
     pub speakers: Speakers,
     pub duration: Option<Frames>,
+    pub whole_file: Option<Frames>,
     pub encoder_delay: u32,
     pub encoder_padding: u32,
     pub playable: Option<FrameSpan>,
@@ -510,6 +511,7 @@ impl Decoder {
 
         self.origin = start;
         self.limit = held.end();
+        self.info.whole_file = self.info.duration;
         self.info.duration = held.frames();
         if let Some(track) = cut.and_then(|cut| cut.cut_at(start, self.info.spec.rate)) {
             self.info.tags = track.titled();
@@ -1447,6 +1449,21 @@ mod tests {
 
         assert_eq!(info.duration, Some(Frames(3_000)));
         assert_eq!(decoder.position(), Frames::ZERO);
+    }
+
+    #[test]
+    fn a_decoder_confined_to_a_span_remembers_how_long_the_whole_file_runs() {
+        let span = FrameSpan::between(Frames(1_000), Frames(4_000));
+        let samples = ramp(16);
+        let (_, info) = spanned(Wav::pcm(16).build(&samples), span);
+        let (_, whole) = Decoder::open_reader(
+            Wav::pcm(16).build(&samples),
+            &MediaLocation::local("held.wav"),
+        )
+        .expect("a well-formed wav opens");
+
+        assert_eq!(info.whole_file, whole.duration);
+        assert_eq!(whole.whole_file, None);
     }
 
     #[test]

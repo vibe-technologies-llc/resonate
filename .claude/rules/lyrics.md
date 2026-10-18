@@ -101,7 +101,9 @@ dependency (tested without a window).
   (`NamedAfter::TheFile`) + whatever `Embedded` carries; a sidecar named after the row's own title
   is already the row's. **A whole-file sheet is checked against the whole file, then cut**
   (`Wanted::of_the_whole_file`: the album stands for the title; the row's artist and length are
-  not the file's, so none is weighed), never against the row, whose title a `[ti:]` of the album
+  not the file's, so `Wanted::file_artist` (the cue's album artist) and `Wanted::file_duration`
+  (`MediaInfo::whole_file`, the file's music length a confined decoder remembers) stand for them,
+  each weighed only where known), never against the row, whose title a `[ti:]` of the album
   would disagree with.
 - **A `.lyricsfile.yaml` beside a file is a sidecar, the richest.** `BESIDE` pairs each ending with
   how it is `Written`: `.lyricsfile.yaml`, `.yml`, then `.lrc`, `.txt`. Read to `LARGEST_LYRICSFILE`,

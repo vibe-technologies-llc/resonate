@@ -18,6 +18,8 @@ pub struct Wanted {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub duration: Option<Duration>,
+    pub file_artist: Option<String>,
+    pub file_duration: Option<Duration>,
     pub carried: Option<String>,
 }
 
@@ -31,6 +33,8 @@ impl Wanted {
             artist: None,
             album: None,
             duration: None,
+            file_artist: None,
+            file_duration: None,
             carried: None,
         }
     }
@@ -43,8 +47,8 @@ impl Wanted {
             span: None,
             rate: None,
             title: self.album.clone(),
-            artist: None,
-            duration: None,
+            artist: self.file_artist.clone(),
+            duration: self.file_duration,
             ..self.clone()
         }
     }
