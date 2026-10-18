@@ -126,6 +126,9 @@ struct SyncStatusSection: View {
         let offline = !features.online && features.syncConfig?.nearbyOnly != true
         Section {
             SyncStateRow()
+            if features.localNetworkRefused {
+                LocalNetworkRefusedRow()
+            }
             if offline {
                 Button("Sync only on this network", systemImage: "wifi") {
                     guard var next = features.syncConfig else { return }
@@ -145,6 +148,27 @@ struct SyncStatusSection: View {
             if offline {
                 Text("Online features are off. Turn them on in Settings, or sync only with devices on the same network.")
             }
+        }
+    }
+}
+
+struct LocalNetworkRefusedRow: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Nearby devices need Local Network access")
+                Text("Without it this iPhone cannot find your devices on this network. Turn on Local Network for Resonate in Settings.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "network.slash").foregroundStyle(.orange)
+        }
+        .padding(.vertical, 4)
+        Button("Open Settings", systemImage: "gear") {
+            if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
         }
     }
 }

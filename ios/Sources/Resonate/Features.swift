@@ -123,6 +123,7 @@ final class Features {
     var syncAskedAt: Date?
     var syncLanding = 0
     var pairingOffered: String?
+    var localNetworkRefused = false
     @ObservationIgnored private var joinWaiting: String?
     var tagsUndoable = false
     var organising = false
@@ -601,8 +602,19 @@ final class Features {
             nearby?.follow(record: nil)
             return
         }
-        if nearby == nil { nearby = NearbyDevices(native: native) }
-        nearby?.follow(record: record)
+        nearbyDevices(native).follow(record: record)
+    }
+
+    private func nearbyDevices(_ native: MobilePlayer) -> NearbyDevices {
+        if let nearby { return nearby }
+        let made = NearbyDevices(native: native) { @Sendable [weak self] refused in
+            Task { @MainActor in
+                guard let self, self.localNetworkRefused != refused else { return }
+                self.localNetworkRefused = refused
+            }
+        }
+        nearby = made
+        return made
     }
 
     private func watchNetwork() {
@@ -646,8 +658,7 @@ final class Features {
                     let handoffs = status.standing == .off ? [] : try native.syncHandoffs()
                     return (status, waiting, handoffs, native.syncNearbyRecord())
                 }
-                if nearby == nil { nearby = NearbyDevices(native: native) }
-                nearby?.follow(record: record)
+                nearbyDevices(native).follow(record: record)
                 if syncStatus != status { syncStatus = status }
                 let moving = status.moving > 0 || !landable(waiting).isEmpty
                 if transferring != moving { transferring = moving }

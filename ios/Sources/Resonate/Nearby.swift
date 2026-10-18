@@ -8,6 +8,7 @@ final class NearbyDevices: @unchecked Sendable {
     private static let toldAgainAfter: TimeInterval = 5
 
     private let native: MobilePlayer
+    private let refusedChanged: @Sendable (Bool) -> Void
     private let queue = DispatchQueue(label: "org.resonate.nearby")
     private let instance = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     private var listener: NWListener?
@@ -15,9 +16,11 @@ final class NearbyDevices: @unchecked Sendable {
     private var browser: NWBrowser?
     private var seen: Set<String> = []
     private var toldAt = Date.distantPast
+    private var refused = false
 
-    init(native: MobilePlayer) {
+    init(native: MobilePlayer, refusedChanged: @escaping @Sendable (Bool) -> Void) {
         self.native = native
+        self.refusedChanged = refusedChanged
     }
 
     func follow(record: String?) {
@@ -38,6 +41,7 @@ final class NearbyDevices: @unchecked Sendable {
     private func followed(_ record: String?) {
         guard let record else {
             stopped()
+            changeRefused(false)
             return
         }
         if browser == nil { browse() }
@@ -81,6 +85,7 @@ final class NearbyDevices: @unchecked Sendable {
             self?.found(results)
         }
         browsing.stateUpdateHandler = { [weak self] state in
+            self?.heard(state: state)
             if case .failed = state {
                 self?.browser?.cancel()
                 self?.browser = nil
@@ -101,6 +106,25 @@ final class NearbyDevices: @unchecked Sendable {
             native.syncNearbyHeard(record: record)
         }
         seen = records
+    }
+
+    private func heard(state: NWBrowser.State) {
+        switch state {
+        case .ready: changeRefused(false)
+        case .waiting(let error), .failed(let error): changeRefused(Self.isPolicyDenied(error))
+        default: break
+        }
+    }
+
+    private static func isPolicyDenied(_ error: NWError) -> Bool {
+        if case .dns(let code) = error { return code == DNSServiceErrorType(kDNSServiceErr_PolicyDenied) }
+        return false
+    }
+
+    private func changeRefused(_ now: Bool) {
+        guard refused != now else { return }
+        refused = now
+        refusedChanged(now)
     }
 
     private func stopped() {

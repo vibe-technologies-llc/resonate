@@ -48,8 +48,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] iOS is built universal (`UIDeviceFamily` 1 and 2, four iPad orientations, multitasking) with no
   size-class, readable-width or orientation handling anywhere: rows run edge to edge on an iPad and
   no iPad layout was ever looked at; restricting the family is one line
-- [S] The Local Network permission being denied is invisible: `NearbyDevices` handles `.failed`
-  only, never `.waiting`, so nearby devices silently never appear with no hint to open Settings
 - [S] Statistics' listening chart is one summary element to VoiceOver, so no bar can be reached
 - [S] Destructive edits on iOS have no undo: swipe, menu and `onDelete` removal from the queue,
   *Forget* on a per-output curve, and swiping down on the tag editor, *Add songs* and the filter

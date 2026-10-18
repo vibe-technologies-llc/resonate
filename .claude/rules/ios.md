@@ -251,7 +251,12 @@ Pointer authentication is not adopted: it needs an `arm64e` slice, and the Rust 
   `syncNearbyHeard`. All of its state lives on its own queue; the sync poll drives it, and a `nil`
   record (sync off, or transfers not allowed) withdraws both. It is told the record as soon as sync
   starts and whenever the network turns unmetered (`announceNearby`), not only by the poll.
-  `Info.plist` lists the type under `NSBonjourServices` (`sync.md`'s *Nearby*).
+  `Info.plist` lists the type under `NSBonjourServices` (`sync.md`'s *Nearby*). **A refused Local
+  Network permission is said**: the browser waits (or fails) with `NWError.dns` of
+  `kDNSServiceErr_PolicyDenied` rather than failing outright, so its state handler reads that and
+  hands the change to `Features.localNetworkRefused` (cleared when the browser turns ready or sync
+  withdraws the record, kept across `restart`), and the sync page's status section then says nearby
+  devices need Local Network access, with *Open Settings* (`openSettingsURLString`).
 - **Coming back from the background rebuilds sync.** iOS may reclaim a suspended app's sockets, which
   left the QUIC endpoint deaf until a setting restarted sync. So when the scene returns to active
   after `.background` (`Features.wentToBackground`/`cameForward`) and no transfer held the app
