@@ -904,6 +904,18 @@ pub fn configure(connection: &Connection, role: Role) -> Result<()> {
         .map_err(|source| Error::store(StoreOp::Open, source))?;
     connection
         .create_scalar_function(
+            store::LISTS_WORDS,
+            2,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| {
+                let list: Option<String> = context.get(0)?;
+                let words: String = context.get(1)?;
+                Ok(list.map(|list| store::lists_words(&list, &words)))
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+    connection
+        .create_scalar_function(
             store::SPREAD_OF,
             1,
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,

@@ -77,9 +77,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `fs::write`; two writers stage to one fixed `.txt.new`
 
 ## Search
-- [M] A multi-valued genre is one `tracks.genre` (`House; Disco`): `genre:=House` misses it, and
-  suggestions tally whole strings (a *House; Disco* card); a one-word genre card is a prefix
-  (`Reach::Begins`), so *Rock* holds *Rockabilly* and *Rocksteady* (artist mixes were made whole)
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's

@@ -18997,6 +18997,83 @@ fn a_genre_tag_is_searchable() -> Result<()> {
 }
 
 #[test]
+fn a_whole_genre_is_asked_of_each_genre_a_track_lists_and_of_no_longer_name() -> Result<()> {
+    let tree = Tree::new();
+    for (name, genre) in [
+        ("Strings", "House; Disco"),
+        ("Brass", "Disco"),
+        ("Twang", "Rockabilly"),
+        ("Riff", "Rock"),
+    ] {
+        tree.write(
+            &format!("{name}.wav"),
+            &Wav::new().text(TITLE, name).text(GENRE, genre).build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(narrowed(&library, "genre:=House")?, vec!["Strings"]);
+    assert_eq!(
+        narrowed(&library, "genre:=Disco")?,
+        vec!["Brass", "Strings"]
+    );
+    assert_eq!(narrowed(&library, "genre:=Rock")?, vec!["Riff"]);
+    assert!(
+        narrowed(&library, "genre:=\"House Disco\"")?.is_empty(),
+        "two listed genres were read as the one name"
+    );
+    assert_eq!(
+        narrowed(&library, "genre:Rock")?,
+        vec!["Riff", "Twang"],
+        "a bare genre word stopped reaching the names it begins"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -> Result<()> {
+    let tree = Tree::new();
+    for number in 1..=TRACKS_OF_A_DECADE {
+        let genre = if number % 2 == 0 {
+            "House; Disco"
+        } else {
+            "Rockabilly"
+        };
+        tree.write(
+            &format!("{number:02}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Track {number:02}"))
+                .text(GENRE, genre)
+                .build(),
+        );
+    }
+    tree.write(
+        "rock.wav",
+        &Wav::new().text(TITLE, "Rock").text(GENRE, "Rock").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let suggestions = library.suggestions()?;
+    let texts = asked(&suggestions);
+
+    assert!(texts.contains(&"genre:=\"House\""), "{texts:?}");
+    assert!(texts.contains(&"genre:=\"Disco\""), "{texts:?}");
+    assert!(
+        texts.iter().all(|text| !text.contains(';')),
+        "a list of genres was offered as one: {texts:?}"
+    );
+
+    let house = suggestions
+        .iter()
+        .find(|suggestion| suggestion.query.text.as_deref() == Some("genre:=\"House\""))
+        .expect("House is offered");
+    assert_eq!(u64::from(house.rows), u64::from(TRACKS_OF_A_DECADE / 2));
+    Ok(())
+}
+
+#[test]
 fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     assert!(narrowed(&library, "genre:psychedelic")?.is_empty());
@@ -19199,7 +19276,7 @@ fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result
 
     let texts = asked(&suggestions);
     assert!(texts.contains(&"year:1990-1999"), "{texts:?}");
-    assert!(texts.contains(&"genre:\"Progressive Rock\""), "{texts:?}");
+    assert!(texts.contains(&"genre:=\"Progressive Rock\""), "{texts:?}");
     assert!(texts.contains(&"artist:=\"The Orbiters\""), "{texts:?}");
     assert!(texts.contains(&"plays:0"), "{texts:?}");
     Ok(())

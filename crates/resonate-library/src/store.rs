@@ -8,7 +8,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
-    Codec, CoverArt, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
+    Codec, CoverArt, ImageFormat, LISTED_APART_BY, PacketDigest, ReplayGain, Sources, TagSet,
+    probe_cover_art,
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
@@ -1471,6 +1472,8 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
 
 pub(crate) const WORDS_OF: &str = "words_of";
 
+pub(crate) const LISTS_WORDS: &str = "lists_words";
+
 pub(crate) const SPREAD_OF: &str = "spread_of";
 
 const FIBONACCI_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -1486,6 +1489,11 @@ pub(crate) fn words_of(text: &str) -> String {
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+pub(crate) fn lists_words(list: &str, words: &str) -> bool {
+    list.split(LISTED_APART_BY)
+        .any(|listed| words_of(listed) == words)
 }
 
 pub(crate) fn marks_in(name: &str) -> usize {

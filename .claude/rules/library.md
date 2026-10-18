@@ -1278,9 +1278,12 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   a column (`artist:"Air"` holds *Air Supply*); `artist:=Air` is `Reach::Whole` (beside `Begins`,
   `Phrase`); `=` inside quotes is phrase text; `lyrics:` takes no whole name. `db::named` weighs it
   through the `words_of` SQL function: artist by id (`tracks.artist_id` or a `track_credits` member
-  of that name); album by billed or scanned title; title, and genre (track's or its artist's), by
-  the column behind the phrase's `INDEX_LOOKUP`. Never ranked: reaches the `WHERE` as a denial does.
-  `suggest.rs` artist mixes are whole names.
+  of that name); album by billed or scanned title; title by the column behind the phrase's
+  `INDEX_LOOKUP`; genre (track's or its artist's) by the same lookup, the track's column read as a
+  list (`store::lists_words`, the SQL `lists_words`: `genre:=House` holds `House; Disco`, cut on
+  `LISTED_APART_BY`, each item through `words_of`). Never ranked: reaches the `WHERE` as a denial
+  does. `suggest.rs` artist mixes and genre cards are whole names (`genre:="Rock"` holds no
+  *Rockabilly*); a genre list is tallied item by item, so no card is a list.
 - **`tracks_fts` holds the fold of a name; the query is folded with it.** Indexed: `folded_letters`
   of title, billed artist (with the album's owner beside it, read by `store::index_row` itself via
   `album_owner_of`, so scan, enrichment and every reindex write the album artist alike), album,

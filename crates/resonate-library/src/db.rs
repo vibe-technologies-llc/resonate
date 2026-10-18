@@ -5893,7 +5893,7 @@ fn named(word: &Word) -> Option<Narrowing> {
 
 const TITLED_AS_A_WHOLE: &str = "tracks.title_words = ?";
 
-const FILED_UNDER_A_WHOLE_GENRE: &str = "(words_of(tracks.genre) = ?
+const FILED_UNDER_A_WHOLE_GENRE: &str = "(lists_words(tracks.genre, ?)
       OR tracks.artist_id IN (SELECT artist_id FROM artist_genres WHERE words_of(name) = ?))";
 
 const BY_AN_ARTIST_NAMED_AS_A_WHOLE: &str = "(tracks.artist_id IN
