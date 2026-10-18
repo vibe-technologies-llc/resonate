@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    iter, mem,
+    mem,
     sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
@@ -33,6 +33,7 @@ use crate::{
     ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
     streaming::{Asked, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
+    turns::Turns,
 };
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -44,8 +45,6 @@ const EVENTS_A_PASS_HELD_INLINE: usize = 4;
 
 type Drained = SmallVec<[StreamEvent; EVENTS_A_PASS_HELD_INLINE]>;
 const CHAIN_BLOCK: usize = 1024;
-const TURNS_REMEMBERED: usize = 8;
-const ONE_LEVEL_WITHIN: f32 = 1e-5;
 const MIN_RING_FRAMES: u64 = 8_192;
 const BLOCKS_A_RING_HOLDS: u64 = 2;
 const LARGEST_RING: u64 = 64 * 1024 * 1024;
@@ -699,7 +698,7 @@ pub struct Engine {
     failures: usize,
     renegotiations: u8,
     sounded: Option<(SinkId, Instant)>,
-    turned: VecDeque<Gain>,
+    turned: Turns,
     muted: bool,
     answers: Vec<Answer>,
     openings_begun: u64,
@@ -847,7 +846,7 @@ impl Engine {
             failures: 0,
             renegotiations: 0,
             sounded: None,
-            turned: VecDeque::with_capacity(TURNS_REMEMBERED),
+            turned: Turns::new(),
             muted: false,
             answers: Vec::new(),
             openings_begun: 0,
@@ -2395,11 +2394,7 @@ impl Engine {
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };
-        let ours = self.heard_volume().to_gain();
-        let echoed = iter::once(&ours)
-            .chain(&self.turned)
-            .any(|turned| (turned.get() - heard.get()).abs() < ONE_LEVEL_WITHIN);
-        if echoed {
+        if self.turned.echo(heard, self.heard_volume().to_gain()) {
             return;
         }
         tracing::debug!(%heard, "the device's volume was turned from elsewhere; the slider follows it");
@@ -2420,10 +2415,7 @@ impl Engine {
             tracing::warn!(%error, "the device's volume could not be turned");
             return;
         }
-        if self.turned.len() == TURNS_REMEMBERED {
-            self.turned.pop_front();
-        }
-        self.turned.push_back(gain);
+        self.turned.sent(gain);
     }
 
     fn mute_the_device(&self, muted: bool) -> Result<()> {

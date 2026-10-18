@@ -17,6 +17,7 @@ mod state;
 mod streaming;
 mod surveying;
 mod tap;
+mod turns;
 
 pub use resonate_analysis::{
     Analysis, AnalysisOp, Cutoff, ENVELOPE_LANES, Envelope, Error as AnalysisError, Examined,

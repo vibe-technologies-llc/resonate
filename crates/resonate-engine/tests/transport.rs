@@ -8109,6 +8109,77 @@ fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -
 }
 
 #[test]
+fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_the_mute_alone()
+-> Result<()> {
+    let (player, graph) = {
+        let tree = Tree::new();
+        let source = pcm(16, FRAMES);
+        let path = tree.write("track.wav", &source.file);
+        let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
+        let player = Player::with_backend(handing_the_volume_over(true), move |_| {
+            Ok(Box::new(backend))
+        })?;
+        player.send(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?;
+        wait_for(&player, playing, "the stream to open");
+        (player, graph)
+    };
+    let dragged: Vec<Volume> = (0..32)
+        .map(|step| Volume::new(0.2 + step as f32 * 0.015).expect("in range"))
+        .collect();
+    let rounded_to_a_step = |volume: Volume| {
+        let sent = volume.to_gain().to_decibels().get();
+        Decibels::new((sent / 1.5).round() * 1.5)
+            .expect("a finite level")
+            .to_gain()
+            .get()
+    };
+
+    for volume in &dragged {
+        answered(&player, Command::SetVolume(*volume))?;
+    }
+    answered(&player, Command::SetVolume(Volume::MUTE))?;
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[0]));
+    });
+    let enumerated = graph.lock().enumerations;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the device again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert_eq!(
+        player.state().volume,
+        Volume::MUTE,
+        "the device's rounded echo of the drag's first turn cleared the mute"
+    );
+
+    answered(&player, Command::SetVolume(dragged[31]))?;
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[31]));
+    });
+    let enumerated = graph.lock().enumerations;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the device again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert!(
+        heard_near(&player, dragged[31].get()),
+        "the device's rounded echo snapped the slider to {}",
+        player.state().volume.get()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

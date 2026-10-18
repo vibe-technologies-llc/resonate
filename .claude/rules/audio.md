@@ -738,9 +738,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   adapter's software volume), **keeping balance and mute**. **The slider starts where the device is**
   (`Volume::heard_at`) and follows a device turned from the desktop: a `Route` is not re-sent when
   volume moves, so the device's `info` saying `PARAMS` changed enumerates again (`SinkChange::Turned`,
-  `follow_the_devices_volume`). The engine's own sends echo back the same way: `Engine::turned`
-  remembers the last `TURNS_REMEMBERED` (8) gains, a reading within `ONE_LEVEL_WITHIN` of any is an
-  echo. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
+  `follow_the_devices_volume`). The engine's own sends echo back the same way: `Turns` (`turns.rs`)
+  remembers the last `TURNS_REMEMBERED` (8) gains and every one sent within `ECHOES_ARRIVE_WITHIN`
+  (2 s, at most `TURNS_HELD_AT_MOST`), so a fast drag's early echoes still arrive known; a reading
+  within `A_DEVICES_HALF_STEP_DB` (0.75 dB, half a coarse hardware step) of any is an echo, since a
+  device rounds what it is sent to its own steps (silence matches silence alone). Read as turned
+  elsewhere, an echo snapped the slider and cleared the mute. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
 - **Stream latency is counted in the stream's frames, converted where the graph tick rate is
   known.** `pw_time.delay` is in `pw_time.rate` (graph clock), not the stream's. The `process`
   callback holds the only consistent delay/rate snapshot: it builds a `GraphTime` and publishes
