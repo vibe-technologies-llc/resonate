@@ -27,6 +27,7 @@ struct SongsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var scope = SearchScope.top
+    @FocusState private var typing: Bool
 
     var body: some View {
         let grouping = navigation.songsGrouping
@@ -35,9 +36,10 @@ struct SongsView: View {
             if search.isAsked {
                 List {
                     SearchCompletions(search: search).themedRows()
-                    SearchResults(search: search, scope: $scope).themedRows()
+                    SearchResults(search: search, scope: $scope) { typing = false }.themedRows()
                 }
                 .listStyle(.plain)
+                .scrollDismissesKeyboard(.immediately)
                 .id(SongsList.searched)
             } else {
                 browsed(grouping: grouping)
@@ -45,6 +47,7 @@ struct SongsView: View {
             }
         }
         .searchable(text: $search.text, prompt: "Search your music")
+        .searchFocused($typing)
         .searchScopes($scope, activation: .onSearchPresentation) {
             ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
         }
@@ -57,8 +60,8 @@ struct SongsView: View {
                 ToolbarItem(placement: .topBarTrailing) { FilterButton() }
             }
             LibraryToolbar()
-            if search.asking, search.hasAnswer {
-                ToolbarItem(placement: .topBarLeading) { ProgressView() }
+            if search.isAsked {
+                ToolbarItem(placement: .topBarLeading) { SearchProgress(search: search) }
             }
         }
     }

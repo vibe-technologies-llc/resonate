@@ -13,6 +13,7 @@ struct SearchTab: View {
     @Environment(Navigation.self) private var navigation
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
+    @FocusState private var typing: Bool
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -28,7 +29,7 @@ struct SearchTab: View {
                 } else {
                     switch place {
                     case .library:
-                        LibraryFindings(search: search, seeAll: $seeAll) { navigation.searchPlace = .online }
+                        LibraryFindings(search: search, seeAll: $seeAll, chosen: stowKeyboard) { navigation.searchPlace = .online }
                     case .online:
                         OnlineSearchContent(actions: $actions)
                     }
@@ -37,7 +38,9 @@ struct SearchTab: View {
             .themedRows()
         }
         .listStyle(.plain)
+        .scrollDismissesKeyboard(.immediately)
         .searchable(text: Binding(get: { search.text }, set: enter), prompt: place == .online ? OnlineAsked.prompt : "Search your library")
+        .searchFocused($typing)
         .searchScopes($navigation.searchPlace) {
             ForEach(SearchPlace.allCases) { Text($0.rawValue).tag($0) }
         }
@@ -47,8 +50,8 @@ struct SearchTab: View {
         .navigationTitle("Search")
         .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .toolbar {
-            if place == .library, search.asking, search.hasAnswer {
-                ToolbarItem(placement: .topBarTrailing) { ProgressView() }
+            if place == .library {
+                ToolbarItem(placement: .topBarTrailing) { SearchProgress(search: search) }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
@@ -62,6 +65,10 @@ struct SearchTab: View {
             search.recallRecents()
             if place == .online { library.features.onlineQuery = search.text }
         }
+    }
+
+    private func stowKeyboard() {
+        typing = false
     }
 
     private func enter(_ text: String) {
@@ -120,11 +127,12 @@ struct LibraryFindings: View {
 
     let search: SearchModel
     @Binding var seeAll: SearchScope?
+    let chosen: () -> Void
     let searchOnline: () -> Void
 
     var body: some View {
         SearchCompletions(search: search)
-        SearchResults(search: search, scope: Binding(get: { .top }, set: { seeAll = $0 }))
+        SearchResults(search: search, scope: Binding(get: { .top }, set: { seeAll = $0 }), chosen: chosen)
         if search.hasAnswer, search.found.trackCount < Self.few {
             Section {
                 Button(action: searchOnline) {

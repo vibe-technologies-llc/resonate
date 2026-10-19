@@ -30,6 +30,7 @@ struct SearchResults: View {
     @Environment(Navigation.self) private var navigation
     let search: SearchModel
     @Binding var scope: SearchScope
+    var chosen: () -> Void = {}
 
     var body: some View {
         let found = search.found
@@ -131,14 +132,27 @@ struct SearchResults: View {
 
     private func songRow(_ track: Track, among tracks: [Track], _ query: String) -> some View {
         TrackRow(track: track, query: query) {
+            chosen()
             search.remember()
             library.play(tracks, selected: track)
         }
     }
 
     private func open(_ destination: Destination) {
+        chosen()
         search.remember()
         navigation.open(destination)
+    }
+}
+
+struct SearchProgress: View {
+    let search: SearchModel
+
+    var body: some View {
+        let busy = search.asking && search.hasAnswer
+        ProgressView()
+            .opacity(busy ? 1 : 0)
+            .accessibilityHidden(!busy)
     }
 }
 
