@@ -367,26 +367,13 @@ struct PlayerTitles: View {
     let track: Track?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            ZStack(alignment: .topLeading) {
-                room
-                words
-                    .contentTransition(.opacity)
-                    .motion(Handover.animation, value: track?.id)
-            }
+        HStack(alignment: .center, spacing: 12) {
+            words
+                .contentTransition(.opacity)
+                .motion(Handover.animation, value: track?.id)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
-    }
-
-    private var room: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(" ").font(.title2.weight(.bold)).lineLimit(2, reservesSpace: true)
-            Text(" ").font(.title3)
-            Text(" ").font(.subheadline)
-        }
-        .hidden()
-        .accessibilityHidden(true)
     }
 
     private var words: some View {
@@ -404,14 +391,13 @@ struct PlayerTitles: View {
                         .font(.title3)
                         .nowPlayingInk()
                 }
-                SongMenu(track: track) {
-                    Text(track.album.isEmpty ? " " : track.album)
-                        .font(.subheadline)
-                        .nowPlayingInk()
+                if !track.album.isEmpty {
+                    SongMenu(track: track) {
+                        Text(track.album)
+                            .font(.subheadline)
+                            .nowPlayingInk()
+                    }
                 }
-                .opacity(track.album.isEmpty ? 0 : 1)
-                .disabled(track.album.isEmpty)
-                .accessibilityHidden(track.album.isEmpty)
             } else {
                 Text("Nothing playing")
                     .font(.title2.weight(.bold))

@@ -522,16 +522,11 @@ every route change (a pair of headphones at the same rate included), not from th
   (`contentTransition(.opacity)` under the handover's implicit animation), never as two copies keyed
   by song in a `ZStack`: the stack took the taller of the two, so a title of two lines moved the
   layout once as the crossfade began and again as the leaving words went, and the cover jumped
-  with its slot each time. The cover's offset and scale still take the handover's animation when
-  the song changes (`MovingCover`), for the compact layout's slot.
-  **A song change moves nothing in the large layout**: `PlayerTitles` lays the words over a hidden
-  block reserving a two-line title, the artist line and the album line (`room`), top-aligned, so
-  every song's titles take the same height and the cover never moves for one; the heart sits on
-  the title's first baseline. The album line is always laid out, drawn clear and disabled for a
-  song with none. A title changing height moved the cover's slot, and fonts differ in line height
-  (accents, CJK, emoji), so even one line to one line nudged it; and a line removed under the
-  handover keeps its space until it has faded, so the cover went to the place laid out with it
-  and snapped when it went. **A slot that moves with no animation of its own is followed in 0.25 s**
+  with its slot each time. The one move a new title's height makes is animated with the cover,
+  whose offset and scale take the handover's animation when the song changes (`MovingCover`).
+  The titles take the height they need (a two-line title, an album line only where the song has
+  one), so the large cover moves with a song whose titles are taller or shorter, in the handover.
+  **A slot that moves with no animation of its own is followed in 0.25 s**
   (`MovingCover.settlesOnItsSlot`, a `transaction(value: slot)` that fills in only an empty
   animation): rows a mode change removes also hold their space until they fade, and the cover
   reached the slot laid out with them, then jumped as they went.
