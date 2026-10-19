@@ -245,6 +245,10 @@ private struct CalmedAnimation<Value: Equatable>: ViewModifier {
     }
 }
 
+enum Handover {
+    static let animation = Animation.timingCurve(0.5, 0, 0.5, 1, duration: 0.28)
+}
+
 extension View {
     func motion<Value: Equatable>(_ animation: Animation?, calm: Animation? = nil, value: Value) -> some View {
         modifier(CalmedAnimation(animation: animation, calm: calm, value: value))

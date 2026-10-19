@@ -18,18 +18,26 @@ struct ArtworkView: View {
 
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track?
     var corner: CGFloat = 12
     var circle = false
+    var handsOver = false
     @State private var image: UIImage?
+    @State private var pictured: UInt64?
+    @State private var leaving: UIImage?
+    @State private var face = 1
     @State private var bucket: ArtworkBucket?
     @State private var wanted: ArtworkBucket?
 
-    init(track: Track?, corner: CGFloat = 12, circle: Bool = false) {
+    init(track: Track?, corner: CGFloat = 12, circle: Bool = false, handsOver: Bool = false) {
         self.track = track
         self.corner = corner
         self.circle = circle
-        _image = State(initialValue: circle ? nil : ShownArtwork.latest(for: track))
+        self.handsOver = handsOver
+        let latest = circle ? nil : ShownArtwork.latest(for: track)
+        _image = State(initialValue: latest)
+        _pictured = State(initialValue: latest == nil ? nil : track?.id)
     }
 
     var body: some View {
@@ -38,10 +46,17 @@ struct ArtworkView: View {
             Image(systemName: circle ? "person.fill" : "music.note")
                 .font(.title2)
                 .foregroundStyle(.secondary)
+            if let leaving {
+                Image(uiImage: leaving)
+                    .resizable()
+                    .scaledToFill()
+            }
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    .id(face)
+                    .zIndex(Double(face))
                     .transition(.opacity)
             }
         }
@@ -77,7 +92,10 @@ struct ArtworkView: View {
         guard let shown = bucket, image != nil else {
             bucket = fitting
             wanted = nil
-            if image == nil, let held = held(at: fitting) { image = held }
+            if image == nil, let held = held(at: fitting) {
+                image = held
+                pictured = track?.id
+            }
             return
         }
         guard fitting.rawValue > shown.rawValue else {
@@ -116,7 +134,7 @@ struct ArtworkView: View {
             return
         }
         if let held = held(at: bucket) {
-            if image !== held { image = held }
+            if image !== held { present(held, of: track) }
             return
         }
         let features = library.features
@@ -129,10 +147,28 @@ struct ArtworkView: View {
         guard !Task.isCancelled else { return }
         if image == nil, shown != nil {
             withAnimation(.easeOut(duration: Self.arrival)) { image = shown }
+            pictured = track.id
         } else if image !== shown {
-            image = shown
+            present(shown, of: track)
         }
         if let shown, !portrayed { ShownArtwork.keep(shown, for: track) }
+    }
+
+    private func present(_ shown: UIImage?, of track: Track) {
+        let anotherSong = pictured != track.id
+        pictured = shown == nil ? nil : track.id
+        guard handsOver, anotherSong, let current = image, !reduceMotion else {
+            image = shown
+            return
+        }
+        leaving = shown == nil ? nil : current
+        let handedOver = face + 1
+        withAnimation(Handover.animation, completionCriteria: .logicallyComplete) {
+            image = shown
+            face = handedOver
+        } completion: {
+            if face == handedOver { leaving = nil }
+        }
     }
 }
 

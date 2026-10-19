@@ -26,7 +26,7 @@ struct MiniPlayer: View {
         let titled = expanded || width == 0 || width >= Self.titledFrom
         let skips = expanded || width >= Self.skipsFrom
         HStack(spacing: expanded ? 12 : 8) {
-            ArtworkView(track: track, corner: expanded ? 8 : 7)
+            ArtworkView(track: track, corner: expanded ? 8 : 7, handsOver: true)
                 .frame(width: expanded ? artworkEdge : inlineArtworkEdge, height: expanded ? artworkEdge : inlineArtworkEdge)
                 .matchedTransitionSource(id: PlayerTransition.source, in: zoom)
             if titled {
@@ -43,7 +43,7 @@ struct MiniPlayer: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(reduceMotion ? .identity : .opacity)
-                .motion(.smooth, value: track?.id)
+                .motion(Handover.animation, value: track?.id)
             } else {
                 Spacer(minLength: 0)
             }
@@ -289,7 +289,7 @@ struct MovingCover: View {
         let playing = library.transport == .playing || library.transport == .loading
         let drawn = edge > 0 ? edge : max(slot.width, 1)
         let resting = large && !playing && !reduceMotion ? Self.pausedScale : 1
-        ArtworkView(track: track, corner: Self.corner)
+        ArtworkView(track: track, corner: Self.corner, handsOver: true)
             .frame(width: drawn, height: drawn)
             .background { CoverShadow(corner: Self.corner) }
             .scaleEffect(resting)
@@ -332,37 +332,44 @@ struct PlayerTitles: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let track {
-                    SongMenu(track: track) {
-                        Text(track.shownTitle)
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(Color.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    SongMenu(track: track) {
-                        Text(track.shownArtist)
-                            .font(.title3)
-                            .nowPlayingInk()
-                    }
-                    if !track.album.isEmpty {
-                        SongMenu(track: track) {
-                            Text(track.album)
-                                .font(.subheadline)
-                                .nowPlayingInk()
-                        }
-                    }
-                } else {
-                    Text("Nothing playing")
-                        .font(.title2.weight(.bold))
-                        .lineLimit(2)
-                }
+            ZStack(alignment: .leading) {
+                words.id(track?.id).transition(.opacity)
             }
-            .lineLimit(1)
+            .motion(Handover.animation, value: track?.id)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let track {
+                SongMenu(track: track) {
+                    Text(track.shownTitle)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                SongMenu(track: track) {
+                    Text(track.shownArtist)
+                        .font(.title3)
+                        .nowPlayingInk()
+                }
+                if !track.album.isEmpty {
+                    SongMenu(track: track) {
+                        Text(track.album)
+                            .font(.subheadline)
+                            .nowPlayingInk()
+                    }
+                }
+            } else {
+                Text("Nothing playing")
+                    .font(.title2.weight(.bold))
+                    .lineLimit(2)
+            }
+        }
+        .lineLimit(1)
     }
 }
 
@@ -400,19 +407,27 @@ struct CompactTitles: View {
             Color.clear
                 .frame(width: artworkEdge, height: artworkEdge)
                 .anchorPreference(key: CoverSlot.self, value: .bounds) { [.compact: $0] }
-            if let track {
-                SongMenu(track: track) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).lineLimit(1)
-                        Text(track.shownArtist).font(.subheadline).nowPlayingInk().lineLimit(1)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            } else {
-                Text("Nothing playing").font(.headline).lineLimit(1)
+            ZStack(alignment: .leading) {
+                words.id(track?.id).transition(.opacity)
             }
+            .motion(Handover.animation, value: track?.id)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
+        }
+    }
+
+    @ViewBuilder
+    private var words: some View {
+        if let track {
+            SongMenu(track: track) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).lineLimit(1)
+                    Text(track.shownArtist).font(.subheadline).nowPlayingInk().lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        } else {
+            Text("Nothing playing").font(.headline).lineLimit(1)
         }
     }
 }

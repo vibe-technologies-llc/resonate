@@ -481,6 +481,17 @@ every route change (a pair of headphones at the same rate included), not from th
   glass took the frames it needed. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the artwork layout scrolls.
+- **A song change hands the cover and the words over, as the desktop does** (`motion.md`'s *The
+  song change*): one pace for both, `Handover.animation` (280 ms, smoothstep), and nothing slides.
+  `ArtworkView(handsOver: true)` (Now Playing's `MovingCover` and the mini player) keeps the leaving
+  song's picture opaque beneath (`leaving`) while the arriving one fades in over it, a new face
+  keyed and lifted above the last (`face`), so the crossfade never dips toward the placeholder; the
+  leaving picture stays until the arriving one is decoded, and is dropped when the latest handover
+  completes. A song with no picture fades to the placeholder. Only a picture of another song hands
+  over (`pictured`): a larger bucket of the same song swaps in place. The titles (`PlayerTitles`,
+  `CompactTitles`, the mini player's) crossfade in place, the leaving words keyed by song beneath
+  the arriving ones in a `ZStack`. The backdrop keeps its own 1.2 s palette crossfade. Under Reduce
+  Motion the song swaps at once.
 - **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
   with History above it, reached by scrolling up and drawn faded, then *Playing next* (the rows the
   engine's `Queued::next` holds, `Snapshot.next_first`/`next_count`) and *Continue playing* (*Up
