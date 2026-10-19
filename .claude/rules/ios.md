@@ -509,7 +509,12 @@ every route change (a pair of headphones at the same rate included), not from th
   song change*): one pace for both, `Handover.animation` (280 ms, smoothstep), and nothing slides.
   `ArtworkView(handsOver: true)` (Now Playing's `MovingCover` and the mini player) keeps the leaving
   song's picture opaque beneath (`leaving`) while the arriving one fades in over it, a new face
-  keyed and lifted above the last (`face`), so the crossfade never dips toward the placeholder; the
+  keyed and lifted above the last (`face`), so the crossfade never dips toward the placeholder.
+  **Every picture is cropped to the view's own frame**: the pictures are overlays on the
+  placeholder's rectangle, clipped with it (`ArtworkClip`), never children of a `ZStack`, since the
+  decoder keeps a cover's own shape and a `scaledToFill` picture in a stack widened the stack past
+  its square, so a cover not square drew wide, and the leaving one held it wide until the handover
+  ended and then snapped back; the
   leaving picture stays until the arriving one is decoded, and is dropped when the latest handover
   completes. A song with no picture fades to the placeholder. Only a picture of another song hands
   over (`pictured`): a larger bucket of the same song swaps in place. The titles (`PlayerTitles`,

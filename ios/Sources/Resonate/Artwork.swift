@@ -41,26 +41,33 @@ struct ArtworkView: View {
     }
 
     var body: some View {
-        ZStack {
-            Rectangle().fill(.quaternary)
-            Image(systemName: circle ? "person.fill" : "music.note")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            if let leaving {
-                Image(uiImage: leaving)
-                    .resizable()
-                    .scaledToFill()
+        Rectangle()
+            .fill(.quaternary)
+            .overlay {
+                Image(systemName: circle ? "person.fill" : "music.note")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
             }
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .id(face)
-                    .zIndex(Double(face))
-                    .transition(.opacity)
+            .overlay {
+                if let leaving {
+                    Image(uiImage: leaving)
+                        .resizable()
+                        .scaledToFill()
+                }
             }
-        }
-        .modifier(ArtworkClip(circle: circle, corner: corner))
+            .overlay {
+                ZStack {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .id(face)
+                            .zIndex(Double(face))
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .modifier(ArtworkClip(circle: circle, corner: corner))
         .onGeometryChange(for: CGFloat.self) { proxy in
             max(proxy.size.width, proxy.size.height)
         } action: { edge in
