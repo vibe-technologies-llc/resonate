@@ -458,6 +458,12 @@ every route change (a pair of headphones at the same rate included), not from th
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
+  **The scrubber's bar flows between readings**: each new position read while playing animates
+  the bar linearly to where the song will be one reading later (`PlayerScrubber.flow`: the reading
+  plus the time since the last, held within 0.05 to 0.6 s, over that same time), so the render
+  server moves it and nothing re-renders between polls; a reading that steps back or moves 1.5 s or
+  more (a seek, a skip), the first after opening, a paused transport and Reduce Motion set it at
+  once, and a transport change settles it on the reading in 0.15 s. The times stay on the reading.
   Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
   capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre

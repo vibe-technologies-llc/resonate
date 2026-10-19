@@ -471,19 +471,29 @@ struct PlayerScrubber: View {
     private static let touchHeight: CGFloat = 28
     private static let stepMs: Double = 10_000
     private static let slightestMove: CGFloat = 2
+    private static let flowsWithin: ClosedRange<CFTimeInterval> = 0.05...0.6
+    private static let flowsAcrossMs: Double = 1500
+    private static let settles: Animation = .easeOut(duration: 0.15)
 
     @Environment(Library.self) private var library
     @State private var dragging: Double?
     @State private var grabbedAt: Double?
     @State private var held: Double?
     @State private var grabs = 0
+    @State private var flowing: Double = 0
+    @State private var lastReading = LastReading()
     @GestureState private var touching = false
+
+    private final class LastReading {
+        var at: CFTimeInterval = 0
+    }
 
     var body: some View {
         let timing = library.clock
         let duration = Double(max(timing.durationMs, 1))
         let live = Double(timing.positionMs)
         let shown = min(dragging ?? held ?? live, duration)
+        let drawn = min(dragging ?? held ?? flowing, duration)
         let grabbed = dragging != nil
 
         VStack(spacing: 6) {
@@ -494,7 +504,7 @@ struct PlayerScrubber: View {
                     .overlay(alignment: .leading) {
                         Rectangle()
                             .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
-                            .frame(width: width * shown / duration)
+                            .frame(width: width * drawn / duration)
                     }
                     .clipShape(Capsule())
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
@@ -535,8 +545,12 @@ struct PlayerScrubber: View {
             grabbedAt = nil
             dragging = nil
         }
-        .onChange(of: timing.positionMs) { _, now in
+        .onChange(of: timing.positionMs, initial: true) { old, now in
             if let target = held, abs(Double(now) - target) < Self.nearEnoughMs { held = nil }
+            flow(from: Double(old), to: Double(now))
+        }
+        .onChange(of: library.transport) {
+            withAnimation(reduceMotion ? nil : Self.settles) { flowing = Double(library.clock.positionMs) }
         }
         .task(id: held) {
             guard held != nil else { return }
@@ -569,6 +583,20 @@ struct PlayerScrubber: View {
     private func commit(_ target: Double) {
         held = target
         library.seek(to: UInt64(target))
+    }
+
+    private func flow(from old: Double, to now: Double) {
+        let at = CACurrentMediaTime()
+        let first = lastReading.at == 0
+        let elapsed = min(max(at - lastReading.at, Self.flowsWithin.lowerBound), Self.flowsWithin.upperBound)
+        lastReading.at = at
+        let stepped = now - old
+        let flows = !first && !reduceMotion && library.transport == .playing && stepped >= 0 && stepped < Self.flowsAcrossMs
+        guard flows else {
+            flowing = now
+            return
+        }
+        withAnimation(.linear(duration: elapsed)) { flowing = now + elapsed * 1000 }
     }
 }
 
