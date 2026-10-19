@@ -9,8 +9,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   by count (`from_count`), so a 5.0 or 6.1 stream reads as changed and is rebuilt once
 
 ## Formats
-- [M] A spliced M4A whose edit list jumps in media time (a cut, a reorder) plays only its first
-  stretch: the playable window is one `FrameSpan`, so the later edits have nowhere to go
+- [S] An edit's media rate is ignored: a dwell (rate 0) or a speed change in an M4A edit list
+  plays at normal speed
+- [S] An M4A edit list is honoured only where the track's timescale is its sample rate, and only its
+  first 64 entries; a non-seekable source ends the track at an edit reaching back
+- [S] An AAC seek, and so every jump of a spliced AAC M4A, may decode its landing packet with no
+  lead-in (unverified; the spliced test is ALAC, which is exact)
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
