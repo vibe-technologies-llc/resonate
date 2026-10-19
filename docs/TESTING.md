@@ -66,6 +66,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
+- [S] Trashing through the portal (`trash_through_the_portal`) is unproved against a live portal
+  under Flatpak; the agent shell's sandbox answered *refused* for a host file
 - [S] Organise's case-folded claims are proved through an injected probe alone: no test sees a
   casefold directory (ext4 `+F`) beside ones without the flag
 

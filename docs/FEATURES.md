@@ -85,8 +85,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Catalog
-- [S] Deleting under Flatpak trashes into the sandbox's own `XDG_DATA_HOME`, not the
-  desktop's trash; the trash portal would
 - [M] A file whose name is not UTF-8 is counted `Unnamed` and never catalogued
 
 ## Providers and network
@@ -96,8 +94,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
 - [M] Saved-query playlists stay on the device they were saved on; only lists travel
-- [S] A song from another device is refused where no music folder is set; an open vault does not
-  keep it
+- [S] A song another device sent into the vault is not offered onward (`held_songs` passes over
+  vaulted rows), so a vault-only device cannot pass it to a third
+- [S] With both a music folder and a vault set, a song from another device lands in the folder,
+  where a provider's delivery prefers the vault
+- [S] A song another device sent into the vault is grouped by title and track artist alone: no
+  album artist, year or totals
 - [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
 - [L] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
   them
@@ -131,8 +133,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [S] A lyric line reached by tab is not scrolled into view (a synced sheet follows playback, so
-  the lines near the playing one are in view; an unsynced sheet is not followed)
 - [M] An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
