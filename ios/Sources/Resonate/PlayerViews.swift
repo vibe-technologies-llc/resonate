@@ -327,6 +327,7 @@ struct MovingCover: View {
             .motion(.spring(duration: 0.5, bounce: 0.25), value: playing)
             .scaleEffect(slot.width / drawn)
             .offset(x: slot.midX - drawn / 2, y: slot.midY - drawn / 2)
+            .motion(Handover.animation, value: track?.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: slot, initial: true) { _, now in
                 if large, now.width > 0, now.width != edge { edge = now.width }
@@ -363,10 +364,9 @@ struct PlayerTitles: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            ZStack(alignment: .leading) {
-                words.id(track?.id).transition(.opacity)
-            }
-            .motion(Handover.animation, value: track?.id)
+            words
+                .contentTransition(.opacity)
+                .motion(Handover.animation, value: track?.id)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
@@ -438,10 +438,9 @@ struct CompactTitles: View {
             Color.clear
                 .frame(width: artworkEdge, height: artworkEdge)
                 .anchorPreference(key: CoverSlot.self, value: .bounds) { [.compact: $0] }
-            ZStack(alignment: .leading) {
-                words.id(track?.id).transition(.opacity)
-            }
-            .motion(Handover.animation, value: track?.id)
+            words
+                .contentTransition(.opacity)
+                .motion(Handover.animation, value: track?.id)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
@@ -592,9 +591,11 @@ struct WaitingLine: View {
 struct QualityLine: View {
     @Environment(Library.self) private var library
     let track: Track?
+    @State private var lastOutput: UInt32 = 0
 
     var body: some View {
-        let output = library.clock.outputRate
+        let reading = library.clock.outputRate
+        let output = reading > 0 ? reading : lastOutput
         let line = Self.line(track, output: output)
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
             Text(line)
@@ -605,6 +606,9 @@ struct QualityLine: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(.quaternary, in: .capsule)
+                .onChange(of: reading, initial: true) { _, now in
+                    if now > 0 { lastOutput = now }
+                }
         }
     }
 
