@@ -16,9 +16,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `Settling` and `Steered`, `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
   against the suites in use, `ListenNext.after`, `ArtworkBucket.fitting`,
   `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
-- [S] `remote_io.rs` and `remote_io_render.rs` are `cfg(target_os = "ios")` alone: no host test of
-  `render` (a short fill, zero length, the `empty` flag), `Routing::route_changed` or the drain
-  wait, though `Routing` is atomics and could leave the cfg
+- [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
+  host; `Routing`, `Drain` and `fill` are proved
 - [S] `build-native.py` reads the accents and `LIFTED_TOWARD_WHITE` out of Rust sources by regex and
   recolours the SVG with a silent `replace(..., 1)`, and nothing asserts that the twenty-one PNGs
   match `xtool.yml` and `Info.plist`
@@ -71,10 +70,15 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   casefold directory (ext4 `+F`) beside ones without the flag
 
 ## Providers and network
+- [S] The hosted hifi path's hosts are constants no fake server can stand in for, so it runs only
+  live; TIDAL's `slow_down` test waits out the real widened interval (about 3 s) where a
+  configurable `SLOWED_BY` would not
 - [S] The hosted hifi-api and Monochrome token endpoints are hardcoded: nothing hermetic covers the
   hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
 
 ## Build and checks
+- [S] `cargo clippy -p resonate --no-default-features` fails on dead code in `providers.rs` and an
+  unconstructed error variant; CI's clippy runs with the default features alone
 - [M] No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
   (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,
@@ -91,11 +95,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   3341/3342, K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - [M] Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
   `landed_or_standing` exists for it
-- [S] TIDAL's `slow_down` is untested; the hosted hifi path's hosts are constants no fake server can
-  stand in for, so it runs only live
-- [S] `signals::relay` (a window's or `play`'s second signal) and `leave_when_told` (the Last.fm
-  password prompt) are tested only through their terminal: a second signal's 128+n and the farewell
-  thread's `Stop` are not driven
 - [M] The Output and Processing settings panes have no test pressing their controls
 - [M] `transport.rs`'s
   `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once when
@@ -110,7 +109,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
 
 ## Later: Packaging
-- [S] No package builds `resonate-server`; `packaging/server/` holds only its systemd unit
+- [S] The sync server's PKGBUILD and RPM spec are built by nothing: no CI job, no `rpmbuild` run,
+  no `.SRCINFO` until it is published
 - [M · blocked: gpui] Gpui 0.2.2 pulls `stacksafe` 0.1 and with it `proc-macro-error2`, whose
   `E0365` future-incompatibility warning becomes a hard error in a future rustc; `stacksafe` 1.x
   dropped it and Zed's `main` uses that, so only a git gpui or a vendored `[patch]` of
