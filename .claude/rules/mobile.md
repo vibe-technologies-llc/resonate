@@ -24,7 +24,7 @@ negative descriptor is refused. The same transfer (`downloads::fresh_destination
 created download or received-song destination, never an existing music document. **The iOS audio
 unit**: `output/remote_io.rs` creates, configures and disposes a RemoteIO unit through
 `objc2-audio-toolbox`, and `output/remote_io_render.rs` reads the buffer list the system hands its
-render callback. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
+render callback and passes the bytes on to `Rendering::fill`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
 ## A panic is an error on the phones
@@ -161,7 +161,15 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   waits and the bounded open are `output/waits.rs`, compiled on the host as well so its tests run
   there (`android.md`).
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
-  into it. Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
+  into it. **What does not touch CoreAudio is compiled on the host too, so its tests run there**:
+  `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and channels)
+  and `Drain` (when a drain is over: the latency after the ring empties, never under 20 ms, restarted
+  by a source that fills again), `output/remote_io_fill.rs` holds `Rendering::fill` (a short fill
+  zeroed, the `empty` flag set exactly when the source gave nothing). `remote_io.rs` and
+  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only the unit, the callback's pointers
+  and the output thread's loop (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
+  `a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once`,
+  `a_moved_rate_is_announced_once_and_an_unmoved_one_is_not`). Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s
   `NowPlaying`); a moved rate announces `SinkChange::Reformatted` and rebinds with
   `SetSink(None)`, as does `rebind` (a media-services reset rebuilds the unit at an unchanged rate).

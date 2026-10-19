@@ -4,8 +4,12 @@ mod oboe;
 mod oboe_render;
 #[cfg(target_os = "ios")]
 mod remote_io;
+#[cfg(any(target_os = "ios", test))]
+mod remote_io_fill;
 #[cfg(target_os = "ios")]
 mod remote_io_render;
+#[cfg(any(target_os = "ios", test))]
+mod remote_io_state;
 #[cfg(any(target_os = "android", test))]
 mod waits;
 
@@ -17,7 +21,7 @@ use resonate_engine::{EngineConfig, Player};
 #[cfg(target_os = "android")]
 pub(crate) use self::oboe::Routing;
 #[cfg(target_os = "ios")]
-pub(crate) use self::remote_io::Routing;
+pub(crate) use self::remote_io_state::Routing;
 use crate::Result;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -7,7 +7,7 @@ use std::{
     ptr::{self, NonNull},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -31,9 +31,12 @@ use resonate_audio::{
 };
 use resonate_core::{ChannelLayout, Frames, Gain, Ratio, SampleFormat, SampleRate, StreamSpec};
 
-use super::remote_io_render::{Rendering, render};
+use super::{
+    remote_io_fill::Rendering,
+    remote_io_render::render,
+    remote_io_state::{Drain, OUTPUT, Routing},
+};
 
-const OUTPUT: SinkId = SinkId::new(1);
 const REMOTE_IO: u32 = u32::from_be_bytes(*b"rioc");
 const OUTPUT_BUS: u32 = 0;
 const STEREO_CHANNELS: u32 = 2;
@@ -41,63 +44,6 @@ const FLOAT_BYTES: u32 = size_of::<f32>() as u32;
 const COMMAND_POLL: Duration = Duration::from_millis(10);
 const QUIET_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
 const UNIT_WITHIN: Duration = Duration::from_secs(3);
-const SHORTEST_DRAIN: Duration = Duration::from_millis(20);
-const MILLISECONDS_A_SECOND: f64 = 1000.0;
-
-pub(crate) struct Routing {
-    rate: AtomicU32,
-    latency: AtomicU64,
-    announce: Sender<SinkChange>,
-    changes: Receiver<SinkChange>,
-    latency_moved: Sender<()>,
-    latency_moves: Receiver<()>,
-}
-
-impl Routing {
-    pub(crate) fn new() -> Self {
-        let (announce, changes) = unbounded();
-        let (latency_moved, latency_moves) = bounded(1);
-        Self {
-            rate: AtomicU32::new(SampleRate::HZ_48000.hz()),
-            latency: AtomicU64::new(0),
-            announce,
-            changes,
-            latency_moved,
-            latency_moves,
-        }
-    }
-
-    pub(crate) fn select(&self, _: i32) -> bool {
-        false
-    }
-
-    pub(crate) fn actual(&self) -> i32 {
-        0
-    }
-
-    pub(crate) fn route_changed(&self, rate: u32, latency_ms: f64) -> bool {
-        let Ok(rate) = SampleRate::new(rate) else {
-            return false;
-        };
-        let latency = latency_ms.max(0.0) * f64::from(rate.hz()) / MILLISECONDS_A_SECOND;
-        if self.latency.swap(latency as u64, Ordering::Relaxed) != latency as u64 {
-            let _ = self.latency_moved.try_send(());
-        }
-        let moved = self.rate.swap(rate.hz(), Ordering::Relaxed) != rate.hz();
-        if moved {
-            let _ = self.announce.send(SinkChange::Reformatted(OUTPUT));
-        }
-        moved
-    }
-
-    fn rate(&self) -> SampleRate {
-        SampleRate::new(self.rate.load(Ordering::Relaxed)).unwrap_or(SampleRate::HZ_48000)
-    }
-
-    fn latency(&self) -> Frames {
-        Frames(self.latency.load(Ordering::Relaxed))
-    }
-}
 
 pub(crate) struct IosAudio {
     routing: Arc<Routing>,
@@ -341,8 +287,7 @@ fn serve(
         denom: NonZeroU32::new(rate.hz()).unwrap_or(NonZeroU32::MIN),
     };
     let mut state = StreamState::Paused;
-    let mut draining = false;
-    let mut drain_after = None;
+    let mut drain = Drain::new();
     loop {
         clock.note(
             GraphTime {
@@ -353,20 +298,16 @@ fn serve(
             },
             rate,
         );
-        if draining && empty.load(Ordering::Acquire) {
-            let ready_at = *drain_after.get_or_insert_with(|| {
-                Instant::now() + clock.latency().to_duration(rate).max(SHORTEST_DRAIN)
-            });
-            if Instant::now() >= ready_at {
-                unit.stop();
-                let _ = announced.send(StreamEvent::Drained);
-                draining = false;
-                drain_after = None;
-            }
-        } else {
-            drain_after = None;
+        let latency = clock.latency().to_duration(rate);
+        if drain.settled(empty.load(Ordering::Acquire), latency, Instant::now()) {
+            unit.stop();
+            let _ = announced.send(StreamEvent::Drained);
         }
-        let wait = if draining { COMMAND_POLL } else { QUIET_WAIT };
+        let wait = if drain.is_requested() {
+            COMMAND_POLL
+        } else {
+            QUIET_WAIT
+        };
         let command = select! {
             recv(asked) -> command => Some(command),
             recv(routing.latency_moves) -> _ => None,
@@ -374,7 +315,7 @@ fn serve(
         };
         match command {
             Some(Ok(StreamCommand::Close) | Err(_)) => break,
-            Some(Ok(StreamCommand::Drain)) => draining = true,
+            Some(Ok(StreamCommand::Drain)) => drain.request(),
             Some(Ok(StreamCommand::SetActive(active))) => {
                 let status = if active { unit.start() } else { unit.stop() };
                 if status != 0 {

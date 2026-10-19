@@ -12,22 +12,14 @@ use std::{
     process,
     ptr::NonNull,
     slice,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
 };
 
 use objc2_audio_toolbox::AudioUnitRenderActionFlags;
 use objc2_core_audio_types::{AudioBufferList, AudioTimeStamp};
-use resonate_audio::AudioSource;
+
+use super::remote_io_fill::Rendering;
 
 const RENDERED: i32 = 0;
-
-pub(crate) struct Rendering {
-    pub(crate) source: Box<dyn AudioSource>,
-    pub(crate) empty: Arc<AtomicBool>,
-}
 
 pub(crate) unsafe extern "C-unwind" fn render(
     rendering: NonNull<c_void>,
@@ -52,10 +44,6 @@ unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBufferList) ->
         return RENDERED;
     };
     let bytes = unsafe { slice::from_raw_parts_mut(data.as_ptr(), buffer.mDataByteSize as usize) };
-    let filled = rendering.source.fill(bytes);
-    rendering.empty.store(filled == 0, Ordering::Release);
-    if let Some(unfilled) = bytes.get_mut(filled..) {
-        unfilled.fill(0);
-    }
+    rendering.fill(bytes);
     RENDERED
 }

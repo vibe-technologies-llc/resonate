@@ -3,6 +3,8 @@ paths:
   - "ios/**"
   - "crates/resonate-mobile/src/output/remote_io.rs"
   - "crates/resonate-mobile/src/output/remote_io_render.rs"
+  - "crates/resonate-mobile/src/output/remote_io_fill.rs"
+  - "crates/resonate-mobile/src/output/remote_io_state.rs"
 ---
 
 # iOS
