@@ -783,15 +783,24 @@ in; it never opens on another colour first.
   with their chroma partly kept, so complementary blobs do not meet in grey; then a lightness
   curve, a vignette and triangular dither on the sRGB-encoded output (`bgra8Unorm`). Every period divides 360 s, the
   length after which the clock wraps without a seam. `BackdropMetalView` is a `CAMetalLayer` driven
-  by a `CAMetalDisplayLink` on the main run loop, which hands each frame a drawable already acquired
-  (two frames queued ahead) and its presentation time: an `MTKView` takes its drawable on the main
-  thread and blocks there whenever the GPU is behind, which stalled every animation on the screen.
+  by a `CAMetalDisplayLink`, which hands each frame a drawable already acquired (two frames queued
+  ahead) and its presentation time: an `MTKView` takes its drawable on the main thread and blocks
+  there whenever the GPU is behind, which stalled every animation on the screen. **The field draws
+  off the main thread**: the link runs on `FieldThread`, a thread of the backdrop's own with a run
+  loop (`org.resonate.backdrop`, user-interactive), owned by `FieldDrawer`, which is the link's
+  delegate and the only code touching it (the view's start, pause, still redraw and stop are blocks
+  `FieldThread.perform` runs there); `BackdropRenderer` is `Sendable`, its inputs (tone, playing,
+  still, palette) and its clock, energy and kept placeholder behind one `Mutex`, and the loudness is
+  read from `HeardLevel`, an atomic `Features.heardLevel` writes. On the main run loop the field
+  missed its frame whenever the main thread did (a poll published, a queue read landed, a lyric
+  line moved), which read as the background stuttering now and then; the first live frame is told
+  back to the main actor once per entry into a window, to retire the placeholder.
   A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it renders the field at 96 pixels across into a texture at the current time (`BackdropRenderer.placeholder`; waiting on the GPU only the first time: leaving a window renders the next one off the main thread, `keepPlaceholder`, kept until the palette or tone moves), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
   leaves its window. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
   a change mid-fade starts from the blend then on screen.
-- **Energy** is the RMS of the visualizer tap (`Features.heardRms`, worked out off the main thread
+- **Energy** is the RMS of the visualizer tap (`Features.heardLevel`, worked out off the main thread
   with the read, `HeardSignal`), with a 120 ms attack and a 600 ms
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
   the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop) and

@@ -1566,7 +1566,7 @@ final class Features {
 
     @ObservationIgnored private var visualizers = 0
     @ObservationIgnored private var loudnessListeners = 0
-    @ObservationIgnored private(set) var heardRms: Float = 0
+    @ObservationIgnored let heardLevel = HeardLevel()
 
     func visualize(_ enabled: Bool) {
         visualizers = max(visualizers + (enabled ? 1 : -1), 0)
@@ -1587,7 +1587,7 @@ final class Features {
         guard visualizersWatching || loudnessListeners > 0 else {
             visualization?.cancel()
             visualization = nil
-            heardRms = 0
+            heardLevel.hear(0)
             return
         }
         guard visualization == nil else { return }
@@ -1608,7 +1608,7 @@ final class Features {
     }
 
     private func heard(_ signal: HeardSignal) {
-        heardRms = signal.rms
+        heardLevel.hear(signal.rms)
         if visualizersWatching { samples = signal.samples }
     }
 }
