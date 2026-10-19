@@ -348,7 +348,9 @@ fetched whole and lands as a track row.
 - **Signed in from the window or `resonate tidal`.** `resonate_providers::SignsIn` is the seam,
   `TidalSignIn` its implementation, handed over as `Lookups::signs_in` by `providers::signs_in`. The
   device flow asks the `r_usr` scope alone and polls every `interval` (at least
-  `ASKED_EVERY_AT_LEAST`, longer on `slow_down` and 429) until a refresh token,
+  `ASKED_EVERY_AT_LEAST`, longer on `slow_down` and 429: `SLOWED_BY` is added to the wait, held by
+  `a_device_sign_in_told_to_slow_down_waits_longer_than_its_interval_before_asking_again` and
+  `a_device_sign_in_turned_away_for_asking_too_often_waits_longer_before_asking_again`) until a refresh token,
   `AuthorizationLapsed`, `AuthorizationDenied` or the cancel (`Ok(None)`), each poll bounded to
   `A_POLL_ANSWERED_WITHIN` (3 s, not the API agent's 20 s) so a cancel is heard within one poll
   even when TIDAL does not answer (`a_cancel_is_heard_within_one_poll_even_when_the_server_does_not_answer`),

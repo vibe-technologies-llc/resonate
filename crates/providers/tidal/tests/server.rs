@@ -4,7 +4,7 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -887,6 +887,48 @@ fn a_device_sign_in_cancelled_while_waiting_stops_asking() {
 
     assert!(matches!(answer, Ok(None)));
     assert_eq!(fake.paths(), vec!["/auth/device".to_owned()]);
+}
+
+fn token_polls_when_told_to_slow_down(slowing: fn() -> Canned) -> usize {
+    const LISTENED_FOR: Duration = Duration::from_millis(1_800);
+
+    let fake = Fake::serving(move |asked, _, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        _ => slowing(),
+    });
+    let signing_in = fake.signing_in();
+    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+    let slowed_at = Mutex::new(None::<Instant>);
+
+    let answer = signing_in.authorized(&client(), &authorizing, &|| {
+        let mut slowed_at = slowed_at.lock();
+        if slowed_at.is_none() && fake.paths().iter().any(|path| path == "/auth/token") {
+            *slowed_at = Some(Instant::now());
+        }
+        slowed_at.is_some_and(|at| at.elapsed() >= LISTENED_FOR)
+    });
+
+    assert!(matches!(answer, Ok(None)));
+    fake.paths()
+        .iter()
+        .filter(|path| path.as_str() == "/auth/token")
+        .count()
+}
+
+#[test]
+fn a_device_sign_in_told_to_slow_down_waits_longer_than_its_interval_before_asking_again() {
+    let polls = token_polls_when_told_to_slow_down(|| {
+        Canned::refused(400, r#"{"status":400,"error":"slow_down"}"#)
+    });
+
+    assert_eq!(polls, 1);
+}
+
+#[test]
+fn a_device_sign_in_turned_away_for_asking_too_often_waits_longer_before_asking_again() {
+    let polls = token_polls_when_told_to_slow_down(|| Canned::refused(429, "{}"));
+
+    assert_eq!(polls, 1);
 }
 
 fn wrapped(canned: Canned) -> Canned {
