@@ -29,10 +29,14 @@ pub struct Deleted {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Removal {
+pub enum Removal {
     Removed,
     AlreadyGone,
     Kept,
+}
+
+pub trait Trashes: Send + Sync {
+    fn trash(&self, file: &Path) -> Removal;
 }
 
 pub(crate) struct Forgotten {
@@ -57,7 +61,15 @@ pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BT
     Ok(files)
 }
 
-pub(crate) fn removed(path: &Path, data_home: Option<&Path>) -> Removal {
+pub(crate) fn removed(
+    path: &Path,
+    data_home: Option<&Path>,
+    through: Option<&dyn Trashes>,
+) -> Removal {
+    if let Some(through) = through {
+        return through.trash(path);
+    }
+
     match trash::send(path, data_home, SystemTime::now()) {
         Ok(()) => Removal::Removed,
         Err(Error::Trash {

@@ -39,6 +39,7 @@ mod submitting;
 mod suggest;
 mod sync;
 mod table;
+mod trashing;
 mod vault;
 mod vocabulary;
 mod wanting;
@@ -449,6 +450,7 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
     stop_telling_what_has_no_account(&library, config);
     age_the_history(&library, config.history_kept());
     library.deliver_into(delivery_folder(config));
+    library.trash_through(trashing::the_desktops());
     Ok(library)
 }
 

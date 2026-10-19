@@ -44,7 +44,7 @@ use crate::{
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
     Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word, alternatives,
-    deleted::{self, Deleted, Removal},
+    deleted::{self, Deleted, Removal, Trashes},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
@@ -691,6 +691,7 @@ pub(crate) struct Inner {
     walked: Mutex<Vec<Step>>,
     delivering_into: Mutex<Option<DeliveryFolder>>,
     trash_home: Mutex<Option<PathBuf>>,
+    trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
 }
 
@@ -1356,6 +1357,10 @@ impl Library {
         *self.inner.trash_home.lock() = data_home;
     }
 
+    pub fn trash_through(&self, trashes: Option<Arc<dyn Trashes>>) {
+        *self.inner.trashes.lock() = trashes;
+    }
+
     pub fn music_filters(&self) -> MusicFilters {
         *self.inner.music_filters.lock()
     }
@@ -1536,6 +1541,7 @@ impl Library {
                 walked: Mutex::new(Vec::new()),
                 delivering_into: Mutex::new(None),
                 trash_home: Mutex::new(None),
+                trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
             }),
         })
@@ -2195,16 +2201,18 @@ impl Library {
             .read(|connection| deleted::files_of(connection, tracks))?;
 
         let data_home = self.inner.trash_home.lock().clone();
+        let through = self.inner.trashes.lock().clone();
+        let through = through.as_deref();
         let mut done = Deleted::default();
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
-            match deleted::removed(&path, data_home.as_deref()) {
+            match deleted::removed(&path, data_home.as_deref(), through) {
                 Removal::Removed => {
                     done.files += 1;
                     for sidecar in &sidecars {
-                        deleted::removed(sidecar, data_home.as_deref());
+                        deleted::removed(sidecar, data_home.as_deref(), through);
                     }
                     emptied.extend(path.parent().map(Path::to_path_buf));
                     gone.push(path);

@@ -38,11 +38,11 @@ use resonate_library::{
     PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
     RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
     Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions,
-    ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder,
-    Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet,
-    TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten,
-    Vault, Waits, Window, Wording, Written,
+    Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery,
+    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
+    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
+    Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -849,6 +849,77 @@ fn a_file_with_no_trash_to_go_to_is_kept_with_its_row() -> Result<()> {
     let blocked = data.write("not-a-folder", b"");
     let library = Library::open_in_memory()?;
     library.trash_into(Some(blocked));
+    scan(&library, &options(&tree))?;
+    let track = all(&library)?[0].id;
+
+    let deleted = library.delete_tracks(&[track])?;
+
+    assert_eq!(
+        deleted,
+        Deleted {
+            tracks: 0,
+            files: 0,
+            kept: 1,
+        }
+    );
+    assert!(song.exists());
+    assert_eq!(all(&library)?.len(), 1);
+    Ok(())
+}
+
+struct TrashedByTheDesktop {
+    asked: Mutex<Vec<PathBuf>>,
+    answer: Removal,
+}
+
+impl Trashes for TrashedByTheDesktop {
+    fn trash(&self, file: &Path) -> Removal {
+        self.asked.lock().push(file.to_path_buf());
+        if self.answer == Removal::Removed {
+            fs::remove_file(file).expect("the desktop takes the file");
+        }
+        self.answer
+    }
+}
+
+#[test]
+fn a_file_is_trashed_through_the_desktops_trash_where_one_is_given_and_never_by_hand() -> Result<()>
+{
+    let tree = Tree::new();
+    let data = Tree::new();
+    let song = tree.write("song.wav", &Wav::new().text(TITLE, "Song").build());
+    let desktop = Arc::new(TrashedByTheDesktop {
+        asked: Mutex::new(Vec::new()),
+        answer: Removal::Removed,
+    });
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.root.clone()));
+    library.trash_through(Some(Arc::clone(&desktop) as Arc<dyn Trashes>));
+    scan(&library, &options(&tree))?;
+    let track = all(&library)?[0].id;
+
+    let deleted = library.delete_tracks(&[track])?;
+
+    assert_eq!(deleted.files, 1);
+    let asked = desktop.asked.lock().clone();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].ends_with("song.wav"));
+    assert!(!song.exists());
+    assert!(!data.root.join("Trash").exists());
+    assert!(all(&library)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_file_the_desktops_trash_would_not_take_is_kept_with_its_row() -> Result<()> {
+    let tree = Tree::new();
+    let song = tree.write("song.wav", &Wav::new().text(TITLE, "Song").build());
+    let desktop = Arc::new(TrashedByTheDesktop {
+        asked: Mutex::new(Vec::new()),
+        answer: Removal::Kept,
+    });
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(desktop as Arc<dyn Trashes>));
     scan(&library, &options(&tree))?;
     let track = all(&library)?[0].id;
 
