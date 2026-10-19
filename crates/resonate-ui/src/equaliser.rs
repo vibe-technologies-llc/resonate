@@ -509,6 +509,17 @@ impl EqualiserModel {
         self.bindings.enabled = on;
     }
 
+    pub fn rebound(&mut self, bindings: Bindings) {
+        self.save_now();
+        self.bindings = bindings;
+        self.held.clear();
+        self.shown = None;
+        self.forget_the_rows();
+        self.kept = self.store.names().unwrap_or_default();
+        self.gather();
+        self.step();
+    }
+
     pub fn bind(&mut self, sink: Option<&NodeName>, binding: Option<Binding>) {
         self.save_now();
         self.bindings.bind(sink, binding);
@@ -1223,6 +1234,56 @@ mod tests {
             "the catalogue read was dropped and left the pane looking"
         );
         assert!(known, "the catalogue was never read");
+    }
+
+    #[test]
+    fn bindings_changed_from_outside_are_what_the_pane_shows_and_tells_the_engine_next() {
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-rebound-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let before = named("Harman");
+        let after = named("Flat-ish");
+        let dac = NodeName::new("alsa_output.dac");
+        let louder = Band {
+            gain: BandGain::from_decibels(6.0).expect("a gain"),
+            ..a_band()
+        };
+        for (name, band) in [(&before, a_band()), (&after, louder)] {
+            store
+                .keep(
+                    name,
+                    &Profile::new(Preamp::NONE, vec![band]).expect("a profile"),
+                )
+                .expect("the profile is kept");
+        }
+        let mut model = EqualiserModel::new(
+            folder.clone(),
+            Arc::new(Corrected::uncorrected()),
+            Bindings {
+                enabled: true,
+                fallback: None,
+                by_sink: vec![(dac.clone(), Binding::Profile(before.clone()))],
+            },
+        );
+        model.show(Some(&dac));
+
+        model.rebound(Bindings {
+            enabled: true,
+            fallback: None,
+            by_sink: vec![(dac.clone(), Binding::Profile(after.clone()))],
+        });
+        model.show(Some(&dac));
+        let told = model.equalisation();
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert_eq!(model.shown_curve(), Some(&Curve::Kept(after)));
+        assert_eq!(model.shown_bands(), vec![louder]);
+        assert_eq!(
+            told.bound.get(&dac).map(|profile| profile.bands().to_vec()),
+            Some(vec![louder])
+        );
     }
 
     #[test]

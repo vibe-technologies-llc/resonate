@@ -79,12 +79,16 @@ struct Desktop {
     quit: Option<Sender<()>>,
     attention: Option<Attention>,
     raise: Option<Sender<()>>,
+    #[cfg(feature = "ui")]
+    followed: Option<Sender<resonate_ui::Followed>>,
     notify: Arc<AtomicBool>,
 }
 
 pub(crate) struct Window {
     pub(crate) attention: Receiver<bool>,
     pub(crate) raise: Sender<()>,
+    #[cfg(feature = "ui")]
+    pub(crate) followed: Sender<resonate_ui::Followed>,
 }
 
 impl Host for Desktop {
@@ -220,6 +224,7 @@ impl Host for Desktop {
                 Reloaded::Applied
             }
             Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
+            Reloadable::Tidal => self.tidal_signed_in_again(Path::new(settings)),
         }
     }
 }
@@ -242,12 +247,66 @@ impl Desktop {
         let equalisation = Arc::new(equaliser::resolved(&config));
 
         match self.player.send(Command::SetEqualisation(equalisation)) {
-            Ok(()) => Reloaded::Applied,
+            Ok(()) => {
+                self.tell_the_window_of_the_bindings(&config);
+                Reloaded::Applied
+            }
             Err(error) => {
                 tracing::warn!(%error, "the equaliser read again did not reach the engine");
                 Reloaded::Refused
             }
         }
+    }
+}
+
+#[cfg(feature = "ui")]
+impl Desktop {
+    fn tell_the_window(&self, followed: resonate_ui::Followed) -> Reloaded {
+        let Some(window) = self.followed.as_ref() else {
+            return Reloaded::Refused;
+        };
+
+        match window.send(followed) {
+            Ok(()) => Reloaded::Applied,
+            Err(error) => {
+                tracing::debug!(%error, "the window was not told of a change to the settings");
+                Reloaded::Refused
+            }
+        }
+    }
+
+    fn tell_the_window_of_the_bindings(&self, config: &config::Config) {
+        self.tell_the_window(resonate_ui::Followed::Bindings(equaliser::bound(config)));
+    }
+
+    fn tidal_signed_in_again(&self, settings: &Path) -> Reloaded {
+        match config::load(Some(settings)) {
+            Ok(config) => {
+                self.tell_the_window(resonate_ui::Followed::Tidal(tidal_sign_in(&config)))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the TIDAL account could not be read again from the settings");
+                Reloaded::Refused
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "ui"))]
+impl Desktop {
+    fn tell_the_window_of_the_bindings(&self, _config: &config::Config) {}
+
+    fn tidal_signed_in_again(&self, _settings: &Path) -> Reloaded {
+        Reloaded::Refused
+    }
+}
+
+#[cfg(feature = "ui")]
+fn tidal_sign_in(config: &config::Config) -> resonate_ui::TidalSignIn {
+    resonate_ui::TidalSignIn {
+        client_id: config.tidal_client_id.clone().unwrap_or_default(),
+        client_secret: config.tidal_client_secret.clone().unwrap_or_default(),
+        refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),
     }
 }
 
@@ -343,8 +402,10 @@ pub(crate) fn start(
     window: Option<Window>,
     notify: &Arc<AtomicBool>,
 ) -> Option<Mpris> {
+    #[cfg(feature = "ui")]
+    let followed = window.as_ref().map(|window| window.followed.clone());
     let (attention, raise) = match window {
-        Some(Window { attention, raise }) => (Some(attention), Some(raise)),
+        Some(window) => (Some(window.attention), Some(window.raise)),
         None => (None, None),
     };
     let host = Desktop {
@@ -358,6 +419,8 @@ pub(crate) fn start(
             held: AtomicBool::new(OPENS_IN_FRONT),
         }),
         raise,
+        #[cfg(feature = "ui")]
+        followed,
         notify: Arc::clone(notify),
     };
     let playlists = library.map(|library| {

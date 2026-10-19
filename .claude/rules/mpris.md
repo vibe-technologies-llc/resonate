@@ -36,7 +36,7 @@ the client a second `resonate` reaches a first through.
   `Command::Set…` the pane would send, for this run only; the settings file is untouched); a name or
   value the host refuses is `InvalidArgs` and the settings before it stay applied.
   `Reload(ss)` tells a running player that a subcommand wrote the settings file at the path given:
-  `Reloadable::name` of the group changed (`equaliser`, `submission`, `sync`) and the path, asked of
+  `Reloadable::name` of the group changed (`equaliser`, `submission`, `sync`, `tidal`) and the path, asked of
   `Host::reload`, which refuses (`InvalidArgs`) a file it does not read or a group it cannot take
   up (`Running::reload`).
 

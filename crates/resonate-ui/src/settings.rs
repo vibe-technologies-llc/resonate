@@ -577,6 +577,29 @@ pub struct Online {
     pub hosted_services: bool,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct TidalSignIn {
+    pub client_id: String,
+    pub client_secret: String,
+    pub refresh_token: String,
+}
+
+impl fmt::Debug for TidalSignIn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TidalSignIn")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &withheld(&self.client_secret))
+            .field("refresh_token", &withheld(&self.refresh_token))
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Followed {
+    Bindings(Bindings),
+    Tidal(TidalSignIn),
+}
+
 struct Withheld;
 
 impl fmt::Debug for Withheld {

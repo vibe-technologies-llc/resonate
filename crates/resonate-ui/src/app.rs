@@ -38,7 +38,7 @@ use crate::{
     },
     recent::Recent,
     settings::{
-        Online, Places, Present, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons,
+        Followed, Online, Places, Present, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons,
         WindowSize,
     },
     theme, toast,
@@ -922,6 +922,34 @@ pub struct Bus {
     pub quit: Receiver<()>,
     pub raise: Receiver<()>,
     pub attention: Sender<bool>,
+    pub followed: Receiver<Followed>,
+}
+
+fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
+    let waiting = cx.background_executor().clone();
+    cx.spawn(async move |cx| {
+        loop {
+            match told.try_recv() {
+                Ok(followed) => {
+                    let applied = cx.update(|cx| {
+                        for handle in cx.windows() {
+                            let Some(root) = handle.downcast::<RootView>() else {
+                                continue;
+                            };
+                            let _ =
+                                root.update(cx, |root, _, cx| root.follow(followed.clone(), cx));
+                        }
+                    });
+                    if applied.is_err() {
+                        return;
+                    }
+                }
+                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
+                Err(TryRecvError::Disconnected) => return,
+            }
+        }
+    })
+    .detach();
 }
 
 fn raise_when_asked(asked: Receiver<()>, cx: &mut App) {
@@ -1058,6 +1086,7 @@ pub fn run(
         cx.activate(true);
         close_when_asked(bus.quit, cx);
         raise_when_asked(bus.raise, cx);
+        follow_when_told(bus.followed, cx);
         quit_once_the_last_window_closes(cx);
 
         let opening_size = stored

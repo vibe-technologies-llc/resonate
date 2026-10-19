@@ -285,7 +285,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   keeps its pointer for `OutputSettings`' fast path. A pending save is written when the pane moves
   to another curve; an import/fetch replacing a shown file drops the unsaved copy; replacing a
   *bound* file raises `untold`, answered with `tell_the_engine`
-  (`a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next`).
+  (`a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next`). **Bindings changed
+  from outside are followed**: `resonate eq` writes the file and the player's `Reload` reaches the
+  window as `Followed::Bindings`, which `RootView::follow` hands to `EqualiserModel::rebound` (the
+  unsaved edit is written first, held curves are read afresh, the shown curve is chosen again for
+  the sink in use), so the next edit writes from what the engine plays
+  (`bindings_changed_from_outside_are_what_the_pane_shows_and_tells_the_engine_next`).
 - **The drawn range follows the curve**: `widest_drawn` = largest magnitude over the `CURVE_COLUMNS`
   (192), rounded out to `LEVEL_MARKED_EVERY_DB` (5), never under `DRAWN_BETWEEN_MILLIBELS` (15 dB);
   `marked_levels` labels only the edges (a mid label sits on the trace); the wash runs to the zero

@@ -603,6 +603,39 @@ mod tests {
     }
 
     #[gpui::test]
+    fn bindings_and_a_tidal_account_changed_from_the_command_line_are_followed_by_the_window(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        let bindings = crate::Bindings {
+            enabled: true,
+            fallback: Some(resonate_eq::Binding::Own),
+            by_sink: Vec::new(),
+        };
+        let account = crate::TidalSignIn {
+            client_id: "client".to_owned(),
+            client_secret: "secret".to_owned(),
+            refresh_token: "token".to_owned(),
+        };
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.follow(crate::Followed::Bindings(bindings.clone()), cx);
+            root.follow(crate::Followed::Tidal(account), cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.equaliser.read(cx).bindings().clone()),
+            bindings
+        );
+        let online = driven.read(|_, cx| cx.global::<ResonateApp>().online.clone());
+        assert_eq!(online.tidal_client_id, "client");
+        assert_eq!(online.tidal_client_secret, "secret");
+        assert_eq!(online.tidal_refresh_token, "token");
+    }
+
+    #[gpui::test]
     fn a_press_on_the_equaliser_curve_adds_a_band_a_drag_moves_it_and_a_right_press_takes_it_out(
         cx: &mut TestAppContext,
     ) {
