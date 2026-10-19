@@ -48,13 +48,13 @@ struct LibraryView: View {
                 }
             }
             if !playlistsOnly, shelf == .all, folded.isEmpty {
-                Button {
-                    if library.filtering { library.setFilter(Library.everything) }
-                    navigation.showSongs()
-                } label: {
+                NavigationLink(value: Destination.songs) {
                     SongsCountRow()
                 }
-                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded {
+                    if library.filtering { library.setFilter(Library.everything) }
+                    navigation.songsGrouping = .songs
+                })
                 NavigationLink(value: Destination.suggestions) {
                     SuggestionsRow()
                 }
@@ -196,15 +196,27 @@ struct PinnedLabelStyle: LabelStyle {
 }
 
 struct FavouritesArtwork: View {
-    static let corner: CGFloat = 10
+    static let corner = ShelfTile.corner
 
     var body: some View {
-        Image(systemName: "heart.fill")
+        ShelfTile(symbol: "heart.fill", from: .pink, to: .purple)
+    }
+}
+
+struct ShelfTile: View {
+    static let corner: CGFloat = 10
+
+    let symbol: String
+    let from: Color
+    let to: Color
+
+    var body: some View {
+        Image(systemName: symbol)
             .font(.title2)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
+                LinearGradient(colors: [from, to], startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: .rect(cornerRadius: Self.corner)
             )
             .accessibilityHidden(true)
@@ -217,21 +229,14 @@ struct AllSongsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "music.note.list")
-                .font(.title2)
-                .foregroundStyle(.tint)
+            ShelfTile(symbol: "music.note", from: .orange, to: .red)
                 .frame(width: artworkEdge, height: artworkEdge)
-                .background(.quaternary, in: .rect(cornerRadius: 10))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("All songs").font(.body.weight(.medium))
                 Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
         }
-        .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -240,7 +245,7 @@ struct SuggestionsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            MosaicArtwork(covers: [], accents: MixAccents(from: .teal, to: .blue), mark: "sparkles", name: "", corner: 10)
+            ShelfTile(symbol: "sparkles", from: .teal, to: .blue)
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Suggestions").font(.body.weight(.medium))
@@ -256,7 +261,7 @@ struct StatisticsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            MosaicArtwork(covers: [], accents: MixAccents(from: .mauve, to: .blue), mark: "chart.bar.fill", name: "", corner: 10)
+            ShelfTile(symbol: "chart.bar.fill", from: .indigo, to: .blue)
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Statistics").font(.body.weight(.medium))

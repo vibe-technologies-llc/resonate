@@ -566,8 +566,11 @@ every route change (a pair of headphones at the same rate included), not from th
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
   it was reached through it. A failed read cuts nothing. Now Playing and the sheets are not kept.
-- **The Library tab's *All songs*** clears any filter or mix and pushes the Songs page alone on the
-  Library stack, showing songs (`Navigation.showSongs`).
+- **The Library tab's *All songs*** is a navigation link to the Songs page, so it carries the
+  disclosure arrow its neighbours do; a simultaneous tap clears any filter or mix and shows songs.
+  **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
+  corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
+  songs orange and red, Suggestions teal and blue, Statistics indigo and blue.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
   the full list is rows. **A shelf's cover pushes its page as every album and artist entry does**,
@@ -709,7 +712,7 @@ every route change (a pair of headphones at the same rate included), not from th
   holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
   play button and the context menu (Play, Shuffle, Show songs) play every song it holds, read
   page by page (`Library.everyPage`), so *Never heard* shuffles the whole of it.
-  `SuggestionsRow` wears a teal and blue sparkles tile.
+  `SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
 
 ## Search
 
