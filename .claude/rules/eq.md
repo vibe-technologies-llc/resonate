@@ -164,8 +164,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   walk that reads a profile (`apo::walk`) names each line's role (`Preamp`, `Band(k)`, `Graphic`,
   else `Other`), bands are aligned old to new by longest common run so an edit changes the lines it
   moved (a band inserted or removed lands or goes beside its own comment), and every `Other` line
-  (comments, `Include:`, `Device:`, `If:`, a second device's lines, filters past `MAX_BANDS`)
-  stays where it was; a band given other channels is wrapped in `Channel:` lines that restore the
+  (comments, `Include:`, `Device:`, `If:`, a second device's lines) stays where it was, while a
+  `Surplus` line (a filter past `MAX_BANDS`, which never played) goes with any save that changes the
+  profile, else removing a band would bring the 33rd into play at the next read
+  (`removing_a_band_from_a_profile_of_more_than_the_cap_does_not_bring_the_next_into_play`); a band given other channels is wrapped in `Channel:` lines that restore the
   scope after it. The edit is read back and must equal the wanted profile, else one more try
   states the preamp, else the model is written fresh (`apo::write`). A model nothing moved leaves
   the file untouched. Line ending, UTF-8 mark and encoding are the file's own (`Standing`,

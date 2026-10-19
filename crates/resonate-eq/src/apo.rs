@@ -383,6 +383,7 @@ enum Role {
     Preamp,
     Band(usize),
     Graphic,
+    Surplus,
 }
 
 struct Walked {
@@ -534,6 +535,7 @@ fn walk(text: &str) -> Result<Walked> {
             }
             Some(_) => {
                 tracing::debug!(line, "a filter past the bands a profile holds");
+                marked(&mut roles, Role::Surplus);
                 passed_over += 1;
             }
             None => {
@@ -545,7 +547,7 @@ fn walk(text: &str) -> Result<Walked> {
 
     if target.is_some() {
         for role in &mut roles {
-            if matches!(role, Role::Band(_)) {
+            if matches!(role, Role::Band(_) | Role::Surplus) {
                 *role = Role::Other;
             }
         }
@@ -793,7 +795,7 @@ fn revised(
                     spelled_preamp(wanted.preamp())
                 ));
             }
-            Role::Preamp => {}
+            Role::Preamp | Role::Surplus => {}
             Role::Graphic => match wanted.target() {
                 Some(_) if !target_moved => kept.push(line.to_owned()),
                 Some(target) => kept.push(format!(
@@ -1328,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn filters_past_the_bands_a_profile_holds_and_lines_no_band_reads_stay_in_the_file() {
+    fn lines_no_band_reads_stay_in_the_file_and_filters_past_the_bands_a_profile_holds_go() {
         let mut long = String::from("Include: shared.txt\n");
         for at in 0..MAX_BANDS + 3 {
             let _ = writeln!(
@@ -1344,14 +1346,46 @@ mod tests {
 
         let text = edited(&long, &louder).expect("it edits");
 
-        assert_eq!(text.lines().count(), long.lines().count());
+        assert_eq!(text.lines().count(), MAX_BANDS + 1);
         assert!(text.starts_with("Include: shared.txt\n"));
-        assert!(text.contains(&format!(
-            "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
-            MAX_BANDS + 3,
-            100 + MAX_BANDS + 2
-        )));
+        assert!(!text.contains(&format!("Filter {}:", MAX_BANDS + 1)));
         assert_eq!(read_profile(&text).ok(), Some(louder));
+    }
+
+    #[test]
+    fn removing_a_band_from_a_profile_of_more_than_the_cap_does_not_bring_the_next_into_play() {
+        let mut long = String::new();
+        for at in 0..MAX_BANDS + 1 {
+            let _ = writeln!(
+                long,
+                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                at + 1,
+                100 + at
+            );
+        }
+        let read = read_profile(&long).expect("a readable profile");
+        let mut fewer = read.clone();
+        fewer.remove(0);
+
+        let text = edited(&long, &fewer).expect("it edits");
+
+        assert_eq!(read_profile(&text).ok(), Some(fewer));
+    }
+
+    #[test]
+    fn a_profile_unchanged_keeps_the_filters_past_the_bands_it_holds() {
+        let mut long = String::new();
+        for at in 0..MAX_BANDS + 1 {
+            let _ = writeln!(
+                long,
+                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                at + 1,
+                100 + at
+            );
+        }
+        let read = read_profile(&long).expect("a readable profile");
+
+        assert_eq!(edited(&long, &read), Some(long));
     }
 
     #[test]
