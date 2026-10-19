@@ -648,6 +648,20 @@ every route change (a pair of headphones at the same rate included), not from th
   saved, a failure is reported with how many were left. Library tools offers *Undo tag edit* while
   `tags_to_undo` names a step (`Features.undoTags`, through the same paths).
 
+- **A song is deleted from its menu; identical files are folded from Library tools**
+  (`Deleting.swift`). `SongPages` offers *Delete song* where the song's folder is writable
+  (`Features.songDeletable`, which `tagsWritable` builds on); it sets `Navigation.deleting`, and the
+  confirmation is presented by `DeleteSongsConfirmation` on the root view, or on Now Playing while
+  the cover is up (the root cannot present over it). `Library.deleteSongs` removes each file with
+  `Folders.deleteSong`, which, unlike `delete`, never counts an unreachable folder's file as gone,
+  so a song whose file stays keeps its row; only the songs whose files went are forgotten
+  (`forget_deleted_songs`), and the rest are told as `DeletionFailure.filesKept`. Library tools'
+  *Identical songs* (`IdenticalSongsView`, `Destination.identicalSongs`) asks `identical_songs` on
+  `Work.aside` and lists each set, every file with its folder and name (marked read-only where its
+  folder is); a tap chooses the copy kept, and *Delete copies* (confirmed) deletes the others set by
+  set and folds those that went into the kept one (`Library.deleteIdenticalCopies`, then the
+  page asks again). Both refresh the catalog, the open playlist and the playlists, and read the
+  queue again where rows left it.
 - **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout
   field (`organise-layout` in `library-features`, the desktop's `DEFAULT_LAYOUT` until changed)
   checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`

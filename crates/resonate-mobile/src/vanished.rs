@@ -73,13 +73,16 @@ impl MobilePlayer {
 
 impl MobilePlayer {
     fn drop_missing_from_queue(&self) -> usize {
-        let missing = match self.catalog.missing_uris() {
-            Ok(missing) => missing,
+        match self.catalog.missing_uris() {
+            Ok(missing) => self.drop_from_queue(&missing),
             Err(error) => {
                 tracing::debug!(%error, "the missing songs could not be read");
-                return 0;
+                0
             }
-        };
+        }
+    }
+
+    pub(crate) fn drop_from_queue(&self, missing: &BTreeSet<String>) -> usize {
         if missing.is_empty() {
             return 0;
         }
@@ -107,7 +110,7 @@ impl MobilePlayer {
                 (Ok(()), Some(rows)) => dropped += rows,
                 (Ok(()), None) => break,
                 (Err(error), _) => {
-                    tracing::debug!(%error, "a missing song could not leave the queue");
+                    tracing::debug!(%error, "a song could not leave the queue");
                     break;
                 }
             }
@@ -300,7 +303,7 @@ fn missing_recordings(connection: &Connection) -> Result<Vec<(i64, Recording)>> 
         .map_err(read_error)
 }
 
-fn handed_over(
+pub(crate) fn handed_over(
     transaction: &Transaction<'_>,
     referring: &[(String, String)],
     old: i64,

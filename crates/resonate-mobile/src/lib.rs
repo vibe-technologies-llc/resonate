@@ -1,6 +1,7 @@
 mod catalog;
 mod catalog_extras;
 mod collections;
+mod deleting;
 mod documents;
 mod downloads;
 mod enrichment;

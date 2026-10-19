@@ -177,6 +177,7 @@ struct NowPlayingView: View {
                 }
             }
             .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .modifier(DeleteSongsConfirmation(insidePlayer: true))
         }
     }
 

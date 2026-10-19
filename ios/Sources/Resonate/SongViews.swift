@@ -651,5 +651,10 @@ struct SongPages: View {
         if !track.artist.isEmpty {
             Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
         }
+        if library.features.songDeletable(track) {
+            Button("Delete song", systemImage: "trash", role: .destructive) {
+                navigation.deleting = SongsToDelete(tracks: [track])
+            }
+        }
     }
 }

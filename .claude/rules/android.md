@@ -476,6 +476,24 @@ before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` nam
 `song_tags(id)` reads a song's fields through the document provider. `TagsWritten` counts written,
 unchanged and failed songs with the first failure's sentence.
 
+**A song is deleted by the front end, then forgotten; identical files fold into one** (`deleting.rs`).
+The front end removes the file (Rust holds only a descriptor), then `forget_deleted_songs(ids)` drops
+the queue rows naming each (the playing one moving on), steps the revision of every playlist holding
+it and deletes its row with every row referring to it (playlist rows, listens, lyrics, artwork,
+studies; a picture nothing else shows goes too), answering `SongsForgotten` (rows forgotten, queue
+rows left); its listens leave the totals, as a hidden song's already do. `identical_songs()` answers
+`IdenticalSongs` (the copy kept and the copies) for files holding exactly the same bytes: held
+songs grouped by size (the stamp a scan kept, else measured through the document provider, since a
+download, a landing or an opened file is indexed with none), then by a CRC-32 of the whole file,
+then confirmed byte for byte, so equal sizes or equal CRCs alone never match
+(`songs_whose_files_hold_the_same_bytes_are_found_and_one_alike_in_size_alone_is_not`). The copy
+playing is kept, else the first indexed (`the_copy_playing_is_the_one_kept`); an unreadable file is
+left out. `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
+copy's favourite, playlist rows, listens, lyrics and studies to the one kept (`handed_over`, the
+missing-song merge) and drops its queue rows
+(`folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept`,
+`a_deleted_song_leaves_the_catalog_the_queue_and_its_playlists`). Only iOS calls them yet.
+
 **A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
 `plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as
 `LayoutUnreadable`; `organise_layout_problem` says why before asking, `default_organise_layout` is

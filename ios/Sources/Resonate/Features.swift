@@ -1063,7 +1063,11 @@ final class Features {
     }
 
     func tagsWritable(_ track: Track) -> Bool {
-        guard writableKind(of: track.name), let root = Folders.root(of: track.uri) else { return false }
+        writableKind(of: track.name) && songDeletable(track)
+    }
+
+    func songDeletable(_ track: Track) -> Bool {
+        guard let root = Folders.root(of: track.uri) else { return false }
         return library.folderList.first { $0.id == root }?.writable ?? false
     }
 

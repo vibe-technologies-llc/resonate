@@ -438,17 +438,23 @@ final class Folders: Documents, @unchecked Sendable {
 
     @discardableResult
     func delete(_ uri: String) -> Bool {
-        let gone = removed(uri)
+        let gone = removed(uri, unreachableIsGone: true)
         if gone { written(uri) }
         return gone
     }
 
-    private func removed(_ uri: String) -> Bool {
+    func deleteSong(_ uri: String) -> Bool {
+        let gone = removed(uri, unreachableIsGone: false)
+        if gone { written(uri) }
+        return gone
+    }
+
+    private func removed(_ uri: String, unreachableIsGone: Bool) -> Bool {
         let resolution: (URL, Bool)
         do {
             resolution = try resolved(uri)
         } catch is FolderFailure {
-            return true
+            return unreachableIsGone
         } catch {
             return false
         }

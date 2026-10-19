@@ -512,6 +512,128 @@ mod tests {
     }
 
     #[test]
+    fn songs_whose_files_hold_the_same_bytes_are_found_and_one_alike_in_size_alone_is_not() {
+        let harness = Harness::new();
+        let mut differing = silence();
+        if let Some(last) = differing.last_mut() {
+            *last ^= 1;
+        }
+        fs::write(harness.folder.join("d.wav"), differing).expect("a song differing by a byte");
+
+        let found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kept.id, harness.song('a').id);
+        assert_eq!(
+            found[0]
+                .copies
+                .iter()
+                .map(|copy| copy.id)
+                .collect::<Vec<_>>(),
+            harness.ids("bc")
+        );
+    }
+
+    #[test]
+    fn the_copy_playing_is_the_one_kept() {
+        let harness = Harness::new();
+        harness.resumed("ab", 1, 0);
+
+        let found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kept.id, harness.song('b').id);
+    }
+
+    #[test]
+    fn folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept() {
+        let harness = Harness::new();
+        let [kept, copy] = [harness.song('a').id, harness.song('b').id];
+        harness.player.favourite(copy, true).expect("a favourite");
+        let playlist = harness
+            .player
+            .create_playlist("Evening".into())
+            .expect("a playlist");
+        harness
+            .player
+            .add_to_playlist(playlist, vec![copy])
+            .expect("a playlist row");
+
+        let folded = harness
+            .player
+            .fold_identical_songs(kept, vec![copy])
+            .expect("a fold");
+
+        assert_eq!(folded.forgotten, 1);
+        assert!(matches!(
+            harness.player.catalog.track(copy),
+            Err(Error::UnknownTrack)
+        ));
+        assert!(
+            harness
+                .player
+                .catalog
+                .track(kept)
+                .expect("the kept song")
+                .favourite
+        );
+        assert_eq!(
+            harness
+                .player
+                .playlist_tracks(playlist, 0, 10)
+                .expect("the playlist")
+                .iter()
+                .map(|track| track.id)
+                .collect::<Vec<_>>(),
+            vec![kept]
+        );
+    }
+
+    #[test]
+    fn a_deleted_song_leaves_the_catalog_the_queue_and_its_playlists() {
+        let harness = Harness::new();
+        harness.resumed("abc", 0, 0);
+        let gone = harness.song('b').id;
+        let playlist = harness
+            .player
+            .create_playlist("Evening".into())
+            .expect("a playlist");
+        harness
+            .player
+            .add_to_playlist(playlist, vec![gone, harness.song('c').id])
+            .expect("playlist rows");
+
+        let forgotten = harness
+            .player
+            .forget_deleted_songs(vec![gone])
+            .expect("a deletion");
+
+        assert_eq!(forgotten.forgotten, 1);
+        assert_eq!(forgotten.left_the_queue, 1);
+        assert_eq!(harness.queued(), "ac");
+        assert!(matches!(
+            harness.player.catalog.track(gone),
+            Err(Error::UnknownTrack)
+        ));
+        assert_eq!(
+            harness
+                .player
+                .playlist_tracks(playlist, 0, 10)
+                .expect("the playlist")
+                .iter()
+                .map(|track| track.id)
+                .collect::<Vec<_>>(),
+            harness.ids("c")
+        );
+    }
+
+    #[test]
     fn an_empty_queue_takes_what_is_queued_paused_on_its_first_row() {
         let harness = Harness::new();
 

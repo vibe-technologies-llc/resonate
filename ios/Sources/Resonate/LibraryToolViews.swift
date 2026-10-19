@@ -35,6 +35,9 @@ struct LibraryToolsView: View {
                 NavigationLink(value: Destination.statistics) {
                     ToolRow(title: "Statistics", detail: "Your listening history and most played music", symbol: "chart.bar")
                 }
+                NavigationLink(value: Destination.identicalSongs) {
+                    ToolRow(title: "Identical songs", detail: "Find files held twice and keep one of each", symbol: "square.on.square")
+                }
                 Button { navigation.filters = true } label: {
                     ToolRow(title: "Filter and sort", detail: "Genre, artist, audio quality and more", symbol: "line.3.horizontal.decrease.circle")
                 }

@@ -65,6 +65,7 @@ enum Destination: Hashable, Codable {
     case songDetails(UInt64)
     case appearance
     case background
+    case identicalSongs
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -94,6 +95,7 @@ final class Navigation {
     var filters = false
     var listening = false
     var tagging: TagEditing?
+    var deleting: SongsToDelete?
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
     var searchPlace = SearchPlace.library
@@ -287,6 +289,7 @@ struct RootView: View {
                 .navigationTransition(.zoom(sourceID: PlayerTransition.source, in: player))
                 .environment(navigation)
         }
+        .modifier(DeleteSongsConfirmation(insidePlayer: false))
         .sheet(isPresented: $navigation.sleepTimer) {
             SleepTimerSheet().presentationDetents([.medium, .large])
         }
@@ -453,6 +456,7 @@ struct DestinationView: View {
         case .processing: ProcessingView()
         case .appearance: AppearanceView()
         case .background: BackgroundView()
+        case .identicalSongs: IdenticalSongsView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }
