@@ -45,8 +45,17 @@ Bus `DesktopEntry` and the notification `desktop-entry` hint follow: `mpris.rs` 
 `FLATPAK_ID` where set, else `resonate`.
 
 **`packaging/server/` deploys the sync server, not the player** (`server.md`): a hardened systemd
-unit and its environment file; no package builds it yet.
+unit, its environment file and the two recipes that install them with the `resonate-server` binary:
+`PKGBUILD` (`resonate-server-git`) and `resonate-server.spec` (`resonate-server`). Both build only
+`--package resonate-server` (it reaches no PipeWire, GPUI or Vulkan, so the recipes name no such
+dependency), set `RUSTFLAGS` as the player's recipes do, install the unit under systemd's unit
+directory and the environment file as `/etc/resonate-server/resonate-server.env`, kept across an
+upgrade (`backup=` / `%config(noreplace)`), and leave the certificate and key to the listener. The
+spec reads the player's source archive (`resonate-<version>.tar.gz`) and is held to the workspace's
+version like the player's (`the_server_spec_builds_the_version_cargo_declares`);
+`every_server_package_installs_the_unit_and_its_environment` holds both recipes to the two files.
+Neither is built by CI.
 
-**`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the PKGBUILD beside it**, committed because
-the AUR reads it. Regenerate it when publishing to the AUR; no test holds it, since the VCS
-`pkgver` moves with every commit.
+**`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the player's PKGBUILD beside it**, committed
+because the AUR reads it. Regenerate it when publishing to the AUR; no test holds it, since the VCS
+`pkgver` moves with every commit. The server's PKGBUILD has none until it is published.

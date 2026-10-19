@@ -5,6 +5,8 @@ const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
 const CONFIG_MAN_PAGE: &str = "resonate-config.toml.5";
 const PACKAGE_RECIPES: [&str; 3] = ["PKGBUILD", "resonate.spec", FLATPAK_MANIFEST];
+const SERVER_RECIPES: [&str; 2] = ["server/PKGBUILD", "server/resonate-server.spec"];
+const SERVER_FILES: [&str; 2] = ["resonate-server.service", "resonate-server.env"];
 
 fn packaging(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -100,6 +102,37 @@ fn the_rpm_spec_builds_the_version_cargo_declares() {
         env!("CARGO_PKG_VERSION"),
         "the spec's Version is not the workspace's; a release archive would not match it"
     );
+}
+
+#[test]
+fn the_server_spec_builds_the_version_cargo_declares() {
+    let spec = packaging("server/resonate-server.spec");
+
+    let declared = spec
+        .lines()
+        .find_map(|line| line.strip_prefix("Version:"))
+        .map(str::trim)
+        .expect("the server spec declares a version");
+
+    assert_eq!(
+        declared,
+        env!("CARGO_PKG_VERSION"),
+        "the server spec's Version is not the workspace's; a release archive would not match it"
+    );
+}
+
+#[test]
+fn every_server_package_installs_the_unit_and_its_environment() {
+    for file in SERVER_FILES {
+        packaging(&format!("server/{file}"));
+    }
+
+    for recipe in SERVER_RECIPES {
+        let text = packaging(recipe);
+        for file in SERVER_FILES {
+            assert!(text.contains(file), "{recipe} does not install {file}");
+        }
+    }
 }
 
 #[test]

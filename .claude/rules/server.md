@@ -52,4 +52,5 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; the certificate chain and key
 are handed in as systemd credentials from `/etc/resonate-server/fullchain.pem` and `privkey.pem`
 (a root-owned Let's Encrypt key a dynamic user could not read); `resonate-server.env` sets `LISTEN`
-and `RUST_LOG`. SIGINT and SIGTERM close the endpoint and wait for it to go idle.
+and `RUST_LOG`. SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
+`resonate-server.env` (`packaging.md`).
