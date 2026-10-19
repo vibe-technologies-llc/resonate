@@ -122,6 +122,11 @@ own curve. Default: none.
 Table. Maps a sink's node.name to the profile it uses, or to true for its own curve. A binding that
 names neither is ignored with a warning. Default: empty.
 .TP
+.B equaliser-measurer
+String. The measurer whose AutoEq correction is preferred where several measured a device, for
+resonate\-eq \-\-find and \-\-suggest (which \-\-measurer outranks) and the pane's suggestions.
+A device it did not measure keeps the usual ranking. Default: none.
+.TP
 .B convolution
 Path. An impulse response convolved with the signal, for room correction. Default: none.
 .SH LIBRARY AND FILES

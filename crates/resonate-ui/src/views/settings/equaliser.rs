@@ -14,7 +14,7 @@ use resonate_engine::{Command, NodeName, Sources, read_impulse};
 use resonate_eq::{Binding, Device, ProfileName};
 
 use crate::{
-    Notice, ResonateApp, Setting,
+    Bindings, Notice, ResonateApp, Setting,
     app::{
         BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
         CONTROL_CONTEXT,
@@ -1156,6 +1156,18 @@ impl RootView {
             Command::SetEqualisation(std::sync::Arc::new(equalisation)),
             cx,
         );
+    }
+
+    pub(crate) fn follow_the_bindings_read_again(
+        &mut self,
+        bindings: Bindings,
+        cx: &mut Context<Self>,
+    ) {
+        self.held_band = None;
+        self.equaliser
+            .update(cx, |model, _| model.rebound(bindings));
+        self.follow_the_binding(cx);
+        cx.notify();
     }
 
     pub(crate) fn follow_the_binding(&mut self, cx: &mut Context<Self>) {

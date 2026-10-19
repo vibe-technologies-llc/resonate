@@ -25,16 +25,18 @@ pub enum Reloadable {
     Equaliser,
     Submission,
     Sync,
+    Tidal,
 }
 
 impl Reloadable {
-    pub const ALL: [Self; 3] = [Self::Equaliser, Self::Submission, Self::Sync];
+    pub const ALL: [Self; 4] = [Self::Equaliser, Self::Submission, Self::Sync, Self::Tidal];
 
     pub const fn name(self) -> &'static str {
         match self {
             Self::Equaliser => "equaliser",
             Self::Submission => "submission",
             Self::Sync => "sync",
+            Self::Tidal => "tidal",
         }
     }
 

@@ -769,6 +769,7 @@ impl RootView {
         let for_the_pass = global.for_the_pass.clone();
         let corrections = Arc::clone(&global.corrections);
         let bindings = global.bindings.clone();
+        let measurer = global.measurer.clone();
         let places = global.places.clone();
         let resume = global.resume;
         let organise_as = global.organise_as.clone();
@@ -1082,12 +1083,14 @@ impl RootView {
         .detach();
 
         let equaliser = cx.new(|cx| {
-            EqualiserModel::saved_on_leaving(
+            let mut model = EqualiserModel::saved_on_leaving(
                 places.equaliser.clone(),
                 Arc::clone(&corrections),
                 bindings,
                 cx,
-            )
+            );
+            model.prefer(measurer);
+            model
         });
         cx.observe(&equaliser, |this, equaliser, cx| {
             let (notice, untold) =

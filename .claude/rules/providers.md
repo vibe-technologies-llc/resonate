@@ -361,7 +361,8 @@ fetched whole and lands as a track row.
   `Online` and `tidal-refresh-token`. `resonate tidal` is the same windowless
   (`providers::sign_in_to_tidal`): refuses with `OnlineOff` or `NoTidalClient` before asking, waits
   with the first interrupt as cancel (`SignInCancelled`), writes via `config::store`
-  (`a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked`).
+  (`a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked`) and tells a
+  running window the account (`Reloadable::Tidal`, `binary.md`), which takes it as if signed in there.
 - **Paces and identifies itself as Subsonic does**; `Account`'s `Debug` prints neither secret nor
   token. `asker.rs` is the pacing, retrying and reading both TIDAL providers share; `played.rs` what
   follows a playback answer, `played::found` (link first, then `Finds::tracks_for`) written once over

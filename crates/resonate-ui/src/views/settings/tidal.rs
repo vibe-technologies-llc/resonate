@@ -10,7 +10,7 @@ use gpui::{
 use resonate_providers::{Authorizing, Client, Error, RefreshToken};
 
 use crate::{
-    Notice, ResonateApp, Setting,
+    Notice, ResonateApp, Setting, TidalSignIn,
     icons::Icon,
     settings::Online,
     views::{
@@ -240,6 +240,30 @@ impl RootView {
         self.report(Notice::Done(said.to_owned()), cx);
         self.the_sources_moved(cx);
         window.focus(&self.focus);
+        cx.notify();
+    }
+
+    pub(crate) fn follow_the_tidal_sign_in_made_elsewhere(
+        &mut self,
+        signed_in: TidalSignIn,
+        cx: &mut Context<Self>,
+    ) {
+        let TidalSignIn {
+            client_id,
+            client_secret,
+            refresh_token,
+        } = signed_in;
+        for (account, given) in [
+            (TidalAccount::ClientId, client_id),
+            (TidalAccount::ClientSecret, client_secret),
+            (TidalAccount::RefreshToken, refresh_token),
+        ] {
+            self.tidal_field(account)
+                .clone()
+                .update(cx, |field, cx| field.hold(given.clone(), cx));
+            cx.update_global::<ResonateApp, _>(|global, _| account.hold(&mut global.online, given));
+        }
+        self.the_sources_moved(cx);
         cx.notify();
     }
 

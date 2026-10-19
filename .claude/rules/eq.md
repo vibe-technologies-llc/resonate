@@ -164,8 +164,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   walk that reads a profile (`apo::walk`) names each line's role (`Preamp`, `Band(k)`, `Graphic`,
   else `Other`), bands are aligned old to new by longest common run so an edit changes the lines it
   moved (a band inserted or removed lands or goes beside its own comment), and every `Other` line
-  (comments, `Include:`, `Device:`, `If:`, a second device's lines, filters past `MAX_BANDS`)
-  stays where it was; a band given other channels is wrapped in `Channel:` lines that restore the
+  (comments, `Include:`, `Device:`, `If:`, a second device's lines) stays where it was, while a
+  `Surplus` line (a filter past `MAX_BANDS`, which never played) goes with any save that changes the
+  profile, else removing a band would bring the 33rd into play at the next read
+  (`removing_a_band_from_a_profile_of_more_than_the_cap_does_not_bring_the_next_into_play`); a band given other channels is wrapped in `Channel:` lines that restore the
   scope after it. The edit is read back and must equal the wanted profile, else one more try
   states the preamp, else the model is written fresh (`apo::write`). A model nothing moved leaves
   the file untouched. Line ending, UTF-8 mark and encoding are the file's own (`Standing`,
@@ -247,6 +249,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   name (case-folded) and rank it first among the rows that tie, `resonate eq --measurer` beside
   `--find` or `--suggest`; a device it did not measure keeps the ranking and `--suggest` says so
   (`a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking`).
+  `equaliser-measurer` keeps one for every device: the flag outranks it, and the pane's search and
+  suggestion read it too (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
   `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is
@@ -283,7 +287,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   keeps its pointer for `OutputSettings`' fast path. A pending save is written when the pane moves
   to another curve; an import/fetch replacing a shown file drops the unsaved copy; replacing a
   *bound* file raises `untold`, answered with `tell_the_engine`
-  (`a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next`).
+  (`a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next`). **Bindings changed
+  from outside are followed**: `resonate eq` writes the file and the player's `Reload` reaches the
+  window as `Followed::Bindings`, which `RootView::follow` hands to `EqualiserModel::rebound` (the
+  unsaved edit is written first, held curves are read afresh, the shown curve is chosen again for
+  the sink in use), so the next edit writes from what the engine plays
+  (`bindings_changed_from_outside_are_what_the_pane_shows_and_tells_the_engine_next`).
 - **The drawn range follows the curve**: `widest_drawn` = largest magnitude over the `CURVE_COLUMNS`
   (192), rounded out to `LEVEL_MARKED_EVERY_DB` (5), never under `DRAWN_BETWEEN_MILLIBELS` (15 dB);
   `marked_levels` labels only the edges (a mid label sits on the trace); the wash runs to the zero

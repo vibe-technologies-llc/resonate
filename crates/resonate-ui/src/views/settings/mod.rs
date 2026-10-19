@@ -35,7 +35,7 @@ pub(crate) use crate::views::settings::{
     tidal::{SigningIn, TidalAccount},
 };
 use crate::{
-    AppIcon, ResonateApp, Setting, Synchronised,
+    AppIcon, Followed, ResonateApp, Setting, Synchronised,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     motion, theme,
@@ -94,6 +94,15 @@ fn said_under<T: Choice>(held: T) -> SharedString {
 }
 
 impl RootView {
+    pub(crate) fn follow(&mut self, followed: Followed, cx: &mut Context<Self>) {
+        match followed {
+            Followed::Bindings(bindings) => self.follow_the_bindings_read_again(bindings, cx),
+            Followed::Tidal(signed_in) => {
+                self.follow_the_tidal_sign_in_made_elsewhere(signed_in, cx)
+            }
+        }
+    }
+
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let narrowing = Narrowing::of(self.finding.read(cx).text());
         let category = self.settings_category;

@@ -50,10 +50,10 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     let bound = wanted.r#for.as_deref().map(NodeName::new);
 
     if let Some(text) = wanted.find.as_deref() {
-        return find(config, text, wanted.measurer.as_deref());
+        return find(config, text, measurer_of(config, wanted));
     }
     if wanted.suggest {
-        return suggested(cli, config, wanted.measurer.as_deref());
+        return suggested(cli, config, measurer_of(config, wanted));
     }
     if wanted.list {
         return list(&store, config);
@@ -463,6 +463,13 @@ fn asked(config: &Config) -> Result<(Corrected, Arc<Catalogue>)> {
     Ok((corrections, catalogue))
 }
 
+fn measurer_of<'a>(config: &'a Config, wanted: &'a EqArgs) -> Option<&'a str> {
+    wanted
+        .measurer
+        .as_deref()
+        .or_else(|| config.equaliser_measurer())
+}
+
 fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
     let (_, catalogue) = asked(config)?;
     let hits = search_preferring(&catalogue, text, measurer);
@@ -729,6 +736,20 @@ mod tests {
                 "{refused:?} was taken"
             );
         }
+    }
+
+    #[test]
+    fn the_measurer_a_flag_names_outranks_the_one_the_settings_keep() {
+        let kept = Config {
+            equaliser_measurer: Some("Rtings".to_owned()),
+            ..Config::default()
+        };
+        let plain = asked(&["--suggest"]);
+        let flagged = asked(&["--suggest", "--measurer", "crinacle"]);
+
+        assert_eq!(measurer_of(&kept, &plain), Some("Rtings"));
+        assert_eq!(measurer_of(&kept, &flagged), Some("crinacle"));
+        assert_eq!(measurer_of(&Config::default(), &plain), None);
     }
 
     #[test]

@@ -244,6 +244,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   as its error after the pass, `resonate mcp` logs it at error, and the window logs it and toasts it
   once when the pass ends (`Sourcing::unkept`, `providers::sourced`'s second half). The settings path
   is already the default config file, so no further location is tried.
+- `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
+  device (one for every device); `eq --find`/`--suggest` take `--measurer` over it and the
+  equaliser pane's search and suggestion take it over the fixed ranking
+  (`EqualiserModel::prefer`); read at start, no pane control.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
@@ -282,10 +286,13 @@ said to take it up; one that refused, or is too old to know `Reload`, is said to
 started with and to hear the change once started again; with none running, or no bus, nothing is
 said. `Desktop::reload` (`mpris.rs`) answers only for the file it reads (`same_file`, so a
 `--config` elsewhere is a refusal): `Equaliser` reads the file again and sends
-`Command::SetEqualisation` from `equaliser::resolved`; `Submission` and `Sync` are `Applied` where
+`Command::SetEqualisation` from `equaliser::resolved` and, for a window, sends the window the bindings
+read again (`resonate_ui::Followed::Bindings`); `Submission` and `Sync` are `Applied` where
 the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file
-themselves. `tidal` names no group: the window's providers are registered from the pane's own copy
-of the account, so a TIDAL sign-in is only said to wait for the next start.
+themselves; `Tidal` (named by `resonate tidal`) reads the account again and hands a window
+`Followed::Tidal`, which the window writes into its own `Online` and TIDAL fields before asking
+every unheld want again, and a windowless player refuses it (it registers no providers). The
+window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and

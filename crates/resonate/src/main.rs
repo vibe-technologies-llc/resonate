@@ -283,7 +283,7 @@ fn run() -> Result<()> {
         }
         Some(Sub::Tidal) => {
             let settings = settings_path(&cli)?;
-            reloading::delivering(&settings, None, || {
+            reloading::delivering(&settings, Some(Reloadable::Tidal), || {
                 providers::sign_in_to_tidal(&config, &settings)
             })
         }
@@ -2661,6 +2661,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     signals::quit_when_told(asked_to_quit.clone(), Arc::clone(&player));
     let (attending, attention) = crossbeam_channel::unbounded();
     let (asked_to_raise, raising) = bounded(1);
+    let (follow, followed) = crossbeam_channel::unbounded();
     let notify = Arc::new(AtomicBool::new(config.notifies()));
     let by_sound = online::by_sound(&config);
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
@@ -2673,6 +2674,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         Some(mpris::Window {
             attention,
             raise: asked_to_raise,
+            followed: follow,
         }),
         &notify,
     );
@@ -2710,6 +2712,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             signs_in: providers::signs_in(),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
+            measurer: config.equaliser_measurer().map(str::to_owned),
             online: resonate_ui::Online {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),
@@ -2786,6 +2789,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             quit: quitting,
             raise: raising,
             attention: attending,
+            followed,
         },
     );
     drop(presenter);
