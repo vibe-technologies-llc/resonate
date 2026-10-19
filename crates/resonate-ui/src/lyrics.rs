@@ -12,7 +12,7 @@ use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
 use resonate_library::LyricsAhead;
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
-use crate::{models::Scale, theme};
+use crate::{models::Scale, theme, views::kit};
 
 pub(crate) fn near_the_words(
     pointer: Point<Pixels>,
@@ -27,6 +27,20 @@ pub(crate) fn near_the_words(
     let middle = pane.left() + pane.size.width / 2.0;
 
     (pointer.x - middle).abs() <= column / 2.0 + slack
+}
+
+pub(crate) fn moved_to_show(
+    line: Bounds<Pixels>,
+    offset: Pixels,
+    pane: Bounds<Pixels>,
+    room: Pixels,
+) -> Pixels {
+    let top = line.top() + offset;
+    let bottom = line.bottom() + offset;
+    let seen_top = pane.top() + room;
+    let seen_bottom = pane.bottom() - room;
+
+    kit::moved_into(top, bottom, seen_top, seen_bottom).unwrap_or(px(0.0))
 }
 
 fn column_within(pane: Pixels, measures: Measures) -> Pixels {
@@ -580,6 +594,7 @@ pub struct LyricsModel {
     spread: Turn<Falloff>,
     glide: Option<Glide>,
     hand_at: Option<Instant>,
+    reached: Option<usize>,
     breathing_for: Option<Breathing>,
     fading_breath: Option<FadingBreath>,
     clock: Option<Clock>,
@@ -610,6 +625,7 @@ impl LyricsModel {
             spread: Turn::still(Falloff::Around),
             glide: None,
             hand_at: None,
+            reached: None,
             breathing_for: None,
             fading_breath: None,
             clock: None,
@@ -1056,6 +1072,36 @@ impl LyricsModel {
         self.spread_out(now);
     }
 
+    pub fn reached(&mut self, index: usize, now: Instant) -> bool {
+        if self.reached == Some(index) {
+            return false;
+        }
+        let Some(line) = self.scroll.bounds_for_item(index) else {
+            return false;
+        };
+        let pane = self.scroll.bounds();
+        if pane.size.height <= px(0.0) {
+            return false;
+        }
+
+        let offset = self.scroll.offset();
+        let moved = moved_to_show(line, offset.y, pane, self.measures().dissolve);
+        self.reached = Some(index);
+        self.led_by_hand(now);
+        if moved != px(0.0) {
+            self.scroll
+                .set_offset(point(offset.x, self.scale.snapped(offset.y + moved)));
+        }
+
+        true
+    }
+
+    pub fn left(&mut self, index: usize) {
+        if self.reached == Some(index) {
+            self.reached = None;
+        }
+    }
+
     pub fn following(&self, now: Instant) -> bool {
         self.hand_at
             .is_none_or(|at| now.saturating_duration_since(at) >= HANDS_OFF)
@@ -1153,6 +1199,7 @@ impl LyricsModel {
         self.light = Turn::still([None; 2]);
         self.glide = None;
         self.hand_at = None;
+        self.reached = None;
         self.breathing_for = None;
         self.fading_breath = None;
         self.opened_out = false;
@@ -1225,6 +1272,31 @@ mod tests {
             title: title.map(ToOwned::to_owned),
             ..Wanted::for_media(MediaLocation::local("/music/echoes.flac"))
         }
+    }
+
+    fn pane_of(top: f32, bottom: f32) -> Bounds<Pixels> {
+        Bounds::from_corners(point(px(0.0), px(top)), point(px(300.0), px(bottom)))
+    }
+
+    #[test]
+    fn a_line_in_view_is_left_where_it_is_and_one_out_of_view_is_moved_just_into_it() {
+        let pane = pane_of(100.0, 500.0);
+        let room = px(20.0);
+        let line = |top: f32| pane_of(top, top + 40.0);
+
+        assert_eq!(moved_to_show(line(200.0), px(0.0), pane, room), px(0.0));
+        assert_eq!(moved_to_show(line(700.0), px(0.0), pane, room), px(-260.0));
+        assert_eq!(moved_to_show(line(-300.0), px(0.0), pane, room), px(420.0));
+        assert_eq!(moved_to_show(line(700.0), px(-300.0), pane, room), px(0.0));
+    }
+
+    #[test]
+    fn a_line_at_the_dissolving_edge_is_moved_clear_of_it() {
+        let pane = pane_of(100.0, 500.0);
+
+        let moved = moved_to_show(pane_of(470.0, 510.0), px(0.0), pane, px(40.0));
+
+        assert_eq!(moved, px(-50.0));
     }
 
     #[test]

@@ -947,7 +947,12 @@ pub(crate) fn brought_into_view_within(
     .inset_0()
 }
 
-fn moved_into(start: Pixels, end: Pixels, seen_start: Pixels, seen_end: Pixels) -> Option<Pixels> {
+pub(crate) fn moved_into(
+    start: Pixels,
+    end: Pixels,
+    seen_start: Pixels,
+    seen_end: Pixels,
+) -> Option<Pixels> {
     if start < seen_start {
         Some(seen_start - start)
     } else if end > seen_end {

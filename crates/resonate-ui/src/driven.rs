@@ -1251,6 +1251,64 @@ mod tests {
     }
 
     #[gpui::test]
+    fn tabbing_down_an_unsynced_sheet_keeps_the_line_reached_in_view(cx: &mut TestAppContext) {
+        const LINES: usize = 40;
+        const TABS: usize = 90;
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        let sheet: String = (0..LINES).map(|n| format!("words of line {n}\n")).collect();
+        std::fs::write(folder.path().join("one.lrc"), sheet).expect("a sidecar beside the track");
+        let mut driven = Driven::singing(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
+        driven.until(|root, cx| root.lyrics.read(cx).text().len() == LINES);
+        driven.settle();
+
+        let mut deepest = 0;
+        for _ in 0..TABS {
+            driven.cx.simulate_keystrokes("tab");
+            driven.settle();
+
+            let reached = driven.cx.update(|window, cx| {
+                let root = root.read(cx);
+                (0..LINES).find(|line| {
+                    root.controls
+                        .at(format!("lyric-{line}"), cx)
+                        .is_focused(window)
+                })
+            });
+            let Some(line) = reached else {
+                continue;
+            };
+            deepest = deepest.max(line);
+
+            let (seen, drawn) = driven.read(|root, cx| {
+                let model = root.lyrics.read(cx);
+                let pane = model.scroll().bounds();
+                let drawn = model
+                    .scroll()
+                    .bounds_for_item(line)
+                    .expect("a line is drawn");
+                let top = drawn.top() + model.scroll().offset().y;
+                let bottom = drawn.bottom() + model.scroll().offset().y;
+                (pane, (top, bottom))
+            });
+            assert!(
+                drawn.0 >= seen.top() && drawn.1 <= seen.bottom(),
+                "line {line} was reached by tab but stands outside the pane"
+            );
+        }
+
+        assert!(
+            deepest > LINES / 2,
+            "tab only got as far as line {deepest} of {LINES}"
+        );
+    }
+
+    #[gpui::test]
     fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
         cx: &mut TestAppContext,
     ) {

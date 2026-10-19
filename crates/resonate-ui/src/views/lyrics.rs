@@ -1,9 +1,10 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, Font, FontWeight, HighlightStyle,
-    Hsla, LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent, SharedString, StyledText,
-    canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px, rgb, size,
+    AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, ElementId, Font, FontWeight,
+    HighlightStyle, Hsla, LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent,
+    SharedString, StyledText, canvas, div, fill, linear_color_stop, linear_gradient, point,
+    prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
 use resonate_library::LyricsAhead;
@@ -501,7 +502,8 @@ impl RootView {
             .flex_col()
             .when(line.breathes, |carried| {
                 carried.child(breath_room(line.breath, second, line.two_voices, measures))
-            });
+            })
+            .child(self.brings_into_view_when_reached(line.index, cx));
 
         let words = line.text.clone();
         let inside = (line.width - measures.pad * 2.0).max(px(0.0));
@@ -612,6 +614,29 @@ impl RootView {
         );
 
         row.child(carried.child(sung)).into_any_element()
+    }
+
+    fn brings_into_view_when_reached(&self, index: usize, cx: &App) -> Canvas<()> {
+        let handle = self
+            .controls
+            .at(ElementId::from(("lyric", index)).to_string(), cx);
+        let lyrics = self.lyrics.clone();
+
+        canvas(
+            move |_, window, cx| {
+                if !handle.is_focused(window) {
+                    lyrics.update(cx, |model, _| model.left(index));
+                    return;
+                }
+                let moved = lyrics.update(cx, |model, _| model.reached(index, Instant::now()));
+                if moved {
+                    window.refresh();
+                }
+            },
+            |_, (), _, _| {},
+        )
+        .absolute()
+        .inset_0()
     }
 
     fn copies_a_lyric(&self, at: Point<Pixels>, line: &SharedString, cx: &Context<Self>) -> Menu {
