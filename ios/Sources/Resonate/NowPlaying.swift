@@ -336,6 +336,11 @@ final class NowPlaying {
         rewrite()
     }
 
+    func queueChanged() {
+        guard let shown, shown.queueCount != library.queue.count else { return }
+        rewrite()
+    }
+
     private func rewrite() {
         guard native != nil, var state = library.snapshot else { return }
         state.positionMs = library.clock.positionMs
@@ -420,6 +425,12 @@ final class NowPlaying {
         ]
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
 
+        if next.track.favourite != shown?.track.favourite || next.queueIndex != shown?.queueIndex
+            || next.queueCount != shown?.queueCount || next.shuffle != shown?.shuffle
+            || next.repeatMode != shown?.repeatMode || shown == nil
+        {
+            enableCommands(for: next)
+        }
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = info
         center.playbackState =
@@ -428,12 +439,6 @@ final class NowPlaying {
             case .paused: .paused
             case .stopped: .stopped
             }
-        if next.track.favourite != shown?.track.favourite || next.queueIndex != shown?.queueIndex
-            || next.queueCount != shown?.queueCount || next.shuffle != shown?.shuffle
-            || next.repeatMode != shown?.repeatMode || shown == nil
-        {
-            enableCommands(for: next)
-        }
         shown = next
         written = Written(positionMs: position, at: now, rate: rate)
     }

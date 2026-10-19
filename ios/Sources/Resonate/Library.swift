@@ -209,7 +209,10 @@ final class Library {
         didSet { if collectionOrder != oldValue { reloadCollections() } }
     }
     var queue: [Track] = [] {
-        didSet { findPlayingRow() }
+        didSet {
+            findPlayingRow()
+            if queue.count != oldValue.count { nowPlaying.queueChanged() }
+        }
     }
     private(set) var playingQueueRow: Int?
     private(set) var snapshot: Snapshot? {
