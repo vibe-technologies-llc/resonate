@@ -149,7 +149,16 @@ struct SearchResults: View {
     }
 }
 
+@MainActor
+enum Keyboard {
+    static func stow() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
 struct SeeAllHeader: View {
+    private static let reachBeyondTheLine: CGFloat = 12
+
     let title: String
     let more: Bool
     let seeAll: () -> Void
@@ -163,7 +172,10 @@ struct SeeAllHeader: View {
                     .accessibilityLabel("See all \(title.lowercased())")
                     .font(.subheadline)
                     .textCase(nil)
-                    .touchTarget()
+                    .frame(minWidth: 44)
+                    .padding(.vertical, Self.reachBeyondTheLine)
+                    .contentShape(.rect)
+                    .padding(.vertical, -Self.reachBeyondTheLine)
             }
         }
     }
@@ -258,17 +270,17 @@ struct SearchCompletions: View {
                                 .font(.subheadline)
                                 .lineLimit(1)
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
+                                .padding(.vertical, 8)
                                 .glassEffect(.regular.interactive(), in: .capsule)
-                                .touchTarget()
+                                .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Search for \(completion)")
                     }
                 }
-                .padding(.horizontal, 16)
             }
-            .listRowInsets(EdgeInsets())
+            .contentMargins(.horizontal, 16, for: .scrollContent)
+            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 2, trailing: 0))
             .listRowSeparator(.hidden)
         }
     }

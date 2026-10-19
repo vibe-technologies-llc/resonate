@@ -5,8 +5,6 @@ import SwiftUI
 
 struct MiniPlayer: View {
     private static let swipeDistance: CGFloat = 40
-    private static let titledFrom: CGFloat = 150
-    private static let skipsFrom: CGFloat = 200
     private static let inlineInset: CGFloat = 12
     private static let artistOpacity = 0.6
 
@@ -18,13 +16,30 @@ struct MiniPlayer: View {
     @ScaledMetric(relativeTo: .subheadline) private var inlineArtworkEdge: CGFloat = 28
     let zoom: Namespace.ID
     @State private var skipped = 0
-    @State private var width: CGFloat = 0
+    @State private var fit = InlineFit.unmeasured
+
+    private enum InlineFit {
+        private static let titledFrom: CGFloat = 150
+        private static let skipsFrom: CGFloat = 200
+
+        case unmeasured
+        case coverAndPlay
+        case titled
+        case skipping
+
+        init(width: CGFloat) {
+            self =
+                width >= Self.skipsFrom ? .skipping
+                : width >= Self.titledFrom ? .titled
+                : .coverAndPlay
+        }
+    }
 
     var body: some View {
         let track = library.playingTrack
         let expanded = placement != .inline
-        let titled = expanded || width == 0 || width >= Self.titledFrom
-        let skips = expanded || width >= Self.skipsFrom
+        let titled = expanded || fit != .coverAndPlay
+        let skips = expanded || fit == .skipping
         HStack(spacing: expanded ? 12 : 8) {
             ArtworkView(track: track, corner: expanded ? 8 : 7, handsOver: true)
                 .frame(width: expanded ? artworkEdge : inlineArtworkEdge, height: expanded ? artworkEdge : inlineArtworkEdge)
@@ -62,7 +77,7 @@ struct MiniPlayer: View {
         .buttonStyle(.plain)
         .padding(.horizontal, expanded ? 14 : Self.inlineInset)
         .frame(maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: InlineFit.self) { InlineFit(width: $0.size.width) } action: { fit = $0 }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
         .simultaneousGesture(

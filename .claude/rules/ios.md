@@ -397,7 +397,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
   no settle wait.
 - **An icon-only control is at least 44 pt** (`touchTarget()`: a minimum frame and a rectangle
-  content shape, put inside a control's label so the hit area grows with it: the favourite heart, a *See all* link, a header's menu and the recent searches' *Clear*; a folder row's three actions are large bordered buttons that stack where they do not fit; the mini player's skips and play button and the transport row's skips, shuffle and
+  content shape, put inside a control's label so the hit area grows with it: the favourite heart, a header's menu and the recent searches' *Clear*; a folder row's three actions are large bordered buttons that stack where they do not fit; the mini player's skips and play button and the transport row's skips, shuffle and
   repeat (the active mode also carries a dot, so colour is never the only sign), a filter token, the online song menu, *See all*). A slider speaks its value in its unit
   (`CommittingSlider.spoken`: decibels, milliseconds), not a percentage. Now Playing's secondary labels (artist, album, times, the quality line, the sleep countdown, the volume glyphs and the Up next list's headings and detail lines, the last through `secondaryInk()`, which reads the `liftedField` environment the player's `QueueList` sets) take `nowPlayingInk`, primary at 95 % and solid under Increase Contrast or Reduce Transparency, since the field behind them is lifted by the shader. A long status message opens in full on a tap and always at accessibility text sizes. What is lettered on the
   accent (Play, the active mode toggle, the swatch tick, a chosen handle) takes `Color.wornInk`,
@@ -445,7 +445,7 @@ heart (the song's heart is Now Playing's). Opening Now Playing the first time in
 `AVRoutePickerView` and, 600 ms in, an `MPVolumeView`, each the first of its framework, so
 `PlayerWarmup` builds one of each 2 s after launch and drops them, and the first opening costs no
 more than the next. Inline (the
-tab bar minimised on scroll) it measures itself and keeps what fits: a 28 pt cover and the play
+tab bar minimised on scroll) it measures itself and keeps what fits, the width read as one of three fits (`InlineFit`) so the accessory's animated resizing redraws the player only as a threshold is crossed, never every frame: a 28 pt cover and the play
 button always, the title from 150 pt, next from 200 pt (a minimised capsule beside the search
 button is about 220 pt, and without next the title trailed into empty glass), tighter spacing and a
 12 pt inset each side, so the square cover clears the capsule's rounded end; the title stays the
@@ -766,10 +766,15 @@ every route change (a pair of headphones at the same rate included), not from th
   that opens Settings (`OnlineOffRow`); a link (`OnlineAsked.isLink`) shows *Online* alone. The tab
   has no `.searchSuggestions`. With no text the page lists the recent searches and a hint. Library
   tools' *Search* opens this tab (`Navigation.openSearch`); there is no destination of its own.
+- **Search's rows sit close**: a completion is a glass capsule 8 pt taller than its line, its row
+  inset 6 pt above and 2 pt below and scrolled within 16 pt content margins
+  (`contentMargins(.horizontal:for: .scrollContent)`), and *See all* reaches 12 pt above and below
+  its line through its content shape while laying out at the line's height
+  (`SeeAllHeader.reachBeyondTheLine`), so neither a completion nor a header stands 44 pt tall.
 - **A result answers while the keyboard is up.** The Search tab's and the Songs page's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first
-  (`searchFocused`, `SearchResults.chosen`). A library search shows no spinner: the last answer
+  (`Keyboard.stow`, `SearchResults.chosen`), resigning the first responder rather than binding `searchFocused`, whose focus binding fought the system field as it moved above the keyboard. A library search shows no spinner: the last answer
   stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar
   spinner added and removed with each keystroke rebuilt the bar under the focused field, and one
   held hidden for the whole search drew an empty slot in the glass pill iOS 26 groups trailing
