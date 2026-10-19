@@ -68,12 +68,22 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   decodes as 32-bit float** (`container::representable`); declared depth stays 64.
 - **This build drops every priming itself** (`AudioDecoderOptions::gapless(false)`); only
   `MediaInfo::playable` trims. `container::priming` prefers `Track::delay`/`padding`/`num_frames`,
-  else the box scan (`iTunSMPB`, else the first run of `elst` entries that continue one another in
-  media time, within a tick; an empty edit or a jump elsewhere ends it, so a spliced M4A plays its
-  first stretch alone) or an iTunes MP3 `COMM` note (`Priming::behind_a_decoder_delay` adds
-  `MP3_DECODER_DELAY` to delay, subtracts it from padding). **`playable` = decoded frames, possibly
-  open-ended;** `duration` = playable count (seek bar, `mpris:length`, `heard.rs`). `Priming` holds
-  the count as `Option`: a reader can name a delay without a length and the priming must still go.
+  else the box scan (`iTunSMPB`, else the `elst` entries) or an iTunes MP3 `COMM` note
+  (`Priming::behind_a_decoder_delay` adds `MP3_DECODER_DELAY` to delay, subtracts it from padding).
+  **`playable` = the first decoded frame heard and how many are heard, possibly open-ended;**
+  `duration` = playable count (seek bar, `mpris:length`, `heard.rs`). `Priming` holds the count as
+  `Option`: a reader can name a delay without a length and the priming must still go.
+- **An edit list plays in the order it lists its edits.** `elst` entries continuing one another in
+  media time (within a tick) join; zero-length entries and leading or trailing empty edits are
+  dropped. One stretch left is the gapless window as ever (`MediaInfo::splices` `None`). More are
+  `Splices` (`Edit::Music` in music frames, counted from the earliest frame any edit reads, which is
+  the priming; `Edit::Silence` for an empty edit between music), `playable` lasting their sum. The
+  decoder walks them itself (`Decoder::spliced_block`): where an edit does not continue where the
+  reader stands it seeks there (a cut skips ahead, a reorder seeks back), an empty edit is handed
+  out as silence, and `seek`, `confine` (a cue span over a spliced file) and a settled spool place a
+  heard frame through `Splices::place_of`. The list is read once at open into one `Arc<[Edit]>`;
+  walking it allocates nothing. A source that cannot seek skips ahead to a cut and ends at an edit
+  reaching back. Splices reaching past the samples `stts` holds play the first stretch alone.
   **Fragmented MP4 length is in the fragments, not `moov`** (`mvex/mehd`, else the top-level `sidx`
   boxes added up, one a DASH segment, those naming the sound track's id or else the first one's:
   `Movie::fragmented_length`; the walk goes on past `MAX_CHILD_BOXES` top-level boxes once a `sidx`

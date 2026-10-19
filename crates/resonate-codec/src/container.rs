@@ -518,14 +518,14 @@ pub(crate) fn coded_info(
     let carrying = Carrying::of(opened.reader.format_info().format, params.codec);
     let noted = itunes_priming(opened, track, params);
     let primed = priming(track, params, carrying, prescan, spec.rate).or(noted);
-    let playable = primed.and_then(Priming::window);
+    let playable = primed.as_ref().and_then(Priming::window);
     let tags = tags::read(
         &opened.revisions,
         track.id,
         prescan,
         segment_title_names_the_track(opened.reader.as_ref()),
         mpa::FrameClock::of(params.codec, spec.rate)
-            .map(|clock| clock.heard_from(primed.map_or(0, |held| held.delay))),
+            .map(|clock| clock.heard_from(primed.as_ref().map_or(0, |held| held.delay))),
     );
 
     Ok(MediaInfo {
@@ -542,15 +542,21 @@ pub(crate) fn coded_info(
                 .filter(|declared| *declared != Frames::ZERO)
                 .or_else(|| prescan.boxes.fragmented_length(spec.rate))
                 .or_else(|| prescan.segment_duration(spec.rate))
-                .map(|declared| declared.saturating_sub(carrying.declared_before_the_music(primed)))
+                .map(|declared| {
+                    declared.saturating_sub(carrying.declared_before_the_music(primed.as_ref()))
+                })
         }),
         whole_file: None,
-        encoder_delay: track.delay.or(primed.map(|held| held.delay)).unwrap_or(0),
+        encoder_delay: track
+            .delay
+            .or(primed.as_ref().map(|held| held.delay))
+            .unwrap_or(0),
         encoder_padding: track
             .padding
-            .or(primed.map(|held| held.padding))
+            .or(primed.as_ref().map(|held| held.padding))
             .unwrap_or(0),
         playable,
+        splices: primed.and_then(|held| held.splices),
         bits_per_coded_sample: declared_bits(params, prescan)
             .and_then(|bits| u8::try_from(bits).ok()),
         is_seekable: opened.seekable,
@@ -601,7 +607,7 @@ enum Carrying {
 }
 
 impl Carrying {
-    fn declared_before_the_music(self, primed: Option<Priming>) -> Frames {
+    fn declared_before_the_music(self, primed: Option<&Priming>) -> Frames {
         match (self, primed) {
             (Self::OpusInMatroska, Some(primed)) => Frames(u64::from(primed.delay)),
             _ => Frames::ZERO,

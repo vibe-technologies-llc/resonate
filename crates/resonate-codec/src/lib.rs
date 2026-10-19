@@ -23,6 +23,7 @@ mod registry;
 mod riff;
 mod source;
 mod speakers;
+mod splices;
 mod spool;
 mod stream;
 mod sylt;
@@ -61,6 +62,7 @@ pub use crate::{
         StandIn, StoodIn,
     },
     speakers::{Placement, Speakers},
+    splices::{Edit, Splices},
     stream::{
         BitRate, PacketSpan, Percentiles, ProfileBuilder, StreamProfile, StreamReport, Variability,
         WINDOW, probe_stream,

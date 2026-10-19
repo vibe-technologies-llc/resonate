@@ -2364,6 +2364,182 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     );
 }
 
+const BOX_HEADER: usize = 8;
+const MOVIE_TIMESCALE_AT: usize = 12;
+const UNITY_RATE: u32 = 0x0001_0000;
+const EMPTY_EDIT: i32 = -1;
+
+struct Listed {
+    frames: u32,
+    media_time: i32,
+}
+
+fn boxes_within(bytes: &[u8]) -> Vec<(&[u8], &[u8])> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at + BOX_HEADER <= bytes.len() {
+        let size = u32::from_be_bytes(bytes[at..at + 4].try_into().expect("four bytes")) as usize;
+        assert!(
+            size >= BOX_HEADER,
+            "ffmpeg wrote a box this helper does not walk"
+        );
+        found.push((&bytes[at + 4..at + 8], &bytes[at + BOX_HEADER..at + size]));
+        at += size;
+    }
+    found
+}
+
+fn boxed(kind: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut held = ((body.len() + BOX_HEADER) as u32).to_be_bytes().to_vec();
+    held.extend_from_slice(kind);
+    held.extend_from_slice(body);
+    held
+}
+
+fn edit_list_box(listed: &[Listed], movie_timescale: u32) -> Vec<u8> {
+    let mut elst = vec![0, 0, 0, 0];
+    elst.extend_from_slice(&(listed.len() as u32).to_be_bytes());
+    for edit in listed {
+        let ticks = u64::from(edit.frames) * u64::from(movie_timescale);
+        assert_eq!(
+            ticks % u64::from(RATE),
+            0,
+            "an edit the movie's ticks cannot hold"
+        );
+        elst.extend_from_slice(&((ticks / u64::from(RATE)) as u32).to_be_bytes());
+        elst.extend_from_slice(&edit.media_time.to_be_bytes());
+        elst.extend_from_slice(&UNITY_RATE.to_be_bytes());
+    }
+    boxed(b"edts", &boxed(b"elst", &elst))
+}
+
+fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
+    let top = boxes_within(file);
+    let kinds = top.iter().map(|(kind, _)| *kind).collect::<Vec<_>>();
+    assert_eq!(
+        kinds.last(),
+        Some(&b"moov".as_slice()),
+        "the movie must trail the media so its sample offsets survive a longer edit list"
+    );
+
+    let (_, moov) = top.last().expect("a movie");
+    let mut movie = Vec::new();
+    let mut timescale = None;
+    for (kind, body) in boxes_within(moov) {
+        match kind {
+            b"mvhd" => {
+                timescale = Some(u32::from_be_bytes(
+                    body[MOVIE_TIMESCALE_AT..MOVIE_TIMESCALE_AT + 4]
+                        .try_into()
+                        .expect("four bytes"),
+                ));
+                movie.extend(boxed(kind, body));
+            }
+            b"trak" => {
+                let timescale = timescale.expect("the movie header ahead of its tracks");
+                let mut track = Vec::new();
+                for (inner, held) in boxes_within(body) {
+                    match inner {
+                        b"edts" => {}
+                        b"tkhd" => {
+                            track.extend(boxed(inner, held));
+                            track.extend(edit_list_box(listed, timescale));
+                        }
+                        _ => track.extend(boxed(inner, held)),
+                    }
+                }
+                movie.extend(boxed(kind, &track));
+            }
+            _ => movie.extend(boxed(kind, body)),
+        }
+    }
+
+    let mut rewritten = Vec::new();
+    for (kind, body) in &top[..top.len() - 1] {
+        rewritten.extend(boxed(kind, body));
+    }
+    rewritten.extend(boxed(b"moov", &movie));
+    rewritten
+}
+
+fn heard_through(decoded: &[i32], listed: &[Listed]) -> Vec<i32> {
+    let lanes = usize::from(CHANNELS);
+    let mut heard = Vec::new();
+    for edit in listed {
+        let frames = edit.frames as usize;
+        match usize::try_from(edit.media_time) {
+            Ok(from) => heard.extend_from_slice(&decoded[from * lanes..(from + frames) * lanes]),
+            Err(_) => heard.extend(std::iter::repeat_n(0, frames * lanes)),
+        }
+    }
+    heard
+}
+
+#[test]
+fn a_spliced_m4a_plays_every_edit_in_the_order_its_list_names_them() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "whole.m4a", &["-c:a", "alac"]) else {
+        return;
+    };
+    let whole = decode(&path).samples;
+    let listed = [
+        Listed {
+            frames: 22_050,
+            media_time: 44_100,
+        },
+        Listed {
+            frames: 11_025,
+            media_time: 4_410,
+        },
+        Listed {
+            frames: 4_410,
+            media_time: EMPTY_EDIT,
+        },
+        Listed {
+            frames: 17_640,
+            media_time: 66_150,
+        },
+    ];
+    let spliced = tree.at("spliced.m4a");
+    fs::write(
+        &spliced,
+        with_edit_list(&fs::read(&path).expect("the fixture reads"), &listed),
+    )
+    .expect("a writable temporary file");
+    let lasting = Frames(listed.iter().map(|edit| u64::from(edit.frames)).sum());
+    let heard = heard_through(&whole, &listed);
+    let lanes = usize::from(CHANNELS);
+
+    let info = probe(&Sources::local(), &MediaLocation::local(&spliced)).expect("a spliced m4a");
+    assert_eq!(info.duration, Some(lasting), "the edits were not added up");
+    assert_eq!(info.encoder_delay, 4_410);
+
+    let decoded = decode(&spliced);
+    assert_eq!(
+        decoded.samples.len(),
+        heard.len(),
+        "the decoder did not play every edit"
+    );
+    assert!(
+        decoded.samples == heard,
+        "the edits were not played in the order the list names them"
+    );
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&spliced))
+        .expect("a spliced m4a opens");
+    for target in [40_000_usize, 35_000, 10_000, 0] {
+        assert_eq!(
+            decoder.seek(Frames(target as u64)).expect("a seek inside"),
+            Frames(target as u64)
+        );
+        let rest = drain(&mut decoder, info.spec);
+        assert!(
+            rest == heard[target * lanes..],
+            "a seek to {target} heard something other than the edit it lands in"
+        );
+    }
+}
+
 #[test]
 fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
     let Some(root) = env::var_os(REAL_FIXTURES) else {

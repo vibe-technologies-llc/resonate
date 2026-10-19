@@ -23,6 +23,7 @@ use crate::{
     cue,
     dsd::{self, DSD_BLOCK_FRAMES, Packing},
     source::{FormatHint, Media, Reading as SourceReading, Sources},
+    splices::{Edit, Place, Splices},
     spool::Spool,
     stream::PacketSpan,
     timeline::Timeline,
@@ -299,6 +300,7 @@ pub struct MediaInfo {
     pub encoder_delay: u32,
     pub encoder_padding: u32,
     pub playable: Option<FrameSpan>,
+    pub splices: Option<Splices>,
     pub bits_per_coded_sample: Option<u8>,
     pub is_seekable: bool,
     pub packing: Packing,
@@ -414,6 +416,32 @@ enum Held {
     Dsd(Box<dsd::Stream>),
 }
 
+struct Splicing {
+    splices: Splices,
+    edit: usize,
+    left: Frames,
+    music: Frames,
+}
+
+impl Splicing {
+    fn over(splices: Splices) -> Self {
+        Self {
+            splices,
+            edit: 0,
+            left: Frames::ZERO,
+            music: Frames::ZERO,
+        }
+    }
+
+    fn heard(&self) -> Option<Edit> {
+        self.splices.edits().get(self.edit).copied()
+    }
+
+    fn past_the_last(&self) -> usize {
+        self.splices.edits().len()
+    }
+}
+
 pub struct Decoder {
     location: MediaLocation,
     reading: Held,
@@ -426,6 +454,7 @@ pub struct Decoder {
     last_packet: Option<PacketSpan>,
     spool: Option<Arc<Spool>>,
     layout: Option<BoxLayout>,
+    splicing: Option<Splicing>,
 }
 
 impl Decoder {
@@ -501,12 +530,16 @@ impl Decoder {
         let held = span.within(self.info.duration.unwrap_or(Frames(u64::MAX)));
         let start = held.start();
 
-        if self.info.is_seekable {
-            let landed = self.seek_reader(start)?;
-            self.restart(landed)?;
-        }
-        if self.position < start {
-            self.discard_to(start)?;
+        if self.splicing.is_some() {
+            self.splice_to(start)?;
+        } else {
+            if self.info.is_seekable {
+                let landed = self.seek_reader(start)?;
+                self.restart(landed)?;
+            }
+            if self.position < start {
+                self.discard_to(start)?;
+            }
         }
 
         self.origin = start;
@@ -583,6 +616,7 @@ impl Decoder {
             last_packet: None,
             spool,
             layout,
+            splicing: None,
         };
         decoder.open_on_the_music()?;
 
@@ -599,6 +633,13 @@ impl Decoder {
 
         self.skip(playable.start().get())?;
         self.limit = playable.frames();
+        if let Some(splices) = self.info.splices.clone() {
+            self.splicing = Some(Splicing::over(splices));
+            self.enter(Place {
+                edit: 0,
+                into: Frames::ZERO,
+            })?;
+        }
         Ok(())
     }
 
@@ -631,21 +672,31 @@ impl Decoder {
         let (mut settled, whole) =
             Self::build(container::open(media, &self.location)?, &self.location)?;
         settled.deliver(self.delivery);
-        if whole.is_seekable {
-            let landed = settled.seek_reader(self.position)?;
-            settled.restart(landed)?;
-            settled.discard_to(self.position)?;
-        }
+
         let open_ended = self.limit.is_none() && self.origin == Frames::ZERO;
-        settled.origin = self.origin;
         let mut info = self.info.clone();
         info.is_seekable = whole.is_seekable;
         if open_ended {
             info.duration = whole.duration;
             info.playable = whole.playable;
+            info.splices = whole.splices;
         } else {
             settled.limit = self.limit;
         }
+        if info.splices.is_none() {
+            settled.splicing = None;
+        }
+
+        if whole.is_seekable {
+            if settled.splicing.is_some() {
+                settled.splice_to(self.position)?;
+            } else {
+                let landed = settled.seek_reader(self.position)?;
+                settled.restart(landed)?;
+                settled.discard_to(self.position)?;
+            }
+        }
+        settled.origin = self.origin;
         settled.info = info;
         Ok(settled)
     }
@@ -719,6 +770,7 @@ impl Decoder {
 
         let wanted = self.remaining();
         let frames = match &self.reading {
+            Held::Coded(_) if self.splicing.is_some() => self.spliced_block(out, wanted)?,
             Held::Coded(_) => self.coded_block(out, wanted)?,
             Held::Dsd(_) => self.dsd_block(out, wanted)?,
         };
@@ -762,6 +814,122 @@ impl Decoder {
         Ok(frames)
     }
 
+    fn spliced_block(&mut self, out: &mut AudioBuffer, wanted: Option<u64>) -> Result<usize> {
+        loop {
+            let Some(splicing) = self.splicing.as_ref() else {
+                return Ok(0);
+            };
+            let Some(heard) = splicing.heard() else {
+                return Ok(0);
+            };
+            let next = Place {
+                edit: splicing.edit.saturating_add(1),
+                into: Frames::ZERO,
+            };
+            let left = splicing.left.get();
+            if left == 0 {
+                self.enter(next)?;
+                continue;
+            }
+
+            let taking = wanted.map_or(left, |wanted| wanted.min(left));
+            let frames = match heard {
+                Edit::Silence { .. } => {
+                    let taking = usize::try_from(taking)
+                        .unwrap_or(usize::MAX)
+                        .min(SILENCE_HANDED_OUT_AT_ONCE);
+                    out.set_frames(taking);
+                    silence_out(out.data_mut());
+                    taking
+                }
+                Edit::Music { .. } => self.coded_block(out, Some(taking))?,
+            };
+            if frames == 0 {
+                self.enter(next)?;
+                continue;
+            }
+
+            if let Some(splicing) = self.splicing.as_mut() {
+                let handed = Frames(frames as u64);
+                splicing.left = splicing.left.saturating_sub(handed);
+                if matches!(heard, Edit::Music { .. }) {
+                    splicing.music = splicing.music.saturating_add(handed);
+                }
+            }
+            return Ok(frames);
+        }
+    }
+
+    fn splice_to(&mut self, heard: Frames) -> Result<()> {
+        let Some(place) = self
+            .splicing
+            .as_ref()
+            .map(|splicing| splicing.splices.place_of(heard))
+        else {
+            return Ok(());
+        };
+
+        self.enter(place)?;
+        self.position = heard;
+        Ok(())
+    }
+
+    fn enter(&mut self, place: Place) -> Result<()> {
+        let Some(splicing) = self.splicing.as_ref() else {
+            return Ok(());
+        };
+        let standing = splicing.music;
+        let past_the_last = splicing.past_the_last();
+        let Some(edit) = splicing.splices.edits().get(place.edit).copied() else {
+            self.stand_at(past_the_last, Frames::ZERO, standing);
+            return Ok(());
+        };
+
+        let left = edit.lasting().saturating_sub(place.into);
+        let Edit::Music { from, .. } = edit else {
+            self.stand_at(place.edit, left, standing);
+            return Ok(());
+        };
+        match self.music_reaching(from.saturating_add(place.into), standing)? {
+            Some(reached) => self.stand_at(place.edit, left, reached),
+            None => {
+                tracing::debug!(
+                    location = %self.location,
+                    "an edit reaching back into music a source that cannot seek has passed ends the track there"
+                );
+                self.stand_at(past_the_last, Frames::ZERO, standing);
+            }
+        }
+        Ok(())
+    }
+
+    fn stand_at(&mut self, edit: usize, left: Frames, music: Frames) {
+        if let Some(splicing) = self.splicing.as_mut() {
+            splicing.edit = edit;
+            splicing.left = left;
+            splicing.music = music;
+        }
+    }
+
+    fn music_reaching(&mut self, to: Frames, standing: Frames) -> Result<Option<Frames>> {
+        if to == standing {
+            return Ok(Some(standing));
+        }
+        if self.info.is_seekable {
+            let landed = self.seek_reader(to)?;
+            self.reset();
+            self.skip(landed.short_of_the_music.get())?;
+            let skipped = self.skip(to.get().saturating_sub(landed.at.get()))?;
+            return Ok(Some(landed.at.saturating_add(Frames(skipped))));
+        }
+        if to < standing {
+            return Ok(None);
+        }
+
+        let skipped = self.skip(to.get().saturating_sub(standing.get()))?;
+        Ok(Some(standing.saturating_add(Frames(skipped))))
+    }
+
     fn dsd_block(&mut self, out: &mut AudioBuffer, wanted: Option<u64>) -> Result<usize> {
         let Held::Dsd(held) = &mut self.reading else {
             return Ok(0);
@@ -792,9 +960,13 @@ impl Decoder {
         }
 
         let wanted = self.origin.saturating_add(to);
-        let landed = self.seek_reader(wanted)?;
-        self.restart(landed)?;
-        self.discard_to(wanted)?;
+        if self.splicing.is_some() {
+            self.splice_to(wanted)?;
+        } else {
+            let landed = self.seek_reader(wanted)?;
+            self.restart(landed)?;
+            self.discard_to(wanted)?;
+        }
 
         Ok(self.position())
     }
@@ -1617,6 +1789,144 @@ FILE "Meddle.wav" WAVE
         let rest = drain(&mut decoder, &mut out);
         let wanted = slice_of(&samples, FrameSpan::between(Frames(1_500), Frames(4_000)));
         assert_eq!(rest, wanted);
+    }
+
+    const SPLICE_PRIMING: u64 = 300;
+
+    fn spliced(samples: &[i32], edits: Vec<Edit>) -> (Decoder, MediaInfo) {
+        let (mut decoder, _) = open(Wav::pcm(24).build(samples));
+        let splices = Splices::of(edits);
+        let priming = Frames(SPLICE_PRIMING);
+
+        decoder.info.playable = Some(FrameSpan::between(
+            priming,
+            priming.saturating_add(splices.lasting()),
+        ));
+        decoder.info.duration = Some(splices.lasting());
+        decoder.info.splices = Some(splices);
+        decoder.timeline = Timeline::new(
+            symphonia::core::units::TimeBase::try_from_recip(RATE),
+            Timestamp::new(SPLICE_PRIMING as i64),
+            decoder.info.spec.rate,
+        );
+        decoder
+            .open_on_the_music()
+            .expect("a wav opens on its first edit");
+
+        let info = decoder.info.clone();
+        (decoder, info)
+    }
+
+    fn music(from: u64, lasting: u64) -> Edit {
+        Edit::Music {
+            from: Frames(from),
+            lasting: Frames(lasting),
+        }
+    }
+
+    fn heard_as(samples: &[i32], edits: &[Edit]) -> Vec<i32> {
+        let channels = usize::from(CHANNELS);
+        let mut heard = Vec::new();
+        for edit in edits {
+            match *edit {
+                Edit::Music { from, lasting } => {
+                    let start = SPLICE_PRIMING + from.get();
+                    heard.extend(slice_of(
+                        samples,
+                        FrameSpan::between(Frames(start), Frames(start + lasting.get())),
+                    ));
+                }
+                Edit::Silence { lasting } => {
+                    heard.extend(std::iter::repeat_n(0, lasting.get() as usize * channels));
+                }
+            }
+        }
+        heard
+    }
+
+    fn cut_reordered_and_silenced() -> Vec<Edit> {
+        vec![
+            music(20_000, 3_000),
+            music(1_000, 2_500),
+            Edit::Silence {
+                lasting: Frames(10_000),
+            },
+            music(3_500, 4_000),
+            music(30_000, 1_500),
+        ]
+    }
+
+    #[test]
+    fn a_spliced_file_plays_its_edits_in_the_order_they_are_listed() {
+        let samples = ramp(24);
+        let edits = cut_reordered_and_silenced();
+        let (mut decoder, info) = spliced(&samples, edits.clone());
+
+        assert_eq!(info.duration, Some(Frames(21_000)));
+        assert_eq!(info.priming(), Frames(SPLICE_PRIMING));
+
+        let mut out = AudioBuffer::empty(info.spec);
+        assert_eq!(drain(&mut decoder, &mut out), heard_as(&samples, &edits));
+        assert_eq!(decoder.position(), Frames(21_000));
+    }
+
+    #[test]
+    fn a_seek_into_a_later_edit_lands_where_that_edit_reads() {
+        let samples = ramp(24);
+        let edits = cut_reordered_and_silenced();
+        let (mut decoder, info) = spliced(&samples, edits.clone());
+        let mut out = AudioBuffer::empty(info.spec);
+        let whole = heard_as(&samples, &edits);
+        let channels = usize::from(CHANNELS);
+
+        for target in [4_000_usize, 7_000, 15_500, 19_499, 0, 20_000] {
+            assert_eq!(
+                decoder.seek(Frames(target as u64)).expect("a seek inside"),
+                Frames(target as u64)
+            );
+            assert_eq!(
+                drain(&mut decoder, &mut out),
+                whole[target * channels..],
+                "a seek to {target} heard something else"
+            );
+        }
+        assert_eq!(
+            decoder.seek(Frames(21_000)).expect("a seek to the end"),
+            Frames(21_000)
+        );
+        assert!(drain(&mut decoder, &mut out).is_empty());
+    }
+
+    #[test]
+    fn a_span_of_a_spliced_file_is_cut_from_what_the_edits_play() {
+        let samples = ramp(24);
+        let edits = cut_reordered_and_silenced();
+        let (mut decoder, _) = spliced(&samples, edits.clone());
+        let span = FrameSpan::between(Frames(2_000), Frames(16_000));
+        let channels = usize::from(CHANNELS);
+
+        let info = decoder.confine(span, None).expect("a span inside");
+        assert_eq!(info.duration, Some(Frames(14_000)));
+
+        let mut out = AudioBuffer::empty(info.spec);
+        assert_eq!(
+            drain(&mut decoder, &mut out),
+            heard_as(&samples, &edits)[2_000 * channels..16_000 * channels]
+        );
+    }
+
+    #[test]
+    fn a_source_that_cannot_seek_skips_forward_to_a_cut_and_ends_where_an_edit_reaches_back() {
+        let samples = ramp(24);
+        let edits = vec![music(1_000, 2_000), music(5_000, 1_000), music(0, 4_000)];
+        let (mut decoder, info) = spliced(&samples, edits.clone());
+        decoder.info.is_seekable = false;
+
+        let mut out = AudioBuffer::empty(info.spec);
+        assert_eq!(
+            drain(&mut decoder, &mut out),
+            heard_as(&samples, &edits[..2])
+        );
     }
 
     #[test]
