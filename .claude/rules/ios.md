@@ -555,7 +555,10 @@ every route change (a pair of headphones at the same rate included), not from th
   whatever grouping it last showed otherwise) and pops its stack before switching to it.
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
-  the full list is rows. The *Favourites* and *All songs* rows read their counts in views of their
+  the full list is rows. **A shelf's cover pushes its page as every album and artist entry does**,
+  a `NavigationLink(value:)` (the search's remembering of the text rides on a simultaneous tap,
+  `picked`), never a button appending to `Navigation.paths`: the album page pushed that way from
+  the Library tab came in with no slide. The *Favourites* and *All songs* rows read their counts in views of their
   own (`FavouritesCountRow`, `SongsCountRow`, from `Library.catalogCount`), so a heart or a
   catalog read never rebuilds the tab.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
