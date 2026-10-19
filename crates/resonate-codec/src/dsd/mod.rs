@@ -415,6 +415,7 @@ pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> M
         encoder_delay: 0,
         encoder_padding: 0,
         playable: None,
+        splices: None,
         bits_per_coded_sample: Some(1),
         is_seekable,
         packing: Packing::DopMarked(layout.rate),

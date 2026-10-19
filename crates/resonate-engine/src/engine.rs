@@ -1574,6 +1574,7 @@ impl Engine {
         info.is_seekable = seekable;
         info.duration = settled.duration;
         info.playable = settled.playable;
+        info.splices = settled.splices.clone();
         track.published = None;
         if !seekable || !mem::take(&mut self.rebind_owed) {
             return;

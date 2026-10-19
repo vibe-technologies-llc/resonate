@@ -6,7 +6,10 @@ use std::{
 
 use resonate_core::{FrameSpan, Frames, SampleRate};
 
-use crate::chapters::{ChapterStart, MOST_CHAPTERS, Marked, named};
+use crate::{
+    chapters::{ChapterStart, MOST_CHAPTERS, Marked, named},
+    splices::{Edit, Splices},
+};
 
 const HEADER: u64 = 8;
 const LARGE_HEADER: u64 = 16;
@@ -226,7 +229,7 @@ pub(crate) struct Movie {
 impl Movie {
     pub(crate) fn priming_at(&self, rate: SampleRate) -> Option<Priming> {
         (self.timescale?.get() == rate.hz())
-            .then_some(self.priming)
+            .then(|| self.priming.clone())
             .flatten()
     }
 
@@ -242,11 +245,12 @@ struct Ticks {
     timescale: NonZeroU32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Priming {
     pub(crate) delay: u32,
     pub(crate) padding: u32,
     playable: Option<Frames>,
+    pub(crate) splices: Option<Splices>,
 }
 
 impl Priming {
@@ -255,19 +259,20 @@ impl Priming {
             delay,
             padding,
             playable,
+            splices: None,
         }
     }
 
-    pub(crate) const fn behind_a_decoder_delay(self, frames: u32) -> Self {
+    pub(crate) fn behind_a_decoder_delay(self, frames: u32) -> Self {
         Self {
             delay: self.delay.saturating_add(frames),
             padding: self.padding.saturating_sub(frames),
-            playable: self.playable,
+            ..self
         }
     }
 
-    pub(crate) fn window(self) -> Option<FrameSpan> {
-        if self.delay == 0 && self.padding == 0 {
+    pub(crate) fn window(&self) -> Option<FrameSpan> {
+        if self.delay == 0 && self.padding == 0 && self.splices.is_none() {
             return None;
         }
 
@@ -278,16 +283,17 @@ impl Priming {
         })
     }
 
-    fn fits_within(self, decoded: Option<u64>) -> bool {
+    fn fits_within(&self, decoded: Option<u64>) -> bool {
         let Some(playable) = self.playable.filter(|held| *held != Frames::ZERO) else {
             return false;
         };
         let Some(decoded) = decoded else {
             return true;
         };
+        let reach = self.splices.as_ref().map_or(playable, Splices::reach);
 
         u64::from(self.delay)
-            .checked_add(playable.get())
+            .checked_add(reach.get())
             .is_some_and(|held| held <= decoded)
     }
 }
@@ -683,7 +689,14 @@ pub(crate) fn gapless_fields(value: &str) -> Option<Priming> {
         delay: u32::from_str_radix(fields.next()?, 16).ok()?,
         padding: u32::from_str_radix(fields.next()?, 16).ok()?,
         playable: Some(Frames(u64::from_str_radix(fields.next()?, 16).ok()?)),
+        splices: None,
     })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Listed {
+    Media { from: u64, lasting: u64 },
+    Empty { lasting: u64 },
 }
 
 fn edit_priming<S: Read + Seek + ?Sized>(
@@ -700,41 +713,99 @@ fn edit_priming<S: Read + Seek + ?Sized>(
     let version = *bytes.first()?;
     let entries = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MAX_EDIT_ENTRIES);
 
-    let mut run: Option<(u32, u64)> = None;
+    let mut listed = Vec::with_capacity(entries);
     for entry in 0..entries {
         let (segment, media_time) = edit_entry(&bytes, version, entry)?;
-        let Ok(start) = u32::try_from(media_time) else {
-            if run.is_some() {
-                break;
-            }
+        let lasting = rescaled(segment, movie.timescale, media.timescale)?;
+        if lasting == 0 {
             continue;
-        };
-
-        let length = rescaled(segment, movie.timescale, media.timescale)?;
-        match run {
-            None => run = Some((start, length)),
-            Some((delay, playable)) => {
-                let continues_at = u64::from(delay).saturating_add(playable);
-                if u64::from(start).abs_diff(continues_at) > EDIT_ROUNDING_TICKS {
-                    break;
-                }
-                run = Some((delay, playable.saturating_add(length)));
-            }
         }
+
+        let edit = match u64::try_from(media_time) {
+            Ok(from) => Listed::Media { from, lasting },
+            Err(_) => Listed::Empty { lasting },
+        };
+        joined(&mut listed, edit);
+    }
+    while matches!(listed.last(), Some(Listed::Empty { .. })) {
+        listed.pop();
     }
 
-    let (delay, playable) = run?;
     let whole = decoded.unwrap_or(media.frames);
+    let Some(&Listed::Media { from, lasting }) = listed.first() else {
+        return None;
+    };
+    let first = Priming {
+        delay: u32::try_from(from).ok()?,
+        padding: frames_past(whole, from.saturating_add(lasting)),
+        playable: Some(Frames(lasting)),
+        splices: None,
+    };
+    if listed.len() == 1 {
+        return Some(first);
+    }
+
+    spliced_priming(&listed, whole)
+        .filter(|spliced| spliced.fits_within(decoded))
+        .or(Some(first))
+}
+
+fn joined(listed: &mut Vec<Listed>, edit: Listed) {
+    let merged = match (listed.last_mut(), edit) {
+        (None, Listed::Empty { .. }) => true,
+        (
+            Some(Listed::Media { from, lasting }),
+            Listed::Media {
+                from: next,
+                lasting: more,
+            },
+        ) if from.saturating_add(*lasting).abs_diff(next) <= EDIT_ROUNDING_TICKS => {
+            *lasting = lasting.saturating_add(more);
+            true
+        }
+        (Some(Listed::Empty { lasting }), Listed::Empty { lasting: more }) => {
+            *lasting = lasting.saturating_add(more);
+            true
+        }
+        _ => false,
+    };
+    if !merged {
+        listed.push(edit);
+    }
+}
+
+fn spliced_priming(listed: &[Listed], whole: u64) -> Option<Priming> {
+    let media = listed.iter().filter_map(|edit| match *edit {
+        Listed::Media { from, lasting } => Some((from, from.saturating_add(lasting))),
+        Listed::Empty { .. } => None,
+    });
+    let earliest = media.clone().map(|(from, _)| from).min()?;
+    let reach = media.map(|(_, end)| end).max()?;
+
+    let edits = listed
+        .iter()
+        .map(|edit| match *edit {
+            Listed::Media { from, lasting } => Edit::Music {
+                from: Frames(from - earliest),
+                lasting: Frames(lasting),
+            },
+            Listed::Empty { lasting } => Edit::Silence {
+                lasting: Frames(lasting),
+            },
+        })
+        .collect();
+    let splices = Splices::of(edits);
+
     Some(Priming {
-        delay,
-        padding: u32::try_from(
-            whole
-                .saturating_sub(u64::from(delay))
-                .saturating_sub(playable),
-        )
-        .unwrap_or(u32::MAX),
-        playable: Some(Frames(playable)),
+        delay: u32::try_from(earliest).ok()?,
+        padding: frames_past(whole, reach),
+        playable: Some(splices.lasting()),
+        splices: Some(splices),
     })
+}
+
+fn frames_past(whole: u64, reach: u64) -> u32 {
+    u32::try_from(whole.saturating_sub(reach)).unwrap_or(u32::MAX)
 }
 
 fn edit_entry(bytes: &[u8], version: u8, entry: usize) -> Option<(u64, i64)> {
@@ -1227,8 +1298,95 @@ mod tests {
         );
     }
 
+    fn music(from: u32, lasting: u32) -> Edit {
+        Edit::Music {
+            from: Frames(u64::from(from)),
+            lasting: Frames(u64::from(lasting)),
+        }
+    }
+
+    fn silence(lasting: u32) -> Edit {
+        Edit::Silence {
+            lasting: Frames(u64::from(lasting)),
+        }
+    }
+
     #[test]
-    fn a_stretch_ends_where_the_next_edit_jumps_elsewhere() {
+    fn edits_that_jump_in_media_time_are_spliced_in_the_order_they_are_listed() {
+        let quarter = MUSIC / 4;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (quarter, PRIMING as i32),
+                (quarter, (PRIMING + 3 * quarter) as i32),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(held.delay, PRIMING);
+        assert_eq!(held.padding, REMAINDER);
+        assert_eq!(
+            held.window(),
+            Some(FrameSpan::between(
+                Frames(u64::from(PRIMING)),
+                Frames(u64::from(PRIMING + 2 * quarter))
+            ))
+        );
+        assert_eq!(
+            held.splices.as_ref().map(Splices::edits),
+            Some([music(0, quarter), music(3 * quarter, quarter)].as_slice())
+        );
+    }
+
+    #[test]
+    fn a_reordered_list_is_primed_by_the_earliest_music_any_edit_reads() {
+        let half = MUSIC / 2;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (half, (PRIMING + half) as i32),
+                (half, PRIMING as i32),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(held.delay, PRIMING);
+        assert_eq!(
+            held.window().and_then(FrameSpan::frames),
+            Some(Frames(u64::from(MUSIC)))
+        );
+        assert_eq!(
+            held.splices.as_ref().map(Splices::edits),
+            Some([music(half, half), music(0, half)].as_slice())
+        );
+    }
+
+    #[test]
+    fn an_empty_edit_between_two_stretches_is_heard_as_silence() {
+        let quarter = MUSIC / 4;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (quarter, PRIMING as i32),
+                (512, -1),
+                (quarter, (PRIMING + quarter) as i32),
+                (256, -1),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(
+            held.splices.as_ref().map(Splices::edits),
+            Some([music(0, quarter), silence(512), music(quarter, quarter)].as_slice())
+        );
+        assert_eq!(
+            held.window().and_then(FrameSpan::frames),
+            Some(Frames(u64::from(2 * quarter + 512)))
+        );
+    }
+
+    #[test]
+    fn a_spliced_list_reaching_past_the_music_the_samples_hold_plays_its_first_stretch_alone() {
         let half = MUSIC / 2;
         let held = priming_of(&movie(
             &[sound(&[edit_list(&[
@@ -1239,10 +1397,28 @@ mod tests {
         ))
         .expect("an edit list the reader can act on");
 
+        assert_eq!(held.splices, None);
+        assert_eq!(held.delay, PRIMING);
         assert_eq!(
             held.window().and_then(FrameSpan::frames),
             Some(Frames(u64::from(half)))
         );
+    }
+
+    #[test]
+    fn a_single_edit_spliced_from_nothing_names_no_splices() {
+        let held = priming_of(&movie(
+            &[sound(&[edit_list(&[
+                (512, -1),
+                (MUSIC, PRIMING as i32),
+                (256, -1),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(held.splices, None);
+        assert_eq!(held.padding, REMAINDER);
     }
 
     #[test]
