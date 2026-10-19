@@ -272,9 +272,7 @@ struct SuggestionsView: View {
 
     private func open(_ mix: SuggestedMix) {
         library.setFilter(mix.filter)
-        navigation.songsGrouping = .songs
-        navigation.tab = .songs
-        navigation.paths[.songs] = []
+        navigation.showSongs()
     }
 
     private func loadCovers(_ mixes: [SuggestedMix]) async {

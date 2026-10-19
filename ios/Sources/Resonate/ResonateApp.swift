@@ -39,7 +39,7 @@ struct ResonateApp: App {
 }
 
 enum Root: String, Hashable, Codable {
-    case songs, library, queue, settings, search
+    case library, settings, search
 }
 
 enum Destination: Hashable, Codable {
@@ -66,6 +66,7 @@ enum Destination: Hashable, Codable {
     case appearance
     case background
     case identicalSongs
+    case songs
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -136,6 +137,13 @@ final class Navigation {
 
     var coversAmbient: Bool {
         nowPlaying || (paths[tab]?.last?.drawsItsOwnBackdrop ?? false)
+    }
+
+    func showSongs() {
+        nowPlaying = false
+        songsGrouping = .songs
+        tab = .library
+        paths[.library] = [.songs]
     }
 
     func leave(_ destination: Destination) {
@@ -261,14 +269,8 @@ struct RootView: View {
     var body: some View {
         @Bindable var navigation = navigation
         TabView(selection: $navigation.tab) {
-            Tab("Songs", systemImage: "music.note", value: Root.songs) {
-                stack(.songs) { SongsView() }
-            }
             Tab("Library", systemImage: "music.note.house", value: Root.library) {
                 stack(.library) { LibraryView() }
-            }
-            Tab("Queue", systemImage: "list.bullet", value: Root.queue) {
-                stack(.queue) { QueueView() }
             }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
@@ -457,6 +459,7 @@ struct DestinationView: View {
         case .appearance: AppearanceView()
         case .background: BackgroundView()
         case .identicalSongs: IdenticalSongsView()
+        case .songs: SongsView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }

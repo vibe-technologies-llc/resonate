@@ -145,6 +145,8 @@ struct NowPlayingView: View {
     @State private var settled: PlayerMode?
     @State private var reshaping = false
     @State private var picked: PickedTracks?
+    @State private var savingQueue = false
+    @State private var clearingQueue = false
 
     var body: some View {
         let track = library.playingTrack
@@ -173,10 +175,23 @@ struct NowPlayingView: View {
                     Button("Close", systemImage: "chevron.down") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    PlayerMoreMenu(track: track) { picked = PickedTracks(tracks: [$0]) }
+                    PlayerMoreMenu(
+                        track: track,
+                        addToPlaylist: { picked = PickedTracks(tracks: [$0]) },
+                        saveQueue: { savingQueue = true },
+                        clearQueue: { clearingQueue = true }
+                    )
                 }
             }
             .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .alert("Save queue as playlist", isPresented: $savingQueue) {
+                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue) }
+            }
+            .confirmationDialog("Clear the queue?", isPresented: $clearingQueue, titleVisibility: .visible) {
+                Button("Clear queue", role: .destructive) { library.clearQueue() }
+            } message: {
+                Text("Songs up next and in your history are removed. The playing song keeps playing.")
+            }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
         }
     }
@@ -970,6 +985,8 @@ struct PlayerMoreMenu: View {
     @Environment(Navigation.self) private var navigation
     let track: Track?
     let addToPlaylist: (Track) -> Void
+    let saveQueue: () -> Void
+    let clearQueue: () -> Void
 
     var body: some View {
         Menu("More", systemImage: "ellipsis") {
@@ -978,6 +995,13 @@ struct PlayerMoreMenu: View {
                     Button("Add to playlist", systemImage: "text.badge.plus") { addToPlaylist(track) }
                     Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
                     Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+                }
+            }
+            if !library.queue.isEmpty {
+                Section("Queue") {
+                    Button("Save queue as playlist", systemImage: "text.badge.plus", action: saveQueue)
+                    Button("Clear queue", systemImage: "trash", role: .destructive, action: clearQueue)
+                        .disabled(library.queue.count <= 1)
                 }
             }
             Section {
@@ -1022,79 +1046,22 @@ struct RoutePicker: UIViewRepresentable {
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
-struct QueueView: View {
-    @Environment(Library.self) private var library
-    @State private var clearing = false
-    @State private var saving = false
-
-    var body: some View {
-        QueueList(inPlayer: false)
-            .navigationTitle("Queue")
-            .refreshable { await library.rereadQueue() }
-            .toolbar {
-                if !library.queue.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Save as playlist", systemImage: "text.badge.plus") { saving = true }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Clear", systemImage: "trash") { clearing = true }
-                            .disabled(library.queue.count <= 1)
-                    }
-                    ToolbarItem(placement: .topBarTrailing) { EditButton() }
-                }
-            }
-            .alert("Save queue as playlist", isPresented: $saving) {
-                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue) }
-            }
-            .confirmationDialog("Clear the queue?", isPresented: $clearing, titleVisibility: .visible) {
-                Button("Clear queue", role: .destructive) { library.clearQueue() }
-            } message: {
-                Text("Songs up next and in your history are removed. The playing song keeps playing.")
-            }
-    }
-}
-
-struct EmptyQueue: View {
-    @Environment(Navigation.self) private var navigation
-
-    var body: some View {
-        ContentUnavailableView {
-            Label("Your queue is empty", systemImage: "list.bullet")
-        } description: {
-            Text("Songs you play, play next or add to the queue appear here.")
-        } actions: {
-            Button("Browse songs") { navigation.tab = .songs }
-                .buttonStyle(.glass)
-        }
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-    }
-}
-
 struct UpNextList: View {
-    var body: some View {
-        QueueList(inPlayer: true)
-    }
-}
-
-struct QueueList: View {
     private static let playingRow = "playing"
 
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let inPlayer: Bool
     @State private var onScreen = false
 
     var body: some View {
         ScrollViewReader { scroller in
             List {
-                if !inPlayer { HandoffRows().themedRows() }
-                QueueSections(inPlayer: inPlayer, playingRowId: Self.playingRow)
-                    .listRowBackground(inPlayer || AppearanceState.shared.themedBackground ? Color.clear : nil)
+                QueueSections(playingRowId: Self.playingRow)
+                    .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
-            .scrollContentBackground(inPlayer ? .hidden : .automatic)
-            .environment(\.liftedField, inPlayer)
+            .scrollContentBackground(.hidden)
+            .environment(\.liftedField, true)
             .onAppear {
                 onScreen = true
                 scroller.scrollTo(Self.playingRow, anchor: .top)
@@ -1114,39 +1081,37 @@ struct QueueList: View {
 
 struct QueueSections: View {
     private static let heardFaded = 0.55
-    private static let heardInPlayer = 50
-    private static let aheadInPlayer = 200
-    private static let shownInTab = 1000
+    private static let heardAtFirst = 50
+    private static let aheadAtFirst = 200
+    private static let widenedBy = 200
 
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-    let inPlayer: Bool
     let playingRowId: String
     @State private var edited = 0
-    @State private var heardInTab = Self.shownInTab
-    @State private var aheadInTab = Self.shownInTab
+    @State private var heard = Self.heardAtFirst
+    @State private var ahead = Self.aheadAtFirst
 
     var body: some View {
         let rows = library.queue
         let playing = library.playingQueueRow
         Group {
-            if rows.isEmpty, inPlayer {
+            if rows.isEmpty {
                 Text("Your queue is empty").secondaryInk()
-            } else if rows.isEmpty {
-                EmptyQueue()
             } else if let playing {
                 let parts = QueueParts(
                     rows: rows.count,
                     playing: playing,
                     next: library.playingNext,
-                    heardAtMost: inPlayer ? Self.heardInPlayer : heardInTab,
-                    aheadAtMost: inPlayer ? Self.aheadInPlayer : aheadInTab
+                    heardAtMost: heard,
+                    aheadAtMost: ahead
                 )
                 if playing > 0 {
                     Section {
                         QueueHeading(title: "History")
                         if parts.history.lowerBound > 0 {
-                            earlier(parts.history.lowerBound)
+                            moreRows(parts.history.lowerBound == 1 ? "1 earlier song" : "\(parts.history.lowerBound) earlier songs") {
+                                heard += Self.widenedBy
+                            }
                         }
                         rowsOf(rows, parts.history).opacity(Self.heardFaded)
                     }
@@ -1173,7 +1138,7 @@ struct QueueSections: View {
                     }
                 }
             } else {
-                let shown = min(rows.count, inPlayer ? Self.aheadInPlayer : aheadInTab)
+                let shown = min(rows.count, ahead)
                 Section {
                     QueueHeading(title: "Up next")
                     rowsOf(rows, 0..<shown)
@@ -1186,24 +1151,8 @@ struct QueueSections: View {
         .sensoryFeedback(.selection, trigger: edited)
     }
 
-    @ViewBuilder
-    private func earlier(_ count: Int) -> some View {
-        let title = count == 1 ? "1 earlier song" : "\(count) earlier songs"
-        if inPlayer {
-            wholeQueue(title)
-        } else {
-            moreRows(title) { heardInTab += Self.shownInTab }
-        }
-    }
-
-    @ViewBuilder
     private func further(_ count: Int) -> some View {
-        let title = count == 1 ? "1 more song" : "\(count) more songs"
-        if inPlayer {
-            wholeQueue(title)
-        } else {
-            moreRows(title) { aheadInTab += Self.shownInTab }
-        }
+        moreRows(count == 1 ? "1 more song" : "\(count) more songs") { ahead += Self.widenedBy }
     }
 
     private func moreRows(_ title: String, _ widen: @escaping () -> Void) -> some View {
@@ -1219,24 +1168,6 @@ struct QueueSections: View {
         .buttonStyle(.plain)
         .listRowBackground(Color.clear)
         .accessibilityHint("Shows more of the queue")
-    }
-
-    private func wholeQueue(_ title: String) -> some View {
-        Button {
-            navigation.nowPlaying = false
-            navigation.tab = .queue
-        } label: {
-            HStack {
-                Text(title)
-                Spacer()
-                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold))
-            }
-            .secondaryInk()
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .listRowBackground(Color.clear)
-        .accessibilityHint("Opens the whole queue")
     }
 
     private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {

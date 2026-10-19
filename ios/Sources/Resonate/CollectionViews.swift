@@ -50,9 +50,7 @@ struct LibraryView: View {
             if !playlistsOnly, shelf == .all, folded.isEmpty {
                 Button {
                     if library.filtering { library.setFilter(Library.everything) }
-                    navigation.songsGrouping = .songs
-                    navigation.paths[.songs] = []
-                    navigation.tab = .songs
+                    navigation.showSongs()
                 } label: {
                     SongsCountRow()
                 }
@@ -863,7 +861,7 @@ struct FavouritesView: View {
                     Text("Keep the songs you love together. Tap a heart on any song or on the player to add it here.")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
-                    Button("Browse songs") { navigation.tab = .songs }.buttonStyle(.glass)
+                    Button("Browse songs") { navigation.showSongs() }.buttonStyle(.glass)
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)

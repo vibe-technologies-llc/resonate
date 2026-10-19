@@ -421,9 +421,13 @@ sync seals its records and talks QUIC (TLS) of its own.
   and is left as it is, and so is a song a download or the listener put in Documents. Songs landed
   before this was done carry no mark: nothing tells them from the listener's own.
 
-The views follow Android's screens and wording (`android.md`): tabs Songs, Library, Queue, Settings
+The views follow Android's screens and wording (`android.md`), with three tabs: Library, Settings
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
-field; `Root.search` has its own stack); the mini player in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
+field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
+Now Playing's Up next, neither a tab**: *All songs*, a suggestion's mix, Favourites' and the
+empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
+(`Navigation.showSongs`, which closes Now Playing and sets the grouping to songs). The mini
+player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
 so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
 skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
 since the system fixes the accessory's height, and a ring around the play button was dropped) and no
@@ -492,26 +496,24 @@ every route change (a pair of headphones at the same rate included), not from th
   `CompactTitles`, the mini player's) crossfade in place, the leaving words keyed by song beneath
   the arriving ones in a `ZStack`. The backdrop keeps its own 1.2 s palette crossfade. Under Reduce
   Motion the song swaps at once.
-- **The queue** (the tab and the player's Up next alike, `QueueList`) opens on Now playing at the top
+- **The queue** (Now Playing's Up next, `UpNextList`) opens on Now playing at the top
   with History above it, reached by scrolling up and drawn faded, then *Playing next* (the rows the
   engine's `Queued::next` holds, `Snapshot.next_first`/`next_count`) and *Continue playing* (*Up
   next* where nothing was asked to play next), as the desktop's four parts (`QueueParts`), each headed by a row of its own
   (`QueueHeading`), never a `Section` header, which a plain list pins under a square blur that
   banded the player's list as it scrolled; it scrolls back to the playing row whenever the song
   changes. **The player's list is a window around the playing row** (`QueueParts`' `heardAtMost` 50
-  and `aheadAtMost` 200), with a row naming the earlier and the further songs that opens the Queue
-  tab: a whole library queued from Songs is thousands of rows, and a `List`
-  holding them all set every one up and scrolled past the whole history to the playing row on the
-  main thread, so the pane came in a beat after the cover landed (and, built earlier, swallowed
-  taps). The Queue tab is a window too, 1000 rows either side of the playing one
-  (`QueueSections.shownInTab`), each end a row that counts the rest and shows 1000 more when
-  tapped, so a song change re-sections a few thousand rows, never a whole library; rows are told
+  and `aheadAtMost` 200 at first), each end a row that counts the rest and shows 200 more when
+  tapped (`QueueSections.widenedBy`): a whole library queued from Songs is thousands of rows, and a
+  `List` holding them all set every one up and scrolled past the whole history to the playing row on
+  the main thread, so the pane came in a beat after the cover landed (and, built earlier, swallowed
+  taps); widened on asking, a song change re-sections what was asked for, never a whole library; rows are told
   whether they play (`QueueRow.current`) rather than each reading `currentQueueId`, and the list
   scrolls to the playing row only while it is on screen. In the player the list takes the full width
-  (the player's gutter undone), since its rows carry their own insets;
-  empty, the tab says so (`EmptyQueue`, with *Browse songs*) and hides Clear and Edit.
-  Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is), swipe to
-  remove by queue id, and Clear (confirmed) keeps the playing row. Play next and Add to queue are a
+  (the player's gutter undone), since its rows carry their own insets; empty, it says so.
+  Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is) and swipe to
+  remove by queue id; the player's More menu holds a *Queue* section while the queue holds a row:
+  *Save queue as playlist* and *Clear queue* (confirmed; it keeps the playing row). Play next and Add to queue are a
   song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
   `CollectionMenu` (`CollectionQueueActions`: Play next, Add to queue, Add to playlist; inside the
   playlist's own options menu on a playlist).
@@ -564,8 +566,8 @@ every route change (a pair of headphones at the same rate included), not from th
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
   it was reached through it. A failed read cuts nothing. Now Playing and the sheets are not kept.
-- **The Library tab's *All songs*** clears any filter or mix, sets the Songs tab to songs (it keeps
-  whatever grouping it last showed otherwise) and pops its stack before switching to it.
+- **The Library tab's *All songs*** clears any filter or mix and pushes the Songs page alone on the
+  Library stack, showing songs (`Navigation.showSongs`).
 - **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
   the full list is rows. **A shelf's cover pushes its page as every album and artist entry does**,
@@ -608,7 +610,7 @@ every route change (a pair of headphones at the same rate included), not from th
   in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
   options menu exports M3U8, PLS or XSPF through `export_playlist` into a `fileExporter`
   (`PlaylistFile`).
-- **The queue is saved as a playlist** from the Queue tab's toolbar (`createPlaylist` with every
+- **The queue is saved as a playlist** from the player's More menu (`createPlaylist` with every
   queue row, repeats kept).
 - **Statistics is a page of its own** (`StatisticsView.swift`), a row beside Favourites, All songs and
   Suggestions on the Library tab as well as in Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
@@ -746,7 +748,7 @@ every route change (a pair of headphones at the same rate included), not from th
   which switches scope; the tab has no `.searchSuggestions`. With no text the page lists the recent searches and a hint; Online with online
   features off shows why, with Open Settings. Library tools' Online search switches to this tab
   in Online (`Navigation.searchOnline`); there is no destination of its own.
-- **A result answers while the keyboard is up.** The Search tab's and the Songs tab's result lists
+- **A result answers while the keyboard is up.** The Search tab's and the Songs page's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first
   (`searchFocused`, `SearchResults.chosen`). The spinner a pending answer shows is one toolbar item

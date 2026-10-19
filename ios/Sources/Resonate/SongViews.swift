@@ -54,7 +54,7 @@ struct SongsView: View {
         .searchSuggestions { SearchSuggestions(search: search) }
         .onSubmit(of: .search) { search.remember() }
         .onAppear { search.recallRecents() }
-        .navigationTitle("Resonate")
+        .navigationTitle("Songs")
         .toolbar {
             if grouping == .songs, !search.isAsked {
                 ToolbarItem(placement: .topBarTrailing) { FilterButton() }
