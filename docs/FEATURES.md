@@ -107,15 +107,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   different networks meet only through a self-hosted `resonate-server`
 
 ## Command line and bus
-- [S] A TIDAL sign-in (`resonate tidal`) is only said not to be heard by a running window or
-  player: the window's providers are registered from the settings pane's own copy of the account
-- [S] A window whose equaliser pane is open keeps showing the bindings it started with after
-  `resonate eq` changed them, though the engine plays the new ones; the pane's next edit writes from
-  what it showed
+- [S] A window started from another settings file than a `resonate eq` or `resonate tidal` run
+  writes is not told of the change
 
 ## Equaliser and DSP
-- [S] The measurer a listener prefers is a flag of `resonate eq --find` and `--suggest` alone: no
-  setting keeps one per device, and the equaliser pane suggests from the fixed ranking
+- [S] The preferred measurer (`equaliser-measurer`) is one for every device and has no control in
+  the equaliser pane; it is a hand-edited key read at start
 - [S] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
   not carry it
 

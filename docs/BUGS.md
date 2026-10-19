@@ -30,10 +30,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
   caret inside a grapheme cluster; selection is one quad across a mixed-direction run
 
-## Equaliser and DSP
-- [S] A profile of more than 32 filters keeps the ones past 32 in its text, so removing a band
-  from it brings the 33rd into play at the next read
-
 ## Search
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
