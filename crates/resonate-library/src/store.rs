@@ -1724,6 +1724,35 @@ struct Tagged<'a> {
     declaration: &'a Declaration<'a>,
 }
 
+pub(crate) fn album_named_in(
+    tx: &Transaction<'_>,
+    title: &str,
+    owner: Option<&str>,
+    owner_id: Option<i64>,
+) -> Result<i64> {
+    let naming = vec![album_key(title, owner)];
+    if let Some(held) = album_already_named(tx, &naming)? {
+        return Ok(held);
+    }
+
+    let tags = TagSet::default();
+    let declaration = Declaration::of(&tags);
+    let grouped = make_album(
+        tx,
+        &Tagged {
+            title,
+            owner_id,
+            year: None,
+            mbid: None,
+            release_group: None,
+            declaration: &declaration,
+        },
+    )?;
+    name_the_album(tx, &mut Cache::default(), &naming, grouped)?;
+
+    Ok(grouped.id)
+}
+
 pub(crate) fn album_keyed(tx: &Transaction<'_>, key: &str) -> Result<Option<i64>> {
     queried(
         tx,

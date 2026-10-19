@@ -22,8 +22,8 @@ use resonate_core::{
 use resonate_providers::Providers;
 use resonate_vault::{Encoding, Kept as VaultKept, Replacing, VaultFiles};
 use rusqlite::{
-    Connection, OptionalExtension as _, Row, TransactionBehavior, hooks::Action, params,
-    params_from_iter, types::Value,
+    Connection, OptionalExtension as _, Row, Transaction, TransactionBehavior, hooks::Action,
+    params, params_from_iter, types::Value,
 };
 
 use crate::{
@@ -44,7 +44,7 @@ use crate::{
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
     Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word, alternatives,
-    deleted::{self, Deleted, Removal},
+    deleted::{self, Deleted, Removal, Trashes},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
@@ -691,6 +691,7 @@ pub(crate) struct Inner {
     walked: Mutex<Vec<Step>>,
     delivering_into: Mutex<Option<DeliveryFolder>>,
     trash_home: Mutex<Option<PathBuf>>,
+    trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
 }
 
@@ -1356,6 +1357,10 @@ impl Library {
         *self.inner.trash_home.lock() = data_home;
     }
 
+    pub fn trash_through(&self, trashes: Option<Arc<dyn Trashes>>) {
+        *self.inner.trashes.lock() = trashes;
+    }
+
     pub fn music_filters(&self) -> MusicFilters {
         *self.inner.music_filters.lock()
     }
@@ -1536,6 +1541,7 @@ impl Library {
                 walked: Mutex::new(Vec::new()),
                 delivering_into: Mutex::new(None),
                 trash_home: Mutex::new(None),
+                trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
             }),
         })
@@ -2195,16 +2201,18 @@ impl Library {
             .read(|connection| deleted::files_of(connection, tracks))?;
 
         let data_home = self.inner.trash_home.lock().clone();
+        let through = self.inner.trashes.lock().clone();
+        let through = through.as_deref();
         let mut done = Deleted::default();
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
-            match deleted::removed(&path, data_home.as_deref()) {
+            match deleted::removed(&path, data_home.as_deref(), through) {
                 Removal::Removed => {
                     done.files += 1;
                     for sidecar in &sidecars {
-                        deleted::removed(sidecar, data_home.as_deref());
+                        deleted::removed(sidecar, data_home.as_deref(), through);
                     }
                     emptied.extend(path.parent().map(Path::to_path_buf));
                     gone.push(path);
@@ -3109,35 +3117,7 @@ impl Library {
             if !still_unheld(transaction, want.release_track)? {
                 return Ok(None);
             }
-            transaction
-                .execute(
-                    "INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels,
-                            sample_format, frames, taken_from, took, was_bytes, was_codec,
-                            encoding, validated)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?4, ?11, ?12, 1)
-                     ON CONFLICT(key) DO NOTHING",
-                    params![
-                        key,
-                        store::vault_form_code(kept.form),
-                        held,
-                        kept.bytes as i64,
-                        kept.spec.rate.hz(),
-                        kept.spec.channel_count().get(),
-                        store::format_code(kept.spec.format),
-                        kept.frames.get() as i64,
-                        offered,
-                        took,
-                        store::codec_code(kept.codec),
-                        i64::from(weighed_under(kept, false).get()),
-                    ],
-                )
-                .map_err(|source| Error::store(StoreOp::Insert, source))?;
-            transaction
-                .execute(
-                    NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM,
-                    params![key, offered, took],
-                )
-                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            note_the_delivered_object(transaction, kept, &held, &offered, took)?;
 
             let artist = want
                 .artist
@@ -3220,6 +3200,100 @@ impl Library {
                     params![id, want.release_track.get() as i64],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+            Ok(Some(id))
+        })?;
+
+        id.map(|id| TrackId::new(id as u64).map_err(Error::from))
+            .transpose()
+    }
+
+    pub(crate) fn note_received(
+        &self,
+        recording: &resonate_core::Recording,
+        kept: &VaultKept,
+        from: &str,
+    ) -> Result<Option<TrackId>> {
+        let key = kept.key.to_string();
+        let held = self.inner.within_the_vault(&kept.path)?;
+        let path = store::path_text(&kept.path)?.to_owned();
+        let now = SystemTime::now();
+        let took = store::to_nanos(now);
+        let modified = std::fs::metadata(&kept.path)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(now);
+        let declared = &kept.declared;
+        let gain = declared.heard_gain();
+        let artist_name = Some(recording.artist.trim()).filter(|name| !name.is_empty());
+        let album_title = Some(recording.album.trim()).filter(|title| !title.is_empty());
+        let mbid = recording.mbid.as_ref().map(Mbid::as_str);
+
+        let id = self.inner.write(|transaction| {
+            note_the_delivered_object(transaction, kept, &held, from, took)?;
+
+            let artist = artist_name
+                .map(|name| store::artist_named_in(transaction, name, None))
+                .transpose()?;
+            let album = album_title
+                .map(|title| store::album_named_in(transaction, title, artist_name, None))
+                .transpose()?;
+            let landed: Option<i64> = transaction
+                .query_row(
+                    "INSERT INTO tracks (
+                         root_id, path, title, artist, artist_id, album_id, track_number,
+                         disc_number, duration, sample_rate, channels, sample_format, codec,
+                         file_size, modified, added, seen, mbid, vault_key, vault_path, genre,
+                         lyrics, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
+                         vault_bits
+                     ) VALUES (
+                         NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
+                     )
+                     ON CONFLICT(path, span_start) DO NOTHING
+                     RETURNING id",
+                    params![
+                        path,
+                        recording.title,
+                        artist_name,
+                        artist,
+                        album,
+                        declared.track_number.map(i64::from),
+                        declared.disc_number.map(i64::from),
+                        kept.frames.get() as i64,
+                        kept.spec.rate.hz(),
+                        kept.spec.channel_count().get(),
+                        store::format_code(kept.spec.format),
+                        store::codec_code(kept.codec),
+                        kept.bytes as i64,
+                        store::to_nanos(modified),
+                        took,
+                        mbid,
+                        key,
+                        held,
+                        declared.genre,
+                        declared.lyrics,
+                        gain.track_gain.map(|gain| f64::from(gain.get())),
+                        gain.track_peak.map(f64::from),
+                        gain.album_gain.map(|gain| f64::from(gain.get())),
+                        gain.album_peak.map(f64::from),
+                        i64::from(kept.bits),
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
+            let Some(id) = landed else {
+                return Ok(None);
+            };
+            store::index_row(
+                transaction,
+                id,
+                &recording.title,
+                artist_name.unwrap_or_default(),
+                album_title.unwrap_or_default(),
+                &store::indexed_genre_of(transaction, declared.genre.as_deref(), artist)?,
+            )?;
+            vaulted::keep_what_the_catalog_cannot_fill(transaction, id, declared)?;
             Ok(Some(id))
         })?;
 
@@ -6283,6 +6357,46 @@ fn keep_place(transaction: &rusqlite::Transaction<'_>, row: usize, at: Frames) -
                 i64::try_from(at.get()).unwrap_or(i64::MAX),
                 store::to_nanos(SystemTime::now())
             ],
+        )
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Insert, source))
+}
+
+fn note_the_delivered_object(
+    transaction: &Transaction<'_>,
+    kept: &VaultKept,
+    held: &str,
+    offered: &str,
+    took: i64,
+) -> Result<()> {
+    let key = kept.key.to_string();
+    transaction
+        .execute(
+            "INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels,
+                    sample_format, frames, taken_from, took, was_bytes, was_codec,
+                    encoding, validated)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?4, ?11, ?12, 1)
+             ON CONFLICT(key) DO NOTHING",
+            params![
+                key,
+                store::vault_form_code(kept.form),
+                held,
+                kept.bytes as i64,
+                kept.spec.rate.hz(),
+                kept.spec.channel_count().get(),
+                store::format_code(kept.spec.format),
+                kept.frames.get() as i64,
+                offered,
+                took,
+                store::codec_code(kept.codec),
+                i64::from(weighed_under(kept, false).get()),
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    transaction
+        .execute(
+            NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM,
+            params![key, offered, took],
         )
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Insert, source))

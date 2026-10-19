@@ -1572,6 +1572,12 @@ is never named.
     `PressControl` action alone, so the line's own pointer click, guarded by `by_the_pointer`, stays the
     seek): `enter` opens the line's menu, *Copy this line*, *Copy the whole sheet* and, on a timed
     line, *Play from this line* (`tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it`).
+    **A line reached by tab is brought into view**: each drawn line carries a canvas
+    (`brings_into_view_when_reached`) asking its handle in prepaint; `LyricsModel::reached` scrolls
+    the sheet just far enough (`moved_to_show`, clear of the `dissolve` edges, snapped to whole
+    pixels) once per reach (`left` lets go) and `led_by_hand`, so a synced sheet's glide does not
+    carry the line away for `HANDS_OFF`
+    (`tabbing_down_an_unsynced_sheet_keeps_the_line_reached_in_view`).
   - **The seek and volume rails are tab stops of their own context**: `slider::rail` under `Control
     Rail`; `app::answering_on_a_rail` binds `right`/`up` to `RailOn` and `left`/`down` to `RailBack`,
     stepping a seek by `seek_step`, a volume by `VOLUME_STEP`

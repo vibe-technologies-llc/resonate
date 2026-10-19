@@ -7,6 +7,7 @@ use std::{
 };
 
 use resonate_core::{FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, folded_letters};
+use resonate_vault::Keeping;
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
@@ -28,6 +29,8 @@ const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
 const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 
 const FIRST_ALIAS: usize = 2;
+
+const DEVICES: &str = "devices";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncedPlaylist {
@@ -538,6 +541,7 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SongFiled {
     Filed(PathBuf),
+    Vaulted(PathBuf),
     Nowhere,
     Refused,
 }
@@ -549,7 +553,7 @@ pub(crate) fn file_song(
     reader: &mut dyn Read,
 ) -> Result<SongFiled> {
     let Some(into) = library.delivering_into() else {
-        return Ok(SongFiled::Nowhere);
+        return vaulted(library, recording, extension, reader);
     };
     let Some(folder) = into
         .path
@@ -590,6 +594,47 @@ pub(crate) fn file_song(
             Ok(SongFiled::Refused)
         }
     }
+}
+
+fn vaulted(
+    library: &Library,
+    recording: &Recording,
+    extension: &str,
+    reader: &mut dyn Read,
+) -> Result<SongFiled> {
+    let Some(vault) = library.vault() else {
+        return Ok(SongFiled::Nowhere);
+    };
+    let kept = match vault.keep_delivered(reader, extension) {
+        Ok(Keeping::Kept(kept)) => kept,
+        Ok(Keeping::Refused(refusal)) => {
+            tracing::warn!(
+                refused = refusal.as_str(),
+                "a song from another device was refused by the vault"
+            );
+            return Ok(SongFiled::Refused);
+        }
+        Err(error) if vault.failed_itself(&error) => {
+            return Err(Error::Vault {
+                path: vault.root().to_path_buf(),
+                source: Box::new(error),
+            });
+        }
+        Err(error) => {
+            tracing::warn!(%error, "a song from another device could not be read into the vault");
+            return Ok(SongFiled::Refused);
+        }
+    };
+    let taken_from = format!("{DEVICES}:{}", recording.key());
+    if library
+        .note_received(recording, &kept, &taken_from)?
+        .is_none()
+    {
+        tracing::warn!(path = %kept.path.display(), "a song from another device is the audio of a song already held");
+        return Ok(SongFiled::Refused);
+    }
+
+    Ok(SongFiled::Vaulted(kept.path))
 }
 
 fn scanning(root: PathBuf) -> ScanOptions {

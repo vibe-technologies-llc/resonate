@@ -14,6 +14,7 @@ mod remote;
 mod service;
 mod track;
 mod tracklist;
+mod trash;
 
 pub use crate::{
     caret::{Blinking, caret_blinking},
@@ -26,4 +27,5 @@ pub use crate::{
     remote::{Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing},
     service::{Mpris, Teller, Told},
     track::{PlaybackStatus, utc_stamp},
+    trash::{Trashing, trash_through_the_portal},
 };

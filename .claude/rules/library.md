@@ -1094,7 +1094,14 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Library::delete_tracks` (`deleted.rs`): `Walk` guard; distinct paths of the tracks
   (`Error::UnknownTrack` for an unheld id); each file moved to the freedesktop trash
   (`trash::send`, hand-written to the Trash spec, pure Rust; already gone = removed; refused:
-  logged, `Deleted::kept`, rows left). **No trash is no deletion**: a file that cannot be trashed
+  logged, `Deleted::kept`, rows left). **A desktop's trash can stand in**: `Library::trash_through`
+  takes a `Trashes` (answering a `Removal`) that replaces the hand-written bin for every file and
+  sidecar, so a sandbox whose own `XDG_DATA_HOME` is not the desktop's trash does not hide a
+  deleted song; the binary registers one under Flatpak (`/.flatpak-info`, `trashing.rs`) over
+  `resonate_mpris::trash_through_the_portal` (`org.freedesktop.portal.Trash.TrashFile`, the file's
+  descriptor passed; zbus is not a library dependency), a portal that refuses or cannot be
+  reached being `Kept` (`a_file_the_desktops_trash_would_not_take_is_kept_with_its_row`).
+  **No trash is no deletion**: a file that cannot be trashed
   (`Error::Trash`, `Error::NoTrashFor`) is kept with its rows, never removed for good. The bin is
   `$XDG_DATA_HOME/Trash` (else `~/.local/share/Trash`; `Library::trash_into` overrides the data
   home, which tests set) where it is on the file's device, else `$topdir/.Trash-$uid` at the

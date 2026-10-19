@@ -125,7 +125,10 @@ instance names are keyed by pid and each process has its own `INSTANCES` pool.
   poll thread one unanswered call held every property change 25 s). Inhibit is a *level*:
   `Errands::follow` writes whether the session should be awake into an `AtomicBool` and nudges the
   thread, whose `Gripping` weighs it after every errand. A failed `Inhibit` still counts as taken.
-  Either service missing = debug records, never a refusal to start.
+  Either service missing = debug records, never a refusal to start. `trash.rs` is the same kind
+  of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
+  passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own
+  (`Trashing`: `Unopened`, `Unreached`, `Refused`), asked by the binary, never by this crate's poll.
 - **A notification is keyed on what it *says*.** The cover lands a moment after the track starts:
   the second telling replaces the first under the server's `replaces_id`; teardown closes it and
   waits `FAREWELL` (500 ms). Body escaped only where `GetCapabilities` answers `body-markup`.

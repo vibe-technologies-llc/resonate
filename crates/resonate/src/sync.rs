@@ -591,12 +591,12 @@ impl Catalog for Catalogued {
             .library
             .file_song_from_elsewhere(recording, extension, &mut file)
         {
-            Ok(SongFiled::Filed(_)) => Ok(true),
+            Ok(SongFiled::Filed(_) | SongFiled::Vaulted(_)) => Ok(true),
             Ok(SongFiled::Refused) => Ok(false),
             Ok(SongFiled::Nowhere) => {
                 tracing::warn!(
                     "a song from another device has nowhere to land: set music-folder to the \
-                     folder songs are filed in"
+                     folder songs are filed in, or open a vault"
                 );
                 Err(Refused::Unwritable)
             }
