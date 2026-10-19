@@ -4,13 +4,17 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use resonate_core::{MediaLocation, Recording};
 use resonate_library::{
-    Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled,
+    Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled, TrackQuery,
+    Vault,
 };
 
 const RATE: u32 = 44_100;
@@ -333,5 +337,81 @@ fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behin
 
     assert_eq!(filed, SongFiled::Refused);
     assert!(!tree.root.join("Meddle/Seamus.wav").exists());
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> Result<()> {
+    let tree = Tree::new();
+    let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(Arc::clone(&vault))?;
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let SongFiled::Vaulted(kept) =
+        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?
+    else {
+        panic!("vaulted");
+    };
+
+    assert!(kept.starts_with(vault.root()));
+    let resolved = library.resolve_recording(&arriving)?.expect("catalogued");
+    assert_eq!(resolved.location, MediaLocation::local(&kept));
+    let rows = library.tracks(&TrackQuery::default())?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].title, "San Tropez");
+    assert_eq!(rows[0].artist.as_deref(), Some("Pink Floyd"));
+    assert!(rows[0].album_id.is_some());
+    assert_eq!(library.held_songs()?, []);
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_comes_back_nowhere_with_neither_folder_nor_vault() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+
+    assert_eq!(filed, SongFiled::Nowhere);
+    Ok(())
+}
+
+#[test]
+fn two_songs_of_one_album_from_another_device_land_in_the_vault_under_one_album() -> Result<()> {
+    let tree = Tree::new();
+    let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(vault)?;
+    for title in ["San Tropez", "Seamus"] {
+        let arriving = song(title, "Pink Floyd", "Meddle");
+        let mut bytes = tagged_wav(title, "Pink Floyd", "Meddle");
+        if title == "Seamus" {
+            *bytes.last_mut().expect("a sample") = 1;
+        }
+        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+    }
+
+    let rows = library.tracks(&TrackQuery::default())?;
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].album_id, rows[1].album_id);
+    Ok(())
+}
+
+#[test]
+fn a_song_whose_audio_the_vault_already_holds_under_another_recording_is_refused() -> Result<()> {
+    let tree = Tree::new();
+    let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(vault)?;
+    let first = song("San Tropez", "Pink Floyd", "Meddle");
+    let again = song("San Tropez (Edit)", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    library.file_song_from_elsewhere(&first, "wav", &mut Cursor::new(bytes.clone()))?;
+
+    let filed = library.file_song_from_elsewhere(&again, "wav", &mut Cursor::new(bytes))?;
+
+    assert_eq!(filed, SongFiled::Refused);
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 1);
     Ok(())
 }

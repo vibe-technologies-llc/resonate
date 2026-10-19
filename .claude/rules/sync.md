@@ -135,9 +135,15 @@ Failures are a `Refused` the implementation logs (errors.md: no boxed error). Th
 local; a recording resolves by MBID, else folded artist, title words and album with lengths within
 2 s; a remote playlist write moves `modified` past any undo step's `left_at` and drops those steps,
 `undo::overtaken`). A song from another device is filed in the music folder under `organise-as`
-like a delivery (`filed::landed_beside`) and its root scanned; with no music folder it is refused
-(`SongFiled::Nowhere`), and one that does not probe is deleted and answered `false`
-(`SongFiled::Refused`), so a damaged file is never filed to be fetched again.
+like a delivery (`filed::landed_beside`) and its root scanned. **With no music folder it lands in the
+open vault** (`SongFiled::Vaulted`, `synced::vaulted`): `Vault::keep_delivered`, then
+`Library::note_received` writes the `vault_objects` row (`taken_from` = `devices:<recording key>`)
+and a rootless `tracks` row named by the recording (title, artist, album grouped by
+`store::album_named_in`, MBID) with what the file declared (genre, lyrics, ReplayGain, numbers), as
+a provider's delivery lands (`providers.md`); a held vaulted song is not offered onward, and audio the vault holds already under another recording is `Refused`. With
+neither folder nor vault it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
+vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
+filed to be fetched again.
 
 ## The service
 
