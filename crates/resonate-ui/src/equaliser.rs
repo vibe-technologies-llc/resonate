@@ -7,7 +7,8 @@ use resonate_core::{
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
-    Binding, Catalogue, Corrected, Device, DeviceId, Found, ProfileName, Store, search, suggest,
+    Binding, Catalogue, Corrected, Device, DeviceId, Found, ProfileName, Store, search_preferring,
+    suggest_preferring,
 };
 
 use crate::{Bindings, models::Notice, toast};
@@ -214,6 +215,7 @@ pub struct EqualiserModel {
     store: Store,
     corrections: Arc<Corrected>,
     bindings: Bindings,
+    measurer: Option<String>,
     kept: Vec<ProfileName>,
     shown: Option<(Curve, Profile)>,
     held: BTreeMap<Curve, Arc<Profile>>,
@@ -246,6 +248,7 @@ impl EqualiserModel {
             store,
             corrections,
             bindings,
+            measurer: None,
             kept,
             shown: None,
             held: BTreeMap::new(),
@@ -507,6 +510,10 @@ impl EqualiserModel {
 
     pub fn switch(&mut self, on: bool) {
         self.bindings.enabled = on;
+    }
+
+    pub fn prefer(&mut self, measurer: Option<String>) {
+        self.measurer = measurer;
     }
 
     pub fn rebound(&mut self, bindings: Bindings) {
@@ -861,7 +868,7 @@ impl EqualiserModel {
             return;
         }
         if let Some(catalogue) = self.catalogue.clone() {
-            self.found = search(&catalogue, typed)
+            self.found = search_preferring(&catalogue, typed, self.measurer.as_deref())
                 .into_iter()
                 .take(FOUND_SHOWN)
                 .collect();
@@ -915,7 +922,8 @@ impl EqualiserModel {
 
     pub fn suggested(&self, description: &str) -> Option<&Device> {
         let catalogue = self.catalogue.as_ref()?;
-        suggest(catalogue, description).and_then(|found| catalogue.device(found))
+        suggest_preferring(catalogue, description, self.measurer.as_deref())
+            .and_then(|found| catalogue.device(found))
     }
 
     pub fn knows_the_catalogue(&self) -> bool {
@@ -1284,6 +1292,38 @@ mod tests {
             told.bound.get(&dac).map(|profile| profile.bands().to_vec()),
             Some(vec![louder])
         );
+    }
+
+    #[test]
+    fn the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking() {
+        let by = |measured_by: &str| Device {
+            id: DeviceId::new(&format!("{measured_by}/over-ear/Maker Thing 100")).expect("a path"),
+            label: "Maker Thing 100".to_owned(),
+            measured_by: measured_by.to_owned(),
+            rig: None,
+        };
+        let folder = std::env::temp_dir().join("resonate-ui-equaliser-measurer");
+        let mut model = EqualiserModel::new(
+            folder,
+            Arc::new(Corrected::uncorrected()),
+            Bindings::default(),
+        );
+        model.catalogue = Some(Arc::new(Catalogue::of(vec![
+            by("Rtings"),
+            by("oratory1990"),
+        ])));
+        let measurer_of = |model: &EqualiserModel| {
+            model
+                .suggested("Maker Thing 100")
+                .map(|device| device.measured_by.clone())
+        };
+
+        let ranked = measurer_of(&model);
+        model.prefer(Some("rtings".to_owned()));
+        let preferred = measurer_of(&model);
+
+        assert_eq!(ranked.as_deref(), Some("oratory1990"));
+        assert_eq!(preferred.as_deref(), Some("Rtings"));
     }
 
     #[test]

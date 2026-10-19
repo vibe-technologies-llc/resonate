@@ -237,6 +237,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   as its error after the pass, `resonate mcp` logs it at error, and the window logs it and toasts it
   once when the pass ends (`Sourcing::unkept`, `providers::sourced`'s second half). The settings path
   is already the default config file, so no further location is tried.
+- `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
+  device (one for every device); `eq --find`/`--suggest` take `--measurer` over it and the
+  equaliser pane's search and suggestion take it over the fixed ranking
+  (`EqualiserModel::prefer`); read at start, no pane control.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is

@@ -144,6 +144,7 @@ pub struct Config {
     pub listen_for: Option<Duration>,
     pub equaliser: Option<bool>,
     pub equaliser_for: Option<Bindings>,
+    pub equaliser_measurer: Option<String>,
     pub resume: Option<bool>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
@@ -258,6 +259,7 @@ impl fmt::Debug for Config {
             listen_for,
             equaliser,
             equaliser_for,
+            equaliser_measurer,
             resume,
             history_kept,
             organise_as,
@@ -358,6 +360,7 @@ impl fmt::Debug for Config {
             .field("listen_for", listen_for)
             .field("equaliser", equaliser)
             .field("equaliser_for", equaliser_for)
+            .field("equaliser_measurer", equaliser_measurer)
             .field("resume", resume)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
@@ -533,6 +536,10 @@ impl Config {
             Some(false) => PreviousRestarts::AlwaysGoesBack,
             Some(true) | None => PreviousRestarts::RestartsTheTrack,
         }
+    }
+
+    pub fn equaliser_measurer(&self) -> Option<&str> {
+        self.equaliser_measurer.as_deref()
     }
 
     pub fn equaliser_on(&self) -> bool {
@@ -982,6 +989,9 @@ impl Config {
             ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
             ConfigKey::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
+            }
+            ConfigKey::EqualiserMeasurer => {
+                config.equaliser_measurer = given(at.string(value)?);
             }
             ConfigKey::EqualiserProfile => {
                 config.equaliser_for.get_or_insert_default().fallback = at.binding(value)?;
@@ -2090,6 +2100,17 @@ mod tests {
         assert_eq!(config.acoustid_key, None);
 
         assert_eq!(Config::default().acoustid_key, None);
+    }
+
+    #[test]
+    fn an_equaliser_measurer_is_read_and_a_blank_one_is_none() {
+        let config = read("equaliser-measurer = \" Rtings \"").expect("a well formed document");
+        assert_eq!(config.equaliser_measurer(), Some("Rtings"));
+
+        let config = read("equaliser-measurer = \"  \"").expect("a well formed document");
+        assert_eq!(config.equaliser_measurer(), None);
+
+        assert_eq!(Config::default().equaliser_measurer(), None);
     }
 
     #[cfg(feature = "ui")]

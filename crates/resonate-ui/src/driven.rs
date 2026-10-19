@@ -323,6 +323,7 @@ impl Driven {
                 settings: Arc::new(Ephemeral),
                 online,
                 bindings: Bindings::default(),
+                measurer: None,
                 for_the_pass: Consulted {
                     reference: reference.clone(),
                     fingerprinters,

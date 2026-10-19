@@ -156,6 +156,7 @@ pub struct Lookups {
     pub corrections: Arc<Corrected>,
     pub online: Online,
     pub bindings: Bindings,
+    pub measurer: Option<String>,
     pub sourcing: Sourcing,
     pub listens: Listens,
 }
@@ -169,6 +170,7 @@ pub struct ResonateApp {
     pub settings: Arc<dyn Settings>,
     pub online: Online,
     pub bindings: Bindings,
+    pub measurer: Option<String>,
     pub reference: Option<Arc<dyn Reference>>,
     pub for_the_pass: Consulted,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
@@ -1041,6 +1043,7 @@ pub fn run(
             corrections: Arc::clone(&lookups.corrections),
             settings: Arc::clone(&stored.settings),
             bindings: lookups.bindings.clone(),
+            measurer: lookups.measurer.clone(),
             online: lookups.online.clone(),
             reference: lookups.reference.clone(),
             for_the_pass: lookups.for_the_pass.clone(),
