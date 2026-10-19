@@ -50,9 +50,6 @@ struct SearchTab: View {
         .navigationTitle("Search")
         .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .toolbar {
-            if place == .library {
-                ToolbarItem(placement: .topBarTrailing) { SearchProgress(search: search) }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
             }

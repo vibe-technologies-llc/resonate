@@ -764,10 +764,11 @@ every route change (a pair of headphones at the same rate included), not from th
 - **A result answers while the keyboard is up.** The Search tab's and the Songs page's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first
-  (`searchFocused`, `SearchResults.chosen`). The spinner a pending answer shows is one toolbar item
-  held for the whole search (`SearchProgress`, shown by its opacity), never an item added and
-  removed with each keystroke, which rebuilt the bar under the focused field as the listener
-  typed and left the rows below it ignoring taps until the keyboard was stowed.
+  (`searchFocused`, `SearchResults.chosen`). A library search shows no spinner: the last answer
+  stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar
+  spinner added and removed with each keystroke rebuilt the bar under the focused field, and one
+  held hidden for the whole search drew an empty slot in the glass pill iOS 26 groups trailing
+  items into (beside Listen's ear) and a pill of its own on the Songs page.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
   page published at once where nothing is shown yet and the rest after; albums and artists through
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. The ordered

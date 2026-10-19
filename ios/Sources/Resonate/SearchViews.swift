@@ -149,17 +149,6 @@ struct SearchResults: View {
     }
 }
 
-struct SearchProgress: View {
-    let search: SearchModel
-
-    var body: some View {
-        let busy = search.asking && search.hasAnswer
-        ProgressView()
-            .opacity(busy ? 1 : 0)
-            .accessibilityHidden(!busy)
-    }
-}
-
 struct SeeAllHeader: View {
     let title: String
     let more: Bool

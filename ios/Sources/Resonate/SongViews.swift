@@ -60,9 +60,6 @@ struct SongsView: View {
                 ToolbarItem(placement: .topBarTrailing) { FilterButton() }
             }
             LibraryToolbar()
-            if search.isAsked {
-                ToolbarItem(placement: .topBarLeading) { SearchProgress(search: search) }
-            }
         }
     }
 
