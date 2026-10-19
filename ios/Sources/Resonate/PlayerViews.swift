@@ -367,13 +367,26 @@ struct PlayerTitles: View {
     let track: Track?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            words
-                .contentTransition(.opacity)
-                .motion(Handover.animation, value: track?.id)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                room
+                words
+                    .contentTransition(.opacity)
+                    .motion(Handover.animation, value: track?.id)
+            }
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
+    }
+
+    private var room: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(" ").font(.title2.weight(.bold)).lineLimit(2, reservesSpace: true)
+            Text(" ").font(.title3)
+            Text(" ").font(.subheadline)
+        }
+        .hidden()
+        .accessibilityHidden(true)
     }
 
     private var words: some View {
