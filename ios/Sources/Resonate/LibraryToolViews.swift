@@ -43,8 +43,8 @@ struct LibraryToolsView: View {
                 }
             }
             Section("Discover") {
-                Button { navigation.searchOnline() } label: {
-                    ToolRow(title: "Online search", detail: "Find songs, artists, albums and shared music", symbol: "globe")
+                Button { navigation.openSearch() } label: {
+                    ToolRow(title: "Search", detail: "Your library, online music and shared links", symbol: "magnifyingglass")
                 }
                 Button { navigation.listening = true } label: {
                     ToolRow(title: "Listen", detail: "Name the song playing around you", symbol: "ear")

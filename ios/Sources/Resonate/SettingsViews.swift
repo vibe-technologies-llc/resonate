@@ -32,6 +32,7 @@ struct SettingsView: View {
         "Download providers TIDAL Subsonic Monochrome",
         "Scrobbling ListenBrainz Last.fm",
         "Erase all data reset everything delete start over",
+        "Search history recent searches privacy",
         "Appearance accent colour icon tint theme background shader wallpaper",
     ]
 
@@ -89,6 +90,9 @@ struct SettingsView: View {
                         entryRow(syncEntry)
                     }
                 }
+            }
+            if shown("Search history recent searches privacy") {
+                SearchHistorySection()
             }
             if features.online, shown("Artwork and details automatically portraits Wi-Fi missing covers") {
                 EnrichmentSection()
@@ -964,5 +968,27 @@ struct ScrobblingView: View {
         .navigationTitle("Scrobbling")
         .onAppear { if let saved = features.scrobbleAccount { account = saved } }
         .onChange(of: features.scrobbleAccount) { _, saved in if let saved { account = saved } }
+    }
+}
+
+struct SearchHistorySection: View {
+    @Environment(Library.self) private var library
+    @AppStorage(SearchModel.historyKeptKey, store: UserDefaults(suiteName: SearchModel.historySuite)) private var kept = true
+
+    var body: some View {
+        Section {
+            Toggle(isOn: $kept) {
+                ToolRow(title: "Keep search history", detail: "Offer your recent searches again", symbol: "clock.arrow.circlepath")
+            }
+            .onChange(of: kept) { _, now in
+                guard !now else { return }
+                library.songSearch.forgetRecents()
+                library.tabSearch.forgetRecents()
+            }
+        } header: {
+            Text("Search")
+        } footer: {
+            Text("Searches are kept on this iPhone only. Turning this off forgets the ones kept.")
+        }
     }
 }

@@ -741,6 +741,10 @@ every route change (a pair of headphones at the same rate included), not from th
   offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
   each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
+  **Search history can be turned off**: Settings' *Search* section holds *Keep search history*
+  (`SearchHistorySection`, `keep-search-history` in the same suite, on unless set), and while it is
+  off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
+  kept.
   Completions are never `.searchSuggestions` while typing: that overlay sat over the results and
   moved with every answer. The results and the browsed music are two `List`s (`SongsList`), so a
   search beginning or ending swaps one list for the other instead of deleting or inserting every
@@ -753,14 +757,15 @@ every route change (a pair of headphones at the same rate included), not from th
   closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
   that clears it. Playlists and Suggestions are reached from the Library tab (Suggestions is a row
   beside Favourites and All songs), online search from the Search tab.
-- **The Search tab** (`SearchTab.swift`) has scopes Your library (the default) and Online
-  (`Navigation.searchPlace`), one field for both: typing sets `tabSearch.text` always and
-  `Features.onlineQuery` only in Online, and choosing Online hands it the text, so a library search
-  never reaches the network. Your library shows the Songs results (Top, *See all* pushing the full
-  list, *Did you mean*, reads, the completions' row) and, under five songs, "Search online for “…”",
-  which switches scope; the tab has no `.searchSuggestions`. With no text the page lists the recent searches and a hint; Online with online
-  features off shows why, with Open Settings. Library tools' Online search switches to this tab
-  in Online (`Navigation.searchOnline`); there is no destination of its own.
+- **The Search tab is one search of the library and online** (`SearchTab.swift`), with no scope to
+  choose: typing sets `tabSearch.text` and `Features.onlineQuery` together, and the page lists *In
+  your library* (the completions' row, then the Songs results' Top with *See all* pushing the full
+  list, or, matching nothing, *Did you mean* and one line saying so) above *Online* (the online
+  Top, below), each under a heading row of its own (`SearchHeading`). With online features off
+  nothing reaches the network (`Features.askOnline` asks nothing then) and *Online* is one row
+  that opens Settings (`OnlineOffRow`); a link (`OnlineAsked.isLink`) shows *Online* alone. The tab
+  has no `.searchSuggestions`. With no text the page lists the recent searches and a hint. Library
+  tools' *Search* opens this tab (`Navigation.openSearch`); there is no destination of its own.
 - **A result answers while the keyboard is up.** The Search tab's and the Songs page's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first

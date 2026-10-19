@@ -87,7 +87,6 @@ struct ListenSheet: View {
     private func find(_ song: HeardSong) {
         dismiss()
         navigation.nowPlaying = false
-        navigation.searchPlace = .library
         navigation.tab = .search
         library.tabSearch.text = [song.artist, song.title].filter { !$0.isEmpty }.joined(separator: " ")
     }

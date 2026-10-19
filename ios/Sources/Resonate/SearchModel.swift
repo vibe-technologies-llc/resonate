@@ -19,6 +19,8 @@ final class SearchModel {
     nonisolated static let mostSongs: UInt32 = 500
     private static let recentsKept = 10
     private static let recentsKey = "recent-searches"
+    static let historyKeptKey = "keep-search-history"
+    static let historySuite = "library-features"
     private static let nothing = LibrarySearch(
         tracks: [],
         trackCount: 0,
@@ -44,8 +46,12 @@ final class SearchModel {
 
     init(library: Library, remembering: Bool) {
         self.library = library
-        remembered = remembering ? UserDefaults(suiteName: "library-features") : nil
-        recents = remembered?.stringArray(forKey: Self.recentsKey) ?? []
+        remembered = remembering ? UserDefaults(suiteName: Self.historySuite) : nil
+        recents = Self.kept(remembered) ? remembered?.stringArray(forKey: Self.recentsKey) ?? [] : []
+    }
+
+    private static func kept(_ remembered: UserDefaults?) -> Bool {
+        remembered?.object(forKey: historyKeptKey) as? Bool ?? true
     }
 
     var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -66,7 +72,7 @@ final class SearchModel {
     }
 
     func remember() {
-        guard let remembered else { return }
+        guard let remembered, Self.kept(remembered) else { return }
         let kept = query
         guard !kept.isEmpty else { return }
 
@@ -76,7 +82,7 @@ final class SearchModel {
     }
 
     func recallRecents() {
-        let stored = remembered?.stringArray(forKey: Self.recentsKey) ?? []
+        let stored = Self.kept(remembered) ? remembered?.stringArray(forKey: Self.recentsKey) ?? [] : []
         if stored != recents { recents = stored }
     }
 

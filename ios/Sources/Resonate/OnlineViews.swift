@@ -109,22 +109,6 @@ struct OnlineAnswers {
     }
 }
 
-struct OnlineOff: View {
-    @Environment(Navigation.self) private var navigation
-
-    var body: some View {
-        ContentUnavailableView {
-            Label("Online features are off", systemImage: "globe")
-        } description: {
-            Text("Turn them on in Settings to search for music online and download it.")
-        } actions: {
-            Button("Open Settings") { navigation.tab = .settings }
-                .buttonStyle(.glass)
-        }
-        .listRowSeparator(.hidden)
-    }
-}
-
 struct OnlineSearchContent: View {
     @Environment(Library.self) private var library
     @Binding var actions: OnlineSongActions
@@ -135,9 +119,7 @@ struct OnlineSearchContent: View {
         let found = features.onlineFound
         let current = found.text == text
 
-        if !features.online {
-            OnlineOff()
-        } else if text.isEmpty {
+        if text.isEmpty {
             ContentUnavailableView(
                 "Search online",
                 systemImage: "globe",

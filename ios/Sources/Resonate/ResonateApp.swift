@@ -99,7 +99,6 @@ final class Navigation {
     var deleting: SongsToDelete?
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
-    var searchPlace = SearchPlace.library
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
@@ -121,9 +120,8 @@ final class Navigation {
         tagging = waiting
     }
 
-    func searchOnline() {
+    func openSearch() {
         nowPlaying = false
-        searchPlace = .online
         tab = .search
     }
 
