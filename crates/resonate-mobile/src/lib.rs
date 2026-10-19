@@ -37,7 +37,9 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
 use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume};
-use resonate_engine::{Command, EngineConfig, PlaybackState, Player, QueueItem, RepeatMode};
+use resonate_engine::{
+    Command, EngineConfig, PlaybackState, Player, PlayerState, QueueItem, RepeatMode,
+};
 
 use crate::{
     catalog::Catalog,
@@ -93,6 +95,18 @@ pub enum Transport {
     Loading,
     Playing,
     Paused,
+}
+
+fn row_being_opened(state: &PlayerState, rows: &[QueueItem]) -> Option<TrackId> {
+    let opening = matches!(
+        state.playback,
+        PlaybackState::Buffering | PlaybackState::Paused
+    );
+    opening
+        .then_some(state.queue_position)
+        .flatten()
+        .and_then(|at| rows.get(at))
+        .map(|item| item.id)
 }
 
 const fn transport_of(playback: PlaybackState) -> Transport {
@@ -405,11 +419,15 @@ impl MobilePlayer {
         }
         let waiting = self.still_waiting(&state);
         self.count_listening(&state, &queue.rows)?;
-        let current = state.current.and_then(|track| {
+        let heard = state
+            .current
+            .map(|track| track.id)
+            .or_else(|| row_being_opened(&state, &queue.rows));
+        let current = heard.and_then(|id| {
             queue
                 .rows
                 .iter()
-                .find(|item| item.id == track.id)
+                .find(|item| item.id == id)
                 .and_then(|item| {
                     document_uri(&item.location)
                         .ok()

@@ -147,7 +147,7 @@ mod tests {
     };
     use resonate_codec::Sources;
     use resonate_core::{Frames, Gain, SampleRate};
-    use resonate_engine::{EngineConfig, Player};
+    use resonate_engine::{EngineConfig, PlaybackState, Player, PlayerState};
 
     use super::*;
     use crate::{
@@ -464,6 +464,50 @@ mod tests {
         assert_eq!(
             skipped.current.and_then(|current| current.queue_id),
             Some(ids[1])
+        );
+    }
+
+    #[test]
+    fn a_row_still_opening_is_the_song_a_snapshot_names() {
+        let harness = Harness::new();
+        harness.resumed("abc", 0, 0);
+        harness.settled(|snapshot| snapshot.current.is_some());
+
+        let rows = harness
+            .player
+            .player
+            .lock()
+            .as_ref()
+            .expect("an open player")
+            .queued()
+            .rows;
+        let opening = |playback| PlayerState {
+            playback,
+            queue_position: Some(1),
+            ..PlayerState::default()
+        };
+
+        assert_eq!(
+            crate::row_being_opened(&opening(PlaybackState::Buffering), &rows),
+            Some(rows[1].id)
+        );
+        assert_eq!(
+            crate::row_being_opened(&opening(PlaybackState::Paused), &rows),
+            Some(rows[1].id)
+        );
+        assert_eq!(
+            crate::row_being_opened(&opening(PlaybackState::Stopped), &rows),
+            None
+        );
+        assert_eq!(
+            crate::row_being_opened(
+                &PlayerState {
+                    queue_position: Some(rows.len()),
+                    ..opening(PlaybackState::Buffering)
+                },
+                &rows
+            ),
+            None
         );
     }
 

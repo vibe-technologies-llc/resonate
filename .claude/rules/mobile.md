@@ -69,6 +69,13 @@ takes it down when playback goes on
 `snapshot` consumes (it drains engine events, takes the failure and counts listening), so a caller that
 only needs the transport asks `transport`, which reads the engine's state and nothing else.
 
+**A song being opened is the song a snapshot names.** The engine opens every row off its thread and
+publishes no `current` meanwhile (`audio.md`'s *Every track opens off the engine thread*), so a
+poll landing in a skip read no song and the phones drew an empty player, then the next song with
+nothing to animate from. Where the engine names no track while buffering or paused, `current` is the
+queue row at `queue_position` (`row_being_opened`), at position 0 with the catalog's length, until
+the opening lands (`a_row_still_opening_is_the_song_a_snapshot_names`).
+
 ## The catalog does not hold the transport
 
 Nothing the transport needs waits on the catalog's one connection. `snapshot` copies the engine's
