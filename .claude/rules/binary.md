@@ -95,7 +95,13 @@ them no type). Decoders: `audio.md`.
   `a_pass_no_signal_interrupts_answers_its_summary_through_until_told`).
 - **One signal silences the graph though the front end never answers.** `signals.rs` asks the front
   end to quit, leaves anyway after `DRAINS_WITHIN`; the farewell thread sends `Command::Stop` after
-  `SILENCED_AFTER`, so a wedged window is not *heard* for the whole drain.
+  `SILENCED_AFTER`, so a wedged window is not *heard* for the whole drain. `relay` takes a
+  `Farewell` (what silences the graph, what leaves, and the two delays), so the tests drive the
+  first signal's quit request, a second signal's 128 + n, the silence and the leave after the delays
+  and a closed front end's immediate leave with stand-ins and short delays
+  (`the_first_signal_asks_to_quit_and_a_second_leaves_with_its_number`,
+  `a_front_end_that_never_answers_is_silenced_and_then_left`,
+  `a_signal_with_no_front_end_listening_leaves_at_once`).
 - **Output via `said!`, `said_on!`, `told!`, never `println!`/`eprintln!`** (`main.rs` denies
   `clippy::print_stdout`, `print_stderr`). Control characters but newline/tab, and the bidi
   overrides in `table::TURNS_THE_READING`, become spaces so titles and service answers cannot steer
@@ -116,7 +122,8 @@ them no type). Decoders: `audio.md`.
   title and artist where it is the row's, else the file's stem.
 - **A password prompt restores the terminal on a signal.** `resonate lastfm` reads the password
   under `signals::leave_when_told`: the first interrupt leaves through `signals::leave`, echo back
-  on.
+  on; `leaving_on` is that over any signals and any `leaving`
+  (`a_signal_during_a_prompt_leaves_with_its_number`).
 - **`play` takes a key at a time on a terminal.** `input::KeyAtATime` leaves canonical mode and echo
   via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
