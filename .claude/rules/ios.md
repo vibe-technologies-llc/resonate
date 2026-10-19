@@ -44,7 +44,9 @@ has no such step. So the `Resonate` target is compiled with `-emit-const-values`
 `-const-gather-protocols-file Resonate/AppIntentsProtocols.json` (an absolute path, since the
 compiler resolves it from its own working directory; both flags, since the first alone gathers
 nothing), which leaves a `.swiftconstvalues` per source under
-`.build/out/Intermediates.noindex/Resonate.build/<Config>-iphoneos/Resonate-t.build/`, and
+`.build/out/Intermediates.noindex/Resonate.build/<Config>-iphoneos/Resonate-t.build/` in debug and
+one for the whole module in release (`Resonate-primary.swiftconstvalues`, read in place of the
+per-source files, since a whole-module build writes no other), and
 `ios/app-intents.py [-c debug|release] [--ipa]` writes `xtool/Resonate.app/Metadata.appintents`
 (`extract.actionsdata`, `version.json` naming tools version 27A266a) from them after
 `xtool dev build`, and with `--ipa` packs `xtool/Resonate.ipa`. `xtool dev run` and

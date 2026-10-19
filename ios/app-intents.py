@@ -75,11 +75,9 @@ def wrapped(type_name, wrapper):
 def const_values():
     configuration = args.configuration.capitalize()
     sources = {path.stem for path in (ios / "Sources" / MODULE).glob("*.swift")}
-    found = [
-        path
-        for path in (ios / ".build").glob(f"**/{MODULE}.build/{configuration}-iphoneos/{MODULE}-t.build/**/*.swiftconstvalues")
-        if path.stem in sources
-    ]
+    written = list((ios / ".build").glob(f"**/{MODULE}.build/{configuration}-iphoneos/{MODULE}-t.build/**/*.swiftconstvalues"))
+    whole_module = [path for path in written if path.stem == f"{MODULE}-primary"]
+    found = whole_module or [path for path in written if path.stem in sources]
     if not found:
         raise SystemExit(f"app-intents.py: no const values for a {args.configuration} build under {ios / '.build'}; run `xtool dev build -c {args.configuration}` first")
     return [entry for path in sorted(found) for entry in json.loads(path.read_text())]
