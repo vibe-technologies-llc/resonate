@@ -83,14 +83,14 @@ struct LibraryView: View {
             }
             if !playlistsOnly, shelf == .all, !albumHits.isEmpty {
                 Section {
-                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked) { navigation.open($0.destination) }
+                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked)
                 } header: {
                     SeeAllHeader(title: "Albums", more: albumHits.count > Self.shelved) { shelf = .albums }
                 }
             }
             if !playlistsOnly, shelf == .all, !artistHits.isEmpty {
                 Section {
-                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked) { navigation.open($0.destination) }
+                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked)
                 } header: {
                     SeeAllHeader(title: "Artists", more: artistHits.count > Self.shelved) { shelf = .artists }
                 }

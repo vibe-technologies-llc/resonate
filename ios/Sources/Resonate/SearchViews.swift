@@ -62,14 +62,14 @@ struct SearchResults: View {
         }
         if !found.albums.isEmpty {
             Section {
-                AlbumShelf(albums: Array(found.albums.prefix(Self.topCollections)), query: query) { open($0.destination) }
+                AlbumShelf(albums: Array(found.albums.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
                 SeeAllHeader(title: "Albums", more: found.albums.count > Self.topCollections) { scope = .albums }
             }
         }
         if !found.artists.isEmpty {
             Section {
-                ArtistShelf(artists: Array(found.artists.prefix(Self.topCollections)), query: query) { open($0.destination) }
+                ArtistShelf(artists: Array(found.artists.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
                 SeeAllHeader(title: "Artists", more: found.artists.count > Self.topCollections) { scope = .artists }
             }
@@ -139,9 +139,13 @@ struct SearchResults: View {
     }
 
     private func open(_ destination: Destination) {
+        picked()
+        navigation.open(destination)
+    }
+
+    private func picked() {
         chosen()
         search.remember()
-        navigation.open(destination)
     }
 }
 
@@ -286,13 +290,13 @@ struct AlbumShelf: View {
     @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 140
     let albums: [AlbumHit]
     let query: String
-    let open: (AlbumHit) -> Void
+    var picked: () -> Void = {}
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 14) {
                 ForEach(albums, id: \.key) { album in
-                    Button { open(album) } label: {
+                    NavigationLink(value: album.destination) {
                         VStack(alignment: .leading, spacing: 4) {
                             ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
                                 .frame(width: edge, height: edge)
@@ -308,6 +312,7 @@ struct AlbumShelf: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { picked() })
                     .collectionActions(.album(album.key), artist: album.artist)
                 }
             }
@@ -323,13 +328,13 @@ struct ArtistShelf: View {
     @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 96
     let artists: [ArtistHit]
     let query: String
-    let open: (ArtistHit) -> Void
+    var picked: () -> Void = {}
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 16) {
                 ForEach(artists, id: \.name) { artist in
-                    Button { open(artist) } label: {
+                    NavigationLink(value: artist.destination) {
                         VStack(spacing: 6) {
                             ArtworkView(track: library.artworkTrack(artist.artworkTrack), circle: true)
                                 .frame(width: edge, height: edge)
@@ -344,6 +349,7 @@ struct ArtistShelf: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { picked() })
                     .collectionActions(.artist(artist.name))
                 }
             }
