@@ -519,6 +519,13 @@ every route change (a pair of headphones at the same rate included), not from th
   layout once as the crossfade began and again as the leaving words went, and the cover jumped
   with its slot each time. The one move a new title's height makes is animated with the cover,
   whose offset and scale take the handover's animation when the song changes (`MovingCover`).
+  **Nothing in the layout comes or goes with a song**: the album line is always laid out, drawn
+  clear and disabled for a song with none, since a line removed under the handover keeps its
+  space until it has faded, so the cover went to the place laid out with it and snapped when it
+  went. **A slot that moves with no animation of its own is followed in 0.25 s**
+  (`MovingCover.settlesOnItsSlot`, a `transaction(value: slot)` that fills in only an empty
+  animation): rows a mode change removes also hold their space until they fade, and the cover
+  reached the slot laid out with them, then jumped as they went.
   **The quality line holds the last output rate** (`QualityLine.lastOutput`) while the engine reads
   none: between songs there is no stream until the next row binds, and the line lost its *Output*
   part, drew unshrunk and shrank back once the rate returned. The backdrop keeps its own 1.2 s palette crossfade. Under Reduce

@@ -308,6 +308,7 @@ struct LargeArtwork: View {
 struct MovingCover: View {
     private static let pausedScale: CGFloat = 0.84
     private static let corner: CGFloat = 24
+    private static let settlesOnItsSlot: Animation = .smooth(duration: 0.25)
 
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -327,6 +328,9 @@ struct MovingCover: View {
             .motion(.spring(duration: 0.5, bounce: 0.25), value: playing)
             .scaleEffect(slot.width / drawn)
             .offset(x: slot.midX - drawn / 2, y: slot.midY - drawn / 2)
+            .transaction(value: slot) { moved in
+                if moved.animation == nil, !reduceMotion { moved.animation = Self.settlesOnItsSlot }
+            }
             .motion(Handover.animation, value: track?.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: slot, initial: true) { _, now in
@@ -387,13 +391,14 @@ struct PlayerTitles: View {
                         .font(.title3)
                         .nowPlayingInk()
                 }
-                if !track.album.isEmpty {
-                    SongMenu(track: track) {
-                        Text(track.album)
-                            .font(.subheadline)
-                            .nowPlayingInk()
-                    }
+                SongMenu(track: track) {
+                    Text(track.album.isEmpty ? " " : track.album)
+                        .font(.subheadline)
+                        .nowPlayingInk()
                 }
+                .opacity(track.album.isEmpty ? 0 : 1)
+                .disabled(track.album.isEmpty)
+                .accessibilityHidden(track.album.isEmpty)
             } else {
                 Text("Nothing playing")
                     .font(.title2.weight(.bold))
