@@ -486,6 +486,7 @@ struct PlayerScrubber: View {
 
     private final class LastReading {
         var at: CFTimeInterval = 0
+        var flow: Animation?
     }
 
     var body: some View {
@@ -505,6 +506,7 @@ struct PlayerScrubber: View {
                         Rectangle()
                             .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
                             .frame(width: width * drawn / duration)
+                            .animation(lastReading.flow, value: flowing)
                     }
                     .clipShape(Capsule())
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
@@ -550,7 +552,8 @@ struct PlayerScrubber: View {
             flow(from: Double(old), to: Double(now))
         }
         .onChange(of: library.transport) {
-            withAnimation(reduceMotion ? nil : Self.settles) { flowing = Double(library.clock.positionMs) }
+            lastReading.flow = reduceMotion ? nil : Self.settles
+            flowing = Double(library.clock.positionMs)
         }
         .task(id: held) {
             guard held != nil else { return }
@@ -591,12 +594,10 @@ struct PlayerScrubber: View {
         let elapsed = min(max(at - lastReading.at, Self.flowsWithin.lowerBound), Self.flowsWithin.upperBound)
         lastReading.at = at
         let stepped = now - old
-        let flows = !first && !reduceMotion && library.transport == .playing && stepped >= 0 && stepped < Self.flowsAcrossMs
-        guard flows else {
-            flowing = now
-            return
-        }
-        withAnimation(.linear(duration: elapsed)) { flowing = now + elapsed * 1000 }
+        let free = dragging == nil && held == nil
+        let flows = free && !first && !reduceMotion && library.transport == .playing && stepped >= 0 && stepped < Self.flowsAcrossMs
+        lastReading.flow = flows ? .linear(duration: elapsed) : nil
+        flowing = flows ? now + elapsed * 1000 : now
     }
 }
 
