@@ -147,6 +147,16 @@ sync seals its records and talks QUIC (TLS) of its own.
   Playing's cover began its spring; only the views that show the position (Now Playing
   slider and times, sleep countdowns, the output page) read the clock, each in a view of its own (Settings' sleep row is `SleepTimerRow` inside `SleepTimerButton`, which alone reads whether a song is loaded, so the list and its search filter are rebuilt by neither a tick nor a song change).
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
+- **A skip shows the song it lands on at once.** Next and previous steer the song (`Steered.song`,
+  `Library.neighbour`): the queue row after or before the playing one, the first row when next
+  passes the end under a repeat (a skip under repeat-one repeats the queue), at position 0 with its
+  own length; previous past the first 3 s of a longer song (`previousRestartsPastMs`, the engine's
+  `PreviousRestarts::OPENING`) steers only the position back to 0, and a skip with no row to land
+  on is sent unsteered. The engine answers a skip only once the next row has opened
+  (`OPENING_ANSWERED_WITHIN`, 250 ms), and the poll reading the new song waited behind that answer
+  on the transport's lane, so the cover and words stalled before handing over. A steer is shown
+  through `showSteered`, which moves the clock, the playing row and the lock screen with the
+  snapshot.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
   keeps the steered values and leaves `queue` alone (`Settling` counts asked against answered); the steered values outlive their command's answer and are dropped only by a poll that began after it, so an answer landing during that poll's queue read never publishes the older snapshot raw. Every steer wakes the poll (`nudgePoll`).

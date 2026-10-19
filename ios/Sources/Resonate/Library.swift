@@ -135,16 +135,31 @@ struct QueueListed: Equatable {
     static let catalogRereadAfter = Duration.seconds(3)
 }
 
+struct SteeredSong {
+    let track: Track
+    let index: Int
+}
+
 struct Steered {
     var transport: Transport?
     var shuffle: Bool?
     var repeatMode: UInt32?
+    var song: SteeredSong?
+    var restarted = false
 
     func applied(to state: Snapshot) -> Snapshot {
         var steered = state
         if let transport { steered.transport = transport }
         if let shuffle { steered.shuffle = shuffle }
         if let repeatMode { steered.repeat = repeatMode }
+        if let song {
+            steered.current = song.track
+            steered.queueIndex = UInt32(song.index)
+            steered.positionMs = 0
+            steered.durationMs = song.track.durationMs
+        } else if restarted {
+            steered.positionMs = 0
+        }
         return steered
     }
 }
@@ -174,6 +189,7 @@ final class Library {
     private static let pollBusy: Duration = .milliseconds(250)
     private static let pollNearEnd: Duration = .milliseconds(100)
     private static let nearTheEndMs: UInt64 = 1500
+    private static let previousRestartsPastMs: UInt64 = 3000
     private static let pollIdle: Duration = .seconds(1)
     private static let pollBackgroundPlaying: Duration = .milliseconds(500)
     private static let pollBackgroundIdle: Duration = .seconds(2)
@@ -729,11 +745,32 @@ final class Library {
     }
 
     func next() {
-        request { try $0.next() }
+        steerSong(by: 1) { try $0.next() }
     }
 
     func previous() {
-        request { try $0.previous() }
+        let restarts = clock.positionMs > Self.previousRestartsPastMs && clock.durationMs > Self.previousRestartsPastMs
+        guard !restarts else {
+            steer({ $0.song = nil; $0.restarted = true }) { try $0.previous() }
+            return
+        }
+        steerSong(by: -1) { try $0.previous() }
+    }
+
+    private func steerSong(by step: Int, _ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
+        guard let song = neighbour(step) else {
+            request(action)
+            return
+        }
+        steer({ $0.song = song; $0.restarted = false }, action)
+    }
+
+    private func neighbour(_ step: Int) -> SteeredSong? {
+        guard let playing = playingQueueRow, !queue.isEmpty else { return nil }
+        let at = playing + step
+        if queue.indices.contains(at) { return SteeredSong(track: queue[at], index: at) }
+        guard step > 0, repeatMode != .off else { return nil }
+        return SteeredSong(track: queue[0], index: 0)
     }
 
     func seek(to position: UInt64) {
@@ -763,12 +800,23 @@ final class Library {
         change(&steered)
         if let shown = snapshot {
             let expected = steered.applied(to: shown)
-            if expected != shown { snapshot = expected }
+            if expected != shown { showSteered(expected) }
         }
         attempt(action) { [self] failure in
             steering.answer()
             if let failure { report(failure) }
         }
+    }
+
+    private func showSteered(_ expected: Snapshot) {
+        snapshot = expected
+        clock.follow(expected)
+        if currentId != expected.current?.id {
+            currentId = expected.current?.id
+            shownFailure = nil
+        }
+        if currentQueueId != expected.current?.queueId { currentQueueId = expected.current?.queueId }
+        nowPlaying.update(expected)
     }
 
     func playNext(_ rows: [Track]) {
