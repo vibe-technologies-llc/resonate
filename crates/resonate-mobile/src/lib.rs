@@ -28,6 +28,7 @@ mod stamp;
 mod sync;
 mod tagging;
 mod vanished;
+mod watching;
 
 use std::{
     fs,
@@ -62,6 +63,7 @@ pub use crate::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,
     },
+    watching::PlayerWatch,
 };
 
 uniffi::setup_scaffolding!();
@@ -211,6 +213,7 @@ impl MobilePlayer {
             tag_undo: tagging::TagUndo::default(),
         });
         this.resume_saved()?;
+        watching::keep(&this);
         Ok(this)
     }
 
@@ -413,15 +416,8 @@ impl MobilePlayer {
             let events = player.events().try_iter().collect::<Vec<_>>();
             (events, player.state(), player.queued())
         };
-        for event in events {
-            if let Some(told) = failure::waiting_told(&event) {
-                *self.waiting.lock() = Some(told);
-            } else if let Some(told) = self.failure_told(&queue.rows, event) {
-                *self.failure.lock() = Some(told);
-            }
-        }
+        self.take_in(events, &queue.rows);
         let waiting = self.still_waiting(&state);
-        self.count_listening(&state, &queue.rows)?;
         let heard = state
             .current
             .map(|track| track.id)

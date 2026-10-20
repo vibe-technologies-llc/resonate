@@ -8,11 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
   still copies the whole file, twice for one with a second name
 
-## iOS
-- [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
-  to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
-  needs the counting moved first
-
 ## Performance and scale
 - [M] Every open of a Matroska file still reads every block header of it (up to
   `MAX_ELEMENTS_COUNTED`), and of a VBR MP3 naming no length every frame header (up to

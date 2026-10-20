@@ -66,8 +66,25 @@ bound again or the transport stops (`waiting_is_over`), so a front end shows it 
 takes it down when playback goes on
 (`a_snapshot_says_there_is_no_device_to_play_through_until_the_transport_stops`).
 
-`snapshot` consumes (it drains engine events, takes the failure and counts listening), so a caller that
+`snapshot` consumes (it drains engine events and takes the failure), so a caller that
 only needs the transport asks `transport`, which reads the engine's state and nothing else.
+
+## The engine's events are heard on a thread of the boundary's
+
+`watching.rs` keeps one thread per player (`resonate-watch`, holding a `Weak` so a dropped player
+ends it, and ending when the engine's event channel closes), which owns two jobs a front end's poll
+used to do. **It counts listening**: on each engine event and otherwise every second while playing
+(every two seconds otherwise, so a resumed song's first step stays inside `A_SEEK`), it reads the
+state and queue under the player lock and hands them to `Listening::heard`; a failure to store a
+listen is warned once until counting recovers. `snapshot` does not count, so no front end's poll
+rate decides what a listen is. **It tells the front end**: `watch_player(PlayerWatch)` registers a
+callback whose `moved()` is called, off every lock, when an event that changes what is shown arrives
+(`TrackStarted`, `TrackFinished`, `QueueFinished`, `OutputChanged`, `Failed`, `Waiting`,
+`CommandFailed`, however many arrive at once: one call), so a front end need not poll fast to see a
+song change the engine already knows. The thread and `snapshot` both drain the events (whichever
+reads one stores its failure or wait through `take_in`); a poll that finds none was just told
+(`engine_events_that_change_what_is_shown_tell_the_watch_once_however_many_arrive`,
+`an_underrun_alone_does_not_wake_the_watch`).
 
 **A song being opened is the song a snapshot names.** The engine opens every row off its thread and
 publishes no `current` meanwhile (`audio.md`'s *Every track opens off the engine thread*), so a

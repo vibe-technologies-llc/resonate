@@ -147,7 +147,7 @@ mod tests {
     };
     use resonate_codec::Sources;
     use resonate_core::{Frames, Gain, SampleRate};
-    use resonate_engine::{EngineConfig, PlaybackState, Player, PlayerState};
+    use resonate_engine::{EngineConfig, Event, PlaybackState, Player, PlayerState};
 
     use super::*;
     use crate::{
@@ -958,5 +958,68 @@ mod tests {
         });
 
         assert!(asked < transport_within, "the seek waited {asked:?}");
+    }
+
+    struct Told(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl crate::PlayerWatch for Told {
+        fn moved(&self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn engine_events_that_change_what_is_shown_tell_the_watch_once_however_many_arrive() {
+        let harness = Harness::new();
+        let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        harness
+            .player
+            .watch_player(Box::new(Told(Arc::clone(&told))));
+        let (sends, arrives) = unbounded();
+        sends.send(Event::QueueFinished).expect("an event sent");
+        sends
+            .send(Event::TrackStarted(TrackId::new(1).expect("an id")))
+            .expect("an event sent");
+
+        harness.player.absorbed(Event::QueueFinished, &arrives);
+
+        assert_eq!(told.load(Ordering::Relaxed), 1);
+        assert!(arrives.is_empty());
+    }
+
+    #[test]
+    fn an_underrun_alone_does_not_wake_the_watch() {
+        let harness = Harness::new();
+        let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        harness
+            .player
+            .watch_player(Box::new(Told(Arc::clone(&told))));
+        let (_sends, arrives) = unbounded();
+
+        harness
+            .player
+            .absorbed(Event::Underrun { missing: Frames(1) }, &arrives);
+
+        assert_eq!(told.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_watch_over_a_player_no_longer_held_ends() {
+        let (sends, arrives) = unbounded();
+        sends.send(Event::QueueFinished).expect("an event sent");
+
+        crate::watching::watch(&std::sync::Weak::new(), &arrives);
+
+        assert_eq!(arrives.len(), 0);
+    }
+
+    #[test]
+    fn counting_what_is_heard_reads_the_engine_and_answers_its_transport() {
+        let harness = Harness::new();
+        harness.resumed("ab", 0, 0);
+
+        let playback = harness.player.counted_now().expect("a count");
+
+        assert_eq!(playback, PlaybackState::Paused);
     }
 }

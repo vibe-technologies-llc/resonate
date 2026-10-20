@@ -179,6 +179,19 @@ struct Settling {
     }
 }
 
+final class PlayerWake: PlayerWatch, @unchecked Sendable {
+    private weak var library: Library?
+
+    init(_ library: Library) {
+        self.library = library
+    }
+
+    func moved() {
+        let library = library
+        Task { @MainActor in library?.wakePoll() }
+    }
+}
+
 @MainActor
 @Observable
 final class Library {
@@ -191,8 +204,7 @@ final class Library {
     private static let nearTheEndMs: UInt64 = 1500
     private static let previousRestartsPastMs: UInt64 = 3000
     private static let pollIdle: Duration = .seconds(1)
-    private static let pollBackgroundPlaying: Duration = .milliseconds(500)
-    private static let pollBackgroundIdle: Duration = .seconds(2)
+    private static let pollBackground: Duration = .seconds(2)
     private static let noticeLasts: Duration = .seconds(6)
     private static let documentsSettleFor: Duration = .seconds(2)
 
@@ -314,6 +326,7 @@ final class Library {
     @ObservationIgnored private var queueSettling = Settling()
     @ObservationIgnored let support: URL
     @ObservationIgnored private var pollSleep: Task<Void, Never>?
+    @ObservationIgnored private var wakeOwed = false
     @ObservationIgnored private var busyUntil = ContinuousClock.now
     @ObservationIgnored lazy var features = Features(library: self)
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
@@ -373,6 +386,7 @@ final class Library {
                     try await Work.inOrder { try opened.setVolume(volume: kept) }
                 }
                 native = opened
+                opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
                 waiting.forEach { $0.resume(returning: opened) }
                 waiting.removeAll()
@@ -419,6 +433,7 @@ final class Library {
                 lastSaved = .now
                 save(native)
             }
+            wakeOwed = false
             do {
                 let state = try await Work.inOrder { try native.snapshot() }
                 wait = pollInterval(foreground: features.foreground, state: state, analysing: features.analysisBusy)
@@ -482,7 +497,13 @@ final class Library {
         pollSleep?.cancel()
     }
 
+    func wakePoll() {
+        wakeOwed = true
+        pollSleep?.cancel()
+    }
+
     private func sleepBetweenPolls(_ wait: Duration) async {
+        if wakeOwed { return }
         let sleeper = Task<Void, Never> { try? await Task.sleep(for: wait) }
         pollSleep = sleeper
         await withTaskCancellationHandler {
@@ -498,8 +519,7 @@ final class Library {
         switch (foreground, moving) {
         case (true, true): return Self.endingSoon(state) ? Self.pollNearEnd : Self.pollBusy
         case (true, false): return analysing ? Self.pollBusy : Self.pollIdle
-        case (false, true): return Self.endingSoon(state) ? Self.pollNearEnd : Self.pollBackgroundPlaying
-        case (false, false): return Self.pollBackgroundIdle
+        case (false, _): return Self.pollBackground
         }
     }
 
