@@ -14,3 +14,14 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
+## Android
+- [S] A pass that hides missing songs (`hide_missing_songs`) treats any exception from
+  `Documents.openDocument` as a vanished file, so a transient provider error hides songs until the
+  next pass restores them
+- [S] `MobilePlayer::shutdown` returns on a failed `finish_listening` or `save` before it stops the
+  player, so a full disk skips the clean engine stop and only `native.close()` ends it
+- [S] `MusicDocuments.delete` ignores the count `ContentResolver.delete` answers, so a MediaStore row
+  that was not removed is taken as removed
+- [S] The release variant is never built in CI, so R8, the release packaging and 16 KB alignment
+  are unchecked, and the emulator job runs API 36 alone though the minimum is 33
+

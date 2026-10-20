@@ -93,7 +93,11 @@ service. A stopped transport is Media3 idle and idle players show no notificatio
 disappears even while an Activity or another controller remains bound. Playing again restores it;
 pausing keeps the card. Stop clears pending audio-focus resumption so a later focus gain cannot
 restart music after Close.
-Controller actions enter one ordered worker, so load/prepare/play cannot race one another.
+Controller actions enter one ordered worker, so load/prepare/play cannot race one another. The queue and
+place are saved every fifth second of polling and also when the Activity stops and when the task is
+dismissed (`LibraryRepository.saveNow`, through that worker), so a process kill while paused loses
+nothing. Audio focus is given up when the engine stops or pauses itself (sleep timer, end of the
+queue, a failure) unless a transient loss is waiting to resume.
 `RustMediaPlayer` declares `COMMAND_RELEASE`, so `release()` reaches `handleRelease` once (media3
 ignores a second): the service's retain is given back, its collectors and the widgets stop, and the
 receiver and focus request are removed. Only the service's own controllers, the media
@@ -699,7 +703,12 @@ Monochrome, hifi-api, Subsonic and the listener's TIDAL account use the existing
 and delivery code. Credentials and recognition keys are encrypted with AES-GCM under Android
 Keystore. TIDAL device sign-in displays the code and authorization page, and renewed refresh
 tokens are saved. The user chooses a write-granted music folder per download. A data-sync
-foreground service retains the engine and offers cancellation.
+foreground service retains the engine and offers cancellation; a download waits at most ten seconds for
+that service to start and then fails with a notice, so one that never starts cannot hold the
+download slot (`DOWNLOAD_SERVICE_STARTS_WITHIN_MS`). Choosing Downloads writes its preference on the IO
+dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
+`CoroutineExceptionHandler` that logs and says the failure, and the bridge answers every call, a
+`LinkageError` from the native library included, so a Dart future never waits for ever.
 
 **A download is a job** (`downloads.rs`), several at once: `begin_download(song)` answers its
 number, `find_download(job, accounts)` races every account through `Providers::first` (registration

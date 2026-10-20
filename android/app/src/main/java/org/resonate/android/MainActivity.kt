@@ -105,8 +105,7 @@ class MainActivity : FlutterActivity() {
             checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         ) {
-            library.features.useDownloads()
-            library.scan(MusicDocuments.downloads)
+            library.features.useDownloadsAndScan()
         } else {
             requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_AUDIO), AUDIO_REQUEST)
         }
@@ -120,8 +119,7 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != AUDIO_REQUEST) return
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            library.features.useDownloads()
-            library.scan(MusicDocuments.downloads)
+            library.features.useDownloadsAndScan()
         } else {
             library.notice("Allow music access to read existing songs in Downloads")
         }
@@ -157,6 +155,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onStop() {
         library.features.foreground(false)
+        library.saveNow()
         super.onStop()
     }
 

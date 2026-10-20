@@ -18,6 +18,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
@@ -101,6 +103,7 @@ data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolea
 data class RefusedLanding(val until: Long, val tries: Int)
 
 private const val LANDING_PAUSE_MS = 60000L
+private const val DOWNLOAD_SERVICE_STARTS_WITHIN_MS = 10000L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 300000L
 private const val RECENT_SEARCHES_KEY = "recent-searches"
@@ -117,7 +120,15 @@ private fun mimeOf(extension: String) =
     }
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.IO +
+                CoroutineExceptionHandler { _, failure ->
+                    android.util.Log.e("Resonate", "A background task failed", failure)
+                    if (failure is Exception) library.report(failure)
+                }
+        )
     private val accounts = ProviderAccountStore(context)
     private val settings = context.getSharedPreferences("library-features", Context.MODE_PRIVATE)
     val tidalAuthorization = MutableStateFlow<TidalAuthorization?>(null)
@@ -271,6 +282,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                             .submitScrobbles(account, playing?.takeIf { it != lastPlaying })
                     lastPlaying = playing
                     if (count > 0uL) scrobbleStatus.value = "Submitted $count listens"
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (failure: Exception) {
                     scrobbleStatus.value = failure.message
                 }
@@ -603,21 +616,29 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun useDownloads(): MusicFolder {
-        val uri = MusicDocuments.downloads
-        check(
-            settings
-                .edit()
-                .putStringSet(
-                    "folders",
-                    settings.getStringSet("folders", emptySet()).orEmpty() + uri.toString(),
-                )
-                .commit()
-        ) {
-            "The Downloads choice could not be saved"
+    suspend fun useDownloads(): MusicFolder =
+        withContext(Dispatchers.IO) {
+            val uri = MusicDocuments.downloads
+            check(
+                settings
+                    .edit()
+                    .putStringSet(
+                        "folders",
+                        settings.getStringSet("folders", emptySet()).orEmpty() + uri.toString(),
+                    )
+                    .commit()
+            ) {
+                "The Downloads choice could not be saved"
+            }
+            refreshFolders()
+            MusicFolder(uri, "Downloads", true, true)
         }
-        refreshFolders()
-        return MusicFolder(uri, "Downloads", true, true)
+
+    fun useDownloadsAndScan() {
+        scope.launch {
+            useDownloads()
+            library.scan(MusicDocuments.downloads)
+        }
     }
 
     fun downloadsEnabled() =
@@ -664,7 +685,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
                                             readable = true
                                         }
                                     }
-                            } catch (failure: SecurityException) {
+                            } catch (failure: RuntimeException) {
+                                android.util.Log.w(
+                                    "Resonate",
+                                    "A music folder could not be read",
+                                    failure,
+                                )
                                 readable = false
                             }
                         }
@@ -805,6 +831,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                android.util.Log.w("Resonate", "A cover could not be drawn", failure)
                 null
             }
         }
@@ -829,6 +856,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                android.util.Log.w("Resonate", "A cover could not be encoded", failure)
                 null
             }
         }
@@ -1192,6 +1220,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun download(song: SearchSong, folder: MusicFolder) {
         if (downloading.value) return
         val account = providerAccount.value ?: return
+        downloadJob = null
         downloading.value = true
         downloadReady = CompletableDeferred()
         try {
@@ -1206,7 +1235,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             var created: Uri? = null
             try {
-                downloadReady.await()
+                checkNotNull(
+                    withTimeoutOrNull(DOWNLOAD_SERVICE_STARTS_WITHIN_MS) { downloadReady.await() }
+                ) {
+                    "The download service did not start"
+                }
                 val job = native.beginDownload(song)
                 downloadJob = job
                 val offer = native.findDownload(job, listOf(account))
@@ -1246,6 +1279,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         library.report(failure)
                     }
                 }
+                downloadJob = null
                 downloading.value = false
             }
         }

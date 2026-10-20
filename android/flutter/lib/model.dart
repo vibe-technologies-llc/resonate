@@ -327,7 +327,10 @@ class PlayerModel extends ChangeNotifier {
     }
     final future = _methods
         .invokeMethod<Uint8List>('artwork', {'id': track['id'], 'size': bucket})
-        .catchError((Object _) => null);
+        .catchError((Object _) {
+          _pictures.remove(key);
+          return null;
+        });
     _pictures[key] = future;
     while (_pictures.length > 48) {
       _pictures.remove(_pictures.keys.first);

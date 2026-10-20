@@ -1,5 +1,6 @@
 package org.resonate.android
 
+import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import io.flutter.plugin.common.BinaryMessenger
@@ -142,6 +143,9 @@ class FlutterBridge(
                 throw cancelled
             } catch (failure: kotlin.Exception) {
                 result.error("native", failure.message ?: "The action could not be completed", null)
+            } catch (failure: LinkageError) {
+                Log.e("ResonateBridge", "A native call failed", failure)
+                result.error("native", "The action could not be completed", null)
             }
         }
     }

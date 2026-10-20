@@ -273,6 +273,10 @@ class LibraryRepository(private val context: Context) {
         actions.trySend(action)
     }
 
+    fun saveNow() {
+        request { native -> native.save() }
+    }
+
     fun setFavourite(id: ULong, enabled: Boolean) {
         request { native ->
             native.favourite(id, enabled)

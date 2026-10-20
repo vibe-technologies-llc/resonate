@@ -94,6 +94,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         pauseAllPlayersAndStopSelf()
+        (application as ResonateApplication).library.saveNow()
     }
 
     override fun onDestroy() {

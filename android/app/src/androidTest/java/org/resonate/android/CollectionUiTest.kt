@@ -37,7 +37,7 @@ class CollectionUiTest {
     fun flutterFavouritesSurviveActivityRecreation() =
         withLibrary { library, controller, scenario, tracks ->
             play(controller, tracks, 0)
-            await(By.descContains("Song progress")).click()
+            await(By.descStartsWith(tracks[0].title)).click()
             await(By.desc("Add to favourites")).click()
             eventually { library.allTracks.value.any { it.id == tracks[0].id && it.favourite } }
             await(By.desc("Remove from favourites"))

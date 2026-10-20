@@ -19,3 +19,16 @@ are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
+
+## Android
+- [M] Every repository refresh sends the whole `tracks` and `allTracks` lists across the event
+  channel, `refreshCollections` re-reads every album and artist on each catalog revision, and
+  `AppShell` rebuilds every mounted root on each notification, so a large library pays for it on
+  every enrichment step
+- [M] `refresh()` and `reload()` hold the repository's `access` lock for the whole paged read, so the
+  poll and every queued transport action wait behind a big library
+- [S] A folder scan reads up to 8 MB of cover per directory and hands it to `set_artwork` for every
+  song of that directory
+- [S] `hide_missing_songs` opens every document under the granted folders (one IPC each) on every
+  foreground, at most every five minutes
+

@@ -91,7 +91,10 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         scope.launch {
             library.snapshot.collect { value ->
                 val moved = value.stateKey() != snapshot.stateKey()
+                val stoppedItself =
+                    snapshot.playsOrLoads() && !value.playsOrLoads() && !resumeAfterFocus
                 snapshot = value
+                if (stoppedItself) audio.abandonAudioFocusRequest(focus)
                 ResonateWidgets.publish(
                     context,
                     value,

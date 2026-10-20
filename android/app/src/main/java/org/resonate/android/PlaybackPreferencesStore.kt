@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import android.content.SharedPreferences
+import android.util.Log
 import java.io.IOException
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.GainMode
@@ -59,17 +60,22 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
     private fun storedCurve(): EqualiserCurve? {
         val kept = storage.getString(CURVE, null) ?: return null
         val name = storage.getString(CURVE_NAME, "").orEmpty()
-        return runCatching { parseEqProfile(kept.toByteArray(Charsets.UTF_8), name).curve }
-            .getOrNull()
+        return parsedCurve(kept, name)
     }
+
+    private fun parsedCurve(text: String, name: String): EqualiserCurve? =
+        try {
+            parseEqProfile(text.toByteArray(Charsets.UTF_8), name).curve
+        } catch (failure: Exception) {
+            Log.w("Resonate", "A kept equaliser curve could not be read", failure)
+            null
+        }
 
     private fun tenBandMigration(): EqualiserCurve? {
         val profile = storage.getString(TEN_BAND_PROFILE_TEXT, "").orEmpty()
         if (profile.isNotEmpty()) {
             val name = storage.getString(TEN_BAND_PROFILE_NAME, "").orEmpty()
-            val migrated =
-                runCatching { parseEqProfile(profile.toByteArray(Charsets.UTF_8), name).curve }
-                    .getOrNull()
+            val migrated = parsedCurve(profile, name)
             if (migrated != null) return migrated
         }
         if ((listOf(TEN_BAND_PREAMP) + TEN_BAND_GAINS).none(storage::contains)) return null

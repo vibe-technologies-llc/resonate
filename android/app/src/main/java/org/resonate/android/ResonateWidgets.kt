@@ -22,6 +22,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -132,9 +133,7 @@ object ResonateWidgets {
                                 preferences.getString("artist", "Your music, everywhere").orEmpty(),
                                 preferences.getString("album", "").orEmpty(),
                                 false,
-                                preferences.getString("artwork", null)?.let {
-                                    Base64.decode(it, Base64.NO_WRAP)
-                                },
+                                preferences.getString("artwork", null)?.let(::storedArtwork),
                             )
                     render(context, song)
                 }
@@ -143,6 +142,14 @@ object ResonateWidgets {
             }
         }
     }
+
+    private fun storedArtwork(encoded: String): ByteArray? =
+        try {
+            Base64.decode(encoded, Base64.NO_WRAP)
+        } catch (failure: IllegalArgumentException) {
+            Log.w("ResonateWidgets", "The kept artwork could not be read", failure)
+            null
+        }
 
     fun control(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
         scope.launch {
@@ -168,6 +175,12 @@ object ResonateWidgets {
                 Log.w("ResonateWidgets", "Connect playback session", failure)
             } catch (failure: java.util.concurrent.TimeoutException) {
                 Log.w("ResonateWidgets", "Connect playback session", failure)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: IllegalStateException) {
+                Log.w("ResonateWidgets", "Control playback session", failure)
+            } catch (failure: SecurityException) {
+                Log.w("ResonateWidgets", "Control playback session", failure)
             } finally {
                 MediaController.releaseFuture(connection)
                 result.finish()
