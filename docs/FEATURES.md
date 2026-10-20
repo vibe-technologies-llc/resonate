@@ -94,12 +94,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
 - [M] Saved-query playlists stay on the device they were saved on; only lists travel
-- [S] A song another device sent into the vault is not offered onward (`held_songs` passes over
-  vaulted rows), so a vault-only device cannot pass it to a third
-- [S] With both a music folder and a vault set, a song from another device lands in the folder,
-  where a provider's delivery prefers the vault
-- [S] A song another device sent into the vault is grouped by title and track artist alone: no
-  album artist, year or totals
+- [S] A song a vaulted device passes on has lost its tags to the vault, so the third device groups
+  it by title and track artist alone unless the sender's file declared more; the wire's
+  `Recording` carries no album artist, year or totals
 - [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
 - [L] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
   them

@@ -425,14 +425,6 @@ fn playlist_id(at: LocalPlaylistId) -> Answered<PlaylistId> {
 }
 
 #[cfg(feature = "sync")]
-fn extension_of(path: &Path) -> String {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-}
-
-#[cfg(feature = "sync")]
 impl Catalog for Catalogued {
     fn playlists(&self) -> Answered<Vec<LocalPlaylist>> {
         self.library
@@ -551,7 +543,7 @@ impl Catalog for Catalogued {
                 songs
                     .into_iter()
                     .map(|song| Held {
-                        extension: extension_of(&song.path),
+                        extension: song.extension,
                         recording: song.recording,
                         size: song.size,
                     })
@@ -571,17 +563,15 @@ impl Catalog for Catalogued {
         else {
             return Ok(None);
         };
-        let Ok(file) = File::open(&path) else {
-            return Ok(None);
-        };
-        let size = file
-            .metadata()
-            .map(|metadata| metadata.len())
-            .map_err(|_| Refused::Unavailable)?;
-        Ok(Some(Opened {
-            reader: Box::new(file),
-            size,
-            extension: extension_of(&path),
+        let opened = self
+            .library
+            .open_song(&path)
+            .map_err(|error| refused(&error))?;
+
+        Ok(opened.map(|song| Opened {
+            size: song.size,
+            extension: song.extension.clone(),
+            reader: Box::new(song),
         }))
     }
 

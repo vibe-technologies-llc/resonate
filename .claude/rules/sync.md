@@ -134,16 +134,29 @@ Failures are a `Refused` the implementation logs (errors.md: no boxed error). Th
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: lists only, saved queries stay
 local; a recording resolves by MBID, else folded artist, title words and album with lengths within
 2 s; a remote playlist write moves `modified` past any undo step's `left_at` and drops those steps,
-`undo::overtaken`). A song from another device is filed in the music folder under `organise-as`
-like a delivery (`filed::landed_beside`) and its root scanned. **With no music folder it lands in the
-open vault** (`SongFiled::Vaulted`, `synced::vaulted`): `Vault::keep_delivered`, then
-`Library::note_received` writes the `vault_objects` row (`taken_from` = `devices:<recording key>`)
-and a rootless `tracks` row named by the recording (title, artist, album grouped by
-`store::album_named_in`, MBID) with what the file declared (genre, lyrics, ReplayGain, numbers), as
-a provider's delivery lands (`providers.md`); a held vaulted song is not offered onward, and audio the vault holds already under another recording is `Refused`. With
-neither folder nor vault it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
+`undo::overtaken`). **A song from another device lands where a provider's delivery does: in the open
+vault, else the music folder.** With a vault open (`SongFiled::Vaulted`, `synced::vaulted`, even
+where a music folder is set): `Vault::keep_delivered`, then `Library::note_received` writes the
+`vault_objects` row (`taken_from` = `devices:<recording key>`) and a rootless `tracks` row named by
+the recording (title, artist, MBID, `track_total`) with what the file declared (genre, lyrics,
+ReplayGain, numbers), as a provider's delivery lands (`providers.md`). **Its album is grouped as a
+scan would group the declared tags** (`store::album_received_in`, over the `grouping_keys` the scan
+uses): an `ALBUMARTIST` the file declares (unless a compilation) owns the album and keys it, else
+the recording's artist; year, barcode, catalogue number, label and `TRACKTOTAL` fill the album as
+a scan fills one, a differing owner disowns it
+(`songs_from_another_device_group_by_the_album_artist_and_year_their_files_declare`). Tags the
+vault drops are gone for a song passed on again, so such a song groups by title and track artist
+alone. Audio the vault holds already under another recording is `Refused`. With no vault, a song is
+filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
+root scanned. With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
-filed to be fetched again.
+filed to be fetched again. **A vaulted song is offered onward**: `Library::held_songs` lists the
+rootless vaulted rows beside the rooted unvaulted ones, and `Library::open_song` opens either;
+`Vault::offer` gives the object's bytes (`Offered`, `Read + Seek`) with their size and extension, a
+`.wav.zst` object as the WAVE it decodes to (`Unpacking`, extension `wav`), so the receiver's vault
+keys the same PCM
+(`a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to`). A vaulted object that
+will not open is left out of the holdings.
 
 ## The service
 
@@ -251,7 +264,7 @@ filed to be fetched again.
   it began, so a song an earlier follow landed meanwhile is passed over (`held_already`), never
   fetched twice (on a phone a second landing took `Name (1)` beside the first); the passed-over run's
   `Waiting` row is taken off the list (`Running::unlisted_waiting`), the claiming one reporting the
-  song. Only whole-file, unvaulted songs are offered. A transfer is staged under
+  song. Only whole-file songs are offered (a rooted file, or a vaulted object as `Vault::offer` gives it). A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
