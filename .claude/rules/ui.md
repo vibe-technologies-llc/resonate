@@ -843,7 +843,8 @@ is never named.
   `Fingerprinters` whose fake printer hears the playing file as another song;
   `Driven::reaching` a `Reaching` naming the reference and providers. A control below the fold is out of reach of a press (`Driven::scroll` the
   settings body first); a switch is pressed by its `-track` mark. Every Output and Processing choice and
-  switch is pressed and read back off `Player::output_settings`. gpui can't build an
+  switch is pressed and read back off `Player::output_settings`; `Driven::hearing` hands the
+  `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
   `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`. `views/root.rs`
   drives keys. Pressing the equaliser curve with the equaliser off once turned it on and moved the
   curve from under the press; the note is now always there and `kit::section_header` holds a row

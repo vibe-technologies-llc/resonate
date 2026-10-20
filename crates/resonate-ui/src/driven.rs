@@ -129,17 +129,18 @@ impl Drop for Folder {
 struct Unplugged {
     changes: Receiver<SinkChange>,
     _announcing: Sender<SinkChange>,
+    sinks: Vec<SinkInfo>,
 }
 
-struct NoSinks;
+struct Listed(Vec<SinkInfo>);
 
-impl Surveyor for NoSinks {
+impl Surveyor for Listed {
     fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Ok(Vec::new())
+        Ok(self.0.clone())
     }
 }
 
-impl Opener for NoSinks {
+impl Opener for Listed {
     fn open(&self, _: &StreamRequest, _: Box<dyn AudioSource>) -> SinkResult<SinkStream> {
         Err(SinkError::NoSink)
     }
@@ -151,11 +152,11 @@ impl Backend for Unplugged {
     }
 
     fn surveyor(&self) -> Arc<dyn Surveyor> {
-        Arc::new(NoSinks)
+        Arc::new(Listed(self.sinks.clone()))
     }
 
     fn opener(&self) -> Arc<dyn Opener> {
-        Arc::new(NoSinks)
+        Arc::new(Listed(self.sinks.clone()))
     }
 
     fn set_device_volume(&self, _: SinkId, _: Gain) -> SinkResult<()> {
@@ -182,12 +183,17 @@ impl Launcher for Unseen {
 }
 
 pub(crate) fn unplugged_player() -> Arc<Player> {
+    player_over(Vec::new())
+}
+
+fn player_over(sinks: Vec<SinkInfo>) -> Arc<Player> {
     let (announcing, changes) = unbounded();
     Arc::new(
         Player::with_backend(EngineConfig::default(), move |_| {
             Ok(Box::new(Unplugged {
                 changes,
                 _announcing: announcing,
+                sinks,
             }))
         })
         .expect("an engine over no graph starts"),
@@ -285,6 +291,23 @@ impl Driven {
         )
     }
 
+    pub(crate) fn hearing(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        sinks: Vec<SinkInfo>,
+    ) -> Self {
+        Self::built_over(
+            cx,
+            library,
+            &Folder::new(),
+            Corrected::uncorrected(),
+            None,
+            None,
+            Lyricists::unsourced(),
+            sinks,
+        )
+    }
+
     fn built(
         cx: &mut TestAppContext,
         library: Arc<Library>,
@@ -293,6 +316,29 @@ impl Driven {
         reaching: Option<Reaching>,
         recognising: Option<Arc<Fingerprinters>>,
         lyricists: Lyricists,
+    ) -> Self {
+        Self::built_over(
+            cx,
+            library,
+            folder,
+            corrections,
+            reaching,
+            recognising,
+            lyricists,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn built_over(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        corrections: Corrected,
+        reaching: Option<Reaching>,
+        recognising: Option<Arc<Fingerprinters>>,
+        lyricists: Lyricists,
+        sinks: Vec<SinkInfo>,
     ) -> Self {
         let (reference, register) = match reaching {
             Some(Reaching {
@@ -315,7 +361,7 @@ impl Driven {
         cx.update(|cx| {
             cx.set_global(Drawer::new());
             cx.set_global(ResonateApp {
-                player: unplugged_player(),
+                player: player_over(sinks),
                 library,
                 lyricists: Arc::new(lyricists),
                 fingerprinters: Arc::clone(&fingerprinters),
@@ -792,6 +838,10 @@ mod tests {
             driven.read(|root, cx| root.search.read(cx).text().to_owned()),
             "dark"
         );
+    }
+
+    fn named_by(name: &str) -> &'static str {
+        Box::leak(name.to_owned().into_boxed_str())
     }
 
     fn named(prefix: &str, id: impl std::fmt::Display) -> &'static str {
@@ -3159,6 +3209,63 @@ mod tests {
         flipped_until(&mut driven, "dsd-like-pcm", |settings| {
             settings.dsd_like_pcm
         });
+    }
+
+    fn sink_named(id: u32, name: &str, description: &str, is_default: bool) -> SinkInfo {
+        use resonate_core::{ChannelLayout, SampleFormat, SampleRate};
+        use resonate_engine::{NodeName, SinkFormats, Words};
+
+        SinkInfo {
+            id: SinkId::new(id),
+            name: NodeName::new(name),
+            description: description.to_owned(),
+            is_default,
+            is_hardware: true,
+            port: None,
+            profile: None,
+            formats: vec![SinkFormats {
+                format: SampleFormat::S32,
+                words: Words::offered_for(SampleFormat::S32),
+                rates: vec![SampleRate::HZ_48000],
+                channels: vec![ChannelLayout::Stereo],
+            }],
+            allowed_rates: vec![SampleRate::HZ_48000],
+            current_rate: Some(SampleRate::HZ_48000),
+        }
+    }
+
+    #[gpui::test]
+    fn every_device_row_is_pressed_to_choose_its_sink_and_the_default_row_lets_go(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_engine::NodeName;
+
+        let mut driven = Driven::hearing(
+            cx,
+            catalog(),
+            vec![
+                sink_named(1, "alsa_output.desk", "Desk speakers", true),
+                sink_named(2, "alsa_output.usb", "USB DAC", false),
+                sink_named(3, "bluez_output.buds", "Earbuds", false),
+            ],
+        );
+        driven.until(|root, cx| root.player.read(cx).sinks().len() == 3);
+        showing_settings(&mut driven, SettingsCategory::Output);
+
+        let chosen = |driven: &mut Driven| {
+            driven.read(|root, cx| root.player.read(cx).output_settings().sink.clone())
+        };
+        assert_eq!(chosen(&mut driven), None);
+
+        for name in ["alsa_output.usb", "bluez_output.buds", "alsa_output.desk"] {
+            driven.click(named_by(name));
+            driven.until(|root, cx| {
+                root.player.read(cx).output_settings().sink == Some(NodeName::new(name))
+            });
+        }
+
+        driven.click("follow-the-default");
+        driven.until(|root, cx| root.player.read(cx).output_settings().sink.is_none());
     }
 
     #[gpui::test]
