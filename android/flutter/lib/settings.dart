@@ -1573,11 +1573,106 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                 ),
               ),
             ],
+            const SizedBox(height: 24),
+            RoomCorrectionSection(model: model),
           ],
         );
       },
     );
   }
+}
+
+String describeRoom(RowData room) {
+  final channels = integer(room['channels']);
+  if (channels == 0) return '';
+  final label = switch (channels) {
+    1 => 'Mono',
+    2 => 'Stereo',
+    _ => '$channels channels',
+  };
+  final kilohertz = (integer(room['rate']) / 1000).toStringAsFixed(1);
+  final seconds = (integer(room['lengthMs']) / 1000).toStringAsFixed(2);
+  return '$label · ${kilohertz.replaceFirst(RegExp(r'\.0$'), '')} kHz · $seconds s';
+}
+
+class RoomCorrectionSection extends StatelessWidget {
+  const RoomCorrectionSection({super.key, required this.model});
+  final PlayerModel model;
+
+  Future<void> _forget(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Forget the room correction?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Forget'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await model.call('forgetRoomCorrection');
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: model,
+    builder: (context, _) {
+      final room = row(model.state['room']);
+      final named = room['name'] != null;
+      final reading = room['reading'] == true;
+      final scheme = Theme.of(context).colorScheme;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Room correction',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Correct for the room'),
+            subtitle: named
+                ? Text('${room['name']} · ${describeRoom(room)}')
+                : null,
+            value: room['on'] == true,
+            onChanged: named
+                ? (value) => model.call('roomCorrection', {'enabled': value})
+                : null,
+          ),
+          OutlinedButton.icon(
+            onPressed: reading ? null : () => model.call('chooseRoomResponse'),
+            icon: const Icon(Icons.graphic_eq_rounded),
+            label: Text(
+              reading
+                  ? 'Reading…'
+                  : named
+                  ? 'Choose another response…'
+                  : 'Choose a response…',
+            ),
+          ),
+          if (named)
+            TextButton.icon(
+              onPressed: () => _forget(context),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Forget the response'),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _EqualiserBandSlider extends StatefulWidget {

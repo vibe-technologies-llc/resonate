@@ -11,13 +11,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
 - [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
-- [S] Android has no room correction: `keep_room_correction` and `apply_room_correction` keep and
-  play a response, and only iOS offers them
 - [M] Android lists only the first 500 matches of a search: `search_library` answers at most 500
   ranked songs and has no offset, so a wider search needs narrowing (the *Songs* chip says how many
   it shows)
-- [S] Android's search does not light the matched text: `highlights` is exported and nothing on
-  Android calls it
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
 - [M] Android cannot be woken by a media button once its service is gone: no `MediaButtonReceiver`
@@ -27,19 +23,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Android registers no `ACTION_VIEW` audio filter, so a file manager cannot open a song in it,
   and declares a `MediaBrowserService` whose default callback answers the library root as
   unsupported, so Android Auto and car kits browse an empty service
-- [S] Android never calls `hide_missing_songs` or `hide_songs_under`: a song whose file left a
-  granted folder stays listed and queued and fails to open; iOS hides it at every foregrounding
-- [S] Android installs no `tracing` subscriber, so engine, library and sync warnings never reach
-  logcat
-- [S] Android's *Recent searches* live in Dart's `state` alone and are gone with the process
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account and runs one download at a time; the boundary races
   every account and runs jobs side by side, but Settings stores one and the screens show one job
 - [M] Android does not ask for its wants on its own: `poll_wanted_due` and `next_wanted_due` say
   which are due and when, and only iOS calls them on a timer
-- [S] Android cannot share a song link: `share_link` answers the link a song is shared as, and only
-  iOS calls it
 - [S] The phones apply one curve to every channel: a filter an imported profile limits to some
   channels is passed over (and counted), where the desktop keeps it on those channels
 - [S] The phones choose providers explicitly and do not honour `hosted-services`
@@ -137,9 +126,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
   alone; nothing adds a row with Control
-- [S] Android's status, scan, sync and failure banners are no live regions: TalkBack announces
-  neither results nor errors
-- [S] Android removes a queue row only by swiping it: the song sheet has no *Remove from queue*
 - [L · blocked: gpui] Nothing is exposed to a screen reader: published gpui 0.2.2 carries no
   AccessKit, which only Zed's `main` has
 

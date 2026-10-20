@@ -8,10 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
   write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
   still copies the whole file, twice for one with a second name
 
-## Android
-- [S] The lyrics pane builds every line in a non-lazy `Column` and rebuilds all of them on each
-  4 Hz frame while it is open, a blur filter per line away from the read one
-
 ## iOS
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
   to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event

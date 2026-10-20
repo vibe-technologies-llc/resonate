@@ -24,6 +24,7 @@ void main() {
   Object? collectionAnswer;
   Object? searchAnswer;
   Object? albumKeyAnswer;
+  Object? highlightsAnswer;
   final first = <String, dynamic>{
     'id': '18446744073709551614',
     'queueId': '81',
@@ -47,6 +48,7 @@ void main() {
     collectionAnswer = [first];
     searchAnswer = null;
     albumKeyAnswer = null;
+    highlightsAnswer = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
@@ -56,6 +58,7 @@ void main() {
             'collectionTracks' => collectionAnswer,
             'searchLibrary' => searchAnswer,
             'albumKey' => albumKeyAnswer,
+            'highlights' => highlightsAnswer,
             'fails' => throw PlatformException(
               code: 'native',
               message: 'The disk is full',
@@ -2050,5 +2053,246 @@ void main() {
     await tester.tap(find.byTooltip('Close link'));
     await tester.pump();
     expect(calls.any((call) => call.method == 'clearCollection'), isTrue);
+  });
+
+  test(
+    'recent searches are kept natively, newest first and without repeats',
+    () {
+      events.add({
+        'recentSearches': ['floyd', 'air'],
+      });
+
+      model.keepRecentSearch('  AIR ');
+      expect(model.recentSearches, ['AIR', 'floyd']);
+      expect(calls.last.method, 'recentSearches');
+      expect(calls.last.arguments, {
+        'values': ['AIR', 'floyd'],
+      });
+
+      for (var i = 0; i < 12; i++) {
+        model.keepRecentSearch('search $i');
+      }
+      expect(model.recentSearches.length, recentSearchesKept);
+      expect(model.recentSearches.first, 'search 11');
+
+      model.keepRecentSearch('   ');
+      expect(model.recentSearches.first, 'search 11');
+
+      model.forgetRecentSearches();
+      expect(model.recentSearches, isEmpty);
+      expect(calls.last.arguments, {'values': <String>[]});
+    },
+  );
+
+  testWidgets('a library search lights the matched text', (tester) async {
+    searchAnswer = {
+      'tracks': [first],
+      'trackCount': 1,
+      'albums': <dynamic>[],
+      'artists': <dynamic>[],
+      'reads': <dynamic>[],
+    };
+    highlightsAnswer = [
+      [0, 2],
+      <dynamic>[],
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(model: model, open: (_, [data = const {}]) {}),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'ec');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    final asked = calls.lastWhere((call) => call.method == 'highlights');
+    expect(asked.arguments['query'], 'ec');
+    expect(asked.arguments['items'], [
+      {'column': 'TITLE', 'text': 'Echoes'},
+      {'column': 'ARTIST', 'text': 'An artist / with punctuation'},
+    ]);
+    final lit = tester
+        .widgetList<RichText>(find.byType(RichText))
+        .firstWhere((text) => text.text.toPlainText() == 'Echoes');
+    final spans = <TextSpan>[];
+    lit.text.visitChildren((span) {
+      if (span is TextSpan && span.text != null) spans.add(span);
+      return true;
+    });
+    expect(spans.map((span) => span.text), ['Ec', 'hoes']);
+    expect(spans.first.style!.fontWeight, FontWeight.w800);
+    expect(spans.last.style!.fontWeight, isNot(FontWeight.w800));
+  });
+
+  testWidgets('a song sheet shares the link and removes a queue row', (
+    tester,
+  ) async {
+    Future<void> openSheet({Object? queueId}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => songActions(
+                context,
+                model,
+                first,
+                (_, [data = const {}]) {},
+                queueId: queueId,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    await openSheet();
+    expect(find.text('Remove from queue'), findsNothing);
+    await tester.ensureVisible(find.text('Share link'));
+    await tester.tap(find.text('Share link'));
+    await tester.pumpAndSettle();
+    expect(calls.last.method, 'shareLink');
+    expect(calls.last.arguments, {'id': first['id']});
+
+    await openSheet(queueId: '81');
+    await tester.ensureVisible(find.text('Remove from queue'));
+    await tester.tap(find.text('Remove from queue'));
+    await tester.pumpAndSettle();
+    expect(calls.last.method, 'removeFromQueue');
+    expect(calls.last.arguments, {'id': '81'});
+  });
+
+  testWidgets('status, scan and sync banners are live regions', (tester) async {
+    await mount(tester, populated: true);
+    bool live(String label) => tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .any(
+          (semantics) =>
+              semantics.properties.liveRegion == true &&
+              semantics.properties.label == label,
+        );
+
+    events.add({'scanning': true});
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(live('Reading music folder'), isTrue);
+    events.add({'scanning': false});
+
+    events.add({
+      'syncConfig': {'key': 'code', 'enabled': true},
+      'syncStatus': {
+        'standing': 'CONNECTED',
+        'transfers': [
+          {
+            'title': 'Solaris',
+            'artist': 'Artist',
+            'size': 1000,
+            'received': 640,
+            'state': 'MOVING',
+          },
+        ],
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(live('Fetching songs from your devices'), isTrue);
+
+    events.add({'status': 'Kept 4 songs from your devices'});
+    await tester.pumpAndSettle();
+    final notice = tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .where((semantics) => semantics.properties.liveRegion == true);
+    expect(notice.length, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('a long lyric sheet builds only the lines near the one read', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            child: LyricsPane(model: model, track: first),
+          ),
+        ),
+      ),
+    );
+    events.add({
+      'snapshot': {'current': first, 'transport': 'PLAYING'},
+      'lyrics': {
+        'trackId': first['id'],
+        'detail': 'SYNCED',
+        'lines': [
+          for (var i = 0; i < 400; i++) {'text': 'Line $i', 'atMs': i * 1000},
+        ],
+      },
+      'lyricFrame': {
+        'readAt': 0,
+        'active': [0],
+        'wipes': <dynamic>[],
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Line 0'), findsOneWidget);
+    expect(find.byType(LyricWords).evaluate().length, lessThan(60));
+
+    events.add({
+      'lyricFrame': {
+        'readAt': 300,
+        'active': [300],
+        'wipes': <dynamic>[],
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Line 300'), findsOneWidget);
+    expect(find.text('Line 0'), findsNothing);
+    expect(find.byType(LyricWords).evaluate().length, lessThan(60));
+  });
+
+  testWidgets('room correction is chosen, switched and forgotten', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: RoomCorrectionSection(model: model),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Choose a response…'), findsOneWidget);
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged,
+      isNull,
+    );
+
+    await tester.tap(find.text('Choose a response…'));
+    expect(calls.last.method, 'chooseRoomResponse');
+
+    events.add({
+      'room': {
+        'on': true,
+        'name': 'Living room',
+        'reading': false,
+        'channels': 2,
+        'rate': 48000,
+        'lengthMs': 1250,
+      },
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Living room · Stereo · 48 kHz · 1.25 s'), findsOneWidget);
+    expect(find.text('Choose another response…'), findsOneWidget);
+
+    await tester.tap(find.byType(SwitchListTile));
+    expect(calls.last.method, 'roomCorrection');
+    expect(calls.last.arguments, {'enabled': false});
+
+    await tester.tap(find.text('Forget the response'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Forget'));
+    await tester.pumpAndSettle();
+    expect(calls.last.method, 'forgetRoomCorrection');
   });
 }

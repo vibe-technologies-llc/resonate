@@ -20,50 +20,18 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   final _controller = TextEditingController();
-  final List<String> _recents = [];
   Timer? _debounce;
   String _place = 'Your library';
   String _libraryScope = 'Top';
   String _onlineType = 'Songs';
   RowData _libraryResult = {};
+  Lit _lit = Lit.none;
   bool _searching = false;
   _OnlineView _view = _OnlineView.results;
   String? _artistId;
   String _artistName = '';
   String _albumTitle = '';
   String _releaseTitle = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecents();
-  }
-
-  Future<void> _loadRecents() async {
-    final stored = widget.model.state['recentSearches'] as List? ?? [];
-    if (stored.isNotEmpty && mounted) {
-      setState(() {
-        _recents.clear();
-        _recents.addAll(stored.map((e) => '$e'));
-      });
-    }
-  }
-
-  void _saveRecent(String text) {
-    final query = text.trim();
-    if (query.isEmpty) return;
-    setState(() {
-      _recents.remove(query);
-      _recents.insert(0, query);
-      if (_recents.length > 10) _recents.removeLast();
-    });
-    widget.model.state['recentSearches'] = _recents;
-  }
-
-  void _clearRecents() {
-    setState(() => _recents.clear());
-    widget.model.state['recentSearches'] = [];
-  }
 
   @override
   void dispose() {
@@ -86,9 +54,11 @@ class _SearchPageState extends State<SearchPage> {
       if (_place == 'Your library') {
         setState(() => _searching = true);
         final result = await widget.model.searchLibrary(trimmed);
+        final lit = await widget.model.lit(trimmed, result);
         if (mounted && _controller.text.trim() == trimmed) {
           setState(() {
             _libraryResult = result;
+            _lit = lit;
             _searching = false;
           });
         }
@@ -171,7 +141,7 @@ class _SearchPageState extends State<SearchPage> {
                     controller: _controller,
                     onChanged: _onSearchChanged,
                     onSubmitted: (text) {
-                      _saveRecent(text);
+                      widget.model.keepRecentSearch(text);
                       _onSearchChanged(text);
                     },
                     decoration: InputDecoration(
@@ -254,7 +224,7 @@ class _SearchPageState extends State<SearchPage> {
       return ListView(
         padding: pageInsets(context, top: 8),
         children: [
-          if (_recents.isNotEmpty) ...[
+          if (widget.model.recentSearches.isNotEmpty) ...[
             Row(
               children: [
                 Expanded(
@@ -265,7 +235,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                 ),
                 TextButton(
-                  onPressed: _clearRecents,
+                  onPressed: widget.model.forgetRecentSearches,
                   child: const Text('Clear'),
                 ),
               ],
@@ -275,7 +245,7 @@ class _SearchPageState extends State<SearchPage> {
               margin: EdgeInsets.zero,
               clipBehavior: Clip.antiAlias,
               child: Column(
-                children: _recents
+                children: widget.model.recentSearches
                     .map(
                       (recent) => ListTile(
                         leading: const Icon(Icons.history_rounded),
@@ -344,7 +314,7 @@ class _SearchPageState extends State<SearchPage> {
                 borderRadius: BorderRadius.circular(16),
                 onTap: () {
                   _controller.text = didYouMean;
-                  _saveRecent(didYouMean);
+                  widget.model.keepRecentSearch(didYouMean);
                   _onSearchChanged(didYouMean);
                 },
                 child: Glass(
@@ -464,8 +434,9 @@ class _SearchPageState extends State<SearchPage> {
               itemBuilder: (context, i) => SongTile(
                 model: widget.model,
                 track: tracks[i],
+                lit: _lit,
                 onTap: () {
-                  _saveRecent(query);
+                  widget.model.keepRecentSearch(query);
                   widget.model.play(tracks, i);
                 },
                 open: widget.open,
@@ -519,7 +490,7 @@ class _SearchPageState extends State<SearchPage> {
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
                         onTap: () {
-                          _saveRecent(query);
+                          widget.model.keepRecentSearch(query);
                           widget.open('collection', {
                             ...albums[i],
                             'kind': 'album',
@@ -539,19 +510,20 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
+                            LitText(
                               '${albums[i]['title']}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              ranges: _lit.of('ALBUM', '${albums[i]['title']}'),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
                               ),
                             ),
-                            Text(
+                            LitText(
                               '${albums[i]['artist']}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              ranges: _lit.of(
+                                'ARTIST',
+                                '${albums[i]['artist']}',
+                              ),
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
@@ -575,7 +547,7 @@ class _SearchPageState extends State<SearchPage> {
                   itemBuilder: (context, i) => InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () {
-                      _saveRecent(query);
+                      widget.model.keepRecentSearch(query);
                       widget.open('collection', {
                         ...albums[i],
                         'kind': 'album',
@@ -595,16 +567,14 @@ class _SearchPageState extends State<SearchPage> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
+                        LitText(
                           '${albums[i]['title']}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          ranges: _lit.of('ALBUM', '${albums[i]['title']}'),
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        Text(
+                        LitText(
                           '${albums[i]['artist']}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          ranges: _lit.of('ARTIST', '${albums[i]['artist']}'),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -648,11 +618,14 @@ class _SearchPageState extends State<SearchPage> {
                   size: 48,
                   radius: 24,
                 ),
-                title: Text('${artists[i]['name']}'),
+                title: LitText(
+                  '${artists[i]['name']}',
+                  ranges: _lit.of('ARTIST', '${artists[i]['name']}'),
+                ),
                 subtitle: Text('${artists[i]['songs']} songs'),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () {
-                  _saveRecent(query);
+                  widget.model.keepRecentSearch(query);
                   widget.open('collection', {
                     'kind': 'artist',
                     'key': artists[i]['name'],

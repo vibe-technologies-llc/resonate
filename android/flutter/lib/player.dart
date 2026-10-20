@@ -1067,6 +1067,17 @@ class QueuePage extends StatelessWidget {
                                 color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
+                          ActionIcon(
+                            icon: Icons.more_horiz_rounded,
+                            label: 'More about ${title(track)}',
+                            onPressed: () => songActions(
+                              context,
+                              model,
+                              track,
+                              open,
+                              queueId: track['queueId'],
+                            ),
+                          ),
                           ReorderableDragStartListener(
                             index: index,
                             child: const Padding(

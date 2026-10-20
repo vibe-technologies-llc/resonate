@@ -30,6 +30,8 @@ String humanize(String value) => value.toLowerCase().split('_').join(' ');
 int queueLanding(int from, int adjustedTo) =>
     adjustedTo > from ? adjustedTo + 1 : adjustedTo;
 
+const recentSearchesKept = 10;
+
 const _artworkBuckets = [96, 192, 384, 512, 768, 1024];
 const defaultArtworkBucket = 768;
 const colourSampleBucket = 96;
@@ -41,6 +43,16 @@ int artworkBucket(double? logicalSize, double pixelRatio) {
     (bucket) => bucket >= pixels,
     orElse: () => _artworkBuckets.last,
   );
+}
+
+class Lit {
+  const Lit(this._ranges);
+  static const none = Lit({});
+
+  final Map<(String, String), List<int>> _ranges;
+
+  List<int> of(String column, String text) =>
+      _ranges[(column, text)] ?? const [];
 }
 
 class SyncActivity {
@@ -348,6 +360,61 @@ class PlayerModel extends ChangeNotifier {
   Future<RowData> searchLibrary(String text, [int limit = 500]) async {
     final result = await call('searchLibrary', {'text': text, 'limit': limit});
     return row(result);
+  }
+
+  List<String> get recentSearches =>
+      (state['recentSearches'] as List? ?? const [])
+          .map((entry) => '$entry')
+          .toList();
+
+  void keepRecentSearch(String text) {
+    final query = text.trim();
+    if (query.isEmpty) return;
+    final next = [
+      query,
+      ...recentSearches.where(
+        (entry) => entry.toLowerCase() != query.toLowerCase(),
+      ),
+    ].take(recentSearchesKept).toList();
+    _rememberSearches(next);
+  }
+
+  void forgetRecentSearches() => _rememberSearches(const []);
+
+  void _rememberSearches(List<String> values) {
+    state['recentSearches'] = values;
+    notifyListeners();
+    unawaited(call('recentSearches', {'values': values}));
+  }
+
+  Future<Lit> lit(String query, RowData result) async {
+    final asked = <(String, String)>{};
+    for (final track in rows(result['tracks'])) {
+      asked.add(('TITLE', title(track)));
+      asked.add(('ARTIST', '${track['artist'] ?? ''}'));
+    }
+    for (final album in rows(result['albums'])) {
+      asked.add(('ALBUM', '${album['title'] ?? ''}'));
+      asked.add(('ARTIST', '${album['artist'] ?? ''}'));
+    }
+    for (final artist in rows(result['artists'])) {
+      asked.add(('ARTIST', '${artist['name'] ?? ''}'));
+    }
+    asked.removeWhere((entry) => entry.$2.isEmpty);
+    if (query.isEmpty || asked.isEmpty) return Lit.none;
+    final items = asked.toList();
+    final answer = await call('highlights', {
+      'query': query,
+      'items': [
+        for (final (column, text) in items) {'column': column, 'text': text},
+      ],
+    });
+    if (answer is! List || answer.length != items.length) return Lit.none;
+    return Lit({
+      for (var i = 0; i < items.length; i++)
+        if (answer[i] is List && (answer[i] as List).isNotEmpty)
+          items[i]: [for (final unit in answer[i] as List) integer(unit)],
+    });
   }
 
   Future<void> forceSync() async {

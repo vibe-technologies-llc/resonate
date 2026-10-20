@@ -243,7 +243,13 @@ are URI-encoded and carried in saved navigation history, so punctuation and nest
 which collection was opened.
 
 The navigation roots are Songs, Library, Queue, Settings and Search. Search switches between the
-native library search (songs, albums and artists) and online results; recent queries remain local.
+native library search (songs, albums and artists) and online results. The last ten queries
+(`recent-searches`, a JSON list in `library-features`) are kept by Kotlin (`keepRecentSearches`) and
+reach Dart as `recentSearches`; Dart keeps one on submit or when a result is opened and sends the
+list back (`PlayerModel.keepRecentSearch`), so they outlive the process. A library search asks
+`highlights` once for every title, artist, album and artist name it shows (the bridge's `highlights`
+call, one batch per answer, waited for with the answer so rows never light late) and `LitText`
+draws the UTF-16 ranges bold over a dimmed rest, as iOS's `lit`.
 Songs without an active search or filter use the full catalog already held by the repository,
 so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
 Queue separates history, the playing row and Up next, and saves its current order through the
@@ -293,7 +299,10 @@ layout keeps these gaps equal as display scale changes; the Material bar's fixed
 into neighboring tabs and centers variable
 label heights differently.
 Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
-push the page heading down. A notice (a failure or a status) shows on every pushed page too: the
+push the page heading down. Each is a `LiveRegion` for TalkBack: the notice card announces its
+message as it appears or changes, and the scan and sync banners carry a fixed label (*Reading music
+folder*, *Syncing with your devices*, *Fetching songs from your devices*) with their counts
+excluded, so a changing count is never read out again at every step. A notice (a failure or a status) shows on every pushed page too: the
 bottom bar a collection or settings page carries shows the notice card alone, and a page with no bar
 (lyrics, analysis, details, the visualiser, search) is wrapped in `NoticeFooter`. A failure stays
 until dismissed, whatever call succeeds after it, as on iOS. A collection that cannot be read says
@@ -356,6 +365,11 @@ Artwork color callbacks publish after the frame and refuse a stale artwork key, 
 hits: creating a cover while switching player modes must not rebuild its parent during build.
 The compact lyrics/queue layout keeps a bounded reading viewport and scrolls as a whole when
 short screens or large text leave too little room for its titles and transport controls.
+The lyric sheet is a lazy `ListView.builder` (cache extent 900 px), each line a `RepaintBoundary`
+whose built widget is kept and reused while its values (text, lit, blurred, seek time, wipe) are
+unchanged, so a 4 Hz frame rebuilds the lit line and the few that changed, and a blurred line is
+raster-cached; the followed line is revealed through its key, or, when it is not built, by jumping to
+its share of the scroll extent and revealing it from there.
 Lyrics fade at the viewport edges, enlarge the active line and soften distant lines. Native
 UTF-16 wipe ranges and letter blend fractions color word timing without a Dart clock. Manual
 scroll pauses following for five seconds and offers an immediate Follow lyrics button. Restorable
@@ -395,6 +409,15 @@ allowing playback actions, sends edits and commits each completed gesture off th
 Sliders keep an in-progress value locally and commit on release, avoiding a file write or stream
 rebuild for each motion event.
 
+**Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
+*Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
+file is read up to 64 MiB and one byte (the boundary refuses the byte) and kept through
+`keep_room_correction`, then switched on; the switch, the response's channels, rate and length and
+*Forget the response* (confirmed) follow, as `eq.md`'s *Room correction* says. `room-correction` (on)
+and `room-correction-name` live in the `playback` preferences, as iOS's suite; the kept response is
+applied at start (`initialize`), a missing file turning correction off with a notice. Choosing,
+applying, forgetting and restoring run one at a time under one mutex.
+
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
 and the existing fade into a pause. Snapshot polling carries the remaining time; Flutter keeps no
 timer, so the countdown and pause continue with the Activity in the background. A timer is not
@@ -414,7 +437,21 @@ to the tagged artist. Songs resolve by id through the repository's index (`findT
 request. A song's album page opens by `album_key` (`albumKey` through the bridge), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
-unavailable grants; removing access revokes a grant after confirmation, leaving music untouched.
+unavailable grants; removing access revokes a grant after confirmation, leaving music files
+untouched, and hides the songs under a tree (`hide_songs_under` its prefix, `MusicDocuments.prefix`:
+`<tree>/document/`) while Downloads keeps its entries.
+
+**A song whose file has gone is hidden, as on iOS** (`LibraryFeatures.forgetMissing`): when the
+Activity comes forward (at most every five minutes, and not during a scan) and after a scan that
+failed on no song, `hide_missing_songs` is given the prefixes of the readable folders (a tree whose
+root answers a query, and MediaStore's Files collection while Downloads is on), so an unreadable
+grant never hides its songs. A pass that hid songs reads the catalog again, reloads the open
+playlist and says *N songs whose files are gone were hidden*; one that fails is reported once per
+distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
+
+A song sheet (`songActions`) holds *Share link* (the bridge's `shareLink`: `share_link(id)` on the
+IO dispatcher, then the system `ACTION_SEND` chooser with the link as text; no link is a notice) and,
+from a queue row's *More* button, *Remove from queue* by `queueId`; the swipe stays.
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
 with seven stable orders (title, album, artist, duration, added, plays and last played, the latest
@@ -649,8 +686,8 @@ failure stops that service until the next call; one service failing tells the ot
 `share_link(id)` (`sharing.rs`) is the desktop's share over a document row: `Shared` is built from the
 row's title, artist, album, year, recording id, ISRC and length (a stored code that does not parse is
 left out), the reference is asked where the song streams only while online is reaching, and the
-answer is `Shared::written`, `None` where neither a service nor a recording gives a link; only iOS
-calls it.
+answer is `Shared::written`, `None` where neither a service nor a recording gives a link; both phones
+call it.
 
 Monochrome, hifi-api, Subsonic and the listener's TIDAL account use the existing provider matching
 and delivery code. Credentials and recognition keys are encrypted with AES-GCM under Android
