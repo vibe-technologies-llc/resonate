@@ -920,8 +920,12 @@ fn tier_of(key: &str) -> Option<&str> {
         .next()
 }
 
-fn grouping_keys(record: &TrackRecord, title: &str, owner: Option<&str>) -> Vec<String> {
-    let tags = &record.tags;
+fn grouping_keys(
+    tags: &TagSet,
+    sleeve: Option<&Path>,
+    title: &str,
+    owner: Option<&str>,
+) -> Vec<String> {
     if let Some(release) = named(tags.musicbrainz_album_id.as_deref()) {
         return vec![release_key(release)];
     }
@@ -932,7 +936,7 @@ fn grouping_keys(record: &TrackRecord, title: &str, owner: Option<&str>) -> Vec<
     {
         naming.push(album_key(title, Some(owner)));
     }
-    if let Some(folder) = record.sleeve.as_deref() {
+    if let Some(folder) = sleeve {
         naming.push(sleeve_key(title, folder));
     }
     if naming.is_empty() {
@@ -1653,7 +1657,7 @@ fn album(
     record: &TrackRecord,
     extract_cover_art: bool,
 ) -> Result<i64> {
-    let naming = grouping_keys(record, title, owner);
+    let naming = grouping_keys(&record.tags, record.sleeve.as_deref(), title, owner);
     let year = record.tags.date.as_deref().and_then(year);
     let mbid = mbid_in(record.tags.musicbrainz_album_id.as_deref());
     let release_group = mbid_in(record.tags.musicbrainz_release_group_id.as_deref());
@@ -1724,33 +1728,77 @@ struct Tagged<'a> {
     declaration: &'a Declaration<'a>,
 }
 
-pub(crate) fn album_named_in(
+pub(crate) fn album_received_in(
     tx: &Transaction<'_>,
     title: &str,
-    owner: Option<&str>,
-    owner_id: Option<i64>,
+    track_artist: Option<&str>,
+    tags: &TagSet,
 ) -> Result<i64> {
-    let naming = vec![album_key(title, owner)];
-    if let Some(held) = album_already_named(tx, &naming)? {
-        return Ok(held);
-    }
+    let album_artist = named(tags.album_artist.as_deref());
+    let owner = if tags.compilation {
+        None
+    } else {
+        album_artist.or(track_artist)
+    };
+    let owner_id = owner
+        .map(|name| {
+            let identity = album_artist
+                .filter(|album_artist| *album_artist == name)
+                .and(tags.musicbrainz_album_artist_id.as_deref());
+            artist_named_in(tx, name, identity)
+        })
+        .transpose()?;
 
-    let tags = TagSet::default();
-    let declaration = Declaration::of(&tags);
-    let grouped = make_album(
-        tx,
-        &Tagged {
-            title,
-            owner_id,
-            year: None,
-            mbid: None,
-            release_group: None,
-            declaration: &declaration,
-        },
-    )?;
+    let naming = grouping_keys(tags, None, title, owner);
+    let year = tags.date.as_deref().and_then(year);
+    let mbid = mbid_in(tags.musicbrainz_album_id.as_deref());
+    let release_group = mbid_in(tags.musicbrainz_release_group_id.as_deref());
+    let declaration = Declaration::of(tags);
+
+    let grouped = match album_already_named(tx, &naming)? {
+        Some(held) => {
+            let mut grouped = grouped_album(tx, held)?;
+            if grouped.owner.is_some() && grouped.owner != owner_id {
+                disown(tx, grouped.id)?;
+                grouped.owner = None;
+            }
+            if let Some(year) = year
+                && grouped.year.is_none()
+            {
+                fill_year(tx, grouped.id, year)?;
+            }
+            if declaration.fills(grouped.declared) {
+                fill_declared(tx, grouped.id, &declaration)?;
+            }
+            grouped
+        }
+        None => make_album(
+            tx,
+            &Tagged {
+                title,
+                owner_id,
+                year,
+                mbid: mbid.as_ref().map(Mbid::as_str),
+                release_group: release_group.as_ref().map(Mbid::as_str),
+                declaration: &declaration,
+            },
+        )?,
+    };
     name_the_album(tx, &mut Cache::default(), &naming, grouped)?;
 
     Ok(grouped.id)
+}
+
+fn grouped_album(tx: &Transaction<'_>, id: i64) -> Result<Grouped> {
+    queried(
+        tx,
+        "SELECT id, artist_id, year, barcode IS NOT NULL, catalog_number IS NOT NULL,
+                label IS NOT NULL, tagged_tracks IS NOT NULL
+           FROM albums WHERE id = ?1",
+        params![id],
+        grouped_row,
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub(crate) fn album_keyed(tx: &Transaction<'_>, key: &str) -> Result<Option<i64>> {

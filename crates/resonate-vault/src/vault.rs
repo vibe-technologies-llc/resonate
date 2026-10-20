@@ -57,6 +57,35 @@ const SIXTEEN_BIT_CEILING: u8 = 16;
 const LARGEST_DELIVERY: u64 = wave::LARGEST_PCM;
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
+enum Offering {
+    Whole(File),
+    Unpacked(Unpacking),
+}
+
+pub struct Offered {
+    pub size: u64,
+    pub extension: String,
+    stream: Offering,
+}
+
+impl Read for Offered {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        match &mut self.stream {
+            Offering::Whole(file) => file.read(into),
+            Offering::Unpacked(unpacking) => unpacking.read(into),
+        }
+    }
+}
+
+impl Seek for Offered {
+    fn seek(&mut self, to: io::SeekFrom) -> io::Result<u64> {
+        match &mut self.stream {
+            Offering::Whole(file) => file.seek(to),
+            Offering::Unpacked(unpacking) => unpacking.seek(to),
+        }
+    }
+}
+
 pub struct Vault {
     root: PathBuf,
     drawings: Drawings,
@@ -325,6 +354,40 @@ impl Vault {
 
     pub fn holds(&self, path: &Path) -> bool {
         self.within(path).is_ok()
+    }
+
+    pub fn offer(&self, path: &Path) -> Result<Offered> {
+        self.inside(path)?;
+        let packed =
+            path.extension().and_then(|extension| extension.to_str()) == Some(COMPRESSED_EXTENSION);
+        let io = |source| Error::io(VaultOp::Read, path, source);
+        if packed {
+            let unpacking = Unpacking::open(path).map_err(io)?;
+            let extension = path
+                .file_stem()
+                .map(Path::new)
+                .and_then(Path::extension)
+                .and_then(|extension| extension.to_str())
+                .unwrap_or(UNNAMED_EXTENSION)
+                .to_owned();
+            return Ok(Offered {
+                size: unpacking.len(),
+                extension,
+                stream: Offering::Unpacked(unpacking),
+            });
+        }
+        let file = File::open(path).map_err(io)?;
+        let size = file.metadata().map_err(io)?.len();
+        let extension = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or(UNNAMED_EXTENSION)
+            .to_owned();
+        Ok(Offered {
+            size,
+            extension,
+            stream: Offering::Whole(file),
+        })
     }
 
     pub fn failed_itself(&self, error: &Error) -> bool {

@@ -270,7 +270,8 @@ renewal landed mid-play leaves the reader on the object it began with
 (`a_seek_back_reads_the_object_it_opened_after_another_is_landed_under_its_name`). An object an
 earlier build packed as one frame naming no length is repacked by `Vault::reframe`
 (`vault --verify --apply`) through `wave::packed_in_frames`, read back to its key, landed over itself
-(`a_wave_packed_before_the_frames_is_repacked_in_frames_and_reads_back_the_same`). The binary
+(`a_wave_packed_before_the_frames_is_repacked_in_frames_and_reads_back_the_same`). `Vault::offer` hands an object to be sent to another device: a `.zst` object as the WAVE it
+unpacks to (size from the RIFF header, extension `wav`), anything else as its file (`sync.md`). The binary
 registers it wherever it opens a track to play or read (`held_over`). Bus, playlists, resumption,
 queue never see an object's path.
 

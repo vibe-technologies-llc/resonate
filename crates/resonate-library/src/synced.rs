@@ -1,13 +1,14 @@
 use std::{
-    io::Read,
+    fs::File,
+    io::{self, Read, Seek, SeekFrom},
     num::NonZeroUsize,
-    path::PathBuf,
+    path::{Path, PathBuf},
     thread,
     time::{Duration, SystemTime},
 };
 
 use resonate_core::{FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, folded_letters};
-use resonate_vault::Keeping;
+use resonate_vault::{Keeping, Offered};
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
@@ -52,7 +53,103 @@ pub struct SyncedListen {
 pub struct HeldSong {
     pub recording: Recording,
     pub path: PathBuf,
+    pub extension: String,
     pub size: u64,
+}
+
+enum Streaming {
+    Plain(File),
+    Vaulted(Offered),
+}
+
+pub struct OpenedSong {
+    pub size: u64,
+    pub extension: String,
+    stream: Streaming,
+}
+
+impl Read for OpenedSong {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        match &mut self.stream {
+            Streaming::Plain(file) => file.read(into),
+            Streaming::Vaulted(offered) => offered.read(into),
+        }
+    }
+}
+
+impl Seek for OpenedSong {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        match &mut self.stream {
+            Streaming::Plain(file) => file.seek(to),
+            Streaming::Vaulted(offered) => offered.seek(to),
+        }
+    }
+}
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+pub(crate) fn offered(library: &Library, songs: Vec<HeldSong>) -> Vec<HeldSong> {
+    let Some(vault) = library.vault() else {
+        return songs;
+    };
+    songs
+        .into_iter()
+        .filter_map(|song| {
+            if !vault.holds(&song.path) {
+                return Some(song);
+            }
+            match vault.offer(&song.path) {
+                Ok(offered) => Some(HeldSong {
+                    extension: offered.extension.clone(),
+                    size: offered.size,
+                    ..song
+                }),
+                Err(error) => {
+                    tracing::debug!(%error, path = %song.path.display(), "a vaulted song is not offered to other devices");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn open_song(library: &Library, path: &Path) -> Result<Option<OpenedSong>> {
+    if let Some(vault) = library.vault()
+        && vault.holds(path)
+    {
+        return match vault.offer(path) {
+            Ok(offered) => Ok(Some(OpenedSong {
+                size: offered.size,
+                extension: offered.extension.clone(),
+                stream: Streaming::Vaulted(offered),
+            })),
+            Err(error) if vault.failed_itself(&error) => Err(Error::Vault {
+                path: vault.root().to_path_buf(),
+                source: Box::new(error),
+            }),
+            Err(error) => {
+                tracing::debug!(%error, path = %path.display(), "a vaulted song could not be opened to send");
+                Ok(None)
+            }
+        };
+    }
+    let Ok(file) = File::open(path) else {
+        return Ok(None);
+    };
+    let Ok(size) = file.metadata().map(|metadata| metadata.len()) else {
+        return Ok(None);
+    };
+
+    Ok(Some(OpenedSong {
+        size,
+        extension: extension_of(path),
+        stream: Streaming::Plain(file),
+    }))
 }
 
 pub(crate) fn playlists(inner: &Inner) -> Result<Vec<SyncedPlaylist>> {
@@ -512,7 +609,8 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
             .prepare(&format!(
                 "SELECT t.path, t.file_size, {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS}
                   WHERE t.hidden = 0 AND t.span_start = 0 AND t.span_frames IS NULL
-                    AND t.vault_key IS NULL AND t.root_id IS NOT NULL"
+                    AND ((t.vault_key IS NULL AND t.root_id IS NOT NULL)
+                         OR (t.vault_key IS NOT NULL AND t.root_id IS NULL))"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let rows = statement
@@ -528,10 +626,14 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
         Ok(rows
             .into_iter()
             .filter_map(|(path, size, recording)| {
-                recording.map(|recording| HeldSong {
-                    recording,
-                    path: PathBuf::from(path),
-                    size: size.cast_unsigned(),
+                recording.map(|recording| {
+                    let path = PathBuf::from(path);
+                    HeldSong {
+                        recording,
+                        extension: extension_of(&path),
+                        path,
+                        size: size.cast_unsigned(),
+                    }
                 })
             })
             .collect())
@@ -552,8 +654,11 @@ pub(crate) fn file_song(
     extension: &str,
     reader: &mut dyn Read,
 ) -> Result<SongFiled> {
-    let Some(into) = library.delivering_into() else {
+    if library.vault().is_some() {
         return vaulted(library, recording, extension, reader);
+    }
+    let Some(into) = library.delivering_into() else {
+        return Ok(SongFiled::Nowhere);
     };
     let Some(folder) = into
         .path

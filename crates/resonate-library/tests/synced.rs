@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    io::Cursor,
+    io::{Cursor, Read},
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
@@ -13,8 +13,8 @@ use std::{
 
 use resonate_core::{MediaLocation, Recording};
 use resonate_library::{
-    Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled, TrackQuery,
-    Vault,
+    AlbumQuery, Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled,
+    TrackQuery, Vault,
 };
 
 const RATE: u32 = 44_100;
@@ -78,6 +78,87 @@ fn tagged_wav(title: &str, artist: &str, album: &str) -> Vec<u8> {
     let mut body = b"WAVE".to_vec();
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"LIST", &info);
+    chunk(&mut body, b"data", &data);
+
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    file
+}
+
+fn syncsafe(value: usize) -> [u8; 4] {
+    [
+        ((value >> 21) & 0x7f) as u8,
+        ((value >> 14) & 0x7f) as u8,
+        ((value >> 7) & 0x7f) as u8,
+        (value & 0x7f) as u8,
+    ]
+}
+
+fn id3_frame(id: &[u8; 4], text: &str) -> Vec<u8> {
+    let mut payload = vec![3_u8];
+    payload.extend_from_slice(text.as_bytes());
+
+    let mut frame = id.to_vec();
+    frame.extend_from_slice(&syncsafe(payload.len()));
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(&payload);
+    frame
+}
+
+fn id3_tag(frames: &[(&[u8; 4], &str)]) -> Vec<u8> {
+    let body: Vec<u8> = frames
+        .iter()
+        .flat_map(|(id, text)| id3_frame(id, text))
+        .collect();
+
+    let mut tag = b"ID3".to_vec();
+    tag.extend_from_slice(&[4, 0, 0]);
+    tag.extend_from_slice(&syncsafe(body.len()));
+    tag.extend_from_slice(&body);
+    tag
+}
+
+fn declared_wav(frames: &[(&[u8; 4], &str)], distinct: u8) -> Vec<u8> {
+    let block_align = CHANNELS * BITS / 8;
+    let mut data = vec![0_u8; (RATE * SECONDS) as usize * usize::from(block_align)];
+    *data.last_mut().expect("a sample") = distinct;
+
+    let mut format = Vec::new();
+    format.extend_from_slice(&1_u16.to_le_bytes());
+    format.extend_from_slice(&CHANNELS.to_le_bytes());
+    format.extend_from_slice(&RATE.to_le_bytes());
+    format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&block_align.to_le_bytes());
+    format.extend_from_slice(&BITS.to_le_bytes());
+
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &format);
+    chunk(&mut body, b"id3 ", &id3_tag(frames));
+    chunk(&mut body, b"data", &data);
+
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    file
+}
+
+fn float_wav(distinct: u8) -> Vec<u8> {
+    let float_bits = 32_u16;
+    let block_align = CHANNELS * float_bits / 8;
+    let mut data = vec![0_u8; (RATE * SECONDS) as usize * usize::from(block_align)];
+    *data.last_mut().expect("a sample") = distinct;
+
+    let mut format = Vec::new();
+    format.extend_from_slice(&3_u16.to_le_bytes());
+    format.extend_from_slice(&CHANNELS.to_le_bytes());
+    format.extend_from_slice(&RATE.to_le_bytes());
+    format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&block_align.to_le_bytes());
+    format.extend_from_slice(&float_bits.to_le_bytes());
+
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut file = b"RIFF".to_vec();
@@ -362,7 +443,10 @@ fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> 
     assert_eq!(rows[0].title, "San Tropez");
     assert_eq!(rows[0].artist.as_deref(), Some("Pink Floyd"));
     assert!(rows[0].album_id.is_some());
-    assert_eq!(library.held_songs()?, []);
+    let offered = library.held_songs()?;
+    assert_eq!(offered.len(), 1);
+    assert_eq!(offered[0].path, kept);
+    assert_eq!(offered[0].extension, "flac");
     Ok(())
 }
 
@@ -413,5 +497,140 @@ fn a_song_whose_audio_the_vault_already_holds_under_another_recording_is_refused
 
     assert_eq!(filed, SongFiled::Refused);
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_goes_to_the_vault_when_both_a_vault_and_a_music_folder_are_set()
+-> Result<()> {
+    let tree = Tree::new();
+    let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(Arc::clone(&vault))?;
+    let folder = tree.root.join("music");
+    fs::create_dir_all(&folder).expect("a folder");
+    library.deliver_into(Some(DeliveryFolder {
+        path: folder.clone(),
+        layout: Layout::default(),
+    }));
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+
+    let SongFiled::Vaulted(kept) = filed else {
+        panic!("vaulted");
+    };
+    assert!(kept.starts_with(vault.root()));
+    assert_eq!(fs::read_dir(&folder).expect("a folder").count(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_with_a_folder_and_no_vault_is_still_filed_in_the_folder() -> Result<()>
+{
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+
+    assert!(matches!(filed, SongFiled::Filed(_)));
+    Ok(())
+}
+
+#[test]
+fn a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to() -> Result<()> {
+    let tree = Tree::new();
+    let first = Library::open_in_memory_with_vault(Arc::new(
+        Vault::make(tree.root.join("first")).expect("a writable vault"),
+    ))?;
+    let second = Library::open_in_memory_with_vault(Arc::new(
+        Vault::make(tree.root.join("second")).expect("a writable vault"),
+    ))?;
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    first.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(float_wav(1)))?;
+
+    let offered = first.held_songs()?;
+    assert_eq!(offered.len(), 1);
+    assert_eq!(offered[0].extension, "wav");
+    let mut sent = first.open_song(&offered[0].path)?.expect("opens");
+    assert_eq!(sent.size, offered[0].size);
+    assert_eq!(sent.extension, "wav");
+    let mut bytes = Vec::new();
+    sent.read_to_end(&mut bytes).expect("read");
+    assert_eq!(bytes.len() as u64, offered[0].size);
+    assert_eq!(bytes, float_wav(1));
+
+    let filed = second.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+
+    assert!(matches!(filed, SongFiled::Vaulted(_)));
+    assert_eq!(second.held_songs()?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_plain_file_is_opened_to_send_as_it_stands() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+
+    let mut opened = library.open_song(&path)?.expect("opens");
+    let mut bytes = Vec::new();
+    opened.read_to_end(&mut bytes).expect("read");
+
+    assert_eq!(opened.extension, "wav");
+    assert_eq!(opened.size, bytes.len() as u64);
+    assert_eq!(bytes, fs::read(&path).expect("the file"));
+    assert!(library.open_song(&tree.root.join("gone.wav"))?.is_none());
+    Ok(())
+}
+
+#[test]
+fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_declare() -> Result<()>
+{
+    let tree = Tree::new();
+    let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(vault)?;
+    let waters = song("San Tropez", "Roger Waters", "Meddle");
+    let gilmour = song("Seamus", "David Gilmour", "Meddle");
+    let first = declared_wav(
+        &[
+            (b"TIT2", "San Tropez"),
+            (b"TPE1", "Roger Waters"),
+            (b"TPE2", "Pink Floyd"),
+            (b"TALB", "Meddle"),
+            (b"TDRC", "1971"),
+            (b"TRCK", "3/6"),
+        ],
+        0,
+    );
+    let second = declared_wav(
+        &[
+            (b"TIT2", "Seamus"),
+            (b"TPE1", "David Gilmour"),
+            (b"TPE2", "Pink Floyd"),
+            (b"TALB", "Meddle"),
+            (b"TDRC", "1971"),
+        ],
+        1,
+    );
+    library.file_song_from_elsewhere(&waters, "wav", &mut Cursor::new(first))?;
+    library.file_song_from_elsewhere(&gilmour, "wav", &mut Cursor::new(second))?;
+
+    let rows = library.tracks(&TrackQuery::default())?;
+    let albums = library.albums(&AlbumQuery::default())?;
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].album_id, rows[1].album_id);
+    assert_eq!(albums.len(), 1);
+    assert_eq!(albums[0].title, "Meddle");
+    assert_eq!(albums[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(albums[0].year, Some(1971));
+    assert_eq!(albums[0].artist_count, 2);
     Ok(())
 }

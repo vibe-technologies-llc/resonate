@@ -63,7 +63,7 @@ use crate::{
     scan, schema, scrobble, search, share, sheet, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
-    synced::{self, HeldSong, SyncedListen, SyncedPlaylist},
+    synced::{self, HeldSong, OpenedSong, SyncedListen, SyncedPlaylist},
     undo::{self, Step},
     vaulted::{self, Vaulted},
 };
@@ -2492,7 +2492,11 @@ impl Library {
     }
 
     pub fn held_songs(&self) -> Result<Vec<HeldSong>> {
-        synced::holdings(&self.inner)
+        synced::holdings(&self.inner).map(|songs| synced::offered(self, songs))
+    }
+
+    pub fn open_song(&self, path: &Path) -> Result<Option<OpenedSong>> {
+        synced::open_song(self, path)
     }
 
     pub fn file_song_from_elsewhere(
@@ -3234,7 +3238,7 @@ impl Library {
                 .map(|name| store::artist_named_in(transaction, name, None))
                 .transpose()?;
             let album = album_title
-                .map(|title| store::album_named_in(transaction, title, artist_name, None))
+                .map(|title| store::album_received_in(transaction, title, artist_name, declared))
                 .transpose()?;
             let landed: Option<i64> = transaction
                 .query_row(
@@ -3243,10 +3247,10 @@ impl Library {
                          disc_number, duration, sample_rate, channels, sample_format, codec,
                          file_size, modified, added, seen, mbid, vault_key, vault_path, genre,
                          lyrics, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
-                         vault_bits
+                         vault_bits, track_total
                      ) VALUES (
                          NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
+                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
                      )
                      ON CONFLICT(path, span_start) DO NOTHING
                      RETURNING id",
@@ -3276,6 +3280,7 @@ impl Library {
                         gain.album_gain.map(|gain| f64::from(gain.get())),
                         gain.album_peak.map(f64::from),
                         i64::from(kept.bits),
+                        declared.track_total.map(i64::from),
                     ],
                     |row| row.get(0),
                 )
