@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Transport
+import org.resonate.android.nativecore.defaultTrackFilter
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackTest {
@@ -33,7 +34,7 @@ class PlaybackTest {
                 player.indexDocument("content://test/tree/music%3A/document/tone.wav", "tone.wav")
             assertEquals(44100u, track.rate)
             assertTrue(track.durationMs >= 9900uL)
-            assertEquals(1, player.tracks("tone", 0u, 100u).size)
+            assertEquals(1, player.filteredTracks(defaultTrackFilter().copy(text = "tone"), 0u, 100u).size)
             player.load(listOf(track.id), 0u, true)
             eventually { player.snapshot().transport == Transport.PLAYING }
             eventually { player.snapshot().positionMs > 300uL }
@@ -47,10 +48,11 @@ class PlaybackTest {
             player.shutdown()
             player.close()
             player = MobilePlayer(folder.absolutePath, documents)
-            eventually { player.snapshot().current != null }
+            eventually {
+                player.snapshot().current != null && player.snapshot().positionMs >= 2900uL
+            }
             assertEquals(Transport.PAUSED, player.snapshot().transport)
-            assertTrue(player.snapshot().positionMs >= 2900uL)
-            assertTrue(player.tracks("", 0u, 100u).single().favourite)
+            assertTrue(player.filteredTracks(defaultTrackFilter(), 0u, 100u).single().favourite)
         } finally {
             player.shutdown()
             player.close()

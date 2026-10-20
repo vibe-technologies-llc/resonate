@@ -42,10 +42,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the desktop's lyrics tests, `OnlineFound.landing`/`awaited`, `FieldBlend.show` mid-fade,
   `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
 
-## Phones
-- [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
-  `filtered_tracks` and the download calls
-
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test

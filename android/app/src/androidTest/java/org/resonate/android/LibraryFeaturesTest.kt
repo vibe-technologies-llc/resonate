@@ -130,7 +130,7 @@ class LibraryFeaturesTest {
             player.seek(0uL)
             eventually { player.snapshot().positionMs < 1000uL }
             eventually { player.snapshot().positionMs > 4500uL }
-            assertEquals(1uL, player.statistics(0u).plays)
+            eventually { player.statistics(0u).plays == 1uL }
             assertTrue(player.statistics(0u).listenedMs >= 3500uL)
             player.favourite(track.id, true)
             assertEquals(
@@ -152,8 +152,8 @@ class LibraryFeaturesTest {
             assertArrayEquals(png, player.artwork(track.id))
             assertEquals(3, player.lyrics(track.id, false).lines.size)
             assertEquals(3, player.playlistTracks(playlist, 0u, 100u).size)
-            assertTrue(player.tracks("Fixture song", 0u, 100u).any { it.favourite })
-            assertEquals(1uL, player.statistics(0u).plays)
+            assertTrue(player.filteredTracks(defaultTrackFilter().copy(text = "Fixture song"), 0u, 100u).any { it.favourite })
+            eventually { player.statistics(0u).plays == 1uL }
             assertEquals(1, player.wantedSongs(0u, 500u).size)
         } finally {
             player.shutdown()

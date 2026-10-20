@@ -866,8 +866,10 @@ impl MobilePlayer {
     pub fn refreshed_tidal_token(&self) -> Option<String> {
         self.downloads.refreshed.lock().take()
     }
+}
 
-    pub fn validate_download(&self, uri: String, duration_ms: Option<u64>) -> Result<()> {
+impl MobilePlayer {
+    pub(crate) fn validate_download(&self, uri: String, duration_ms: Option<u64>) -> Result<()> {
         let info = resonate_codec::probe(&self.sources, &crate::documents::location(&uri)?)?;
         if let Some(expected) = duration_ms
             && let Some(frames) = info.duration
@@ -1447,5 +1449,67 @@ mod tests {
 
         assert!(matches!(answer, Ok(None)));
         assert!(began.elapsed() < Duration::from_secs(5));
+    }
+
+    mod validating {
+        use super::*;
+        use crate::harness::{FOLDER, Harness, SECONDS_A_SONG};
+
+        fn uri() -> String {
+            format!("{FOLDER}a.wav")
+        }
+
+        #[test]
+        fn a_delivery_of_the_length_the_song_names_is_the_song() {
+            let harness = Harness::new();
+            let length = u64::from(SECONDS_A_SONG) * 1_000;
+
+            harness
+                .player
+                .validate_download(uri(), Some(length))
+                .expect("a song of its own length");
+        }
+
+        #[test]
+        fn a_delivery_within_the_slack_the_providers_allow_is_still_the_song() {
+            let harness = Harness::new();
+            let length = u64::from(SECONDS_A_SONG) * 1_000;
+            let slack = resonate_providers::LENGTHS_AGREE_WITHIN.as_millis() as u64;
+
+            harness
+                .player
+                .validate_download(uri(), Some(length + slack))
+                .expect("a song a little long");
+        }
+
+        #[test]
+        fn a_delivery_of_another_length_is_the_wrong_song() {
+            let harness = Harness::new();
+
+            let refused = harness.player.validate_download(uri(), Some(60_000));
+
+            assert!(matches!(refused, Err(Error::WrongSong)), "{refused:?}");
+        }
+
+        #[test]
+        fn a_song_naming_no_length_asks_none_of_the_delivery() {
+            let harness = Harness::new();
+
+            harness
+                .player
+                .validate_download(uri(), None)
+                .expect("no length to disagree with");
+        }
+
+        #[test]
+        fn a_document_that_will_not_open_is_not_validated() {
+            let harness = Harness::new();
+
+            let refused = harness
+                .player
+                .validate_download(format!("{FOLDER}missing.wav"), Some(2_000));
+
+            assert!(refused.is_err());
+        }
     }
 }

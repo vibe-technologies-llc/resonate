@@ -284,10 +284,6 @@ impl MobilePlayer {
         self.catalog.uris()
     }
 
-    pub fn tracks(&self, text: String, offset: u32, limit: u32) -> Result<Vec<Track>> {
-        self.catalog.tracks(&text, offset, limit)
-    }
-
     pub fn queue(&self) -> Result<Vec<Track>> {
         let rows = {
             let held = self.player.lock();

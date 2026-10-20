@@ -93,7 +93,6 @@ class DownloadTest {
             assertEquals(audio.size.toULong(), progress.received)
             assertEquals(audio.size.toULong(), progress.total)
             assertArrayEquals(audio, destination.readBytes())
-            player.validateDownload("content://test/delivered.wav", 8000uL)
             player.saveWanted(listOf(song))
             val track = player.indexDownload(job, "content://test/delivered.wav", "delivered.wav")
             assertEquals(DownloadPhase.DONE, player.downloadProgress(job)?.phase)
@@ -105,9 +104,6 @@ class DownloadTest {
             assertEquals(track.id, rescanned.id)
             assertEquals(song.title, rescanned.title)
             assertEquals(song.artist, rescanned.artist)
-            assertThrows(Exception::class.java) {
-                player.validateDownload("content://test/delivered.wav", 60000uL)
-            }
             val cancelled = player.beginDownload(song)
             player.findDownload(cancelled, listOf(account))
             player.cancelDownload(cancelled)

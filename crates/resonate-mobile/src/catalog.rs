@@ -243,6 +243,7 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
+    #[cfg(test)]
     pub(crate) fn tracks(&self, text: &str, offset: u32, limit: u32) -> Result<Vec<Track>> {
         let connection = self.0.lock();
         let mut query = connection
