@@ -53,11 +53,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           style: Theme.of(context).textTheme.headlineLarge,
                         ),
                       ),
-                      ActionIcon(
-                        icon: Icons.tune_rounded,
-                        label: 'Library tools',
-                        onPressed: () => widget.open('tools'),
-                      ),
+                      _LibraryMenu(model: model, open: widget.open),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -158,17 +154,37 @@ class _LibraryPageState extends State<LibraryPage> {
                         children: [
                           Expanded(
                             child: _Shortcut(
+                              icon: Icons.music_note_rounded,
+                              label: 'All songs',
+                              colors: const [
+                                Color(0xFFE8833A),
+                                Color(0xFFC8433B),
+                              ],
+                              onTap: () => widget.open('songs'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _Shortcut(
                               icon: Icons.auto_awesome_rounded,
                               label: 'Made for you',
+                              colors: const [
+                                Color(0xFF2E9C9A),
+                                Color(0xFF3B73C4),
+                              ],
                               onTap: () => widget.open('suggestions'),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: _Shortcut(
-                              icon: Icons.travel_explore_rounded,
-                              label: 'Discover',
-                              onTap: () => widget.open('online'),
+                              icon: Icons.bar_chart_rounded,
+                              label: 'Statistics',
+                              colors: const [
+                                Color(0xFF5B5BD6),
+                                Color(0xFF3B6FD0),
+                              ],
+                              onTap: () => widget.open('statistics'),
                             ),
                           ),
                         ],
@@ -316,29 +332,63 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 }
 
+class _LibraryMenu extends StatelessWidget {
+  const _LibraryMenu({required this.model, required this.open});
+  final PlayerModel model;
+  final OpenPage open;
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<String>(
+    tooltip: 'More',
+    icon: const Icon(Icons.more_horiz_rounded),
+    onSelected: (choice) => switch (choice) {
+      'folder' => model.call('chooseFolder'),
+      'rescan' => model.call('rescan'),
+      _ => open('tools'),
+    },
+    itemBuilder: (_) => const [
+      PopupMenuItem(value: 'folder', child: Text('Add music folder')),
+      PopupMenuItem(value: 'rescan', child: Text('Rescan library')),
+      PopupMenuItem(value: 'tools', child: Text('Library tools')),
+    ],
+  );
+}
+
 class _Shortcut extends StatelessWidget {
   const _Shortcut({
     required this.icon,
     required this.label,
+    required this.colors,
     required this.onTap,
   });
   final IconData icon;
   final String label;
+  final List<Color> colors;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Card.filled(
-    margin: EdgeInsets.zero,
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
     child: InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      child: Ink(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(colors: colors),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
+            Icon(icon, color: Colors.white),
             const SizedBox(height: 12),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -392,10 +442,57 @@ class _AlbumTile extends StatelessWidget {
   );
 }
 
-class SongsPage extends StatelessWidget {
-  const SongsPage({super.key, required this.model, required this.open});
+class SongsScreen extends StatelessWidget {
+  const SongsScreen({super.key, required this.model, required this.open});
   final PlayerModel model;
   final OpenPage open;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: model,
+    builder: (context, _) => ArtworkAtmosphere(
+      model: model,
+      track: model.current,
+      shortFade: true,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
+          title: const Text('Songs'),
+          actions: [
+            ActionIcon(
+              icon: Icons.filter_list_rounded,
+              label: 'Filter songs',
+              selected: model.hasActiveFilter,
+              onPressed: () => songFilters(context, model),
+            ),
+          ],
+        ),
+        body: SongsPage(
+          model: model,
+          open: open,
+          topInset: MediaQuery.paddingOf(context).top + kToolbarHeight,
+        ),
+        bottomNavigationBar: AppBottomBar(model: model, open: open),
+      ),
+    ),
+  );
+}
+
+class SongsPage extends StatelessWidget {
+  const SongsPage({
+    super.key,
+    required this.model,
+    required this.open,
+    required this.topInset,
+  });
+  final PlayerModel model;
+  final OpenPage open;
+  final double topInset;
 
   @override
   Widget build(BuildContext context) {
@@ -403,48 +500,20 @@ class SongsPage extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(
+          padding: EdgeInsets.fromLTRB(
             AppGeometry.pageInset,
-            AppGeometry.pageTop,
+            topInset + 8,
             AppGeometry.pageInset,
-            12,
+            4,
           ),
-          child: Column(
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Songs',
-                      style: Theme.of(context).textTheme.headlineLarge,
-                    ),
-                  ),
-                  ActionIcon(
-                    icon: Icons.filter_list_rounded,
-                    label: 'Filter songs',
-                    selected: model.hasActiveFilter,
-                    onPressed: () => songFilters(context, model),
-                  ),
-                  ActionIcon(
-                    icon: Icons.tune_rounded,
-                    label: 'Library tools',
-                    onPressed: () => open('tools'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Text(
-                    '${tracks.length} ${tracks.length == 1 ? 'song' : 'songs'}',
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: tracks.isEmpty ? null : () => model.play(tracks),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Play all'),
-                  ),
-                ],
+              Text('${tracks.length} ${tracks.length == 1 ? 'song' : 'songs'}'),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: tracks.isEmpty ? null : () => model.play(tracks),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('Play all'),
               ),
             ],
           ),
@@ -590,6 +659,7 @@ Future<void> songActions(
   RowData track,
   OpenPage open, {
   Object? queueId,
+  bool player = false,
 }) {
   final favourite = model.isFavourite(track);
   return showModalBottomSheet<void>(
@@ -674,6 +744,23 @@ Future<void> songActions(
                 label: 'Share link',
                 action: () => model.call('shareLink', {'id': track['id']}),
               ),
+              if (player) ...[
+                (
+                  icon: Icons.equalizer_rounded,
+                  label: 'Equaliser',
+                  action: () => open('equaliser'),
+                ),
+                (
+                  icon: Icons.speaker_outlined,
+                  label: 'Audio output',
+                  action: () => open('output'),
+                ),
+                (
+                  icon: Icons.graphic_eq_rounded,
+                  label: 'Visualizer',
+                  action: () => open('visualizer'),
+                ),
+              ],
               if (queueId != null)
                 (
                   icon: Icons.remove_circle_outline_rounded,

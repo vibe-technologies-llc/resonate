@@ -1666,9 +1666,8 @@ class RoomCorrectionSection extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       );
@@ -1798,9 +1797,7 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
     final preamp = decimal(widget.curve['preampDb']);
     final bands = _eqBands(widget.curve);
     final handles = bands.map((band) => _eqLevel(band, preamp)).toList();
-    final values = [...widget.responseDb, ...handles].where(
-      (v) => v.isFinite,
-    );
+    final values = [...widget.responseDb, ...handles].where((v) => v.isFinite);
     double loudest = 0;
     for (final v in values) {
       final abs = v.abs();
@@ -1853,10 +1850,7 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
   RowData _placed(int held, Offset location, Size size, double span) {
     final bands = _eqBands(widget.curve).toList();
     if (held < 0 || held >= bands.length) return widget.curve;
-    final pointed = Offset(
-      location.dx + _offset.dx,
-      location.dy + _offset.dy,
-    );
+    final pointed = Offset(location.dx + _offset.dx, location.dy + _offset.dy);
     final lowest = decimal(widget.limits['lowestHz']);
     final highest = decimal(widget.limits['highestHz']);
     final gainAtMost = decimal(widget.limits['gainAtMostDb']);
@@ -1946,7 +1940,8 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
               if (travel <= _tapTravel) {
                 final preamp = decimal(widget.curve['preampDb']);
                 final hertz = _hertzAtX(start.dx, size.width);
-                final gain = _dbAtY(start.dy, size.height, frozen ?? span) - preamp;
+                final gain =
+                    _dbAtY(start.dy, size.height, frozen ?? span) - preamp;
                 widget.onAdd(hertz, gain);
               }
             }
@@ -1976,7 +1971,8 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
                   Positioned(
                     left:
                         _x(
-                          decimal(bands[i]['frequencyHz']).clamp(_lowest, _highest),
+                          decimal(bands[i]['frequencyHz'])
+                              .clamp(_lowest, _highest),
                           size.width,
                         ) -
                         13,
@@ -1996,10 +1992,7 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
                           color: widget.selected == i
                               ? scheme.primary
                               : scheme.surface,
-                          border: Border.all(
-                            color: scheme.primary,
-                            width: 2,
-                          ),
+                          border: Border.all(color: scheme.primary, width: 2),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.15),
@@ -2046,8 +2039,29 @@ class _EqualiserPainter extends CustomPainter {
   final Color faint;
   final Color marked;
   static const List<double> _faintFreqs = [
-    30, 40, 50, 60, 70, 80, 90, 200, 300, 400, 500, 600, 700, 800, 900,
-    2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
+    30,
+    40,
+    50,
+    60,
+    70,
+    80,
+    90,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    2000,
+    3000,
+    4000,
+    5000,
+    6000,
+    7000,
+    8000,
+    9000,
   ];
   static const List<(double, String)> _labelledFreqs = [
     (100, '100'),
@@ -2103,7 +2117,9 @@ class _EqualiserPainter extends CustomPainter {
       } else {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), faintPaint);
       }
-      if (zero || (level - span).abs() < 0.001 || (level + span).abs() < 0.001) {
+      if (zero ||
+          (level - span).abs() < 0.001 ||
+          (level + span).abs() < 0.001) {
         final text = zero ? '0 dB' : level.toStringAsFixed(0);
         final label = TextPainter(
           text: TextSpan(
@@ -2112,10 +2128,7 @@ class _EqualiserPainter extends CustomPainter {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        label.paint(
-          canvas,
-          Offset(3, y + (level >= span - 0.001 ? 2 : -12)),
-        );
+        label.paint(canvas, Offset(3, y + (level >= span - 0.001 ? 2 : -12)));
       }
       level += 5;
     }
@@ -2135,10 +2148,7 @@ class _EqualiserPainter extends CustomPainter {
       ..lineTo(size.width, zeroY)
       ..lineTo(0, zeroY)
       ..close();
-    canvas.drawPath(
-      wash,
-      Paint()..color = line.withValues(alpha: 0.18),
-    );
+    canvas.drawPath(wash, Paint()..color = line.withValues(alpha: 0.18));
     canvas.drawPath(
       trace,
       Paint()
@@ -2193,7 +2203,12 @@ class _BandEditor extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text('Band ${index + 1}', style: Theme.of(context).textTheme.titleMedium)),
+                Expanded(
+                  child: Text(
+                    'Band ${index + 1}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
                 TextButton.icon(
                   onPressed: onDelete,
                   icon: const Icon(Icons.delete_outline_rounded, size: 18),
@@ -2208,23 +2223,24 @@ class _BandEditor extends StatelessWidget {
               requestFocusOnTap: false,
               label: const Text('Type'),
               menuStyle: selectionMenuStyle(context),
-              dropdownMenuEntries: const [
-                'PEAKING',
-                'LOW_SHELF',
-                'HIGH_SHELF',
-                'LOW_PASS',
-                'HIGH_PASS',
-                'NOTCH',
-                'BAND_PASS',
-                'ALL_PASS',
-              ]
-                  .map(
-                    (value) => DropdownMenuEntry(
-                      value: value,
-                      label: _eqFilterLabel(value),
-                    ),
-                  )
-                  .toList(),
+              dropdownMenuEntries:
+                  const [
+                        'PEAKING',
+                        'LOW_SHELF',
+                        'HIGH_SHELF',
+                        'LOW_PASS',
+                        'HIGH_PASS',
+                        'NOTCH',
+                        'BAND_PASS',
+                        'ALL_PASS',
+                      ]
+                      .map(
+                        (value) => DropdownMenuEntry(
+                          value: value,
+                          label: _eqFilterLabel(value),
+                        ),
+                      )
+                      .toList(),
               onSelected: (value) {
                 if (value == null) return;
                 onChange(row({...band, 'filter': value}));
@@ -2269,10 +2285,7 @@ class _BandEditor extends StatelessWidget {
               label: 'Band ${index + 1} Q',
               format: (v) => 'Q ${v.toStringAsFixed(2)}',
               onCommit: (chosen) => onChange(
-                row({
-                  ...band,
-                  'q': _eqTidyQ(chosen.clamp(qLow, qHigh)),
-                }),
+                row({...band, 'q': _eqTidyQ(chosen.clamp(qLow, qHigh))}),
               ),
             ),
           ],

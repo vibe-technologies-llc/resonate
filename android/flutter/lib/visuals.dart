@@ -44,8 +44,7 @@ class ResonatePageTransitionsBuilder extends PageTransitionsBuilder {
   Duration get transitionDuration => const Duration(milliseconds: 400);
 
   @override
-  Duration get reverseTransitionDuration =>
-      const Duration(milliseconds: 350);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 350);
 
   @override
   Widget buildTransitions<T>(
@@ -68,11 +67,10 @@ class ResonatePageTransitionsBuilder extends PageTransitionsBuilder {
       return child;
     }
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    final slide =
-        Tween<Offset>(
-          begin: Offset(rtl ? -0.08 : 0.08, 0),
-          end: Offset.zero,
-        ).chain(CurveTween(curve: Curves.easeOutCubic));
+    final slide = Tween<Offset>(
+      begin: Offset(rtl ? -0.08 : 0.08, 0),
+      end: Offset.zero,
+    ).chain(CurveTween(curve: Curves.easeOutCubic));
     final fade = Tween<double>(
       begin: 0,
       end: 1,
@@ -272,7 +270,11 @@ class _ArtworkState extends State<Artwork> {
   void _load() {
     final bucket = artworkBucket(
       widget.size,
-      WidgetsBinding.instance.platformDispatcher.implicitView?.devicePixelRatio ??
+      WidgetsBinding
+              .instance
+              .platformDispatcher
+              .implicitView
+              ?.devicePixelRatio ??
           1.0,
     );
     final key = widget.model.artworkKey(widget.track, bucket);

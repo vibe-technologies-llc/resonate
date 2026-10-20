@@ -109,7 +109,7 @@ void main() {
   ) async {
     await mount(tester);
     expect(find.text('Your library'), findsOneWidget);
-    for (final label in ['Songs', 'Library', 'Queue', 'Settings']) {
+    for (final label in ['Library', 'Settings', 'Search']) {
       expect(find.text(label), findsOneWidget);
     }
     await tester.scrollUntilVisible(
@@ -160,7 +160,7 @@ void main() {
     'song playback preserves full unsigned ids and explicit position',
     (tester) async {
       await mount(tester, populated: true);
-      await tester.tap(find.text('Songs'));
+      await tester.tap(find.text('All songs'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Echoes').first);
       await tester.pump();
@@ -426,16 +426,18 @@ void main() {
       addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
       await mount(tester, populated: true);
+      await tester.tap(find.text('Echoes').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('Add to favourites'));
       await tester.tap(find.byTooltip('Add to favourites'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      final banner = find.byType(SnackBar);
-      final message = find.text('Added to favourites');
-      final action = find.descendant(
-        of: banner,
-        matching: find.text('Add to playlist'),
-      );
+      final banner = find.byType(SnackBar).last;
+      final message = find.text('Added to favourites').last;
+      final action = find
+          .descendant(of: banner, matching: find.text('Add to playlist'))
+          .last;
       final theme = Theme.of(tester.element(banner));
       expect(theme.colorScheme.brightness, brightness);
       expect(
@@ -458,13 +460,16 @@ void main() {
 
   testWidgets('favourite banner fades away after four seconds', (tester) async {
     await mount(tester, populated: true);
+    await tester.tap(find.text('Echoes').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Add to favourites'));
     await tester.tap(find.byTooltip('Add to favourites'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Added to favourites'), findsOneWidget);
+    expect(find.text('Added to favourites'), findsWidgets);
     await tester.pump(const Duration(seconds: 3));
-    expect(find.text('Added to favourites'), findsOneWidget);
+    expect(find.text('Added to favourites'), findsWidgets);
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Added to favourites'), findsNothing);
@@ -715,7 +720,7 @@ void main() {
       'tracks': <Map<String, dynamic>>[],
     });
     await mount(tester, populated: true);
-    await tester.tap(find.text('Songs'));
+    await tester.tap(find.text('All songs'));
     await tester.pumpAndSettle();
     expect(find.text('No songs found'), findsNothing);
     expect(find.byType(SongTile), findsOneWidget);
@@ -1365,7 +1370,7 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48));
     }
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.byTooltip('Songs'), findsOneWidget);
+    expect(find.byTooltip('Library'), findsOneWidget);
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsWidgets);
@@ -1374,7 +1379,7 @@ void main() {
 
   for (final (viewport, textScale) in const [
     (Size(320, 720), 2.0),
-    (Size(390, 844), 1.25),
+    (Size(390, 844), 1.5),
   ]) {
     testWidgets('scaled navigation keeps equal insets at ${viewport.width}', (
       tester,
@@ -1385,7 +1390,7 @@ void main() {
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-      AppShell.currentTab.value = 1;
+      AppShell.currentTab.value = 0;
       await mount(tester, populated: true);
 
       final tab = find.byTooltip('Library');
@@ -1780,7 +1785,9 @@ void main() {
     await mount(tester);
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Library tools'));
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Library tools'));
     await tester.pumpAndSettle();
 
     events.add({'status': 'The folder could not be removed'});
@@ -2294,5 +2301,78 @@ void main() {
     await tester.tap(find.text('Forget'));
     await tester.pumpAndSettle();
     expect(calls.last.method, 'forgetRoomCorrection');
+  });
+
+  testWidgets('the roots are Library, Settings and Search, with no Queue tab', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Queue'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Songs'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('the mini-player has no favourite heart', (tester) async {
+    await mount(tester, populated: true);
+
+    expect(find.byType(MiniPlayer), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MiniPlayer),
+        matching: find.byType(FavouriteButton),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Library menu offers folders, rescan and tools', (tester) async {
+    await mount(tester);
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add music folder'), findsWidgets);
+    expect(find.text('Rescan library'), findsOneWidget);
+    expect(find.text('Library tools'), findsOneWidget);
+
+    await tester.tap(find.text('Rescan library'));
+    await tester.pump();
+    expect(calls.last.method, 'rescan');
+  });
+
+  testWidgets('All songs opens the songs page with its filter', (tester) async {
+    await mount(tester, populated: true);
+    await tester.tap(find.text('All songs'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SongsPage), findsOneWidget);
+    expect(find.byTooltip('Filter songs'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+  });
+
+  testWidgets('the player menu reaches the equaliser, output and visualizer', (
+    tester,
+  ) async {
+    await mount(tester, populated: true);
+    await tester.tap(find.text('Echoes').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Player options'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Equaliser'), findsOneWidget);
+    expect(find.text('Audio output'), findsOneWidget);
+    expect(find.text('Visualizer'), findsOneWidget);
   });
 }

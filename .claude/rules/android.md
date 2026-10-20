@@ -226,7 +226,7 @@ splits history from up next by row, a repeated song included
 Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
 rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
 theme follows day/night. Android 13 is
-the minimum app version, so there is no older-platform palette or notification-permission branch.
+the minimum app version, so there is no older-platform palette branch; `POST_NOTIFICATIONS` is asked only from a button in Settings.
 The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 33 governs
 installation, and native code currently needs no newer platform symbols.
 
@@ -237,14 +237,18 @@ after Activity recreation. Library tools use a separate grouped page with compac
 surface and no duplicate toolbar inset. Folder source cards retain space between them. Processing
 choices and provider selection use rounded, themed menus with compact option rows. Popup menus
 use that surface and corner shape below their trigger. The floating mini-player
-shows cover, title, artist, previous/play/next controls and a favourite heart in a floating pill
+shows cover, title, artist and previous/play/next controls in a floating pill, with no heart as on iOS,
 above navigation, with ambient tones matching the album. Its transport targets remain accessible
 touch targets, and accessibility semantics retain the song progress node.
 The expanded player links the tagged album and artist to their collection pages; route arguments
 are URI-encoded and carried in saved navigation history, so punctuation and nested Back preserve
 which collection was opened.
 
-The navigation roots are Songs, Library, Queue, Settings and Search. Search switches between the
+The navigation roots are Library, Settings and Search, as iOS's tab bar: Songs is a page (`songs`) that
+Library's *All songs* tile opens, and the queue is Now Playing's Queue mode alone. Library's header has a
+*More* menu (Add music folder, Rescan library, Library tools) and, under the Favourites card, the *All songs*,
+*Made for you* and *Statistics* tiles; Now Playing's options sheet adds Equaliser, Audio output and
+Visualizer to the song's own entries. A saved root beyond the three reads as Library. Search switches between the
 native library search (songs, albums and artists) and online results. The last ten queries
 (`recent-searches`, a JSON list in `library-features`) are kept by Kotlin (`keepRecentSearches`) and
 reach Dart as `recentSearches`; Dart keeps one on submit or when a result is opened and sends the
@@ -294,7 +298,7 @@ of the album color strength, so bright covers cannot compete with labels. Cards 
 neutral surfaces; secondary text retains its own contrasting color. Root headings align with
 their actions and omit decorative captions.
 The mini-player keeps 40-pixel artwork and 48-pixel touch targets; standard navigation is 80
-pixels high. When five tabs leave less than 80 pixels each or text is enlarged, compact navigation
+pixels high. When the tabs leave less than 80 pixels each or text is enlarged, compact navigation
 is 72 pixels high, shows only the selected label, and gives its pill eight pixels of space above
 and on both sides within its tab. Inactive icons center in the full tab height. A fixed internal
 layout keeps these gaps equal as display scale changes; the Material bar's fixed-width pill spills
@@ -311,7 +315,7 @@ until dismissed, whatever call succeeds after it, as on iOS. A collection that c
 so with *Try again* instead of spinning, and a playlist is a spinner until its rows arrive (the
 bridge sends `playlistRows` as `null` while `playlistLoading`, and `beginPlaylist` clears the
 model's copy at once, so the previous playlist's rows never flash); a *Made for you* mix is a
-collection page of its own (`kind` `mix`, read through `filtered_tracks`), never the Songs tab's
+collection page of its own (`kind` `mix`, read through `filtered_tracks`), never the Songs page's
 filter. Scrolling lists take their bottom inset from the scaffold rather than
 reserving a fixed 180 pixels, keeping the final row clear without leaving an empty tail.
 

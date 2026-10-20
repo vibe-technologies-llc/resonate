@@ -54,8 +54,6 @@ class MiniPlayer extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (MediaQuery.sizeOf(context).width > 380)
-                  FavouriteButton(model: model, track: model.current),
                 ActionIcon(
                   icon: Icons.skip_previous_rounded,
                   label: 'Previous',
@@ -368,6 +366,7 @@ class _NowPlayingState extends State<NowPlaying>
                                                 model,
                                                 track,
                                                 widget.open,
+                                                player: true,
                                               ),
                                       ),
                                     ],
@@ -564,7 +563,8 @@ class _NowPlayingState extends State<NowPlaying>
                                                 Icon(
                                                   model.waiting == null
                                                       ? Icons.graphic_eq_rounded
-                                                      : Icons.volume_off_rounded,
+                                                      : Icons
+                                                            .volume_off_rounded,
                                                   size: 14,
                                                   color: Theme.of(context)
                                                       .colorScheme

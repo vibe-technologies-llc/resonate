@@ -224,9 +224,7 @@ class ResonateApp extends StatelessWidget {
         showValueIndicator: ShowValueIndicator.onDrag,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: ResonatePageTransitionsBuilder(),
-        },
+        builders: {TargetPlatform.android: ResonatePageTransitionsBuilder()},
       ),
     );
   }
@@ -249,20 +247,23 @@ class ResonateApp extends StatelessWidget {
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.model});
   final PlayerModel model;
-  static final ValueNotifier<int> currentTab = ValueNotifier(1);
+  static final ValueNotifier<int> currentTab = ValueNotifier(0);
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell>
     with RestorationMixin, WidgetsBindingObserver {
-  final _tab = RestorableInt(1);
+  final _tab = RestorableInt(0);
   int _direction = 0;
   @override
   String get restorationId => 'shell';
   @override
   void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
     registerForRestoration(_tab, 'tab');
+    if (_tab.value < 0 || _tab.value >= _navigationRoots.length) {
+      _tab.value = 0;
+    }
     AppShell.currentTab.value = _tab.value;
   }
 
@@ -306,8 +307,7 @@ class _AppShellState extends State<AppShell>
       return ArtworkAtmosphere(
         model: model,
         track: model.current,
-        shortFade: _tab.value == 0,
-        subdued: _tab.value == 3,
+        subdued: _tab.value == 1,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           extendBody: true,
@@ -315,7 +315,7 @@ class _AppShellState extends State<AppShell>
             fit: StackFit.expand,
             children: [
               SafeArea(
-                top: _tab.value != 1,
+                top: _tab.value != 0,
                 bottom: false,
                 child: Column(
                   children: [
@@ -332,10 +332,8 @@ class _AppShellState extends State<AppShell>
                         curve: Curves.easeOutCubic,
                         builder: (context, value, child) {
                           final rtl =
-                              Directionality.of(context) ==
-                              TextDirection.rtl;
-                          final sign =
-                              _direction * (rtl ? -1 : 1);
+                              Directionality.of(context) == TextDirection.rtl;
+                          final sign = _direction * (rtl ? -1 : 1);
                           return Opacity(
                             opacity: value,
                             child: Transform.translate(
@@ -350,9 +348,7 @@ class _AppShellState extends State<AppShell>
                         child: IndexedStack(
                           index: _tab.value,
                           children: [
-                            SongsPage(model: model, open: open),
                             LibraryPage(model: model, open: open),
-                            QueuePage(model: model, open: open),
                             SettingsPage(model: model, open: open),
                             SearchPage(model: model, open: open),
                           ],
@@ -385,9 +381,7 @@ class _AppShellState extends State<AppShell>
 }
 
 const _navigationRoots = <(IconData, IconData, String)>[
-  (Icons.music_note_outlined, Icons.music_note_rounded, 'Songs'),
   (Icons.library_music_outlined, Icons.library_music_rounded, 'Library'),
-  (Icons.queue_music_outlined, Icons.queue_music_rounded, 'Queue'),
   (Icons.settings_outlined, Icons.settings_rounded, 'Settings'),
   (Icons.search_rounded, Icons.search_rounded, 'Search'),
 ];
@@ -563,17 +557,14 @@ class _CompactNavigationBar extends StatelessWidget {
                                             _navigationRoots[index].$3,
                                             maxLines: 1,
                                             softWrap: false,
-                                            overflow:
-                                                TextOverflow.ellipsis,
+                                            overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.center,
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .labelMedium
                                                 ?.copyWith(
-                                                  color:
-                                                      scheme.onSurface,
-                                                  fontWeight:
-                                                      FontWeight.w600,
+                                                  color: scheme.onSurface,
+                                                  fontWeight: FontWeight.w600,
                                                 ),
                                           ),
                                         )
@@ -620,6 +611,7 @@ Route<void> resonatePageRoute(BuildContext context, Object? arguments) {
   final Widget child = switch (page) {
     'player' => NowPlaying(model: model, open: open),
     'collection' => CollectionPage(model: model, data: data, open: open),
+    'songs' => SongsScreen(model: model, open: open),
     'online' || 'search' => SearchPage(model: model, open: open),
     'lyrics' => LyricsPage(
       model: model,
