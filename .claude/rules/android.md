@@ -798,7 +798,12 @@ Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 ## Checks
 
 From `android/flutter/`, run `flutter pub get`, `flutter analyze` and `flutter test`. The Flutter
-tests cover repeated rows, identities, favourite updates, feedback, restoration and large text.
+tests cover repeated rows, identities, favourite updates, feedback, restoration and large text, and
+`bridge_test.dart` reads `FlutterBridge.kt` and `lib/*.dart` alike: every action Dart sends is a
+branch of `dispatch`, every branch is named in Dart, and every argument Dart sends by name is one
+its branch reads. The equaliser graph's handle is grabbed where the finger went down
+(`DragStartBehavior.down`; by default a pan starts where it crossed the touch slop, 36 px from the
+handle and out of its reach).
 
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
 both native ABIs and checks Kotlin and the manifest, and `:app:testDebugUnitTest` runs the plain

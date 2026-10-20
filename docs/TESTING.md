@@ -45,9 +45,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Android
 - [M] The instrumented tests never drive audio focus, becoming noisy, a controller's queue edits,
   service destruction releasing the repository, or a poll tick that throws
-- [M] No Dart test mounts `SearchPage`, `EqualiserPane`'s graph, the sync pane's save,
-  `CorrectionPane` or the queue's reorder and removal, and nothing holds Dart's `call` names and
-  arguments against `FlutterBridge.dispatch` (`FlutterWireTest` covers encodings alone)
 
 ## Phones
 - [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
