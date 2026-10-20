@@ -477,8 +477,19 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `AddTrack`, `OpenUri`, `mpris::claimed_by` and a resumed row ask before minting). **A row's id names
   that row alone:** `one_id_each` replaces an already-claimed id with a minted one in all
   `Queue::load` / `Queue::insert` input; the queue mints, not callers (a duplicate id made `Tracks`
-  publish one object path twice). `stamp_of` hashes location and span, not ids, so a renamed row
+  publish one object path twice). The ids held are the queue's own `Unclaimed` (`Queue::ids`), kept
+  edit by edit (a removed or heard-next row releases its id; load and restore build it afresh), so an
+  insert weighs only what arrives. `stamp_of` hashes location and span, not ids, so a renamed row
   still stamps as its playlist.
+- **A queue edit costs what it moves, short of the stamps and the publish.** A row is an
+  `Arc<QueueItem>` from the moment it arrives: `Queued::rows` (`Arc<[Arc<QueueItem>]>`, play order)
+  shares every row with the queue and every earlier publish, so a publish copies a pointer a row,
+  never a location (`a_row_published_twice_is_the_same_row_and_not_a_copy`); `Queue::relocate`
+  copies only a row a reader still holds (`Arc::make_mut`). Both stamps are order-dependent SipHash
+  over the rows in load order, kept as core `Stamping` hasher states: an insert appends to `items`, so
+  it feeds the arriving rows alone (to `playing_from` only where they land in `order`); a heard
+  queued-next row leaving was never in `playing_from` and rehashes the stamp alone; a removal, load or
+  restore rehashes both (`stamps_kept_edit_by_edit_agree_with_the_rows_stamped_afresh`).
 - **What was queued is apart from what plays.** `order` = loaded album or playlist (only list
   shuffle, a `RepeatMode::Queue` wrap and unshuffling touch); `next` = rows somebody asked to hear,
   in asking order; drawn = `order[..after] ++ next ++ order[after..]`. `next` is exhausted before
@@ -567,8 +578,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   frames summed.
 - **One `Published` bundle, not a growing argument list:** `PlayerState`, `OutputSettings`,
   `StreamDigest`, queue, sink list, the visualiser's `Tapped`, each behind its own lock so a 60 Hz
-  poll clones a pointer. The queue is a `Queued` (rows in play order, where each was loaded,
-  revision) under one lock; queue and digest are written before the `PlayerState` advertising them.
+  poll clones a pointer. The queue is a `Queued` (rows in play order as shared `Arc<QueueItem>`s,
+  where each was loaded, revision) under one lock; queue and digest are written before the `PlayerState` advertising them.
   `PlayerState::seeks` = token `Engine::seek` steps where the seek landed and nowhere else
   (`resonate-mpris` emits `Seeked` from it). `PlayerState::sleeping` carries what is left, so a front
   end keeps no clock. `OutputSettings` is the engine's whole configured output (a new `Arc` only when

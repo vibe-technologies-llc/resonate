@@ -164,7 +164,7 @@ mod tests {
     fn drawn(queue: &[QueueItem], revision: u64) -> Queued {
         Queued {
             revision,
-            rows: Arc::new(queue.to_vec()),
+            rows: queue.iter().cloned().map(Arc::new).collect(),
             loaded_at: Arc::from((0..queue.len()).collect::<Vec<_>>()),
             next: None,
             stamp: stamp_of(queue),
@@ -184,7 +184,7 @@ mod tests {
 
         Queued {
             revision,
-            rows: Arc::new(queue.to_vec()),
+            rows: queue.iter().cloned().map(Arc::new).collect(),
             loaded_at: Arc::from(loaded_at),
             next: None,
             stamp: stamp_of(&in_load_order),

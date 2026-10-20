@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueItem};
 use resonate_library::{Error as Library, LookupOp};
 
@@ -12,7 +14,7 @@ impl MobilePlayer {
         waiting.clone()
     }
 
-    pub(crate) fn failure_told(&self, rows: &[QueueItem], event: Event) -> Option<String> {
+    pub(crate) fn failure_told(&self, rows: &[Arc<QueueItem>], event: Event) -> Option<String> {
         match event {
             Event::Failed { track, error } => {
                 tracing::error!(%error, %track, "playback failed");

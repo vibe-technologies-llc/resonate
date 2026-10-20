@@ -1730,7 +1730,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
 - **Which playlist is in play is the library's, kept by the queue it was loaded as.**
   `Library::playing_playlist` = a cell beside the catalog holding a `Playing`: `PlaylistId` + the
   `QueueStamp` `engine::stamp_of` reads off the loaded rows (locations and spans, not handed ids);
-  it answers only where stamps agree. `Queue::rows_changed` restamps on every row arriving/leaving;
+  it answers only where stamps agree. The queue restamps on every row arriving/leaving (an arrival
+  feeds the kept `Stamping` its rows, a leaving rehashes: `audio.md`);
   `stamp_what_is_playing_from` stamps the rows outside the queued-next run, which the engine
   publishes as `PlayerState::queue_stamp`: an `Insert` into the playlist's rows or a `Remove` takes
   the badge off wherever it came from; rows queued next leave it; `Queue::split` restamps;

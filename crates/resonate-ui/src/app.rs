@@ -471,7 +471,7 @@ impl PlayerModel {
         series
     }
 
-    pub fn queue(&self) -> Arc<Vec<QueueItem>> {
+    pub fn queue(&self) -> Arc<[Arc<QueueItem>]> {
         Arc::clone(&self.queued.rows)
     }
 

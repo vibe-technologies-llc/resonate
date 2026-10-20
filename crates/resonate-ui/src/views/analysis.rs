@@ -113,7 +113,7 @@ impl RootView {
         self.analysis.update(cx, |model, cx| {
             model.follow(
                 Row {
-                    location: row.location,
+                    location: row.location.clone(),
                     span: row.span,
                 },
                 cx,

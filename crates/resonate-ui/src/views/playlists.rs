@@ -327,8 +327,8 @@ fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> O
         .map(|(_, index)| *index)
 }
 
-pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &[QueueItem]) -> Vec<QueueItem> {
-    let mut minting = Unclaimed::beside(beside);
+pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &[Arc<QueueItem>]) -> Vec<QueueItem> {
+    let mut minting = Unclaimed::beside(beside.iter().map(Arc::as_ref));
 
     entries
         .iter()
@@ -2321,7 +2321,7 @@ mod tests {
 
     fn queued_as(rows: Vec<QueueItem>, loaded_at: Vec<usize>) -> Queued {
         Queued {
-            rows: Arc::new(rows),
+            rows: rows.into_iter().map(Arc::new).collect(),
             loaded_at: loaded_at.into(),
             ..Queued::default()
         }

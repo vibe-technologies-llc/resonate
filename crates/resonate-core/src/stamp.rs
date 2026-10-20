@@ -5,11 +5,28 @@ pub struct QueueStamp(u64);
 
 impl QueueStamp {
     pub fn of<Row: Hash>(rows: impl IntoIterator<Item = Row>) -> Self {
-        let mut hasher = DefaultHasher::new();
+        let mut stamping = Stamping::default();
+        stamping.extend(rows);
+        stamping.stamp()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Stamping(DefaultHasher);
+
+impl Stamping {
+    pub fn row<Row: Hash>(&mut self, row: Row) {
+        row.hash(&mut self.0);
+    }
+
+    pub fn extend<Row: Hash>(&mut self, rows: impl IntoIterator<Item = Row>) {
         for row in rows {
-            row.hash(&mut hasher);
+            self.row(row);
         }
-        Self(hasher.finish())
+    }
+
+    pub fn stamp(&self) -> QueueStamp {
+        QueueStamp(self.0.finish())
     }
 }
 
@@ -31,6 +48,17 @@ mod tests {
     #[test]
     fn the_same_rows_in_the_same_order_stamp_the_same() {
         assert_eq!(QueueStamp::of([1, 2, 3]), QueueStamp::of([1, 2, 3]));
+    }
+
+    #[test]
+    fn rows_stamped_as_they_arrive_stamp_as_the_whole_run_does() {
+        let mut stamping = Stamping::default();
+        stamping.extend([1, 2]);
+        let before = stamping.clone();
+        stamping.row(3);
+
+        assert_eq!(before.stamp(), QueueStamp::of([1, 2]));
+        assert_eq!(stamping.stamp(), QueueStamp::of([1, 2, 3]));
     }
 
     #[test]

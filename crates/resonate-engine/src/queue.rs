@@ -1,7 +1,7 @@
 use std::{mem::take, ops::Range, sync::Arc};
 
 use ahash::AHashSet;
-use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, Span, TrackId};
+use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, Span, Stamping, TrackId};
 
 use crate::{RepeatMode, seed};
 
@@ -16,7 +16,7 @@ pub struct QueueItem {
 pub struct Queued {
     pub revision: u64,
     pub rows_revision: u64,
-    pub rows: Arc<Vec<QueueItem>>,
+    pub rows: Arc<[Arc<QueueItem>]>,
     pub loaded_at: Arc<[usize]>,
     pub listed: Arc<[usize]>,
     pub next: Option<Span>,
@@ -38,7 +38,7 @@ impl Default for Queued {
 }
 
 impl Queued {
-    pub fn in_list_order(&self) -> Vec<QueueItem> {
+    pub fn in_list_order(&self) -> Vec<Arc<QueueItem>> {
         if self.listed.len() != self.rows.len() {
             return self.rows.to_vec();
         }
@@ -73,22 +73,28 @@ pub enum Placement {
     At(usize),
 }
 
-pub fn unclaimed_id(queue: &[QueueItem]) -> TrackId {
+pub fn unclaimed_id<'a>(queue: impl IntoIterator<Item = &'a QueueItem>) -> TrackId {
     Unclaimed::beside(queue).mint()
 }
 
-pub fn stamp_of(items: &[QueueItem]) -> QueueStamp {
-    QueueStamp::of(items.iter().map(|item| (&item.location, item.span)))
+pub fn stamp_of<'a>(items: impl IntoIterator<Item = &'a QueueItem>) -> QueueStamp {
+    let mut stamping = Stamping::default();
+    stamp_onto(&mut stamping, items);
+    stamping.stamp()
 }
 
-fn one_id_each(items: Vec<QueueItem>, beside: &[QueueItem]) -> Vec<QueueItem> {
-    let mut minting = Unclaimed::beside(beside);
+fn stamp_onto<'a>(stamping: &mut Stamping, items: impl IntoIterator<Item = &'a QueueItem>) {
+    stamping.extend(items.into_iter().map(|item| (&item.location, item.span)));
+}
 
+fn one_id_each(items: Vec<QueueItem>, minting: &mut Unclaimed) -> Vec<Arc<QueueItem>> {
     items
         .into_iter()
-        .map(|item| QueueItem {
-            id: minting.claim(item.id).unwrap_or_else(|| minting.mint()),
-            ..item
+        .map(|item| {
+            Arc::new(QueueItem {
+                id: minting.claim(item.id).unwrap_or_else(|| minting.mint()),
+                ..item
+            })
         })
         .collect()
 }
@@ -99,9 +105,9 @@ pub struct Unclaimed {
 }
 
 impl Unclaimed {
-    pub fn beside(queue: &[QueueItem]) -> Self {
+    pub fn beside<'a>(queue: impl IntoIterator<Item = &'a QueueItem>) -> Self {
         Self {
-            taken: queue.iter().map(|item| item.id.get()).collect(),
+            taken: queue.into_iter().map(|item| item.id.get()).collect(),
             next: u64::MAX,
         }
     }
@@ -122,6 +128,10 @@ impl Unclaimed {
 
     pub fn claim(&mut self, id: TrackId) -> Option<TrackId> {
         self.taken.insert(id.get()).then_some(id)
+    }
+
+    fn release(&mut self, id: TrackId) {
+        self.taken.remove(&id.get());
     }
 }
 
@@ -156,7 +166,8 @@ enum Row {
 type Flagged = Vec<(usize, bool)>;
 
 pub struct Queue {
-    items: Vec<QueueItem>,
+    items: Vec<Arc<QueueItem>>,
+    ids: Unclaimed,
     order: Vec<usize>,
     unshuffled: Vec<usize>,
     next: Vec<usize>,
@@ -167,7 +178,9 @@ pub struct Queue {
     shuffler: Shuffler,
     revision: u64,
     rows_revision: u64,
+    stamping: Stamping,
     stamp: QueueStamp,
+    stamping_what_plays: Stamping,
     playing_from: QueueStamp,
 }
 
@@ -175,6 +188,7 @@ impl Queue {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
+            ids: Unclaimed::beside([]),
             order: Vec::new(),
             unshuffled: Vec::new(),
             next: Vec::new(),
@@ -185,23 +199,27 @@ impl Queue {
             shuffler: Shuffler::new(),
             revision: 0,
             rows_revision: 0,
+            stamping: Stamping::default(),
             stamp: QueueStamp::default(),
+            stamping_what_plays: Stamping::default(),
             playing_from: QueueStamp::default(),
         }
     }
 
     pub fn load(&mut self, items: Vec<QueueItem>, start_at: usize) -> Option<usize> {
-        let kept: Vec<QueueItem> = self
+        let kept: Vec<Arc<QueueItem>> = self
             .waiting()
             .iter()
             .filter_map(|index| self.items.get(*index))
             .cloned()
             .collect();
-        let loaded = one_id_each(items, &kept);
+        let mut minting = Unclaimed::beside(kept.iter().map(Arc::as_ref));
+        let loaded = one_id_each(items, &mut minting);
         let count = loaded.len();
 
         self.items = loaded;
         self.items.extend(kept);
+        self.ids = minting;
         self.order = (0..count).collect();
         self.unshuffled.clone_from(&self.order);
         self.next = (count..self.items.len()).collect();
@@ -232,20 +250,23 @@ impl Queue {
         let shuffle = resumption.shuffle;
         let drawn = resumption.in_play_order();
         let next = resumption.next.filter(|next| next.last() < drawn.len());
-        let mut minting = Unclaimed::beside(&[]);
+        let mut minting = Unclaimed::beside([]);
 
         self.items = resumption
             .rows
             .into_iter()
-            .map(|row| QueueItem {
-                id: row
-                    .held
-                    .and_then(|held| minting.claim(held))
-                    .unwrap_or_else(|| minting.mint()),
-                location: row.location,
-                span: row.span,
+            .map(|row| {
+                Arc::new(QueueItem {
+                    id: row
+                        .held
+                        .and_then(|held| minting.claim(held))
+                        .unwrap_or_else(|| minting.mint()),
+                    location: row.location,
+                    span: row.span,
+                })
             })
             .collect();
+        self.ids = minting;
         self.shuffle = shuffle;
 
         let (order, waiting, after, seat) = match next {
@@ -290,21 +311,27 @@ impl Queue {
         if items.is_empty() {
             return None;
         }
+        let arrived = one_id_each(items, &mut self.ids);
         let first = self.items.len();
-        self.items.extend(one_id_each(items, &self.items));
-        let landed = first..self.items.len();
+        let landed = first..first + arrived.len();
+        let row = self.landing(at);
 
-        let row = match self.landing(at) {
+        stamp_onto(&mut self.stamping, arrived.iter().map(Arc::as_ref));
+        if let Row::InOrder(_) = row {
+            stamp_onto(
+                &mut self.stamping_what_plays,
+                arrived.iter().map(Arc::as_ref),
+            );
+        }
+        self.items.extend(arrived);
+
+        match row {
             Row::Next(at) => {
                 self.next.splice(at..at, landed);
-                Row::Next(at)
             }
-            Row::InOrder(at) => {
-                self.land_in_order(at, landed);
-                Row::InOrder(at)
-            }
-        };
-        self.rows_changed();
+            Row::InOrder(at) => self.land_in_order(at, landed),
+        }
+        self.rows_moved();
         Some(self.drawn_at(row))
     }
 
@@ -368,12 +395,15 @@ impl Queue {
         self.order = reseat(take(&mut self.order));
         self.unshuffled = reseat(take(&mut self.unshuffled));
         self.next = reseat(take(&mut self.next));
-        self.items = take(&mut self.items)
-            .into_iter()
-            .zip(dropping.iter().copied())
-            .filter(|(_, dropped)| !dropped)
-            .map(|(item, _)| item)
-            .collect();
+        let mut kept_items = Vec::with_capacity(kept);
+        for (item, dropped) in take(&mut self.items).into_iter().zip(&dropping) {
+            if *dropped {
+                self.ids.release(item.id);
+            } else {
+                kept_items.push(item);
+            }
+        }
+        self.items = kept_items;
         self.after -= heard_before;
         self.rows_changed();
 
@@ -447,7 +477,7 @@ impl Queue {
         let mut relocated = false;
         for item in &mut self.items {
             if let Some(to) = landed_at(&item.location, moved) {
-                item.location = to;
+                Arc::make_mut(item).location = to;
                 relocated = true;
             }
         }
@@ -497,7 +527,7 @@ impl Queue {
         Some(Span::between(self.after, self.after + last))
     }
 
-    pub fn in_play_order(&self) -> Vec<QueueItem> {
+    pub fn in_play_order(&self) -> Arc<[Arc<QueueItem>]> {
         self.drawn()
             .filter_map(|index| self.items.get(index))
             .cloned()
@@ -546,7 +576,7 @@ impl Queue {
     }
 
     pub fn current(&self) -> Option<&QueueItem> {
-        self.items.get(self.heard()?)
+        self.items.get(self.heard()?).map(Arc::as_ref)
     }
 
     pub fn set_repeat(&mut self, repeat: RepeatMode) {
@@ -790,24 +820,25 @@ impl Queue {
 
     fn let_go_of_what_was_heard(&mut self) -> Option<usize> {
         let heard = *self.next.first()?;
-        self.forget(heard);
-        Some(heard)
-    }
-
-    fn forget(&mut self, gone: usize) {
-        if gone >= self.items.len() {
-            return;
+        if heard >= self.items.len() {
+            return Some(heard);
         }
-        self.items.remove(gone);
+
+        let gone = self.items.remove(heard);
+        self.ids.release(gone.id);
+        self.next.remove(0);
         for held in [&mut self.order, &mut self.unshuffled, &mut self.next] {
-            held.retain(|index| *index != gone);
             for index in held.iter_mut() {
-                if *index > gone {
+                if *index > heard {
                     *index -= 1;
                 }
             }
         }
-        self.rows_changed();
+
+        self.stamping = Stamping::default();
+        stamp_onto(&mut self.stamping, self.items.iter().map(Arc::as_ref));
+        self.rows_moved();
+        Some(heard)
     }
 
     fn seat_after(&mut self, after: usize) {
@@ -896,10 +927,17 @@ impl Queue {
     }
 
     fn rows_changed(&mut self) {
+        self.stamping = Stamping::default();
+        stamp_onto(&mut self.stamping, self.items.iter().map(Arc::as_ref));
+        self.stamp_what_is_playing_from();
+        self.rows_moved();
+    }
+
+    fn rows_moved(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.rows_revision = self.rows_revision.wrapping_add(1);
-        self.stamp = stamp_of(&self.items);
-        self.stamp_what_is_playing_from();
+        self.stamp = self.stamping.stamp();
+        self.playing_from = self.stamping_what_plays.stamp();
     }
 
     fn stamp_what_is_playing_from(&mut self) {
@@ -907,13 +945,16 @@ impl Queue {
         for index in &self.next {
             waits[*index] = true;
         }
-        self.playing_from = QueueStamp::of(
+        self.stamping_what_plays = Stamping::default();
+        stamp_onto(
+            &mut self.stamping_what_plays,
             self.items
                 .iter()
                 .zip(waits)
                 .filter(|(_, waits)| !waits)
-                .map(|(item, _)| (&item.location, item.span)),
+                .map(|(item, _)| item.as_ref()),
         );
+        self.playing_from = self.stamping_what_plays.stamp();
     }
 
     fn reshuffle_keeping(&mut self, playing: usize) {
@@ -2314,5 +2355,111 @@ mod tests {
             3,
             "a queued row heard before the run ended came back to stay"
         );
+    }
+
+    fn stamped_afresh(queue: &Queue) -> (QueueStamp, QueueStamp) {
+        let waiting: AHashSet<usize> = queue.next.iter().copied().collect();
+        let playing_from = stamp_of(
+            queue
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !waiting.contains(index))
+                .map(|(_, item)| item.as_ref()),
+        );
+
+        (stamp_of(queue.items.iter().map(Arc::as_ref)), playing_from)
+    }
+
+    #[test]
+    fn stamps_kept_edit_by_edit_agree_with_the_rows_stamped_afresh() {
+        let mut queue = loaded(6, 1);
+        let edits: [fn(&mut Queue); 12] = [
+            |queue| {
+                queue.insert(vec![item(90), item(91)], Placement::Next);
+            },
+            |queue| {
+                queue.insert(vec![item(92)], Placement::Queued);
+            },
+            |queue| {
+                queue.insert(vec![item(93)], Placement::At(5));
+            },
+            |queue| {
+                queue.advance(false);
+            },
+            |queue| {
+                queue.advance(false);
+            },
+            |queue| {
+                queue.jump_to(2);
+            },
+            |queue| {
+                queue.move_rows(Span::one(0), 4);
+            },
+            |queue| {
+                queue.remove_rows(Span::one(1));
+            },
+            |queue| {
+                queue.set_shuffle(true);
+            },
+            |queue| {
+                queue.insert(vec![item(94)], Placement::Next);
+            },
+            |queue| {
+                queue.advance(false);
+            },
+            |queue| {
+                queue.advance(false);
+            },
+        ];
+
+        for (step, edit) in edits.iter().enumerate() {
+            edit(&mut queue);
+
+            assert_eq!(
+                (queue.stamp(), queue.playing_from()),
+                stamped_afresh(&queue),
+                "edit {step} left a stamp the rows no longer give"
+            );
+        }
+    }
+
+    #[test]
+    fn a_row_published_twice_is_the_same_row_and_not_a_copy() {
+        let mut queue = loaded(3, 0);
+        let before = queue.in_play_order();
+
+        queue.insert(vec![item(90)], Placement::Next);
+        let after = queue.in_play_order();
+
+        assert!(Arc::ptr_eq(&before[0], &after[0]));
+        assert!(Arc::ptr_eq(&before[1], &after[2]));
+        assert!(Arc::ptr_eq(&before[2], &after[3]));
+    }
+
+    #[test]
+    fn an_id_a_removed_row_let_go_of_is_free_for_the_next_row_claiming_it() {
+        let mut queue = loaded(3, 0);
+
+        queue.remove_rows(Span::one(2));
+        queue.insert(vec![item(3)], Placement::Queued);
+        let ids: AHashSet<u64> = queue.items.iter().map(|row| row.id.get()).collect();
+
+        assert!(ids.contains(&item(3).id.get()));
+        assert_eq!(ids.len(), queue.len());
+    }
+
+    #[test]
+    fn ids_stay_one_a_row_through_rows_heard_next_and_let_go() {
+        let mut queue = loaded(2, 0);
+
+        for _ in 0..4 {
+            queue.insert(vec![item(1), item(1)], Placement::Next);
+            queue.advance(false);
+            queue.advance(false);
+        }
+
+        let ids: AHashSet<u64> = queue.items.iter().map(|row| row.id.get()).collect();
+        assert_eq!(ids.len(), queue.len());
     }
 }

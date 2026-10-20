@@ -106,7 +106,7 @@ impl Shared {
         }
     }
 
-    pub(crate) fn heard(&self, state: &PlayerState, queue: &[QueueItem]) -> Option<Heard> {
+    pub(crate) fn heard(&self, state: &PlayerState, queue: &[Arc<QueueItem>]) -> Option<Heard> {
         let current = state.current?;
         let playing = queue.iter().find(|item| item.id == current.id)?;
 
@@ -454,7 +454,7 @@ impl OwnInterface {
                     .shared
                     .host
                     .held_as(&location, span)
-                    .unwrap_or_else(|| unclaimed_id(&queue));
+                    .unwrap_or_else(|| unclaimed_id(queue.iter().map(Arc::as_ref)));
                 Ok(QueueItem { id, location, span })
             })
             .collect::<fdo::Result<Vec<_>>>()?;
