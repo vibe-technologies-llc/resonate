@@ -4,44 +4,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-func syncStanding(_ status: SyncStatus?, config: SyncConfig?, online: Bool) -> String {
-    guard let config, config.enabled else { return "Off" }
-    if !online, !config.nearbyOnly { return "Waiting for online features" }
-    let others = status?.devices.filter { !$0.thisDevice } ?? []
-    let nearby = others.filter(\.nearby).count
-    let reached = others.filter(\.online).count
-    switch status?.standing {
-    case .connected:
-        return reached == 0 ? "No other device online" : "\(counted(reached, "device")) online"
-    case .nearby:
-        return nearby == 0 ? "Looking on this network" : "\(counted(nearby, "device")) on this network"
-    case .unreachable:
-        return nearby == 0 ? "Can't reach the server" : "Server unreachable · \(counted(nearby, "device")) on this network"
-    case .refused:
-        return "The server refused this iPhone"
-    case .connecting:
-        return nearby == 0 ? "Connecting…" : "Connecting · \(counted(nearby, "device")) on this network"
-    case .off, nil:
-        return "Starting…"
-    }
-}
-
-enum SyncRoute: Hashable {
-    case hosted
-    case own
-    case nearby
-
-    init(_ config: SyncConfig) {
-        if config.nearbyOnly {
-            self = .nearby
-        } else if config.server.trimmingCharacters(in: .whitespaces).isEmpty {
-            self = .hosted
-        } else {
-            self = .own
-        }
-    }
-}
-
 struct SyncView: View {
     @Environment(Library.self) private var library
     @State private var pairing = false
@@ -650,33 +612,16 @@ struct SyncTransfers: View {
         let active = transfers.filter { $0.state == .waiting || $0.state == .moving }
         let finished = transfers.filter { $0.state == .landed || $0.state == .failed }.suffix(Self.finishedShown).reversed()
         Section {
-            ForEach(Self.keyed(active, as: "active"), id: \.key) { keyed in
+            ForEach(SyncTransferKeys.keyed(active, as: "active"), id: \.key) { keyed in
                 SyncTransferRow(transfer: keyed.transfer)
             }
-            ForEach(Self.keyed(Array(finished), as: "finished"), id: \.key) { keyed in
+            ForEach(SyncTransferKeys.keyed(Array(finished), as: "finished"), id: \.key) { keyed in
                 SyncTransferRow(transfer: keyed.transfer)
             }
         } header: {
             Text(active.isEmpty ? "Recently fetched" : "Fetching")
         }
     }
-}
-
-extension SyncTransfers {
-    static func keyed(_ transfers: [SyncTransfer], as group: String) -> [KeyedTransfer] {
-        var seen: [String: Int] = [:]
-        return transfers.map { transfer in
-            let identity = "\(group)\u{1f}\(transfer.from)\u{1f}\(transfer.artist)\u{1f}\(transfer.title)"
-            let occurrence = seen[identity, default: 0]
-            seen[identity] = occurrence + 1
-            return KeyedTransfer(key: "\(identity)\u{1f}\(occurrence)", transfer: transfer)
-        }
-    }
-}
-
-struct KeyedTransfer {
-    let key: String
-    let transfer: SyncTransfer
 }
 
 struct SyncTransferRow: View {

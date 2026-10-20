@@ -17,13 +17,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
-- [M] More pure Swift is unproved beside the list above: polling (`NowPlaying.Written.expected`), sync (`syncStanding`, `SyncTransfers.keyed`, `syncActivity`'s fraction,
-  `answerSyncAsked`, `landable`, `SyncRoute.init`), lists and search (`lit`, `LetterRun.runs`,
-  `SearchModel`'s generations, `QueueParts`, `ListeningBar.grouped`, `PlaylistEntry.of`,
-  `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
+- [M] More pure Swift is unproved beside the list above: polling (`NowPlaying.Written.expected`),
+  lists and search (`lit`, `LetterRun.runs`, `SearchModel`'s generations, `QueueParts`,
+  `ListeningBar.grouped`, `PlaylistEntry.of`, `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`),
+  `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
   192-byte stride against the shader's `Field`
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
-  launch machine and `landReceived`'s back-off are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
+  launch machine and `landReceived`'s journal are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
 - [M] Pure Swift in the views is unproved too: `LyricClock`, `EqualiserScale` and
   `EqualiserResponse`'s coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against

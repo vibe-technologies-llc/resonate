@@ -512,9 +512,3 @@ final class BackgroundHold {
         }
     }
 }
-
-struct ContinuedProgress: Equatable {
-    var done: Int64 = 0
-    var total: Int64 = 0
-    var subtitle = ""
-}

@@ -11,11 +11,6 @@ struct PlaylistSync: Equatable {
     let kept: Bool
 }
 
-enum SyncActivity: Equatable {
-    case syncing
-    case fetching(songs: Int, fraction: Double?)
-}
-
 enum ArtistLookup {
     case idle
     case looking
@@ -38,10 +33,6 @@ final class Features {
     private static let syncForeground: Duration = .seconds(2)
     private static let syncBackground: Duration = .seconds(30)
     private static let syncAsked: Duration = .seconds(1)
-    private static let syncAnswersAfter: TimeInterval = 1.5
-    private static let syncGivesUpAfter: TimeInterval = 45
-    private static let landingPause: TimeInterval = 60
-    private static let landingTriesAtMost = 3
     private static let visualizerFrame: Duration = .milliseconds(33)
     private static let loudnessFrame: Duration = .milliseconds(50)
     private static let visualizerRetry: Duration = .seconds(2)
@@ -162,7 +153,7 @@ final class Features {
             tapHoldersChanged()
         }
     }
-    @ObservationIgnored private var landingRefused: [UInt64: RefusedLanding] = [:]
+    @ObservationIgnored private var landingBackoff = LandingBackoff()
     @ObservationIgnored private var leftAt: Date?
 
     init(library: Library) {
@@ -447,27 +438,7 @@ final class Features {
     }
 
     var syncActivity: SyncActivity? {
-        guard let status = syncStatus, status.standing != .off else { return nil }
-        let active = status.transfers.filter { $0.state == .waiting || $0.state == .moving }
-        if !active.isEmpty || syncLanding > 0 {
-            let sized = active.filter { $0.size > 0 }
-            let size = sized.reduce(UInt64(0)) { $0 + $1.size }
-            let received = sized.reduce(UInt64(0)) { $0 + min($1.received, $1.size) }
-            let fraction = size == 0 || sized.count != active.count ? nil : Double(received) / Double(size)
-            return .fetching(songs: active.count + syncLanding, fraction: fraction)
-        }
-        return syncAskedAt == nil ? nil : .syncing
-    }
-
-    private static func fetched(_ status: SyncStatus) -> ContinuedProgress {
-        let active = status.transfers.filter { $0.state == .waiting || $0.state == .moving }
-        let size = active.reduce(UInt64(0)) { $0 + $1.size }
-        let received = active.reduce(UInt64(0)) { $0 + min($1.received, $1.size) }
-        return ContinuedProgress(
-            done: Int64(clamping: received),
-            total: Int64(clamping: size),
-            subtitle: counted(active.count, "song") + " left"
-        )
+        SyncActivity.of(syncStatus, landing: syncLanding, asked: syncAskedAt != nil)
     }
 
     var syncUpToDate: Bool {
@@ -553,19 +524,19 @@ final class Features {
 
     private func answerSyncAsked(_ status: SyncStatus) {
         guard let asked = syncAskedAt else { return }
-        let waited = Date().timeIntervalSince(asked)
-        guard waited >= Self.syncAnswersAfter else { return }
-        let others = status.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) }
-        if status.standing == .off {
+        let answer = SyncAnswer.after(
+            status,
+            activity: syncActivity,
+            config: syncConfig,
+            online: online,
+            waited: Date().timeIntervalSince(asked)
+        )
+        switch answer {
+        case .waiting: return
+        case .forget: syncAskedAt = nil
+        case .tell(let notice):
             syncAskedAt = nil
-        } else if syncActivity == .syncing, status.settled {
-            syncAskedAt = nil
-            library.notice(others.isEmpty ? "Synced · no other device is online" : "Synced with \(counted(others.count, "device"))")
-        } else if status.standing == .refused || (status.standing == .unreachable && others.isEmpty) {
-            syncAskedAt = nil
-            library.notice(syncStanding(status, config: syncConfig, online: online))
-        } else if waited >= Self.syncGivesUpAfter {
-            syncAskedAt = nil
+            library.notice(notice)
         }
     }
 
@@ -666,7 +637,7 @@ final class Features {
                 let moving = status.moving > 0 || !landable(waiting).isEmpty
                 if transferring != moving { transferring = moving }
                 transfers.hold(transferring)
-                if transferring { transfers.progress(Self.fetched(status)) }
+                if transferring { transfers.progress(ContinuedProgress.fetched(status)) }
                 answerSyncAsked(status)
                 if !waiting.isEmpty, landing == nil {
                     landing = Task { [weak self] in
@@ -709,8 +680,7 @@ final class Features {
 
     private func landable(_ waiting: [ReceivedSong]) -> [ReceivedSong] {
         guard writableFolder(syncFolder) != nil else { return [] }
-        let now = Date()
-        return waiting.filter { (landingRefused[$0.id]?.until ?? .distantPast) <= now }
+        return landingBackoff.landable(waiting, now: Date())
     }
 
     private func writableFolder(_ preferred: String?) -> MusicFolder? {
@@ -725,7 +695,7 @@ final class Features {
         }
         let folders = library.folders
         let still = Set(waiting.map(\.id))
-        landingRefused = landingRefused.filter { still.contains($0.key) }
+        landingBackoff.keeping(only: still)
         let due = landable(waiting)
         var landed = 0
         syncLanding = due.count
@@ -747,7 +717,7 @@ final class Features {
                 folders.written(uri)
                 settings.removeObject(forKey: Self.landingJournalKey)
                 landed += 1
-                landingRefused[received.id] = nil
+                landingBackoff.landed(received.id)
             } catch {
                 if let created {
                     _ = try? await Work.aside { folders.delete(created) }
@@ -771,12 +741,7 @@ final class Features {
     }
 
     private func refuseLanding(_ native: MobilePlayer, _ id: UInt64) async {
-        let tries = (landingRefused[id]?.tries ?? 0) + 1
-        guard tries >= Self.landingTriesAtMost else {
-            landingRefused[id] = RefusedLanding(until: Date().addingTimeInterval(Self.landingPause), tries: tries)
-            return
-        }
-        landingRefused[id] = nil
+        guard landingBackoff.refuse(id, now: Date()) else { return }
         _ = try? await Work.aside { try native.syncRefuseReceived(id: id) }
     }
 
@@ -1634,11 +1599,6 @@ private struct SecretsRead: Sendable {
     let scrobbling: Result<ScrobbleAccount, any Swift.Error>
     let recognition: Result<String, any Swift.Error>
     let sync: Result<SyncConfig, any Swift.Error>
-}
-
-struct RefusedLanding {
-    let until: Date
-    let tries: Int
 }
 
 @MainActor
