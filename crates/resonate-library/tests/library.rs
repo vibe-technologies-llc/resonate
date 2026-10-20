@@ -13216,6 +13216,36 @@ fn an_unheld_release_is_found_by_a_name_spelt_either_way() -> Result<()> {
 }
 
 #[test]
+fn an_unheld_release_is_found_by_a_piece_of_a_word_whatever_its_length_or_punctuation() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    let artist = artist_named(&library, "The Orbiters")?;
+    library.land_artist_releases(
+        artist.id,
+        &[artist_release(
+            HOURS_GROUP,
+            "100% a_b\\c",
+            Some("EP"),
+            &[],
+            Some("1996-05-06"),
+        )],
+        (0, 1),
+    )?;
+
+    for piece in ["100", "00%", "a_b", "b\\c", "orbit", "rbite", "rb"] {
+        assert_eq!(
+            library.unheld_releases(Some(piece), None)?.len(),
+            1,
+            "{piece}"
+        );
+    }
+    assert!(library.unheld_releases(Some("axb"), None)?.is_empty());
+    assert_eq!(library.albums_kept_for("a_b")?.len(), 1);
+    assert!(library.albums_kept_for("axb")?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;

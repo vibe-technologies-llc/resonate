@@ -869,7 +869,17 @@ rows read via `Player::media` like any unscanned row.
   three readers take `Option<&str>`, so list, counts and sidebar narrow together. A missing track
   belongs to a *held* album: `narrowed_onto("album_id", "a.id")` gives it the whole grammar. An
   unheld release has only its own row: `unheld_holding` writes one `r.folded LIKE ? OR ar.key LIKE
-  ?` per lone word, folded via `folded_letters`; only lone words are read.
+  ?` per lone word, folded via `folded_letters`; only lone words are read. **A piece of a word is
+  looked up in a trigram index, not scanned for.** `artist_releases_fts` (`folded`),
+  `artists_key_fts` (`key`) and `release_tracks_fts` (`folded`) are FTS5 `trigram` tables over the
+  tables themselves (`content =`, so no second copy of the text), kept by triggers that run the
+  `'delete'` command with the old values; a table with a trigger is never rebuilt by copy-and-rename
+  without redoing them. `Infix` writes the one shape every reader shares: `owner IN (SELECT rowid
+  FROM <index> WHERE <column> LIKE ? ESCAPE '\')` with `playlist::anywhere`'s pattern, which FTS5
+  re-checks against the text so the answer is the `LIKE`'s own (ASCII case-insensitive, `%` `_` `\`
+  literal). The owner of the artist half is `r.artist_id`, so a release's two halves are one
+  multi-index `OR`, not a join scanned row by row. A piece under three letters cannot be indexed and
+  stays a plain `LIKE`. `albums_kept_for` asks the same, a word per `(release OR artist)`.
 - **A cover says where it came from, the file's wins, the archive is asked until it has answered.**
   `albums.cover_source`: `CoverSource::File`/`Archive`/`Vault` (`vault.md`). `land_archive_cover`
   writes under `cover_art IS NULL` (and `cover_path IS NULL`): a file's picture is never
@@ -1406,9 +1416,9 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   phrase `lyrics:"…"`, counted by `Library::sung` so the window can offer it. `spelling.rs` has no
   vocabulary for the column. Also a schema break without a migration.
 - **A search reaches what the catalog lacks.** `release_tracks.folded` = title, artist, release
-  title, through `folded_letters` by `land_release`. `Library::unheld_matching` asks it one `LIKE`
-  per piece of every word asked by name (`elsewhere::words_asked`: lone words, bare or scoped to
-  title, artist, album); a term, denial, genre or lyric answers nothing on an unheld row. Wanted
+  title, through `folded_letters` by `land_release`. `Library::unheld_matching` asks it one `Infix`
+  (the trigram index above) per piece of every word asked by name (`elsewhere::words_asked`: lone
+  words, bare or scoped to title, artist, album); a term, denial, genre or lyric answers nothing on an unheld row. Wanted
   rows first; it and the Missing pane share `SHORT_OF_WHAT_IS_HELD_OR_WANTED` (a release row is
   missing where its album holds a track or the row is wanted).
 - **A song is placed on the album it was meant for, not whatever came out first.**
