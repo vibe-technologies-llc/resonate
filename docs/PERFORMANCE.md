@@ -25,9 +25,6 @@ are in [ROADMAP.md](ROADMAP.md).
   order: rows shared across publishes (an `Arc` a row, or a persistent vector) reach every reader of
   `Queued::rows` in resonate-ui, -mpris, -mcp, -mobile and the binary; the stamps are order-dependent
   SipHash, so they cannot be kept incrementally either
-- [M] The convolver works complex FFTs on real input (twice the memory and multiply-adds), stores a
-  mono response's spectrum once a channel, `%`s per partition, and `loudest_gain` allocates
-  `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
 - [M] Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
   `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
 - [M] The organise planner keeps every library path and folder listing for the whole run

@@ -765,8 +765,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `DAEMON_ANSWERS_WITHIN` goes through `lose_the_graph`. **Nothing inside the request callback sends
   on the request channel** (pipewire-rs runs it under the channel's lock; a send from there never
   returns). With no graph, a `Sync`, open or capture answers `Error::Disconnected` at once. **A
-  recording survives the restart:** `resonate-listen`'s `Capture` reads its disconnected events
-  channel as lost and asks the same client for the same capture every `LOOKS_EVERY`.
+  recording survives the restart:** `resonate-listen`'s `Capture` reads a disconnected events
+  channel, or a `StateChanged` to `Failed` on an open one (an unplugged microphone), as lost and asks
+  the same client for the same capture every `LOOKS_EVERY`. **A gap is silence of the time lost, not
+  a splice:** the reopened stream's `Recorder` is held back until `Recording::silence_for` has
+  advanced the clip by the time since the loss in whole frames (the slots are zero until written),
+  so the clip keeps wall-clock timing and the deadline is not extended; a reopen that fails adds no
+  silence, so a microphone gone for the whole clip is still `NothingHeard`. **A stop that fails keeps
+  the clip heard** (`finished`: warned; the error stands only when nothing was heard).
 - **A metadata key cleared reads as unset.** `Discovered::heard` reads `settings` and `default`
   metadata keyed by speaker (`HeldIn`): a key with no value clears what it held; a key of nothing
   clears every key that object carries and no other's (as `pw-metadata -d`). **Only the core

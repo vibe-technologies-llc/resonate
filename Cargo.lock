@@ -5619,6 +5619,7 @@ name = "resonate-dsp"
 version = "0.1.0"
 dependencies = [
  "parking_lot",
+ "realfft",
  "resonate-core",
  "rustfft",
  "thiserror 2.0.21",
@@ -5702,6 +5703,7 @@ dependencies = [
 name = "resonate-listen"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "resonate-core",
  "resonate-pipewire",
  "thiserror 2.0.21",

@@ -36,9 +36,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Blanking a Matroska file stops at an element of unknown size or after 65 536 elements and
   lands what it blanked so far as stripped; a `TrackEntry` name, chapters and an MP4's track-level
   `meta` are never blanked; an MP4 past 4 096 boxes keeps every tag
-
-## Later: Listen and recognition
-- [M] A capture stream failing without the daemon going (`StateChanged` to `Failed`) is never
-  reopened: `was_lost` reads only a closed channel, so an unplugged microphone records nothing till
-  the deadline; a reopened capture splices onto the clip with no gap mark, and a failing stop
-  discards a full clip

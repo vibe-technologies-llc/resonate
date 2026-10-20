@@ -48,5 +48,5 @@
 0.050	narrow f64 to s16
 0.050	narrow f64 to s24
 0.050	narrow f64 to s32
-3.090	convolve a second's response at 48k
-15.610	convolve a second's response at 192k
+2.190	convolve a second's response at 48k
+10.900	convolve a second's response at 192k
