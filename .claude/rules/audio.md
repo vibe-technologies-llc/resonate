@@ -109,7 +109,17 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `mpa::counted_frames` (`Prescan::buffered`, whole sources only) walks every frame header (at most
   `MOST_FRAMES_WALKED`, past which the reader's reckoning stands), leaving streams whose header
   names frames, and constant rate, to the reader. A seek past the reader's shorter reckoning lands
-  on its last frame and decodes on.
+  on its last frame and decodes on. **A walk is done once, by the scan, and playback is told its
+  result** (`Walked`, on `MediaInfo::walked`): the frame count above and the Matroska cluster tally
+  (counted length, discard padding, Opus and framed sample counts, the counted track) are what
+  `Prescan::buffered` found, written as one text (`Walked::written`) that `Sources` hands back through
+  `Hinting::walked` at every open but the scan's (`probe_scanned` opens afresh, so a revised walk is
+  never fed its own old answer). A hint is believed only for a source of the byte length it was read
+  at (`Walked::size`; the library gives its row's `file_size`): a file another program rewrote since
+  the scan is walked again. A source whose provider hints nothing (the phones) walks as before
+  (`a_walk_read_before_spares_the_frame_walk_of_a_file_of_the_same_size`,
+  `a_walk_read_of_a_file_of_another_size_is_not_believed`,
+  `a_count_already_known_stands_in_for_the_walk_of_the_clusters`).
 - **MPEG audio and ADTS seek from marks, not from the first frame** (`framed::Framed` wraps
   symphonia's `MpaReader` and `AdtsReader`). A seek walks frame headers itself (`Framing::walk`) from
   the latest of: a mark at least `Framing::LEAD` short of the target (MPEG: room for the bit

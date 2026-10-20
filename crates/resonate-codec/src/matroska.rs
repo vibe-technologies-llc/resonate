@@ -12,6 +12,7 @@ use crate::{
     flac, opus,
     prescan::read_exact,
     vorbis::Windows,
+    walked::ClusterTally,
     wavpack::{self, Coding},
 };
 
@@ -263,18 +264,26 @@ impl Tally {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn read_segment<S: Read + Seek + ?Sized>(source: &mut S) -> Segment {
+    read_segment_counted(source, None)
+}
+
+pub(crate) fn read_segment_counted<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    known: Option<&ClusterTally>,
+) -> Segment {
     let Ok(origin) = source.stream_position() else {
         return Segment::default();
     };
-    let found = scan(source).unwrap_or_default();
+    let found = scan(source, known).unwrap_or_default();
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("an EBML segment scan could not restore the stream position");
     }
     found
 }
 
-fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
+fn scan<S: Read + Seek + ?Sized>(source: &mut S, known: Option<&ClusterTally>) -> Option<Segment> {
     let header = element(source)?;
     if header.id != EBML_HEADER {
         return None;
@@ -291,24 +300,15 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
     if source.seek(SeekFrom::Start(body)).is_ok() {
         found.bit_depth = read_bit_depth(source, within);
     }
-    let counted_track = source
-        .seek(SeekFrom::Start(body))
-        .ok()
-        .and_then(|_| read_counted_track(source, within));
-    let opus_tracks = source
-        .seek(SeekFrom::Start(body))
-        .ok()
-        .map(|_| read_tracks_coded_as(source, within, OPUS_CODEC_ID))
-        .unwrap_or_default();
-    if source.seek(SeekFrom::Start(body)).is_ok() {
-        let counted = count_clusters(source, within, Tally::of(counted_track), opus_tracks);
-        let scale = found.scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
-        found.counted = span(counted.ticks.map(|ticks| ticks as f64), scale);
-        found.discarded = counted.discarded;
-        found.opus_samples = counted.tally.samples_where(|counts| counts == Counts::Opus);
-        found.framed_samples = counted.tally.samples_where(Counts::framed);
-        found.counted_track = counted_track.map(|counting| counting.track);
-    }
+    let tally = match known {
+        Some(known) => known.clone(),
+        None => counted_clusters(source, body, within, found.scale),
+    };
+    found.counted = tally.counted;
+    found.discarded = tally.discarded;
+    found.opus_samples = tally.opus_samples;
+    found.framed_samples = tally.framed_samples;
+    found.counted_track = tally.counted_track;
     let wavpack_track = source
         .seek(SeekFrom::Start(body))
         .ok()
@@ -402,6 +402,36 @@ fn read_atom<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Opt
         start: ChapterStart::new(start?, NANOS_A_SECOND),
         title,
     })
+}
+
+fn counted_clusters<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    body: u64,
+    within: Option<u64>,
+    scale: Option<u64>,
+) -> ClusterTally {
+    let counted_track = source
+        .seek(SeekFrom::Start(body))
+        .ok()
+        .and_then(|_| read_counted_track(source, within));
+    let opus_tracks = source
+        .seek(SeekFrom::Start(body))
+        .ok()
+        .map(|_| read_tracks_coded_as(source, within, OPUS_CODEC_ID))
+        .unwrap_or_default();
+    if source.seek(SeekFrom::Start(body)).is_err() {
+        return ClusterTally::default();
+    }
+
+    let counted = count_clusters(source, within, Tally::of(counted_track), opus_tracks);
+    let scale = scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
+    ClusterTally {
+        counted: span(counted.ticks.map(|ticks| ticks as f64), scale),
+        discarded: counted.discarded,
+        opus_samples: counted.tally.samples_where(|counts| counts == Counts::Opus),
+        framed_samples: counted.tally.samples_where(Counts::framed),
+        counted_track: counted_track.map(|counting| counting.track),
+    }
 }
 
 fn count_clusters<S: Read + Seek + ?Sized>(
@@ -1745,6 +1775,27 @@ mod tests {
         assert_eq!(found.opus_samples, None);
         assert_eq!(found.counted_frames_of(1), Some(Frames(8_384)));
         assert_eq!(found.counted_frames_of(2), None);
+    }
+
+    #[test]
+    fn a_count_already_known_stands_in_for_the_walk_of_the_clusters() {
+        let bytes = with_tracks(
+            &[track_entry(1, FLAC_CODEC_ID)],
+            &[flac_block(1, 12), flac_block(1, 12), flac_block(1, 1)],
+        );
+        let known = ClusterTally {
+            framed_samples: Some(77),
+            counted_track: Some(1),
+            ..ClusterTally::default()
+        };
+
+        let walked = read_segment(&mut Cursor::new(bytes.clone()));
+        let told = read_segment_counted(&mut Cursor::new(bytes), Some(&known));
+
+        assert_eq!(walked.framed_samples, Some(8_384));
+        assert_eq!(told.framed_samples, Some(77));
+        assert_eq!(told.counted_frames_of(1), Some(Frames(77)));
+        assert_eq!(told.counted, None);
     }
 
     #[test]

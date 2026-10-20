@@ -113,7 +113,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   screen's info and commands never wait on a large library.
   The poll reads the snapshot every 250 ms while the scene is active and
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
-  500 ms playing in the background (100 ms in the last 1.5 s of a playing song, so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s paused in the background,
+  100 ms in the last 1.5 s of a playing song in the foreground (so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s in the background whatever plays: the engine's own events wake it (`PlayerWake`, a `PlayerWatch` registered when the player opens, `wakePoll`; a wake that lands while a snapshot is in flight is owed, `wakeOwed`, so the next sleep is skipped), so a song that changes by itself is seen at once with the app asleep, and listening is counted in the boundary (`mobile.md`), not by the poll,
   and saves every 5 s, as Android does, on a lane of its own (`Work.inSaving`), so a queue rewrite
   never sits between a tap and the transport (the save on leaving the foreground stays on the
   transport's lane, after the edits queued before it); the snapshot is published (the clock, the lock screen,

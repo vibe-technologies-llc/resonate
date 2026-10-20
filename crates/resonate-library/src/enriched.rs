@@ -2005,6 +2005,7 @@ mod tests {
             named_by_its_stem: false,
             numbered_by_its_stem: false,
             packets: None,
+            walked: None,
         }
     }
 

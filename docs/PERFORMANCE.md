@@ -9,16 +9,7 @@ are in [ROADMAP.md](ROADMAP.md).
   inode when the file has a second name (only the pages that differ, which for moved audio is all
   of them)
 
-## iOS
-- [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only
-  to catch a song change the engine knows; `count_listening` rides on that poll, so an engine event
-  needs the counting moved first
-
 ## Performance and scale
-- [M] Every open of a Matroska file still reads every block header of it (up to
-  `MAX_ELEMENTS_COUNTED`), and of a VBR MP3 naming no length every frame header (up to
-  `MOST_FRAMES_WALKED`), scan and playback alike; a count persisted beside the catalog's duration
-  would spare playback the walk
 - [M] Queue edits still walk the queue on the engine thread, though none allocates a row: a
   publish copies a pointer a row into a fresh `Arc<[Arc<QueueItem>]>` and rebuilds `loaded_at` and
   `listed`; a removal, and a heard play-next row leaving, rehash every location for `Queued::stamp`

@@ -1730,6 +1730,7 @@ fn cut_into_rows(
             named_by_its_stem: false,
             numbered_by_its_stem: false,
             packets: None,
+            walked: info.walked.clone(),
         });
     }
 
@@ -1851,6 +1852,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
         named_by_its_stem: stemmed.named,
         numbered_by_its_stem: stemmed.numbered,
         packets,
+        walked: info.walked,
     }])
 }
 

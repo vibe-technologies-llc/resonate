@@ -541,6 +541,49 @@ fn a_scan_stores_what_the_probe_found() -> Result<()> {
     Ok(())
 }
 
+fn a_variable_rate_stream() -> Vec<u8> {
+    let mut file = Vec::new();
+    for (header, length, count) in [
+        ([0xff, 0xfb, 0x10, 0x00], 104, 40),
+        ([0xff, 0xfb, 0xe0, 0x00], 1_044, 60),
+    ] {
+        for _ in 0..count {
+            file.extend_from_slice(&header);
+            file.resize(file.len() + length - header.len(), 0);
+        }
+    }
+    file
+}
+
+#[test]
+fn a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback() -> Result<()> {
+    let tree = Tree::new();
+    let bytes = a_variable_rate_stream();
+    let path = tree.write("walked.mp3", &bytes);
+
+    let library = Library::open_in_memory()?;
+    let stats = scan(&library, &options(&tree))?;
+    let walked = library
+        .hinting()
+        .walked(&MediaLocation::local(&path))
+        .expect("the scan kept what it walked");
+
+    assert_eq!(stats.failed.total(), 0);
+    assert_eq!(walked.size(), bytes.len() as u64);
+    assert!(
+        walked.written().starts_with("1 115200 "),
+        "{}",
+        walked.written()
+    );
+    assert!(
+        library
+            .hinting()
+            .walked(&MediaLocation::local(tree.path().join("absent.mp3")))
+            .is_none()
+    );
+    Ok(())
+}
+
 #[test]
 fn every_sample_format_survives_the_round_trip() -> Result<()> {
     let tree = Tree::new();

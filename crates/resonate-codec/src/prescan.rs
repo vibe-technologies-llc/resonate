@@ -11,6 +11,7 @@ use crate::{
     mpa::{self, FrameHeader},
     riff::{self, Riff},
     tags::ReplayGain,
+    walked::{ClusterTally, Walked},
     wavpack::{self, Coding},
     wide::Wide,
 };
@@ -52,12 +53,17 @@ pub(crate) struct Prescan {
     pub(crate) mpeg_frames: Option<Frames>,
     pub(crate) layout: Option<boxes::BoxLayout>,
     pub(crate) encoder_gain: ReplayGain,
+    pub(crate) walked: Option<Walked>,
 }
 
 impl Prescan {
     pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Self {
+        Self::read_knowing(source, None)
+    }
+
+    fn read_knowing<S: Read + Seek + ?Sized>(source: &mut S, known: Option<&ClusterTally>) -> Self {
         let riff = riff::read(source);
-        let segment = matroska::read_segment(source);
+        let segment = matroska::read_segment_counted(source, known);
         Self {
             riff,
             boxes: boxes::read_movie(source),
@@ -68,24 +74,48 @@ impl Prescan {
             mpeg_frames: None,
             layout: None,
             encoder_gain: mpa::encoder_gain(source),
+            walked: None,
         }
     }
 
-    pub(crate) fn buffered<S: Read + Seek + ?Sized>(source: &mut S) -> Self {
+    pub(crate) fn buffered<S: Read + Seek + ?Sized>(
+        source: &mut S,
+        known: Option<&Walked>,
+    ) -> Self {
         let Ok(origin) = source.stream_position() else {
             return Self::read(source);
         };
 
+        let size = byte_length(source, origin);
+        let known = known.filter(|walked| Some(walked.size) == size);
         let mut window = Window::over(source, origin);
-        let mut found = Self::read(&mut window);
-        found.mpeg_frames = window
-            .seek(SeekFrom::Start(origin))
-            .ok()
-            .and_then(|_| mpa::counted_frames(&mut window));
+        let mut found = Self::read_knowing(&mut window, known.map(|walked| &walked.clusters));
+        found.mpeg_frames = match known {
+            Some(walked) => walked.mpeg_frames,
+            None => window
+                .seek(SeekFrom::Start(origin))
+                .ok()
+                .and_then(|_| mpa::counted_frames(&mut window)),
+        };
         window.rewind_the_source();
         found.layout = boxes::read_layout(source);
+        found.walked = size.map(|size| found.walked_at(size));
 
         found
+    }
+
+    fn walked_at(&self, size: u64) -> Walked {
+        Walked {
+            size,
+            mpeg_frames: self.mpeg_frames,
+            clusters: ClusterTally {
+                counted: self.segment.counted,
+                discarded: self.segment.discarded.clone(),
+                opus_samples: self.segment.opus_samples,
+                framed_samples: self.segment.framed_samples,
+                counted_track: self.segment.counted_track,
+            },
+        }
     }
 
     pub(crate) fn chapters(&self) -> Vec<Marked> {
@@ -100,6 +130,12 @@ impl Prescan {
             .duration()
             .map(|held| Frames::from_duration(held, rate))
     }
+}
+
+fn byte_length<S: Seek + ?Sized>(source: &mut S, origin: u64) -> Option<u64> {
+    let length = source.seek(SeekFrom::End(0)).ok();
+    source.seek(SeekFrom::Start(origin)).ok()?;
+    length
 }
 
 struct Window<'a, S: ?Sized> {
@@ -487,11 +523,63 @@ mod tests {
         flac.extend_from_slice(&[1, 2, 3, 4]);
         flac.extend_from_slice(&sawtooth(64 * 1024));
 
+        let length = flac.len() as u64;
         let mut counting = Counting::over(flac.clone());
+        let buffered = Prescan::buffered(&mut counting, None);
+
+        assert_eq!(buffered.walked.as_ref().map(Walked::size), Some(length));
         assert_eq!(
-            Prescan::buffered(&mut counting),
+            Prescan {
+                walked: None,
+                ..buffered
+            },
             Prescan::read(&mut Cursor::new(flac))
         );
+    }
+
+    const AT_32: [u8; 4] = [0xff, 0xfb, 0x10, 0x00];
+    const AT_32_LENGTH: usize = 104;
+    const AT_320: [u8; 4] = [0xff, 0xfb, 0xe0, 0x00];
+    const AT_320_LENGTH: usize = 1_044;
+
+    fn a_variable_rate_stream() -> Vec<u8> {
+        let mut file = frames(AT_32, AT_32_LENGTH, 40);
+        file.extend(frames(AT_320, AT_320_LENGTH, 60));
+        file
+    }
+
+    #[test]
+    fn a_walk_read_before_spares_the_frame_walk_of_a_file_of_the_same_size() {
+        let file = a_variable_rate_stream();
+        let mut walking = Counting::over(file.clone());
+        let walked = Prescan::buffered(&mut walking, None);
+
+        let mut sparing = Counting::over(file);
+        let again = Prescan::buffered(&mut sparing, walked.walked.as_ref());
+
+        assert_eq!(walked.mpeg_frames, Some(Frames(100 * 1_152)));
+        assert_eq!(again.mpeg_frames, walked.mpeg_frames);
+        assert_eq!(again.walked, walked.walked);
+        assert!(
+            sparing.reads < walking.reads,
+            "the known walk took {} reads where the frame walk took {}",
+            sparing.reads,
+            walking.reads
+        );
+    }
+
+    #[test]
+    fn a_walk_read_of_a_file_of_another_size_is_not_believed() {
+        let file = a_variable_rate_stream();
+        let stale = Walked {
+            size: file.len() as u64 + 1,
+            mpeg_frames: Some(Frames(7)),
+            clusters: ClusterTally::default(),
+        };
+
+        let found = Prescan::buffered(&mut Counting::over(file), Some(&stale));
+
+        assert_eq!(found.mpeg_frames, Some(Frames(100 * 1_152)));
     }
 
     fn frames(header: [u8; 4], length: usize, count: usize) -> Vec<u8> {

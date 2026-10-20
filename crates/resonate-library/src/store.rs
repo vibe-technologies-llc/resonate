@@ -10,7 +10,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
     Codec, CoverArt, ImageFormat, LISTED_APART_BY, PacketDigest, ReplayGain, Sources, TagSet,
-    probe_cover_art,
+    Walked, probe_cover_art,
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
@@ -89,6 +89,7 @@ pub struct TrackRecord {
     pub named_by_its_stem: bool,
     pub numbered_by_its_stem: bool,
     pub packets: Option<PacketDigest>,
+    pub walked: Option<Walked>,
 }
 
 #[derive(Clone, Copy)]
@@ -2151,11 +2152,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
              genre, lyrics, release_title, asked, answered, named_by_its_stem, packets,
-             title_sort, artist_sort, numbered_by_its_stem, track_total
+             title_sort, artist_sort, numbered_by_its_stem, track_total, walked
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37, ?38
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37, ?38, ?39
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
@@ -2219,6 +2220,7 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              tagged_artist      = excluded.tagged_artist,
              named_by_its_stem  = excluded.named_by_its_stem,
              packets            = excluded.packets,
+             walked             = excluded.walked,
              title_sort         = excluded.title_sort,
              artist_sort        = excluded.artist_sort,
              track_total        = excluded.track_total,
@@ -2315,6 +2317,7 @@ fn track(
             named(record.tags.artist_sort.as_deref()),
             record.numbered_by_its_stem,
             record.tags.track_total.map(i64::from),
+            record.walked.as_ref().map(Walked::written),
         ],
         |row| {
             Ok(Stored {
@@ -2686,6 +2689,7 @@ mod tests {
             named_by_its_stem: false,
             numbered_by_its_stem: false,
             packets: None,
+            walked: None,
         }
     }
 

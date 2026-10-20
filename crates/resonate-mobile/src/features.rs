@@ -30,6 +30,7 @@ pub(crate) struct Services {
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
     listening: Mutex<(Listening, Option<i64>)>,
     pub(crate) searching: crate::search::Searching,
+    pub(crate) watching: crate::watching::Watching,
 }
 
 impl Default for Services {
@@ -45,6 +46,7 @@ impl Default for Services {
             analyses: Mutex::new(BTreeMap::new()),
             listening: Mutex::new((Listening::default(), None)),
             searching: crate::search::Searching::default(),
+            watching: crate::watching::Watching::default(),
         }
     }
 }

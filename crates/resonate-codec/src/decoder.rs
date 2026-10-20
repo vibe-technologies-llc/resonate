@@ -27,6 +27,7 @@ use crate::{
     spool::Spool,
     stream::PacketSpan,
     timeline::Timeline,
+    walked::Walked,
 };
 
 const SILENT_PACKETS_BEFORE_REFUSING: u64 = 64;
@@ -306,6 +307,7 @@ pub struct MediaInfo {
     pub packing: Packing,
     pub tags: TagSet,
     pub cue: Option<CueFile>,
+    pub walked: Option<Walked>,
 }
 
 impl MediaInfo {
