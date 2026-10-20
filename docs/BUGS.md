@@ -16,11 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
-## Window
-- [M] Typing anywhere to search drops text an input method composes until a field is focused; the
-  field's preedit skips `one_line` and keeps its mark past the 16 KiB cut; a click can land the
-  caret inside a grapheme cluster; selection is one quad across a mixed-direction run
-
 ## Search
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo

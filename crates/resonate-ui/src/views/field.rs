@@ -3,10 +3,10 @@ use std::{ops::Range, time::Duration};
 use gpui::{
     App, Bounds, ContentMask, Context, CursorStyle, DispatchPhase, Element, ElementId,
     ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
-    GlobalElementId, InspectorElementId, IntoElement, KeyBinding, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine,
-    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill,
-    point, prelude::*, px, relative, rgb, rgba, size,
+    GlobalElementId, InputHandler, InspectorElementId, IntoElement, KeyBinding, LayoutId,
+    LineLayout, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
+    Point, Render, ShapedLine, SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle,
+    Window, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 
 use crate::{
@@ -223,6 +223,11 @@ impl Field {
             });
         }
         cx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn holds_a_preedit(&self) -> bool {
+        self.marked.is_some()
     }
 
     pub(crate) fn text(&self) -> &str {
@@ -613,17 +618,17 @@ impl EntityInputHandler for Field {
         cx: &mut Context<Self>,
     ) {
         let target = self.target_of(range);
-        let start = target.start;
+        let text = one_line(text);
         if self.marked.is_none() {
             self.edit.end_the_composing();
         }
-        self.edit.replace(target, text);
+        let placed = self.edit.replace(target, &text);
 
-        self.marked = (!text.is_empty()).then(|| start..start + text.len());
+        self.marked = (!placed.is_empty()).then(|| placed.clone());
         if let Some(selected) = selected {
-            let from = start + offset_of(text, selected.start);
-            let to = start + offset_of(text, selected.end);
-            self.edit.select(from..to);
+            let within = |utf16| (placed.start + offset_of(&text, utf16)).min(placed.end);
+            self.edit
+                .select(within(selected.start)..within(selected.end));
         }
         self.touched(cx);
     }
@@ -662,6 +667,121 @@ impl EntityInputHandler for Field {
     }
 }
 
+pub(crate) struct Composing {
+    search: Entity<Field>,
+    welcomed: bool,
+}
+
+impl Composing {
+    pub(crate) const fn at_the_window(search: Entity<Field>, welcomed: bool) -> Self {
+        Self { search, welcomed }
+    }
+
+    fn is_composing(&self, cx: &App) -> bool {
+        self.search.read(cx).marked.is_some()
+    }
+}
+
+impl InputHandler for Composing {
+    fn selected_text_range(
+        &mut self,
+        ignore_disabled_input: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<UTF16Selection> {
+        self.search.update(cx, |field, cx| {
+            field.selected_text_range(ignore_disabled_input, window, cx)
+        })
+    }
+
+    fn marked_text_range(&mut self, window: &mut Window, cx: &mut App) -> Option<Range<usize>> {
+        self.search
+            .update(cx, |field, cx| field.marked_text_range(window, cx))
+    }
+
+    fn text_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        adjusted_range: &mut Option<Range<usize>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<String> {
+        self.search.update(cx, |field, cx| {
+            field.text_for_range(range_utf16, adjusted_range, window, cx)
+        })
+    }
+
+    fn replace_text_in_range(
+        &mut self,
+        replacement_range: Option<Range<usize>>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !self.is_composing(cx) {
+            return;
+        }
+        self.search.update(cx, |field, cx| {
+            field.take_focus(window);
+            field.replace_text_in_range(replacement_range, text, window, cx);
+        });
+    }
+
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        new_text: &str,
+        new_selected_range: Option<Range<usize>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !self.welcomed && !self.is_composing(cx) {
+            return;
+        }
+        self.search.update(cx, |field, cx| {
+            field.take_focus(window);
+            if field.marked.is_none() {
+                field.edit.go(Motion::End, Anchor::Collapse);
+            }
+            field.replace_and_mark_text_in_range(
+                range_utf16,
+                new_text,
+                new_selected_range,
+                window,
+                cx,
+            );
+        });
+    }
+
+    fn unmark_text(&mut self, window: &mut Window, cx: &mut App) {
+        self.search
+            .update(cx, |field, cx| field.unmark_text(window, cx));
+    }
+
+    fn bounds_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Bounds<Pixels>> {
+        let bounds = self.search.read(cx).painted.as_ref()?.bounds;
+        self.search.update(cx, |field, cx| {
+            field.bounds_for_range(range_utf16, bounds, window, cx)
+        })
+    }
+
+    fn character_index_for_point(
+        &mut self,
+        point: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<usize> {
+        self.search.update(cx, |field, cx| {
+            field.character_index_for_point(point, window, cx)
+        })
+    }
+}
+
 struct Line {
     field: Entity<Field>,
 }
@@ -669,7 +789,7 @@ struct Line {
 struct Drawing {
     line: ShapedLine,
     origin: Point<Pixels>,
-    selection: Option<PaintQuad>,
+    selection: Vec<PaintQuad>,
     caret: Option<PaintQuad>,
     scrolled_by: Pixels,
 }
@@ -761,15 +881,18 @@ impl Element for Line {
             ),
             rgb(theme::accent()),
         );
-        let highlight = (!selection.is_empty()).then(|| {
-            fill(
-                Bounds::from_corners(
-                    point(origin.x + line.x_for_index(selection.start), bounds.top()),
-                    point(origin.x + line.x_for_index(selection.end), bounds.bottom()),
-                ),
-                rgba(theme::selection()),
-            )
-        });
+        let highlight = spread_of(glyph_cells(&line), line.width, selection)
+            .into_iter()
+            .map(|span| {
+                fill(
+                    Bounds::from_corners(
+                        point(origin.x + span.start, bounds.top()),
+                        point(origin.x + span.end, bounds.bottom()),
+                    ),
+                    rgba(theme::selection()),
+                )
+            })
+            .collect();
 
         Some(Drawing {
             line,
@@ -805,7 +928,7 @@ impl Element for Line {
         let line_height = window.line_height();
 
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            if let Some(selection) = drawing.selection {
+            for selection in drawing.selection {
                 window.paint_quad(selection);
             }
             if let Err(error) = drawing.line.paint(drawing.origin, line_height, window, cx) {
@@ -894,6 +1017,35 @@ fn runs_for(
     .collect()
 }
 
+fn glyph_cells(line: &LineLayout) -> Vec<(Pixels, usize)> {
+    line.runs
+        .iter()
+        .flat_map(|run| &run.glyphs)
+        .map(|glyph| (glyph.position.x, glyph.index))
+        .collect()
+}
+
+fn spread_of(
+    mut cells: Vec<(Pixels, usize)>,
+    width: Pixels,
+    selection: Range<usize>,
+) -> Vec<Range<Pixels>> {
+    cells.sort_by(|left, right| f32::from(left.0).total_cmp(&f32::from(right.0)));
+
+    let mut spans: Vec<Range<Pixels>> = Vec::new();
+    for (place, &(start, index)) in cells.iter().enumerate() {
+        if !selection.contains(&index) {
+            continue;
+        }
+        let end = cells.get(place + 1).map_or(width, |next| next.0);
+        match spans.last_mut() {
+            Some(last) if last.end == start => last.end = end,
+            _ => spans.push(start..end),
+        }
+    }
+    spans
+}
+
 fn scrolled_to_show(caret: Pixels, line: Pixels, visible: Pixels, held: Pixels) -> Pixels {
     let overflow = (line - visible).max(px(0.0));
     let caret_width = theme::width(theme::CARET_WIDTH);
@@ -905,6 +1057,40 @@ fn scrolled_to_show(caret: Pixels, line: Pixels, visible: Pixels, held: Pixels) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cells(places: &[(f32, usize)]) -> Vec<(Pixels, usize)> {
+        places.iter().map(|&(x, index)| (px(x), index)).collect()
+    }
+
+    #[test]
+    fn a_selection_in_one_direction_is_one_span_from_its_first_glyph_to_the_next() {
+        let line = cells(&[(0.0, 0), (10.0, 1), (20.0, 2), (30.0, 3)]);
+
+        assert_eq!(
+            spread_of(line.clone(), px(40.0), 1..3),
+            vec![px(10.0)..px(30.0)]
+        );
+        assert_eq!(
+            spread_of(line.clone(), px(40.0), 2..9),
+            vec![px(20.0)..px(40.0)]
+        );
+        assert!(spread_of(line, px(40.0), 2..2).is_empty());
+    }
+
+    #[test]
+    fn a_selection_across_a_right_to_left_run_is_a_span_for_each_run_it_touches() {
+        let mixed = cells(&[(0.0, 0), (10.0, 1), (20.0, 4), (30.0, 2), (40.0, 6)]);
+
+        assert_eq!(
+            spread_of(mixed.clone(), px(50.0), 1..3),
+            vec![px(10.0)..px(20.0), px(30.0)..px(40.0)]
+        );
+        assert_eq!(
+            spread_of(mixed.clone(), px(50.0), 1..5),
+            vec![px(10.0)..px(40.0)]
+        );
+        assert_eq!(spread_of(mixed, px(50.0), 2..5), vec![px(20.0)..px(40.0)]);
+    }
 
     #[test]
     fn a_masked_field_draws_a_mark_a_letter_and_maps_every_offset_both_ways() {
