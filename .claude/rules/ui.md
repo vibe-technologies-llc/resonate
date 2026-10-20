@@ -69,6 +69,24 @@ is never named.
   (space, letters/digits, symbol), letter runs broken at UAX #29 boundaries (`Edit::runs`). The view
   is a custom `Element` with an `ElementInputHandler` (IME); a selection drag is followed from a
   `Window::on_mouse_event` registered in `paint`.
+  - **A preedit is held to what the field holds.** `replace_and_mark_text_in_range` runs the text
+    through `one_line` as a commit does, and the mark is the range `Edit::replace` reports it filled,
+    so a preedit cut at `LONGEST_CONTENT` marks only what stayed.
+  - **A click lands on a grapheme boundary**: `Edit::move_to` and `select_to` snap an offset to the
+    nearer edge of the cluster it falls in (`Edit::snapped`; keyboard motions already step by
+    cluster).
+  - **A selection is a quad per visual run**: `spread_of` walks the shaped line's glyphs (position
+    and logical `index`) and joins the cells whose index the selection holds that touch, so a range
+    over mixed-direction text paints one quad per run, not one from its first glyph to its last. The
+    caret and `closest_index_for_x` are still left-to-right arithmetic.
+  - **An input method composing with no field focused starts a search.** The window's root focus
+    registers a `Composing` input handler (a canvas, `composition_watch`) that hands a preedit to the
+    search field: focuses it, puts the caret at the end and marks the preedit there; the commit
+    follows once a preedit is held. Text arriving with no preedit marked is ignored, because the
+    keys the window already heard (`typed`) reach an input handler too and would be typed twice. It
+    takes no preedit while something stands over the pane. Only the root's own focus is covered: a
+    ringed control holding the caret has no handler, so a dead key pressed there composes nothing
+    (`an_input_method_composing_at_the_window_begins_a_search_and_its_commit_lands_in_it`).
 - **TIDAL is signed in to from its group, never by pasting a token.** `RootView`'s `SigningIn`:
   `TidalSigning::Idle`/`Asking`/`Waiting`, a stop flag, the task; `sign_in_to_tidal` runs the
   `SignsIn` seam's two calls on the background executor; the code shows as a `kit::figure` beside

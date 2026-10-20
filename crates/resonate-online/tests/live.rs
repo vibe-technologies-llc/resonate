@@ -184,6 +184,40 @@ fn a_title_holding_by_or_typed_without_its_apostrophe_finds_the_song_first() {
 }
 
 #[test]
+fn a_title_many_artists_recorded_and_a_typo_of_one_find_the_original_first() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let library = Library::open_in_memory().expect("a catalog in memory");
+
+    for (typed, sung_by) in [
+        ("creep", "Radiohead"),
+        ("bohemian rhapsody", "Queen"),
+        ("bohemian rapsody", "Queen"),
+    ] {
+        let asked = songs_asked(typed).expect("words worth asking");
+        let answered = weighed_for(
+            &asked,
+            online.find_songs(&asked).expect("musicbrainz answered"),
+        );
+        let found = library
+            .unheld_among(answered, Some(&asked))
+            .expect("the catalog read");
+
+        assert_eq!(
+            found.first().map(|found| found.artist.as_str()),
+            Some(sung_by),
+            "{typed}: {:?}",
+            found
+                .iter()
+                .map(|found| (&found.title, &found.artist))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
 fn a_link_to_a_song_on_spotify_tidal_and_apple_music_names_its_isrc() {
     let Some(client) = reached() else {
         return;

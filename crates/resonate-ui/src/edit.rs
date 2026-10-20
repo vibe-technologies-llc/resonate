@@ -3,7 +3,7 @@ use std::{collections::VecDeque, ops::Range};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 const UNDO_DEPTH: usize = 128;
-const LONGEST_CONTENT: usize = 16 * 1024;
+pub(crate) const LONGEST_CONTENT: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Motion {
@@ -164,8 +164,8 @@ impl Edit {
         self.reversed = false;
     }
 
-    pub(crate) fn replace(&mut self, range: Range<usize>, text: &str) {
-        self.edited(Span::Composing, range, text);
+    pub(crate) fn replace(&mut self, range: Range<usize>, text: &str) -> Range<usize> {
+        self.edited(Span::Composing, range, text)
     }
 
     pub(crate) fn end_the_composing(&mut self) {
@@ -213,7 +213,7 @@ impl Edit {
         true
     }
 
-    fn edited(&mut self, span: Span, range: Range<usize>, text: &str) {
+    fn edited(&mut self, span: Span, range: Range<usize>, text: &str) -> Range<usize> {
         let range = self.clamped(range);
         let text = fitted(
             text,
@@ -223,7 +223,7 @@ impl Edit {
             let at = range.end;
             self.selection = at..at;
             self.reversed = false;
-            return;
+            return range;
         }
         if !self.history.resumes(span, &self.selection) {
             self.history.keep(self.snapshot());
@@ -239,6 +239,7 @@ impl Edit {
         self.selection = at..at;
         self.reversed = false;
         self.history.settle(span, self.selection.clone());
+        range.start..at
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -295,13 +296,13 @@ impl Edit {
     }
 
     pub(crate) fn move_to(&mut self, offset: usize) {
-        let at = self.boundary(offset);
+        let at = self.snapped(offset);
         self.selection = at..at;
         self.reversed = false;
     }
 
     pub(crate) fn select_to(&mut self, offset: usize) {
-        let to = self.boundary(offset);
+        let to = self.snapped(offset);
         if self.reversed {
             self.selection.start = to;
         } else {
@@ -398,6 +399,26 @@ impl Edit {
         let start = self.boundary(range.start);
         let end = self.boundary(range.end).max(start);
         start..end
+    }
+
+    fn snapped(&self, offset: usize) -> usize {
+        let at = self.boundary(offset);
+        let before = self
+            .content
+            .grapheme_indices(true)
+            .rev()
+            .find_map(|(start, _)| (start <= at).then_some(start))
+            .unwrap_or(0);
+        if before == at {
+            return at;
+        }
+        let after = self.next_grapheme(at);
+
+        if at - before <= after - at {
+            before
+        } else {
+            after
+        }
     }
 
     fn boundary(&self, offset: usize) -> usize {
@@ -681,6 +702,42 @@ mod tests {
         edit.move_to(1);
 
         assert_eq!(edit.cursor(), 0);
+    }
+
+    #[test]
+    fn a_click_inside_a_grapheme_lands_on_its_nearer_edge() {
+        let content = "e\u{301}x\u{1f468}\u{200d}\u{1f469}y";
+        let family = "e\u{301}x".len();
+        let end = content.len() - 1;
+
+        let mut edit = edit(content);
+        edit.move_to(1);
+        assert_eq!(edit.cursor(), 0);
+
+        edit.move_to(2);
+        assert_eq!(edit.cursor(), 0);
+
+        edit.move_to(family + 1);
+        assert_eq!(edit.cursor(), family);
+
+        edit.move_to(end - 1);
+        assert_eq!(edit.cursor(), end);
+
+        edit.move_to(0);
+        edit.select_to(family + 8);
+        assert_eq!(edit.selection(), 0..end);
+    }
+
+    #[test]
+    fn a_replacement_reports_the_range_it_filled_cut_to_what_fits() {
+        let mut held = edit(&"a".repeat(LONGEST_CONTENT - 2));
+
+        assert_eq!(
+            held.replace(LONGEST_CONTENT - 2..LONGEST_CONTENT - 2, "\u{304b}\u{306a}"),
+            LONGEST_CONTENT - 2..LONGEST_CONTENT - 2
+        );
+        assert_eq!(held.content().len(), LONGEST_CONTENT - 2);
+        assert_eq!(held.replace(0..1, "bc"), 0..2);
     }
 
     #[test]

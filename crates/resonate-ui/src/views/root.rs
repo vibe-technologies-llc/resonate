@@ -58,7 +58,7 @@ use crate::{
         browser::{self, ArtistShows, OpenedRecord},
         chrome,
         dropping::{FolderStanding, Incoming, TakingIn},
-        field::{Blurred, Caught, Field, Submitted},
+        field::{Blurred, Caught, Composing, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis},
@@ -3112,6 +3112,24 @@ impl RootView {
         .size(px(0.0))
     }
 
+    fn composition_watch(&self) -> Canvas<()> {
+        let search = self.search.clone();
+        let focus = self.focus.clone();
+        let welcomed = !self.something_stands_over_the_pane();
+        canvas(
+            |_, _, _| (),
+            move |_, (), window, cx| {
+                window.handle_input(
+                    &focus,
+                    Composing::at_the_window(search.clone(), welcomed),
+                    cx,
+                );
+            },
+        )
+        .absolute()
+        .size(px(0.0))
+    }
+
     fn pointer_moved_to(&mut self, pointer: Pointer, cx: &mut Context<Self>) {
         let inside = pointer == Pointer::InTheWindow;
         if self.pointer_inside == inside {
@@ -5321,6 +5339,7 @@ impl Render for RootView {
             .child(self.parts.transport())
             .child(self.drag_surface(cx))
             .child(self.pointer_watch(cx))
+            .child(self.composition_watch())
             .when_some(
                 toast::drawn(self.type_ahead.typed().is_some(), cx),
                 ParentElement::child,

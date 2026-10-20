@@ -1969,6 +1969,114 @@ mod tests {
     }
 
     #[gpui::test]
+    fn an_input_method_composing_at_the_window_begins_a_search_and_its_commit_lands_in_it(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui::InputHandler as _;
+
+        use crate::views::field::Composing;
+
+        let mut driven = Driven::open(cx, catalog());
+        let search = driven.read(|root, _| root.search.clone());
+        let text =
+            |driven: &mut Driven| driven.read(|root, cx| root.search.read(cx).text().to_owned());
+
+        driven.cx.update(|window, cx| {
+            Composing::at_the_window(search.clone(), true)
+                .replace_and_mark_text_in_range(None, "ka", None, window, cx);
+        });
+        driven.settle();
+        assert_eq!(text(&mut driven), "ka");
+        assert!(driven.read(|root, cx| root.search.read(cx).holds_a_preedit()));
+
+        driven.cx.update(|window, cx| {
+            Composing::at_the_window(search.clone(), true)
+                .replace_and_mark_text_in_range(None, "\u{304b}", None, window, cx);
+        });
+        assert_eq!(text(&mut driven), "\u{304b}");
+
+        driven.cx.update(|window, cx| {
+            Composing::at_the_window(search.clone(), true)
+                .replace_text_in_range(None, "\u{304b}", window, cx);
+        });
+        driven.settle();
+        assert_eq!(text(&mut driven), "\u{304b}");
+        assert!(!driven.read(|root, cx| root.search.read(cx).holds_a_preedit()));
+
+        driven.cx.update(|window, cx| {
+            Composing::at_the_window(search.clone(), true)
+                .replace_text_in_range(None, "x", window, cx);
+        });
+        assert_eq!(
+            text(&mut driven),
+            "\u{304b}",
+            "a key the window already heard was typed a second time"
+        );
+    }
+
+    #[gpui::test]
+    fn an_input_method_composing_over_a_sheet_is_not_taken_into_the_search(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui::InputHandler as _;
+
+        use crate::views::field::Composing;
+
+        let mut driven = Driven::open(cx, catalog());
+        let search = driven.read(|root, _| root.search.clone());
+
+        driven.cx.update(|window, cx| {
+            Composing::at_the_window(search, false)
+                .replace_and_mark_text_in_range(None, "ka", None, window, cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            ""
+        );
+    }
+
+    #[gpui::test]
+    fn a_preedit_is_one_line_and_its_mark_stops_where_the_field_stops_holding_it(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui::EntityInputHandler as _;
+
+        use crate::edit::LONGEST_CONTENT;
+
+        let mut driven = Driven::open(cx, catalog());
+        driven.focus(|root| &root.search);
+        let search = driven.read(|root, _| root.search.clone());
+
+        driven.cx.update(|window, cx| {
+            search.update(cx, |field, cx| {
+                field.replace_and_mark_text_in_range(None, "a\nb\rc", None, window, cx);
+            });
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "a b c"
+        );
+
+        driven.cx.update(|window, cx| {
+            search.update(cx, |field, cx| {
+                field.replace_text_in_range(None, "", window, cx);
+                field.hold("a".repeat(LONGEST_CONTENT - 2), cx);
+                field.replace_and_mark_text_in_range(None, "xyz", None, window, cx);
+            });
+        });
+        let marked = driven.cx.update(|window, cx| {
+            search.update(cx, |field, cx| field.marked_text_range(window, cx))
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().len()),
+            LONGEST_CONTENT
+        );
+        assert_eq!(marked, Some(LONGEST_CONTENT - 2..LONGEST_CONTENT));
+    }
+
+    #[gpui::test]
     fn a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back(
         cx: &mut TestAppContext,
     ) {

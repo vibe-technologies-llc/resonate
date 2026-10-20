@@ -1456,7 +1456,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   it offers the one a provider can deliver** (`the_take_worth_offering`: ISRC first, then the best
   standing and kind of release, then the most releases). **Songs are ranked before the cap**:
   `found_among` orders groups by `Fit` (`Titled`, `Answered`, `Partly`), then by the releases the
-  group's takes are on, then first place in the answer; to `FOUND_ELSEWHERE_AT_MOST` (12). **A found
+  group's takes are on, then first place in the answer; to `FOUND_ELSEWHERE_AT_MOST` (12). The
+  answer it ranks is up to a hundred recordings (`online.md`), where the original of a title many
+  artists recorded sits far down MusicBrainz's order of equal scores yet leads on its releases
+  (`a_song_on_the_most_releases_leads_a_hundred_answers_however_far_down_they_put_it`). **A found
   song carries the codes of every take of it as long as it** (`Found::isrcs`, within
   `LENGTHS_AGREE_WITHIN`). Words are weighed by `resonate_core::words_of_a_name` (`Found::answers`,
   `still_answering`, `artists_named_by`, `albums_named_by`, `albums_kept_named_by`: *cant* answers

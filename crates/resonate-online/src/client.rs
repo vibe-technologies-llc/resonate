@@ -26,6 +26,7 @@ use ureq::{
 use crate::{Error, Host, Result, query::Params};
 
 pub(crate) const LARGEST_DOCUMENT: usize = 4 * 1024 * 1024;
+pub(crate) const LARGEST_SONG_SEARCH: usize = 16 * 1024 * 1024;
 pub(crate) const LARGEST_PICTURE: usize = 8 * 1024 * 1024;
 
 const REFUSED_FOR_GOOD: u16 = 500;
@@ -520,8 +521,18 @@ impl Client {
         op: LookupOp,
         path_and_query: &str,
     ) -> Result<Option<T>> {
+        self.json_within(host, op, path_and_query, LARGEST_DOCUMENT)
+    }
+
+    pub(crate) fn json_within<T: DeserializeOwned>(
+        &self,
+        host: Host,
+        op: LookupOp,
+        path_and_query: &str,
+        largest: usize,
+    ) -> Result<Option<T>> {
         let url = format!("{}{path_and_query}", host.base());
-        let Some(bytes) = self.bytes(host, op, &url, LARGEST_DOCUMENT)? else {
+        let Some(bytes) = self.bytes(host, op, &url, largest)? else {
             return Ok(None);
         };
 

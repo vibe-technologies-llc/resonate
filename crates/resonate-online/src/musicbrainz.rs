@@ -12,13 +12,15 @@ use serde::Deserialize;
 
 use crate::{
     Client, Error, Host, Result,
+    client::LARGEST_SONG_SEARCH,
     lrclib::folded,
     query::{Params, escape_query, lucene_quoted},
 };
 
 const FOUND_AT_MOST: u32 = 5;
-const SONGS_FOUND_AT_MOST: u32 = 25;
+const SONGS_FOUND_AT_MOST: u32 = 100;
 const AN_ISRC_HELD: &str = "+isrc:*";
+const A_TAGGED_ONE_FIRST: &str = "tag:*";
 const ALBUMS_FOUND_AT_MOST: u32 = 25;
 const SPELT_LOOSELY_FROM: usize = 4;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
@@ -834,7 +836,7 @@ fn songs_coded_search(words: &str, spelt: Spelt) -> Option<String> {
     let words = words.join(" ");
     Some(searched(
         "/recording/",
-        &format!("+(recording:({words}) artist:({words})) {AN_ISRC_HELD}"),
+        &format!("+(recording:({words}) artist:({words})) {AN_ISRC_HELD} {A_TAGGED_ONE_FIRST}"),
         SONGS_FOUND_AT_MOST,
     ))
 }
@@ -842,7 +844,7 @@ fn songs_coded_search(words: &str, spelt: Spelt) -> Option<String> {
 fn songs_found(client: &Client, path: &str) -> Result<Vec<RecordingMatch>> {
     let op = LookupOp::FindRecording;
     let found = client
-        .json::<RecordingSearchDoc>(Host::MusicBrainz, op, path)?
+        .json_within::<RecordingSearchDoc>(Host::MusicBrainz, op, path, LARGEST_SONG_SEARCH)?
         .map(|document| document.recordings)
         .unwrap_or_default();
 
@@ -2173,7 +2175,7 @@ mod tests {
             path.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    "+(recording:(teardrop massive attack) artist:(teardrop massive attack)) +isrc:*"
+                    "+(recording:(teardrop massive attack) artist:(teardrop massive attack)) +isrc:* tag:*"
                 )
             )),
             "{path}"
@@ -2182,12 +2184,51 @@ mod tests {
             loosely.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    "+(recording:(dont~ stop~ me now) artist:(dont~ stop~ me now)) +isrc:*"
+                    "+(recording:(dont~ stop~ me now) artist:(dont~ stop~ me now)) +isrc:* tag:*"
                 )
             )),
             "{loosely}"
         );
         assert_eq!(songs_coded_search(" - ", Spelt::AsTyped), None);
+    }
+
+    #[test]
+    fn a_song_is_asked_among_a_hundred_recordings_and_no_release_field_narrows_the_releases_listed()
+    {
+        assert_eq!(SONGS_FOUND_AT_MOST, 100);
+
+        for path in [
+            songs_coded_search("creep", Spelt::AsTyped).expect("words to ask"),
+            songs_coded_search("bohemian rapsody", Spelt::Loosely).expect("words to ask"),
+            songs_credited_search("creep"),
+            songs_search("creep"),
+        ] {
+            assert!(path.contains("limit=100"), "{path}");
+            for release_field in ["status", "primarytype", "secondarytype", "date", "country"] {
+                assert!(!path.contains(&format!("{release_field}%3A")), "{path}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_typo_is_asked_with_fuzzy_words_and_the_answer_of_a_hundred_is_handed_on_whole() {
+        let words = asked("bohemian rapsody");
+        let covers = (0..99u8).map(|id| credited_match(id + 2, "Bohemian Rhapsody", "Cover Band"));
+        let queen = credited_match(1, "Bohemian Rhapsody", "Queen");
+        let loosely = songs_coded_search(&words.typed, Spelt::Loosely).expect("words");
+        let mut hundred: Vec<RecordingMatch> = covers.collect();
+        hundred.insert(63, queen.clone());
+
+        let (found, paths) = answered_by(vec![(loosely.clone(), hundred.clone())], &words);
+
+        assert_eq!(found, hundred);
+        assert_eq!(found.len(), 100);
+        assert!(found.contains(&queen));
+        assert!(
+            loosely.contains(&crate::query::escape_query("rapsody~")),
+            "{loosely}"
+        );
+        assert_eq!(paths.last(), Some(&loosely));
     }
 
     #[test]
