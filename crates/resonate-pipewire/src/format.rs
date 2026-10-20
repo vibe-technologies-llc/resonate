@@ -340,11 +340,36 @@ fn named_by(answered: &[u32], channels: ChannelCount) -> ChannelLayout {
 fn advertised_layout(position: &[u32], channels: ChannelCount) -> ChannelLayout {
     let spoken = position.len() == usize::from(channels.get())
         && position.iter().any(|channel| *channel != 0);
-    if spoken {
-        named_by(position, channels)
-    } else {
-        ChannelLayout::from_count(channels)
+    if !spoken {
+        return ChannelLayout::from_count(channels);
     }
+
+    NAMED_LAYOUTS
+        .into_iter()
+        .filter(|layout| layout.count() == channels)
+        .find(|layout| holds_the_places_of(position, *layout))
+        .unwrap_or(ChannelLayout::Discrete(channels))
+}
+
+fn holds_the_places_of(position: &[u32], layout: ChannelLayout) -> bool {
+    let count = usize::from(layout.count().get());
+    let mut named = spa_position(layout)[..count].to_vec();
+    named.sort_unstable();
+
+    let rears_on_the_sides = !named.contains(&sys::SPA_AUDIO_CHANNEL_SL)
+        && !position.contains(&sys::SPA_AUDIO_CHANNEL_RL)
+        && !position.contains(&sys::SPA_AUDIO_CHANNEL_RR);
+    let mut said: Vec<u32> = position
+        .iter()
+        .map(|channel| match *channel {
+            sys::SPA_AUDIO_CHANNEL_SL if rears_on_the_sides => sys::SPA_AUDIO_CHANNEL_RL,
+            sys::SPA_AUDIO_CHANNEL_SR if rears_on_the_sides => sys::SPA_AUDIO_CHANNEL_RR,
+            other => other,
+        })
+        .collect();
+    said.sort_unstable();
+
+    named == said
 }
 
 pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
@@ -1223,6 +1248,34 @@ mod tests {
                 ChannelCount::new(6).expect("six channels")
             )]
         );
+    }
+
+    #[test]
+    fn a_five_point_one_sink_is_itself_in_alsa_order_or_with_its_rears_on_the_sides() {
+        let alsa_order = vec![
+            sys::SPA_AUDIO_CHANNEL_FL,
+            sys::SPA_AUDIO_CHANNEL_FR,
+            sys::SPA_AUDIO_CHANNEL_RL,
+            sys::SPA_AUDIO_CHANNEL_RR,
+            sys::SPA_AUDIO_CHANNEL_FC,
+            sys::SPA_AUDIO_CHANNEL_LFE,
+        ];
+        let on_the_sides = vec![
+            sys::SPA_AUDIO_CHANNEL_FL,
+            sys::SPA_AUDIO_CHANNEL_FR,
+            sys::SPA_AUDIO_CHANNEL_FC,
+            sys::SPA_AUDIO_CHANNEL_LFE,
+            sys::SPA_AUDIO_CHANNEL_SL,
+            sys::SPA_AUDIO_CHANNEL_SR,
+        ];
+        let layouts = |position| {
+            parse_enum_format(&placed_advertisement(6, Some(position)))
+                .expect("an audio format")
+                .layouts
+        };
+
+        assert_eq!(layouts(alsa_order), vec![ChannelLayout::Surround51]);
+        assert_eq!(layouts(on_the_sides), vec![ChannelLayout::Surround51]);
     }
 
     #[test]

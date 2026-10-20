@@ -850,12 +850,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **A sink's advertised layouts are read the same way** (`format::advertised_layout` over
   `named_by`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a
-  channel the matching layout, else `Discrete`; no array, an all-zero one or one of another length
-  falls back to `from_count`. So a 5.0 or 6.1 device lists as itself (a matching source is not
-  remixed by index) and a 6.0 one is not listed as 5.1
+  channel the layout holding the same set of places (`holds_the_places_of`), else `Discrete`; no
+  array, an all-zero one or one of another length falls back to `from_count`. The set, not the
+  order, decides, since the stream names its own positions and the graph routes by name: ALSA's
+  5.1 (`FL FR RL RR FC LFE`) is 5.1. A side pair stands for a rear pair the device lacks, as
+  PipeWire's own 5.1 places its surrounds on `SL`, `SR`. So a 5.0 or 6.1 device lists as itself (a
+  matching source is not remixed by index) and a 6.0 one is not listed as 5.1
   (`every_named_layout_a_sink_places_is_advertised_as_itself`,
-  `an_advertisement_through_the_real_parser_keeps_its_positions`). A 5.1 placed on the sides
-  (`SL`, `SR`) lists as `Discrete`, since no named layout places it so.
+  `a_five_point_one_sink_is_itself_in_alsa_order_or_with_its_rears_on_the_sides`,
+  `an_advertisement_through_the_real_parser_keeps_its_positions`). The settled format stays matched
+  in order by `named_by`: it echoes the positions the stream asked for.
 
 ## Fixtures
 
