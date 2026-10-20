@@ -4,56 +4,6 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-extension EqualiserFilter {
-    static let every: [EqualiserFilter] = [
-        .peaking, .lowShelf, .highShelf, .lowPass, .highPass, .notch, .bandPass, .allPass,
-    ]
-
-    var label: String {
-        switch self {
-        case .peaking: "Peak"
-        case .lowShelf: "Low shelf"
-        case .highShelf: "High shelf"
-        case .lowPass: "Low pass"
-        case .highPass: "High pass"
-        case .notch: "Notch"
-        case .bandPass: "Band pass"
-        case .allPass: "All pass"
-        }
-    }
-
-    var usesGain: Bool {
-        switch self {
-        case .peaking, .lowShelf, .highShelf: true
-        case .lowPass, .highPass, .notch, .bandPass, .allPass: false
-        }
-    }
-}
-
-extension EqualiserCurve {
-    static let flat = EqualiserCurve(name: "", preampDb: 0, bands: [])
-
-    var summary: String {
-        if !name.isEmpty { return name }
-        return bands.isEmpty ? "Flat" : "Custom curve · \(counted(bands.count, "band"))"
-    }
-
-    var presetName: String {
-        let flat = preampDb == 0 && bands.allSatisfy { $0.filter.usesGain && $0.gainDb == 0 }
-        return flat ? "Flat" : name
-    }
-
-    func level(of band: EqualiserBand) -> Float {
-        band.filter.usesGain ? band.gainDb + preampDb : preampDb
-    }
-
-    func replacing(_ index: Int, with band: EqualiserBand) -> EqualiserCurve {
-        var next = self
-        if next.bands.indices.contains(index) { next.bands[index] = band }
-        return next
-    }
-}
-
 extension EqualiserPreset {
     var mark: String {
         switch name {
@@ -163,161 +113,6 @@ struct BandGainSlider: View {
     }
 }
 
-enum EqualiserUnits {
-    static let semitone = Float(pow(2.0, 1.0 / 12.0))
-    static let qNotch = Float(pow(2.0, 1.0 / 6.0))
-    static let gainStep: Float = 0.5
-    static let addedQ: Float = 1.0
-
-    static func hertz(_ frequency: Float) -> String {
-        frequency >= 1000
-            ? String(format: frequency >= 10_000 ? "%.1f kHz" : "%.2f kHz", frequency / 1000)
-            : String(format: frequency >= 100 ? "%.0f Hz" : "%.1f Hz", frequency)
-    }
-
-    static func decibels(_ gain: Float) -> String {
-        String(format: "%+.1f dB", gain)
-    }
-
-    static func range(of hertz: Float) -> String {
-        switch hertz {
-        case ..<60: "Sub-bass"
-        case ..<180: "Bass"
-        case ..<400: "Warmth"
-        case ..<900: "Low mids"
-        case ..<1800: "Mids"
-        case ..<3500: "Vocals"
-        case ..<6000: "Presence"
-        case ..<12000: "Treble"
-        default: "Air"
-        }
-    }
-
-    static func q(_ q: Float) -> String {
-        String(format: "Q %.2f", q)
-    }
-
-    static func tidy(hertz: Float) -> Float {
-        switch hertz {
-        case ..<100: (hertz * 10).rounded() / 10
-        case ..<1000: hertz.rounded()
-        default: (hertz / 10).rounded() * 10
-        }
-    }
-
-    static func tidy(decibels: Float) -> Float {
-        (decibels * 10).rounded() / 10
-    }
-
-    static func tidy(q: Float) -> Float {
-        (q * 100).rounded() / 100
-    }
-}
-
-struct EqualiserScale {
-    static let lowestHz: Float = 20
-    static let highestHz: Float = 20_000
-    static let narrowestSpan: Float = 15
-    static let widestSpan: Float = 30
-    static let markedEvery: Float = 5
-    static let labelledFrequencies: [(hertz: Float, label: String)] = [(100, "100"), (1000, "1k"), (10_000, "10k")]
-    static let fainterFrequencies: [Float] = [
-        30, 40, 50, 60, 70, 80, 90, 200, 300, 400, 500, 600, 700, 800, 900,
-        2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
-    ]
-
-    let size: CGSize
-    let span: Float
-
-    static func span(around response: [Float], handles: [Float]) -> Float {
-        let loudest = (response + handles).lazy.filter(\.isFinite).map(abs).max() ?? 0
-        let rounded = (loudest / markedEvery).rounded(.up) * markedEvery
-        return min(max(rounded, narrowestSpan), widestSpan)
-    }
-
-    func x(_ hertz: Float) -> CGFloat {
-        CGFloat(log10(hertz / Self.lowestHz) / log10(Self.highestHz / Self.lowestHz)) * size.width
-    }
-
-    func hertz(atX x: CGFloat) -> Float {
-        let fraction = Float(min(max(x / max(size.width, 1), 0), 1))
-        return Self.lowestHz * pow(Self.highestHz / Self.lowestHz, fraction)
-    }
-
-    func y(_ decibels: Float) -> CGFloat {
-        let held = min(max(decibels, -span), span)
-        return CGFloat((span - held) / (2 * span)) * size.height
-    }
-
-    func decibels(atY y: CGFloat) -> Float {
-        span - Float(y / max(size.height, 1)) * 2 * span
-    }
-
-    func traced(_ response: [Float]) -> Path {
-        Path { path in
-            guard response.count > 1 else { return }
-            let last = CGFloat(response.count - 1)
-            for (index, decibels) in response.enumerated() {
-                let point = CGPoint(x: CGFloat(index) / last * size.width, y: y(decibels))
-                if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
-            }
-        }
-    }
-
-    func washed(_ response: [Float]) -> Path {
-        var path = traced(response)
-        guard response.count > 1 else { return path }
-        path.addLine(to: CGPoint(x: size.width, y: y(0)))
-        path.addLine(to: CGPoint(x: 0, y: y(0)))
-        path.closeSubpath()
-        return path
-    }
-}
-
-@MainActor
-@Observable
-final class EqualiserResponse {
-    nonisolated static let points: UInt32 = 256
-    private static let between: Duration = .milliseconds(30)
-
-    private struct Asked: Equatable {
-        let curve: EqualiserCurve
-        let rate: UInt32?
-    }
-
-    private(set) var decibels: [Float] = []
-    @ObservationIgnored private var asked: Asked?
-    @ObservationIgnored private var drawn: Asked?
-    @ObservationIgnored private var working = false
-
-    func follow(_ curve: EqualiserCurve, rate: UInt32?) {
-        let next = Asked(curve: curve, rate: rate)
-        if next == drawn, !working {
-            asked = nil
-            return
-        }
-        asked = next
-        guard !working else { return }
-        working = true
-        Task { await drain() }
-    }
-
-    private func drain() async {
-        while let next = asked {
-            asked = nil
-            let curve = next.curve
-            let rate = next.rate
-            if let traced = try? await Work.aside({
-                try responseCurve(curve: curve, points: Self.points, rateHz: rate)
-            }) {
-                decibels = traced
-                drawn = next
-            }
-            if asked != nil { try? await Task.sleep(for: Self.between) }
-        }
-        working = false
-    }
-}
 
 struct EqualiserGraph: View {
     let given: EqualiserCurve
@@ -768,5 +563,35 @@ struct BandValueRow: View {
         let bounded = min(max(chosen, range.lowerBound), range.upperBound)
         guard bounded != value else { return }
         commit(bounded)
+    }
+}
+
+extension EqualiserScale {
+    func traced(_ response: [Float]) -> Path {
+        Path { path in
+            guard response.count > 1 else { return }
+            let last = CGFloat(response.count - 1)
+            for (index, decibels) in response.enumerated() {
+                let point = CGPoint(x: CGFloat(index) / last * size.width, y: y(decibels))
+                if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+            }
+        }
+    }
+
+    func washed(_ response: [Float]) -> Path {
+        var path = traced(response)
+        guard response.count > 1 else { return path }
+        path.addLine(to: CGPoint(x: size.width, y: y(0)))
+        path.addLine(to: CGPoint(x: 0, y: y(0)))
+        path.closeSubpath()
+        return path
+    }
+}
+
+extension EqualiserResponse {
+    convenience init() {
+        self.init(tracing: { curve, rate in
+            try await Work.aside { try responseCurve(curve: curve, points: EqualiserResponse.points, rateHz: rate) }
+        })
     }
 }

@@ -230,7 +230,7 @@ struct SettingsView: View {
     }
 
     private var terms: [String] {
-        search.split(whereSeparator: \.isWhitespace).map(String.init)
+        SettingsSearch.terms(search)
     }
 
     private var nothingMatches: Bool {
@@ -244,7 +244,7 @@ struct SettingsView: View {
     }
 
     private func matches(_ searched: String) -> Bool {
-        terms.allSatisfy { searched.localizedCaseInsensitiveContains($0) }
+        SettingsSearch.matches(searched, terms: terms)
     }
 
     private func shown(_ words: String...) -> Bool {

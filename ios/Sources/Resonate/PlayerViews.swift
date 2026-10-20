@@ -1230,7 +1230,8 @@ struct QueueSections: View {
         .onMove { offsets, destination in
             guard let moved = offsets.first else { return }
             edited += 1
-            library.moveInQueue(from: range.lowerBound + moved, to: range.lowerBound + destination)
+            let move = RowMoves.queue(offset: moved, destination: destination, within: range.lowerBound)
+            library.moveInQueue(from: move.from, to: move.to)
         }
         .onDelete { offsets in
             edited += 1

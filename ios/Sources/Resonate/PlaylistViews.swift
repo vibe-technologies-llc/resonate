@@ -110,7 +110,7 @@ struct PlaylistView: View {
             }
             .onMove { from, to in
                 guard let start = from.first else { return }
-                move(start, to: to > start ? to - 1 : to)
+                move(start, to: RowMoves.playlist(from: start, destination: to))
             }
             .onDelete { offsets in
                 for position in offsets.sorted(by: >) { remove(position) }

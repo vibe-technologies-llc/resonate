@@ -20,9 +20,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
   launch machine and `landReceived`'s journal are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
-- [M] Pure Swift in the views is unproved too: `EqualiserScale` and `EqualiserResponse`'s
-  coalescing, `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic,
-  which differ
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
