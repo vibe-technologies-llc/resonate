@@ -4,14 +4,6 @@ import ResonateLogic
 import ResonateNative
 import Synchronization
 
-struct MusicFolder: Identifiable, Hashable, Sendable {
-    let id: String
-    let name: String
-    let path: String
-    let readable: Bool
-    let writable: Bool
-}
-
 struct FolderAccess: Sendable {
     static let unreachable = FolderAccess(path: "", readable: false, writable: false)
 

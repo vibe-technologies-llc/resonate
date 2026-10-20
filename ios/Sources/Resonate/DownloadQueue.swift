@@ -6,86 +6,6 @@ import ResonateLogic
 import ResonateNative
 import UIKit
 
-enum DownloadState: Equatable {
-    case waiting
-    case finding
-    case downloading
-    case validating
-    case done(Track)
-    case failed(String)
-    case cancelled
-
-    var inFlight: Bool {
-        switch self {
-        case .finding, .downloading, .validating: true
-        default: false
-        }
-    }
-
-    var settled: Bool {
-        switch self {
-        case .done, .failed, .cancelled: true
-        default: false
-        }
-    }
-}
-
-struct DownloadJob: Identifiable, Equatable {
-    let id: UInt64
-    let song: SearchSong
-    let folder: MusicFolder
-    var state = DownloadState.waiting
-    var received: UInt64 = 0
-    var total: UInt64?
-    var provider: MusicProvider?
-
-    var fraction: Double? {
-        guard let total, total > 0 else { return nil }
-        return min(Double(received) / Double(total), 1)
-    }
-
-    mutating func follow(_ progress: ResonateNative.DownloadProgress) {
-        received = progress.received
-        total = progress.total ?? total
-        provider = progress.provider ?? provider
-        guard state.inFlight else { return }
-        switch progress.phase {
-        case .finding: state = .finding
-        case .downloading: state = .downloading
-        case .validating: state = .validating
-        case .done, .failed, .cancelled: return
-        }
-    }
-}
-
-enum ProviderReadiness: Equatable {
-    case ready
-    case missingServer
-    case missingLogin
-    case missingClient
-    case needsSignIn
-}
-
-extension DownloadAccount {
-    var readiness: ProviderReadiness {
-        switch provider {
-        case .monochrome, .hifiApi: .ready
-        case .subsonic where Self.isBlank(server): .missingServer
-        case .subsonic where Self.isBlank(user) || password.isEmpty: .missingLogin
-        case .subsonic: .ready
-        case .tidal where Self.isBlank(clientId): .missingClient
-        case .tidal where Self.isBlank(refreshToken): .needsSignIn
-        case .tidal: .ready
-        }
-    }
-
-    var usesItsOwnServer: Bool { !Self.isBlank(server) }
-
-    private static func isBlank(_ value: String) -> Bool {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-}
-
 extension ResonateNative.Error {
     var isCancelledDownload: Bool {
         if case .DownloadCancelled = self { return true }
@@ -98,7 +18,6 @@ extension ResonateNative.Error {
 final class DownloadQueue {
     private static let runningAtOnce = 2
     private static let pollEvery: Duration = .milliseconds(250)
-    private static let journalKey = "unfinished-download"
     private static let folderKey = "download-folder"
     private static let wantsAutomaticallyKey = "download-wants-automatically"
     private static let wantsAskedAtLeast: Duration = .seconds(30)
@@ -122,6 +41,7 @@ final class DownloadQueue {
 
     @ObservationIgnored private unowned let library: Library
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
+    @ObservationIgnored private let journal = DownloadJournal()
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var created: [UInt64: String] = [:]
     @ObservationIgnored private var paused = false
@@ -170,12 +90,8 @@ final class DownloadQueue {
         if found != held { held = found }
     }
 
-    private var journaled: [String] {
-        settings.stringArray(forKey: Self.journalKey) ?? settings.string(forKey: Self.journalKey).map { [$0] } ?? []
-    }
-
     func recover(_ native: MobilePlayer) {
-        let left = journaled
+        let left = journal.uris
         guard !left.isEmpty else { return }
         let folders = library.folders
         Task { [weak self] in
@@ -184,12 +100,7 @@ final class DownloadQueue {
                 return left.filter { !indexed.contains($0) && !folders.delete($0) }
             }
             guard let self, let kept else { return }
-            let remaining = journaled.filter { !left.contains($0) || kept.contains($0) }
-            if remaining.isEmpty {
-                settings.removeObject(forKey: Self.journalKey)
-            } else {
-                settings.set(remaining, forKey: Self.journalKey)
-            }
+            journal.settleRecovery(left: left, kept: kept)
         }
     }
 
@@ -399,14 +310,14 @@ final class DownloadQueue {
 
             let (uri, descriptor) = try await Work.aside { try folders.fresh(in: folder, named: offer.name) }
             created[id] = uri
-            journal { $0.append(uri) }
+            journal.change { $0.append(uri) }
             _ = try await Work.aside { try native.downloadOffer(job: id, descriptor: descriptor) }
 
             update(id) { $0.state = .validating }
             let track = try await Work.aside { try native.indexDownload(job: id, uri: uri, name: offer.name) }
             created[id] = nil
             folders.written(uri)
-            journal { $0.removeAll { $0 == uri } }
+            journal.change { $0.removeAll { $0 == uri } }
 
             update(id) { $0.state = .done(track) }
             landed(track)
@@ -421,7 +332,7 @@ final class DownloadQueue {
     private func discard(_ id: UInt64, _ folders: Folders) async {
         guard let uri = created.removeValue(forKey: id) else { return }
         let gone = (try? await Work.aside { folders.delete(uri) }) ?? false
-        if gone { journal { $0.removeAll { $0 == uri } } }
+        if gone { journal.change { $0.removeAll { $0 == uri } } }
     }
 
     private func landed(_ track: Track) {
@@ -481,15 +392,6 @@ final class DownloadQueue {
         jobs[index] = changed
     }
 
-    private func journal(_ change: (inout [String]) -> Void) {
-        var uris = settings.stringArray(forKey: Self.journalKey) ?? []
-        change(&uris)
-        if uris.isEmpty {
-            settings.removeObject(forKey: Self.journalKey)
-        } else {
-            settings.set(uris, forKey: Self.journalKey)
-        }
-    }
 }
 
 @MainActor

@@ -12,8 +12,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 ## iOS
-- [M] `ResonateLogic`'s tests (`ios.md`) leave these unproved: `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
-  against the suites in use, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
   host; `Routing`, `Drain` and `fill` are proved
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
@@ -25,11 +23,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
   192-byte stride against the shader's `Field`
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
-  launch machine, `Keychain.read`'s not-found against failure and
-  `landReceived`'s back-off are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
+  launch machine and `landReceived`'s back-off are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
-- [M] Pure Swift in the views is unproved too: `EqualiserScale` and `EqualiserResponse`'s
-  coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against
+- [M] Pure Swift in the views is unproved too: `LyricClock`, `EqualiserScale` and
+  `EqualiserResponse`'s coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against
   the desktop's lyrics tests, `OnlineFound.landing`/`awaited`, `FieldBlend.show` mid-fade,
   `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
 

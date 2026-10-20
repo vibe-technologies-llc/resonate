@@ -1303,7 +1303,13 @@ the SwiftUI sources) and link `ResonateNative` against that library instead of t
 `ios/Generated` must exist (`build-native.py`). The tests are Swift Testing, in
 `ios/Tests/ResonateLogicTests`. A decision worth proving moves out of a view or a platform class
 into this module; what it must keep out is anything that calls `AVAudioSession`, `BGTaskScheduler`,
-`SecItem*` or a view. A name the module exports can meet a C function of the same name in a file
+`SecItem*` or a view. The seams are the module's own: `SecretItems` (the four `SecItem*` calls, implemented by the app's
+`SecurityItems`) under `Keychain`, whose rules are the logic (an item not found reads blank, any
+other status is a failure, a blank write deletes, an update that finds nothing adds); `Secrets`
+under `AccountStore`; a suite name given to `PlaybackPreferencesStore`, `AccountStore` and
+`DownloadJournal` (a `UserDefaults` is not `Sendable`, so the structs keep the name); the places,
+suites and a count of keychain deletions handed to `Erasure.everything`. A test lists the suite
+names the sources use and refuses one `Erasure.suites` lacks. A name the module exports can meet a C function of the same name in a file
 importing both (`clock(_:)` and Darwin's `clock()`), so a function used as a value is written
 `ResonateLogic.clock`.
 

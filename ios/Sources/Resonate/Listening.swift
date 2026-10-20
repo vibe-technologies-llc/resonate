@@ -20,7 +20,7 @@ final class Listening {
     }
 
     @ObservationIgnored private unowned let library: Library
-    @ObservationIgnored private let accounts = AccountStore()
+    @ObservationIgnored private let accounts = AccountStore(secrets: Keychain())
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var tokenRead: Task<Void, Never>?
 

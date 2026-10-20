@@ -50,7 +50,7 @@ final class Features {
     nonisolated private static let wantedChunk = 500
 
     @ObservationIgnored private unowned let library: Library
-    @ObservationIgnored private let accounts = AccountStore()
+    @ObservationIgnored private let accounts = AccountStore(secrets: Keychain())
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
     @ObservationIgnored private let artworks = ArtworkCache()
     @ObservationIgnored lazy var enrichment = Enrichment(library: library)
