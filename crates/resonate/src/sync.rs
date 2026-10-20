@@ -116,6 +116,7 @@ impl Arrangement {
 
 #[cfg(feature = "sync")]
 impl Service {
+    #[cfg(feature = "ui")]
     fn with<Answer>(&self, absent: Answer, ask: impl FnOnce(&Running) -> Answer) -> Answer {
         let running = self.running.lock().clone();
         running.as_deref().map_or(absent, ask)

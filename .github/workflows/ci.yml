@@ -32,6 +32,15 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo clippy --locked --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings
+      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
+      - name: Lint the binary with each feature alone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for feature in ui online mcp discord sync; do
+            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
+          done
 
   headless:
     name: Tests without the window

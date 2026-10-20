@@ -68,6 +68,9 @@ workflow, the profiles and the fuzz targets).
 
 ```
 cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings
+cargo clippy -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
+cargo clippy -p resonate --all-targets --no-default-features --features <f> -- -D warnings   # each of ui online mcp discord sync
 cargo test  --workspace --exclude resonate-ui --no-default-features   # the usual inner loop
 cargo test  --workspace                                               # everything, gpui included
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
