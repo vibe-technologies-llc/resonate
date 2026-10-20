@@ -58,3 +58,4 @@ fuzz/coverage/
 /ios/xtool/
 /ios/.bsp/
 /ios/*.ipa
+__pycache__/

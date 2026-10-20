@@ -18,9 +18,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
   host; `Routing`, `Drain` and `fill` are proved
-- [S] `build-native.py` reads the accents and `LIFTED_TOWARD_WHITE` out of Rust sources by regex and
-  recolours the SVG with a silent `replace(..., 1)`, and nothing asserts that the twenty-one PNGs
-  match `xtool.yml` and `Info.plist`
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it

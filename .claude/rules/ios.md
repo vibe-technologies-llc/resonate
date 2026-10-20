@@ -34,7 +34,11 @@ flavour) and `launcher.rs`'s `LIFTED_TOWARD_WHITE`, writes them as `ResonateAcce
 desktop's launcher does (light stop the accent lifted toward white, deep stop the accent) into
 `Generated/icons/Icon<Accent>{,@2x,@3x}.png` (1024, 120, 180 px) with `rsvg-convert`; `xtool.yml`'s
 `resources` copies them to the bundle root and `Info.plist`'s `CFBundleIcons` names each as an
-alternate icon beside the primary `Icon`. `Package.swift` takes those as a system-library target and a Swift target and links the archive
+alternate icon beside the primary `Icon`. The drawing is `ios/icons.py`, which `build-native.py`
+imports: it refuses a source (a missing accent or `LIFTED_TOWARD_WHITE`, a gradient stop that
+`resonate.svg` holds other than once) by name instead of drawing an uncoloured icon, and after
+drawing checks the twenty-one PNGs against `xtool.yml`'s resources and `Info.plist`'s primary and
+alternate icons (`python3 -m unittest discover -s ios` holds both on the host). `Package.swift` takes those as a system-library target and a Swift target and links the archive
 from `Generated/lib` with AudioToolbox, CoreAudio, Security and SystemConfiguration. Everything under
 `ios/Generated`, `ios/.cargo-target` and `ios/.build` is generated, never checked in or edited.
 
