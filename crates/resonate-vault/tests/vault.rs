@@ -1912,3 +1912,137 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
     assert!(probed.tags.title.is_none());
 }
+
+const RACERS: usize = 8;
+const SWEEPS_WHILE_KEEPING: usize = 64;
+const ROUNDS: usize = 40;
+const RACED_FRAMES: usize = 4_000;
+
+fn keeping(vault: &Vault, location: &MediaLocation, renewing: bool) -> Keeping {
+    vault
+        .keep(&Taking {
+            sources: &Sources::local(),
+            location,
+            span: None,
+            renewing,
+            foretold: None,
+            replacing: None,
+            halt: Halt::NEVER,
+        })
+        .expect("a vault that kept it")
+}
+
+fn stagings(vault: &Vault) -> usize {
+    fs::read_dir(vault.root().join("staging"))
+        .expect("a staging folder")
+        .count()
+}
+
+fn racing_copies(tree: &Tree, bytes: &[u8]) -> Vec<MediaLocation> {
+    (0..RACERS)
+        .map(|nth| MediaLocation::local(tree.write(&format!("copy-{nth}.wav"), bytes)))
+        .collect()
+}
+
+fn landed_once(kept: Vec<Kept>) -> Kept {
+    assert_eq!(kept.iter().filter(|kept| !kept.deduped).count(), 1);
+    assert!(kept.iter().all(|other| other.key == kept[0].key));
+    assert!(kept.iter().all(|other| other.path == kept[0].path));
+
+    kept.into_iter().next().expect("a keep")
+}
+
+fn raced_to_the_same_key(bytes: &[u8], form: Form) {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let locations = racing_copies(&tree, bytes);
+    let barrier = std::sync::Barrier::new(RACERS);
+
+    let kept: Vec<Kept> = std::thread::scope(|scope| {
+        let racers: Vec<_> = locations
+            .iter()
+            .map(|location| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    match keeping(&vault, location, false) {
+                        Keeping::Kept(kept) => kept,
+                        Keeping::Refused(refusal) => panic!("refused: {}", refusal.as_str()),
+                    }
+                })
+            })
+            .collect();
+        racers
+            .into_iter()
+            .map(|racer| racer.join().expect("a racer"))
+            .collect()
+    });
+
+    assert_eq!(kept[0].form, form);
+    let landed = landed_once(kept);
+    assert_eq!(vault.objects().expect("objects").len(), 1);
+    assert_eq!(stagings(&vault), 0);
+    assert!(vault.verify(&landed.path, form).expect("a verified object"));
+}
+
+#[test]
+fn imports_of_one_flac_key_racing_land_one_object_and_leave_nothing_staged() {
+    let bytes = sixteen_bit(&signal(RACED_FRAMES), None);
+
+    for _ in 0..ROUNDS {
+        raced_to_the_same_key(&bytes, Form::Flac);
+    }
+}
+
+#[test]
+fn imports_of_one_wave_key_racing_land_one_object_and_leave_nothing_staged() {
+    let bytes = floating(&signal(RACED_FRAMES));
+
+    for _ in 0..ROUNDS {
+        raced_to_the_same_key(&bytes, Form::Wave);
+    }
+}
+
+#[test]
+fn dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_sweep() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let locations = racing_copies(&tree, &sixteen_bit(&signal(FRAMES), None));
+    let standing = kept(&vault, &Sources::local(), &locations[0]);
+    let barrier = std::sync::Barrier::new(RACERS + 1);
+
+    let kept: Vec<Kept> = std::thread::scope(|scope| {
+        let sweeper = scope.spawn(|| {
+            barrier.wait();
+            for _ in 0..SWEEPS_WHILE_KEEPING {
+                vault.sweep_the_staging().expect("a sweep");
+                assert!(standing.path.is_file());
+            }
+        });
+        let racers: Vec<_> = locations
+            .iter()
+            .enumerate()
+            .map(|(nth, location)| {
+                let (vault, barrier) = (&vault, &barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    match keeping(vault, location, nth % 2 == 1) {
+                        Keeping::Kept(kept) => kept,
+                        Keeping::Refused(refusal) => panic!("refused: {}", refusal.as_str()),
+                    }
+                })
+            })
+            .collect();
+        sweeper.join().expect("a sweeper");
+        racers
+            .into_iter()
+            .map(|racer| racer.join().expect("a racer"))
+            .collect()
+    });
+
+    assert!(kept.iter().all(|other| other.key == standing.key));
+    assert!(kept.iter().all(|other| other.path == standing.path));
+    assert!(kept.iter().all(|other| other.deduped || other.replaced));
+    assert_eq!(vault.objects().expect("objects").len(), 1);
+    assert_eq!(stagings(&vault), 0);
+    assert!(vault.verify(&standing.path, Form::Flac).expect("verified"));
+}
