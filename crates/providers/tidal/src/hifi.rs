@@ -24,6 +24,7 @@ const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
 const HIFI_TOKEN: &str = "https://hifi.odskyler.com/token";
 const TIDAL_TOKEN: &str = "https://auth.odskyler.workers.dev/token";
 const TIDAL_API: &str = "https://api.tidal.com/v1/";
+const MANIFEST_SCHEME: &str = "https";
 const MANIFEST_DOMAIN: &str = "manifest.tidal.com";
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const LISTED_AT_MOST: usize = 25;
@@ -220,13 +221,37 @@ enum Answered {
     Unavailable,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hosting {
+    pub server: String,
+    pub hifi_token: String,
+    pub tidal_token: String,
+    pub tidal_api: String,
+    pub manifests: MediaHosts,
+}
+
+impl Hosting {
+    pub fn live() -> Self {
+        Self {
+            server: HOSTED_SERVER.to_owned(),
+            hifi_token: HIFI_TOKEN.to_owned(),
+            tidal_token: TIDAL_TOKEN.to_owned(),
+            tidal_api: TIDAL_API.to_owned(),
+            manifests: MediaHosts {
+                scheme: MANIFEST_SCHEME.to_owned(),
+                domain: MANIFEST_DOMAIN.to_owned(),
+            },
+        }
+    }
+}
+
 pub struct HifiApi {
     asker: Asker,
     server: String,
     hosts: MediaHosts,
     media: Agent,
     patience: Duration,
-    hosted: bool,
+    hosted: Option<Hosting>,
     tokens: Mutex<Tokens>,
 }
 
@@ -234,28 +259,26 @@ fn source() -> SourceId {
     SourceId::new(HIFI_API).unwrap_or_else(|_| SourceId::local())
 }
 
-fn manifest_hosts() -> MediaHosts {
-    MediaHosts {
-        scheme: "https".to_owned(),
-        domain: MANIFEST_DOMAIN.to_owned(),
-    }
-}
-
 impl HifiApi {
     pub fn at(server: &str) -> Self {
-        Self::building(server, MediaHosts::tidal(), false)
+        Self::building(server, MediaHosts::tidal(), None)
     }
 
     pub fn hosted() -> Self {
-        Self::building(HOSTED_SERVER, MediaHosts::tidal(), true)
+        Self::hosted_through(Hosting::live(), MediaHosts::tidal())
+    }
+
+    pub fn hosted_through(hosting: Hosting, hosts: MediaHosts) -> Self {
+        let server = hosting.server.clone();
+        Self::building(&server, hosts, Some(hosting))
     }
 
     pub fn fetching_from(server: &str, hosts: MediaHosts) -> Self {
-        Self::building(server, hosts, false)
+        Self::building(server, hosts, None)
     }
 
-    fn building(server: &str, hosts: MediaHosts, hosted: bool) -> Self {
-        let asker = if hosted {
+    fn building(server: &str, hosts: MediaHosts, hosted: Option<Hosting>) -> Self {
+        let asker = if hosted.is_some() {
             Asker::new(source())
         } else {
             Asker::of_the_listeners_server(source())
@@ -336,11 +359,11 @@ impl HifiApi {
         Ok(bearer)
     }
 
-    fn hosted_tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
+    fn hosted_tracks_for(&self, hosting: &Hosting, identity: &Identity) -> Result<Vec<TrackId>> {
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
         for words in &wordings {
-            for listing in self.hosted_listings(words)? {
+            for listing in self.hosted_listings(hosting, words)? {
                 choosing.weigh(identity, &listing.weighed(), TrackId(listing.id));
             }
             if choosing.holds_a_coded_listing() {
@@ -368,11 +391,12 @@ impl HifiApi {
         Ok(ranked)
     }
 
-    fn hosted_listings(&self, words: &str) -> Result<Vec<WebListing>> {
+    fn hosted_listings(&self, hosting: &Hosting, words: &str) -> Result<Vec<WebListing>> {
         let op = ProviderOp::Search;
-        let bearer = self.token(op, TIDAL_TOKEN, TokenService::Tidal)?;
+        let bearer = self.token(op, &hosting.tidal_token, TokenService::Tidal)?;
         let url = format!(
-            "{TIDAL_API}search/tracks?query={}&limit={LISTED_AT_MOST}&offset=0&countryCode=US",
+            "{}search/tracks?query={}&limit={LISTED_AT_MOST}&offset=0&countryCode=US",
+            hosting.tidal_api,
             escaped(words)
         );
         let sent = self.asker.sent(op, || {
@@ -394,9 +418,9 @@ impl HifiApi {
         Ok(listed.items)
     }
 
-    fn hosted_delivery(&self, track: TrackId) -> Result<Option<Delivery>> {
+    fn hosted_delivery(&self, hosting: &Hosting, track: TrackId) -> Result<Option<Delivery>> {
         let op = ProviderOp::Playback;
-        let bearer = self.token(op, HIFI_TOKEN, TokenService::Hifi)?;
+        let bearer = self.token(op, &hosting.hifi_token, TokenService::Hifi)?;
         let url = format!(
             "{}/manifests?id={}&quality={ASKED_QUALITY}",
             self.server, track.0
@@ -421,7 +445,7 @@ impl HifiApi {
             .attributes()
             .ok_or_else(|| self.asker.unreadable(op))?;
         let uri = attributes.uri.ok_or_else(|| self.asker.unreadable(op))?;
-        if !manifest_hosts().holds(&uri) {
+        if !hosting.manifests.holds(&uri) {
             tracing::warn!(track = track.0, provider = %self.asker.source, "a manifest URL was outside TIDAL's manifest hosts");
             return Err(Error::OffItsHosts {
                 provider: self.asker.source.clone(),
@@ -516,8 +540,8 @@ impl HifiApi {
 
 impl Finds for HifiApi {
     fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
-        if self.hosted {
-            return self.hosted_tracks_for(identity);
+        if let Some(hosting) = &self.hosted {
+            return self.hosted_tracks_for(hosting, identity);
         }
         let mut tracks: Vec<TrackId> = Vec::new();
         for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
@@ -532,8 +556,8 @@ impl Finds for HifiApi {
     }
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
-        if self.hosted {
-            return self.hosted_delivery(track);
+        if let Some(hosting) = &self.hosted {
+            return self.hosted_delivery(hosting, track);
         }
         let op = ProviderOp::Playback;
         let url = format!(
@@ -673,7 +697,7 @@ mod tests {
 
     #[test]
     fn a_hosted_manifest_url_must_be_on_tidals_manifest_hosts() {
-        let hosts = manifest_hosts();
+        let hosts = Hosting::live().manifests;
 
         assert!(hosts.holds("https://im-fa.manifest.tidal.com/path"));
         assert!(!hosts.holds("https://manifest.tidal.com.evil.example/path"));

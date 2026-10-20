@@ -14,7 +14,7 @@ use resonate_providers::{
     Authorizing, Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider,
     ProviderOp, SignsIn,
 };
-use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal, TidalSignIn};
+use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, TidalSignIn};
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const ECHOES_ISRC: &str = "GBN9Y1100089";
@@ -65,6 +65,8 @@ struct Asked {
     query: String,
     authorization: Option<String>,
     range: Option<String>,
+    origin: Option<String>,
+    referer: Option<String>,
     body: String,
 }
 
@@ -127,6 +129,19 @@ impl Fake {
         )
     }
 
+    fn hosted(&self, manifests: MediaHosts) -> HifiApi {
+        HifiApi::hosted_through(
+            Hosting {
+                server: self.url.clone(),
+                hifi_token: format!("{}/hifi/token", self.url),
+                tidal_token: format!("{}/tidal/token", self.url),
+                tidal_api: format!("{}/v1/", self.url),
+                manifests,
+            },
+            on_loopback(),
+        )
+    }
+
     fn signing_in(&self) -> TidalSignIn {
         TidalSignIn::at(Endpoints {
             auth: format!("{}/auth/token", self.url),
@@ -152,6 +167,8 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
     }
     let mut authorization = None;
     let mut range = None;
+    let mut origin = None;
+    let mut referer = None;
     let mut length = 0;
     loop {
         let mut header = String::new();
@@ -167,6 +184,8 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
         match name.to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value),
             "range" => range = Some(value),
+            "origin" => origin = Some(value),
+            "referer" => referer = Some(value),
             "content-length" => length = value.parse().unwrap_or_default(),
             _ => {}
         }
@@ -185,6 +204,8 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
         query: query.to_owned(),
         authorization,
         range,
+        origin,
+        referer,
         body: String::from_utf8_lossy(&body).into_owned(),
     };
     let before = heard.lock().clone();
@@ -245,11 +266,14 @@ fn frames() -> Vec<u8> {
 }
 
 fn dash(media: &str, segments: usize) -> String {
-    let mpd = format!(
+    STANDARD.encode(mpd(media, segments))
+}
+
+fn mpd(media: &str, segments: usize) -> String {
+    format!(
         r#"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static"><Period><AdaptationSet mimeType="audio/mp4"><Representation id="FLAC,8000,16" codecs="flac" bandwidth="1"><SegmentTemplate timescale="8000" initialization="{media}/0.mp4" media="{media}/$Number$.mp4" startNumber="1"><SegmentTimeline><S d="2000" r="{}"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>"#,
         segments - 1
-    );
-    STANDARD.encode(mpd)
+    )
 }
 
 fn playback(presentation: &str, manifest: &str) -> Canned {
@@ -303,6 +327,13 @@ fn tidal_server(
             _ => Canned::refused(404, "{}"),
         }
     })
+}
+
+fn on_loopback() -> MediaHosts {
+    MediaHosts {
+        scheme: "http".to_owned(),
+        domain: "127.0.0.1".to_owned(),
+    }
 }
 
 fn on_itself(own: &str) -> String {
@@ -1134,4 +1165,159 @@ fn the_hosted_hifi_service_downloads_ncs_heroes_tonight_by_isrc() {
     assert_eq!(extension, "flac");
     assert!(bytes.starts_with(b"fLaC"));
     assert!(bytes.len() > 1_000_000);
+}
+
+const HIFI_BEARER: &str = "Bearer hifi-granted";
+const TIDAL_BEARER: &str = "Bearer tidal-granted";
+
+fn hosted_listing() -> Canned {
+    Canned::json(&format!(
+        r#"{{"items":[{{"id":{TRACK},"title":"Echoes","isrc":"{ECHOES_ISRC}","duration":1385,"artists":[{{"name":"Pink Floyd"}}]}}]}}"#
+    ))
+}
+
+fn hosted_manifest(own: &str) -> Canned {
+    Canned::json(&format!(
+        r#"{{"data":{{"attributes":{{"uri":"{own}/manifest/document","trackPresentation":"FULL"}}}}}}"#
+    ))
+}
+
+fn hosted_server() -> Fake {
+    let count = segmented().len() - 1;
+    Fake::serving(move |asked, _, own| {
+        if let Some(nth) = segment(&asked.path) {
+            return Canned::media(&segmented()[nth]);
+        }
+        let token = |bearer: &str| {
+            Canned::json(&format!(
+                r#"{{"access_token":"{}","expires_in":3600}}"#,
+                bearer.trim_start_matches("Bearer ")
+            ))
+        };
+        match asked.path.as_str() {
+            "/tidal/token" => token(TIDAL_BEARER),
+            "/hifi/token" => token(HIFI_BEARER),
+            "/v1/search/tracks" if asked.authorization.as_deref() == Some(TIDAL_BEARER) => {
+                hosted_listing()
+            }
+            "/manifests" if asked.authorization.as_deref() == Some(HIFI_BEARER) => {
+                hosted_manifest(own)
+            }
+            "/manifest/document" => Canned {
+                headers: vec![("Content-Type", "application/dash+xml".to_owned())],
+                body: mpd(&on_itself(own), count).into_bytes(),
+                ..Canned::media(&[])
+            },
+            _ => Canned::refused(404, "{}"),
+        }
+    })
+}
+
+#[test]
+fn the_hosted_hifi_service_is_searched_and_its_track_delivered_through_two_tokens() {
+    let fake = hosted_server();
+
+    let (key, extension, bytes) = streamed(
+        fake.hosted(on_loopback())
+            .find(&by_isrc())
+            .expect("an answer"),
+    )
+    .expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(extension, "flac");
+    assert_native_flac(&bytes);
+
+    let heard = fake.heard();
+    let paths: Vec<_> = heard.iter().map(|asked| asked.path.as_str()).collect();
+    assert_eq!(
+        &paths[..5],
+        [
+            "/tidal/token",
+            "/v1/search/tracks",
+            "/hifi/token",
+            "/manifests",
+            "/manifest/document"
+        ]
+    );
+    let search = &heard[1];
+    assert!(search.query.starts_with("query="), "{}", search.query);
+    assert!(search.query.contains("limit=25"), "{}", search.query);
+    assert_eq!(
+        heard[3].query,
+        format!("id={TRACK}&quality=HI_RES_LOSSLESS")
+    );
+    assert_eq!(heard[4].authorization, None);
+}
+
+#[test]
+fn the_hosted_hifi_service_is_asked_in_this_builds_name_alone_and_each_token_once() {
+    let fake = hosted_server();
+    let hosted = fake.hosted(on_loopback());
+
+    for _ in 0..2 {
+        streamed(hosted.find(&by_isrc()).expect("an answer")).expect("a delivery");
+    }
+
+    let heard = fake.heard();
+    assert!(
+        heard
+            .iter()
+            .all(|asked| asked.origin.is_none() && asked.referer.is_none()),
+        "{heard:?}"
+    );
+    for token in ["/tidal/token", "/hifi/token"] {
+        assert_eq!(
+            heard.iter().filter(|asked| asked.path == token).count(),
+            1,
+            "{token} was asked for more than once"
+        );
+    }
+}
+
+#[test]
+fn a_hosted_manifest_named_off_the_manifest_hosts_is_never_fetched() {
+    let fake = hosted_server();
+    let hosted = fake.hosted(MediaHosts {
+        scheme: "https".to_owned(),
+        domain: "manifest.tidal.com".to_owned(),
+    });
+
+    let Err(error) = hosted.find(&by_isrc()) else {
+        panic!("a manifest off its hosts is an error");
+    };
+
+    assert!(matches!(error, Error::OffItsHosts { .. }), "{error:?}");
+    assert!(
+        !fake.paths().contains(&"/manifest/document".to_owned()),
+        "{:?}",
+        fake.paths()
+    );
+}
+
+#[test]
+fn a_hosted_service_turning_the_token_away_is_unwelcome_and_one_with_no_such_track_is_nothing() {
+    let turned_away = Fake::serving(|_, _, _| Canned::refused(401, "{}"));
+    let Err(error) = turned_away.hosted(on_loopback()).find(&by_isrc()) else {
+        panic!("a token turned away is an error");
+    };
+    assert!(matches!(
+        error,
+        Error::Unwelcome {
+            code: 401,
+            op: ProviderOp::Search,
+            ..
+        }
+    ));
+    assert!(error.is_the_provider_away());
+
+    let unlisted = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/tidal/token" => Canned::json(r#"{"access_token":"tidal-granted"}"#),
+        "/v1/search/tracks" => Canned::json(r#"{"items":[]}"#),
+        _ => Canned::refused(404, "{}"),
+    });
+    assert!(matches!(
+        unlisted.hosted(on_loopback()).find(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
 }

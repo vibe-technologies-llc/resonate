@@ -379,7 +379,10 @@ reaches a third party's service without the listener's say (`a_hifi_api_server_t
 `the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services`). The hosted
 service holds no listener credential: its tokens are cached until shortly before expiry and sent
 only to their own issuer or API, asking in this build's name alone, never with another site's
-`Origin` or `Referer` (`a_hosted_token_is_asked_for_in_this_builds_name_alone`). `played.rs` reads the manifest through the same checks as a TIDAL account; the
+`Origin` or `Referer` (`a_hosted_token_is_asked_for_in_this_builds_name_alone`). **The hosted endpoints are one `Hosting`** (`Hosting::live()`: the server, the two token endpoints, TIDAL's API, the manifest hosts), which `HifiApi::hosted_through` takes with the media hosts, so a fake server on loopback stands in for the whole flow
+(`the_hosted_hifi_service_is_searched_and_its_track_delivered_through_two_tokens`,
+`the_hosted_hifi_service_is_asked_in_this_builds_name_alone_and_each_token_once`,
+`a_hosted_manifest_named_off_the_manifest_hosts_is_never_fetched`). `played.rs` reads the manifest through the same checks as a TIDAL account; the
 manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 
 - **Asked by link, then by the seam's choice**, via `played::found`: the linked track first; else the

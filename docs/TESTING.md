@@ -72,10 +72,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   casefold directory (ext4 `+F`) beside ones without the flag
 
 ## Providers and network
-- [S] The hosted hifi path's hosts are constants no fake server can stand in for, so it runs only
-  live
-- [S] The hosted hifi-api and Monochrome token endpoints are hardcoded: nothing hermetic covers the
-  hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
+- [S · blocked: network] That the hosted hifi service still answers a request carrying neither
+  `Origin` nor `Referer` is proved by its gated live test alone (`RESONATE_HIFI_LIVE_TESTS`), which
+  nothing here has run
 
 ## Testing
 - [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
