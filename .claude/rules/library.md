@@ -519,7 +519,11 @@ rows read via `Player::media` like any unscanned row.
   free `NAME (N)`; favourites and recordings resolved by MBID, else folded artist key, `title_words`
   and folded album with lengths within 2 s, the first best copy; a remote listen is a `listens` row
   with `elsewhere = 1` (counted in plays and statistics, passed over by `THE_LISTENS_AFTER` and by
-  `listens_to_sync`, which also stops at a listen not yet settled). `Library::synced_revision`
+  `listens_to_sync`, which also stops at a listen not yet settled). **A saved query is read and
+  written as its text, order and reading codes and row cap** (`synced_queries`, `write_synced_query`:
+  a taken name aliased like a list's, a query written over a list made anew, an unknown code
+  `None`; `a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_asked_there`).
+  `Library::synced_revision`
   counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
 
 ## Enrichment

@@ -51,6 +51,22 @@ pub struct PlaylistNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryBody {
+    pub name: String,
+    pub text: Option<String>,
+    pub sort: u8,
+    pub reading: u8,
+    pub rows: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryNote {
+    pub key: PlaylistKey,
+    pub stamp: Stamp,
+    pub body: Option<QueryBody>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FavouriteNote {
     pub recording: Recording,
     pub favoured: bool,
@@ -81,6 +97,7 @@ pub enum Change {
     Device(DeviceNote),
     Forgotten(DeviceForgotten),
     Playlist(PlaylistNote),
+    Query(QueryNote),
     Favourite(FavouriteNote),
     Listen(Listen),
     Handoff(Handoff),
@@ -137,6 +154,7 @@ impl Change {
             Self::Device(note) => Some(note.stamp),
             Self::Forgotten(forgotten) => Some(forgotten.stamp),
             Self::Playlist(note) => Some(note.stamp),
+            Self::Query(note) => Some(note.stamp),
             Self::Favourite(note) => Some(note.stamp),
             Self::Handoff(handoff) => Some(handoff.stamp),
             Self::Listen(_) => None,

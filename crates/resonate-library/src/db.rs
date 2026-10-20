@@ -63,7 +63,9 @@ use crate::{
     scan, schema, scrobble, search, share, sheet, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
-    synced::{self, HeldSong, OpenedSong, SyncedListen, SyncedPlaylist},
+    synced::{
+        self, HeldSong, OpenedSong, SyncedListen, SyncedPlaylist, SyncedQuery, SyncedQueryBody,
+    },
     undo::{self, Step},
     vaulted::{self, Vaulted},
 };
@@ -2448,6 +2450,18 @@ impl Library {
         entries: &[resonate_core::Recording],
     ) -> Result<SyncedPlaylist> {
         synced::write_playlist(&self.inner, at, name, entries)
+    }
+
+    pub fn synced_queries(&self) -> Result<Vec<SyncedQuery>> {
+        synced::queries(&self.inner)
+    }
+
+    pub fn write_synced_query(
+        &self,
+        at: Option<(PlaylistId, i64)>,
+        body: &SyncedQueryBody,
+    ) -> Result<Option<SyncedQuery>> {
+        synced::write_query(&self.inner, at, body)
     }
 
     pub fn remove_synced_playlist(&self, id: PlaylistId, created: i64) -> Result<bool> {

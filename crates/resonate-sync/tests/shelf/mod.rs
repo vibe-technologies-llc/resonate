@@ -10,8 +10,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::Recording;
 use resonate_sync::{
-    Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Opened, Refused, RemoteListen,
-    Resumed,
+    Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
+    Refused, RemoteListen, Resumed,
 };
 
 #[derive(Default)]
@@ -24,6 +24,8 @@ pub struct Shelf {
 pub struct Inside {
     pub songs: Vec<(Recording, Vec<u8>)>,
     pub playlists: BTreeMap<i64, (i64, String, Vec<Recording>)>,
+    pub queries: BTreeMap<i64, (i64, QueryBody)>,
+    pub without_queries: bool,
     pub favourites: Vec<Recording>,
     pub listens: Vec<LocalListen>,
     pub credited: Vec<RemoteListen>,
@@ -72,7 +74,66 @@ impl Shelf {
         self.moved();
         id
     }
+}
 
+#[allow(dead_code)]
+impl Shelf {
+    pub fn make_query(&self, name: &str, text: &str) -> i64 {
+        let mut inside = self.inside.lock();
+        inside.next_id += 1;
+        let id = inside.next_id;
+        inside.queries.insert(
+            id,
+            (
+                id * 1000,
+                QueryBody {
+                    name: name.into(),
+                    text: Some(text.into()),
+                    sort: 0,
+                    reading: 0,
+                    rows: None,
+                },
+            ),
+        );
+        drop(inside);
+        self.moved();
+        id
+    }
+
+    pub fn revise_query(&self, id: i64, name: &str, text: &str) {
+        let mut inside = self.inside.lock();
+        let body = &mut inside.queries.get_mut(&id).expect("a query").1;
+        body.name = name.into();
+        body.text = Some(text.into());
+        drop(inside);
+        self.moved();
+    }
+
+    pub fn drop_query(&self, id: i64) {
+        self.inside.lock().queries.remove(&id);
+        self.moved();
+    }
+
+    pub fn query_named(&self, name: &str) -> Option<(i64, Option<String>)> {
+        self.inside
+            .lock()
+            .queries
+            .iter()
+            .find(|(_, (_, body))| body.name == name)
+            .map(|(id, (_, body))| (*id, body.text.clone()))
+    }
+
+    pub fn query_names(&self) -> Vec<String> {
+        self.inside
+            .lock()
+            .queries
+            .values()
+            .map(|(_, body)| body.name.clone())
+            .collect()
+    }
+}
+
+impl Shelf {
     pub fn rename_playlist(&self, id: i64, name: &str) {
         self.inside
             .lock()
@@ -194,9 +255,71 @@ impl Catalog for Shelf {
     }
 
     fn remove_playlist(&self, at: LocalPlaylistId) -> Result<(), Refused> {
-        self.inside.lock().playlists.remove(&at.id);
+        let mut inside = self.inside.lock();
+        inside.playlists.remove(&at.id);
+        inside.queries.remove(&at.id);
+        drop(inside);
         self.moved();
         Ok(())
+    }
+
+    fn keeps_queries(&self) -> bool {
+        !self.inside.lock().without_queries
+    }
+
+    fn queries(&self) -> Result<Vec<LocalQuery>, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .queries
+            .iter()
+            .map(|(id, (created, body))| LocalQuery {
+                at: LocalPlaylistId {
+                    id: *id,
+                    created: *created,
+                },
+                body: body.clone(),
+            })
+            .collect())
+    }
+
+    fn write_query(
+        &self,
+        at: Option<LocalPlaylistId>,
+        body: &QueryBody,
+    ) -> Result<LocalQuery, Refused> {
+        let mut inside = self.inside.lock();
+        let taken = |inside: &Inside, candidate: &str| {
+            inside
+                .queries
+                .iter()
+                .any(|(id, (_, held))| held.name == candidate && at.is_none_or(|at| at.id != *id))
+        };
+        let mut used = body.name.clone();
+        let mut copy = 2;
+        while taken(&inside, &used) {
+            used = format!("{} ({copy})", body.name);
+            copy += 1;
+        }
+        let at = match at.filter(|at| inside.queries.contains_key(&at.id)) {
+            Some(at) => at,
+            None => {
+                inside.next_id += 1;
+                let id = inside.next_id;
+                LocalPlaylistId {
+                    id,
+                    created: id * 1000,
+                }
+            }
+        };
+        let written = QueryBody {
+            name: used,
+            ..body.clone()
+        };
+        inside.queries.insert(at.id, (at.created, written.clone()));
+        drop(inside);
+        self.moved();
+        Ok(LocalQuery { at, body: written })
     }
 
     fn favourites(&self) -> Result<Vec<Recording>, Refused> {

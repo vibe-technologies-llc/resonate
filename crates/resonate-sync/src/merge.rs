@@ -1,7 +1,7 @@
 use resonate_core::{Recording, folded_letters};
 use ring::digest::{SHA256, digest};
 
-use crate::wire::Writer;
+use crate::{change::QueryBody, wire::Writer};
 
 pub const DIGEST_BYTES: usize = 32;
 
@@ -64,6 +64,31 @@ pub fn spliced(local: &[Recording], synced: &[Synced<'_>]) -> Vec<Recording> {
         .cloned()
         .chain(placed.into_iter().map(|(recording, _)| recording))
         .collect()
+}
+
+pub fn query_digest(body: &QueryBody) -> [u8; DIGEST_BYTES] {
+    let mut writer = Writer::new();
+    writer.text(&body.name);
+    match &body.text {
+        Some(text) => {
+            writer.flag(true);
+            writer.text(text);
+        }
+        None => writer.flag(false),
+    }
+    writer.byte(body.sort);
+    writer.byte(body.reading);
+    match body.rows {
+        Some(rows) => {
+            writer.flag(true);
+            writer.number(u64::from(rows));
+        }
+        None => writer.flag(false),
+    }
+    let hashed = digest(&SHA256, &writer.finish());
+    let mut out = [0; DIGEST_BYTES];
+    out.copy_from_slice(hashed.as_ref());
+    out
 }
 
 pub fn projection_digest(name: &str, entries: &[Option<Recording>]) -> [u8; DIGEST_BYTES] {

@@ -13,12 +13,12 @@ pub mod wire;
 
 pub use crate::{
     catalog::{
-        Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Opened, ReadSeek, Refused,
-        RemoteListen, Resumed,
+        Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, ReadSeek,
+        Refused, RemoteListen, Resumed,
     },
     change::{
         Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
+        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},

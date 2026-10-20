@@ -6,6 +6,8 @@ use std::{
 
 use resonate_core::Recording;
 
+use crate::change::QueryBody;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalPlaylistId {
     pub id: i64,
@@ -17,6 +19,12 @@ pub struct LocalPlaylist {
     pub at: LocalPlaylistId,
     pub name: String,
     pub entries: Vec<Option<Recording>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalQuery {
+    pub at: LocalPlaylistId,
+    pub body: QueryBody,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +85,23 @@ pub trait Catalog: Send + Sync + 'static {
     ) -> Result<LocalPlaylist, Refused>;
 
     fn remove_playlist(&self, at: LocalPlaylistId) -> Result<(), Refused>;
+
+    fn keeps_queries(&self) -> bool {
+        false
+    }
+
+    fn queries(&self) -> Result<Vec<LocalQuery>, Refused> {
+        Ok(Vec::new())
+    }
+
+    fn write_query(
+        &self,
+        at: Option<LocalPlaylistId>,
+        body: &QueryBody,
+    ) -> Result<LocalQuery, Refused> {
+        let _ = (at, body);
+        Err(Refused::Unavailable)
+    }
 
     fn favourites(&self) -> Result<Vec<Recording>, Refused>;
 

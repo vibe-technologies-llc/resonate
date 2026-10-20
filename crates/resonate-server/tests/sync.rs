@@ -192,6 +192,55 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
 }
 
 #[test]
+fn a_saved_query_travels_through_the_server_as_text_and_follows_its_revision_and_removal() {
+    let folder = scratch("queries");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    let recent = desk_shelf.make_query("Recent", "added:<30d");
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+
+    eventually("the query arriving", || {
+        phone_shelf.query_named("Recent").is_some()
+    });
+    assert_eq!(
+        phone_shelf.query_named("Recent").expect("arrived").1,
+        Some("added:<30d".to_owned())
+    );
+
+    desk_shelf.revise_query(recent, "Recent", "added:<7d");
+    eventually("the revision reaching the phone", || {
+        phone_shelf.query_named("Recent").map(|(_, text)| text) == Some(Some("added:<7d".into()))
+    });
+
+    desk_shelf.drop_query(recent);
+    eventually("the removal reaching the phone", || {
+        phone_shelf.query_names().is_empty()
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
     let folder = scratch("follow");
     let hosted = hosted(&folder);

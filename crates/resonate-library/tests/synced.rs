@@ -13,8 +13,8 @@ use std::{
 
 use resonate_core::{MediaLocation, Recording};
 use resonate_library::{
-    AlbumQuery, Cut, DeliveryFolder, Layout, Library, Result, ScanOptions, ScanStats, SongFiled,
-    TrackQuery, Vault,
+    AlbumQuery, Cut, DeliveryFolder, Direction, Layout, Library, Result, SavedQuery, ScanOptions,
+    ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
 };
 
 const RATE: u32 = 44_100;
@@ -253,6 +253,85 @@ fn a_playlist_reads_as_recordings_and_one_written_from_elsewhere_resolves_what_i
     assert_eq!(written.name, "Mix");
     assert_eq!(titles(&written.entries), [Some("Fearless"), Some("Echoes")]);
     assert_eq!(there.synced_playlists()?, [written]);
+    Ok(())
+}
+
+#[test]
+fn a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_asked_there()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song("fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    here.create_playlist("Plain")?;
+    here.save_query(
+        "Floyd",
+        &SavedQuery {
+            text: Some("artist:floyd".into()),
+            sort: SortOrder::Title,
+            reading: Direction::Descending,
+            limit: Some(1),
+        },
+    )?;
+
+    let read = here.synced_queries()?;
+    let there = Library::open_in_memory()?;
+    scan(&there, &tree.root)?;
+    let written = there
+        .write_synced_query(None, &read[0].body)?
+        .expect("a query this build reads");
+    let entries = there.playlist_entries(written.id, None)?;
+
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].body.name, "Floyd");
+    assert_eq!(read[0].body.text.as_deref(), Some("artist:floyd"));
+    assert_eq!(read[0].body.rows, Some(1));
+    assert_eq!(written.body, read[0].body);
+    assert_eq!(there.synced_queries()?.len(), 1);
+    assert!(there.synced_playlists()?.is_empty());
+    assert_eq!(entries.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_query_written_over_itself_is_revised_and_a_code_this_build_lacks_writes_nothing() -> Result<()>
+{
+    let library = Library::open_in_memory()?;
+    library.create_playlist("Floyd")?;
+    let body = SyncedQueryBody {
+        name: "Floyd".into(),
+        text: Some("artist:floyd".into()),
+        sort: 0,
+        reading: 0,
+        rows: None,
+    };
+
+    let first = library.write_synced_query(None, &body)?.expect("written");
+    let revised = library
+        .write_synced_query(
+            Some((first.id, first.created)),
+            &SyncedQueryBody {
+                text: Some("artist:waters".into()),
+                ..body.clone()
+            },
+        )?
+        .expect("revised");
+    let unknown = library.write_synced_query(
+        None,
+        &SyncedQueryBody {
+            sort: 200,
+            ..body.clone()
+        },
+    )?;
+
+    assert_eq!(first.body.name, "Floyd (2)");
+    assert_eq!(revised.id, first.id);
+    assert_eq!(revised.body.text.as_deref(), Some("artist:waters"));
+    assert_eq!(library.synced_queries()?.len(), 1);
+    assert!(unknown.is_none());
+    assert!(library.remove_synced_playlist(first.id, first.created)?);
+    assert!(library.synced_queries()?.is_empty());
     Ok(())
 }
 

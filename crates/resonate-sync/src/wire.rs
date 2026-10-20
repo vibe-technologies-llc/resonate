@@ -10,7 +10,7 @@ use crate::{
     catalog::Held,
     change::{
         Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, Stamp,
+        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     seal::SEALED_AT_LEAST,
@@ -869,6 +869,34 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.device(forgotten.device);
             writer.stamp(forgotten.stamp);
         }
+        Change::Query(note) => {
+            writer.byte(6);
+            writer.fixed(&note.key.0);
+            writer.stamp(note.stamp);
+            match &note.body {
+                Some(body) => {
+                    writer.flag(true);
+                    writer.text(&body.name);
+                    match &body.text {
+                        Some(text) => {
+                            writer.flag(true);
+                            writer.text(text);
+                        }
+                        None => writer.flag(false),
+                    }
+                    writer.byte(body.sort);
+                    writer.byte(body.reading);
+                    match body.rows {
+                        Some(rows) => {
+                            writer.flag(true);
+                            writer.number(u64::from(rows));
+                        }
+                        None => writer.flag(false),
+                    }
+                }
+                None => writer.flag(false),
+            }
+        }
     }
     writer.finish()
 }
@@ -950,6 +978,35 @@ fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
             device: reader.device()?,
             stamp: reader.stamp()?,
         }),
+        6 => {
+            let key = PlaylistKey(reader.fixed()?);
+            let stamp = reader.stamp()?;
+            let body = if reader.flag()? {
+                let name = reader.text()?;
+                let text = if reader.flag()? {
+                    Some(reader.text()?)
+                } else {
+                    None
+                };
+                let sort = reader.byte()?;
+                let reading = reader.byte()?;
+                let rows = if reader.flag()? {
+                    Some(reader.small()?)
+                } else {
+                    None
+                };
+                Some(QueryBody {
+                    name,
+                    text,
+                    sort,
+                    reading,
+                    rows,
+                })
+            } else {
+                None
+            };
+            Change::Query(QueryNote { key, stamp, body })
+        }
         _ => return Ok(None),
     };
     reader.done()?;
@@ -1193,6 +1250,33 @@ mod tests {
             Change::Forgotten(DeviceForgotten {
                 device: DeviceId([4; DEVICE_BYTES]),
                 stamp: stamp(),
+            }),
+            Change::Query(QueryNote {
+                key: PlaylistKey([5; 16]),
+                stamp: stamp(),
+                body: Some(QueryBody {
+                    name: "Recent".into(),
+                    text: Some("added:<30d".into()),
+                    sort: 4,
+                    reading: 1,
+                    rows: Some(25),
+                }),
+            }),
+            Change::Query(QueryNote {
+                key: PlaylistKey([6; 16]),
+                stamp: stamp(),
+                body: Some(QueryBody {
+                    name: "Everything".into(),
+                    text: None,
+                    sort: 0,
+                    reading: 0,
+                    rows: None,
+                }),
+            }),
+            Change::Query(QueryNote {
+                key: PlaylistKey([7; 16]),
+                stamp: stamp(),
+                body: None,
             }),
         ];
 

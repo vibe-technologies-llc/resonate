@@ -11,7 +11,7 @@ paths:
 
 # Device sync
 
-`resonate-sync` keeps a listener's devices in step: playlists, track favourites, listening history
+`resonate-sync` keeps a listener's devices in step: playlists and saved-query playlists, track favourites, listening history
 and what each device was playing travel through a server that cannot read them, or straight between
 devices on one network when the server is away; songs travel from one device to another directly.
 It reaches `resonate-core` alone among workspace crates (the layering job refuses the library,
@@ -54,7 +54,13 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   build adds reads as `Other` (`every_platform_reads_back_and_a_later_one_reads_as_other`), and the
   ledger keeps the same codes.
 - **A bundle's changes are each length-prefixed**, so a change of a later build's tag is skipped,
-  not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`).
+  not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`). **A saved
+  query is `Change::Query` (wire tag 6)**: key, stamp, then a body (name, optional text, sort code,
+  reading code, optional row cap) or none for a tombstone; a build without it skips it as it skips any
+  later tag. The two codes are the library's `store::sort_code` and `direction_code`, which are
+  stored and so never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
+  server's log writes a snapshot lacking the queries, so a device joining from the server alone
+  misses them until a device holding them edits them or tells it on the network.
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
   `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Bye`. **From
   it**: `Welcome` (devices online, the address it saw, head), `Snapshot`, `Records` (a device's
@@ -86,6 +92,18 @@ platforms; the catalog seam stays thin.
   it is held here; `merge::spliced` puts unheld entries back after the nearest earlier held one the
   edit kept (or where it stood, or at the head). A song arriving later is written in place by
   `settle`.
+- **A saved query travels as its text, evaluated by each device against its own catalog.** Its own
+  `queries` table (V4) beside `playlists`, same key type, stamp, alias and tombstone rules, looked at
+  the same way: a digest of the body (`merge::query_digest`) moved means an edit, stamped and owed; a
+  mapped query gone locally is a tombstone. A query has no entries, so there is no `here` and nothing
+  to splice or fetch. Two queries of one folded name meeting for the first time become one with the
+  **synced body standing** (the local text is replaced, not stamped: the account's definition was
+  there first). A list and a query of one name stay two, the catalog's free alias keeping them
+  apart. A body the receiving catalog cannot read (a sort or reading code a later build added) is
+  kept in the ledger and passed on, written nowhere (`Refused::Unwritable`), and tried again when a
+  newer note arrives. **A catalog that keeps no queries** (`Catalog::keeps_queries`, false by
+  default, as on the phones, which have no saved-query playlists) never looks at queries and stores
+  and forwards every note untouched, so a snapshot through it still carries them.
 - **Two playlists of one folded name meeting for the first time become one** (adopted, the local
   entries the other lacks appended). An arriving name another playlist holds lands as the catalog's
   free alias (`Mix (2)`); the alias is never sent back as a rename.
@@ -127,12 +145,14 @@ platforms; the catalog seam stays thin.
 
 ## The seam
 
-`Catalog` is what a platform implements: playlists read and written (no undo step), favourites,
+`Catalog` is what a platform implements: playlists read and written (no undo step), saved queries
+read and written (`queries`, `write_query`; removal is `remove_playlist`, one id space), favourites,
 listens after a mark, a remote listen credited, the resume state, whether and how a song is held,
 opening one to send and landing one received, and a `revision` that moves with any of these.
 Failures are a `Refused` the implementation logs (errors.md: no boxed error). The binary's
-`Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: lists only, saved queries stay
-local; a recording resolves by MBID, else folded artist, title words and album with lengths within
+`Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
+only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
+rather than overwritten; a recording resolves by MBID, else folded artist, title words and album with lengths within
 2 s; a remote playlist write moves `modified` past any undo step's `left_at` and drops those steps,
 `undo::overtaken`). **A song from another device lands where a provider's delivery does: in the open
 vault, else the music folder.** With a vault open (`SongFiled::Vaulted`, `synced::vaulted`, even

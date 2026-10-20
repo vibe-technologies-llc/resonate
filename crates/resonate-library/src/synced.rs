@@ -12,7 +12,7 @@ use resonate_vault::{Keeping, Offered};
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
-    Cut, Error, Library, PassHandle, Result, ScanOptions, StoreOp,
+    Cut, Error, Library, OrderedColumn, PassHandle, Result, SavedQuery, ScanOptions, StoreOp,
     db::Inner,
     filed::{self, Unfiled},
     organise::{Named, Naming},
@@ -39,6 +39,22 @@ pub struct SyncedPlaylist {
     pub created: i64,
     pub name: String,
     pub entries: Vec<Option<Recording>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncedQueryBody {
+    pub name: String,
+    pub text: Option<String>,
+    pub sort: u8,
+    pub reading: u8,
+    pub rows: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncedQuery {
+    pub id: PlaylistId,
+    pub created: i64,
+    pub body: SyncedQueryBody,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -186,6 +202,145 @@ pub(crate) fn playlists(inner: &Inner) -> Result<Vec<SyncedPlaylist>> {
     })
 }
 
+pub(crate) fn queries(inner: &Inner) -> Result<Vec<SyncedQuery>> {
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare(
+                "SELECT p.id, p.created, p.name, q.text, q.sort, q.reading, q.max_rows
+                   FROM playlists p JOIN playlist_queries q ON q.playlist_id = p.id
+                  ORDER BY p.id",
+            )
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let listed = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                ))
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        listed
+            .into_iter()
+            .map(|(id, created, name, text, sort, reading, rows)| {
+                Ok(SyncedQuery {
+                    id: PlaylistId::new(id.cast_unsigned())?,
+                    created,
+                    body: SyncedQueryBody {
+                        name,
+                        text,
+                        sort: u8::try_from(sort).unwrap_or(u8::MAX),
+                        reading: u8::try_from(reading).unwrap_or(u8::MAX),
+                        rows: rows.and_then(|rows| u32::try_from(rows).ok()),
+                    },
+                })
+            })
+            .collect()
+    })
+}
+
+fn query_of(body: &SyncedQueryBody) -> Result<Option<SavedQuery>> {
+    let placeholder = PlaylistId::new(1)?;
+    let Ok(sort) = store::sort_of(placeholder, i64::from(body.sort)) else {
+        return Ok(None);
+    };
+    let Ok(reading) =
+        store::direction_of(placeholder, OrderedColumn::Reading, i64::from(body.reading))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(SavedQuery {
+        text: body.text.clone(),
+        sort,
+        reading,
+        limit: body.rows.map(|rows| rows as usize),
+    }))
+}
+
+pub(crate) fn write_query(
+    inner: &Inner,
+    at: Option<(PlaylistId, i64)>,
+    body: &SyncedQueryBody,
+) -> Result<Option<SyncedQuery>> {
+    let Some(query) = query_of(body)? else {
+        return Ok(None);
+    };
+    let written = inner.write(|transaction| {
+        let held = at.filter(|(id, created)| {
+            transaction
+                .query_row(
+                    "SELECT 1 FROM playlists p JOIN playlist_queries q ON q.playlist_id = p.id
+                      WHERE p.id = ?1 AND p.created = ?2",
+                    params![id.get().cast_signed(), created],
+                    |_| Ok(()),
+                )
+                .optional()
+                .ok()
+                .flatten()
+                .is_some()
+        });
+        let id = match held {
+            Some((id, _)) => id,
+            None => made(transaction, &body.name)?,
+        };
+        let name = named(transaction, id, &body.name)?;
+        transaction
+            .execute(
+                "DELETE FROM playlist_queries WHERE playlist_id = ?1",
+                params![id.get().cast_signed()],
+            )
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        playlist::write_query(transaction, id, &query)?;
+        let created: i64 = transaction
+            .query_row(
+                "SELECT created FROM playlists WHERE id = ?1",
+                params![id.get().cast_signed()],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        Ok(SyncedQuery {
+            id,
+            created,
+            body: SyncedQueryBody {
+                name,
+                ..body.clone()
+            },
+        })
+    })?;
+    undo::overtaken(
+        inner,
+        &[written.id],
+        &[playlist::folded(&written.body.name)],
+    );
+    inner.playlists_changed();
+    inner.arrived();
+    Ok(Some(written))
+}
+
+fn named(transaction: &Transaction<'_>, id: PlaylistId, wanted: &str) -> Result<String> {
+    let name = a_free_name(transaction, wanted, Some(id))?;
+    let modified: i64 = transaction
+        .query_row(
+            "SELECT modified FROM playlists WHERE id = ?1",
+            params![id.get().cast_signed()],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let now = store::to_nanos(SystemTime::now()).max(modified.saturating_add(1));
+    transaction
+        .execute(
+            "UPDATE playlists SET name = ?2, folded = ?3, modified = ?4 WHERE id = ?1",
+            params![id.get().cast_signed(), name, playlist::folded(&name), now],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(name)
+}
+
 fn entries_of(connection: &Connection, id: PlaylistId) -> Result<Vec<Option<Recording>>> {
     let mut statement = connection
         .prepare_cached(&format!(
@@ -254,21 +409,7 @@ pub(crate) fn write_playlist(
             Some((id, _)) => id,
             None => made(transaction, name)?,
         };
-        let name = a_free_name(transaction, name, Some(id))?;
-        let modified: i64 = transaction
-            .query_row(
-                "SELECT modified FROM playlists WHERE id = ?1",
-                params![id.get().cast_signed()],
-                |row| row.get(0),
-            )
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-        let now = store::to_nanos(SystemTime::now()).max(modified.saturating_add(1));
-        transaction
-            .execute(
-                "UPDATE playlists SET name = ?2, folded = ?3, modified = ?4 WHERE id = ?1",
-                params![id.get().cast_signed(), name, playlist::folded(&name), now],
-            )
-            .map_err(|source| Error::store(StoreOp::Update, source))?;
+        let name = named(transaction, id, name)?;
         transaction
             .execute(
                 "DELETE FROM playlist_entries WHERE playlist_id = ?1",

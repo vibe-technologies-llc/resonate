@@ -18,12 +18,15 @@ use resonate_core::{Frames, PlaylistId, Recording, SampleRate, SyncedSongs};
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
 #[cfg(feature = "sync")]
-use resonate_library::{Cut, Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist};
+use resonate_library::{
+    Cut, Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist, SyncedQuery,
+    SyncedQueryBody,
+};
 #[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
-    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, Standing, Sync, SyncDevice,
-    SyncKey, TransferState,
+    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me,
+    Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server, Settings,
+    Standing, Sync, SyncDevice, SyncKey, TransferState,
 };
 
 use crate::config::Config;
@@ -415,6 +418,23 @@ fn local(playlist: SyncedPlaylist) -> LocalPlaylist {
 }
 
 #[cfg(feature = "sync")]
+fn local_query(query: SyncedQuery) -> LocalQuery {
+    LocalQuery {
+        at: LocalPlaylistId {
+            id: query.id.get().cast_signed(),
+            created: query.created,
+        },
+        body: QueryBody {
+            name: query.body.name,
+            text: query.body.text,
+            sort: query.body.sort,
+            reading: query.body.reading,
+            rows: query.body.rows,
+        },
+    }
+}
+
+#[cfg(feature = "sync")]
 fn refused(error: &LibraryError) -> Refused {
     tracing::warn!(%error, "the catalog could not answer the sync");
     Refused::Unavailable
@@ -454,6 +474,35 @@ impl Catalog for Catalogued {
             .remove_synced_playlist(playlist_id(at)?, at.created)
             .map(drop)
             .map_err(|error| refused(&error))
+    }
+
+    fn keeps_queries(&self) -> bool {
+        true
+    }
+
+    fn queries(&self) -> Answered<Vec<LocalQuery>> {
+        self.library
+            .synced_queries()
+            .map(|queries| queries.into_iter().map(local_query).collect())
+            .map_err(|error| refused(&error))
+    }
+
+    fn write_query(&self, at: Option<LocalPlaylistId>, body: &QueryBody) -> Answered<LocalQuery> {
+        let at = at
+            .map(|at| playlist_id(at).map(|id| (id, at.created)))
+            .transpose()?;
+        let body = SyncedQueryBody {
+            name: body.name.clone(),
+            text: body.text.clone(),
+            sort: body.sort,
+            reading: body.reading,
+            rows: body.rows,
+        };
+        self.library
+            .write_synced_query(at, &body)
+            .map_err(|error| refused(&error))?
+            .map(local_query)
+            .ok_or(Refused::Unwritable)
     }
 
     fn favourites(&self) -> Answered<Vec<Recording>> {
