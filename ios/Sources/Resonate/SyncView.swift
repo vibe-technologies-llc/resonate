@@ -248,6 +248,7 @@ struct SyncDevices: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 features.forgetSyncDevices([known])
                             }
+                            .tint(.red)
                         }
                     }
                     .contextMenu {

@@ -301,6 +301,7 @@ struct PlaylistRow: View, Equatable {
         }
         .swipeActions(edge: .trailing) {
             Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
+                .tint(.red)
         }
         .contextMenu {
             Section {

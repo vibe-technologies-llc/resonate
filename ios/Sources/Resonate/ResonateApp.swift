@@ -9,6 +9,7 @@ struct ResonateApp: App {
     @Environment(\.scenePhase) private var phase
 
     init() {
+        BackdropPipeline.prepare()
         BackgroundHold.register()
         let library = Library()
         _library = State(initialValue: library)
@@ -19,10 +20,7 @@ struct ResonateApp: App {
         WindowGroup {
             RootView()
                 .environment(library)
-                .onAppear {
-                    BackdropPipeline.prepare()
-                    library.start()
-                }
+                .onAppear { library.start() }
                 .onOpenURL { library.open($0) }
         }
         .onChange(of: phase) { _, now in
@@ -530,16 +528,19 @@ struct SyncProgress: View {
             }
         } label: {
             HStack(spacing: 12) {
-                switch activity {
-                case .fetching(_, let fraction?):
-                    ProgressView(value: fraction)
-                        .progressViewStyle(.circular)
-                case .fetching, .syncing:
-                    ProgressView()
+                Group {
+                    switch activity {
+                    case .fetching(_, let fraction?):
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.circular)
+                    case .fetching, .syncing:
+                        ProgressView()
+                    }
                 }
+                .frame(width: BannerGlyph.edge, height: BannerGlyph.edge)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.footnote.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                     if let detail {
                         Text(detail)
                             .font(.caption)
@@ -553,13 +554,11 @@ struct SyncProgress: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
+            .frame(minHeight: BannerGlyph.row)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .padding(.horizontal, 12)
+        .bannerGlass()
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens device sync")
     }
@@ -584,18 +583,20 @@ struct ScanProgress: View {
     var body: some View {
         HStack(spacing: 12) {
             ProgressView()
+                .frame(width: BannerGlyph.edge, height: BannerGlyph.edge)
             Text("Reading music folder… \(counted(library.scanned, "song"))")
-                .font(.footnote)
+                .font(.subheadline)
                 .monospacedDigit()
                 .contentTransition(reduceMotion ? .identity : .numericText())
             Spacer(minLength: 0)
             Button("Stop") { library.stopScanning() }
                 .font(.footnote.weight(.semibold))
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .padding(.horizontal, 12)
+        .frame(minHeight: BannerGlyph.row)
+        .bannerGlass()
         .accessibilityElement(children: .combine)
     }
 }
@@ -608,42 +609,73 @@ extension StatusMessage.Offer {
     }
 }
 
+struct BannerGlyph: View {
+    static let edge: CGFloat = 28
+    static let row: CGFloat = 44
+
+    let symbol: String
+    let colour: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(colour)
+            .frame(width: Self.edge, height: Self.edge)
+            .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    func bannerGlass(tint: Color? = nil) -> some View {
+        let glass = tint.map { Glass.regular.tint($0) } ?? Glass.regular
+        return padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .glassEffect(glass, in: .rect(cornerRadius: 22))
+            .padding(.horizontal, 12)
+    }
+}
+
 struct StatusCard: View {
+    private static let failureTint = Color.orange.opacity(0.2)
+
     @Environment(Library.self) private var library
     @Environment(\.dynamicTypeSize) private var textSize
     let message: StatusMessage
     @State private var expanded = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            if message.kind == .failure {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-            }
+        let failed = message.kind == .failure
+
+        HStack(spacing: 12) {
+            BannerGlyph(
+                symbol: failed ? "exclamationmark.triangle.fill" : "info.circle.fill",
+                colour: failed ? .orange : Color.worn
+            )
             Text(message.text)
-                .font(.footnote)
+                .font(.subheadline)
                 .lineLimit(expanded || textSize.isAccessibilitySize ? nil : 3)
+                .frame(maxWidth: .infinity, minHeight: BannerGlyph.row, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { expanded.toggle() }
-            Spacer(minLength: 0)
             if let offer = message.offer {
                 Button(offer.title) { library.perform(offer) }
                     .font(.footnote.weight(.semibold))
-                    .buttonStyle(.borderless)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
             }
-            Button("Dismiss") { library.dismissStatus() }
-                .font(.footnote.weight(.semibold))
-                .buttonStyle(.borderless)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
+            Button {
+                library.dismissStatus()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .touchTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 2)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .padding(.horizontal, 12)
+        .bannerGlass(tint: failed ? Self.failureTint : nil)
     }
 }
 

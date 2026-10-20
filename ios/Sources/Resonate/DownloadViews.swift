@@ -291,6 +291,7 @@ struct WantedRow: View {
         }
         .swipeActions {
             Button("Remove", role: .destructive) { features.removeWanted(wanted.id) }
+                .tint(.red)
         }
     }
 }

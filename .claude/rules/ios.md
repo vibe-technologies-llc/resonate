@@ -159,6 +159,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   on the transport's lane, so the cover and words stalled before handing over. A steer is shown
   through `showSteered`, which moves the clock, the playing row and the lock screen with the
   snapshot.
+- **A destructive swipe action is `.tint(.red)`**: the app's accent tint reaches a swipe button and paints a `role: .destructive` one in the accent (the queue's *Remove from queue*), so each says its red.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
   keeps the steered values and leaves `queue` alone (`Settling` counts asked against answered); the steered values outlive their command's answer and are dropped only by a poll that began after it, so an answer landing during that poll's queue read never publishes the older snapshot raw. Every steer wakes the poll (`nudgePoll`).
@@ -185,7 +186,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   Adding, removing and measuring a music folder (security-scoped bookmarks, a File Provider that may
   hang), the keychain reads at launch (`Features.readSecrets`), a landing's `Folders.fresh` and `delete`,
   the journals' recovery at launch and the joining of an enrichment pass or a download on erasing run on `Work.aside`, never the main actor.
-- **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver). A notice fades after
+- **Status** is one `StatusMessage` (notice or failure, announced to VoiceOver), drawn with the scan and sync progress as one kind of card (`bannerGlass`: a 22 pt glass rectangle, a 28 pt `BannerGlyph` or spinner leading, a 44 pt row, capsule buttons and an *xmark* dismiss trailing; a failure tints the glass orange). A notice fades after
   6 s; a failure stays until dismissed, and no notice replaces it. The engine's `failure` (the boundary's cause sentence, `mobile.md`'s *A failure is told by its cause*) is shown once per distinct text per
   song, and a poll failure once until that part of polling recovers, so a dismissal holds.
   **A catalog that would not open is asked again, never given up on**: the failure's banner offers
@@ -856,7 +857,7 @@ in; it never opens on another colour first.
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
   A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
-  per process with `makeLibrary(source:)` on a utility task (`BackdropPipeline`): the offline
+  per process with `makeLibrary(source:)` on a user-initiated task started in `ResonateApp.init` (`BackdropPipeline.prepare`), so the first page opens on the field rather than the gradient it falls back to while compiling (`BackdropPipeline`): the offline
   `metal` compiler in the SDK is an arm64 Mach-O that cannot run on the Linux host, so the package
   carries no `.metal` file and no `.metallib`, and SwiftUI's `ShaderLibrary` is unusable. One
   fullscreen triangle; the uniforms (`FieldUniforms`, 192 bytes, mirrored by the shader's `Field`,
@@ -879,7 +880,8 @@ in; it never opens on another colour first.
   line moved), which read as the background stuttering now and then; the first live frame is told
   back to the main actor once per entry into a window, to retire the placeholder.
   A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it renders the field at 96 pixels across into a texture at the current time (`BackdropRenderer.placeholder`; waiting on the GPU only the first time: leaving a window renders the next one off the main thread, `keepPlaceholder`, kept until the palette or tone moves), lays that over the layer and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
-  leaves its window. The view draws at scale 1; the compositor
+  leaves its window, and dropped and made again whenever the application becomes active
+  (`UIApplication.didBecomeActiveNotification`, `FieldDrawer.restart`; `AmbientField.cameForward` does the same for its link and clears a draw that never completed), so a field never waits on a link the system stopped while the app was away. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
   a change mid-fade starts from the blend then on screen.

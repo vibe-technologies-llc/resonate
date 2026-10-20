@@ -605,6 +605,25 @@ final class AmbientField: NSObject {
     private var owed = false
     private var latest: (image: CGImage, size: FieldSize)?
 
+    private override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(cameForward),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func cameForward() {
+        link?.invalidate()
+        link = nil
+        lastStep = nil
+        drawing = false
+        owed = true
+        schedule()
+    }
+
     func wear(_ look: AmbientLook, gpu: BackdropGPU) {
         let now = CACurrentMediaTime()
         let toneChanged = look.tone != tone
@@ -842,6 +861,14 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
         }
     }
 
+    func restart(_ motion: BackdropMotion) {
+        FieldThread.shared.perform { [self] in
+            link?.invalidate()
+            link = nil
+            apply(motion)
+        }
+    }
+
     func redrawIfStill() {
         FieldThread.shared.perform { [self] in
             if still { link?.isPaused = false }
@@ -918,6 +945,17 @@ final class BackdropMetalView: UIView {
         metal.isOpaque = true
         metal.contentsScale = Self.drawingScale
         drawer = FieldDrawer(layer: metal, renderer: renderer) { [weak self] in self?.liveFrameDrawn() }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(cameForward),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func cameForward() {
+        guard window != nil else { return }
+        drawer?.restart(motion)
     }
 
     required init?(coder: NSCoder) {
@@ -1195,7 +1233,7 @@ enum BackdropPipeline {
     private static let log = Logger(subsystem: "org.resonate.ios", category: "backdrop")
     private static let settledRendering = Mutex<BackdropRendering?>(nil)
     private static let frameFailureLogged = Atomic<Bool>(false)
-    private static let compilation = Task.detached(priority: .utility) { settle(compiled()) }
+    private static let compilation = Task.detached(priority: .userInitiated) { settle(compiled()) }
 
     static func prepare() {
         _ = compilation

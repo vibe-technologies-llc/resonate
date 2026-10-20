@@ -1286,6 +1286,7 @@ struct QueueRow: View {
                 edited += 1
                 library.removeFromQueue(row)
             }
+            .tint(.red)
         }
         .contextMenu {
             Section {
