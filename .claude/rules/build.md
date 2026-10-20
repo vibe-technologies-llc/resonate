@@ -14,7 +14,8 @@ paths:
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers): clippy (the default
   features, the workspace headless, and the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless and whole-workspace builds and tests, the DSP bench under its ceilings, the layering refusals, the
+  dead without a feature is warned), headless and whole-workspace builds and tests (the headless job runs the MPRIS bus tests again under
+  `dbus-run-session`, which a plain `cargo test` skips for want of a session bus), the DSP bench under its ceilings, the layering refusals, the
   fuzz build. A command added to `CLAUDE.md` goes into the workflow; a crate added to the layering
   refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no default
   features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`

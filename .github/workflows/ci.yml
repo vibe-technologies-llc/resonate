@@ -56,6 +56,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --workspace --exclude resonate-ui --no-default-features
       - run: cargo test --locked --workspace --exclude resonate-ui --no-default-features
+      - run: dbus-run-session -- cargo test --locked -p resonate-mpris --test bus
 
   workspace:
     name: Tests with everything

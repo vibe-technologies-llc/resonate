@@ -80,8 +80,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Testing
 - [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
   mobile network and a Linux desktop, have not been driven against a live server
-- [M] The MPRIS bus tests skip without a session bus and CI's `cargo test` gives them none, so all
-  but the `dbus-run-session` ones pass having run nothing
 - [M] The Output and Processing settings panes have no test pressing their controls
 - [M] `transport.rs`'s
   `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once when
