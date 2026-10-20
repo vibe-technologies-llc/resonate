@@ -140,7 +140,7 @@ impl Cycle {
         slice: &mut [u8],
         source: &mut dyn AudioSource,
     ) -> usize {
-        let frame = self.frame_of(taken);
+        let frame = self.ring_frame_of(taken);
         let Some(quantum) = slice.get_mut(..asked_for(asked, frame, slice.len())) else {
             return 0;
         };
@@ -154,6 +154,13 @@ impl Cycle {
                 quantum.fill(0);
                 quantum.len()
             }
+        }
+    }
+
+    fn ring_frame_of(&self, taken: Taken) -> NonZeroUsize {
+        match taken {
+            Taken::AsAsked(_) => self.padded_frame,
+            Taken::Otherwise { frame } => NonZeroUsize::from(frame),
         }
     }
 
@@ -356,6 +363,35 @@ mod tests {
             taking.store(taken);
             assert_eq!(taking.load(), taken);
         }
+    }
+
+    #[test]
+    fn a_packed_quantum_asks_the_ring_for_every_padded_frame_the_graph_wants() {
+        let cycle = cycling(SampleFormat::S24);
+        let frames = 256;
+        let mut source = Counting {
+            handed: vec![0x5A; 4 * 2 * 1_024],
+            asked: 0,
+        };
+        let mut buffer = vec![0; 4 * 2 * 1_024];
+
+        let filled = cycle.write(
+            Taken::AsAsked(WireWord::Packed),
+            frames as u64,
+            &mut buffer,
+            &mut source,
+        );
+
+        assert_eq!(
+            source.asked,
+            frames * 2 * PADDED_WORD,
+            "the ring was asked for fewer frames than the graph wanted"
+        );
+        assert_eq!(
+            filled,
+            frames * 2 * PACKED_WORD,
+            "the graph was handed fewer packed frames than it asked for"
+        );
     }
 
     #[test]
