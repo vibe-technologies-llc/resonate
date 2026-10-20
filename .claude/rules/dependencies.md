@@ -68,7 +68,7 @@ here, add it there.
   `pw_buffer.requested` (fill the quantum asked), `pw_time.buffered`/`queued_buffers`. A *minimum
   daemon* version; `packaging/PKGBUILD` says so.
 - **`ahash`**: `std`, `runtime-rng` (`Default` for `AHashMap::new()`).
-- **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`.
+- **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`. `resonate-mobile` takes it for the `fmt` writer of its phone log (`mobile.md`'s *Logging*).
 - **`unicode-normalization`** (`std`): core's `folded_letters` and library's `playlist::folded`.
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
   (`resonate-codec`), `getuid` (`resonate-discord`).

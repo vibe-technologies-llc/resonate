@@ -162,6 +162,7 @@ class LibraryRepository(private val context: Context) {
             previous?.join()
             var opened: MobilePlayer? = null
             try {
+                Logcat.install()
                 val native =
                     MobilePlayer(
                         context.filesDir.absolutePath,

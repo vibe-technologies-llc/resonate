@@ -10,6 +10,7 @@ mod error;
 mod failure;
 mod features;
 mod listening;
+mod logging;
 mod loves;
 mod lyrics;
 mod mixes;
@@ -56,6 +57,7 @@ pub use crate::{
         ten_band_gains,
     },
     error::{Error, Result, StoreOp},
+    logging::{LogLevel, Logbook, keep_log},
     playback::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,
