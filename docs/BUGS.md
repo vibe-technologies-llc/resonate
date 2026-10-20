@@ -3,11 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Playback and output
-- [M] A sink's advertised layouts are read by count (`parse_enum_format`'s `from_count`), never its
-  `position`: a 5.0 or 6.1 device lists as `Discrete`, so a 5.0 or 6.1 source is remixed by index
-  into a stream naming no positions and never plays bit-perfect there, and a 6.0 device lists as 5.1
-
 ## Formats
 - [S] A non-seekable source (a stream too long to spool) ends the track at an M4A edit reaching
   back

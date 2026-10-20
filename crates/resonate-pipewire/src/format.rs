@@ -324,18 +324,27 @@ fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> Cha
         };
     }
 
-    let answered = info.position();
+    named_by(&info.position(), channels)
+}
+
+fn named_by(answered: &[u32], channels: ChannelCount) -> ChannelLayout {
+    let count = usize::from(channels.get());
+    let said = answered.get(..count);
     NAMED_LAYOUTS
         .into_iter()
         .filter(|layout| layout.count() == channels)
-        .find(|layout| {
-            spa_position(*layout)
-                .iter()
-                .zip(answered.iter())
-                .take(count)
-                .all(|(named, said)| named == said)
-        })
+        .find(|layout| spa_position(*layout).get(..count) == said)
         .unwrap_or(ChannelLayout::Discrete(channels))
+}
+
+fn advertised_layout(position: &[u32], channels: ChannelCount) -> ChannelLayout {
+    let spoken = position.len() == usize::from(channels.get())
+        && position.iter().any(|channel| *channel != 0);
+    if spoken {
+        named_by(position, channels)
+    } else {
+        ChannelLayout::from_count(channels)
+    }
 }
 
 pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
@@ -384,6 +393,8 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
     let mut advertised = AdvertisedFormat::default();
     let mut media_type = None;
     let mut media_subtype = None;
+    let mut counts = None;
+    let mut position = Vec::new();
 
     for property in &object.properties {
         match property.key {
@@ -401,16 +412,8 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
                     .filter_map(|hz| SampleRate::new(hz).ok())
                     .collect();
             }
-            sys::SPA_FORMAT_AUDIO_channels => {
-                advertised.layouts = offered(&property.value)
-                    .map(|choice| choice.read_as(1..=i32::from(ChannelCount::MAX.get())))
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|count| u16::try_from(count).ok())
-                    .filter_map(|count| ChannelCount::new(count).ok())
-                    .map(ChannelLayout::from_count)
-                    .collect();
-            }
+            sys::SPA_FORMAT_AUDIO_channels => counts = offered(&property.value),
+            sys::SPA_FORMAT_AUDIO_position => position = positions(&property.value),
             _ => {}
         }
     }
@@ -420,7 +423,25 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
     {
         return None;
     }
+
+    advertised.layouts = counts
+        .map(|choice| choice.read_as(1..=i32::from(ChannelCount::MAX.get())))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|count| u16::try_from(count).ok())
+        .filter_map(|count| ChannelCount::new(count).ok())
+        .map(|count| advertised_layout(&position, count))
+        .collect();
     Some(advertised)
+}
+
+fn positions(value: &Value) -> Vec<u32> {
+    match value {
+        Value::ValueArray(ValueArray::Id(channels)) => {
+            channels.iter().map(|Id(raw)| *raw).collect()
+        }
+        _ => Vec::new(),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -697,7 +718,12 @@ const fn words_of(format: SampleFormat, word: WireWord) -> Words {
 
 #[cfg(test)]
 mod tests {
-    use libspa::utils::{Choice, ChoiceFlags};
+    use std::io::Cursor;
+
+    use libspa::{
+        pod::{deserialize::PodDeserializer, serialize::PodSerializer},
+        utils::{Choice, ChoiceFlags},
+    };
 
     use super::*;
 
@@ -1114,6 +1140,150 @@ mod tests {
         parse_enum_format(&advertising(sys::SPA_FORMAT_AUDIO_channels, value))
             .expect("an audio format")
             .layouts
+    }
+
+    fn placed_advertisement(count: i32, position: Option<Vec<u32>>) -> Value {
+        let mut properties = vec![
+            Property::new(
+                sys::SPA_FORMAT_mediaType,
+                Value::Id(Id(sys::SPA_MEDIA_TYPE_audio)),
+            ),
+            Property::new(
+                sys::SPA_FORMAT_mediaSubtype,
+                Value::Id(Id(sys::SPA_MEDIA_SUBTYPE_raw)),
+            ),
+            Property::new(
+                sys::SPA_FORMAT_AUDIO_format,
+                Value::Id(Id(sys::SPA_AUDIO_FORMAT_S32_LE)),
+            ),
+            Property::new(sys::SPA_FORMAT_AUDIO_channels, Value::Int(count)),
+        ];
+        if let Some(position) = position {
+            properties.push(Property::new(
+                sys::SPA_FORMAT_AUDIO_position,
+                Value::ValueArray(ValueArray::Id(position.into_iter().map(Id).collect())),
+            ));
+        }
+
+        Value::Object(Object {
+            type_: sys::SPA_TYPE_OBJECT_Format,
+            id: sys::SPA_PARAM_EnumFormat,
+            properties,
+        })
+    }
+
+    fn advertised_as(layout: ChannelLayout) -> Vec<ChannelLayout> {
+        let count = i32::from(layout.count().get());
+        let position = spa_position(layout)[..usize::from(layout.count().get())].to_vec();
+
+        parse_enum_format(&placed_advertisement(count, Some(position)))
+            .expect("an audio format")
+            .layouts
+    }
+
+    #[test]
+    fn every_named_layout_a_sink_places_is_advertised_as_itself() {
+        for layout in NAMED_LAYOUTS {
+            assert_eq!(
+                advertised_as(layout),
+                vec![layout],
+                "{layout} was advertised as another layout"
+            );
+        }
+    }
+
+    #[test]
+    fn a_five_point_oh_or_six_point_one_sink_is_not_listed_as_unnamed_channels() {
+        assert_eq!(
+            advertised_as(ChannelLayout::Surround50),
+            vec![ChannelLayout::Surround50]
+        );
+        assert_eq!(
+            advertised_as(ChannelLayout::Surround61),
+            vec![ChannelLayout::Surround61]
+        );
+    }
+
+    #[test]
+    fn six_channels_without_a_low_frequency_channel_are_not_listed_as_five_point_one() {
+        let six_oh = vec![
+            sys::SPA_AUDIO_CHANNEL_FL,
+            sys::SPA_AUDIO_CHANNEL_FR,
+            sys::SPA_AUDIO_CHANNEL_FC,
+            sys::SPA_AUDIO_CHANNEL_RC,
+            sys::SPA_AUDIO_CHANNEL_SL,
+            sys::SPA_AUDIO_CHANNEL_SR,
+        ];
+
+        assert_eq!(
+            parse_enum_format(&placed_advertisement(6, Some(six_oh)))
+                .expect("an audio format")
+                .layouts,
+            vec![ChannelLayout::Discrete(
+                ChannelCount::new(6).expect("six channels")
+            )]
+        );
+    }
+
+    #[test]
+    fn a_sink_naming_no_positions_is_listed_by_its_count() {
+        let layouts = |position| {
+            parse_enum_format(&placed_advertisement(6, position))
+                .expect("an audio format")
+                .layouts
+        };
+
+        assert_eq!(layouts(None), vec![ChannelLayout::Surround51]);
+        assert_eq!(layouts(Some(vec![0; 6])), vec![ChannelLayout::Surround51]);
+        assert_eq!(layouts(Some(Vec::new())), vec![ChannelLayout::Surround51]);
+    }
+
+    #[test]
+    fn positions_for_another_count_than_the_one_offered_leave_it_listed_by_count() {
+        let stereo = vec![sys::SPA_AUDIO_CHANNEL_FL, sys::SPA_AUDIO_CHANNEL_FR];
+
+        assert_eq!(
+            parse_enum_format(&placed_advertisement(6, Some(stereo)))
+                .expect("an audio format")
+                .layouts,
+            vec![ChannelLayout::Surround51]
+        );
+    }
+
+    #[test]
+    fn positions_are_read_whichever_property_comes_first() {
+        let mut advertisement = placed_advertisement(
+            5,
+            Some(spa_position(ChannelLayout::Surround50)[..5].to_vec()),
+        );
+        if let Value::Object(object) = &mut advertisement {
+            object.properties.reverse();
+        }
+
+        assert_eq!(
+            parse_enum_format(&advertisement)
+                .expect("an audio format")
+                .layouts,
+            vec![ChannelLayout::Surround50]
+        );
+    }
+
+    #[test]
+    fn an_advertisement_through_the_real_parser_keeps_its_positions() {
+        let advertisement = placed_advertisement(
+            6,
+            Some(spa_position(ChannelLayout::Surround51)[..6].to_vec()),
+        );
+        let bytes = PodSerializer::serialize(Cursor::new(Vec::new()), &advertisement)
+            .expect("a serialised pod")
+            .0
+            .into_inner();
+        let (_, parsed) = PodDeserializer::deserialize_any_from(&bytes).expect("a parsed pod");
+
+        assert_eq!(
+            parse_enum_format(&parsed).expect("an audio format").layouts,
+            vec![ChannelLayout::Surround51]
+        );
     }
 
     #[test]

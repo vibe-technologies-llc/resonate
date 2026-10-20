@@ -847,6 +847,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone`); one that truly
   differs plays silence until the rebuild (`realtime.md`). A hosted daemon cannot prove this: with
   no session manager nothing links, so no `Format` is ever set.
+- **A sink's advertised layouts are read the same way** (`format::advertised_layout` over
+  `named_by`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
+  array whatever their order, and gives each offered count whose array is that long and names a
+  channel the matching layout, else `Discrete`; no array, an all-zero one or one of another length
+  falls back to `from_count`. So a 5.0 or 6.1 device lists as itself (a matching source is not
+  remixed by index) and a 6.0 one is not listed as 5.1
+  (`every_named_layout_a_sink_places_is_advertised_as_itself`,
+  `an_advertisement_through_the_real_parser_keeps_its_positions`). A 5.1 placed on the sides
+  (`SL`, `SR`) lists as `Discrete`, since no named layout places it so.
 
 ## Fixtures
 
