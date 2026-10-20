@@ -42,10 +42,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the desktop's lyrics tests, `OnlineFound.landing`/`awaited`, `FieldBlend.show` mid-fade,
   `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
 
-## Android
-- [M] The instrumented tests never drive audio focus, becoming noisy, a controller's queue edits,
-  service destruction releasing the repository, or a poll tick that throws
-
 ## Phones
 - [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
   `filtered_tracks` and the download calls

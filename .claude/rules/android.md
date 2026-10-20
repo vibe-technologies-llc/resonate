@@ -106,7 +106,9 @@ focus if the engine was playing or loading, and a duck is left to the platform
 place, repeat, shuffle, volume or song moved (the position is read live), and its playlist is
 rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
 audio engine. Playback and download services each retain the repository; the last
-release cancels its workers and saves and closes the engine off the main thread. A later service
+release cancels its workers and saves and closes the engine off the main thread, then clears the
+published snapshot, so a service made afterwards never draws the playing state the closed engine last
+had (`PlaybackLifecycleTest`). A later service
 waits for that cleanup before opening another. The snapshot's `waiting` (`mobile.md`) becomes the status when it begins and is cleared when it
 ends, if still shown; the expanded player shows it in place of the format line.
 The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
@@ -818,7 +820,9 @@ playlist import, a loopback provider download, MediaStore Downloads publication 
 identity, music access to another app's audio in Downloads, and
 cancellation, encrypted account storage, pinned favourites and player hearts, collection links,
 playlist picker/edit/undo and repeated-row playback, tool navigation, Activity recreation and
-background controls through Media3, notification artwork and opening, and task-dismissal pause. CI uses an API 36 x86_64
+background controls through Media3, notification artwork and opening, task-dismissal pause, audio
+focus lost and regained, the output becoming noisy, a controller's queue edits, the service's
+destruction giving the repository back and a failing poll tick said once. CI uses an API 36 x86_64
 emulator; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real hardware
 remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks clear the
 accessibility cache before each poll: an API 36 screenshot can show current controls while the

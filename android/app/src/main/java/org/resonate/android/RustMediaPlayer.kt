@@ -71,12 +71,15 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private val noisy =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                    resumeAfterFocus = false
-                    library.request { it.pause() }
-                }
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+                    outputBecameNoisy()
             }
         }
+
+    internal fun outputBecameNoisy() {
+        resumeAfterFocus = false
+        library.request { it.pause() }
+    }
 
     init {
         ContextCompat.registerReceiver(

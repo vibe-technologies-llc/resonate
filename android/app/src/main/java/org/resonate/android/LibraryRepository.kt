@@ -81,6 +81,9 @@ class LibraryRepository(private val context: Context) {
         if (owners == 0) close()
     }
 
+    internal val retained: Int
+        @Synchronized get() = owners
+
     private var playbackJob: Job? = null
     private var documentScope: CoroutineScope? = null
     private var search = ""
@@ -214,6 +217,7 @@ class LibraryRepository(private val context: Context) {
                             native.close()
                         }
                     }
+                    mutableSnapshot.value = null
                 }
                 ended(currentCoroutineContext()[Job])
             }
