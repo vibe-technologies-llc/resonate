@@ -11,7 +11,7 @@ use resonate_core::{
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{Command, NodeName, Sources, read_impulse};
-use resonate_eq::{Binding, Device, ProfileName};
+use resonate_eq::{Binding, Device, MEASURERS_BEST_FIRST, ProfileName};
 
 use crate::{
     Bindings, Notice, ResonateApp, Setting,
@@ -631,6 +631,7 @@ impl RootView {
         }
 
         kit::section_body()
+            .child(self.measurer_choice(cx))
             .when(!reachable, |body| {
                 body.child(note(
                     "Nothing is reached: turn Online on, or this build carries no network.",
@@ -644,6 +645,74 @@ impl RootView {
             .when_some(sink, |body, description| {
                 body.child(self.plugged_in(&description, suggested.as_ref(), knows, reachable, cx))
             })
+    }
+
+    fn measurer_choice(&mut self, cx: &mut Context<Self>) -> Div {
+        let preferred = cx.global::<ResonateApp>().measurer.clone();
+        let is_preferred = |name: &str| {
+            preferred
+                .as_deref()
+                .is_some_and(|held| held.eq_ignore_ascii_case(name))
+        };
+        let outside_the_ranking = preferred.clone().filter(|held| {
+            !MEASURERS_BEST_FIRST
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(held))
+        });
+
+        let mut choices = div().flex().flex_wrap().gap_2().child(self.in_the_ring(
+            "measurer-best-ranked",
+            kit::chip("measurer-best-ranked", "Best ranked", preferred.is_none()).names(
+                "Prefer no measurer: the fixed ranking decides where several measured a device",
+            ),
+            |this, _, cx| this.prefer_a_measurer(None, cx),
+            cx,
+        ));
+        for name in MEASURERS_BEST_FIRST {
+            let id = SharedString::from(format!("measurer-{name}"));
+            choices = choices.child(self.in_the_ring(
+                name,
+                kit::chip(id, name, is_preferred(name)).names(format!(
+                    "Prefer the correction {name} measured where several measured a device"
+                )),
+                move |this, _, cx| this.prefer_a_measurer(Some(name.to_owned()), cx),
+                cx,
+            ));
+        }
+        if let Some(held) = outside_the_ranking {
+            let id = SharedString::from(format!("measurer-{held}"));
+            let named = held.clone();
+            choices = choices.child(self.in_the_ring(
+                "measurer-outside-the-ranking",
+                kit::chip(id, held.clone(), true).names(format!(
+                    "{held} is preferred where several measured a device; it is not one the \
+                         ranking names"
+                )),
+                move |this, _, cx| this.prefer_a_measurer(Some(named.clone()), cx),
+                cx,
+            ));
+        }
+
+        kit::field("Preferred measurer", choices)
+    }
+
+    pub(crate) fn prefer_a_measurer(&mut self, measurer: Option<String>, cx: &mut Context<Self>) {
+        self.wear_the_measurer(measurer.clone(), cx);
+        self.store(&Setting::EqualiserMeasurer(measurer), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn wear_the_measurer(&mut self, measurer: Option<String>, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.measurer = measurer.clone());
+
+        let typed = self.looking.read(cx).text().to_owned();
+        self.equaliser.update(cx, |model, cx| {
+            model.prefer(measurer);
+            if model.knows_the_catalogue() {
+                model.look(&typed, cx);
+            }
+            cx.notify();
+        });
     }
 
     fn looking_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {

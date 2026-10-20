@@ -163,7 +163,10 @@ Invariants the layering protects (the rules files have the rest):
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
   `cargo run` opens the window.
 - `cargo build|test --workspace`: everything. `cargo test -p <crate> <test> -- --exact --nocapture`:
-  one test. `cargo clippy --workspace --all-targets -- -D warnings`.
+  one test. `cargo clippy --workspace --all-targets -- -D warnings`, and the same with
+  `--workspace --exclude resonate-ui --no-default-features`, with `-p resonate --no-default-features
+  --features online,mcp,discord,sync`, and with `-p resonate --no-default-features --features <f>`
+  for each of `ui`, `online`, `mcp`, `discord`, `sync`: code dead without a feature is warned.
 - `rust-formatter` formats, `rust-formatter --check` checks; never `cargo fmt`. CI cannot run it.
 - `RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages [<words>]`: every DSP stage
   against `benches/ceilings.tsv`; a stage added to the bench is added to the file.

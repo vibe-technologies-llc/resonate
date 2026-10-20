@@ -73,14 +73,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 
 ## Providers and network
 - [S] The hosted hifi path's hosts are constants no fake server can stand in for, so it runs only
-  live; TIDAL's `slow_down` test waits out the real widened interval (about 3 s) where a
-  configurable `SLOWED_BY` would not
+  live
 - [S] The hosted hifi-api and Monochrome token endpoints are hardcoded: nothing hermetic covers the
   hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
 
 ## Build and checks
-- [S] CI's clippy runs with the default features alone, so code dead without `online`, `mcp` or
-  `ui` reaches `master` unwarned
 - [M] No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
   `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
   (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,

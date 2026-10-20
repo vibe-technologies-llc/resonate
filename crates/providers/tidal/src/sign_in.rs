@@ -61,6 +61,7 @@ pub struct TidalSignIn {
     endpoints: Endpoints,
     agent: Agent,
     polls_answered_within: Duration,
+    slowed_by: Duration,
 }
 
 enum Answered {
@@ -91,6 +92,7 @@ impl TidalSignIn {
             endpoints,
             agent: api_agent(),
             polls_answered_within: A_POLL_ANSWERED_WITHIN,
+            slowed_by: SLOWED_BY,
         }
     }
 
@@ -100,6 +102,11 @@ impl TidalSignIn {
             polls_answered_within,
             ..self
         }
+    }
+
+    #[must_use]
+    pub fn slowing_by(self, slowed_by: Duration) -> Self {
+        Self { slowed_by, ..self }
     }
 
     fn unreachable(&self, error: ureq::Error) -> Error {
@@ -279,7 +286,7 @@ impl SignsIn for TidalSignIn {
             match self.asked(client, authorizing).map_err(Passing::of) {
                 Ok(Answered::Granted(token)) => return Ok(Some(token)),
                 Ok(Answered::Pending) => {}
-                Ok(Answered::SlowDown) | Err(Passing::SlowDown) => every += SLOWED_BY,
+                Ok(Answered::SlowDown) | Err(Passing::SlowDown) => every += self.slowed_by,
                 Err(Passing::Again(error)) => {
                     tracing::debug!(%error, "TIDAL's sign-in did not answer this time; asking again");
                 }

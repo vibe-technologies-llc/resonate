@@ -598,6 +598,7 @@ impl Group {
             Self::LossySources => &[SettingKey::Restoration],
             Self::Equalising => &[SettingKey::Equaliser],
             Self::BoundTo => &[SettingKey::EqualiserFor],
+            Self::Measured => &[SettingKey::EqualiserMeasurer],
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
@@ -675,7 +676,6 @@ impl Group {
                 SettingKey::RememberSettingsCategory,
             ],
             Self::Bands
-            | Self::Measured
             | Self::Folders
             | Self::Updating
             | Self::Build
@@ -910,7 +910,8 @@ pub(crate) const MEASURED_HINT: &str = "Corrections measured by AutoEq for a few
      beside every result, because two rigs disagree about one pair of headphones more than two \
      measurements on one rig do. What is plugged in reads the chosen device's own name back \
      against the catalogue, and answers with nothing rather than a guess wherever that name is a \
-     socket rather than a product.";
+     socket rather than a product. The preferred measurer decides between two measurements of one \
+     device, taking the one it made before the fixed ranking.";
 
 pub(crate) const REPLAY_GAIN_HINT: &str = "Plays every track at the loudness its tags declare. \
                                            Track levels each track on its own, Album keeps the \

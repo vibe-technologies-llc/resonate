@@ -11,7 +11,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Link};
 use resonate_providers::{
-    Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp, SignsIn,
+    Authorizing, Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider,
+    ProviderOp, SignsIn,
 };
 use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal, TidalSignIn};
 
@@ -890,14 +891,25 @@ fn a_device_sign_in_cancelled_while_waiting_stops_asking() {
 }
 
 fn token_polls_when_told_to_slow_down(slowing: fn() -> Canned) -> usize {
-    const LISTENED_FOR: Duration = Duration::from_millis(1_800);
+    const ASKED_EVERY: Duration = Duration::from_millis(100);
+    const SLOWED_BY: Duration = Duration::from_secs(2);
+    const LISTENED_FOR: Duration = Duration::from_millis(600);
 
     let fake = Fake::serving(move |asked, _, _| match asked.path.as_str() {
         "/auth/device" => device_code(),
         _ => slowing(),
     });
-    let signing_in = fake.signing_in();
-    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+    let signing_in = fake.signing_in().slowing_by(SLOWED_BY);
+    let authorizing = {
+        let device = signing_in.authorizing(&client()).expect("a device code");
+        Authorizing::new(
+            device.user_code.clone(),
+            device.verify_at.clone(),
+            device.lasts,
+            ASKED_EVERY,
+            device.device_code().to_owned(),
+        )
+    };
     let slowed_at = Mutex::new(None::<Instant>);
 
     let answer = signing_in.authorized(&client(), &authorizing, &|| {

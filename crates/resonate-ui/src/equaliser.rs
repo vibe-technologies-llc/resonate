@@ -516,6 +516,10 @@ impl EqualiserModel {
         self.measurer = measurer;
     }
 
+    pub fn measurer(&self) -> Option<&str> {
+        self.measurer.as_deref()
+    }
+
     pub fn rebound(&mut self, bindings: Bindings) {
         self.save_now();
         self.bindings = bindings;

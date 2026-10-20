@@ -50,6 +50,7 @@ pub(crate) struct Standing {
     pub(crate) lyrics: bool,
     pub(crate) lyrics_by_the_locale: bool,
     pub(crate) contact_given: bool,
+    pub(crate) measurer_given: bool,
     pub(crate) key_given: bool,
     pub(crate) token_given: bool,
     pub(crate) submitting_given: bool,
@@ -94,6 +95,7 @@ impl Standing {
             lyrics: FETCH_LYRICS,
             lyrics_by_the_locale: LYRICS_BY_THE_LOCALE,
             contact_given: false,
+            measurer_given: false,
             key_given: false,
             token_given: false,
             submitting_given: false,
@@ -187,6 +189,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
         Group::Contact => standing.contact_given,
+        Group::Measured => standing.measurer_given,
         Group::Recognition => standing.key_given || standing.token_given,
         Group::Submitting => standing.submitting_given,
         Group::Lastfm => standing.lastfm_given,
@@ -219,7 +222,6 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Bands
         | Group::Pairing
         | Group::SyncDevices
-        | Group::Measured
         | Group::Folders
         | Group::Updating
         | Group::Vault
@@ -446,6 +448,13 @@ mod tests {
             Group::Contact,
             &Standing {
                 contact_given: true,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Measured,
+            &Standing {
+                measurer_given: true,
                 ..built.clone()
             }
         ));

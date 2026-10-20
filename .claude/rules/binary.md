@@ -247,7 +247,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
   device (one for every device); `eq --find`/`--suggest` take `--measurer` over it and the
   equaliser pane's search and suggestion take it over the fixed ranking
-  (`EqualiserModel::prefer`); read at start, no pane control.
+  (`EqualiserModel::prefer`); the Equaliser category's *Measured corrections* group chooses it as
+  chips (*Best ranked*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
+  `Setting::EqualiserMeasurer` and worn at once on `ResonateApp::measurer` and the model
+  (`RootView::prefer_a_measurer`), and the group's mark removes the key.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
@@ -283,9 +286,12 @@ the write of `resonate eq`, `tidal`, `lastfm` and `sync`: it compares the settin
 after and, when it moved, lists the players on the bus (`Running::listed`) and calls `Reload` on each
 with the group the command changed (`Reloadable`) and the file's path. A player that took it is
 said to take it up; one that refused, or is too old to know `Reload`, is said to keep the settings it
-started with and to hear the change once started again; with none running, or no bus, nothing is
+started with and to hear the change only if it reads the file written, once started again; with none running, or no bus, nothing is
 said. `Desktop::reload` (`mpris.rs`) answers only for the file it reads (`same_file`, so a
-`--config` elsewhere is a refusal): `Equaliser` reads the file again and sends
+`--config` elsewhere is a refusal, **by design**: a player on another settings file lives in
+another world, its catalog and accounts included, and one file's equaliser, account or sync key
+applied to it would mix two, so the run says it keeps what it started with and hears the change
+only if it reads the file written): `Equaliser` reads the file again and sends
 `Command::SetEqualisation` from `equaliser::resolved` and, for a window, sends the window the bindings
 read again (`resonate_ui::Followed::Bindings`); `Submission` and `Sync` are `Applied` where
 the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file

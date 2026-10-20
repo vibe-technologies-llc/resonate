@@ -100,6 +100,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::EqualiserFor { sink, binding } => {
             return written_as_a_binding(setting, bound(editing, sink, binding.as_ref()));
         }
+        Setting::EqualiserMeasurer(measurer) => given_or_cleared(
+            ConfigKey::EqualiserMeasurer,
+            measurer.as_deref().unwrap_or(""),
+        ),
         Setting::EqualiserProfile(binding) => (
             ConfigKey::EqualiserProfile,
             binding.as_ref().map(config::written),
@@ -405,6 +409,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Equaliser => ConfigKey::Equaliser,
         SettingKey::EqualiserFor => ConfigKey::EqualiserFor,
         SettingKey::EqualiserProfile => ConfigKey::EqualiserProfile,
+        SettingKey::EqualiserMeasurer => ConfigKey::EqualiserMeasurer,
         SettingKey::Resume => ConfigKey::Resume,
         SettingKey::HistoryKept => ConfigKey::HistoryKept,
         SettingKey::OrganiseAs => ConfigKey::OrganiseAs,
@@ -627,6 +632,27 @@ mod tests {
         assert_eq!(bindings.for_sink(Some(&sink)), Some((None, &Binding::Own)));
 
         let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_measurer_the_pane_prefers_reads_back_and_one_put_back_is_gone() {
+        let folder = env::temp_dir().join(format!("resonate-settings-measurer-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+
+        file.apply(&[SettingChange::Store(Setting::EqualiserMeasurer(Some(
+            "Rtings".to_owned(),
+        )))])
+        .expect("a writable temporary directory");
+        let preferred = config::load(Some(&path)).expect("the file reads back");
+
+        file.apply(&[SettingChange::Forget(SettingKey::EqualiserMeasurer)])
+            .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(preferred.equaliser_measurer(), Some("Rtings"));
+        assert_eq!(forgotten.equaliser_measurer(), None);
     }
 
     #[test]

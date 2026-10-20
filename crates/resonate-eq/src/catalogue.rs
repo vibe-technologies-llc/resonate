@@ -43,7 +43,7 @@ const SAID_BY_THE_GRAPH: [&str; 37] = [
     "wireless",
 ];
 
-const MEASURERS_BEST_FIRST: [&str; 8] = [
+pub const MEASURERS_BEST_FIRST: [&str; 8] = [
     "oratory1990",
     "crinacle",
     "innerfidelity",
