@@ -6,7 +6,7 @@ use std::{
     io::{self, BufReader, Read, Seek, SeekFrom, Write},
     os::unix::{
         ffi::OsStrExt as _,
-        fs::{self as unix_fs, MetadataExt as _},
+        fs::{self as unix_fs, FileExt as _, MetadataExt as _},
     },
     path::{Path, PathBuf},
     process,
@@ -34,12 +34,14 @@ use rustix::fs::XattrFlags;
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
     counted::{Counted, counts},
+    insert::{Fallocate, Shifting, lengthened},
     journal::{
         Torn, Unsettled, WholeCopy, mend_what_a_dead_writer_left, mend_what_was_left_in,
         staged_elsewhere_name,
     },
-    overlay::{Landing, Overlay},
-    padded::Head,
+    ogg,
+    overlay::{Landing, MOST_BYTES_WRITTEN_IN_PLACE, Overlay},
+    padded::{Head, Rebuilt, Room},
     probe::probe_pictured_from,
     probe_pictured,
     source::{FormatHint, Media, Reading, Sources},
@@ -909,7 +911,7 @@ fn rate(tag: &mut Tag, popularity: Popularity) {
     }
 }
 
-const LEEWAY_PAST_THE_HEAD: u64 = 64 << 10;
+const MOVED_AT_ONCE_BYTES: usize = 1 << 20;
 
 struct Saving<'a> {
     kind: FileType,
@@ -974,22 +976,21 @@ impl Saving<'_> {
         Ok(())
     }
 
-    fn written_into_the_head<F: FileLike>(
+    fn head_written<F: FileLike>(
         &self,
         head: Head,
-        overlay: &mut F,
-    ) -> std::result::Result<bool, FileEncodingError> {
-        let stood = overlay.len()?;
-        let tail = stood.saturating_sub(head.length).min(LEEWAY_PAST_THE_HEAD);
-        if tail == 0 {
-            return Ok(false);
-        }
+        file: &mut F,
+    ) -> std::result::Result<Option<Vec<u8>>, FileEncodingError> {
+        let stood = file.len()?;
+        let Some(tail) = head.tail_read(stood) else {
+            return Ok(None);
+        };
 
         let length = usize::try_from(head.length + tail)
             .map_err(|_| io::Error::from(io::ErrorKind::FileTooLarge))?;
         let mut held = vec![0_u8; length];
-        overlay.rewind()?;
-        overlay.read_exact(&mut held)?;
+        file.rewind()?;
+        file.read_exact(&mut held)?;
         let past = held[usize::try_from(head.length).unwrap_or(length)..].to_vec();
 
         let mut copy = io::Cursor::new(held);
@@ -1001,17 +1002,116 @@ impl Saving<'_> {
             self.options,
         )?;
         let written = copy.into_inner();
-        let Some(written) = written.strip_suffix(past.as_slice()) else {
-            return Ok(false);
+        Ok(written.strip_suffix(past.as_slice()).map(<[u8]>::to_vec))
+    }
+
+    fn staged_into(&self, file: &mut File) -> std::result::Result<(), FileEncodingError> {
+        let Some(head) = Head::of(self.kind, &mut &*file) else {
+            return self.written_into(file);
         };
-        let Some(absorbed) = head.absorbed(written) else {
-            return Ok(false);
+        let Some(written) = self.head_written(head, file)? else {
+            return self.written_into(file);
+        };
+        let Some(rebuilt) = head
+            .rebuilt(&written, Room::Held)
+            .or_else(|| head.rebuilt(&written, Room::Generous))
+        else {
+            return self.written_into(file);
         };
 
-        overlay.rewind()?;
-        overlay.write_all(&absorbed)?;
-        Ok(true)
+        laid_head(file, head.length, &rebuilt)?;
+        self.others_written_into(file)
     }
+
+    fn lengthened_in_place(
+        &self,
+        path: &Path,
+        location: &MediaLocation,
+        file: &File,
+        head: Head,
+        written: &[u8],
+        shifting: &dyn Shifting,
+    ) -> Result<bool> {
+        let Some(block) = self
+            .others
+            .is_empty()
+            .then(|| shifting.block_of(file))
+            .flatten()
+        else {
+            return Ok(false);
+        };
+        let Some(rebuilt) = head.rebuilt(written, Room::Blocks(block)) else {
+            return Ok(false);
+        };
+        if head.length > MOST_BYTES_WRITTEN_IN_PLACE || rebuilt.renumbered_from.is_some() {
+            return Ok(false);
+        }
+        if !self.taken.still_stands(path) {
+            return Err(Error::ChangedWhileWritten {
+                location: location.clone(),
+            });
+        }
+
+        let stood = file.metadata().map_err(|source| Error::Io {
+            location: location.clone(),
+            source,
+        })?;
+        lengthened(
+            shifting,
+            file,
+            path,
+            stood.len(),
+            head.length,
+            &rebuilt.head,
+        )
+        .map_err(|source| Error::Io {
+            location: location.clone(),
+            source,
+        })
+    }
+}
+
+fn laid_head(file: &mut File, standing: u64, rebuilt: &Rebuilt) -> io::Result<()> {
+    let lands = rebuilt.head.len() as u64;
+    if let Some(first) = rebuilt.renumbered_from {
+        let mut tail = Vec::new();
+        file.seek(SeekFrom::Start(standing))?;
+        file.read_to_end(&mut tail)?;
+        ogg::renumbered(&mut tail, first);
+        file.write_all_at(&rebuilt.head, 0)?;
+        file.write_all_at(&tail, lands)?;
+        return file.set_len(lands + tail.len() as u64);
+    }
+    if lands != standing {
+        moved(file, standing, lands)?;
+    }
+    file.write_all_at(&rebuilt.head, 0)
+}
+
+fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
+    let length = file.metadata()?.len();
+    let mut chunk = vec![0_u8; MOVED_AT_ONCE_BYTES];
+    if to > from {
+        let mut end = length;
+        while end > from {
+            let start = end.saturating_sub(MOVED_AT_ONCE_BYTES as u64).max(from);
+            let bytes = usize::try_from(end - start).unwrap_or(MOVED_AT_ONCE_BYTES);
+            file.read_exact_at(&mut chunk[..bytes], start)?;
+            file.write_all_at(&chunk[..bytes], start + (to - from))?;
+            end = start;
+        }
+        return Ok(());
+    }
+
+    let mut at = from;
+    while at < length {
+        let bytes = usize::try_from(length - at)
+            .map_or(MOVED_AT_ONCE_BYTES, |left| left.min(MOVED_AT_ONCE_BYTES));
+        file.read_exact_at(&mut chunk[..bytes], at)?;
+        file.write_all_at(&chunk[..bytes], at - (from - to))?;
+        at += bytes as u64;
+    }
+    file.set_len(length - (from - to))
 }
 
 fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
@@ -1028,7 +1128,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {}
         Err(source) => return Err(unread(source)),
     }
-    if landed_in_place(path, location, saving)? {
+    if landed_in_place(path, location, saving, &Fallocate)? {
         return Ok(());
     }
 
@@ -1100,7 +1200,12 @@ fn copied_into(path: &Path, staged: Staged) -> io::Result<Staged> {
     }
 }
 
-fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<bool> {
+fn landed_in_place(
+    path: &Path,
+    location: &MediaLocation,
+    saving: &Saving<'_>,
+    shifting: &dyn Shifting,
+) -> Result<bool> {
     let Ok(file) = OpenOptions::new().read(true).write(true).open(path) else {
         return Ok(false);
     };
@@ -1109,19 +1214,37 @@ fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -
         source,
     };
     let mut overlay = Overlay::over(&file).map_err(unread)?;
-    let fitted =
-        match Head::of(saving.kind, &mut &file) {
-            Some(head) => saving
-                .written_into_the_head(head, &mut overlay)
-                .and_then(|fits| match fits {
-                    true => saving.others_written_into(&mut overlay).map(|()| true),
-                    false => Ok(false),
-                }),
-            None => saving.written_into(&mut overlay).map(|()| true),
-        };
+    let head = Head::of(saving.kind, &mut &file);
+    let mut outgrown = None;
+    let fitted = match head {
+        Some(head) => match saving.head_written(head, &mut overlay) {
+            Ok(Some(written)) => match head.rebuilt(&written, Room::Held) {
+                Some(rebuilt) => overlay
+                    .rewind()
+                    .and_then(|()| overlay.write_all(&rebuilt.head))
+                    .map_err(FileEncodingError::from)
+                    .and_then(|()| saving.others_written_into(&mut overlay))
+                    .map(|()| true),
+                None => {
+                    outgrown = Some((head, written));
+                    Ok(false)
+                }
+            },
+            Ok(None) => Ok(false),
+            Err(error) => Err(error),
+        },
+        None => saving.written_into(&mut overlay).map(|()| true),
+    };
     match fitted {
         Ok(true) => {}
-        Ok(false) => return Ok(false),
+        Ok(false) => {
+            return match outgrown {
+                Some((head, written)) => {
+                    saving.lengthened_in_place(path, location, &file, head, &written, shifting)
+                }
+                None => Ok(false),
+            };
+        }
         Err(_) if overlay.outgrown() => return Ok(false),
         Err(source) => {
             return Err(Error::TagsUnwritten {
@@ -1169,7 +1292,7 @@ fn landed_by(
         })
         .and_then(|mut file| {
             saving
-                .written_into(&mut file)
+                .staged_into(&mut file)
                 .map_err(|source| Error::TagsUnwritten {
                     location: location.clone(),
                     source,
@@ -1472,7 +1595,10 @@ mod tests {
     use lofty::ogg::tag::VorbisComments;
 
     use super::*;
-    use crate::{ImageFormat, Pictured};
+    use crate::{
+        ImageFormat, Pictured,
+        insert::{Copying, Refusing},
+    };
 
     const RATE: u32 = 44_100;
     const CHANNELS: u16 = 2;
@@ -1812,14 +1938,17 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
+        let lengthens_in_place = Fallocate
+            .block_of(&File::open(&path).expect("a file"))
+            .is_some();
         let tags = FileTags::default();
 
         tags.write(&location, just(&named_and_identified()))
             .expect("a written FLAC");
-        assert_ne!(
-            fs::metadata(&path).expect("a file").ino(),
-            before,
-            "the tags were spliced into the file where it stood"
+        assert_eq!(
+            fs::metadata(&path).expect("a file").ino() == before,
+            lengthens_in_place,
+            "the tags were not landed the way this filesystem lands a head that outgrew its room"
         );
 
         let broken = folder.holding("broken.flac", b"fLaC but nothing after it");
@@ -1868,11 +1997,21 @@ mod tests {
     }
 
     fn retitled(path: &Path, location: &MediaLocation, title: &str) -> Result<bool> {
+        retitled_through(path, location, title, &Refusing)
+    }
+
+    fn retitled_through(
+        path: &Path,
+        location: &MediaLocation,
+        title: &str,
+        shifting: &dyn Shifting,
+    ) -> Result<bool> {
         retitled_after(
             path,
             location,
             title,
             Taken::of(path).expect("a writable file"),
+            shifting,
         )
     }
 
@@ -1881,6 +2020,7 @@ mod tests {
         location: &MediaLocation,
         title: &str,
         taken: Taken,
+        shifting: &dyn Shifting,
     ) -> Result<bool> {
         let mut tagged = opened(path, location)?;
         let kind = tagged.file_type();
@@ -1901,6 +2041,7 @@ mod tests {
                 taken,
                 options: WriteOptions::default(),
             },
+            shifting,
         )
     }
 
@@ -2009,7 +2150,7 @@ mod tests {
             .expect("a file touched by another program");
         let before = fs::read(&path).expect("the file");
 
-        let landed = retitled_after(&path, &location, "Echoes (Live)", taken);
+        let landed = retitled_after(&path, &location, "Echoes (Live)", taken, &Refusing);
 
         assert!(
             matches!(landed, Err(Error::ChangedWhileWritten { .. })),
@@ -2170,6 +2311,299 @@ mod tests {
             "an edit that moved the audio was landed in place"
         );
         assert_eq!(fs::read(&path).expect("the file"), before);
+    }
+
+    const BLOCK: u64 = 4096;
+
+    fn head_length(kind: FileType, path: &Path) -> usize {
+        Head::of(kind, &mut File::open(path).expect("a file"))
+            .expect("a head")
+            .length as usize
+    }
+
+    #[test]
+    fn a_head_outgrowing_its_room_is_given_room_at_the_head_and_lands_in_the_file_itself() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        let standing = fs::read(&path).expect("the file");
+        let old_head = head_length(FileType::Flac, &path);
+        let inode = fs::metadata(&path).expect("the file").ino();
+        let title = "Echoes ".repeat(4096).trim_end().to_owned();
+
+        assert!(
+            retitled_through(&path, &location, &title, &Copying { block: BLOCK })
+                .expect("an edit in place"),
+            "a head that outgrew its room was not given more"
+        );
+
+        let landed = fs::read(&path).expect("the file");
+        let grown = (landed.len() - standing.len()) as u64;
+        assert!(
+            grown > 0 && grown.is_multiple_of(BLOCK),
+            "the head grew by {grown}"
+        );
+        assert_eq!(fs::metadata(&path).expect("the file").ino(), inode);
+        assert_eq!(
+            landed[head_length(FileType::Flac, &path)..],
+            standing[old_head..],
+            "the audio behind the head moved or changed"
+        );
+        assert_eq!(titled(&tags, &location).as_deref(), Some(title.as_str()));
+        assert_eq!(
+            fs::read_dir(&folder.root).expect("the folder").count(),
+            1,
+            "a copy or a journal was left beside the file"
+        );
+
+        assert!(
+            retitled(&path, &location, &format!("{title}!")).expect("an edit in place"),
+            "the padding left by the growth did not hold the next edit"
+        );
+    }
+
+    #[test]
+    fn a_head_the_filesystem_cannot_lengthen_is_left_to_a_whole_copy() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let standing = fs::read(&path).expect("the file");
+
+        assert!(
+            !retitled_through(&path, &location, &"Echoes ".repeat(4096), &Refusing)
+                .expect("a refusal"),
+        );
+        assert_eq!(fs::read(&path).expect("the file"), standing);
+        assert_eq!(
+            fs::read_dir(&folder.root).expect("the folder").count(),
+            1,
+            "a refused lengthening left a journal beside the file"
+        );
+    }
+
+    #[test]
+    fn an_untagged_mp3_is_given_a_tag_and_room_for_the_next_edit_at_its_head() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.mp3", &mp3());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+
+        assert!(
+            retitled_through(&path, &location, "Echoes", &Copying { block: BLOCK })
+                .expect("an edit in place"),
+            "a tag grown from nothing was not given room at the head"
+        );
+
+        let landed = fs::read(&path).expect("the file");
+        let head = head_length(FileType::Mpeg, &path);
+        assert!(
+            head > 0 && (head as u64).is_multiple_of(BLOCK),
+            "a head of {head}"
+        );
+        assert_eq!(landed[head..], mp3());
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes"));
+        assert!(
+            retitled(&path, &location, &"Echoes ".repeat(500)).expect("an edit in place"),
+            "the padding left at the head did not hold the next edit"
+        );
+    }
+
+    #[test]
+    fn a_write_through_a_copy_leaves_padding_enough_for_the_next_edit_to_land_in_place() {
+        for (name, bytes) in [("echoes.flac", flac()), ("echoes.mp3", mp3())] {
+            let folder = Folder::new();
+            let location = folder.holding(name, &bytes);
+            let path = location.as_path().expect("a local file").to_path_buf();
+            let tags = FileTags::default();
+            tags.write(&location, just(&named_and_identified()))
+                .expect("a written file");
+            let standing = fs::metadata(&path).expect("the file");
+
+            assert!(
+                retitled(&path, &location, &"Echoes ".repeat(600)).expect("an edit in place"),
+                "{name} was left without the padding for an edit of four kilobytes"
+            );
+            assert_eq!(fs::metadata(&path).expect("the file").len(), standing.len());
+        }
+    }
+
+    const OPUS_SERIAL: u32 = 0x4F50_5553;
+    const OPUS_PACKET_BYTES: usize = 120;
+    const OPUS_PAGES: u32 = 24;
+
+    fn opus() -> Vec<u8> {
+        let mut identification = b"OpusHead".to_vec();
+        identification.extend_from_slice(&[1, 2, 0x38, 0x01]);
+        identification.extend_from_slice(&48_000_u32.to_le_bytes());
+        identification.extend_from_slice(&[0, 0, 0]);
+        let mut comments = b"OpusTags".to_vec();
+        comments.extend_from_slice(&4_u32.to_le_bytes());
+        comments.extend_from_slice(b"test");
+        comments.extend_from_slice(&0_u32.to_le_bytes());
+
+        let mut file = ogg::paginated(OPUS_SERIAL, &[&identification, &comments]);
+        for page in 0..OPUS_PAGES {
+            let mut packet = vec![page as u8; OPUS_PACKET_BYTES];
+            packet[0] = 0xFC;
+            let last = page + 1 == OPUS_PAGES;
+            file.extend_from_slice(&ogg::page(
+                if last { 0x04 } else { 0 },
+                960 * u64::from(page + 1),
+                OPUS_SERIAL,
+                2 + page,
+                &[OPUS_PACKET_BYTES as u8],
+                &packet,
+            ));
+        }
+        file
+    }
+
+    fn audio_of(bytes: &[u8]) -> Vec<u8> {
+        let head = Head::of(FileType::Opus, &mut Cursor::new(bytes)).expect("an Opus head");
+        bytes[head.length as usize..].to_vec()
+    }
+
+    #[test]
+    fn an_opus_comment_is_written_through_a_copy_with_room_left_and_its_audio_pages_whole() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.opus", &opus());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        let edits = named_and_identified();
+
+        tags.write(&location, just(&edits)).expect("a written Opus");
+
+        let written = fs::read(&path).expect("the file");
+        assert!(
+            ogg::pages_are_whole(&written),
+            "the pages were not a whole stream"
+        );
+        assert_eq!(
+            audio_of(&written).len(),
+            audio_of(&opus()).len(),
+            "the audio pages changed in size"
+        );
+        assert_read_back(
+            &tags
+                .read(&location, Picturing::Whether)
+                .expect("a readable Opus")
+                .tags,
+            &edits,
+            &[],
+        );
+    }
+
+    #[test]
+    fn an_opus_edit_the_comment_has_room_for_lands_in_its_header_pages_alone() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.opus", &opus());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        tags.write(&location, just(&named_and_identified()))
+            .expect("a written Opus");
+        let standing = fs::read(&path).expect("the file");
+        let inode = fs::metadata(&path).expect("the file").ino();
+
+        assert!(
+            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            "an edit the comment's padding holds was not landed in place"
+        );
+
+        let landed = fs::read(&path).expect("the file");
+        assert_eq!(landed.len(), standing.len());
+        assert_eq!(fs::metadata(&path).expect("the file").ino(), inode);
+        assert!(ogg::pages_are_whole(&landed));
+        assert_eq!(audio_of(&landed), audio_of(&standing));
+        assert_ne!(landed, standing);
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes (Live)"));
+        assert_eq!(
+            fs::read_dir(&folder.root).expect("the folder").count(),
+            1,
+            "an edit in place left a copy or a journal beside the file"
+        );
+    }
+
+    #[test]
+    fn an_opus_comment_that_outgrew_its_room_is_given_more_at_the_head_without_moving_its_pages() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.opus", &opus());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        let standing = fs::read(&path).expect("the file");
+        let title = "Echoes ".repeat(500).trim_end().to_owned();
+
+        assert!(
+            retitled_through(&path, &location, &title, &Copying { block: BLOCK })
+                .expect("an edit in place"),
+            "a comment that outgrew its room was not given more"
+        );
+
+        let landed = fs::read(&path).expect("the file");
+        assert!(((landed.len() - standing.len()) as u64).is_multiple_of(BLOCK));
+        assert!(ogg::pages_are_whole(&landed));
+        assert_eq!(audio_of(&landed), audio_of(&standing));
+        assert_eq!(titled(&tags, &location).as_deref(), Some(title.as_str()));
+    }
+
+    #[test]
+    fn an_opus_comment_that_needs_another_page_is_renumbered_through_a_copy() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.opus", &opus());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        let standing = fs::read(&path).expect("the file");
+        let title = "Echoes ".repeat(3000).trim_end().to_owned();
+
+        assert!(
+            !retitled_through(&path, &location, &title, &Copying { block: BLOCK })
+                .expect("a refusal"),
+            "a comment on another page was landed without renumbering the audio"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), standing);
+
+        let edits = [edited(TagField::Title, &title)];
+        tags.write(&location, just(&edits)).expect("a written Opus");
+
+        let written = fs::read(&path).expect("the file");
+        assert!(
+            ogg::pages_are_whole(&written),
+            "the audio pages were left unnumbered"
+        );
+        assert_eq!(titled(&tags, &location).as_deref(), Some(title.as_str()));
+    }
+
+    #[test]
+    fn a_filesystem_that_inserts_ranges_lengthens_a_head_where_it_stands() {
+        for (name, bytes, kind) in [
+            ("echoes.flac", flac(), FileType::Flac),
+            ("echoes.opus", opus(), FileType::Opus),
+            ("echoes.mp3", mp3(), FileType::Mpeg),
+        ] {
+            let folder = Folder::new();
+            let location = folder.holding(name, &bytes);
+            let path = location.as_path().expect("a local file").to_path_buf();
+            let file = File::open(&path).expect("a file");
+            if Fallocate.block_of(&file).is_none() {
+                eprintln!("skipped: the temporary folder cannot insert a range into a file");
+                return;
+            }
+            let standing = fs::read(&path).expect("the file");
+            let old_head = head_length(kind, &path);
+            let tags = FileTags::default();
+            let title = "Echoes ".repeat(if kind == FileType::Opus { 500 } else { 4096 });
+            let title = title.trim_end();
+
+            assert!(
+                retitled_through(&path, &location, title, &Fallocate).expect("an edit in place"),
+                "{name} was not lengthened where it stood"
+            );
+
+            let landed = fs::read(&path).expect("the file");
+            assert_eq!(landed[head_length(kind, &path)..], standing[old_head..]);
+            assert_eq!(titled(&tags, &location).as_deref(), Some(title));
+            assert_eq!(fs::read_dir(&folder.root).expect("the folder").count(), 1);
+        }
     }
 
     #[test]

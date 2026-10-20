@@ -1052,20 +1052,56 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   never held, and a read the file can serve is served in one `pread`. **A tail that grows or
   shrinks lands as it is:** the file is extended by the writes or cut by `set_len` after them,
   and a page the file no longer supplies (a truncation, regrown) is landed as the zeros it reads
-  as. A tag that moves the audio (a head tag outgrowing its room, an Ogg comment header) makes
-  every page differ and goes through a whole staged copy; so does a landing whose length
-  changes while no undo could be kept.
-  For FLAC padding and ID3v2 tags (whose length lofty would change) `Head` has lofty write into an
-  in-memory copy of the tag's head and `Head::absorbed` fits the result into the old length or
-  answers it will not fit. **A page landed in place can be taken back:** before the first page
-  `Undo::kept_beside` writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: the length
-  before and after, each changed page's bytes before and after, which may differ in length at a
-  tail, FNV-1a check; `RSUNDO01`, which has no landing length, is still read), removed once pages
-  sync; a failure rolls back at once (`set_len` back, then the old bytes). A dead writer's journal
-  is mended by the next write to that track and by the scan, which looks in each folder before
-  reading a file there: a length between the two and every byte the journal's before or after (a
-  byte past the file's end is not counted) → rolled back, unless all after; other length or bytes
-  is another program's, left alone.
+  as. A landing whose length changes while no undo could be kept goes through a whole staged copy.
+  **A head is rebuilt, not rewritten.** For FLAC, ID3v2 (an untagged MPEG file too: a head of
+  length zero), Ogg Vorbis and Opus, `Head` has lofty write into an in-memory copy of the head
+  (FLAC and ID3v2 with up to `LEEWAY_PAST_THE_HEAD` of what follows, Ogg the header pages alone) and
+  `Head::rebuilt(written, Room)` lays the result out again: `Held` in the length the head had
+  (FLAC's padding block and ID3v2's zeros take up the slack, an Ogg comment packet is padded with
+  zeros to the length it had), `Generous` in whatever length the tag needs plus
+  `PADDING_LEFT_FOR_THE_NEXT_EDIT` (8 KiB), `Blocks(b)` in exactly the old length plus whole
+  filesystem blocks with at least that padding. Each answers `None` where the tag will not fit.
+  **An Ogg head keeps its audio pages byte for byte while its page count stays:** `ogg.rs` reads
+  the header pages (`Headers`: serial, packets, page count, length; refused unless the pages are
+  numbered from zero, the first begins the stream, and the last header packet ends its page) and
+  pages them again as lofty does (`paginated`: a page a packet up to 32 segments, a nil page after
+  a packet of exactly that, checksums mended), so a comment padded to its old length is the same
+  length in the same number of pages and the audio's sequence numbers and CRCs stay true. OpusTags
+  may be followed by padding (RFC 7845), and a Vorbis comment packet is padded after its framing
+  bit, which libvorbis, ffmpeg and symphonia read past
+  (`an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_has_room`). A head
+  another muxer laid out differently (a comment sharing a page with the setup header) is not
+  `Held`: the first write is a copy that lays it out as lofty does, with padding.
+  **A head that outgrew its room is lengthened where the filesystem can insert a range.** After
+  `Held` fails `landed_in_place` tries `insert::lengthened` through a `Shifting` (`Fallocate`:
+  ext4, XFS and F2FS by `fstatfs`, the block size from `fstatvfs`; a test double stands in
+  elsewhere), only where nothing but the head changes and the head is no larger than
+  `MOST_BYTES_WRITTEN_IN_PLACE`. `FALLOC_FL_INSERT_RANGE` opens whole blocks at offset zero, the
+  head is rebuilt to exactly the old length plus them (`Blocks`; an Ogg head only where its page
+  count stays) and written over the old head and the inserted room, so the audio behind it never
+  moves. The order is the crash safety: journal written and synced, range inserted and
+  `sync_all`ed (the head's in-place writes must never reach disc ahead of the insertion), head
+  written, `sync_data`, journal removed. A refusal before the insertion leaves nothing and falls
+  back to the copy; a failure after it is taken back (the old head written at its shifted place,
+  then the range collapsed, so a crash between is still a file the journal mends) and answers the
+  error. **A page landed in place can be taken back:** before the first page `Undo::kept_beside`
+  writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: the length before and after, how
+  far the audio was shifted, each changed page's bytes before and after, which may differ in
+  length at a tail, FNV-1a check; `RSUNDO03`, `RSUNDO02` (no shift) and `RSUNDO01` (no landing
+  length) are read), removed once pages sync; a failure rolls back at once (`set_len` back, then the
+  old bytes). A dead writer's journal is mended by the next write to that track and by the scan,
+  which looks in each folder before reading a file there: a length between the two and every byte
+  the journal's before or after (a byte past the file's end is not counted) → rolled back, unless
+  all after; other length or bytes is another program's, left alone. **A shifted journal is
+  carried on, not rolled back:** at the old length with the old head the file is untouched; at the
+  landed length every byte of the head must be the old head behind zeros (the room just inserted)
+  or the new head, and the new head is then written (`Mended::CarriedOn`); any other length or
+  byte is another program's (`insert::tests`).
+  **The staged copy is laid out by `Head` too** (`Saving::staged_into`): `Held`, else `Generous`,
+  the audio behind it moved by `moved` (chunked, backwards where the head grew) or, for an Ogg
+  head whose page count changed, read, renumbered and sealed again (`ogg::renumbered`), so a write
+  that had to copy leaves the room the next edit lands in place in. Where the head has no layout
+  (a file `Head` does not recognise) lofty writes as before.
   **What the rename would lose is kept.** A symlinked track is written where the link points. The
   staged copy gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
   `chown`, `set_permissions`, every `listxattr` name, via `rustix`). Where any is refused, and

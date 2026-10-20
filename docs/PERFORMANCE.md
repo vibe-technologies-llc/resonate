@@ -4,10 +4,12 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## Tagging
-- [M] On a filesystem that cannot clone a file (ext4), a tag write that moves the audio (a head tag
-  outgrowing its room) and every Ogg write still copy the whole file, and write it back over the
-  inode when the file has a second name (only the pages that differ, which for moved audio is all
-  of them)
+- [M] A tag write that moves the audio still copies the whole file where the filesystem can neither
+  clone nor insert a range (FAT, exFAT, NTFS, network shares) and a head tag outgrows its room; so
+  does an Ogg comment that needs another page (the audio's sequence numbers and CRCs change) and an
+  Ogg head another muxer laid out unlike lofty, once each (the copy leaves padding). Each writes
+  the copy back over the inode when the file has a second name (only the pages that differ, which
+  for moved audio is all of them)
 
 ## iOS
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only

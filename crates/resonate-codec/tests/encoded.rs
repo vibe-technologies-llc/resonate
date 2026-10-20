@@ -1,6 +1,7 @@
 use std::{
     env, fs,
     io::{self, Cursor, Read, Seek, SeekFrom},
+    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     sync::{
@@ -3384,6 +3385,79 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         before,
         "writing the tags moved the audio"
     );
+}
+
+fn titled_with(path: &Path, title: &str) {
+    let location = MediaLocation::local(path);
+    let edits = [TagEdit {
+        field: TagField::Title,
+        value: title.to_owned(),
+    }];
+    FileTags::default()
+        .write(
+            &location,
+            Writing {
+                edits: &edits,
+                taken: &[],
+                picture: None,
+                unpictured: false,
+                popularity: None,
+            },
+        )
+        .expect("a written Ogg file");
+}
+
+fn read_by_ffmpeg_without_a_complaint(path: &Path) -> bool {
+    Command::new("ffmpeg")
+        .args(["-v", "warning", "-err_detect", "crccheck+explode", "-i"])
+        .arg(path)
+        .args(["-f", "null", "-"])
+        .output()
+        .is_ok_and(|output| output.status.success() && output.stderr.is_empty())
+}
+
+#[test]
+fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_has_room() {
+    for (name, codec) in [
+        ("rewritten.opus", ["-c:a", "libopus"]),
+        ("rewritten.ogg", ["-c:a", "libvorbis"]),
+    ] {
+        let tree = Tree::new();
+        let Some((path, _)) = shaped(&tree, BROADCAST, name, &codec) else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let before = decode(&path).samples;
+        let long = "Echoes ".repeat(40);
+        let long = long.trim_end();
+
+        titled_with(&path, long);
+        assert!(
+            read_by_ffmpeg_without_a_complaint(&path),
+            "{name} was read with complaints after its comment grew"
+        );
+        let grown = fs::metadata(&path).expect("the file");
+
+        titled_with(&path, "Echoes (Live)");
+        let shrunk = fs::metadata(&path).expect("the file");
+        assert_eq!(
+            (shrunk.len(), shrunk.ino()),
+            (grown.len(), grown.ino()),
+            "{name} did not take a shorter comment into the room it had"
+        );
+        assert!(
+            read_by_ffmpeg_without_a_complaint(&path),
+            "{name} was read with complaints after its comment shrank"
+        );
+
+        let read = FileTags::default()
+            .read(&location, Picturing::Whether)
+            .expect("a readable Ogg file")
+            .tags;
+        assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
+        assert_eq!(read.album.as_deref(), Some("Meddle"));
+        assert_eq!(decode(&path).samples, before, "{name} had its audio moved");
+    }
 }
 
 #[test]
