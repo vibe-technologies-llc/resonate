@@ -12,8 +12,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 ## iOS
-- [M] `ResonateLogic`'s tests (`ios.md`) leave these unproved: `Folders.uri` and `resolved` (the
-  `..` check), `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
+- [M] `ResonateLogic`'s tests (`ios.md`) leave these unproved: `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
   against the suites in use, `ListenNext.after`, `ArtworkBucket.fitting`,
   `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
@@ -21,9 +20,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
-- [M] More pure Swift is unproved beside the list above: `Folders.file` (the root-prefix guard,
-  existing-destination refusal, the `.lrc` move, `prune`, the *Put files back* list), polling
-  (`NowPlaying.Written.expected`), sync (`syncStanding`, `SyncTransfers.keyed`, `syncActivity`'s fraction,
+- [M] More pure Swift is unproved beside the list above: polling (`NowPlaying.Written.expected`), sync (`syncStanding`, `SyncTransfers.keyed`, `syncActivity`'s fraction,
   `answerSyncAsked`, `landable`, `SyncRoute.init`), lists and search (`lit`, `LetterRun.runs`,
   `SearchModel`'s generations, `QueueParts`, `ListeningBar.grouped`, `PlaylistEntry.of`,
   `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `ArtworkCache`'s flights,
