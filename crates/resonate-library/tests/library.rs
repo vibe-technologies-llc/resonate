@@ -17079,6 +17079,27 @@ fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Re
 }
 
 #[test]
+fn a_path_named_twice_in_a_run_is_planned_once() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let root = filed_under(&tree);
+    let echoes = root.join("loose/echoes.wav");
+    let summary = library
+        .organise(OrganiseOptions {
+            only: vec![echoes.clone(), echoes.clone(), echoes],
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+
+    assert_eq!(summary.plan.moves.len(), 1);
+    assert!(summary.plan.refused.is_empty());
+    Ok(())
+}
+
+#[test]
 fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_folder() -> Result<()> {
     let tree = Tree::new();
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));

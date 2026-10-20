@@ -1192,10 +1192,21 @@ guard and re-keys a sleeve-keyed album after moves land.
   set filed as `CD1`, `CD2` with no disc tags has no `disc_number`; `Planner::knows` raises each
   album's count (per album, so every track of a set agrees) to the larger of stored
   `max(disc_number)` and what the folders spell.
-- **Library-wide reads are lean and paged.** Only destinations, a root's `Naming` and an album's
-  disc count are library-wide: `Planner::knows` is fed `Filing`s (path, root, album, disc) by a
-  cursor collecting nothing; rows come via retag's `paged::Paging`. A sheet tying files is followed
-  across a page. The plan stays whole.
+- **Library-wide reads are lean and paged; no path of the library is kept.** Only a root's `Naming`
+  and an album's disc count are library-wide: `Planner::knows` is fed `Filing`s (path, root, album,
+  disc) by a cursor collecting nothing; rows come via retag's `paged::Paging`. Whether a path is a
+  scanned track (a destination a track may vacate, a sidecar candidate, a picture folder's
+  tracks) is asked of the catalog through the `Tracked` seam (`Library::tracks_among`, under the
+  run's roots, 512 paths a query), one query for a destination that exists and one per folder
+  listing, never from a set of every path. **A listing lives while its folder is planned**: rows
+  arrive in path order, so everything under a folder is one run and `keep_listings_around` drops
+  each `Beside` and each folder's read sheets that is not the current folder or one above it; a
+  folder revisited is listed afresh. `settle` lists a folder again only to decide its pictures and
+  whether it empties, one at a time. `filed` holds only the files a sheet tied ahead of the cursor
+  (a group removes its own entry), and a path named twice in `OrganiseOptions::only` is planned
+  once. A failing catalog question is held by `Catalogued` (answering "tracked", the careful
+  side) and ends the plan as its error at the next group. A sheet tying files is followed across a
+  page. The plan stays whole.
 - **The preview is the plan the apply performs.** `organise::run` builds one `Plan` and hands it to
   `apply` only if `OrganiseOptions::apply`; the pane's `Pass::Preview`/`Pass::Apply` are one call
   with one flag. A preview still reads the filesystem (`symlink_metadata` per destination,

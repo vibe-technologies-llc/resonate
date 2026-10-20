@@ -3386,6 +3386,33 @@ impl Library {
         })
     }
 
+    pub(crate) fn tracks_among(
+        &self,
+        roots: &[PathBuf],
+        paths: &[&Path],
+    ) -> Result<AHashSet<PathBuf>> {
+        let named = rooted(roots)?;
+        let mut tracked = AHashSet::new();
+
+        for chunk in paths.chunks(PATHS_ASKED_AT_ONCE) {
+            let mut binds = named.clone();
+            binds.extend(
+                chunk
+                    .iter()
+                    .map(|path| Value::Text(store::path_text(path).into_owned())),
+            );
+            let sql = tracks_among(named.len(), chunk.len());
+            let found = self.inner.read(|connection| {
+                rows(connection, &sql, binds, |row| {
+                    row.get::<_, String>(0).map(Ok)
+                })
+            })?;
+            tracked.extend(found.iter().map(|path| store::path_of(path)));
+        }
+
+        Ok(tracked)
+    }
+
     pub(crate) fn tracks_to_file_after(
         &self,
         roots: &[PathBuf],
@@ -6489,6 +6516,23 @@ fn rooted(roots: &[PathBuf]) -> Result<Vec<Value>> {
     Ok(named)
 }
 
+const PATHS_ASKED_AT_ONCE: usize = 512;
+
+fn tracks_among(roots: usize, paths: usize) -> String {
+    let among = vec!["?"; paths].join(", ");
+    match roots {
+        0 => format!(
+            "SELECT DISTINCT tracks.path FROM tracks JOIN roots ON roots.id = tracks.root_id
+              WHERE tracks.path IN ({among})"
+        ),
+        held => format!(
+            "SELECT DISTINCT tracks.path FROM tracks JOIN roots ON roots.id = tracks.root_id
+              WHERE roots.path IN ({}) AND tracks.path IN ({among})",
+            vec!["?"; held].join(", ")
+        ),
+    }
+}
+
 fn and_roots(select: &str, roots: usize) -> String {
     match roots {
         0 => format!("{select}{FILED_IN_ORDER}"),
@@ -8845,6 +8889,41 @@ mod tests {
             "the other process's edit failed rather than waiting its turn"
         );
         assert_eq!(here.roots().expect("the roots read back").len(), 2);
+    }
+
+    #[test]
+    fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_asked()
+    -> Result<()> {
+        let library = Library::open_in_memory()?;
+        titled(&library, "Echoes");
+        titled(&library, "Days");
+
+        let echoes = PathBuf::from("/music/Echoes.wav");
+        let days = PathBuf::from("/music/Days.wav");
+        let absent = PathBuf::from("/music/Absent.wav");
+        let asked = [echoes.as_path(), days.as_path(), absent.as_path()];
+
+        let everywhere = library.tracks_among(&[], &asked)?;
+        let under_music = library.tracks_among(&[PathBuf::from("/music")], &asked)?;
+        let under_nothing = library.tracks_among(&[PathBuf::from("/nowhere")], &asked)?;
+
+        assert_eq!(
+            everywhere,
+            AHashSet::from_iter([echoes.clone(), days.clone()])
+        );
+        assert_eq!(under_music, everywhere);
+        assert!(under_nothing.is_empty());
+
+        let many: Vec<PathBuf> = (0..PATHS_ASKED_AT_ONCE * 2 + 1)
+            .map(|at| PathBuf::from(format!("/music/{at}.wav")))
+            .chain([echoes.clone()])
+            .collect();
+        let many: Vec<&Path> = many.iter().map(PathBuf::as_path).collect();
+        assert_eq!(
+            library.tracks_among(&[], &many)?,
+            AHashSet::from_iter([echoes])
+        );
+        Ok(())
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::{
+    cell::OnceCell,
     cmp::Ordering as Ranking,
     ffi::{OsStr, OsString},
     fmt, fs,
@@ -684,7 +685,11 @@ fn run(
     }
 
     let discs = library.album_discs()?;
-    let mut planner = Planner::new(&options.layout, progress);
+    let tracked = TracksInTheCatalog {
+        library,
+        roots: &options.roots,
+    };
+    let mut planner = Planner::new(&options.layout, progress, &tracked);
     library.each_file_to_file(&options.roots, |filing| planner.knows(&filing, &discs))?;
 
     let rows_of = |files: &[PathBuf]| library.tracks_to_file_at(&options.roots, files, &discs);
@@ -703,7 +708,14 @@ fn run(
             planner.plan(&page, rows_of)?;
         }
     } else {
-        for files in options.only.chunks(ROWS_A_PAGE) {
+        let mut named = AHashSet::with_capacity(options.only.len());
+        let only: Vec<PathBuf> = options
+            .only
+            .iter()
+            .filter(|path| named.insert(path.as_path()))
+            .cloned()
+            .collect();
+        for files in only.chunks(ROWS_A_PAGE) {
             if progress.is_cancelled() {
                 break;
             }
@@ -712,7 +724,7 @@ fn run(
     }
 
     let roots: AHashSet<PathBuf> = planner.namings.keys().cloned().collect();
-    let mut plan = planner.settle();
+    let mut plan = planner.settle()?;
     if options.apply {
         apply(library, &mut plan, &roots, progress, Noting::Afresh);
     }
@@ -759,12 +771,67 @@ pub(crate) struct Filing {
     pub disc: Option<NonZeroU32>,
 }
 
+pub(crate) trait Tracked {
+    fn among(&self, paths: &[&Path]) -> Result<AHashSet<PathBuf>>;
+}
+
+struct TracksInTheCatalog<'a> {
+    library: &'a Library,
+    roots: &'a [PathBuf],
+}
+
+impl Tracked for TracksInTheCatalog<'_> {
+    fn among(&self, paths: &[&Path]) -> Result<AHashSet<PathBuf>> {
+        self.library.tracks_among(self.roots, paths)
+    }
+}
+
+struct Catalogued<'a> {
+    catalog: &'a dyn Tracked,
+    fault: Mutex<Option<Error>>,
+}
+
+impl<'a> Catalogued<'a> {
+    fn new(catalog: &'a dyn Tracked) -> Self {
+        Self {
+            catalog,
+            fault: Mutex::new(None),
+        }
+    }
+
+    fn among(&self, paths: &[&Path]) -> AHashSet<PathBuf> {
+        match self.catalog.among(paths) {
+            Ok(tracked) => tracked,
+            Err(error) => {
+                self.fault.lock().get_or_insert(error);
+                paths.iter().map(|path| path.to_path_buf()).collect()
+            }
+        }
+    }
+
+    fn holds(&self, path: &Path) -> bool {
+        !self.among(&[path]).is_empty()
+    }
+
+    fn failed(&self) -> Result<()> {
+        self.fault.lock().take().map_or(Ok(()), Err)
+    }
+}
+
 struct Beside {
     files: Vec<PathBuf>,
     nothing_but_files: bool,
+    tracked: OnceCell<AHashSet<PathBuf>>,
 }
 
 impl Beside {
+    fn tracked(&self, catalog: &Catalogued<'_>) -> &AHashSet<PathBuf> {
+        self.tracked.get_or_init(|| {
+            let files: Vec<&Path> = self.files.iter().map(PathBuf::as_path).collect();
+            catalog.among(&files)
+        })
+    }
+
     fn of(folder: &Path) -> Self {
         let Ok(listed) = fs::read_dir(folder) else {
             tracing::debug!(
@@ -774,6 +841,7 @@ impl Beside {
             return Self {
                 files: Vec::new(),
                 nothing_but_files: false,
+                tracked: OnceCell::new(),
             };
         };
 
@@ -792,6 +860,7 @@ impl Beside {
         Self {
             files,
             nothing_but_files,
+            tracked: OnceCell::new(),
         }
     }
 }
@@ -832,12 +901,13 @@ struct Planned {
 struct Planner<'a> {
     layout: &'a Layout,
     progress: &'a OrganiseProgress,
-    sources: AHashSet<PathBuf>,
+    tracks: Catalogued<'a>,
     namings: AHashMap<PathBuf, Naming>,
     discs: AHashMap<AlbumId, u32>,
     filed: AHashSet<PathBuf>,
     claimed: Claims,
     going: AHashSet<PathBuf>,
+    around: Option<PathBuf>,
     beside: AHashMap<PathBuf, Beside>,
     sheets: AHashMap<PathBuf, Vec<Claiming>>,
     emptying: AHashMap<PathBuf, PathBuf>,
@@ -953,16 +1023,17 @@ struct Tied {
 }
 
 impl<'a> Planner<'a> {
-    fn new(layout: &'a Layout, progress: &'a OrganiseProgress) -> Self {
+    fn new(layout: &'a Layout, progress: &'a OrganiseProgress, catalog: &'a dyn Tracked) -> Self {
         Self {
             layout,
             progress,
-            sources: AHashSet::new(),
+            tracks: Catalogued::new(catalog),
             namings: AHashMap::new(),
             discs: AHashMap::new(),
             filed: AHashSet::new(),
             claimed: Claims::new(),
             going: AHashSet::new(),
+            around: None,
             beside: AHashMap::new(),
             sheets: AHashMap::new(),
             emptying: AHashMap::new(),
@@ -972,7 +1043,6 @@ impl<'a> Planner<'a> {
     }
 
     fn knows(&mut self, filing: &Filing, album_discs: &AHashMap<i64, u32>) {
-        self.sources.insert(filing.path.clone());
         if !self.namings.contains_key(&filing.root) {
             self.namings
                 .insert(filing.root.clone(), Naming::of(&filing.root));
@@ -1006,9 +1076,10 @@ impl<'a> Planner<'a> {
             let Some(first) = group.first() else {
                 continue;
             };
-            if !self.filed.insert(first.path.clone()) {
+            if self.filed.remove(&first.path) {
                 continue;
             }
+            self.keep_listings_around(first.path.parent());
 
             if let Some(sheet) = self.sheet_above(first) {
                 self.refuse(first, Refusal::NamedFromAbove { sheet });
@@ -1018,6 +1089,7 @@ impl<'a> Planner<'a> {
             let tied = self.tied_by_sheets(&first.path);
             if tied.sheets.is_empty() {
                 self.file(group);
+                self.tracks.failed()?;
                 continue;
             }
 
@@ -1042,7 +1114,7 @@ impl<'a> Planner<'a> {
                         .or_else(|| fetched.get(file.as_path()).copied())
                 })
                 .collect();
-            for file in &tied.files {
+            for file in tied.files.iter().filter(|file| **file != first.path) {
                 self.filed.insert(file.clone());
             }
             let held: Vec<&[TrackToFile]> = members.iter().flatten().copied().collect();
@@ -1053,8 +1125,23 @@ impl<'a> Planner<'a> {
                 continue;
             }
             self.file_together(&held, &tied);
+            self.tracks.failed()?;
         }
-        Ok(())
+        self.tracks.failed()
+    }
+
+    fn keep_listings_around(&mut self, folder: Option<&Path>) {
+        if self.around.as_deref() == folder {
+            return;
+        }
+        self.around = folder.map(Path::to_path_buf);
+        let Some(folder) = folder else {
+            self.beside.clear();
+            self.sheets.clear();
+            return;
+        };
+        self.beside.retain(|listed, _| folder.starts_with(listed));
+        self.sheets.retain(|listed, _| folder.starts_with(listed));
     }
 
     fn file(&mut self, group: &[TrackToFile]) {
@@ -1374,7 +1461,7 @@ impl<'a> Planner<'a> {
         if already_copied(from, to) {
             return None;
         }
-        if self.sources.contains(to) {
+        if self.tracks.holds(to) {
             return Some(InTheWay::MayGo(to.to_path_buf()));
         }
 
@@ -1498,6 +1585,7 @@ impl<'a> Planner<'a> {
             .map(|claiming| claiming.sheet.clone())
             .collect();
         let beside = listing(&mut self.beside, folder);
+        let tracked = beside.tracked(&self.tracks);
         let longer_stems: Vec<&str> = beside
             .files
             .iter()
@@ -1508,7 +1596,7 @@ impl<'a> Planner<'a> {
         let candidates: Vec<PathBuf> = beside
             .files
             .iter()
-            .filter(|file| !self.sources.contains(file.as_path()))
+            .filter(|file| !tracked.contains(file.as_path()))
             .filter(|file| !claiming_elsewhere.contains(file.as_path()))
             .filter(|file| {
                 !longer_stems
@@ -1575,8 +1663,10 @@ impl<'a> Planner<'a> {
         self.plan.refused.push(Refused { from, refusal });
     }
 
-    fn settle(mut self) -> Plan {
+    fn settle(mut self) -> Result<Plan> {
         self.order_the_chains();
+        self.beside.clear();
+        self.sheets.clear();
         self.pictures_follow_their_folders();
 
         let mut folders: Vec<PathBuf> = self
@@ -1589,7 +1679,8 @@ impl<'a> Planner<'a> {
 
         folders.sort_by(|one, other| deepest_first(one, other));
         self.plan.folders = folders;
-        self.plan
+        self.tracks.failed()?;
+        Ok(self.plan)
     }
 
     fn order_the_chains(&mut self) {
@@ -1682,11 +1773,14 @@ impl<'a> Planner<'a> {
         landings.sort();
 
         for (folder, into, at) in landings {
-            let files = listing(&mut self.beside, &folder).files.clone();
+            let beside = listing(&mut self.beside, &folder);
+            let tracked = beside.tracked(&self.tracks);
+            let files = beside.files.clone();
             let every_track_goes = files
                 .iter()
-                .filter(|file| self.sources.contains(file.as_path()))
+                .filter(|file| tracked.contains(file.as_path()))
                 .all(|file| self.going.contains(file));
+            self.beside.remove(&folder);
             if !every_track_goes {
                 continue;
             }
@@ -1719,9 +1813,8 @@ impl<'a> Planner<'a> {
     }
 
     fn empties(&self, folder: &Path) -> bool {
-        self.beside.get(folder).is_some_and(|beside| {
-            beside.nothing_but_files && beside.files.iter().all(|file| self.going.contains(file))
-        })
+        let beside = Beside::of(folder);
+        beside.nothing_but_files && beside.files.iter().all(|file| self.going.contains(file))
     }
 }
 
@@ -3463,6 +3556,24 @@ mod tests {
         assert_eq!(layout.render(&named, Naming::Anything), None);
     }
 
+    struct Rows(AHashSet<PathBuf>);
+
+    impl Rows {
+        fn of(rows: &[TrackToFile]) -> Self {
+            Self(rows.iter().map(|row| row.path.clone()).collect())
+        }
+    }
+
+    impl Tracked for Rows {
+        fn among(&self, paths: &[&Path]) -> Result<AHashSet<PathBuf>> {
+            Ok(paths
+                .iter()
+                .filter(|path| self.0.contains(**path))
+                .map(|path| path.to_path_buf())
+                .collect())
+        }
+    }
+
     fn row(id: u64, path: &str) -> TrackToFile {
         TrackToFile {
             id: TrackId::new(id).expect("a non-zero id"),
@@ -3491,7 +3602,8 @@ mod tests {
             .iter()
             .filter_map(|row| Some((row.album_id?.get() as i64, row.discs)))
             .collect();
-        let mut planner = Planner::new(layout, progress);
+        let tracked = Rows::of(rows);
+        let mut planner = Planner::new(layout, progress, &tracked);
         for row in rows {
             planner.knows(
                 &Filing {
@@ -3506,7 +3618,7 @@ mod tests {
         planner
             .plan(rows, |_| Ok(Vec::new()))
             .expect("a plan of rows held in memory");
-        planner.settle()
+        planner.settle().expect("a plan of rows held in memory")
     }
 
     fn a_folder_of_its_own() -> PathBuf {
@@ -3606,7 +3718,8 @@ mod tests {
     ) -> Plan {
         let layout = read(DEFAULT_LAYOUT);
         let discs = AHashMap::new();
-        let mut planner = Planner::new(&layout, progress);
+        let tracked = Rows::of(rows);
+        let mut planner = Planner::new(&layout, progress, &tracked);
         planner.claimed.blind = blind;
         for row in rows {
             planner.knows(
@@ -3622,7 +3735,57 @@ mod tests {
         planner
             .plan(rows, |_| Ok(Vec::new()))
             .expect("a plan of rows held in memory");
-        planner.settle()
+        planner.settle().expect("a plan of rows held in memory")
+    }
+
+    #[test]
+    fn a_planner_keeps_the_listings_of_the_folders_around_the_track_it_is_on_and_no_path_it_filed()
+    {
+        let folder = a_folder_of_its_own();
+        for name in ["a", "b", "b/c", "d"] {
+            fs::create_dir_all(folder.join(name)).expect("a folder");
+        }
+        let paths = ["a/one.wav", "b/c/two.wav", "b/three.wav", "d/four.wav"];
+        let rows: Vec<TrackToFile> = paths
+            .iter()
+            .enumerate()
+            .map(|(at, path)| {
+                let path = folder.join(path);
+                fs::write(&path, b"RIFF").expect("a file");
+                TrackToFile {
+                    root: folder.clone(),
+                    track: Some(at as u32 + 1),
+                    ..row(at as u64 + 1, &path.to_string_lossy())
+                }
+            })
+            .collect();
+
+        let layout = read(DEFAULT_LAYOUT);
+        let progress = OrganiseProgress::default();
+        let tracked = Rows::of(&rows);
+        let mut planner = Planner::new(&layout, &progress, &tracked);
+        planner
+            .plan(&rows[..3], |_| Ok(Vec::new()))
+            .expect("a page of rows held in memory");
+
+        let listed: AHashSet<&Path> = planner.beside.keys().map(PathBuf::as_path).collect();
+        assert!(listed.contains(folder.join("b").as_path()));
+        assert!(!listed.contains(folder.join("a").as_path()));
+        assert!(!listed.contains(folder.join("b/c").as_path()));
+
+        planner
+            .plan(&rows[3..], |_| Ok(Vec::new()))
+            .expect("a last page of rows held in memory");
+        let listed: AHashSet<&Path> = planner.beside.keys().map(PathBuf::as_path).collect();
+        assert_eq!(
+            listed,
+            AHashSet::from_iter([folder.as_path(), folder.join("d").as_path()])
+        );
+        assert!(planner.filed.is_empty());
+
+        let settled = planner.settle().expect("a plan of rows held in memory");
+        assert_eq!(settled.moves.len(), 4);
+        let _ = fs::remove_dir_all(folder);
     }
 
     #[test]
@@ -4270,7 +4433,8 @@ mod tests {
         let whole = planned(&rows, &layout, &OrganiseProgress::default());
 
         let progress = OrganiseProgress::default();
-        let mut planner = Planner::new(&layout, &progress);
+        let tracked = Rows::of(&rows);
+        let mut planner = Planner::new(&layout, &progress, &tracked);
         let discs = AHashMap::new();
         for row in &rows {
             planner.knows(
@@ -4292,7 +4456,7 @@ mod tests {
         };
         planner.plan(&rows[..1], rest).expect("a first page");
         planner.plan(&rows[1..], rest).expect("a second page");
-        let paged = planner.settle();
+        let paged = planner.settle().expect("a plan of rows held in memory");
 
         assert_eq!(whole.moves.len(), 1, "{whole:?}");
         assert_eq!(whole.moves[0].companions.len(), 1, "{whole:?}");
