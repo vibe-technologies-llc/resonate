@@ -4,9 +4,9 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M] Between `param_changed` and the engine's rebuild (up to a poll tick) the callback writes the
-  ring in the requested layout into buffers of the negotiated one; the negotiated layout is rebuilt
-  by count (`from_count`), so a 5.0 or 6.1 stream reads as changed and is rebuilt once
+- [M] A sink's advertised layouts are read by count (`parse_enum_format`'s `from_count`), never its
+  `position`: a 5.0 or 6.1 device lists as `Discrete`, so a 5.0 or 6.1 source is remixed by index
+  into a stream naming no positions and never plays bit-perfect there, and a 6.0 device lists as 5.1
 
 ## Formats
 - [S] An edit's media rate is ignored: a dwell (rate 0) or a speed change in an M4A edit list

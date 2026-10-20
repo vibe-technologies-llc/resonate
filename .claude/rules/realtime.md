@@ -54,6 +54,15 @@ closure `client.rs` registers (else the lints miss it). They cannot reach libspa
 The callback sets `chunk.size` to exactly what the source filled: bytes past a short read never
 reach the graph, nothing needs zeroing.
 
+**A ring laid out for one format never reaches buffers of another.** `param_changed` stores what the
+graph settled on against what was asked (`Negotiated::taken_against`) in one `AtomicU32`
+(`process::Taking`, so word and layout cannot tear): `Taken::AsAsked(word)` hands the ring over as
+ever; `Taken::Otherwise { frame }` (the engine's rebuild is owed, up to a poll tick away) writes
+zeros for the quantum at the graph's own frame and stride, never reading the ring. Silence, not a
+map: every `SampleFormat` is signed or float, so zero is silence in all of them; a remix here would
+need the matrix and a scratch buffer on the RT thread, for audio the rebuild discards anyway
+(`a_ring_laid_out_for_another_layout_is_never_written_into_the_graphs_buffer`).
+
 `panic = "abort"` is no substitute: pipewire-rs trampolines are `extern "C"`, so a panic aborts in
 every profile; only this discipline turns a crash into a glitch. No `catch_unwind`: a malformed
 file returns `Err`, never panics.

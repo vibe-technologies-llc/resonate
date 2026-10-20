@@ -7,10 +7,10 @@
 )]
 
 use std::{
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU16, NonZeroU32, NonZeroUsize},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
 };
 
@@ -18,10 +18,47 @@ use libspa::utils::Fraction;
 use pipewire::stream::Stream;
 use resonate_core::{Ratio, SampleRate, StreamSpec};
 
-use crate::{AudioSink, AudioSource, GraphTime, StreamClock};
+use crate::{AudioSink, AudioSource, GraphTime, StreamClock, format::WireWord};
 
 const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Taken {
+    AsAsked(WireWord),
+    Otherwise { frame: NonZeroU16 },
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Taking(AtomicU32);
+
+const PADDED_AS_ASKED: u32 = 0;
+const PACKED_AS_ASKED: u32 = 1;
+const FRAME_HELD_ABOVE: u32 = 1;
+
+impl Taking {
+    pub(crate) fn store(&self, taken: Taken) {
+        let held = match taken {
+            Taken::AsAsked(WireWord::Padded) => PADDED_AS_ASKED,
+            Taken::AsAsked(WireWord::Packed) => PACKED_AS_ASKED,
+            Taken::Otherwise { frame } => u32::from(frame.get()) << FRAME_HELD_ABOVE,
+        };
+        self.0.store(held, Ordering::Release);
+    }
+
+    fn load(&self) -> Taken {
+        match self.0.load(Ordering::Acquire) {
+            PADDED_AS_ASKED => Taken::AsAsked(WireWord::Padded),
+            PACKED_AS_ASKED => Taken::AsAsked(WireWord::Packed),
+            held => u16::try_from(held >> FRAME_HELD_ABOVE)
+                .ok()
+                .and_then(NonZeroU16::new)
+                .map_or(Taken::AsAsked(WireWord::Padded), |frame| Taken::Otherwise {
+                    frame,
+                }),
+        }
+    }
+}
 
 pub(crate) struct Hearing;
 
@@ -49,29 +86,23 @@ impl Hearing {
 
 pub(crate) struct Cycle {
     rate: SampleRate,
-    stride: i32,
-    packed_stride: i32,
-    bytes_per_frame: usize,
     padded_frame: NonZeroUsize,
     packed_frame: NonZeroUsize,
-    packed: Arc<AtomicBool>,
+    taking: Arc<Taking>,
     clock: Arc<StreamClock>,
     last_filled: AtomicU64,
 }
 
 impl Cycle {
-    pub(crate) fn new(spec: StreamSpec, packed: Arc<AtomicBool>, clock: Arc<StreamClock>) -> Self {
+    pub(crate) fn new(spec: StreamSpec, taking: Arc<Taking>, clock: Arc<StreamClock>) -> Self {
         let bytes_per_frame = spec.bytes_per_frame().get() as usize;
         let packed_stride = packed_stride(spec);
 
         Self {
             rate: spec.rate,
-            stride: bytes_per_frame as i32,
-            packed_stride,
-            bytes_per_frame,
             padded_frame: NonZeroUsize::new(bytes_per_frame).unwrap_or(NonZeroUsize::MIN),
-            packed_frame: NonZeroUsize::new(packed_stride as usize).unwrap_or(NonZeroUsize::MIN),
-            packed,
+            packed_frame: NonZeroUsize::new(packed_stride).unwrap_or(NonZeroUsize::MIN),
+            taking,
             clock,
             last_filled: AtomicU64::new(0),
         }
@@ -88,47 +119,53 @@ impl Cycle {
         let Some(data) = datas.first_mut() else {
             return;
         };
-        let packed = self.packed.load(Ordering::Relaxed);
+        let taken = self.taking.load();
+        let frame = self.frame_of(taken);
         let filled = match data.data() {
-            Some(slice) => match slice.get_mut(..self.asked_for(asked, slice.len())) {
-                Some(quantum) => {
-                    let written = source.fill(quantum);
-                    if packed {
-                        pack(quantum, written)
-                    } else {
-                        written
-                    }
-                }
-                None => 0,
-            },
+            Some(slice) => self.write(taken, asked, slice, source),
             None => 0,
         };
 
-        self.note_filled(filled, packed);
+        self.note_filled(filled, frame);
         let chunk = data.chunk_mut();
         *chunk.offset_mut() = 0;
-        *chunk.stride_mut() = if packed {
-            self.packed_stride
-        } else {
-            self.stride
-        };
+        *chunk.stride_mut() = frame.get() as i32;
         *chunk.size_mut() = filled as u32;
     }
 
-    fn asked_for(&self, frames: u64, room: usize) -> usize {
-        let quantum = (frames as usize).saturating_mul(self.bytes_per_frame);
-        if quantum == 0 {
-            return room;
+    fn write(
+        &self,
+        taken: Taken,
+        asked: u64,
+        slice: &mut [u8],
+        source: &mut dyn AudioSource,
+    ) -> usize {
+        let frame = self.frame_of(taken);
+        let Some(quantum) = slice.get_mut(..asked_for(asked, frame, slice.len())) else {
+            return 0;
+        };
+        match taken {
+            Taken::AsAsked(WireWord::Padded) => source.fill(quantum),
+            Taken::AsAsked(WireWord::Packed) => {
+                let written = source.fill(quantum);
+                pack(quantum, written)
+            }
+            Taken::Otherwise { .. } => {
+                quantum.fill(0);
+                quantum.len()
+            }
         }
-        quantum.min(room)
     }
 
-    fn note_filled(&self, filled: usize, packed: bool) {
-        let frame = if packed {
-            self.packed_frame
-        } else {
-            self.padded_frame
-        };
+    fn frame_of(&self, taken: Taken) -> NonZeroUsize {
+        match taken {
+            Taken::AsAsked(WireWord::Padded) => self.padded_frame,
+            Taken::AsAsked(WireWord::Packed) => self.packed_frame,
+            Taken::Otherwise { frame } => NonZeroUsize::from(frame),
+        }
+    }
+
+    fn note_filled(&self, filled: usize, frame: NonZeroUsize) {
         self.last_filled
             .store((filled / frame) as u64, Ordering::Relaxed);
     }
@@ -154,9 +191,18 @@ impl Cycle {
     }
 }
 
-fn packed_stride(spec: StreamSpec) -> i32 {
+fn asked_for(frames: u64, frame: NonZeroUsize, room: usize) -> usize {
+    let quantum = (frames as usize).saturating_mul(frame.get());
+    let whole_room = room - room % frame;
+    if quantum == 0 {
+        return whole_room;
+    }
+    quantum.min(whole_room)
+}
+
+fn packed_stride(spec: StreamSpec) -> usize {
     let samples = usize::from(spec.channel_count().get());
-    samples.saturating_mul(PACKED_WORD) as i32
+    samples.saturating_mul(PACKED_WORD)
 }
 
 fn pack(slice: &mut [u8], written: usize) -> usize {
@@ -190,7 +236,7 @@ fn ticking(rate: Fraction) -> Option<Ratio> {
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing)]
+#[allow(clippy::indexing_slicing, clippy::expect_used)]
 mod tests {
     use resonate_core::{ChannelLayout, SampleFormat};
 
@@ -219,9 +265,28 @@ mod tests {
     fn cycling(format: SampleFormat) -> Cycle {
         Cycle::new(
             stereo(format),
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Taking::default()),
             Arc::new(StreamClock::default()),
         )
+    }
+
+    struct Counting {
+        handed: Vec<u8>,
+        asked: usize,
+    }
+
+    impl AudioSource for Counting {
+        fn fill(&mut self, dst: &mut [u8]) -> usize {
+            self.asked += dst.len();
+            let written = dst.len().min(self.handed.len());
+            dst[..written].copy_from_slice(&self.handed[..written]);
+            self.handed.drain(..written);
+            written
+        }
+    }
+
+    fn whole(bytes: usize) -> NonZeroUsize {
+        NonZeroUsize::new(bytes).expect("a frame holds a byte")
     }
 
     #[test]
@@ -234,10 +299,10 @@ mod tests {
             "nothing filled was reckoned queued"
         );
 
-        cycle.note_filled(1_024 * 8, false);
+        cycle.note_filled(1_024 * 8, cycle.frame_of(Taken::AsAsked(WireWord::Padded)));
         assert_eq!(cycle.queued_frames(2), 2_048);
 
-        cycle.note_filled(1_024 * 6, true);
+        cycle.note_filled(1_024 * 6, cycle.frame_of(Taken::AsAsked(WireWord::Packed)));
         assert_eq!(
             cycle.queued_frames(1),
             1_024,
@@ -247,24 +312,109 @@ mod tests {
 
     #[test]
     fn a_cycle_takes_the_frames_the_graph_asked_for_rather_than_the_pool_it_was_handed() {
-        let cycle = cycling(SampleFormat::S16);
+        let frame = whole(4);
         let room = 8_192;
 
         assert_eq!(
-            cycle.asked_for(256, room),
+            asked_for(256, frame, room),
             1_024,
             "the cycle read past the quantum the graph asked for"
         );
         assert_eq!(
-            cycle.asked_for(0, room),
+            asked_for(0, frame, room),
             room,
             "a graph that named no quantum left the buffer unfilled"
         );
         assert_eq!(
-            cycle.asked_for(4_096, room),
+            asked_for(4_096, frame, room),
             room,
             "a quantum larger than the buffer was written past its end"
         );
+        assert_eq!(
+            asked_for(0, whole(20), 8_190),
+            8_180,
+            "a pool that is not whole frames was handed out to its last byte"
+        );
+    }
+
+    #[test]
+    fn what_was_taken_reads_back_as_it_was_stored() {
+        let taking = Taking::default();
+
+        assert_eq!(taking.load(), Taken::AsAsked(WireWord::Padded));
+
+        for taken in [
+            Taken::AsAsked(WireWord::Packed),
+            Taken::Otherwise {
+                frame: NonZeroU16::MIN,
+            },
+            Taken::Otherwise {
+                frame: NonZeroU16::new(64 * 4).expect("a wide frame"),
+            },
+            Taken::AsAsked(WireWord::Padded),
+        ] {
+            taking.store(taken);
+            assert_eq!(taking.load(), taken);
+        }
+    }
+
+    #[test]
+    fn a_ring_laid_out_for_another_layout_is_never_written_into_the_graphs_buffer() {
+        let cycle = cycling(SampleFormat::S16);
+        let five_wide = NonZeroU16::new(5 * 2).expect("a five-channel frame");
+        let mut source = Counting {
+            handed: vec![0x5A; 4_096],
+            asked: 0,
+        };
+        let mut buffer = vec![0xFF; 4_096];
+
+        let filled = cycle.write(
+            Taken::Otherwise { frame: five_wide },
+            64,
+            &mut buffer,
+            &mut source,
+        );
+
+        assert_eq!(
+            filled,
+            64 * 10,
+            "the quantum was not counted in the graph's frames"
+        );
+        assert!(
+            buffer[..filled].iter().all(|byte| *byte == 0),
+            "the graph was handed something other than silence"
+        );
+        assert_eq!(
+            source.asked, 0,
+            "the ring was read while it could not be heard"
+        );
+        assert_eq!(source.handed.len(), 4_096);
+        assert_eq!(
+            cycle.frame_of(Taken::Otherwise { frame: five_wide }).get(),
+            10,
+            "the chunk's stride is not the graph's frame"
+        );
+    }
+
+    #[test]
+    fn a_ring_laid_out_as_the_graph_took_it_is_handed_over_as_ever() {
+        let cycle = cycling(SampleFormat::S16);
+        let mut source = Counting {
+            handed: (0..=255).collect(),
+            asked: 0,
+        };
+        let mut buffer = vec![0; 4_096];
+
+        let filled = cycle.write(
+            Taken::AsAsked(WireWord::Padded),
+            16,
+            &mut buffer,
+            &mut source,
+        );
+
+        assert_eq!(filled, 64);
+        assert_eq!(source.asked, 64);
+        assert_eq!(buffer[..filled], (0..64).collect::<Vec<u8>>());
     }
 
     #[test]
