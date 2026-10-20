@@ -491,6 +491,15 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN track_total INTEGER;
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
     "ALTER TABLE albums ADD COLUMN pressing_fit INTEGER;",
+    "DELETE FROM kept_tags WHERE track_id IN (
+         SELECT t.id FROM tracks t JOIN vault_objects o ON o.key = t.vault_key
+          WHERE t.root_id IS NOT NULL AND o.form IN (0, 1)
+            AND (o.sample_rate != t.sample_rate OR o.channels != t.channels));
+     UPDATE tracks SET vault_key = NULL, vault_path = NULL, vault_bits = NULL
+      WHERE root_id IS NOT NULL AND id IN (
+         SELECT t.id FROM tracks t JOIN vault_objects o ON o.key = t.vault_key
+          WHERE o.form IN (0, 1)
+            AND (o.sample_rate != t.sample_rate OR o.channels != t.channels));",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1507,6 +1516,48 @@ mod tests {
             .expect("the index is declared");
         assert!(declared.contains("prefix = '1 2'"));
         lay_out(&connection).expect("opening again is idempotent");
+    }
+
+    #[test]
+    fn a_row_vaulted_under_an_object_of_another_rate_or_count_leaves_the_vault_as_carried_forward()
+    {
+        let connection = opened();
+        let keying = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("o.sample_rate != t.sample_rate"))
+            .expect("the step that parts rows keyed by their samples alone");
+        lay_out_through(&connection, V1, &MIGRATIONS[..keying])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels, sample_format, frames, taken_from, took, was_bytes, was_codec, encoding)
+                 VALUES ('00112233445566778899aabbccddeeff', 0, 'audio/00/silence.flac', 10, 44100, 2, 1, 100, '/music/stereo.wav', 1, 20, 1, 7);
+                 INSERT INTO tracks (id, root_id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen, vault_key, vault_path)
+                 VALUES (1, 1, '/music/stereo.wav', 'Stereo', 44100, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
+                        (2, 1, '/music/mono.wav', 'Mono', 44100, 1, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
+                        (3, 1, '/music/faster.wav', 'Faster', 88200, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
+                        (4, NULL, '/vault/audio/00/silence.flac', 'Delivered', 48000, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac');
+                 INSERT INTO kept_tags (track_id, field, value) VALUES (1, 'label', 'Kept'), (2, 'label', 'Parted');",
+            )
+            .expect("the rows are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let vaulted: Vec<(i64, bool)> = connection
+            .prepare("SELECT id, vault_key IS NOT NULL FROM tracks ORDER BY id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        let kept: Vec<i64> = connection
+            .prepare("SELECT track_id FROM kept_tags ORDER BY track_id")
+            .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
+            .expect("the kept tags read back");
+        assert_eq!(vaulted, [(1, true), (2, false), (3, false), (4, true)]);
+        assert_eq!(kept, [1]);
     }
 
     #[test]

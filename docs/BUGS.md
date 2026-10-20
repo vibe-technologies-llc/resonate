@@ -25,8 +25,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A song is ranked only among the first 25 recordings MusicBrainz answers, all scored alike for
   a title many artists recorded: *creep* lists Radiohead's 53rd of a hundred covers, and a typo
   (*bohemian rapsody*) lists covers of *Bohemian Rhapsody* without Queen's
-
-## Later: The vault
-- [L] The key is the PCM alone: two tracks of the same samples at another rate, count or mask
-  (digital silence) share an object, and a standing object is taken on its size alone; needs a
-  migration

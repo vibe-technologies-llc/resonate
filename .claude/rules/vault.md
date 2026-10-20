@@ -26,12 +26,22 @@ engine, library, `ureq` (CI `refuse`).
   x row frames / file frames); no smaller: `Refusal::NoSmaller`. `Kept::was` is that weight and what
   `was_bytes` counts. **Weighing precedes landing**: `landed_or_standing` weighs the staged object or
   the one under its key and answers `Landing::NoSmaller` without renaming, so concurrent imports of
-  one key never delete what the other's row names.
+  one key never delete what the other's row names. **A standing object is taken only where its head
+  declares what went in, never on its size alone** (`standing_holding`, `holds_the_sound`): a FLAC's
+  STREAMINFO (`standing::of_a_flac`: rate, channels, frames and the samples' MD5), a packed WAVE's
+  RIFF header (`standing::of_a_packed_wave`: rate, channels, frames), a kept object's size against
+  the staged copy of the same bytes. One that does not hold it is no dedup hit: the import encodes,
+  validates and lands over it (warned)
+  (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`).
 - **A kept object is weighed like an encoded one**: `kept_whole` decodes source and staged copy
   through the same `pcm_of`, refuses differing digests; a failing stripped copy is recopied whole.
   `bare` rewrites a FLAC's metadata only if its walk reached the last block, else copies as is.
-- **One copy of one thing.** Key = MD5 of decoded PCM (one audio in two containers = one object);
-  covers keyed by their bytes.
+- **One copy of one thing, and only of one thing.** Key = MD5 over the decoded PCM's MD5 and the
+  sound it is heard as (`key::Sound`: rate, channel count, sample word, speaker mask), so one audio
+  in two containers is one object while the same samples at another rate, count, word or placing
+  (digital silence above all) are objects apart
+  (`the_same_samples_at_another_rate_or_count_land_as_objects_of_their_own`); covers keyed by their
+  bytes.
 - **Nothing outside the root.** `Vault::inside` guards every read, write, delete
   (`Error::OutsideTheVault`); `within` requires plain names after the root (`<root>/../x` passes
   lexical `starts_with`).
@@ -46,11 +56,13 @@ engine, library, `ureq` (CI `refuse`).
   into the key (`Encoded::outgrew`); an encode that outgrew, or whose key already has an object (not
   a renewal), is weighed against that object before read-back (`Deduped` or `NoSmaller`).
   **Key named before encoding where possible**: a native 16/24-bit FLAC's STREAMINFO MD5 is the
-  digest the encode would lay down (`bare::declared_digest`); with an object under it `foretold_flac`
-  decodes once instead of encoding (`Foretold::Misdeclared` if samples hash otherwise; never for a
+  PCM digest the encode would lay down (`bare::declared_digest`), keyed with the source's sound;
+  with an object under it holding that sound `foretold_flac` decodes once instead of encoding
+  (`Foretold::Misdeclared` if samples hash otherwise or the object holds another sound; never for a
   renewal or cut row). Other sources: `Taking::foretold` carries a catalog key where
-  `TRACKS_TO_VAULT` finds exactly one noted object with the row's sound (frames, rate, channels;
-  `vault_objects_by_sound`); a sound two objects share foretells nothing.
+  `TRACKS_TO_VAULT` finds exactly one noted object keyed by the sound (`Encoding::KEYED_BY_THE_SOUND`)
+  with the row's sound (frames, rate, channels; `vault_objects_by_sound`); a sound two objects share
+  foretells nothing.
 - **`Form::Wave`**: PCM FLAC cannot hold (`SampleFormat::F32`, > 24 bits, > 96 kHz). Canonical
   `fmt `+`data` WAVE, zstd at `ARCHIVED_AT` (19). Over `LARGEST_PCM` (RIFF ceiling): refused before
   decoding where the source declares its length (`wave::outgrows_a_wave`), else `wave::tally` stops
@@ -112,9 +124,12 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 <root>/staging/<pid>-<n>.<ext>
 ```
 
-`VaultKey`: 16 bytes as 32 lowercase hex letters, fanned two deep. `Flac`/`Wave`: MD5 of decoded
-interleaved PCM (FLAC's STREAMINFO digest, so `metaflac` agrees); `Kept`, covers: MD5 of stored
-bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder, a failing sync after the rename being a warning (the object is there, so the keep is reported landed rather than failed and left unreferenced) (`an_object_whose_folder_could_not_be_synced_after_the_rename_is_reported_landed`). **A staging
+`VaultKey`: 16 bytes as 32 lowercase hex letters, fanned two deep. `Flac`/`Wave`:
+`Sound::keyed`, MD5 of a tag, the decoded interleaved PCM's MD5 (FLAC's STREAMINFO digest, which
+`metaflac` still agrees with), rate, channel count, sample word and WAVE mask. The mask is placed as
+the form will read back (`Sound::placed`): named speakers as named, unnamed ones in the order the form
+assigns (FLAC's for `Flac`, WAVE's for `Wave`), so a key is the same from the source and from the
+object; `Kept`, covers: MD5 of stored bytes. Writes go to `staging`, `sync_all`, rename; `landed` syncs the object's folder, a failing sync after the rename being a warning (the object is there, so the keep is reported landed rather than failed and left unreferenced) (`an_object_whose_folder_could_not_be_synced_after_the_rename_is_reported_landed`). **A staging
 file is held by its writer, which is how it is swept**: `Vault::staged` creates it `Held`
 (`rust-style.md`); `Vault::open` removes those `writer::writer_of` reads as gone
 (`Sweeping::WhatCrashed`); `Vault::sweep_the_staging` (`--prune`) also takes files not named by a
@@ -155,6 +170,17 @@ carries that object's key and size (`TRACKS_TO_VAULT`), and a result no smaller 
 a replaced object; the old object of a renewal on another key, like one landed then refused, waits
 for `--prune`. A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row for
 its object: weighed again next import.
+
+**Objects from before `Encoding::KEYED_BY_THE_SOUND` (8) are named by their PCM alone, and are
+carried forward, not broken.** The stamp moving makes every such row weighed again; its renewal lands
+under the sound's key even at the same weight (`Replacing::keyed_by_the_pcm_alone`, read off the
+standing object's stamp) (`a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_weight`).
+A row that cannot be renewed (its file gone) keeps its object: `Vault::verify` and `reframe` take a
+name that is the sound's key or the PCM's alone (`Heard::answers_to`). The catalog step bringing the
+stamp in releases every listener's row vaulted under a FLAC or WAVE object of another rate or channel
+count (the objects such rows wrongly shared), kept tags with them; a delivered row, whose path is its
+object, is left alone
+(`a_row_vaulted_under_an_object_of_another_rate_or_count_leaves_the_vault_as_carried_forward`).
 
 **A refusal is stamped against the encoder too.** Each `Keeping::Refused` writes `vault_refused
 (track_id, under)` with `OF_THIS_BUILD`; `TRACKS_TO_VAULT` skips rows stamped at or past this

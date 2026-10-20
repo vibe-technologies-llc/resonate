@@ -11,6 +11,7 @@ mod form;
 mod key;
 mod ogg;
 mod pcm;
+mod standing;
 mod unpacking;
 mod vault;
 mod wave;

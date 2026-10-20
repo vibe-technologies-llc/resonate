@@ -3,7 +3,8 @@ pub struct Encoding(u16);
 
 impl Encoding {
     pub const UNRECORDED: Self = Self(0);
-    pub const OF_THIS_BUILD: Self = Self(7);
+    pub const OF_THIS_BUILD: Self = Self(8);
+    pub const KEYED_BY_THE_SOUND: Self = Self(8);
 
     pub const fn of(held: u16) -> Self {
         Self(held)
@@ -15,6 +16,10 @@ impl Encoding {
 
     pub const fn is_behind(self) -> bool {
         self.0 < Self::OF_THIS_BUILD.0
+    }
+
+    pub const fn keyed_by_the_pcm_alone(self) -> bool {
+        self.0 < Self::KEYED_BY_THE_SOUND.0
     }
 }
 

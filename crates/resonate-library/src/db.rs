@@ -322,8 +322,9 @@ const TRACKS_TO_VAULT: &str = "SELECT tracks.id, tracks.path, tracks.span_start,
             (SELECT min(o.key) FROM vault_objects o
               WHERE tracks.span_frames IS NULL AND o.frames = tracks.duration
                 AND o.sample_rate = tracks.sample_rate AND o.channels = tracks.channels
+                AND o.encoding >= ?
              HAVING count(*) = 1),
-            tracks.vault_key, vault_objects.bytes
+            tracks.vault_key, vault_objects.bytes, vault_objects.encoding
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN vault_objects ON vault_objects.key = tracks.vault_key
@@ -3339,7 +3340,8 @@ impl Library {
         let named = rooted(roots)?;
         let sql = and_roots(TRACKS_TO_VAULT, named.len());
         let this_build = Value::Integer(i64::from(Encoding::OF_THIS_BUILD.get()));
-        let mut asked = vec![this_build.clone(), this_build];
+        let keyed_by_the_sound = Value::Integer(i64::from(Encoding::KEYED_BY_THE_SOUND.get()));
+        let mut asked = vec![keyed_by_the_sound, this_build.clone(), this_build];
         asked.extend(named);
 
         self.inner.read(|connection| {
@@ -7186,6 +7188,7 @@ struct RawToVault {
     foretold: Option<String>,
     standing: Option<String>,
     standing_bytes: Option<i64>,
+    standing_encoding: Option<u16>,
 }
 
 impl RawToVault {
@@ -7205,6 +7208,7 @@ impl RawToVault {
             foretold: row.get(11)?,
             standing: row.get(12)?,
             standing_bytes: row.get(13)?,
+            standing_encoding: row.get(14)?,
         })
     }
 
@@ -7238,6 +7242,8 @@ impl RawToVault {
                 .map(|(key, bytes)| Replacing {
                     key,
                     bytes: u64::try_from(bytes).unwrap_or(0),
+                    keyed_by_the_pcm_alone: Encoding::of(self.standing_encoding.unwrap_or(0))
+                        .keyed_by_the_pcm_alone(),
                 }),
         })
     }
