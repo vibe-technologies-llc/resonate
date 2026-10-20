@@ -1043,18 +1043,29 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   this build's to touch (`a_track_torn_by_a_dead_writer_is_finished_from_the_whole_copy_kept_outside_its_folder`,
   `only_a_dead_writers_copy_staged_outside_the_tracks_folder_is_swept`). The copy is a clone
   (`cloned_beside`, `FICLONE`) where the filesystem shares extents. **Where it cannot clone, an edit
-  the tag's own room holds lands in the file itself**: `landed_in_place` has lofty write into an
-  `Overlay` (4 KiB in-memory pages); `Overlay::land` writes back only differing pages and
-  `sync_data`s, only where the file keeps its length and at most `MOST_BYTES_WRITTEN_IN_PLACE` (32
-  MiB) was touched; audio that would move or a tag that would grow goes through a whole staged copy.
+  that leaves the audio where it is lands in the file itself**: `landed_in_place` has lofty write
+  into an `Overlay` (4 KiB in-memory pages); `Overlay::land` writes back only the differing pages
+  and `sync_data`s, at most `MOST_BYTES_WRITTEN_IN_PLACE` (32 MiB) of them. **The overlay holds
+  what differs, not what lofty wrote:** WAVE, AIFF, WavPack and Monkey's Audio tags sit at the end
+  and lofty reads the whole file, truncates it to nothing and writes it all back, so a whole
+  aligned page equal to the file's own is only noted (`Slot::Stood`, read from the file) and
+  never held, and a read the file can serve is served in one `pread`. **A tail that grows or
+  shrinks lands as it is:** the file is extended by the writes or cut by `set_len` after them,
+  and a page the file no longer supplies (a truncation, regrown) is landed as the zeros it reads
+  as. A tag that moves the audio (a head tag outgrowing its room, an Ogg comment header) makes
+  every page differ and goes through a whole staged copy; so does a landing whose length
+  changes while no undo could be kept.
   For FLAC padding and ID3v2 tags (whose length lofty would change) `Head` has lofty write into an
   in-memory copy of the tag's head and `Head::absorbed` fits the result into the old length or
   answers it will not fit. **A page landed in place can be taken back:** before the first page
-  `Undo::kept_beside` writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: each changed
-  page's bytes before and after, FNV-1a check), removed once pages sync; a failure rolls back at
-  once. A dead writer's journal is mended by the next write to that track and by the scan, which
-  looks in each folder before reading a file there: same length and every byte the journal's before
-  or after → rolled back, unless all after; other length or bytes is another program's, left alone.
+  `Undo::kept_beside` writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: the length
+  before and after, each changed page's bytes before and after, which may differ in length at a
+  tail, FNV-1a check; `RSUNDO01`, which has no landing length, is still read), removed once pages
+  sync; a failure rolls back at once (`set_len` back, then the old bytes). A dead writer's journal
+  is mended by the next write to that track and by the scan, which looks in each folder before
+  reading a file there: a length between the two and every byte the journal's before or after (a
+  byte past the file's end is not counted) → rolled back, unless all after; other length or bytes
+  is another program's, left alone.
   **What the rename would lose is kept.** A symlinked track is written where the link points. The
   staged copy gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
   `chown`, `set_permissions`, every `listxattr` name, via `rustix`). Where any is refused, and
@@ -1064,7 +1075,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **The whole copy says what the
   track was:** `stood_beside` appends an FNV-1a hash of each 4 KiB page of the track as it stood,
   both lengths and a check, `STOOD_MAGIC` last; the write-back lays the copy over in page-aligned
-  chunks (`laid_over`). A dead writer's whole or torn copy is finished by the next write to that
+  chunks (`laid_over`, writing only the runs of pages that differ from the track). A dead writer's whole or torn copy is finished by the next write to that
   track or the scan of its folder, never swept as left over, and only over a track still between the
   two (`Stood::standing`): `Mended::WrittenBack`, `Finished`, `ChangedSince` (a page neither:
   another program's edit, copy dropped), `Unreadable` (record failing its check writes nothing).

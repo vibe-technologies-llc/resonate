@@ -4,9 +4,10 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## Tagging
-- [M] On a filesystem that cannot clone a file (ext4), a tag write outgrowing the tag's room, every
-  write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) and every Ogg write
-  still copies the whole file, twice for one with a second name
+- [M] On a filesystem that cannot clone a file (ext4), a tag write that moves the audio (a head tag
+  outgrowing its room) and every Ogg write still copy the whole file, and write it back over the
+  inode when the file has a second name (only the pages that differ, which for moved audio is all
+  of them)
 
 ## iOS
 - [M] Playing in the background polls `snapshot` twice a second (ten times near a song's end) only

@@ -874,33 +874,41 @@ impl Decoder {
         Ok(())
     }
 
-    fn enter(&mut self, place: Place) -> Result<()> {
-        let Some(splicing) = self.splicing.as_ref() else {
-            return Ok(());
-        };
-        let standing = splicing.music;
-        let past_the_last = splicing.past_the_last();
-        let Some(edit) = splicing.splices.edits().get(place.edit).copied() else {
-            self.stand_at(past_the_last, Frames::ZERO, standing);
-            return Ok(());
-        };
-
-        let left = edit.lasting().saturating_sub(place.into);
-        let Edit::Music { from, .. } = edit else {
-            self.stand_at(place.edit, left, standing);
-            return Ok(());
-        };
-        match self.music_reaching(from.saturating_add(place.into), standing)? {
-            Some(reached) => self.stand_at(place.edit, left, reached),
-            None => {
-                tracing::debug!(
-                    location = %self.location,
-                    "an edit reaching back into music a source that cannot seek has passed ends the track there"
-                );
+    fn enter(&mut self, mut place: Place) -> Result<()> {
+        loop {
+            let Some(splicing) = self.splicing.as_ref() else {
+                return Ok(());
+            };
+            let standing = splicing.music;
+            let past_the_last = splicing.past_the_last();
+            let Some(edit) = splicing.splices.edits().get(place.edit).copied() else {
                 self.stand_at(past_the_last, Frames::ZERO, standing);
+                return Ok(());
+            };
+
+            let left = edit.lasting().saturating_sub(place.into);
+            let Edit::Music { from, .. } = edit else {
+                self.stand_at(place.edit, left, standing);
+                return Ok(());
+            };
+            match self.music_reaching(from.saturating_add(place.into), standing)? {
+                Some(reached) => {
+                    self.stand_at(place.edit, left, reached);
+                    return Ok(());
+                }
+                None => {
+                    tracing::debug!(
+                        location = %self.location,
+                        edit = place.edit,
+                        "an edit reaching back into music a source that cannot seek has passed is left out"
+                    );
+                    place = Place {
+                        edit: place.edit.saturating_add(1),
+                        into: Frames::ZERO,
+                    };
+                }
             }
         }
-        Ok(())
     }
 
     fn stand_at(&mut self, edit: usize, left: Frames, music: Frames) {
@@ -1931,17 +1939,20 @@ FILE "Meddle.wav" WAVE
     }
 
     #[test]
-    fn a_source_that_cannot_seek_skips_forward_to_a_cut_and_ends_where_an_edit_reaches_back() {
+    fn a_source_that_cannot_seek_skips_forward_to_a_cut_and_leaves_out_an_edit_reaching_back() {
         let samples = ramp(24);
-        let edits = vec![music(1_000, 2_000), music(5_000, 1_000), music(0, 4_000)];
+        let edits = vec![
+            music(1_000, 2_000),
+            music(5_000, 1_000),
+            music(0, 4_000),
+            music(8_000, 1_000),
+        ];
         let (mut decoder, info) = spliced(&samples, edits.clone());
         decoder.info.is_seekable = false;
 
         let mut out = AudioBuffer::empty(info.spec);
-        assert_eq!(
-            drain(&mut decoder, &mut out),
-            heard_as(&samples, &edits[..2])
-        );
+        let kept = [edits[0], edits[1], edits[3]];
+        assert_eq!(drain(&mut decoder, &mut out), heard_as(&samples, &kept));
     }
 
     #[test]
