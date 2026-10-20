@@ -13,7 +13,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 
 ## iOS
 - [M] `ResonateLogic`'s tests (`ios.md`) leave these unproved: `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
-  against the suites in use, `ListenNext.after`, `ArtworkBucket.fitting`,
+  against the suites in use, `ArtworkBucket.fitting`,
   `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
   host; `Routing`, `Drain` and `fill` are proved
@@ -27,7 +27,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
   192-byte stride against the shader's `Field`
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
-  launch machine, the `ClipSink`/`OnlyOnce` races, `Keychain.read`'s not-found against failure and
+  launch machine, `Keychain.read`'s not-found against failure and
   `landReceived`'s back-off are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
 - [M] Pure Swift in the views is unproved too: `EqualiserScale` and `EqualiserResponse`'s

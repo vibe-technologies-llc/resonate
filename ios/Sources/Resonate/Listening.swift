@@ -3,66 +3,12 @@ import Foundation
 import Observation
 import ResonateLogic
 import ResonateNative
-import Synchronization
-
-enum ListenStage: Equatable {
-    case idle
-    case recording(nth: Int, since: Date)
-    case asking
-    case found(HeardSong)
-    case unknown
-    case silent
-    case unreached(String)
-    case offline
-    case denied
-    case failed(String)
-
-    var isListening: Bool {
-        switch self {
-        case .recording, .asking: true
-        default: false
-        }
-    }
-
-    var namedOrMissed: Bool {
-        switch self {
-        case .found, .unknown: true
-        default: false
-        }
-    }
-}
-
-enum ListenFollowing: Equatable {
-    case off
-    case waiting
-    case listening
-}
-
-enum ListenNext: Equatable {
-    case tell(HeardSong)
-    case again(nth: Int)
-    case settle(ListenStage)
-    case keep
-
-    static func after(_ answer: HeardAnswer, naming nth: Int?, standing: HeardSong?) -> ListenNext {
-        switch (nth, answer) {
-        case (nil, .named(let song)) where standing?.key == song.key: .keep
-        case (_, .named(let song)): .tell(song)
-        case (nil, _): .keep
-        case (let nth?, .missed) where nth < Listening.triesOnAMiss, (let nth?, .silent) where nth < Listening.triesOnAMiss:
-            .again(nth: nth + 1)
-        case (_?, .missed): .settle(.unknown)
-        case (_?, .silent): .settle(.silent)
-        case (_?, .unreached(let service)): .settle(.unreached(service))
-        }
-    }
-}
 
 @MainActor
 @Observable
 final class Listening {
     static let clipSeconds: TimeInterval = 12
-    nonisolated static let triesOnAMiss = 3
+    nonisolated static let triesOnAMiss = ListenNext.triesOnAMiss
     static let followedEverySeconds = 20
     private static let heardKept = 8
 
@@ -270,56 +216,9 @@ final class Listening {
     }
 }
 
-final class OnlyOnce<Value: Sendable>: Sendable {
-    private struct Held: Sendable {
-        var done = false
-        var early: Value?
-        var waiting: CheckedContinuation<Value, Never>?
-    }
-
-    private let held = Mutex(Held())
-
-    func give(_ value: Value) {
-        let waiting = held.withLock { held -> CheckedContinuation<Value, Never>? in
-            guard !held.done else { return nil }
-            held.done = true
-            guard let waiting = held.waiting else {
-                held.early = value
-                return nil
-            }
-            held.waiting = nil
-            return waiting
-        }
-        waiting?.resume(returning: value)
-    }
-
-    func value() async -> Value {
-        await withCheckedContinuation { continuation in
-            let ready = held.withLock { held -> Value? in
-                if let early = held.early { return early }
-                held.waiting = continuation
-                return nil
-            }
-            if let ready { continuation.resume(returning: ready) }
-        }
-    }
-}
-
 struct HeardClip: Sendable {
     let samples: [Float]
     let rate: UInt32
-}
-
-enum MicrophoneFailure: LocalizedError {
-    case unavailable
-    case interrupted
-
-    var errorDescription: String? {
-        switch self {
-        case .unavailable: "No microphone is available to listen with."
-        case .interrupted: "Listening was interrupted by a call, a change of headphones or another app."
-        }
-    }
 }
 
 final class OpenMicrophone: @unchecked Sendable {
@@ -403,25 +302,7 @@ enum Microphone {
     }
 }
 
-final class ClipSink: Sendable {
-    private struct Held {
-        var samples: [Float] = []
-        var waiting: CheckedContinuation<[Float], any Swift.Error>?
-        var done = false
-        var stopped = false
-        var interrupted = false
-    }
-
-    private let wanted: Int
-    private let held: Mutex<Held>
-
-    init(wanted: Int) {
-        self.wanted = wanted
-        var empty = Held()
-        empty.samples.reserveCapacity(wanted)
-        held = Mutex(empty)
-    }
-
+extension ClipSink {
     nonisolated static func tap(into sink: ClipSink) -> AVAudioNodeTapBlock {
         { buffer, _ in sink.take(buffer) }
     }
@@ -440,50 +321,6 @@ final class ClipSink: Sendable {
         ]
     }
 
-    func interrupt() {
-        let waiting = held.withLock { held -> CheckedContinuation<[Float], any Swift.Error>? in
-            guard !held.done else { return nil }
-            held.done = true
-            held.interrupted = true
-            defer { held.waiting = nil }
-            return held.waiting
-        }
-        waiting?.resume(throwing: MicrophoneFailure.interrupted)
-    }
-
-    func finish() {
-        let ready = held.withLock { held -> (CheckedContinuation<[Float], any Swift.Error>, [Float])? in
-            guard !held.done else { return nil }
-            held.done = true
-            defer { held.waiting = nil }
-            return held.waiting.map { ($0, held.samples) }
-        }
-        if let (waiting, samples) = ready { waiting.resume(returning: samples) }
-    }
-
-    func filled() async throws -> [Float] {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let ready = held.withLock { held -> Result<[Float], any Swift.Error>? in
-                    if held.stopped { return .failure(CancellationError()) }
-                    if held.interrupted { return .failure(MicrophoneFailure.interrupted) }
-                    if held.done { return .success(held.samples) }
-                    held.waiting = continuation
-                    return nil
-                }
-                if let ready { continuation.resume(with: ready) }
-            }
-        } onCancel: {
-            let waiting = held.withLock { held -> CheckedContinuation<[Float], any Swift.Error>? in
-                held.stopped = true
-                held.done = true
-                defer { held.waiting = nil }
-                return held.waiting
-            }
-            waiting?.resume(throwing: CancellationError())
-        }
-    }
-
     private func take(_ buffer: AVAudioPCMBuffer) {
         guard let channels = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
@@ -497,17 +334,6 @@ final class ClipSink: Sendable {
             let samples = interleaved ? channels[0] + channel : channels[channel]
             for frame in 0..<frames { mono[frame] += samples[frame * stride] }
         }
-        let share = 1 / Float(count)
-
-        let ready = held.withLock { held -> (CheckedContinuation<[Float], any Swift.Error>, [Float])? in
-            guard !held.done else { return nil }
-            let room = wanted - held.samples.count
-            held.samples.append(contentsOf: mono.prefix(room).map { $0 * share })
-            guard held.samples.count >= wanted else { return nil }
-            held.done = true
-            defer { held.waiting = nil }
-            return held.waiting.map { ($0, held.samples) }
-        }
-        if let (waiting, samples) = ready { waiting.resume(returning: samples) }
+        append(mono, sharing: 1 / Float(count))
     }
 }
