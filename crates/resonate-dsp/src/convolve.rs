@@ -1,10 +1,12 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use parking_lot::Mutex;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex, num_complex::Complex};
 use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
-use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
-use crate::{FilterPhase, ProcessCount, Processor, Quality, Resampler, ResamplerConfig, Result};
+use crate::{
+    Error, FilterPhase, ProcessCount, Processor, Quality, Resampler, ResamplerConfig, Result,
+};
 
 const PARTITION_AT_48_KHZ: usize = 1_024;
 const FRAMES_A_PARTITION_IS_FOR: u32 = 48_000;
@@ -15,6 +17,34 @@ pub fn partition_frames_at(rate: SampleRate) -> usize {
 }
 const RESAMPLED_A_BLOCK_AT_A_TIME: usize = 4_096;
 const SPECTRUM_POINTS_A_TAP: usize = 4;
+const BYTES_A_TAP: u64 = size_of::<f64>() as u64;
+const BYTES_A_BIN: u64 = size_of::<Complex<f64>>() as u64;
+pub const RESPONSE_BYTES_AT_MOST: u64 = 512 * 1_024 * 1_024;
+
+fn smooth_length_from(least: usize) -> usize {
+    (least.max(2).next_multiple_of(2)..)
+        .step_by(2)
+        .find(|length| {
+            let mut rest = *length;
+            for factor in [2, 3, 5] {
+                while rest.is_multiple_of(factor) {
+                    rest /= factor;
+                }
+            }
+            rest == 1
+        })
+        .unwrap_or(least)
+}
+
+fn refused_over(bytes: u64) -> Result<()> {
+    if bytes > RESPONSE_BYTES_AT_MOST {
+        return Err(Error::ResponseTooLarge {
+            bytes,
+            at_most: RESPONSE_BYTES_AT_MOST,
+        });
+    }
+    Ok(())
+}
 
 pub type Taps = Arc<[Vec<f64>]>;
 
@@ -59,24 +89,29 @@ impl Impulse {
     }
 
     pub fn loudest_gain(&self) -> f64 {
-        let longest = self.frames().max(1);
-        let size = (longest * SPECTRUM_POINTS_A_TAP).next_power_of_two();
-        let fft = FftPlanner::new().plan_fft_forward(size);
-        let mut spectrum = vec![Complex::default(); size];
+        let size = smooth_length_from(self.frames().max(1) * SPECTRUM_POINTS_A_TAP);
+        let fft = RealFftPlanner::<f64>::new().plan_fft_forward(size);
+        let mut window = fft.make_input_vec();
+        let mut spectrum = fft.make_output_vec();
+        let mut scratch = fft.make_scratch_vec();
         let mut loudest = 0.0_f64;
         for channel in &self.taps {
-            spectrum.fill(Complex::default());
-            for (slot, tap) in spectrum.iter_mut().zip(channel) {
-                *slot = Complex::new(*tap, 0.0);
+            window.fill(0.0);
+            for (slot, tap) in window.iter_mut().zip(channel) {
+                *slot = *tap;
             }
-            fft.process(&mut spectrum);
+            if fft
+                .process_with_scratch(&mut window, &mut spectrum, &mut scratch)
+                .is_err()
+            {
+                continue;
+            }
             loudest = spectrum
                 .iter()
-                .take(size / 2 + 1)
-                .map(|bin| bin.norm())
+                .map(Complex::norm_sqr)
                 .fold(loudest, f64::max);
         }
-        loudest
+        loudest.sqrt()
     }
 
     #[must_use]
@@ -104,6 +139,9 @@ impl Impulse {
         if let Some((_, held)) = self.at_rates.lock().iter().find(|(held, _)| *held == rate) {
             return Ok(Arc::clone(held));
         }
+        let resampled_frames =
+            (self.frames() as u64 * u64::from(rate.hz())).div_ceil(u64::from(self.rate.hz()));
+        refused_over(resampled_frames * self.taps.len() as u64 * BYTES_A_TAP)?;
         let resampled: Taps = self
             .taps
             .iter()
@@ -143,9 +181,11 @@ fn resampled(taps: &[f64], from: SampleRate, to: SampleRate) -> Result<Vec<f64>>
         .collect())
 }
 
+type Spectra = Arc<[Vec<Complex<f64>>]>;
+
 struct Channel {
     partition: usize,
-    filter: Vec<Vec<Complex<f64>>>,
+    filter: Spectra,
     history: Vec<Vec<Complex<f64>>>,
     head: usize,
     previous: Vec<f64>,
@@ -154,29 +194,10 @@ struct Channel {
 }
 
 impl Channel {
-    fn of(
-        taps: &[f64],
-        partition: usize,
-        fft: &dyn Fft<f64>,
-        scratch: &mut [Complex<f64>],
-    ) -> Self {
-        let partitions = taps.len().div_ceil(partition).max(1);
-        let filter = (0..partitions)
-            .map(|nth| {
-                let mut spectrum = vec![Complex::default(); 2 * partition];
-                for (slot, tap) in spectrum
-                    .iter_mut()
-                    .zip(taps.iter().skip(nth * partition).take(partition))
-                {
-                    *slot = Complex::new(*tap, 0.0);
-                }
-                fft.process_with_scratch(&mut spectrum, scratch);
-                spectrum
-            })
-            .collect::<Vec<_>>();
+    fn of(filter: Spectra, partition: usize) -> Self {
         let mut channel = Self {
             partition,
-            history: vec![vec![Complex::default(); 2 * partition]; filter.len()],
+            history: vec![vec![Complex::default(); partition + 1]; filter.len()],
             filter,
             head: 0,
             previous: vec![0.0; partition],
@@ -206,48 +227,39 @@ impl Channel {
     }
 
     fn convolved(&mut self, convolving: &mut Convolving) {
-        let Convolving {
-            fft,
-            ifft,
-            scratch,
-            summed,
-        } = convolving;
-        let spectrum = &mut self.history[self.head];
-        for (slot, sample) in spectrum
-            .iter_mut()
-            .zip(self.previous.iter().chain(self.current.iter()))
-        {
-            *slot = Complex::new(*sample, 0.0);
-        }
-        fft.process_with_scratch(spectrum, scratch);
+        let Some(spectrum) = self.history.get_mut(self.head) else {
+            return;
+        };
+        convolving.forward(self.previous.iter().chain(&self.current).copied(), spectrum);
 
-        summed.fill(Complex::default());
-        let partitions = self.filter.len();
-        for (nth, filter) in self.filter.iter().enumerate() {
-            let held = &self.history[(self.head + partitions - nth) % partitions];
-            for ((sum, input), tap) in summed.iter_mut().zip(held).zip(filter) {
+        convolving.summed.fill(Complex::default());
+        let (newer, older) = self.history.split_at(self.head + 1);
+        let newest_first = newer.iter().rev().chain(older.iter().rev());
+        for (held, filter) in newest_first.zip(self.filter.iter()) {
+            for ((sum, input), tap) in convolving.summed.iter_mut().zip(held).zip(filter) {
                 *sum += input * tap;
             }
         }
-        ifft.process_with_scratch(summed, scratch);
-        let scale = 1.0 / (2 * self.partition) as f64;
-        self.ready.extend(
-            summed[self.partition..]
-                .iter()
-                .map(|sample| sample.re * scale),
-        );
+        convolving.inverse_into(&mut self.ready, self.partition);
 
         std::mem::swap(&mut self.previous, &mut self.current);
         self.current.clear();
-        self.head = (self.head + 1) % partitions;
+        self.head = if self.head + 1 == self.history.len() {
+            0
+        } else {
+            self.head + 1
+        };
     }
 }
 
 struct Convolving {
-    fft: Arc<dyn Fft<f64>>,
-    ifft: Arc<dyn Fft<f64>>,
-    scratch: Vec<Complex<f64>>,
+    fft: Arc<dyn RealToComplex<f64>>,
+    ifft: Arc<dyn ComplexToReal<f64>>,
+    forward_scratch: Vec<Complex<f64>>,
+    inverse_scratch: Vec<Complex<f64>>,
+    window: Vec<f64>,
     summed: Vec<Complex<f64>>,
+    time: Vec<f64>,
 }
 
 pub struct Convolver {
@@ -260,21 +272,73 @@ pub struct Convolver {
 
 impl Convolving {
     fn planned(partition: usize) -> Self {
-        let mut planner = FftPlanner::new();
+        let mut planner = RealFftPlanner::new();
         let fft = planner.plan_fft_forward(2 * partition);
         let ifft = planner.plan_fft_inverse(2 * partition);
-        let scratch = vec![
-            Complex::default();
-            fft.get_inplace_scratch_len()
-                .max(ifft.get_inplace_scratch_len())
-        ];
         Self {
+            forward_scratch: fft.make_scratch_vec(),
+            inverse_scratch: ifft.make_scratch_vec(),
+            window: fft.make_input_vec(),
+            summed: fft.make_output_vec(),
+            time: ifft.make_output_vec(),
             fft,
             ifft,
-            scratch,
-            summed: vec![Complex::default(); 2 * partition],
         }
     }
+
+    fn forward(&mut self, samples: impl Iterator<Item = f64>, spectrum: &mut [Complex<f64>]) {
+        self.window.fill(0.0);
+        for (slot, sample) in self.window.iter_mut().zip(samples) {
+            *slot = sample;
+        }
+        if self
+            .fft
+            .process_with_scratch(&mut self.window, spectrum, &mut self.forward_scratch)
+            .is_err()
+        {
+            spectrum.fill(Complex::default());
+        }
+    }
+
+    fn inverse_into(&mut self, ready: &mut VecDeque<f64>, partition: usize) {
+        let scale = 1.0 / (2 * partition) as f64;
+        if self
+            .ifft
+            .process_with_scratch(&mut self.summed, &mut self.time, &mut self.inverse_scratch)
+            .is_err()
+        {
+            self.time.fill(0.0);
+        }
+        ready.extend(
+            self.time
+                .iter()
+                .skip(partition)
+                .map(|sample| sample * scale),
+        );
+    }
+
+    fn filter_of(&mut self, taps: &[f64], partition: usize) -> Spectra {
+        let partitions = taps.len().div_ceil(partition).max(1);
+        (0..partitions)
+            .map(|nth| {
+                let mut spectrum = vec![Complex::default(); partition + 1];
+                self.forward(
+                    taps.iter().skip(nth * partition).take(partition).copied(),
+                    &mut spectrum,
+                );
+                spectrum
+            })
+            .collect()
+    }
+}
+
+fn spectra_bytes(taps: &[Vec<f64>], channels: usize, partition: usize) -> u64 {
+    let longest = taps.iter().map(Vec::len).max().unwrap_or(0);
+    let partitions = longest.div_ceil(partition).max(1) as u64;
+    let held = taps.len().min(channels) as u64 + channels as u64;
+    held.saturating_mul(partitions)
+        .saturating_mul(partition as u64 + 1)
+        .saturating_mul(BYTES_A_BIN)
 }
 
 impl Convolver {
@@ -299,17 +363,15 @@ impl Processor for Convolver {
             self.convolving = Convolving::planned(partition);
         }
         let count = usize::from(spec.channel_count().get());
-        let fft = Arc::clone(&self.convolving.fft);
-        let scratch = &mut self.convolving.scratch;
+        refused_over(spectra_bytes(&taps, count, partition))?;
+        let filters: Vec<Spectra> = taps
+            .iter()
+            .take(count)
+            .map(|channel| self.convolving.filter_of(channel, partition))
+            .collect();
         self.channels = (0..count)
-            .map(|channel| {
-                Channel::of(
-                    &taps[channel % taps.len()],
-                    partition,
-                    fft.as_ref(),
-                    scratch,
-                )
-            })
+            .filter_map(|channel| filters.get(channel % filters.len().max(1)))
+            .map(|filter| Channel::of(Arc::clone(filter), partition))
             .collect();
         self.tail = taps.iter().map(Vec::len).max().unwrap_or(0) + partition;
         Ok(max_frames_in)
@@ -510,5 +572,87 @@ mod tests {
             &at_ours,
             &impulse.at(RATE).expect("the same response")
         ));
+    }
+
+    #[test]
+    fn a_mono_response_holds_one_spectrum_for_every_channel() {
+        let impulse = Arc::new(Impulse::new(RATE, vec![vec![0.5; 3_000]]).expect("an impulse"));
+        let mut stage = Convolver::new(impulse);
+        stage.prepare(stereo(), 512).expect("a prepared stage");
+
+        assert_eq!(stage.channels.len(), 2);
+        assert!(Arc::ptr_eq(
+            &stage.channels[0].filter,
+            &stage.channels[1].filter
+        ));
+    }
+
+    #[test]
+    fn a_stereo_response_keeps_a_spectrum_a_channel() {
+        let impulse = Arc::new(
+            Impulse::new(RATE, vec![vec![0.5; 3_000], vec![0.25; 3_000]]).expect("an impulse"),
+        );
+        let mut stage = Convolver::new(impulse);
+        stage.prepare(stereo(), 512).expect("a prepared stage");
+
+        assert!(!Arc::ptr_eq(
+            &stage.channels[0].filter,
+            &stage.channels[1].filter
+        ));
+    }
+
+    #[test]
+    fn a_response_whose_spectra_outgrow_the_bound_is_refused_before_any_is_made() {
+        let frames = RESPONSE_BYTES_AT_MOST as usize / (3 * 1_025 * 16) * 1_024 * 6 / 5;
+        let impulse = Arc::new(Impulse::new(RATE, vec![vec![0.0; frames]]).expect("an impulse"));
+        let mut stage = Convolver::new(impulse);
+
+        let refused = stage
+            .prepare(stereo(), 512)
+            .expect_err("a response too large");
+        assert!(matches!(
+            refused,
+            Error::ResponseTooLarge { bytes, at_most }
+                if bytes > at_most && at_most == RESPONSE_BYTES_AT_MOST
+        ));
+    }
+
+    #[test]
+    fn a_response_redrawn_beyond_the_bound_is_refused_before_it_is_resampled() {
+        let impulse =
+            Impulse::new(SampleRate::HZ_48000, vec![vec![0.0; 5_000_000]; 4]).expect("an impulse");
+
+        let refused = impulse.at(SampleRate::HZ_192000).expect_err("too large");
+        assert!(matches!(refused, Error::ResponseTooLarge { .. }));
+    }
+
+    #[test]
+    fn the_loudest_gain_is_the_peak_of_the_magnitude_response() {
+        let flat = Impulse::new(RATE, vec![vec![1.0]]).expect("an impulse");
+        let doubled = Impulse::new(RATE, vec![vec![0.5, 0.5]]).expect("an impulse");
+        let alternating =
+            Impulse::new(RATE, vec![vec![1.0, -1.0], vec![0.25]]).expect("an impulse");
+
+        assert!((flat.loudest_gain() - 1.0).abs() < 1e-9);
+        assert!((doubled.loudest_gain() - 1.0).abs() < 1e-9);
+        assert!((alternating.loudest_gain() - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_spectrum_grid_is_a_short_even_length_of_small_factors() {
+        for least in [1, 2, 7, 4_001, 1_000_003, 7_680_000] {
+            let length = smooth_length_from(least);
+            let mut rest = length;
+            for factor in [2, 3, 5] {
+                while rest.is_multiple_of(factor) {
+                    rest /= factor;
+                }
+            }
+            assert!(
+                length >= least && length.is_multiple_of(2) && rest == 1,
+                "{least}: {length}"
+            );
+            assert!(length <= least.max(2) * 11 / 10 + 4, "{least}: {length}");
+        }
     }
 }

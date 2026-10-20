@@ -39,6 +39,9 @@ pub enum Error {
 
     #[error("{requested} filter phases are fewer than the {min} a resampler needs")]
     TooFewPhases { requested: u32, min: u32 },
+
+    #[error("a response needing {bytes} bytes is more than the {at_most} a convolver may hold")]
+    ResponseTooLarge { bytes: u64, at_most: u64 },
 }
 
 pub type Result<T> = result::Result<T, Error>;

@@ -117,6 +117,7 @@ here, add it there.
   a second copy of a small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.
 - **`rustfft`**: `resonate-dsp`'s, `-analysis`', library dev; at symphonia's `opt-simd` version.
+  **`realfft`**: `resonate-dsp`'s convolver, over the same `rustfft`, with the same SIMD features.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
 - **`quinn`** (`runtime-tokio`, `rustls-ring`) and **`tokio`**: the sync stack alone
   (`resonate-sync`, `resonate-server`), not the HTTP client's way: hole punching needs UDP, so the

@@ -94,6 +94,7 @@ image = {
     features = ["bmp", "gif", "jpeg", "png", "webp"]
 }
 
+realfft = { version = "3.5.0", default-features = false, features = ["avx", "sse", "neon"] }
 rustfft = { version = "6.4.1", default-features = false, features = ["avx", "sse", "neon"] }
 rusty-chromaprint = { version = "0.3.0", default-features = false }
 
@@ -260,6 +261,9 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.rustfft]
+opt-level = 3
+
+[profile.dev.package.realfft]
 opt-level = 3
 
 [profile.dev.package.rusty-chromaprint]

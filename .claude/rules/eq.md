@@ -116,8 +116,15 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   non-finite tap. `engine::read_impulse` decodes any codec-readable file, at most `LONGEST_IMPULSE`
   (10 s), **with headroom**: `Impulse::with_headroom` scales every channel by the reciprocal of the
   greatest magnitude where above unity, so a dip-boosting correction never clips; a quieter response
-  is never raised. `Convolver`: uniformly partitioned overlap-save over `rustfft`, one partition
-  behind (`latency_frames`); `partition_frames_at` grows it with the rate (flat cost); a track's end
+  is never raised. `Convolver`: uniformly partitioned overlap-save over `realfft` (real
+  input, `partition + 1` bins a spectrum), one partition behind (`latency_frames`); a response's
+  spectrum is made once a distinct response channel and shared by `Arc` across the stream's channels
+  that wrap onto it (a mono response is transformed once); the history ring walks newest first by
+  splitting at the head, no `%` per partition; `Impulse::loudest_gain` transforms on a 2-3-5-smooth
+  even length of at least four points a tap, not a power of two. **A response is bounded in bytes**:
+  `RESPONSE_BYTES_AT_MOST` (512 MiB) refuses with `Error::ResponseTooLarge` both a redraw at another
+  rate (`Impulse::at`, taps held) and a `prepare` whose filter and history spectra would pass it,
+  before any is allocated; `partition_frames_at` grows it with the rate (flat cost); a track's end
   flushes the tail.
 - **`EngineConfig::convolution`, `Command::SetConvolution`, key `convolution`.**
   `OutputPlan::convolution` makes the plan `Converted`; a change rebinds at the position, no retune.
