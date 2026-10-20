@@ -118,68 +118,6 @@ struct CollectionsListed: Sendable {
     let artistRuns: [LetterRun]
 }
 
-struct QueueListed: Equatable {
-    let queue: UInt64
-    let catalog: UInt64
-
-    init(_ state: Snapshot) {
-        queue = state.queueRevision
-        catalog = state.catalogRevision
-    }
-
-    func isDue(after read: QueueListed?, since readAt: ContinuousClock.Instant) -> Bool {
-        guard let read else { return true }
-        if queue != read.queue { return true }
-        return catalog != read.catalog && readAt.duration(to: .now) >= Self.catalogRereadAfter
-    }
-
-    static let catalogRereadAfter = Duration.seconds(3)
-}
-
-struct SteeredSong {
-    let track: Track
-    let index: Int
-}
-
-struct Steered {
-    var transport: Transport?
-    var shuffle: Bool?
-    var repeatMode: UInt32?
-    var song: SteeredSong?
-    var restarted = false
-
-    func applied(to state: Snapshot) -> Snapshot {
-        var steered = state
-        if let transport { steered.transport = transport }
-        if let shuffle { steered.shuffle = shuffle }
-        if let repeatMode { steered.repeat = repeatMode }
-        if let song {
-            steered.current = song.track
-            steered.queueIndex = UInt32(song.index)
-            steered.positionMs = 0
-            steered.durationMs = song.track.durationMs
-        } else if restarted {
-            steered.positionMs = 0
-        }
-        return steered
-    }
-}
-
-struct Settling {
-    private(set) var asked = 0
-    private(set) var answered = 0
-
-    var settled: Bool { asked == answered }
-
-    mutating func ask() {
-        asked += 1
-    }
-
-    mutating func answer() {
-        answered += 1
-    }
-}
-
 final class PlayerWake: PlayerWatch, @unchecked Sendable {
     private weak var library: Library?
 
@@ -200,12 +138,6 @@ final class Library {
     nonisolated private static let playlistFileBytesAtMost = 8 * 1024 * 1024
     private static let savedEvery: Duration = .seconds(5)
     private static let busyAfterAsking: Duration = .seconds(2)
-    private static let pollBusy: Duration = .milliseconds(250)
-    private static let pollNearEnd: Duration = .milliseconds(100)
-    private static let nearTheEndMs: UInt64 = 1500
-    private static let previousRestartsPastMs: UInt64 = 3000
-    private static let pollIdle: Duration = .seconds(1)
-    private static let pollBackground: Duration = .seconds(2)
     private static let noticeLasts: Duration = .seconds(6)
     private static let documentsSettleFor: Duration = .seconds(2)
 
@@ -427,7 +359,7 @@ final class Library {
         queueListed = nil
         queueUnreadable = nil
         while !Task.isCancelled {
-            var wait = Self.pollBusy
+            var wait = Polling.busy
             let steeringAsked = steering.asked
             let steeringSettled = steering.settled
             if lastSaved.duration(to: .now) >= Self.savedEvery {
@@ -437,7 +369,12 @@ final class Library {
             wakeOwed = false
             do {
                 let state = try await Work.inOrder { try native.snapshot() }
-                wait = pollInterval(foreground: features.foreground, state: state, analysing: features.analysisBusy)
+                wait = Polling.interval(
+                    foreground: features.foreground,
+                    state: state,
+                    analysing: features.analysisBusy,
+                    asked: ContinuousClock.now < busyUntil
+                )
                 let steeringFresh = steeringSettled && steering.asked == steeringAsked
 
                 pollFailures[.snapshot] = nil
@@ -514,21 +451,6 @@ final class Library {
         }
     }
 
-    private func pollInterval(foreground: Bool, state: Snapshot, analysing: Bool) -> Duration {
-        if ContinuousClock.now < busyUntil { return Self.pollBusy }
-        let moving = state.transport == .playing || state.transport == .loading
-        switch (foreground, moving) {
-        case (true, true): return Self.endingSoon(state) ? Self.pollNearEnd : Self.pollBusy
-        case (true, false): return analysing ? Self.pollBusy : Self.pollIdle
-        case (false, _): return Self.pollBackground
-        }
-    }
-
-    private static func endingSoon(_ state: Snapshot) -> Bool {
-        state.transport == .playing && state.durationMs > state.positionMs
-            && state.durationMs - state.positionMs <= nearTheEndMs
-    }
-
     private static func read(queueOf native: MobilePlayer, shown: [Track]) async -> Result<[Track]?, any Swift.Error> {
         do {
             return .success(try await Work.onScreen {
@@ -551,7 +473,7 @@ final class Library {
 
     private func publish(_ state: Snapshot) {
         clock.follow(state)
-        if snapshot.map(Self.steady) != Self.steady(state) { snapshot = state }
+        if snapshot.map(Polling.steady) != Polling.steady(state) { snapshot = state }
         if currentId != state.current?.id {
             currentId = state.current?.id
             shownFailure = nil
@@ -566,19 +488,6 @@ final class Library {
             waitingForADevice = state.waiting
             if let begun = state.waiting { show(begun, as: .failure) }
         }
-    }
-
-    private static func steady(_ state: Snapshot) -> Snapshot {
-        var steady = state
-        steady.positionMs = 0
-        steady.durationMs = 0
-        steady.sleepRemainingMs = state.sleepRemainingMs.map { _ in 0 }
-        steady.outputRate = 0
-        steady.underruns = 0
-        steady.failure = nil
-        steady.queueRevision = 0
-        steady.catalogRevision = 0
-        return steady
     }
 
     private func reportPolling(_ part: PollPart, _ failure: any Swift.Error) {
@@ -770,8 +679,7 @@ final class Library {
     }
 
     func previous() {
-        let restarts = clock.positionMs > Self.previousRestartsPastMs && clock.durationMs > Self.previousRestartsPastMs
-        guard !restarts else {
+        guard !Steering.previousRestarts(positionMs: clock.positionMs, durationMs: clock.durationMs) else {
             steer({ $0.song = nil; $0.restarted = true }) { try $0.previous() }
             return
         }
@@ -787,11 +695,7 @@ final class Library {
     }
 
     private func neighbour(_ step: Int) -> SteeredSong? {
-        guard let playing = playingQueueRow, !queue.isEmpty else { return nil }
-        let at = playing + step
-        if queue.indices.contains(at) { return SteeredSong(track: queue[at], index: at) }
-        guard step > 0, repeatMode != .off else { return nil }
-        return SteeredSong(track: queue[0], index: 0)
+        Steering.neighbour(of: playingQueueRow, step: step, in: queue, repeating: repeatMode != .off)
     }
 
     func seek(to position: UInt64) {
@@ -1822,91 +1726,3 @@ final class FolderCovers {
     }
 }
 
-final class Tally: @unchecked Sendable {
-    enum Companion {
-        case cover
-        case lyrics
-    }
-
-    private static let postedEvery = Duration.milliseconds(200)
-
-    private let lock = NSLock()
-    private var read = 0
-    private var posted: ContinuousClock.Instant?
-    private var unreadable = 0
-    private var firstUnreadable: String?
-    private var companions: [Companion: Int] = [:]
-    private var firstCompanion: String?
-    private var unreached = 0
-    private var firstUnreached: String?
-
-    var complete: Bool {
-        lock.withLock { unreached == 0 }
-    }
-
-    func skipped(_ path: String, _ reason: any Swift.Error) {
-        lock.withLock {
-            unreached += 1
-            if firstUnreached == nil { firstUnreached = "\(path): \(explained(reason))" }
-        }
-    }
-
-    func indexed() -> Int? {
-        lock.withLock {
-            read += 1
-            let now = ContinuousClock.now
-            if let posted, posted.duration(to: now) < Self.postedEvery { return nil }
-            posted = now
-            return read
-        }
-    }
-
-    func failed(_ name: String, _ reason: any Swift.Error) {
-        lock.withLock {
-            unreadable += 1
-            if firstUnreadable == nil { firstUnreadable = "\(name): \(explained(reason))" }
-        }
-    }
-
-    func lost(_ kind: Companion, _ name: String, _ reason: any Swift.Error) {
-        lock.withLock {
-            companions[kind, default: 0] += 1
-            if firstCompanion == nil { firstCompanion = "\(name): \(explained(reason))" }
-        }
-    }
-
-    var count: Int {
-        lock.withLock { read }
-    }
-
-    var summary: String {
-        lock.withLock { "Read \(counted(read, "song"))" + trouble }
-    }
-
-    var foundSummary: String {
-        lock.withLock { "Found \(counted(read, "new or changed song"))" + trouble }
-    }
-
-    var stoppedSummary: String {
-        lock.withLock { "Stopped reading after \(counted(read, "song"))" + trouble }
-    }
-
-    private var trouble: String {
-        var told = ""
-        if unreached > 0 {
-            told += "; \(counted(unreached, "folder")) could not be read" + (firstUnreached.map { " (\($0))" } ?? "")
-        }
-        if unreadable > 0 {
-            told += "; \(unreadable) unreadable" + (firstUnreadable.map { " (\($0))" } ?? "")
-        }
-        let covers = companions[.cover] ?? 0
-        let sheets = companions[.lyrics] ?? 0
-        if covers + sheets > 0 {
-            let lost = [covers > 0 ? counted(covers, "cover") : nil, sheets > 0 ? counted(sheets, "lyrics sheet") : nil]
-                .compactMap { $0 }
-                .joined(separator: " and ")
-            told += "; \(lost) could not be kept" + (firstCompanion.map { " (\($0))" } ?? "")
-        }
-        return told
-    }
-}
