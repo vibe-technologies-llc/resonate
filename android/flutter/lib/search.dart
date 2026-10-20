@@ -127,16 +127,13 @@ class _SearchPageState extends State<SearchPage> {
                 AppGeometry.pageInset,
                 AppGeometry.pageTop,
                 AppGeometry.pageInset,
-                8,
+                AppSpace.s,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Search',
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
-                  const SizedBox(height: 16),
+                  const LargeTitle('Search'),
+                  const SizedBox(height: AppSpace.l),
                   TextField(
                     controller: _controller,
                     onChanged: _onSearchChanged,
@@ -151,6 +148,7 @@ class _SearchPageState extends State<SearchPage> {
                       prefixIcon: const Icon(Icons.search_rounded),
                       suffixIcon: query.isNotEmpty
                           ? IconButton(
+                              tooltip: 'Clear search',
                               icon: const Icon(Icons.close_rounded),
                               onPressed: () {
                                 _controller.clear();
@@ -160,23 +158,16 @@ class _SearchPageState extends State<SearchPage> {
                           : null,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpace.m),
                   Row(
                     children: [
-                      ChoiceChip(
-                        label: const Text('Your library'),
-                        selected: _place == 'Your library',
-                        showCheckmark: false,
-                        onSelected: (_) => _switchPlace('Your library'),
+                      Expanded(
+                        child: ChoiceRow(
+                          labels: const ['Your library', 'Online'],
+                          selected: _place,
+                          onSelected: _switchPlace,
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Online'),
-                        selected: _place == 'Online',
-                        showCheckmark: false,
-                        onSelected: (_) => _switchPlace('Online'),
-                      ),
-                      const Spacer(),
                       if (_place == 'Online')
                         ActionIcon(
                           icon: Icons.bookmark_border_rounded,
@@ -210,6 +201,69 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  static const _sectionPadding = EdgeInsets.fromLTRB(
+    AppGeometry.pageInset,
+    AppSpace.l,
+    AppGeometry.pageInset,
+    AppSpace.xs,
+  );
+
+  static const _pageEdges = EdgeInsets.symmetric(
+    horizontal: AppGeometry.pageInset,
+  );
+
+  Widget _bottomSpace(BuildContext context) => SizedBox(
+    height: MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+  );
+
+  void _openAlbum(String query, RowData album) {
+    widget.model.keepRecentSearch(query);
+    widget.open('collection', {...album, 'kind': 'album'});
+  }
+
+  void _openLibraryArtist(String query, RowData artist) {
+    widget.model.keepRecentSearch(query);
+    widget.open('collection', {
+      'kind': 'artist',
+      'key': artist['name'],
+      'title': artist['name'],
+      'artworkTrack': artist['artworkTrack'],
+    });
+  }
+
+  AlbumCard _albumCard(String query, RowData album) => AlbumCard(
+    model: widget.model,
+    album: album,
+    onTap: () => _openAlbum(query, album),
+    titleRanges: _lit.of('ALBUM', '${album['title']}'),
+    detailRanges: _lit.of('ARTIST', '${album['artist']}'),
+  );
+
+  Widget _albumGrid(String query, List<RowData> albums) {
+    const widest = AppGeometry.carouselCover + 20;
+    const across = AppSpace.l;
+    return SliverPadding(
+      padding: _pageEdges,
+      sliver: SliverLayoutBuilder(
+        builder: (context, constraints) {
+          final extent = constraints.crossAxisExtent;
+          final columns = (extent / (widest + across)).ceil().clamp(1, 12);
+          final tile = (extent - across * (columns - 1)) / columns;
+          return SliverGrid.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: 20,
+              crossAxisSpacing: across,
+              mainAxisExtent: tile + shelfCaptionHeight(context),
+            ),
+            itemCount: albums.length,
+            itemBuilder: (context, i) => _albumCard(query, albums[i]),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildLibraryContent(
     BuildContext context,
     String query,
@@ -222,48 +276,37 @@ class _SearchPageState extends State<SearchPage> {
   ) {
     if (query.isEmpty) {
       return ListView(
-        padding: pageInsets(context, top: 8),
+        padding: EdgeInsets.only(
+          top: AppSpace.s,
+          bottom: MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+        ),
         children: [
           if (widget.model.recentSearches.isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Recent searches',
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(
-                  onPressed: widget.model.forgetRecentSearches,
-                  child: const Text('Clear'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Card.filled(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: widget.model.recentSearches
-                    .map(
-                      (recent) => ListTile(
-                        leading: const Icon(Icons.history_rounded),
-                        title: Text(recent),
-                        trailing: const Icon(
-                          Icons.north_west_rounded,
-                          size: 18,
-                        ),
-                        onTap: () {
-                          _controller.text = recent;
-                          _onSearchChanged(recent);
-                        },
-                      ),
-                    )
-                    .toList(),
+            SectionTitle(
+              'Recent searches',
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppSpace.s,
+                AppSpace.s,
+                AppSpace.xs,
+              ),
+              action: TextButton(
+                onPressed: widget.model.forgetRecentSearches,
+                child: const Text('Clear'),
               ),
             ),
-            const SizedBox(height: 24),
+            ...widget.model.recentSearches.map(
+              (recent) => ListTile(
+                leading: const Icon(Icons.history_rounded),
+                title: Text(recent),
+                trailing: const Icon(Icons.north_west_rounded, size: 18),
+                onTap: () {
+                  _controller.text = recent;
+                  _onSearchChanged(recent);
+                },
+              ),
+            ),
+            const SizedBox(height: AppSpace.xl),
           ],
           const EmptyState(
             icon: Icons.search_rounded,
@@ -276,112 +319,98 @@ class _SearchPageState extends State<SearchPage> {
 
     final matchedNothing =
         tracks.isEmpty && albums.isEmpty && artists.isEmpty && !_searching;
+    final scopes = <(String, String)>[
+      ('Top', 'Top'),
+      (
+        'Songs',
+        trackCount > tracks.length
+            ? 'Songs (${tracks.length} of $trackCount)'
+            : 'Songs ($trackCount)',
+      ),
+      if (albums.isNotEmpty) ('Albums', 'Albums (${albums.length})'),
+      if (artists.isNotEmpty) ('Artists', 'Artists (${artists.length})'),
+    ];
 
     return CustomScrollView(
       slivers: [
         if (reads.isNotEmpty)
           SliverToBoxAdapter(
-            child: SizedBox(
-              height: 44,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                scrollDirection: Axis.horizontal,
-                itemCount: reads.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, i) => Glass(
-                  radius: 16,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: Text(
-                    reads[i],
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppSpace.xs,
+                AppGeometry.pageInset,
+                AppSpace.xs,
+              ),
+              child: Row(
+                children: [
+                  for (final read in reads)
+                    Padding(
+                      padding: const EdgeInsets.only(right: AppSpace.s),
+                      child: Pill(read, icon: Icons.tune_rounded),
                     ),
-                  ),
-                ),
+                ],
               ),
             ),
           ),
         if (didYouMean != null && didYouMean.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  _controller.text = didYouMean;
-                  widget.model.keepRecentSearch(didYouMean);
-                  _onSearchChanged(didYouMean);
-                },
-                child: Glass(
-                  radius: 16,
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.auto_fix_high_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            text: 'Did you mean ',
-                            children: [
-                              TextSpan(
-                                text: didYouMean,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const TextSpan(text: '?'),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppSpace.s,
+                AppGeometry.pageInset,
+                AppSpace.s,
+              ),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: ActionChip(
+                  avatar: Icon(
+                    Icons.auto_fix_high_rounded,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
+                  label: Text.rich(
+                    TextSpan(
+                      text: 'Did you mean ',
+                      children: [
+                        TextSpan(
+                          text: didYouMean,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const TextSpan(text: '?'),
+                      ],
+                    ),
+                  ),
+                  onPressed: () {
+                    _controller.text = didYouMean;
+                    widget.model.keepRecentSearch(didYouMean);
+                    _onSearchChanged(didYouMean);
+                  },
                 ),
               ),
             ),
           ),
         if (!matchedNothing)
           SliverToBoxAdapter(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-              child: Row(
-                children:
-                    [
-                      ('Top', 'Top'),
-                      (
-                        'Songs',
-                        trackCount > tracks.length
-                            ? 'Songs (${tracks.length} of $trackCount)'
-                            : 'Songs ($trackCount)',
-                      ),
-                      if (albums.isNotEmpty)
-                        ('Albums', 'Albums (${albums.length})'),
-                      if (artists.isNotEmpty)
-                        ('Artists', 'Artists (${artists.length})'),
-                    ].map((scope) {
-                      final (key, label) = scope;
-                      final selected = _libraryScope == key;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(label),
-                          selected: selected,
-                          showCheckmark: false,
-                          onSelected: (_) =>
-                              setState(() => _libraryScope = key),
-                        ),
-                      );
-                    }).toList(),
+            child: ChoiceRow(
+              padding: const EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                AppSpace.s,
+                AppGeometry.pageInset,
+                AppSpace.xs,
+              ),
+              labels: [for (final (_, label) in scopes) label],
+              selected: scopes
+                  .firstWhere(
+                    (scope) => scope.$1 == _libraryScope,
+                    orElse: () => scopes.first,
+                  )
+                  .$2,
+              onSelected: (label) => setState(
+                () => _libraryScope = scopes
+                    .firstWhere((scope) => scope.$2 == label)
+                    .$1,
               ),
             ),
           ),
@@ -407,24 +436,12 @@ class _SearchPageState extends State<SearchPage> {
         else ...[
           if (_libraryScope == 'Top' || _libraryScope == 'Songs') ...[
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
-                child: Row(
-                  children: [
-                    Text(
-                      'Songs',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    if (_libraryScope == 'Top' && trackCount > 5)
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _libraryScope = 'Songs'),
-                        child: const Text('See all'),
-                      ),
-                  ],
-                ),
+              child: SectionTitle(
+                'Songs',
+                padding: _sectionPadding,
+                onSeeAll: _libraryScope == 'Top' && trackCount > 5
+                    ? () => setState(() => _libraryScope = 'Songs')
+                    : null,
               ),
             ),
             SliverList.builder(
@@ -445,7 +462,12 @@ class _SearchPageState extends State<SearchPage> {
             if (_libraryScope == 'Songs' && trackCount > tracks.length)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppGeometry.pageInset,
+                    AppSpace.m,
+                    AppGeometry.pageInset,
+                    AppSpace.s,
+                  ),
                   child: Text(
                     'Showing the first ${tracks.length} of $trackCount songs. Narrow the search to see the rest.',
                     style: Theme.of(context).textTheme.bodySmall,
@@ -456,241 +478,99 @@ class _SearchPageState extends State<SearchPage> {
           if ((_libraryScope == 'Top' || _libraryScope == 'Albums') &&
               albums.isNotEmpty) ...[
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                child: Row(
-                  children: [
-                    Text(
-                      'Albums',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    if (_libraryScope == 'Top' && albums.length > 6)
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _libraryScope = 'Albums'),
-                        child: const Text('See all'),
-                      ),
-                  ],
-                ),
+              child: SectionTitle(
+                'Albums',
+                padding: _sectionPadding,
+                onSeeAll: _libraryScope == 'Top' && albums.length > 6
+                    ? () => setState(() => _libraryScope = 'Albums')
+                    : null,
               ),
             ),
             if (_libraryScope == 'Top')
               SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 200,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: albums.length.clamp(0, 6),
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, i) => SizedBox(
-                      width: 136,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () {
-                          widget.model.keepRecentSearch(query);
-                          widget.open('collection', {
-                            ...albums[i],
-                            'kind': 'album',
-                          });
-                        },
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            AspectRatio(
-                              aspectRatio: 1,
-                              child: Artwork(
-                                model: widget.model,
-                                track: widget.model.trackById(
-                                  albums[i]['artworkTrack'],
-                                ),
-                                radius: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            LitText(
-                              '${albums[i]['title']}',
-                              ranges: _lit.of('ALBUM', '${albums[i]['title']}'),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                            LitText(
-                              '${albums[i]['artist']}',
-                              ranges: _lit.of(
-                                'ARTIST',
-                                '${albums[i]['artist']}',
-                              ),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                child: Shelf(
+                  itemCount: albums.length.clamp(0, 6),
+                  itemBuilder: (context, i) => _albumCard(query, albums[i]),
                 ),
               )
             else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                sliver: SliverGrid.builder(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 14,
-                    childAspectRatio: .75,
-                  ),
-                  itemCount: albums.length,
-                  itemBuilder: (context, i) => InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () {
-                      widget.model.keepRecentSearch(query);
-                      widget.open('collection', {
-                        ...albums[i],
-                        'kind': 'album',
-                      });
-                    },
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: 1,
-                          child: Artwork(
-                            model: widget.model,
-                            track: widget.model.trackById(
-                              albums[i]['artworkTrack'],
-                            ),
-                            radius: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        LitText(
-                          '${albums[i]['title']}',
-                          ranges: _lit.of('ALBUM', '${albums[i]['title']}'),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        LitText(
-                          '${albums[i]['artist']}',
-                          ranges: _lit.of('ARTIST', '${albums[i]['artist']}'),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              _albumGrid(query, albums),
           ],
           if ((_libraryScope == 'Top' || _libraryScope == 'Artists') &&
               artists.isNotEmpty) ...[
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
-                child: Row(
-                  children: [
-                    Text(
-                      'Artists',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    if (_libraryScope == 'Top' && artists.length > 6)
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _libraryScope = 'Artists'),
-                        child: const Text('See all'),
-                      ),
-                  ],
-                ),
+              child: SectionTitle(
+                'Artists',
+                padding: _sectionPadding,
+                onSeeAll: _libraryScope == 'Top' && artists.length > 6
+                    ? () => setState(() => _libraryScope = 'Artists')
+                    : null,
               ),
             ),
-            SliverList.builder(
-              itemCount: _libraryScope == 'Top'
-                  ? artists.length.clamp(0, 6)
-                  : artists.length,
-              itemBuilder: (context, i) => ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                leading: Artwork(
-                  model: widget.model,
-                  track: widget.model.trackById(artists[i]['artworkTrack']),
-                  size: 48,
-                  radius: 24,
+            if (_libraryScope == 'Top')
+              SliverToBoxAdapter(
+                child: Shelf(
+                  itemCount: artists.length.clamp(0, 6),
+                  itemWidth: AppGeometry.artistCircle,
+                  coverHeight: AppGeometry.artistCircle,
+                  itemBuilder: (context, i) => ArtistCard(
+                    model: widget.model,
+                    artist: artists[i],
+                    nameRanges: _lit.of('ARTIST', '${artists[i]['name']}'),
+                    onTap: () => _openLibraryArtist(query, artists[i]),
+                  ),
                 ),
-                title: LitText(
-                  '${artists[i]['name']}',
-                  ranges: _lit.of('ARTIST', '${artists[i]['name']}'),
+              )
+            else
+              SliverList.builder(
+                itemCount: artists.length,
+                itemBuilder: (context, i) => CollectionRow(
+                  leading: Artwork(
+                    model: widget.model,
+                    track: widget.model.trackById(artists[i]['artworkTrack']),
+                    size: AppGeometry.rowArt,
+                    radius: AppGeometry.rowArt / 2,
+                  ),
+                  title: LitText(
+                    '${artists[i]['name']}',
+                    ranges: _lit.of('ARTIST', '${artists[i]['name']}'),
+                  ),
+                  subtitle: Text('${artists[i]['songs']} songs'),
+                  onTap: () => _openLibraryArtist(query, artists[i]),
                 ),
-                subtitle: Text('${artists[i]['songs']} songs'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  widget.model.keepRecentSearch(query);
-                  widget.open('collection', {
-                    'kind': 'artist',
-                    'key': artists[i]['name'],
-                    'title': artists[i]['name'],
-                    'artworkTrack': artists[i]['artworkTrack'],
-                  });
-                },
               ),
-            ),
           ],
           if (_libraryScope == 'Top' && trackCount < 5)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => _switchPlace('Online'),
-                  child: Glass(
-                    radius: 20,
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        const CircleAvatar(
-                          backgroundColor: Color(0xFF6D4C99),
-                          child: Icon(
-                            Icons.public_rounded,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Search online for “$query”',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                'Find releases, songs and downloads online',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.arrow_forward_rounded, size: 18),
-                      ],
+                padding: const EdgeInsets.fromLTRB(
+                  AppGeometry.pageInset,
+                  AppSpace.l,
+                  AppGeometry.pageInset,
+                  0,
+                ),
+                child: Card(
+                  child: ListTileTheme.merge(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.l,
+                      vertical: AppSpace.xs,
+                    ),
+                    child: CollectionRow(
+                      leading: const IconTile(
+                        icon: Icons.public_rounded,
+                        colors: AppGradients.online,
+                      ),
+                      title: Text('Search online for “$query”'),
+                      subtitle: const Text(
+                        'Find releases, songs and downloads online',
+                      ),
+                      onTap: () => _switchPlace('Online'),
                     ),
                   ),
                 ),
               ),
             ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height:
-                  MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
-            ),
-          ),
+          SliverToBoxAdapter(child: _bottomSpace(context)),
         ],
       ],
     );
@@ -711,55 +591,73 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     return ListView(
-      padding: pageInsets(context, top: 8),
+      padding: const EdgeInsets.only(top: AppSpace.s),
       children: [
         if (_view == _OnlineView.results)
-          Row(
-            children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'Songs', label: Text('Songs')),
-                  ButtonSegment(value: 'Albums', label: Text('Albums')),
-                  ButtonSegment(value: 'Artists', label: Text('Artists')),
-                ],
-                selected: {_onlineType},
-                onSelectionChanged: (set) {
-                  setState(() {
-                    _onlineType = set.first;
-                    _artistId = null;
-                  });
-                  if (query.isNotEmpty) _performOnlineSearch(query);
-                },
-              ),
-              const Spacer(),
-              TextButton.icon(
-                icon: const Icon(Icons.link_rounded),
-                label: const Text('Link'),
-                onPressed: () => _openMusicLink(context),
-              ),
-            ],
+          Padding(
+            padding: _pageEdges,
+            child: Row(
+              children: [
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'Songs', label: Text('Songs')),
+                    ButtonSegment(value: 'Albums', label: Text('Albums')),
+                    ButtonSegment(value: 'Artists', label: Text('Artists')),
+                  ],
+                  selected: {_onlineType},
+                  onSelectionChanged: (set) {
+                    setState(() {
+                      _onlineType = set.first;
+                      _artistId = null;
+                    });
+                    if (query.isNotEmpty) _performOnlineSearch(query);
+                  },
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.link_rounded),
+                  label: const Text('Link'),
+                  onPressed: () => _openMusicLink(context),
+                ),
+              ],
+            ),
           ),
         if (model.state['downloadStatus'] != null)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Card.filled(
-              margin: EdgeInsets.zero,
-              child: ListTile(
-                leading: const Icon(Icons.download_rounded),
-                title: Text('${model.state['downloadStatus']}'),
-                subtitle: ValueListenableBuilder<Object?>(
-                  valueListenable: model.hot('downloadedBytes'),
-                  builder: (_, bytes, _) => Text(
-                    '${(integer(bytes ?? model.state['downloadedBytes']) / 1048576).toStringAsFixed(1)} MB',
-                  ),
+            padding: const EdgeInsets.fromLTRB(
+              AppGeometry.pageInset,
+              AppSpace.s,
+              AppGeometry.pageInset,
+              AppSpace.s,
+            ),
+            child: Card(
+              child: ListTileTheme.merge(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpace.l,
+                  vertical: AppSpace.xs,
                 ),
-                trailing: model.state['downloading'] == true
-                    ? ActionIcon(
-                        icon: Icons.close_rounded,
-                        label: 'Cancel download',
-                        onPressed: () => model.call('cancelDownload'),
-                      )
-                    : null,
+                child: ListTile(
+                  leading: Icon(
+                    Icons.download_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  title: Text('${model.state['downloadStatus']}'),
+                  subtitle: ValueListenableBuilder<Object?>(
+                    valueListenable: model.hot('downloadedBytes'),
+                    builder: (_, bytes, _) => Text(
+                      '${(integer(bytes ?? model.state['downloadedBytes']) / 1048576).toStringAsFixed(1)} MB',
+                      style: const TextStyle(fontFeatures: tabularFigures),
+                    ),
+                  ),
+                  trailing: model.state['downloading'] == true
+                      ? ActionIcon(
+                          icon: Icons.close_rounded,
+                          label: 'Cancel download',
+                          onPressed: () => model.call('cancelDownload'),
+                        )
+                      : null,
+                ),
               ),
             ),
           ),
@@ -769,12 +667,24 @@ class _SearchPageState extends State<SearchPage> {
           _OnlineView.release => _onlineRelease(context),
           _OnlineView.link => _onlineLink(context),
         },
-        SizedBox(
-          height: MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
-        ),
+        _bottomSpace(context),
       ],
     );
   }
+
+  Widget _onlineAlbum(RowData album, VoidCallback onTap, {String? detail}) =>
+      CollectionRow(
+        leading: const IconTile(icon: Icons.album_rounded),
+        title: Text('${album['title']}'),
+        subtitle: Text(detail ?? '${album['artist']}'),
+        onTap: onTap,
+      );
+
+  Widget _onlineArtist(RowData artist) => CollectionRow(
+    leading: const IconTile(icon: Icons.person_rounded, circle: true),
+    title: Text('${artist['name']}'),
+    onTap: () => _openArtist(artist),
+  );
 
   List<Widget> _onlineResults(BuildContext context, String query) {
     final model = widget.model;
@@ -783,7 +693,7 @@ class _SearchPageState extends State<SearchPage> {
     final artists = rows(model.state['onlineArtists']);
     if (query.isEmpty) {
       return const [
-        SizedBox(height: 20),
+        SizedBox(height: AppSpace.l),
         EmptyState(
           icon: Icons.travel_explore_rounded,
           title: 'Explore the musical universe',
@@ -797,14 +707,20 @@ class _SearchPageState extends State<SearchPage> {
       _ => songs.length,
     };
     return [
+      const SizedBox(height: AppSpace.s),
       if (_onlineType == 'Songs')
         ...songs.map((song) => _onlineSong(context, song)),
       if (_onlineType == 'Albums') ...[
         if (_artistId != null)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Albums by $_artistName'),
-            trailing: ActionIcon(
+          SectionTitle(
+            'Albums by $_artistName',
+            padding: const EdgeInsets.fromLTRB(
+              AppGeometry.pageInset,
+              AppSpace.s,
+              AppSpace.s,
+              AppSpace.xs,
+            ),
+            action: ActionIcon(
               icon: Icons.close_rounded,
               label: 'Search albums again',
               onPressed: () {
@@ -814,34 +730,24 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
         ...albums.map(
-          (album) => ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.album_outlined),
-            title: Text('${album['title']}'),
-            subtitle: Text('${album['artist']}'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _openEditions(album),
-          ),
+          (album) => _onlineAlbum(album, () => _openEditions(album)),
         ),
         if (_artistId != null && model.state['artistAlbumsNext'] != null)
-          TextButton(
-            onPressed: () => model.call('artistAlbums', {
-              'id': _artistId,
-              'from': model.state['artistAlbumsNext'],
-            }),
-            child: const Text('More albums'),
+          Padding(
+            padding: _pageEdges,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () => model.call('artistAlbums', {
+                  'id': _artistId,
+                  'from': model.state['artistAlbumsNext'],
+                }),
+                child: const Text('More albums'),
+              ),
+            ),
           ),
       ],
-      if (_onlineType == 'Artists')
-        ...artists.map(
-          (artist) => ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.person_outline_rounded),
-            title: Text('${artist['name']}'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _openArtist(artist),
-          ),
-        ),
+      if (_onlineType == 'Artists') ...artists.map(_onlineArtist),
       if (shown == 0 && model.state['searching'] != true)
         const EmptyState(
           icon: Icons.search_off_rounded,
@@ -857,18 +763,13 @@ class _SearchPageState extends State<SearchPage> {
     return [
       _onlineBack('Back to albums', _albumTitle, _backToResults),
       ...releases.map(
-        (release) => ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.album_outlined),
-          title: Text('${release['title']}'),
-          subtitle: Text(
-            [
-              '${release['date'] ?? ''}',
-              '${release['country'] ?? ''}',
-            ].where((part) => part.isNotEmpty).join(' · '),
-          ),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => _openRelease(release),
+        (release) => _onlineAlbum(
+          release,
+          () => _openRelease(release),
+          detail: [
+            '${release['date'] ?? ''}',
+            '${release['country'] ?? ''}',
+          ].where((part) => part.isNotEmpty).join(' · '),
         ),
       ),
       if (releases.isEmpty && model.state['searching'] != true)
@@ -920,29 +821,21 @@ class _SearchPageState extends State<SearchPage> {
                 child: const Text('Import matches'),
               ),
       ),
-      if (songs.isNotEmpty) const SectionTitle('Songs'),
+      if (songs.isNotEmpty)
+        const SectionTitle('Songs', padding: _sectionPadding),
       ...songs.map((song) => _onlineSong(context, song)),
-      if (releases.isNotEmpty) const SectionTitle('Editions'),
+      if (releases.isNotEmpty)
+        const SectionTitle('Editions', padding: _sectionPadding),
       ...releases.map(
-        (release) => ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.album_outlined),
-          title: Text('${release['title']}'),
-          subtitle: Text('${release['date'] ?? ''}'),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => _openRelease(release),
+        (release) => _onlineAlbum(
+          release,
+          () => _openRelease(release),
+          detail: '${release['date'] ?? ''}',
         ),
       ),
-      if (artists.isNotEmpty) const SectionTitle('Artists'),
-      ...artists.map(
-        (artist) => ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.person_outline_rounded),
-          title: Text('${artist['name']}'),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => _openArtist(artist),
-        ),
-      ),
+      if (artists.isNotEmpty)
+        const SectionTitle('Artists', padding: _sectionPadding),
+      ...artists.map(_onlineArtist),
       if (collection.isNotEmpty &&
           songs.isEmpty &&
           releases.isEmpty &&
@@ -961,40 +854,46 @@ class _SearchPageState extends State<SearchPage> {
     VoidCallback onBack, {
     Widget? action,
   }) => ListTile(
-    contentPadding: EdgeInsets.zero,
+    contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.m),
     leading: ActionIcon(
       icon: Icons.arrow_back_rounded,
       label: tooltip,
       onPressed: onBack,
     ),
-    title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+    title: Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.titleMedium,
+    ),
     trailing: action,
   );
 
-  Widget _onlineSong(BuildContext context, RowData song) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: Icon(
-      song['held'] == true
-          ? Icons.library_music_rounded
-          : Icons.music_note_rounded,
-      color: song['held'] == true
-          ? Theme.of(context).colorScheme.primary
-          : null,
-    ),
-    title: Text('${song['title']}'),
-    subtitle: Text('${song['artist']} · ${song['album']}'),
-    trailing: PopupMenuButton<String>(
-      onSelected: (v) => v == 'save'
-          ? widget.model.call('saveWanted', {'recording': song['recording']})
-          : chooseDownload(context, widget.model, {
-              'recording': song['recording'],
-            }),
-      itemBuilder: (_) => [
-        const PopupMenuItem(value: 'save', child: Text('Save for later')),
-        const PopupMenuItem(value: 'download', child: Text('Download')),
-      ],
-    ),
-  );
+  Widget _onlineSong(BuildContext context, RowData song) {
+    final held = song['held'] == true;
+    return CollectionRow(
+      leading: IconTile(
+        icon: held ? Icons.library_music_rounded : Icons.music_note_rounded,
+        colors: held ? AppGradients.online : null,
+      ),
+      title: Text('${song['title']}'),
+      subtitle: Text('${song['artist']} · ${song['album']}'),
+      chevron: false,
+      trailing: PopupMenuButton<String>(
+        tooltip: 'More about ${song['title']}',
+        icon: const Icon(Icons.more_horiz_rounded),
+        onSelected: (v) => v == 'save'
+            ? widget.model.call('saveWanted', {'recording': song['recording']})
+            : chooseDownload(context, widget.model, {
+                'recording': song['recording'],
+              }),
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 'save', child: Text('Save for later')),
+          const PopupMenuItem(value: 'download', child: Text('Download')),
+        ],
+      ),
+    );
+  }
 
   void _openEditions(RowData album) {
     setState(() {

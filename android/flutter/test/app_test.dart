@@ -110,7 +110,7 @@ void main() {
     await mount(tester);
     expect(find.text('Your library'), findsOneWidget);
     for (final label in ['Library', 'Settings', 'Search']) {
-      expect(find.text(label), findsOneWidget);
+      expect(find.byTooltip(label), findsOneWidget);
     }
     await tester.scrollUntilVisible(
       find.text('Add music folder'),
@@ -1369,7 +1369,6 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(48));
       expect(size.height, greaterThanOrEqualTo(48));
     }
-    expect(find.byType(NavigationBar), findsNothing);
     expect(find.byTooltip('Library'), findsOneWidget);
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
@@ -1402,10 +1401,10 @@ void main() {
       final tabRect = tester.getRect(tab);
       final pillRect = tester.getRect(pill);
 
-      expect(tabRect.height, 72);
-      expect(pillRect.left - tabRect.left, closeTo(8, .1));
-      expect(tabRect.right - pillRect.right, closeTo(8, .1));
-      expect(pillRect.top - tabRect.top, closeTo(8, .1));
+      expect(tabRect.height, AppGeometry.barHeight);
+      expect(pillRect.left - tabRect.left, closeTo(6, .1));
+      expect(tabRect.right - pillRect.right, closeTo(6, .1));
+      expect(pillRect.top - tabRect.top, closeTo(6, .1));
       expect(
         (tester.getCenter(pill).dx - tabRect.center.dx).abs(),
         lessThan(1),
@@ -1414,14 +1413,27 @@ void main() {
         (tester.getCenter(label).dx - tabRect.center.dx).abs(),
         lessThan(1),
       );
+      expect(tester.getRect(label).bottom, lessThanOrEqualTo(tabRect.bottom));
+
       final searchTab = find.byTooltip('Search');
       final searchIcon = find.descendant(
         of: searchTab,
         matching: find.byIcon(Icons.search_rounded),
       );
+      final searchRect = tester.getRect(searchTab);
+
+      expect(searchRect.width, searchRect.height);
+      expect(
+        searchRect.left - tester.getRect(find.byTooltip('Settings')).right,
+        greaterThanOrEqualTo(AppSpace.m),
+      );
       expect(
         tester.getCenter(searchIcon).dy,
-        closeTo(tester.getCenter(searchTab).dy, .1),
+        closeTo(searchRect.center.dy, .1),
+      );
+      expect(
+        tester.getCenter(searchIcon).dx,
+        closeTo(searchRect.center.dx, .1),
       );
       expect(tester.takeException(), isNull);
     });
@@ -1824,7 +1836,13 @@ void main() {
         },
       ],
     });
-    await tester.tap(find.text('Library'));
+    await tester.tap(find.byTooltip('Library'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Bare'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     final covers = find.byType(PlaylistCover);
@@ -2308,21 +2326,26 @@ void main() {
   ) async {
     await mount(tester, populated: true);
 
-    expect(find.byType(NavigationDestination), findsNWidgets(3));
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Queue'),
+    final bar = find.byType(AppBottomBar);
+    final tabs = find.descendant(
+      of: bar,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.role == SemanticsRole.tab,
       ),
-      findsNothing,
     );
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Songs'),
-      ),
-      findsNothing,
-    );
+
+    expect(tabs, findsNWidgets(3));
+    for (final absent in ['Queue', 'Songs']) {
+      expect(
+        find.descendant(of: bar, matching: find.byTooltip(absent)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: bar, matching: find.text(absent)),
+        findsNothing,
+      );
+    }
   });
 
   testWidgets('the mini-player has no favourite heart', (tester) async {
@@ -2359,7 +2382,7 @@ void main() {
 
     expect(find.byType(SongsPage), findsOneWidget);
     expect(find.byTooltip('Filter songs'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(AppBottomBar), findsOneWidget);
   });
 
   testWidgets('the player menu reaches the equaliser, output and visualizer', (

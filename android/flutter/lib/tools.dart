@@ -40,9 +40,9 @@ class LyricsPage extends StatelessWidget {
       ),
       body: Padding(
         padding: EdgeInsets.fromLTRB(
-          24,
+          AppGeometry.pageInset,
           MediaQuery.paddingOf(context).top + kToolbarHeight,
-          24,
+          AppGeometry.pageInset,
           0,
         ),
         child: LyricsPane(model: model, track: track),
@@ -187,10 +187,15 @@ class _LyricsPaneState extends State<LyricsPane> {
                 itemBuilder: (context, i) {
                   if (i == lines.length) {
                     return Padding(
-                      padding: const EdgeInsets.only(top: 30, bottom: 100),
+                      padding: EdgeInsets.only(
+                        top: AppSpace.xxl,
+                        bottom:
+                            MediaQuery.paddingOf(context).bottom +
+                            AppSpace.xxl * 3,
+                      ),
                       child: Text(
                         '${sheet['origin'] ?? ''}',
-                        style: Theme.of(context).textTheme.labelSmall,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     );
                   }
@@ -224,21 +229,18 @@ class _LyricsPaneState extends State<LyricsPane> {
           ),
           if (_touching && isCurrent && !unsynced)
             Positioned(
-              bottom: 12,
+              bottom: AppSpace.m,
               right: 0,
-              child: Glass(
-                radius: 24,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.my_location_rounded, size: 18),
-                  label: const Text('Follow lyrics'),
-                  onPressed: () {
-                    _resume?.cancel();
-                    setState(() {
-                      _touching = false;
-                      _followed = null;
-                    });
-                  },
-                ),
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.my_location_rounded, size: 18),
+                label: const Text('Follow lyrics'),
+                onPressed: () {
+                  _resume?.cancel();
+                  setState(() {
+                    _touching = false;
+                    _followed = null;
+                  });
+                },
               ),
             ),
         ],
@@ -347,7 +349,9 @@ class _LyricLine extends StatelessWidget {
     final bright = lit || unsynced;
     return RepaintBoundary(
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: blank ? 16 : 12),
+        padding: EdgeInsets.symmetric(
+          vertical: blank ? AppSpace.l : AppSpace.m,
+        ),
         child: InkWell(
           onTap: seekMs == null
               ? null
@@ -365,10 +369,7 @@ class _LyricLine extends StatelessWidget {
               child: AnimatedDefaultTextStyle(
                 duration: motion(context, 260),
                 style: Theme.of(context).textTheme.headlineMedium!.copyWith(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.7,
-                  height: 1.4,
+                  height: 1.35,
                   color: Theme.of(context).colorScheme.onSurface
                       .withValues(alpha: bright ? 1 : .35),
                 ),
@@ -475,81 +476,109 @@ class _InspectorPageState extends State<InspectorPage> {
       final inspector = row(held['track'])['id'] == widget.track['id']
           ? held
           : <String, dynamic>{};
-      return Scaffold(
-        appBar: AppBar(title: const Text('Song details')),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 180),
-          children: [
-            Center(
-              child: Artwork(
-                model: widget.model,
-                track: widget.track,
-                size: 180,
-                radius: 24,
-              ),
+      return ArtworkAtmosphere(
+        model: widget.model,
+        track: widget.track,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            flexibleSpace: const EdgeTint(top: true, child: SizedBox.expand()),
+            title: const Text('Song details'),
+          ),
+          body: ListView(
+            padding: EdgeInsets.fromLTRB(
+              AppGeometry.pageInset,
+              MediaQuery.paddingOf(context).top +
+                  kToolbarHeight +
+                  AppGeometry.pageInset,
+              AppGeometry.pageInset,
+              MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
             ),
-            const SizedBox(height: 24),
-            Text(
-              title(widget.track),
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            Text(artist(widget.track)),
-            const SectionTitle('Audio'),
-            ..._details(context, {
-              'Format': inspector['container'],
-              'Codec': widget.track['codec'],
-              'Sample format': inspector['sampleFormat'],
-              'Sample rate': '${widget.track['rate']} Hz',
-              'Bit depth': widget.track['bits'],
-              'Channels': widget.track['channels'],
-              'Duration': clock(widget.track['durationMs']),
-              'Seekable': inspector['seekable'],
-            }),
-            const SectionTitle('Tags'),
-            ..._details(context, {
-              'Album': widget.track['album'],
-              'Album artist': widget.track['albumArtist'],
-              'Genre': widget.track['genre'],
-              'Date': widget.track['date'],
-              'Track': widget.track['trackNumber'],
-              'Disc': widget.track['discNumber'],
-              'Encoder': inspector['encoder'],
-              'Copyright': inspector['copyright'],
-              'Comment': inspector['comment'],
-              'ISRC': inspector['isrc'],
-              'Recording': widget.track['recording'],
-              'Release': widget.track['release'],
-            }),
-            TextButton(
-              onPressed: () => widget.model.call('enrich', {
-                'ids': [widget.track['id']],
-              }),
-              child: const Text('Find artwork and details'),
-            ),
-            if (widget.model.online)
-              TextButton(
-                onPressed: () =>
-                    widget.model.call('artist', {'id': widget.track['id']}),
-                child: const Text('Look up artist'),
-              ),
-            if (row(widget.model.state['artist']).isNotEmpty) ...[
-              SectionTitle('${row(widget.model.state['artist'])['name']}'),
-              ..._details(context, {
-                'Type': row(widget.model.state['artist'])['kind'],
-                'Country': row(widget.model.state['artist'])['country'],
-                'Area': row(widget.model.state['artist'])['area'],
-                'Genres':
-                    (row(widget.model.state['artist'])['genres'] as List? ?? [])
-                        .join(', '),
-              }),
-              for (final link
-                  in row(widget.model.state['artist'])['links'] as List? ?? [])
-                TextButton(
-                  onPressed: () => widget.model.call('openUrl', {'url': link}),
-                  child: Text('$link'),
+            children: [
+              Center(
+                child: Artwork(
+                  model: widget.model,
+                  track: widget.track,
+                  size: AppGeometry.headerCover,
+                  radius: AppGeometry.cardRadius,
                 ),
+              ),
+              const SizedBox(height: AppSpace.xl),
+              Text(
+                title(widget.track),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                artist(widget.track),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SectionTitle('Audio'),
+              ..._details(context, {
+                'Format': inspector['container'],
+                'Codec': widget.track['codec'],
+                'Sample format': inspector['sampleFormat'],
+                'Sample rate': '${widget.track['rate']} Hz',
+                'Bit depth': widget.track['bits'],
+                'Channels': widget.track['channels'],
+                'Duration': clock(widget.track['durationMs']),
+                'Seekable': inspector['seekable'],
+              }),
+              const SectionTitle('Tags'),
+              ..._details(context, {
+                'Album': widget.track['album'],
+                'Album artist': widget.track['albumArtist'],
+                'Genre': widget.track['genre'],
+                'Date': widget.track['date'],
+                'Track': widget.track['trackNumber'],
+                'Disc': widget.track['discNumber'],
+                'Encoder': inspector['encoder'],
+                'Copyright': inspector['copyright'],
+                'Comment': inspector['comment'],
+                'ISRC': inspector['isrc'],
+                'Recording': widget.track['recording'],
+                'Release': widget.track['release'],
+              }),
+              TextButton(
+                onPressed: () => widget.model.call('enrich', {
+                  'ids': [widget.track['id']],
+                }),
+                child: const Text('Find artwork and details'),
+              ),
+              if (widget.model.online)
+                TextButton(
+                  onPressed: () =>
+                      widget.model.call('artist', {'id': widget.track['id']}),
+                  child: const Text('Look up artist'),
+                ),
+              if (row(widget.model.state['artist']).isNotEmpty) ...[
+                SectionTitle('${row(widget.model.state['artist'])['name']}'),
+                ..._details(context, {
+                  'Type': row(widget.model.state['artist'])['kind'],
+                  'Country': row(widget.model.state['artist'])['country'],
+                  'Area': row(widget.model.state['artist'])['area'],
+                  'Genres':
+                      (row(widget.model.state['artist'])['genres'] as List? ??
+                              [])
+                          .join(', '),
+                }),
+                for (final link
+                    in row(widget.model.state['artist'])['links'] as List? ??
+                        [])
+                  TextButton(
+                    onPressed: () =>
+                        widget.model.call('openUrl', {'url': link}),
+                    child: Text('$link'),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       );
     },
@@ -560,20 +589,25 @@ List<Widget> _details(BuildContext context, RowData values) => values.entries
     .where((e) => e.value != null && '${e.value}'.isNotEmpty)
     .map(
       (e) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: AppSpace.s),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              width: 115,
+              width: 120,
               child: Text(
                 e.key,
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
-            Expanded(child: SelectableText('${e.value}')),
+            Expanded(
+              child: SelectableText(
+                '${e.value}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
           ],
         ),
       ),
@@ -619,19 +653,34 @@ class _AnalysisPageState extends State<AnalysisPage> {
                   detail: 'Choose a song to inspect its audio quality.',
                 )
               : ListView(
-                  padding: EdgeInsets.fromLTRB(24, topInset + 24, 24, 180),
+                  padding: EdgeInsets.fromLTRB(
+                    AppGeometry.pageInset,
+                    topInset + AppGeometry.pageInset,
+                    AppGeometry.pageInset,
+                    MediaQuery.paddingOf(context).bottom +
+                        AppGeometry.pageInset,
+                  ),
                   children: [
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Artwork(
                         model: model,
                         track: widget.track,
-                        size: 64,
+                        size: AppGeometry.rowArt,
+                        radius: AppGeometry.coverRadius,
                       ),
-                      title: Text(title(widget.track)),
-                      subtitle: Text(artist(widget.track)),
+                      title: Text(
+                        title(widget.track),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        artist(widget.track),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: AppSpace.xl),
                     FilledButton.icon(
                       onPressed: () => model.call(
                         model.state['analysisBusy'] == true
@@ -652,7 +701,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     ),
                     if (model.state['analysisBusy'] == true)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpace.xl,
+                        ),
                         child: ValueListenableBuilder<Object?>(
                           valueListenable: model.hot('analysisProgress'),
                           builder: (_, progress, _) => LinearProgressIndicator(
@@ -687,8 +738,13 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       ),
                       ...(report['findings'] as List? ?? []).map(
                         (finding) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text('$finding'),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpace.s,
+                          ),
+                          child: Text(
+                            '$finding',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
                         ),
                       ),
                     ],
@@ -702,7 +758,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       onFieldSubmitted: (v) =>
                           model.call('recognitionKey', {'value': v}),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpace.m),
                     TextButton(
                       onPressed: model.state['recognitionBusy'] == true
                           ? null
@@ -718,6 +774,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     ...candidates.map((candidate) {
                       final song = row(candidate['song']);
                       return ListTile(
+                        contentPadding: EdgeInsets.zero,
                         title: Text('${song['title']}'),
                         subtitle: Text('${song['artist']}'),
                       );
@@ -778,7 +835,12 @@ class _VisualizerPageState extends State<VisualizerPage>
           ),
           body: Center(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(32, topInset + 32, 32, 32),
+              padding: EdgeInsets.fromLTRB(
+                AppGeometry.pageInset,
+                topInset + AppGeometry.pageInset,
+                AppGeometry.pageInset,
+                MediaQuery.paddingOf(context).bottom + AppGeometry.pageInset,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -790,7 +852,7 @@ class _VisualizerPageState extends State<VisualizerPage>
                       bars: true,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpace.xl),
                   Text(
                     widget.model.current.isEmpty
                         ? 'Play a song to see it move'
@@ -798,8 +860,13 @@ class _VisualizerPageState extends State<VisualizerPage>
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 8),
-                  const Text('Live audio from the Resonate engine'),
+                  const SizedBox(height: AppSpace.s),
+                  Text(
+                    'Live audio from the Resonate engine',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -827,16 +894,22 @@ class WantedPane extends StatelessWidget {
               await model.call('loadWanted');
             },
             child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 180),
+              padding: EdgeInsets.only(
+                bottom:
+                    MediaQuery.paddingOf(context).bottom +
+                    AppGeometry.pageInset,
+              ),
               itemCount: wanted.length,
-              itemBuilder: (_, index) {
+              itemBuilder: (context, index) {
                 final want = wanted[index];
                 final song = row(want['song']);
-                return ListTile(
-                  leading: const Icon(Icons.bookmark_rounded),
+                return CollectionRow(
+                  leading: const IconTile(icon: Icons.bookmark_rounded),
                   title: Text('${song['title']}'),
                   subtitle: Text('${song['artist']} · ${song['album']}'),
                   trailing: PopupMenuButton<String>(
+                    tooltip: 'More about ${song['title']}',
+                    icon: const Icon(Icons.more_horiz_rounded),
                     onSelected: (v) => v == 'remove'
                         ? model.call('removeWanted', {'id': want['id']})
                         : chooseDownload(context, model, {'id': want['id']}),
@@ -869,10 +942,7 @@ Future<void> chooseDownload(
     child: ListView(
       shrinkWrap: true,
       children: [
-        const ListTile(
-          title: Text('Choose a music folder'),
-          subtitle: Text(musicFolderGuidance),
-        ),
+        const SheetTitle('Choose a music folder', detail: musicFolderGuidance),
         ListTile(
           leading: const Icon(Icons.download_rounded),
           title: const Text('Downloads'),

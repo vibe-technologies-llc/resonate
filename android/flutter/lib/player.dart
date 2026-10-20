@@ -15,22 +15,26 @@ class MiniPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Glass(
     radius: AppGeometry.chromeRadius,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
+    child: Stack(
       children: [
         InkWell(
           onTap: onOpen,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.m,
+              AppSpace.xs,
+              AppSpace.xs,
+              AppSpace.xs,
+            ),
             child: Row(
               children: [
                 Artwork(
                   model: model,
                   track: model.current,
-                  size: 40,
-                  radius: 12,
+                  size: AppGeometry.miniArt,
+                  radius: AppGeometry.thumbRadius,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpace.m),
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: motion(context, 200),
@@ -42,7 +46,8 @@ class MiniPlayer extends StatelessWidget {
                           title(model.current),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         Text(
                           artist(model.current),
@@ -69,22 +74,26 @@ class MiniPlayer extends StatelessWidget {
             ),
           ),
         ),
-        RepaintBoundary(
-          child: ValueListenableBuilder<int>(
-            valueListenable: model.positionMs,
-            builder: (context, position, _) => Semantics(
-              label: 'Song progress',
-              value:
-                  '${clock(position)} of ${clock(model.snapshot['durationMs'])}',
-              child: LinearProgressIndicator(
-                value: integer(model.snapshot['durationMs']) > 0
-                    ? (position / integer(model.snapshot['durationMs'])).clamp(
-                        0,
-                        1,
-                      )
-                    : 0,
-                minHeight: 2,
-                backgroundColor: Colors.transparent,
+        Positioned(
+          left: AppGeometry.chromeRadius / 2,
+          right: AppGeometry.chromeRadius / 2,
+          bottom: 0,
+          child: RepaintBoundary(
+            child: ValueListenableBuilder<int>(
+              valueListenable: model.positionMs,
+              builder: (context, position, _) => Semantics(
+                label: 'Song progress',
+                value:
+                    '${clock(position)} of ${clock(model.snapshot['durationMs'])}',
+                child: LinearProgressIndicator(
+                  value: integer(model.snapshot['durationMs']) > 0
+                      ? (position / integer(model.snapshot['durationMs']))
+                            .clamp(0, 1)
+                      : 0,
+                  minHeight: 2,
+                  borderRadius: BorderRadius.circular(1),
+                  backgroundColor: Colors.transparent,
+                ),
               ),
             ),
           ),
@@ -93,6 +102,8 @@ class MiniPlayer extends StatelessWidget {
     ),
   );
 }
+
+const _largePlay = 76.0;
 
 class PlayButton extends StatelessWidget {
   const PlayButton({super.key, required this.model, this.large = false});
@@ -103,7 +114,8 @@ class PlayButton extends StatelessWidget {
       ? FilledButton(
           style: FilledButton.styleFrom(
             shape: const CircleBorder(),
-            fixedSize: const Size(80, 80),
+            fixedSize: const Size.square(_largePlay),
+            minimumSize: const Size.square(_largePlay),
             padding: EdgeInsets.zero,
           ),
           onPressed: model.current.isEmpty ? null : () => model.call('toggle'),
@@ -114,7 +126,7 @@ class PlayButton extends StatelessWidget {
               child: Icon(
                 model.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 key: ValueKey(model.playing),
-                size: 40,
+                size: 38,
               ),
             ),
           ),
@@ -309,24 +321,22 @@ class _NowPlayingState extends State<NowPlaying>
                               children: [
                                 Container(
                                   margin: const EdgeInsets.only(
-                                    top: 6,
-                                    bottom: 2,
+                                    top: AppSpace.s,
+                                    bottom: AppSpace.xs,
                                   ),
                                   width: 36,
-                                  height: 4.5,
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black)
-                                            .withValues(alpha: .22),
-                                    borderRadius: BorderRadius.circular(3),
+                                  height: 5,
+                                  decoration: ShapeDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                        .withValues(alpha: .4),
+                                    shape: const StadiumBorder(),
                                   ),
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
+                                    horizontal: AppSpace.m,
                                   ),
                                   child: Row(
                                     children: [
@@ -383,7 +393,9 @@ class _NowPlayingState extends State<NowPlaying>
                                 final artwork = Artwork(
                                   model: model,
                                   track: track,
-                                  radius: compact ? 14 : 26,
+                                  radius: compact
+                                      ? AppGeometry.coverRadius
+                                      : AppGeometry.heroRadius,
                                   size: compact
                                       ? 64
                                       : (constraints.maxWidth - 64).clamp(
@@ -407,9 +419,9 @@ class _NowPlayingState extends State<NowPlaying>
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.fromLTRB(
-                                          24,
-                                          20,
-                                          24,
+                                          AppGeometry.pageInset,
+                                          AppSpace.l,
+                                          AppGeometry.pageInset,
                                           0,
                                         ),
                                         child: Column(
@@ -417,7 +429,9 @@ class _NowPlayingState extends State<NowPlaying>
                                             Row(
                                               children: [
                                                 artwork,
-                                                const SizedBox(width: 16),
+                                                const SizedBox(
+                                                  width: AppSpace.l,
+                                                ),
                                                 Expanded(
                                                   child: _PlayerTitles(
                                                     model: model,
@@ -431,7 +445,7 @@ class _NowPlayingState extends State<NowPlaying>
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 16),
+                                            const SizedBox(height: AppSpace.l),
                                             Expanded(
                                               child: AnimatedSwitcher(
                                                 duration: motion(context, 240),
@@ -455,7 +469,7 @@ class _NowPlayingState extends State<NowPlaying>
                                             ),
                                             Scrubber(model: model),
                                             TransportControls(model: model),
-                                            const SizedBox(height: 12),
+                                            const SizedBox(height: AppSpace.m),
                                           ],
                                         ),
                                       ),
@@ -475,14 +489,14 @@ class _NowPlayingState extends State<NowPlaying>
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 28,
-                                          vertical: 20,
+                                          horizontal: AppGeometry.pageInset,
+                                          vertical: AppSpace.l,
                                         ),
                                         child: Column(
                                           mainAxisAlignment:
                                               MainAxisAlignment.spaceEvenly,
                                           children: [
-                                            const SizedBox(height: 12),
+                                            const SizedBox(height: AppSpace.m),
                                             GestureDetector(
                                               onHorizontalDragEnd: (details) {
                                                 if ((details.primaryVelocity ??
@@ -516,18 +530,19 @@ class _NowPlayingState extends State<NowPlaying>
                                                   decoration: BoxDecoration(
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          26,
+                                                          AppGeometry
+                                                              .heroRadius,
                                                         ),
                                                     boxShadow: [
                                                       BoxShadow(
-                                                        color: _colors.first
+                                                        color: Colors.black
                                                             .withValues(
-                                                              alpha: .24,
+                                                              alpha: .3,
                                                             ),
-                                                        blurRadius: 48,
+                                                        blurRadius: 28,
                                                         offset: const Offset(
                                                           0,
-                                                          24,
+                                                          16,
                                                         ),
                                                       ),
                                                     ],
@@ -536,8 +551,10 @@ class _NowPlayingState extends State<NowPlaying>
                                                 ),
                                               ),
                                             ),
-                                            const SizedBox(height: 28),
+                                            const SizedBox(height: AppSpace.xl),
                                             Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Expanded(
                                                   child: _PlayerTitles(
@@ -551,47 +568,26 @@ class _NowPlayingState extends State<NowPlaying>
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 18),
-                                            Scrubber(model: model),
-                                            const SizedBox(height: 8),
+                                            const SizedBox(height: AppSpace.l),
+                                            Scrubber(
+                                              model: model,
+                                              format: true,
+                                            ),
+                                            const SizedBox(height: AppSpace.s),
                                             TransportControls(model: model),
-                                            const SizedBox(height: 16),
+                                            const SizedBox(height: AppSpace.l),
                                             Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
                                               children: [
                                                 Icon(
-                                                  model.waiting == null
-                                                      ? Icons.graphic_eq_rounded
-                                                      : Icons
-                                                            .volume_off_rounded,
-                                                  size: 14,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Flexible(
-                                                  child: Text(
-                                                    model.waiting ??
-                                                        '${track['codec'] ?? ''} · ${decimal(track['rate']) / 1000} kHz${track['bits'] == null ? '' : ' · ${track['bits']} bit'}',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .labelSmall,
-                                                    textAlign: TextAlign.center,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 16),
-                                            Row(
-                                              children: [
-                                                const Icon(
                                                   Icons.volume_down_rounded,
                                                   size: 20,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
                                                 ),
                                                 Expanded(
                                                   child: CommitSlider(
+                                                    capsule: true,
                                                     value: decimal(
                                                       model.snapshot['volume'],
                                                     ),
@@ -604,9 +600,12 @@ class _NowPlayingState extends State<NowPlaying>
                                                     ),
                                                   ),
                                                 ),
-                                                const Icon(
+                                                Icon(
                                                   Icons.volume_up_rounded,
                                                   size: 20,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
                                                 ),
                                               ],
                                             ),
@@ -620,10 +619,15 @@ class _NowPlayingState extends State<NowPlaying>
                             ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                            padding: const EdgeInsets.fromLTRB(
+                              AppGeometry.pageInset,
+                              AppSpace.xs,
+                              AppGeometry.pageInset,
+                              AppSpace.l,
+                            ),
                             child: Glass(
-                              radius: 32,
-                              padding: const EdgeInsets.all(5),
+                              radius: AppGeometry.chromeRadius,
+                              padding: const EdgeInsets.all(AppSpace.xs),
                               child: Row(
                                 children: [
                                   for (final entry in [
@@ -649,9 +653,8 @@ class _NowPlayingState extends State<NowPlaying>
                                               : _mode == entry.$1,
                                           child: AnimatedContainer(
                                             duration: motion(context, 220),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(26),
+                                            decoration: ShapeDecoration(
+                                              shape: const StadiumBorder(),
                                               color:
                                                   (_mode == entry.$1 ||
                                                       (entry.$1 ==
@@ -661,15 +664,17 @@ class _NowPlayingState extends State<NowPlaying>
                                                   ? Theme.of(context)
                                                         .colorScheme
                                                         .primary
-                                                        .withValues(alpha: .2)
+                                                        .withValues(alpha: .18)
                                                   : Colors.transparent,
                                             ),
                                             child: TextButton(
                                               style: TextButton.styleFrom(
-                                                minimumSize: const Size(48, 48),
+                                                minimumSize: const Size.square(
+                                                  AppGeometry.touchTarget,
+                                                ),
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                      horizontal: 4,
+                                                      horizontal: AppSpace.xs,
                                                     ),
                                               ),
                                               onPressed: () =>
@@ -684,7 +689,9 @@ class _NowPlayingState extends State<NowPlaying>
                                                 children: [
                                                   Icon(entry.$3, size: 20),
                                                   if (!compactModes) ...[
-                                                    const SizedBox(width: 5),
+                                                    const SizedBox(
+                                                      width: AppSpace.s,
+                                                    ),
                                                     Flexible(
                                                       child: Text(
                                                         entry.$2,
@@ -709,12 +716,30 @@ class _NowPlayingState extends State<NowPlaying>
                                 remaining == null
                                 ? const SizedBox.shrink()
                                 : Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Text(
-                                      'Sleep in ${clock(remaining)}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall,
+                                    padding: const EdgeInsets.only(
+                                      bottom: AppSpace.s,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.bedtime_rounded,
+                                          size: 14,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                        const SizedBox(width: AppSpace.xs),
+                                        Text(
+                                          'Sleep in ${clock(remaining)}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                fontFeatures: tabularFigures,
+                                              ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                           ),
@@ -742,71 +767,80 @@ class _PlayerTitles extends StatelessWidget {
   final OpenPage open;
   final bool compact;
   @override
-  Widget build(BuildContext context) => AnimatedSwitcher(
-    layoutBuilder: (current, previous) => Stack(
-      alignment: Alignment.centerLeft,
-      children: [...previous, ?current],
-    ),
-    duration: motion(context, 220),
-    child: Column(
-      key: ValueKey(model.current['id']),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title(model.current),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style:
-              (compact
-                      ? Theme.of(context).textTheme.titleMedium
-                      : Theme.of(context).textTheme.headlineSmall)
-                  ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -.5),
-        ),
-        InkWell(
-          onTap: () => open('collection', {
-            'kind': 'artist',
-            'key': model.current['artist'],
-            'title': artist(model.current),
-            'artworkTrack': model.current['id'],
-          }),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              artist(model.current),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: compact ? 13 : 17,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final secondary = scheme.onSurface.withValues(alpha: .8);
+    return AnimatedSwitcher(
+      layoutBuilder: (current, previous) => Stack(
+        alignment: Alignment.centerLeft,
+        children: [...previous, ?current],
+      ),
+      duration: motion(context, 220),
+      child: Column(
+        key: ValueKey(model.current['id']),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title(model.current),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: compact ? text.titleMedium : text.headlineSmall,
           ),
-        ),
-        if (!compact && '${model.current['album'] ?? ''}'.isNotEmpty)
           InkWell(
-            onTap: () => openAlbumOf(model, model.current, open),
-            child: Text(
-              '${model.current['album']}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            borderRadius: BorderRadius.circular(AppSpace.xs),
+            onTap: () => open('collection', {
+              'kind': 'artist',
+              'key': model.current['artist'],
+              'title': artist(model.current),
+              'artworkTrack': model.current['id'],
+            }),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: compact ? AppSpace.xs / 2 : AppSpace.xs,
+              ),
+              child: Text(
+                artist(model.current),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (compact ? text.bodyMedium : text.titleLarge)?.copyWith(
+                  fontWeight: FontWeight.w400,
+                  color: secondary,
+                ),
               ),
             ),
           ),
-      ],
-    ),
-  );
+          if (!compact && '${model.current['album'] ?? ''}'.isNotEmpty)
+            InkWell(
+              borderRadius: BorderRadius.circular(AppSpace.xs),
+              onTap: () => openAlbumOf(model, model.current, open),
+              child: Text(
+                '${model.current['album']}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class Scrubber extends StatelessWidget {
-  const Scrubber({super.key, required this.model});
+  const Scrubber({super.key, required this.model, this.format = false});
   final PlayerModel model;
+  final bool format;
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
     valueListenable: model.positionMs,
     builder: (context, position, _) {
       final duration = decimal(model.snapshot['durationMs']);
+      final track = model.current;
+      final times = Theme.of(context).textTheme.bodySmall
+          ?.copyWith(fontFeatures: tabularFigures);
       return Column(
         children: [
           CommitSlider(
@@ -814,28 +848,35 @@ class Scrubber extends StatelessWidget {
             min: 0,
             max: duration > 0 ? duration : 1,
             label: 'Song progress',
+            capsule: true,
             format: (value) => clock(value.toInt()),
             onCommit: (value) =>
                 model.call('seek', {'position': value.toInt()}),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children:
-                [
-                      Text(clock(position)),
-                      Text(
-                        '-${clock((duration - position).clamp(0, double.infinity).toInt())}',
-                      ),
-                    ]
-                    .map(
-                      (child) => DefaultTextStyle(
-                        style: Theme.of(context).textTheme.labelSmall!.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        child: child,
-                      ),
-                    )
-                    .toList(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs),
+            child: Row(
+              children: [
+                Text(clock(position), style: times),
+                Expanded(
+                  child: format
+                      ? Center(
+                          child: Pill(
+                            model.waiting ??
+                                '${track['codec'] ?? ''} · ${decimal(track['rate']) / 1000} kHz${track['bits'] == null ? '' : ' · ${track['bits']} bit'}',
+                            icon: model.waiting == null
+                                ? Icons.graphic_eq_rounded
+                                : Icons.volume_off_rounded,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                Text(
+                  '-${clock((duration - position).clamp(0, double.infinity).toInt())}',
+                  style: times,
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -852,11 +893,13 @@ class CommitSlider extends StatefulWidget {
     required this.label,
     required this.onCommit,
     this.format,
+    this.capsule = false,
   });
   final double value, min, max;
   final String label;
   final ValueChanged<double> onCommit;
   final String Function(double)? format;
+  final bool capsule;
   @override
   State<CommitSlider> createState() => _CommitSliderState();
 }
@@ -866,18 +909,43 @@ class _CommitSliderState extends State<CommitSlider> {
   @override
   Widget build(BuildContext context) {
     final value = (_draft ?? widget.value).clamp(widget.min, widget.max);
+    final slider = Slider(
+      value: value,
+      min: widget.min,
+      max: widget.max,
+      label: widget.format?.call(value) ?? value.toStringAsFixed(1),
+      onChanged: (value) => setState(() => _draft = value),
+      onChangeEnd: (value) {
+        widget.onCommit(value);
+        setState(() => _draft = null);
+      },
+    );
+    if (!widget.capsule) {
+      return Semantics(label: widget.label, child: slider);
+    }
+    final ink = Theme.of(context).colorScheme.onSurface;
+    final dragging = _draft != null;
     return Semantics(
       label: widget.label,
-      child: Slider(
-        value: value,
-        min: widget.min,
-        max: widget.max,
-        label: widget.format?.call(value) ?? value.toStringAsFixed(1),
-        onChanged: (value) => setState(() => _draft = value),
-        onChangeEnd: (value) {
-          widget.onCommit(value);
-          setState(() => _draft = null);
-        },
+      child: SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: dragging ? 14 : 7,
+          activeTrackColor: ink.withValues(alpha: dragging ? .95 : .7),
+          inactiveTrackColor: ink.withValues(alpha: .16),
+          thumbColor: ink,
+          overlayColor: Colors.transparent,
+          trackShape: const RoundedRectSliderTrackShape(),
+          thumbShape: const RoundSliderThumbShape(
+            enabledThumbRadius: 0,
+            disabledThumbRadius: 0,
+            elevation: 0,
+            pressedElevation: 0,
+          ),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+          activeTickMarkColor: Colors.transparent,
+          inactiveTickMarkColor: Colors.transparent,
+        ),
+        child: slider,
       ),
     );
   }
@@ -888,40 +956,42 @@ class TransportControls extends StatelessWidget {
   final PlayerModel model;
   @override
   Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: [
-      ActionIcon(
-        icon: Icons.shuffle_rounded,
-        label: 'Shuffle',
-        selected: model.snapshot['shuffle'] == true,
-        onPressed: () => model.call('shuffle', {
-          'enabled': model.snapshot['shuffle'] != true,
-        }),
-      ),
-      ActionIcon(
-        icon: Icons.skip_previous_rounded,
-        label: 'Previous',
-        size: 34,
-        onPressed: () => model.call('previous'),
-      ),
-      PlayButton(model: model, large: true),
-      ActionIcon(
-        icon: Icons.skip_next_rounded,
-        label: 'Next',
-        size: 34,
-        onPressed: () => model.call('next'),
-      ),
-      ActionIcon(
-        icon: integer(model.snapshot['repeat']) == 1
-            ? Icons.repeat_one_rounded
-            : Icons.repeat_rounded,
-        label:
-            'Repeat: ${['off', 'song', 'queue'][integer(model.snapshot['repeat']).clamp(0, 2)]}',
-        selected: integer(model.snapshot['repeat']) > 0,
-        onPressed: () => model.call('repeat', {
-          'mode': (integer(model.snapshot['repeat']) + 1) % 3,
-        }),
-      ),
+      for (final control in <Widget>[
+        ActionIcon(
+          icon: Icons.shuffle_rounded,
+          label: 'Shuffle',
+          selected: model.snapshot['shuffle'] == true,
+          onPressed: () => model.call('shuffle', {
+            'enabled': model.snapshot['shuffle'] != true,
+          }),
+        ),
+        ActionIcon(
+          icon: Icons.skip_previous_rounded,
+          label: 'Previous',
+          size: 34,
+          onPressed: () => model.call('previous'),
+        ),
+        PlayButton(model: model, large: true),
+        ActionIcon(
+          icon: Icons.skip_next_rounded,
+          label: 'Next',
+          size: 34,
+          onPressed: () => model.call('next'),
+        ),
+        ActionIcon(
+          icon: integer(model.snapshot['repeat']) == 1
+              ? Icons.repeat_one_rounded
+              : Icons.repeat_rounded,
+          label:
+              'Repeat: ${['off', 'song', 'queue'][integer(model.snapshot['repeat']).clamp(0, 2)]}',
+          selected: integer(model.snapshot['repeat']) > 0,
+          onPressed: () => model.call('repeat', {
+            'mode': (integer(model.snapshot['repeat']) + 1) % 3,
+          }),
+        ),
+      ])
+        Expanded(child: Center(child: control)),
     ],
   );
 }
@@ -956,7 +1026,7 @@ class QueuePage extends StatelessWidget {
             compact ? 0 : AppGeometry.pageInset,
             compact ? 0 : AppGeometry.pageTop,
             compact ? 0 : AppGeometry.pageInset,
-            10,
+            AppSpace.s,
           ),
           child: Row(
             children: [
@@ -973,18 +1043,16 @@ class QueuePage extends StatelessWidget {
                     if (!compact && queue.isNotEmpty)
                       Text(
                         '${queue.length} ${queue.length == 1 ? 'song' : 'songs'} · ${clock(totalDurationMs)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                   ],
                 ),
               ),
               if (queue.isNotEmpty) ...[
                 if (!compact)
-                  IconButton(
-                    tooltip: 'Save queue as playlist',
-                    icon: const Icon(Icons.playlist_add_rounded),
+                  ActionIcon(
+                    label: 'Save queue as playlist',
+                    icon: Icons.playlist_add_rounded,
                     onPressed: () => _saveAsPlaylist(context),
                   ),
                 TextButton(
@@ -997,7 +1065,10 @@ class QueuePage extends StatelessWidget {
         ),
         if (!compact && handoffs.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppGeometry.pageInset,
+              vertical: AppSpace.xs,
+            ),
             child: Card.filled(
               child: ListTile(
                 leading: Icon(
@@ -1027,7 +1098,12 @@ class QueuePage extends StatelessWidget {
                 )
               : ReorderableListView.builder(
                   buildDefaultDragHandles: false,
-                  padding: EdgeInsets.only(bottom: compact ? 16 : 180),
+                  padding: EdgeInsets.only(
+                    bottom: compact
+                        ? AppSpace.l
+                        : MediaQuery.paddingOf(context).bottom +
+                              AppGeometry.pageInset,
+                  ),
                   itemCount: queue.length,
                   onReorderItem: (from, to) {
                     model.call('moveInQueue', {
@@ -1061,7 +1137,9 @@ class QueuePage extends StatelessWidget {
                         children: [
                           if (isPlaying)
                             Padding(
-                              padding: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.only(
+                                right: AppSpace.xs,
+                              ),
                               child: Icon(
                                 Icons.graphic_eq_rounded,
                                 color: Theme.of(context).colorScheme.primary,
@@ -1081,7 +1159,7 @@ class QueuePage extends StatelessWidget {
                           ReorderableDragStartListener(
                             index: index,
                             child: const Padding(
-                              padding: EdgeInsets.all(12),
+                              padding: EdgeInsets.all(AppSpace.m),
                               child: Icon(Icons.drag_handle_rounded),
                             ),
                           ),
@@ -1105,8 +1183,13 @@ class QueuePage extends StatelessWidget {
                       background: Container(
                         color: Theme.of(context).colorScheme.errorContainer,
                         alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: const Icon(Icons.remove_circle_outline_rounded),
+                        padding: const EdgeInsets.only(
+                          right: AppGeometry.pageInset,
+                        ),
+                        child: Icon(
+                          Icons.remove_circle_outline_rounded,
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
                       ),
                       child: sectionHeader != null
                           ? Column(
@@ -1128,7 +1211,6 @@ class QueuePage extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
       builder: (sheetContext) => SafeArea(
         top: false,
         child: ConstrainedBox(
@@ -1137,21 +1219,20 @@ class QueuePage extends StatelessWidget {
           ),
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            padding: const EdgeInsets.only(bottom: AppGeometry.pageInset),
             children: [
-              Text(
+              const SheetTitle(
                 'Continue listening',
-                style: Theme.of(sheetContext).textTheme.headlineSmall,
+                detail: 'Choose a device to continue its queue here.',
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Choose a device to continue its queue here.',
-                style: Theme.of(sheetContext).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
               for (final (index, handoff) in handoffs.indexed)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppGeometry.pageInset,
+                    0,
+                    AppGeometry.pageInset,
+                    AppSpace.s,
+                  ),
                   child: Card.filled(
                     color: Theme.of(sheetContext)
                         .colorScheme
@@ -1224,15 +1305,13 @@ class _QueueHeader extends StatelessWidget {
   const _QueueHeader(this.title);
   final String title;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(24, 14, 24, 4),
-    child: Text(
-      title,
-      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.5,
-      ),
+  Widget build(BuildContext context) => SectionTitle(
+    title,
+    padding: const EdgeInsets.fromLTRB(
+      AppGeometry.pageInset,
+      AppSpace.l,
+      AppGeometry.pageInset,
+      AppSpace.xs,
     ),
   );
 }
@@ -1245,12 +1324,7 @@ Future<void> sleepTimer(BuildContext context, PlayerModel model) =>
         child: ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(
-              title: Text(
-                'Sleep timer',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-              ),
-            ),
+            const SheetTitle('Sleep timer'),
             for (final minutes in [15, 30, 45, 60, 90])
               ListTile(
                 leading: const Icon(Icons.bedtime_outlined),
@@ -1269,6 +1343,13 @@ Future<void> sleepTimer(BuildContext context, PlayerModel model) =>
               'cancel': 'Cancel timer',
             }.entries)
               ListTile(
+                leading: Icon(
+                  entry.key == 'cancel'
+                      ? Icons.timer_off_outlined
+                      : entry.key == 'track'
+                      ? Icons.music_note_rounded
+                      : Icons.queue_music_rounded,
+                ),
                 title: Text(entry.value),
                 onTap: () {
                   model.call('sleep', {'kind': entry.key});

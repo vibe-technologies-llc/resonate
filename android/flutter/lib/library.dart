@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -23,6 +24,20 @@ class _LibraryPageState extends State<LibraryPage> {
     final albums = model.albums;
     final artists = model.artists;
     final playlists = rows(model.state['playlists']);
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final everything = _shelf == 'All';
+    final showPlaylists = everything || _shelf == 'Playlists';
+    const edge = EdgeInsets.symmetric(horizontal: AppGeometry.pageInset);
+    const shown = 12;
+    void openArtist(RowData artist) => widget.open('collection', {
+      'kind': 'artist',
+      'key': artist['name'],
+      'title': artist['name'],
+      'artworkTrack': artist['artworkTrack'],
+    });
+    void openAlbum(RowData album) =>
+        widget.open('collection', {...album, 'kind': 'album'});
     return RefreshIndicator(
       onRefresh: () async {
         await model.call('rescan');
@@ -40,278 +55,269 @@ class _LibraryPageState extends State<LibraryPage> {
                 AppGeometry.pageInset,
                 AppGeometry.pageTop,
                 AppGeometry.pageInset,
-                0,
+                AppSpace.l,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Your library',
-                          style: Theme.of(context).textTheme.headlineLarge,
-                        ),
-                      ),
-                      _LibraryMenu(model: model, open: widget.open),
-                    ],
+                  LargeTitle(
+                    'Your library',
+                    actions: [_LibraryMenu(model: model, open: widget.open)],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpace.xs),
                   Text(
                     '${model.allTracks.length} ${model.allTracks.length == 1 ? 'song' : 'songs'} · ${model.albums.length} ${model.albums.length == 1 ? 'album' : 'albums'}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   if (model.allTracks.isEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 18),
+                      padding: const EdgeInsets.only(top: AppSpace.l),
                       child: FilledButton.icon(
                         onPressed: () => model.call('chooseFolder'),
                         icon: const Icon(Icons.add_rounded),
                         label: const Text('Add music folder'),
                       ),
                     ),
-                  const SizedBox(height: 18),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['All', 'Playlists', 'Albums', 'Artists']
-                          .map(
-                            (label) => Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text(label),
-                                selected: _shelf == label,
-                                onSelected: (_) =>
-                                    setState(() => _shelf = label),
-                                showCheckmark: false,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  if (_shelf == 'All' || _shelf == 'Playlists')
-                    Padding(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(26),
-                        onTap: () => widget.open('collection', {
-                          'kind': 'favourites',
-                          'title': 'Favourites',
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(26),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6D4C99), Color(0xFFA34B7A)],
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.favorite_rounded,
-                                color: Colors.white,
-                                size: 38,
-                              ),
-                              const SizedBox(width: 18),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Favourites',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 22,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${favourites.length} songs you love',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(
-                                Icons.arrow_forward_rounded,
-                                color: Colors.white70,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (_shelf == 'All')
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _Shortcut(
-                              icon: Icons.music_note_rounded,
-                              label: 'All songs',
-                              colors: const [
-                                Color(0xFFE8833A),
-                                Color(0xFFC8433B),
-                              ],
-                              onTap: () => widget.open('songs'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _Shortcut(
-                              icon: Icons.auto_awesome_rounded,
-                              label: 'Made for you',
-                              colors: const [
-                                Color(0xFF2E9C9A),
-                                Color(0xFF3B73C4),
-                              ],
-                              onTap: () => widget.open('suggestions'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _Shortcut(
-                              icon: Icons.bar_chart_rounded,
-                              label: 'Statistics',
-                              colors: const [
-                                Color(0xFF5B5BD6),
-                                Color(0xFF3B6FD0),
-                              ],
-                              onTap: () => widget.open('statistics'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (_shelf == 'All' || _shelf == 'Playlists')
-                    SectionTitle(
-                      'Playlists',
-                      action: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ActionIcon(
-                            icon: Icons.undo_rounded,
-                            label: 'Undo last playlist edit',
-                            onPressed: () => model.call('undoPlaylist'),
-                          ),
-                          ActionIcon(
-                            icon: Icons.add_rounded,
-                            label: 'Create playlist',
-                            onPressed: () => namePlaylist(context, model),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if ((_shelf == 'All' || _shelf == 'Playlists') &&
-                      playlists.isEmpty)
-                    const Text(
-                      'A mood, a moment, a journey. Make it a playlist.',
-                    ),
-                  if (_shelf == 'All' || _shelf == 'Playlists')
-                    ...playlists.map(
-                      (p) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: PlaylistCover(
-                          model: model,
-                          covers: p['covers'],
-                          size: 48,
-                          radius: 12,
-                        ),
-                        title: Text('${p['name']}'),
-                        subtitle: Text('${p['songs']} songs'),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => widget.open('collection', {
-                          ...p,
-                          'title': p['name'],
-                          'kind': 'playlist',
-                        }),
-                      ),
-                    ),
-                  if (_shelf == 'Albums' ||
-                      (_shelf == 'All' && albums.isNotEmpty))
-                    const SectionTitle('Albums'),
                 ],
               ),
             ),
           ),
-          if (_shelf == 'All' && albums.isNotEmpty)
+          SliverToBoxAdapter(
+            child: ChoiceRow(
+              labels: const ['All', 'Playlists', 'Albums', 'Artists'],
+              selected: _shelf,
+              onSelected: (label) => setState(() => _shelf = label),
+              padding: edge,
+            ),
+          ),
+          if (showPlaylists)
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: 236,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: albums.length.clamp(0, 12),
-                  separatorBuilder: (_, _) => const SizedBox(width: 16),
-                  itemBuilder: (context, index) => SizedBox(
-                    width: 160,
-                    child: _AlbumTile(
-                      model: model,
-                      album: albums[index],
-                      open: widget.open,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppGeometry.pageInset,
+                  AppSpace.l,
+                  AppGeometry.pageInset,
+                  0,
+                ),
+                child: Card(
+                  child: ListTileTheme.merge(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.l,
+                    ),
+                    child: Column(
+                      children: [
+                        CollectionRow(
+                          leading: const IconTile(
+                            icon: Icons.favorite_rounded,
+                            colors: AppGradients.favourites,
+                          ),
+                          title: const Text('Favourites'),
+                          subtitle: Text('${favourites.length} songs you love'),
+                          onTap: () => widget.open('collection', {
+                            'kind': 'favourites',
+                            'title': 'Favourites',
+                          }),
+                        ),
+                        if (everything) ...[
+                          CollectionRow(
+                            leading: const IconTile(
+                              icon: Icons.music_note_rounded,
+                              colors: AppGradients.allSongs,
+                            ),
+                            title: const Text('All songs'),
+                            onTap: () => widget.open('songs'),
+                          ),
+                          CollectionRow(
+                            leading: const IconTile(
+                              icon: Icons.auto_awesome_rounded,
+                              colors: AppGradients.madeForYou,
+                            ),
+                            title: const Text('Made for you'),
+                            onTap: () => widget.open('suggestions'),
+                          ),
+                          CollectionRow(
+                            leading: const IconTile(
+                              icon: Icons.bar_chart_rounded,
+                              colors: AppGradients.statistics,
+                            ),
+                            title: const Text('Statistics'),
+                            onTap: () => widget.open('statistics'),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-          if (_shelf == 'Albums')
+          if (showPlaylists) ...[
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverGrid.builder(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 240,
-                  mainAxisSpacing: 18,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: .72,
+              padding: edge,
+              sliver: SliverToBoxAdapter(
+                child: SectionTitle(
+                  'Playlists',
+                  action: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ActionIcon(
+                        icon: Icons.undo_rounded,
+                        label: 'Undo last playlist edit',
+                        onPressed: () => model.call('undoPlaylist'),
+                      ),
+                      ActionIcon(
+                        icon: Icons.add_rounded,
+                        label: 'Create playlist',
+                        onPressed: () => namePlaylist(context, model),
+                      ),
+                    ],
+                  ),
                 ),
-                itemCount: albums.length,
-                itemBuilder: (_, index) => _AlbumTile(
+              ),
+            ),
+            if (playlists.isEmpty)
+              SliverPadding(
+                padding: edge,
+                sliver: SliverToBoxAdapter(
+                  child: Text(
+                    'A mood, a moment, a journey. Make it a playlist.',
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            SliverList.builder(
+              itemCount: playlists.length,
+              itemBuilder: (context, index) {
+                final p = playlists[index];
+                return CollectionRow(
+                  leading: PlaylistCover(
+                    model: model,
+                    covers: p['covers'],
+                    size: AppGeometry.rowArt,
+                  ),
+                  title: Text('${p['name']}'),
+                  subtitle: Text('${p['songs']} songs'),
+                  onTap: () => widget.open('collection', {
+                    ...p,
+                    'title': p['name'],
+                    'kind': 'playlist',
+                  }),
+                );
+              },
+            ),
+          ],
+          if (everything && albums.isNotEmpty) ...[
+            SliverPadding(
+              padding: edge,
+              sliver: SliverToBoxAdapter(
+                child: SectionTitle(
+                  'Albums',
+                  onSeeAll: albums.length > shown
+                      ? () => setState(() => _shelf = 'Albums')
+                      : null,
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Shelf(
+                itemCount: albums.length.clamp(0, shown),
+                itemBuilder: (context, index) => AlbumCard(
                   model: model,
                   album: albums[index],
-                  open: widget.open,
+                  onTap: () => openAlbum(albums[index]),
                 ),
               ),
             ),
-          if ((_shelf == 'All' || _shelf == 'Artists') && artists.isNotEmpty)
+          ],
+          if (_shelf == 'Albums') ...[
+            const SliverPadding(
+              padding: edge,
+              sliver: SliverToBoxAdapter(child: SectionTitle('Albums')),
+            ),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverList.builder(
-                itemCount: artists.length + 1,
-                itemBuilder: (context, index) => index == 0
-                    ? const SectionTitle('Artists')
-                    : ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Artwork(
-                          model: model,
-                          track: model.trackById(
-                            artists[index - 1]['artworkTrack'],
-                          ),
-                          size: 52,
-                          radius: 26,
-                        ),
-                        title: Text(
-                          '${artists[index - 1]['name']}'.isEmpty
-                              ? 'Unknown artist'
-                              : '${artists[index - 1]['name']}',
-                        ),
-                        subtitle: Text('${artists[index - 1]['songs']} songs'),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => widget.open('collection', {
-                          'kind': 'artist',
-                          'key': artists[index - 1]['name'],
-                          'title': artists[index - 1]['name'],
-                          'artworkTrack': artists[index - 1]['artworkTrack'],
-                        }),
-                      ),
+              padding: edge,
+              sliver: SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  const across = AppSpace.l;
+                  const widest = 160.0;
+                  final width = constraints.crossAxisExtent;
+                  final columns = ((width + across) / (widest + across))
+                      .ceil()
+                      .clamp(2, 12);
+                  final tile = (width - across * (columns - 1)) / columns;
+                  return SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 20,
+                      crossAxisSpacing: across,
+                      mainAxisExtent: tile + shelfCaptionHeight(context),
+                    ),
+                    itemCount: albums.length,
+                    itemBuilder: (_, index) => AlbumCard(
+                      model: model,
+                      album: albums[index],
+                      onTap: () => openAlbum(albums[index]),
+                    ),
+                  );
+                },
               ),
             ),
+          ],
+          if (everything && artists.isNotEmpty) ...[
+            SliverPadding(
+              padding: edge,
+              sliver: SliverToBoxAdapter(
+                child: SectionTitle(
+                  'Artists',
+                  onSeeAll: artists.length > shown
+                      ? () => setState(() => _shelf = 'Artists')
+                      : null,
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Shelf(
+                itemWidth: AppGeometry.artistCircle,
+                coverHeight: AppGeometry.artistCircle,
+                itemCount: artists.length.clamp(0, shown),
+                itemBuilder: (context, index) => ArtistCard(
+                  model: model,
+                  artist: artists[index],
+                  onTap: () => openArtist(artists[index]),
+                ),
+              ),
+            ),
+          ],
+          if (_shelf == 'Artists' && artists.isNotEmpty) ...[
+            const SliverPadding(
+              padding: edge,
+              sliver: SliverToBoxAdapter(child: SectionTitle('Artists')),
+            ),
+            SliverList.builder(
+              itemCount: artists.length,
+              itemBuilder: (context, index) {
+                final artist = artists[index];
+                return CollectionRow(
+                  leading: Artwork(
+                    model: model,
+                    track: model.trackById(artist['artworkTrack']),
+                    size: AppGeometry.rowArt,
+                    radius: AppGeometry.rowArt / 2,
+                  ),
+                  title: Text(
+                    '${artist['name']}'.isEmpty
+                        ? 'Unknown artist'
+                        : '${artist['name']}',
+                  ),
+                  subtitle: Text('${artist['songs']} songs'),
+                  onTap: () => openArtist(artist),
+                );
+              },
+            ),
+          ],
           if (model.allTracks.isEmpty)
             SliverToBoxAdapter(
               child: EmptyState(
@@ -350,95 +356,6 @@ class _LibraryMenu extends StatelessWidget {
       PopupMenuItem(value: 'rescan', child: Text('Rescan library')),
       PopupMenuItem(value: 'tools', child: Text('Library tools')),
     ],
-  );
-}
-
-class _Shortcut extends StatelessWidget {
-  const _Shortcut({
-    required this.icon,
-    required this.label,
-    required this.colors,
-    required this.onTap,
-  });
-  final IconData icon;
-  final String label;
-  final List<Color> colors;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: label,
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Ink(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(colors: colors),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Colors.white),
-            const SizedBox(height: 12),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _AlbumTile extends StatelessWidget {
-  const _AlbumTile({
-    required this.model,
-    required this.album,
-    required this.open,
-  });
-  final PlayerModel model;
-  final RowData album;
-  final OpenPage open;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(18),
-    onTap: () => open('collection', {...album, 'kind': 'album'}),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AspectRatio(
-          aspectRatio: 1,
-          child: Artwork(
-            model: model,
-            track: model.trackById(album['artworkTrack']),
-            radius: 18,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          '${album['title']}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          '${album['artist']}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    ),
   );
 }
 
@@ -502,13 +419,18 @@ class SongsPage extends StatelessWidget {
         Padding(
           padding: EdgeInsets.fromLTRB(
             AppGeometry.pageInset,
-            topInset + 8,
-            AppGeometry.pageInset,
-            4,
+            topInset + AppSpace.s,
+            AppSpace.s,
+            AppSpace.xs,
           ),
           child: Row(
             children: [
-              Text('${tracks.length} ${tracks.length == 1 ? 'song' : 'songs'}'),
+              Text(
+                '${tracks.length} ${tracks.length == 1 ? 'song' : 'songs'}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
               const Spacer(),
               TextButton.icon(
                 onPressed: tracks.isEmpty ? null : () => model.play(tracks),
@@ -521,7 +443,11 @@ class SongsPage extends StatelessWidget {
         Expanded(
           child: tracks.isEmpty
               ? Padding(
-                  padding: const EdgeInsets.only(bottom: 110),
+                  padding: EdgeInsets.only(
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        AppGeometry.pageInset,
+                  ),
                   child: EmptyState(
                     icon: Icons.music_note_rounded,
                     title: model.allTracks.isEmpty
@@ -587,6 +513,7 @@ class SongTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final playing = '${model.current['id']}' == '${track['id']}';
     final spokenNumber = semanticNumber ?? number;
+    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       label: spokenNumber == null
           ? 'Play ${title(track)}'
@@ -594,16 +521,20 @@ class SongTile extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: number == null
-            ? Artwork(model: model, track: track, size: 50, radius: 12)
+            ? Artwork(
+                model: model,
+                track: track,
+                size: AppGeometry.songArt,
+                radius: AppGeometry.thumbRadius,
+              )
             : SizedBox(
-                width: 30,
+                width: 28,
                 child: Text(
                   '$number',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: playing
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontFeatures: tabularFigures,
+                    color: playing ? scheme.primary : scheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -611,8 +542,8 @@ class SongTile extends StatelessWidget {
           title(track),
           ranges: lit.of('TITLE', title(track)),
           style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: playing ? Theme.of(context).colorScheme.primary : null,
+            fontWeight: playing ? FontWeight.w600 : FontWeight.w400,
+            color: playing ? scheme.primary : null,
           ),
         ),
         subtitle: LitText(
@@ -672,8 +603,16 @@ Future<void> songActions(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Artwork(model: model, track: track, size: 52),
-              title: Text(title(track)),
+              leading: Artwork(
+                model: model,
+                track: track,
+                size: AppGeometry.rowArt,
+                radius: AppGeometry.coverRadius,
+              ),
+              title: Text(
+                title(track),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               subtitle: Text(artist(track)),
             ),
             const Divider(),
@@ -844,19 +783,23 @@ Future<void> playlistPicker(
         builder: (_, _) => ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(
-              title: Text(
-                'Add to playlist',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-            ),
+            const SheetTitle('Add to playlist'),
             ListTile(
-              leading: const Icon(Icons.add_rounded),
+              leading: const IconTile(
+                icon: Icons.add_rounded,
+                size: AppGeometry.songArt,
+              ),
               title: const Text('Create playlist'),
               onTap: () => namePlaylist(sheet, model),
             ),
             ...rows(model.state['playlists']).map(
               (p) => ListTile(
+                leading: PlaylistCover(
+                  model: model,
+                  covers: p['covers'],
+                  size: AppGeometry.songArt,
+                  radius: AppGeometry.thumbRadius,
+                ),
                 title: Text('${p['name']}'),
                 subtitle: Text('${p['songs']} songs'),
                 onTap: () {
@@ -885,16 +828,16 @@ Future<void> songFilters(BuildContext context, PlayerModel model) async {
       builder: (context, update) => SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              0,
-              24,
-              MediaQuery.viewInsetsOf(context).bottom + 24,
+            padding: EdgeInsets.only(
+              bottom:
+                  MediaQuery.viewInsetsOf(context).bottom +
+                  AppGeometry.pageInset,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SectionTitle('Shape your listening'),
+                const SheetTitle('Shape your listening'),
                 for (final entry in {
                   'favourites': 'Favourites only',
                   'unplayed': 'Never played',
@@ -906,82 +849,108 @@ Future<void> songFilters(BuildContext context, PlayerModel model) async {
                     onChanged: (value) =>
                         update(() => filter[entry.key] = value),
                   ),
-                for (final key in ['artist', 'album', 'genre'])
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextFormField(
-                      initialValue: '${filter[key] ?? ''}',
-                      decoration: InputDecoration(labelText: humanize(key)),
-                      onChanged: (value) => filter[key] = value,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppGeometry.pageInset,
+                    AppSpace.m,
+                    AppGeometry.pageInset,
+                    0,
                   ),
-                DropdownButtonFormField<String>(
-                  initialValue: filter['order'] as String? ?? 'TITLE',
-                  decoration: const InputDecoration(labelText: 'Sort by'),
-                  items:
-                      ['TITLE', 'ARTIST', 'ALBUM', 'ADDED', 'PLAYS', 'DURATION']
-                          .map(
-                            (v) => DropdownMenuItem(
-                              value: v,
-                              child: Text(humanize(v)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final key in ['artist', 'album', 'genre'])
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpace.m),
+                          child: TextFormField(
+                            initialValue: '${filter[key] ?? ''}',
+                            decoration: InputDecoration(
+                              labelText: humanize(key),
                             ),
-                          )
-                          .toList(),
-                  onChanged: (v) => filter['order'] = v,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  initialValue: integer(filter['minimumRate']),
-                  decoration: const InputDecoration(
-                    labelText: 'Minimum sample rate',
-                  ),
-                  items: [0, 44100, 88200, 96000, 192000]
-                      .map(
-                        (v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(
-                            v == 0 ? 'Any sample rate' : '${v / 1000} kHz',
+                            onChanged: (value) => filter[key] = value,
                           ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: (v) => filter['minimumRate'] = v,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  initialValue: integer(filter['minimumBits']),
-                  decoration: const InputDecoration(
-                    labelText: 'Minimum bit depth',
-                  ),
-                  items: [0, 16, 24, 32]
-                      .map(
-                        (v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(v == 0 ? 'Any bit depth' : '$v bit'),
+                      DropdownButtonFormField<String>(
+                        initialValue: filter['order'] as String? ?? 'TITLE',
+                        decoration: const InputDecoration(labelText: 'Sort by'),
+                        items:
+                            [
+                                  'TITLE',
+                                  'ARTIST',
+                                  'ALBUM',
+                                  'ADDED',
+                                  'PLAYS',
+                                  'DURATION',
+                                ]
+                                .map(
+                                  (v) => DropdownMenuItem(
+                                    value: v,
+                                    child: Text(humanize(v)),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (v) => filter['order'] = v,
+                      ),
+                      const SizedBox(height: AppSpace.m),
+                      DropdownButtonFormField<int>(
+                        initialValue: integer(filter['minimumRate']),
+                        decoration: const InputDecoration(
+                          labelText: 'Minimum sample rate',
                         ),
-                      )
-                      .toList(),
-                  onChanged: (v) => filter['minimumBits'] = v,
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        model.clearFilters();
-                        Navigator.pop(sheet);
-                      },
-                      child: const Text('Reset'),
-                    ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () {
-                        model.call('filter', filter);
-                        Navigator.pop(sheet);
-                      },
-                      child: const Text('Apply filters'),
-                    ),
-                  ],
+                        items: [0, 44100, 88200, 96000, 192000]
+                            .map(
+                              (v) => DropdownMenuItem(
+                                value: v,
+                                child: Text(
+                                  v == 0
+                                      ? 'Any sample rate'
+                                      : '${v / 1000} kHz',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => filter['minimumRate'] = v,
+                      ),
+                      const SizedBox(height: AppSpace.m),
+                      DropdownButtonFormField<int>(
+                        initialValue: integer(filter['minimumBits']),
+                        decoration: const InputDecoration(
+                          labelText: 'Minimum bit depth',
+                        ),
+                        items: [0, 16, 24, 32]
+                            .map(
+                              (v) => DropdownMenuItem(
+                                value: v,
+                                child: Text(
+                                  v == 0 ? 'Any bit depth' : '$v bit',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => filter['minimumBits'] = v,
+                      ),
+                      const SizedBox(height: AppSpace.xl),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              model.clearFilters();
+                              Navigator.pop(sheet);
+                            },
+                            child: const Text('Reset'),
+                          ),
+                          const Spacer(),
+                          FilledButton(
+                            onPressed: () {
+                              model.call('filter', filter);
+                              Navigator.pop(sheet);
+                            },
+                            child: const Text('Apply filters'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1109,6 +1078,11 @@ class _CollectionPageState extends State<CollectionPage> {
                                 child: const Text('Cancel'),
                               ),
                               TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Theme.of(context)
+                                      .colorScheme
+                                      .error,
+                                ),
                                 onPressed: () => Navigator.pop(context, true),
                                 child: const Text('Delete'),
                               ),
@@ -1161,101 +1135,50 @@ class _CollectionPageState extends State<CollectionPage> {
                       ),
                     ),
                     SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: 220,
-                              height: 220,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(24),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: .2),
-                                      blurRadius: 32,
-                                      offset: const Offset(0, 16),
-                                    ),
-                                  ],
+                      child: _CollectionHeader(
+                        cover: SizedBox.square(
+                          dimension: _coverSide(context),
+                          child: kind == 'favourites'
+                              ? const IconTile(
+                                  icon: Icons.favorite_rounded,
+                                  colors: AppGradients.favourites,
+                                  size: AppGeometry.headerCover,
+                                )
+                              : playlist
+                              ? PlaylistCover(
+                                  model: model,
+                                  covers: data['covers'],
+                                  radius: AppGeometry.cardRadius,
+                                )
+                              : Artwork(
+                                  model: model,
+                                  track: cover.isEmpty && tracks.isNotEmpty
+                                      ? tracks.first
+                                      : cover,
+                                  radius: AppGeometry.cardRadius,
                                 ),
-                                child: kind == 'favourites'
-                                    ? Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            24,
-                                          ),
-                                          gradient: const LinearGradient(
-                                            colors: [
-                                              Color(0xFFAD679D),
-                                              Color(0xFF6657AB),
-                                            ],
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.favorite_rounded,
-                                          size: 84,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : playlist
-                                    ? PlaylistCover(
-                                        model: model,
-                                        covers: data['covers'],
-                                        radius: 24,
-                                      )
-                                    : Artwork(
-                                        model: model,
-                                        track:
-                                            cover.isEmpty && tracks.isNotEmpty
-                                            ? tracks.first
-                                            : cover,
-                                        radius: 24,
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              '${data['name'] ?? widget.data['title']}',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '${tracks.length} songs · ${tracks.fold<int>(0, (sum, t) => sum + integer(t['durationMs'])) ~/ 60000} min',
-                            ),
-                            const SizedBox(height: 22),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: tracks.isEmpty
-                                        ? null
-                                        : () => model.play(tracks),
-                                    icon: const Icon(Icons.play_arrow_rounded),
-                                    label: const Text('Play'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: FilledButton.tonalIcon(
-                                    onPressed: tracks.isEmpty
-                                        ? null
-                                        : () async {
-                                            await model.play(tracks);
-                                            await model.call('shuffle', {
-                                              'enabled': true,
-                                            });
-                                          },
-                                    icon: const Icon(Icons.shuffle_rounded),
-                                    label: const Text('Shuffle'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
                         ),
+                        title: '${data['name'] ?? widget.data['title']}',
+                        artist: kind == 'album'
+                            ? '${widget.data['artist'] ?? ''}'
+                            : '',
+                        onArtist: () => widget.open('collection', {
+                          'kind': 'artist',
+                          'key': widget.data['artist'],
+                          'title': widget.data['artist'],
+                          'artworkTrack': widget.data['artworkTrack'],
+                        }),
+                        summary:
+                            '${tracks.length} songs · ${tracks.fold<int>(0, (sum, t) => sum + integer(t['durationMs'])) ~/ 60000} min',
+                        onPlay: tracks.isEmpty
+                            ? null
+                            : () => model.play(tracks),
+                        onShuffle: tracks.isEmpty
+                            ? null
+                            : () async {
+                                await model.play(tracks);
+                                await model.call('shuffle', {'enabled': true});
+                              },
                       ),
                     ),
                     if (tracks.isEmpty)
@@ -1267,35 +1190,37 @@ class _CollectionPageState extends State<CollectionPage> {
                               'Add some songs to make this collection yours.',
                         ),
                       ),
-                    if (_artistAlbums.isNotEmpty)
+                    if (_artistAlbums.isNotEmpty) ...[
+                      const SliverPadding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppGeometry.pageInset,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: SectionTitle('Albums'),
+                        ),
+                      ),
                       SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Column(
-                            children: [
-                              const SectionTitle('Albums'),
-                              SizedBox(
-                                height: 236,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _artistAlbums.length,
-                                  separatorBuilder: (_, _) =>
-                                      const SizedBox(width: 16),
-                                  itemBuilder: (_, index) => SizedBox(
-                                    width: 160,
-                                    child: _AlbumTile(
-                                      model: model,
-                                      album: _artistAlbums[index],
-                                      open: widget.open,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SectionTitle('Songs'),
-                            ],
+                        child: Shelf(
+                          itemCount: _artistAlbums.length,
+                          itemBuilder: (_, index) => AlbumCard(
+                            model: model,
+                            album: _artistAlbums[index],
+                            onTap: () => widget.open('collection', {
+                              ..._artistAlbums[index],
+                              'kind': 'album',
+                            }),
                           ),
                         ),
                       ),
+                      const SliverPadding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppGeometry.pageInset,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: SectionTitle('Songs'),
+                        ),
+                      ),
+                    ],
                     SliverList.builder(
                       itemCount: tracks.length,
                       itemBuilder: (_, index) => SongTile(
@@ -1352,13 +1277,28 @@ class _CollectionPageState extends State<CollectionPage> {
                             : null,
                       ),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 180)),
+                    SliverToBoxAdapter(
+                      child: Builder(
+                        builder: (body) => SizedBox(
+                          height:
+                              MediaQuery.paddingOf(body).bottom +
+                              AppGeometry.pageInset,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
           bottomNavigationBar: AppBottomBar(model: model, open: widget.open),
         ),
       );
     },
+  );
+
+  double _coverSide(BuildContext context) => math.min(
+    MediaQuery.textScalerOf(context)
+        .scale(AppGeometry.headerCover)
+        .clamp(0, AppGeometry.headerCoverAtMost),
+    MediaQuery.sizeOf(context).width - 2 * AppGeometry.pageInset,
   );
 
   Future<void> _syncSongs(BuildContext context) async {
@@ -1382,7 +1322,7 @@ class _CollectionPageState extends State<CollectionPage> {
             return ListView(
               shrinkWrap: true,
               children: [
-                const ListTile(title: Text('Songs on your devices')),
+                const SheetTitle('Songs on your devices'),
                 SwitchListTile(
                   title: const Text('Keep its songs here'),
                   value: sync['kept'] == true,
@@ -1442,7 +1382,12 @@ class _CollectionPageState extends State<CollectionPage> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppGeometry.pageInset,
+                      0,
+                      AppGeometry.pageInset,
+                      AppSpace.s,
+                    ),
                     child: TextField(
                       onChanged: (v) => update(() => query = v),
                       decoration: const InputDecoration(
@@ -1472,7 +1417,7 @@ class _CollectionPageState extends State<CollectionPage> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(AppGeometry.pageInset),
                     child: FilledButton(
                       onPressed: selected.isEmpty
                           ? null
@@ -1491,6 +1436,75 @@ class _CollectionPageState extends State<CollectionPage> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _CollectionHeader extends StatelessWidget {
+  const _CollectionHeader({
+    required this.cover,
+    required this.title,
+    required this.artist,
+    required this.onArtist,
+    required this.summary,
+    required this.onPlay,
+    required this.onShuffle,
+  });
+  final Widget cover;
+  final String title;
+  final String artist;
+  final VoidCallback onArtist;
+  final String summary;
+  final VoidCallback? onPlay;
+  final VoidCallback? onShuffle;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.all(AppGeometry.pageInset),
+      child: Column(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppGeometry.cardRadius),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .25),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppGeometry.cardRadius),
+              child: cover,
+            ),
+          ),
+          const SizedBox(height: AppSpace.l),
+          Text(title, textAlign: TextAlign.center, style: text.headlineSmall),
+          if (artist.isNotEmpty)
+            TextButton(
+              onPressed: onArtist,
+              style: TextButton.styleFrom(
+                textStyle: text.titleMedium,
+                foregroundColor: scheme.primary,
+              ),
+              child: Text(
+                artist,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            )
+          else
+            const SizedBox(height: AppSpace.xs),
+          Text(summary, textAlign: TextAlign.center, style: text.bodySmall),
+          const SizedBox(height: AppSpace.l),
+          PlayShuffle(onPlay: onPlay, onShuffle: onShuffle),
+        ],
       ),
     );
   }

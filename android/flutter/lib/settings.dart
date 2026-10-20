@@ -79,6 +79,53 @@ const _settings =
       ),
     ];
 
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => Card.filled(
+    child: ListTileTheme.merge(
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.l),
+      iconColor: Theme.of(context).colorScheme.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    ),
+  );
+}
+
+class _Chevron extends StatelessWidget {
+  const _Chevron();
+  @override
+  Widget build(BuildContext context) => Icon(
+    Icons.chevron_right_rounded,
+    color: Theme.of(context).colorScheme.outline,
+  );
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+  );
+}
+
+class _Footnote extends StatelessWidget {
+  const _Footnote(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) =>
+      Text(text, style: Theme.of(context).textTheme.bodySmall);
+}
+
+ButtonStyle _destructive(BuildContext context) =>
+    TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error);
+
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.model, required this.open});
   final PlayerModel model;
@@ -117,8 +164,8 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
     return ListView(
       padding: pageInsets(context),
       children: [
-        Text('Settings', style: Theme.of(context).textTheme.headlineLarge),
-        const SizedBox(height: 20),
+        const LargeTitle('Settings'),
+        const SizedBox(height: AppSpace.l),
         TextField(
           controller: _query.value,
           onChanged: (_) => setState(() {}),
@@ -129,20 +176,22 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
         ),
         if (showOnline)
           Padding(
-            padding: const EdgeInsets.only(top: 18),
-            child: Card.filled(
-              margin: EdgeInsets.zero,
-              child: SwitchListTile(
-                title: const Text('Online features'),
-                subtitle: Text(
-                  widget.model.online
-                      ? 'Artwork, lyrics and music search are enabled'
-                      : 'Artwork, lyrics and music search are offline',
+            padding: const EdgeInsets.only(top: AppSpace.l),
+            child: _Group(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.public_rounded),
+                  title: const Text('Online features'),
+                  subtitle: Text(
+                    widget.model.online
+                        ? 'Artwork, lyrics and music search are enabled'
+                        : 'Artwork, lyrics and music search are offline',
+                  ),
+                  value: widget.model.online,
+                  onChanged: (value) =>
+                      widget.model.call('online', {'enabled': value}),
                 ),
-                value: widget.model.online,
-                onChanged: (value) =>
-                    widget.model.call('online', {'enabled': value}),
-              ),
+              ],
             ),
           ),
         for (final group in [
@@ -152,28 +201,21 @@ class _SettingsPageState extends State<SettingsPage> with RestorationMixin {
         ])
           if (entries.any((e) => e.group == group)) ...[
             SectionTitle(group),
-            Card.filled(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: entries
-                    .where((e) => e.group == group)
-                    .map(
-                      (e) => ListTile(
-                        leading: Icon(
-                          e.icon,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        title: Text(e.title),
-                        subtitle: Text(e.detail),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => e.page == 'sleep'
-                            ? sleepTimer(context, widget.model)
-                            : widget.open(e.page),
-                      ),
-                    )
-                    .toList(),
-              ),
+            _Group(
+              children: entries
+                  .where((e) => e.group == group)
+                  .map(
+                    (e) => ListTile(
+                      leading: Icon(e.icon),
+                      title: Text(e.title),
+                      subtitle: Text(e.detail),
+                      trailing: const _Chevron(),
+                      onTap: () => e.page == 'sleep'
+                          ? sleepTimer(context, widget.model)
+                          : widget.open(e.page),
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         if (showArtwork) ArtworkDetailsSection(model: widget.model),
@@ -218,80 +260,80 @@ class _ArtworkDetailsSectionState extends State<ArtworkDetailsSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SectionTitle('Artwork and details'),
-          Card.filled(
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('Fetch artwork and details automatically'),
-                  subtitle: const Text(
-                    'Covers, artist portraits, lyrics and MusicBrainz details',
-                  ),
-                  value: automatic,
-                  onChanged: model.online
-                      ? (enabled) => model.call('enrichmentAutomatic', {
-                          'enabled': enabled,
-                        })
-                      : null,
+          _Group(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.auto_awesome_rounded),
+                title: const Text('Fetch artwork and details automatically'),
+                subtitle: const Text(
+                  'Covers, artist portraits, lyrics and MusicBrainz details',
                 ),
-                SwitchListTile(
-                  title: const Text('Only on Wi-Fi'),
-                  subtitle: const Text(
-                    'Wait for a network that is not metered',
-                  ),
-                  value: model.state['enrichmentUnmeteredOnly'] == true,
-                  onChanged: automatic && model.online
-                      ? (enabled) => model.call('enrichmentUnmeteredOnly', {
-                          'enabled': enabled,
-                        })
-                      : null,
+                value: automatic,
+                onChanged: model.online
+                    ? (enabled) => model.call('enrichmentAutomatic', {
+                        'enabled': enabled,
+                      })
+                    : null,
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.wifi_rounded),
+                title: const Text('Only on Wi-Fi'),
+                subtitle: const Text('Wait for a network that is not metered'),
+                value: model.state['enrichmentUnmeteredOnly'] == true,
+                onChanged: automatic && model.online
+                    ? (enabled) => model.call('enrichmentUnmeteredOnly', {
+                        'enabled': enabled,
+                      })
+                    : null,
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_search_rounded),
+                title: const Text('Look again for missing covers'),
+                subtitle: Text(
+                  covers == null
+                      ? 'Ask again for albums still without a cover'
+                      : 'Asking again for $covers ${integer(covers) == 1 ? 'album' : 'albums'}',
                 ),
-                ListTile(
-                  leading: const Icon(Icons.image_search_rounded),
-                  title: const Text('Look again for missing covers'),
-                  subtitle: Text(
-                    covers == null
-                        ? 'Ask again for albums still without a cover'
-                        : 'Asking again for $covers ${integer(covers) == 1 ? 'album' : 'albums'}',
+                enabled: model.online,
+                onTap: model.online
+                    ? () => model.call('retryMissingCovers')
+                    : null,
+              ),
+              ListTile(
+                leading: running
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        status['stopped'] == 'FINISHED'
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.info_outline_rounded,
+                      ),
+                title: Text(enrichmentLine(status)),
+                trailing: running
+                    ? TextButton(
+                        onPressed: () => model.call('stopEnrichment'),
+                        child: const Text('Stop'),
+                      )
+                    : null,
+              ),
+              if (running && due > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.l,
+                    0,
+                    AppSpace.l,
+                    AppSpace.l,
                   ),
-                  enabled: model.online,
-                  onTap: model.online
-                      ? () => model.call('retryMissingCovers')
-                      : null,
+                  child: LinearProgressIndicator(
+                    value: (asked / due).clamp(0, 1),
+                    semanticsLabel:
+                        'Artwork lookup progress: $asked of $due songs',
+                  ),
                 ),
-                ListTile(
-                  leading: running
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          status['stopped'] == 'FINISHED'
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.info_outline_rounded,
-                        ),
-                  title: Text(
-                    enrichmentLine(status),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  trailing: running
-                      ? TextButton(
-                          onPressed: () => model.call('stopEnrichment'),
-                          child: const Text('Stop'),
-                        )
-                      : null,
-                ),
-                if (running && due > 0)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: LinearProgressIndicator(
-                      value: (asked / due).clamp(0, 1),
-                      semanticsLabel:
-                          'Artwork lookup progress: $asked of $due songs',
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ],
       );
@@ -359,6 +401,7 @@ class SettingsDetail extends StatefulWidget {
 }
 
 class _SettingsDetailState extends State<SettingsDetail> {
+  int _days = 0;
   @override
   void initState() {
     super.initState();
@@ -431,7 +474,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
               topInset: topInset,
             ),
             'wanted' => Padding(
-              padding: EdgeInsets.only(top: topInset),
+              padding: EdgeInsets.only(top: topInset + AppGeometry.pageInset),
               child: WantedPane(model: widget.model),
             ),
             _ => const SizedBox.shrink(),
@@ -460,10 +503,10 @@ class _SettingsDetailState extends State<SettingsDetail> {
     final prefs = model.preferences;
     if (prefs.isEmpty) return const Center(child: CircularProgressIndicator());
     return _list([
-      const Text(
+      const _Note(
         'Keep volume consistent and choose how your music is processed.',
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: AppSpace.xl),
       _choice('ReplayGain', 'replayGain', ['OFF', 'TRACK', 'ALBUM']),
       _choice('Resampling quality', 'quality', [
         'FAST',
@@ -477,31 +520,47 @@ class _SettingsDetailState extends State<SettingsDetail> {
         'MINIMUM',
       ]),
       _choice('Lossy restoration', 'restoration', ['OFF', 'REPAIR', 'EXTEND']),
-      for (final e in {
-        'truePeak': 'True-peak clip prevention',
-        'dsdLikePcm': 'Play DSD as PCM',
-      }.entries)
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(e.value),
-          value: prefs[e.key] == true,
-          onChanged: (value) => model.call('preferences', {e.key: value}),
-        ),
+      _Group(
+        children: [
+          for (final e in {
+            'truePeak': 'True-peak clip prevention',
+            'dsdLikePcm': 'Play DSD as PCM',
+          }.entries)
+            SwitchListTile(
+              title: Text(e.value),
+              value: prefs[e.key] == true,
+              onChanged: (value) => model.call('preferences', {e.key: value}),
+            ),
+        ],
+      ),
       const SectionTitle('Playback buffer'),
-      Text('${prefs['bufferMs']} ms'),
-      CommitSlider(
-        value: decimal(prefs['bufferMs']),
-        min: 50,
-        max: 2000,
-        label: 'Playback buffer',
-        onCommit: (value) =>
-            model.call('preferences', {'bufferMs': value.round()}),
+      Card.filled(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.l),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${prefs['bufferMs']} ms',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              CommitSlider(
+                value: decimal(prefs['bufferMs']),
+                min: 50,
+                max: 2000,
+                label: 'Playback buffer',
+                onCommit: (value) =>
+                    model.call('preferences', {'bufferMs': value.round()}),
+              ),
+            ],
+          ),
+        ),
       ),
     ]);
   }
 
   Widget _choice(String label, String key, List<String> choices) => Padding(
-    padding: const EdgeInsets.only(bottom: 18),
+    padding: const EdgeInsets.only(bottom: AppSpace.l),
     child: DropdownMenu<String>(
       key: ValueKey('$key:${widget.model.preferences[key]}'),
       initialSelection: widget.model.preferences[key] as String?,
@@ -526,75 +585,80 @@ class _SettingsDetailState extends State<SettingsDetail> {
   }
 
   Widget _folders() => _list([
-    const Text(
+    const _Note(
       'Add music folders or use Downloads. Android asks for music access to read existing songs in Downloads.',
     ),
-    const SizedBox(height: 20),
+    const SizedBox(height: AppSpace.l),
     ...rows(widget.model.state['folders']).map(
       (folder) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Card.filled(
-          child: ListTile(
-            leading: const Icon(Icons.folder_outlined),
-            title: Text('${folder['name']}'),
-            subtitle: Text(
-              folder['uri'] == 'content://media/external_primary/downloads'
-                  ? 'Tap to allow music access and scan existing songs'
-                  : folder['readable'] == true
-                  ? (folder['writable'] == true
-                        ? 'Read and write access'
-                        : 'Read access')
-                  : 'Access unavailable',
-            ),
-            onTap: folder['uri'] == 'content://media/external_primary/downloads'
-                ? () => widget.model.call('useDownloads')
-                : null,
-            trailing: ActionIcon(
-              icon: Icons.link_off_rounded,
-              label: 'Remove access',
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Remove folder access?'),
-                    content: const Text(
-                      'Your files and saved library entries will be kept.',
+        padding: const EdgeInsets.only(bottom: AppSpace.m),
+        child: _Group(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text('${folder['name']}'),
+              subtitle: Text(
+                folder['uri'] == 'content://media/external_primary/downloads'
+                    ? 'Tap to allow music access and scan existing songs'
+                    : folder['readable'] == true
+                    ? (folder['writable'] == true
+                          ? 'Read and write access'
+                          : 'Read access')
+                    : 'Access unavailable',
+              ),
+              onTap:
+                  folder['uri'] == 'content://media/external_primary/downloads'
+                  ? () => widget.model.call('useDownloads')
+                  : null,
+              trailing: ActionIcon(
+                icon: Icons.link_off_rounded,
+                label: 'Remove access',
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Remove folder access?'),
+                      content: const Text(
+                        'Your files and saved library entries will be kept.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          style: _destructive(context),
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Remove access'),
+                        ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Remove access'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) {
-                  widget.model.call('removeFolder', {'uri': folder['uri']});
-                }
-              },
+                  );
+                  if (confirmed == true) {
+                    widget.model.call('removeFolder', {'uri': folder['uri']});
+                  }
+                },
+              ),
             ),
-          ),
+          ],
         ),
       ),
     ),
-    const SizedBox(height: 16),
-    const Text(musicFolderGuidance),
-    const SizedBox(height: 16),
-    FilledButton.icon(
-      onPressed: () => widget.model.call('useDownloads'),
-      icon: const Icon(Icons.download_rounded),
-      label: const Text('Use Downloads'),
-    ),
-    const SizedBox(height: 12),
+    const SizedBox(height: AppSpace.xs),
+    const _Footnote(musicFolderGuidance),
+    const SizedBox(height: AppSpace.l),
     FilledButton.icon(
       onPressed: () => widget.model.call('chooseFolder'),
       icon: const Icon(Icons.add_rounded),
       label: const Text('Add music folder'),
     ),
+    const SizedBox(height: AppSpace.m),
+    FilledButton.tonalIcon(
+      onPressed: () => widget.model.call('useDownloads'),
+      icon: const Icon(Icons.download_rounded),
+      label: const Text('Use Downloads'),
+    ),
+    const SizedBox(height: AppSpace.s),
     TextButton(
       onPressed: () => widget.model.call('rescan'),
       child: const Text('Rescan folders'),
@@ -623,11 +687,11 @@ class _SettingsDetailState extends State<SettingsDetail> {
     return _list([
       Card.filled(
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(AppSpace.l),
           child: Row(
             children: [
               Icon(Icons.volume_up_rounded, color: scheme.primary),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppSpace.l),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -642,11 +706,7 @@ class _SettingsDetailState extends State<SettingsDetail> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     if (selected != actual)
-                      Text(
-                        'Requested: ${titleFor(selected)}',
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
+                      _Footnote('Requested: ${titleFor(selected)}'),
                   ],
                 ),
               ),
@@ -655,31 +715,25 @@ class _SettingsDetailState extends State<SettingsDetail> {
         ),
       ),
       const SectionTitle('Choose an output'),
-      Card.filled(
-        child: Column(
-          children: [
-            for (final output in outputs)
-              ListTile(
-                dense: true,
-                minTileHeight: 64,
-                leading: Icon(_outputIcon(output), color: scheme.primary),
-                title: Text(_outputTitle(output)),
-                subtitle: Text(_outputSubtitle(output)),
-                trailing: integer(output['id']) == selected
-                    ? Icon(Icons.check_circle_rounded, color: scheme.primary)
-                    : null,
-                onTap: () => widget.model.call('output', {'id': output['id']}),
-              ),
-          ],
-        ),
+      _Group(
+        children: [
+          for (final output in outputs)
+            ListTile(
+              leading: Icon(_outputIcon(output)),
+              title: Text(_outputTitle(output)),
+              subtitle: Text(_outputSubtitle(output)),
+              trailing: integer(output['id']) == selected
+                  ? Icon(Icons.check_circle_rounded, color: scheme.primary)
+                  : null,
+              onTap: () => widget.model.call('output', {'id': output['id']}),
+            ),
+        ],
       ),
-      const SizedBox(height: 20),
-      Text(
+      const SizedBox(height: AppSpace.m),
+      const _Footnote(
         'Android controls the physical route. Resonate plays shared stereo audio at 48 kHz.',
-        style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(color: scheme.onSurfaceVariant),
       ),
-    ], top: MediaQuery.paddingOf(context).top + kToolbarHeight + 20);
+    ]);
   }
 
   String _outputTitle(RowData output) {
@@ -709,74 +763,62 @@ class _SettingsDetailState extends State<SettingsDetail> {
   };
 
   Widget _tools() => _list([
-    const SectionTitle('A deeper listen'),
-    Card.filled(
-      margin: EdgeInsets.zero,
-      child: Column(
-        children:
-            <({String label, String page, IconData icon})>[
-                  (
-                    label: 'Suggestions',
-                    page: 'suggestions',
-                    icon: Icons.auto_awesome_rounded,
-                  ),
-                  (
-                    label: 'Statistics',
-                    page: 'statistics',
-                    icon: Icons.bar_chart_rounded,
-                  ),
-                  (
-                    label: 'Search online',
-                    page: 'online',
-                    icon: Icons.travel_explore_rounded,
-                  ),
-                  (
-                    label: 'Saved for later',
-                    page: 'wanted',
-                    icon: Icons.bookmark_border_rounded,
-                  ),
-                  (
-                    label: 'Music folders',
-                    page: 'folders',
-                    icon: Icons.folder_open_rounded,
-                  ),
-                  (
-                    label: 'Lyrics',
-                    page: 'lyrics',
-                    icon: Icons.lyrics_outlined,
-                  ),
-                  (
-                    label: 'Analysis',
-                    page: 'analysis',
-                    icon: Icons.insights_rounded,
-                  ),
-                  (
-                    label: 'Visualizer',
-                    page: 'visualizer',
-                    icon: Icons.waves_rounded,
-                  ),
-                ]
-                .map(
-                  (entry) => ListTile(
-                    dense: true,
-                    visualDensity: VisualDensity.compact,
-                    minTileHeight: 56,
-                    minVerticalPadding: 0,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: Icon(
-                      entry.icon,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    title: Text(entry.label),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => widget.open(entry.page),
-                  ),
-                )
-                .toList(),
-      ),
+    const SectionTitle(
+      'A deeper listen',
+      padding: EdgeInsets.only(bottom: AppSpace.s),
+    ),
+    _Group(
+      children:
+          <({String label, String page, IconData icon})>[
+                (
+                  label: 'Suggestions',
+                  page: 'suggestions',
+                  icon: Icons.auto_awesome_rounded,
+                ),
+                (
+                  label: 'Statistics',
+                  page: 'statistics',
+                  icon: Icons.bar_chart_rounded,
+                ),
+                (
+                  label: 'Search online',
+                  page: 'online',
+                  icon: Icons.travel_explore_rounded,
+                ),
+                (
+                  label: 'Saved for later',
+                  page: 'wanted',
+                  icon: Icons.bookmark_border_rounded,
+                ),
+                (
+                  label: 'Music folders',
+                  page: 'folders',
+                  icon: Icons.folder_open_rounded,
+                ),
+                (label: 'Lyrics', page: 'lyrics', icon: Icons.lyrics_outlined),
+                (
+                  label: 'Analysis',
+                  page: 'analysis',
+                  icon: Icons.insights_rounded,
+                ),
+                (
+                  label: 'Visualizer',
+                  page: 'visualizer',
+                  icon: Icons.waves_rounded,
+                ),
+              ]
+              .map(
+                (entry) => ListTile(
+                  leading: Icon(entry.icon),
+                  title: Text(entry.label),
+                  trailing: const _Chevron(),
+                  onTap: () => widget.open(entry.page),
+                ),
+              )
+              .toList(),
     ),
     const SectionTitle('Library care'),
-    OutlinedButton(
+    FilledButton.tonal(
       onPressed: () => widget.model.call('rescan'),
       child: const Text('Rescan folders'),
     ),
@@ -786,28 +828,32 @@ class _SettingsDetailState extends State<SettingsDetail> {
           : () => refreshArtworkAndDetails(context, widget.model),
       child: const Text('Refresh artwork and details'),
     ),
-  ], top: MediaQuery.paddingOf(context).top + kToolbarHeight - 24);
+  ]);
 
   Widget _statistics() {
     final stats = row(widget.model.state['statistics']);
     final top = rows(stats['topTracks']);
     return _list([
       Wrap(
-        spacing: 8,
+        spacing: AppSpace.s,
         children: {'All time': 0, 'Week': 7, 'Month': 30, 'Year': 365}.entries
             .map(
-              (e) => ActionChip(
+              (e) => ChoiceChip(
                 label: Text(e.key),
-                onPressed: () =>
-                    widget.model.call('statistics', {'days': e.value}),
+                selected: _days == e.value,
+                showCheckmark: false,
+                onSelected: (_) {
+                  setState(() => _days = e.value);
+                  widget.model.call('statistics', {'days': e.value});
+                },
               ),
             )
             .toList(),
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: AppSpace.l),
       Wrap(
-        spacing: 12,
-        runSpacing: 12,
+        spacing: AppSpace.m,
+        runSpacing: AppSpace.m,
         children:
             {
                   'Songs': stats['songs'],
@@ -818,19 +864,28 @@ class _SettingsDetailState extends State<SettingsDetail> {
                 }.entries
                 .map(
                   (e) => SizedBox(
-                    width: 145,
+                    width: 150,
                     child: Card.filled(
+                      shape: roundedShape(AppGeometry.controlRadius),
                       child: Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(AppSpace.l),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               '${e.value ?? 0}',
                               style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
+                                  ?.copyWith(fontFeatures: tabularFigures),
                             ),
-                            Text(e.key),
+                            Text(
+                              e.key,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
                           ],
                         ),
                       ),
@@ -840,64 +895,68 @@ class _SettingsDetailState extends State<SettingsDetail> {
                 .toList(),
       ),
       const SectionTitle('Your most played'),
-      for (final (index, track) in top.indexed)
-        SongTile(
-          model: widget.model,
-          track: track,
-          onTap: () => widget.model.play(top, index),
-          open: widget.open,
+      ListTileTheme.merge(
+        contentPadding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            for (final (index, track) in top.indexed)
+              SongTile(
+                model: widget.model,
+                track: track,
+                onTap: () => widget.model.play(top, index),
+                open: widget.open,
+              ),
+          ],
         ),
+      ),
     ]);
   }
 
   Widget _suggestions() => _list([
-    const Text('Mixes from your music and listening history.'),
-    for (final entry in <({String title, String subtitle, RowData filter})>[
-      (
-        title: 'Never heard',
-        subtitle: 'There is always something new to find.',
-        filter: {'unplayed': true},
-      ),
-      (
-        title: 'Your favourites',
-        subtitle: 'The ones you come back to.',
-        filter: {'favourites': true},
-      ),
-      (
-        title: 'Most played',
-        subtitle: 'The soundtrack to your days.',
-        filter: {'order': 'PLAYS', 'descending': true},
-      ),
-      (
-        title: 'Recently added',
-        subtitle: 'Fresh arrivals in your library.',
-        filter: {'order': 'ADDED', 'descending': true},
-      ),
-      (
-        title: 'High resolution',
-        subtitle: 'A little more detail.',
-        filter: {'minimumRate': 88200},
-      ),
-    ])
-      Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Card.filled(
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(20),
-            leading: Icon(
-              Icons.auto_awesome_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+    const _Note('Mixes from your music and listening history.'),
+    const SizedBox(height: AppSpace.l),
+    _Group(
+      children: [
+        for (final entry in <({String title, String subtitle, RowData filter})>[
+          (
+            title: 'Never heard',
+            subtitle: 'There is always something new to find.',
+            filter: {'unplayed': true},
+          ),
+          (
+            title: 'Your favourites',
+            subtitle: 'The ones you come back to.',
+            filter: {'favourites': true},
+          ),
+          (
+            title: 'Most played',
+            subtitle: 'The soundtrack to your days.',
+            filter: {'order': 'PLAYS', 'descending': true},
+          ),
+          (
+            title: 'Recently added',
+            subtitle: 'Fresh arrivals in your library.',
+            filter: {'order': 'ADDED', 'descending': true},
+          ),
+          (
+            title: 'High resolution',
+            subtitle: 'A little more detail.',
+            filter: {'minimumRate': 88200},
+          ),
+        ])
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_rounded),
             title: Text(entry.title),
             subtitle: Text(entry.subtitle),
+            trailing: const _Chevron(),
             onTap: () => widget.open('collection', {
               ...entry.filter,
               'kind': 'mix',
               'title': entry.title,
             }),
           ),
-        ),
-      ),
+      ],
+    ),
   ]);
 }
 
@@ -1261,35 +1320,32 @@ class _EqualiserPaneState extends State<EqualiserPane> {
         final preset = _presets
             .where((item) => item['name'] == name)
             .firstOrNull;
-        final scheme = Theme.of(context).colorScheme;
         return ListView(
           padding: pageInsets(
             context,
             top: widget.topInset + AppGeometry.pageInset,
           ),
           children: [
-            Card.filled(
-              child: SwitchListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
+            _Group(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.equalizer_rounded),
+                  title: const Text('Enable equaliser'),
+                  subtitle: Text(
+                    livePrefs['equaliserEnabled'] == true
+                        ? '$name · All audio outputs'
+                        : 'Off · Original sound',
+                  ),
+                  value: livePrefs['equaliserEnabled'] == true,
+                  onChanged: (value) =>
+                      model.call('preferences', {'equaliserEnabled': value}),
                 ),
-                secondary: Icon(Icons.equalizer_rounded, color: scheme.primary),
-                title: const Text('Enable equaliser'),
-                subtitle: Text(
-                  livePrefs['equaliserEnabled'] == true
-                      ? '$name · All audio outputs'
-                      : 'Off · Original sound',
-                ),
-                value: livePrefs['equaliserEnabled'] == true,
-                onChanged: (value) =>
-                    model.call('preferences', {'equaliserEnabled': value}),
-              ),
+              ],
             ),
             const SectionTitle('Presets'),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpace.s,
+              runSpacing: AppSpace.s,
               children: [
                 for (final item in _presets)
                   ChoiceChip(
@@ -1305,13 +1361,11 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
+            const SizedBox(height: AppSpace.m),
+            _Note(
               preset != null
                   ? '${preset['detail']}'
                   : 'Your own sound. Adjust the sliders to make it yours.',
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
             SectionTitle(
               'Adjust sound',
@@ -1338,20 +1392,17 @@ class _EqualiserPaneState extends State<EqualiserPane> {
               onSelectionChanged: (values) =>
                   setState(() => _advanced = values.single),
             ),
-            const SizedBox(height: 12),
-            Text(
+            const SizedBox(height: AppSpace.m),
+            _Footnote(
               _advanced
                   ? 'Select a band below or drag a point on the graph.'
                   : 'Slide left to reduce, right to boost.',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpace.m),
             if (_advanced) ...[
-              const SizedBox(height: 16),
               Card.filled(
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(AppSpace.l),
                   child: Column(
                     children: [
                       _EqualiserGraph(
@@ -1374,23 +1425,23 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                         onAdd: (hertz, gainDb) =>
                             _addBand(shown, hertz, gainDb),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppSpace.s),
                       const Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('20 Hz'),
-                          Text('1 kHz'),
-                          Text('20 kHz'),
+                          _Footnote('20 Hz'),
+                          _Footnote('1 kHz'),
+                          _Footnote('20 kHz'),
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpace.m),
               Wrap(
-                spacing: 8,
-                runSpacing: 4,
+                spacing: AppSpace.s,
+                runSpacing: AppSpace.s,
                 children: [
                   for (var i = 0; i < shownBands.length; i++)
                     ChoiceChip(
@@ -1398,13 +1449,13 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                         '${i + 1} · ${_eqFormatHertz(decimal(shownBands[i]['frequencyHz']))}',
                       ),
                       selected: shownSelected == i,
+                      showCheckmark: false,
                       onSelected: (_) => setState(() => _selected = i),
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpace.m),
               if (shownSelected != null) ...[
-                const SizedBox(height: 12),
                 _BandEditor(
                   band: shownBands[shownSelected],
                   index: shownSelected,
@@ -1425,25 +1476,25 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                   },
                   onDelete: () => _removeBand(shown, shownSelected),
                 ),
+                const SizedBox(height: AppSpace.m),
               ],
               FilledButton.tonalIcon(
                 onPressed: canAdd ? () => _addBand(shown, 1000, 0) : null,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Add a band'),
               ),
-              const SizedBox(height: 12),
             ],
             if (!_advanced)
               Card.filled(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                    horizontal: AppSpace.l,
+                    vertical: AppSpace.s,
                   ),
                   child: Column(
                     children: [
                       for (var i = 0; i < editableBands.length; i++) ...[
-                        if (i > 0) const Divider(height: 16),
+                        if (i > 0) const Divider(height: AppSpace.l),
                         if (_eqUsesGain('${editableBands[i]['filter']}'))
                           _EqualiserBandSlider(
                             key: ValueKey(
@@ -1483,7 +1534,7 @@ class _EqualiserPaneState extends State<EqualiserPane> {
             const SectionTitle('Output gain'),
             Card.filled(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppSpace.l),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1496,11 +1547,9 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
+                    const SizedBox(height: AppSpace.xs),
+                    const _Footnote(
                       'Sets the overall level before the frequency adjustments.',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                     CommitSlider(
                       value: shownPreamp.clamp(-preampCap, preampCap),
@@ -1524,28 +1573,28 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                       ),
                       label: const Text('Fit the preamp'),
                     ),
-                    Text(
+                    const _Footnote(
                       "Set the preamp from the curve's own peak, so the loudest part of it reaches full scale and no further.",
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            const SizedBox(height: 16),
-            OutlinedButton(
+            const SizedBox(height: AppSpace.l),
+            TextButton.icon(
               onPressed: () => setState(() => _import = !_import),
-              child: const Text('Import an equaliser profile'),
+              icon: Icon(
+                _import ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              ),
+              label: const Text('Import an equaliser profile'),
             ),
             if (_import) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpace.s),
               TextField(
                 controller: _name,
                 decoration: const InputDecoration(labelText: 'Profile name'),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpace.m),
               TextField(
                 controller: _text,
                 minLines: 3,
@@ -1554,7 +1603,12 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                   labelText: 'EqualizerAPO / GraphicEQ profile',
                 ),
               ),
-              TextButton(
+              const SizedBox(height: AppSpace.s),
+              const _Footnote(
+                'EqualizerAPO or GraphicEQ text. Parametric filters load as bands; a GraphicEQ line is fitted onto bands.',
+              ),
+              const SizedBox(height: AppSpace.m),
+              FilledButton(
                 onPressed: () {
                   model.call('profile', {
                     'name': _name.text,
@@ -1567,14 +1621,7 @@ class _EqualiserPaneState extends State<EqualiserPane> {
                 },
                 child: const Text('Apply profile'),
               ),
-              Text(
-                'EqualizerAPO or GraphicEQ text. Parametric filters load as bands; a GraphicEQ line is fitted onto bands.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
             ],
-            const SizedBox(height: 24),
             RoomCorrectionSection(model: model),
           ],
         );
@@ -1611,6 +1658,7 @@ class RoomCorrectionSection extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
+            style: _destructive(dialog),
             onPressed: () => Navigator.pop(dialog, true),
             child: const Text('Forget'),
           ),
@@ -1627,26 +1675,28 @@ class RoomCorrectionSection extends StatelessWidget {
       final room = row(model.state['room']);
       final named = room['name'] != null;
       final reading = room['reading'] == true;
-      final scheme = Theme.of(context).colorScheme;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Room correction',
-            style: Theme.of(context).textTheme.titleMedium,
+          const SectionTitle('Room correction'),
+          _Group(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.surround_sound_rounded),
+                title: const Text('Correct for the room'),
+                subtitle: named
+                    ? Text('${room['name']} · ${describeRoom(room)}')
+                    : null,
+                value: room['on'] == true,
+                onChanged: named
+                    ? (value) =>
+                          model.call('roomCorrection', {'enabled': value})
+                    : null,
+              ),
+            ],
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Correct for the room'),
-            subtitle: named
-                ? Text('${room['name']} · ${describeRoom(room)}')
-                : null,
-            value: room['on'] == true,
-            onChanged: named
-                ? (value) => model.call('roomCorrection', {'enabled': value})
-                : null,
-          ),
-          OutlinedButton.icon(
+          const SizedBox(height: AppSpace.m),
+          FilledButton.tonalIcon(
             onPressed: reading ? null : () => model.call('chooseRoomResponse'),
             icon: const Icon(Icons.graphic_eq_rounded),
             label: Text(
@@ -1659,15 +1709,14 @@ class RoomCorrectionSection extends StatelessWidget {
           ),
           if (named)
             TextButton.icon(
+              style: _destructive(context),
               onPressed: () => _forget(context),
               icon: const Icon(Icons.delete_outline_rounded),
               label: const Text('Forget the response'),
             ),
-          const SizedBox(height: 8),
-          Text(
+          const SizedBox(height: AppSpace.s),
+          const _Footnote(
             'A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale.',
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       );
@@ -1711,7 +1760,7 @@ class _EqualiserBandSliderState extends State<_EqualiserBandSlider> {
     final label = '${_eqFormatHertz(frequency)} ${_eqRange(frequency)}';
     final filter = _eqFilterValue(widget.band['filter']);
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: AppSpace.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1730,11 +1779,8 @@ class _EqualiserBandSliderState extends State<_EqualiserBandSlider> {
               ),
             ],
           ),
-          Text(
+          _Footnote(
             '${_eqFormatHertz(frequency)}${filter == 'PEAKING' ? '' : ' · ${_eqFilterLabel(filter)}'}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
           ),
           Slider(
             value: gain.clamp(-cap, cap),
@@ -1965,6 +2011,7 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
                     line: scheme.primary,
                     faint: scheme.onSurfaceVariant.withValues(alpha: 0.18),
                     marked: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                    ink: scheme.onSurfaceVariant,
                   ),
                 ),
                 for (var i = 0; i < bands.length; i++)
@@ -2004,13 +2051,13 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
                         child: Center(
                           child: Text(
                             '${i + 1}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: widget.selected == i
-                                  ? scheme.onPrimary
-                                  : scheme.primary,
-                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: widget.selected == i
+                                      ? scheme.onPrimary
+                                      : scheme.primary,
+                                ),
                           ),
                         ),
                       ),
@@ -2032,12 +2079,14 @@ class _EqualiserPainter extends CustomPainter {
     required this.line,
     required this.faint,
     required this.marked,
+    required this.ink,
   });
   final List<double> responseDb;
   final double span;
   final Color line;
   final Color faint;
   final Color marked;
+  final Color ink;
   static const List<double> _faintFreqs = [
     30,
     40,
@@ -2096,7 +2145,7 @@ class _EqualiserPainter extends CustomPainter {
       final label = TextPainter(
         text: TextSpan(
           text: entry.$2,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          style: TextStyle(fontSize: 10, color: ink),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -2124,7 +2173,7 @@ class _EqualiserPainter extends CustomPainter {
         final label = TextPainter(
           text: TextSpan(
             text: text,
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
+            style: TextStyle(fontSize: 10, color: ink),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
@@ -2162,7 +2211,10 @@ class _EqualiserPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EqualiserPainter old) =>
-      responseDb != old.responseDb || span != old.span || line != old.line;
+      responseDb != old.responseDb ||
+      span != old.span ||
+      line != old.line ||
+      ink != old.ink;
 }
 
 class _BandEditor extends StatelessWidget {
@@ -2197,26 +2249,21 @@ class _BandEditor extends StatelessWidget {
     final usesGain = _eqUsesGain(filter);
     return Card.filled(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpace.l),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Band ${index + 1}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Delete'),
-                ),
-              ],
+            SectionTitle(
+              'Band ${index + 1}',
+              padding: EdgeInsets.zero,
+              action: TextButton.icon(
+                style: _destructive(context),
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Delete'),
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.s),
             DropdownMenu<String>(
               initialSelection: filter,
               expandedInsets: EdgeInsets.zero,
@@ -2246,7 +2293,7 @@ class _BandEditor extends StatelessWidget {
                 onChange(row({...band, 'filter': value}));
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpace.m),
             Text('${_eqFormatHertz(freq)} · ${_eqFilterLabel(filter)}'),
             _LogCommitSlider(
               value: freq.clamp(low, high),
@@ -2372,7 +2419,12 @@ class _CorrectionPaneState extends State<CorrectionPane> {
   Widget build(BuildContext context) => Column(
     children: [
       Padding(
-        padding: EdgeInsets.fromLTRB(24, widget.topInset + 24, 24, 24),
+        padding: EdgeInsets.fromLTRB(
+          AppGeometry.pageInset,
+          widget.topInset + AppGeometry.pageInset,
+          AppGeometry.pageInset,
+          AppSpace.l,
+        ),
         child: TextField(
           decoration: const InputDecoration(
             labelText: 'AutoEq headphone correction',
@@ -2464,7 +2516,7 @@ class _AccountPaneState extends State<AccountPane> {
   }) {
     _text(key, initial ?? '');
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: AppSpace.l),
       child: TextField(
         controller: _fields[key],
         obscureText: secret,
@@ -2597,10 +2649,10 @@ class _AccountPaneState extends State<AccountPane> {
       ),
       children: [
         if (kind == 'provider') ...[
-          const Text(
+          const _Note(
             'Downloads are matched by recording codes, or by title, artist and duration. Choose the destination folder for each song.',
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpace.xl),
           DropdownMenu<String>(
             initialSelection: _draft['provider'] as String?,
             expandedInsets: EdgeInsets.zero,
@@ -2619,7 +2671,7 @@ class _AccountPaneState extends State<AccountPane> {
                 .toList(),
             onSelected: (v) => setState(() => _draft['provider'] = v),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.l),
           if (_draft['provider'] != 'TIDAL')
             _field(
               'server',
@@ -2673,11 +2725,11 @@ class _AccountPaneState extends State<AccountPane> {
           ),
         ],
         if (kind == 'scrobbling') ...[
-          const Text(
+          const _Note(
             'Completed listens are queued on this device and submitted when online features are enabled. '
             'Favourites with a recording are loved on each saved account and taken back there when removed.',
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpace.xl),
           _field(
             'listenbrainzToken',
             'ListenBrainz token',
@@ -2702,11 +2754,17 @@ class _AccountPaneState extends State<AccountPane> {
             initial: stored['lastfmSession'],
             secret: true,
           ),
-          SwitchListTile(
-            title: const Text('Include existing history'),
-            value: _draft['includeHistory'] == true,
-            onChanged: (v) => setState(() => _draft['includeHistory'] = v),
+          _Group(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.history_rounded),
+                title: const Text('Include existing history'),
+                value: _draft['includeHistory'] == true,
+                onChanged: (v) => setState(() => _draft['includeHistory'] = v),
+              ),
+            ],
           ),
+          const SizedBox(height: AppSpace.l),
           FilledButton(
             onPressed: () => model.call('scrobbling', _draft),
             child: const Text('Save scrobbling'),
@@ -2715,443 +2773,459 @@ class _AccountPaneState extends State<AccountPane> {
             onPressed: () => model.call('validateScrobbling', _draft),
             child: const Text('Validate accounts'),
           ),
-          ExpansionTile(
-            title: const Text('Sign in to Last.fm'),
+          const SizedBox(height: AppSpace.s),
+          _Group(
             children: [
-              _field('user', 'Last.fm username'),
-              _field('password', 'Last.fm password', secret: true),
-              TextButton(
-                onPressed: () async {
-                  await model.call('lastFm', _draft);
-                  _fields['password']?.clear();
-                  _draft.remove('password');
-                },
-                child: const Text('Sign in'),
+              ExpansionTile(
+                leading: const Icon(Icons.login_rounded),
+                title: const Text('Sign in to Last.fm'),
+                shape: const Border(),
+                collapsedShape: const Border(),
+                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                childrenPadding: const EdgeInsets.fromLTRB(
+                  AppSpace.l,
+                  0,
+                  AppSpace.l,
+                  AppSpace.s,
+                ),
+                children: [
+                  _field('user', 'Last.fm username'),
+                  _field('password', 'Last.fm password', secret: true),
+                  FilledButton(
+                    onPressed: () async {
+                      await model.call('lastFm', _draft);
+                      _fields['password']?.clear();
+                      _draft.remove('password');
+                    },
+                    child: const Text('Sign in'),
+                  ),
+                ],
               ),
             ],
           ),
-          if (model.state['scrobbleStatus'] != null)
-            Text('${model.state['scrobbleStatus']}'),
+          if (model.state['scrobbleStatus'] != null) ...[
+            const SizedBox(height: AppSpace.m),
+            _Note('${model.state['scrobbleStatus']}'),
+          ],
         ],
         if (kind == 'sync') ...[
-          Card.filled(
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('Device sync'),
-                  subtitle: Text(
-                    _draft['enabled'] == true
-                        ? '${_syncHeadline(row(model.state['syncStatus']), _draft)} · ${_syncStanding(row(model.state['syncStatus']), _draft, model.online)}'
-                        : 'Playlists, favourites and history follow you across devices.',
-                  ),
-                  value: _draft['enabled'] == true,
-                  onChanged: (v) => _commit('enabled', v),
+          _Group(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.devices_rounded),
+                title: const Text('Device sync'),
+                subtitle: Text(
+                  _draft['enabled'] == true
+                      ? '${_syncHeadline(row(model.state['syncStatus']), _draft)} · ${_syncStanding(row(model.state['syncStatus']), _draft, model.online)}'
+                      : 'Playlists, favourites and history follow you across devices.',
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                  child: Row(
-                    children: [
-                      if (!model.online && _draft['nearbyOnly'] != true)
-                        OutlinedButton.icon(
-                          onPressed: () => _commit('nearbyOnly', true),
-                          icon: const Icon(Icons.wifi_rounded),
-                          label: const Text('Sync only on this network'),
-                        )
-                      else
-                        FilledButton.tonalIcon(
-                          onPressed: () => model.forceSync(),
-                          icon: const Icon(Icons.sync_rounded),
-                          label: const Text('Sync now'),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card.outlined(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Only this network'),
-                    subtitle: const Text(
-                      'Devices sync on the same network without a server',
-                    ),
-                    value: _draft['nearbyOnly'] == true,
-                    onChanged: (v) => _commit('nearbyOnly', v),
-                  ),
-                  _field('device', 'Device name', initial: stored['device']),
-                  if (_draft['nearbyOnly'] == true)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        'Devices sync on the same network without a server.',
-                      ),
-                    )
-                  else ...[
-                    if (!model.online)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'Turn on online features in Settings to sync.',
-                        ),
-                      ),
-                    _field('server', 'Sync server', initial: stored['server']),
-                  ],
-                  FilledButton(
-                    onPressed: _unsaved(stored)
-                        ? () => model.call('sync', {
-                            'device': _draft['device'],
-                            'server': _draft['server'],
-                          })
-                        : null,
-                    child: Text(
-                      _unsaved(stored)
-                          ? 'Save device name and server'
-                          : 'Device name and server saved',
-                    ),
-                  ),
-                ],
+                value: _draft['enabled'] == true,
+                onChanged: (v) => _commit('enabled', v),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.l,
+                  0,
+                  AppSpace.l,
+                  AppSpace.l,
+                ),
+                child: Row(
+                  children: [
+                    if (!model.online && _draft['nearbyOnly'] != true)
+                      FilledButton.tonalIcon(
+                        onPressed: () => _commit('nearbyOnly', true),
+                        icon: const Icon(Icons.wifi_rounded),
+                        label: const Text('Sync only on this network'),
+                      )
+                    else
+                      FilledButton.tonalIcon(
+                        onPressed: () => model.forceSync(),
+                        icon: const Icon(Icons.sync_rounded),
+                        label: const Text('Sync now'),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpace.l),
+          _Group(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.wifi_rounded),
+                title: const Text('Only this network'),
+                subtitle: const Text(
+                  'Devices sync on the same network without a server',
+                ),
+                value: _draft['nearbyOnly'] == true,
+                onChanged: (v) => _commit('nearbyOnly', v),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.l,
+                  AppSpace.s,
+                  AppSpace.l,
+                  AppSpace.l,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _field('device', 'Device name', initial: stored['device']),
+                    if (_draft['nearbyOnly'] == true)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: AppSpace.m),
+                        child: _Footnote(
+                          'Devices sync on the same network without a server.',
+                        ),
+                      )
+                    else ...[
+                      if (!model.online)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: AppSpace.m),
+                          child: _Footnote(
+                            'Turn on online features in Settings to sync.',
+                          ),
+                        ),
+                      _field(
+                        'server',
+                        'Sync server',
+                        initial: stored['server'],
+                      ),
+                    ],
+                    FilledButton(
+                      onPressed: _unsaved(stored)
+                          ? () => model.call('sync', {
+                              'device': _draft['device'],
+                              'server': _draft['server'],
+                            })
+                          : null,
+                      child: Text(
+                        _unsaved(stored)
+                            ? 'Save device name and server'
+                            : 'Device name and server saved',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SectionTitle('Your devices'),
-          Card.outlined(
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showSyncCode = !_showSyncCode),
-                        icon: Icon(
-                          _showSyncCode
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                        ),
-                        label: Text(
-                          _showSyncCode
-                              ? 'Hide pairing code'
-                              : 'Show pairing code',
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: () => Clipboard.setData(
-                          ClipboardData(
-                            text:
-                                '${row(model.state['syncStatus'])['code'] ?? ''}',
-                          ),
-                        ),
-                        icon: const Icon(Icons.copy_rounded, size: 18),
-                        label: const Text('Copy pairing code'),
-                      ),
-                    ],
-                  ),
+          _Group(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.s,
+                  AppSpace.s,
+                  AppSpace.s,
+                  AppSpace.s,
                 ),
-                if (_showSyncCode) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                child: Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _showSyncCode = !_showSyncCode),
+                      icon: Icon(
+                        _showSyncCode
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
                       ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: .6),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant
-                              .withValues(alpha: .5),
+                      label: Text(
+                        _showSyncCode
+                            ? 'Hide pairing code'
+                            : 'Show pairing code',
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () => Clipboard.setData(
+                        ClipboardData(
+                          text:
+                              '${row(model.state['syncStatus'])['code'] ?? ''}',
                         ),
                       ),
-                      child: SelectableText(
-                        '${row(model.state['syncStatus'])['code'] ?? ''}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 2,
-                          fontSize: 16,
-                        ),
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      label: const Text('Copy pairing code'),
+                    ),
+                  ],
+                ),
+              ),
+              if (_showSyncCode) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpace.l),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.l,
+                      vertical: AppSpace.m,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: .6),
+                      borderRadius: BorderRadius.circular(
+                        AppGeometry.controlRadius,
+                      ),
+                    ),
+                    child: SelectableText(
+                      '${row(model.state['syncStatus'])['code'] ?? ''}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                ],
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      _field('code', 'Pairing code', lines: 1),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => model.call('joinSync', {
-                                'code': _fields['code']?.text ?? '',
-                              }),
-                              child: const Text('Join a group'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => model.call('newSyncGroup'),
-                              child: const Text('Start a new group'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
                 ),
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                ...() {
-                  final devList = rows(
-                    row(model.state['syncStatus'])['devices'],
-                  );
-                  final thisDev = devList
-                      .where((d) => d['thisDevice'] == true)
-                      .toList();
-                  final others =
-                      devList.where((d) => d['thisDevice'] != true).toList()
-                        ..sort((a, b) {
-                          final aOn = a['online'] == true ? 1 : 0;
-                          final bOn = b['online'] == true ? 1 : 0;
-                          if (aOn != bOn) return bOn.compareTo(aOn);
-                          return '${a['name']}'.compareTo('${b['name']}');
-                        });
-                  final allDevices = [...thisDev, ...others];
-                  if (allDevices.isEmpty) {
-                    return [
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text(
-                          'No devices registered yet. Connect your devices using your pairing code.',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ];
-                  }
-                  return allDevices.map((device) {
-                    final isThis = device['thisDevice'] == true;
-                    final isOnline = device['online'] == true;
-                    final isNearby = device['nearby'] == true;
-                    final platform = '${device['platform'] ?? ''}'
-                        .toLowerCase();
-                    final icon = isThis
-                        ? Icons.phone_android_rounded
-                        : platform.contains('iphone') ||
-                              platform.contains('ios')
-                        ? Icons.phone_iphone_rounded
-                        : platform.contains('mac') ||
-                              platform.contains('linux') ||
-                              platform.contains('windows') ||
-                              platform.contains('desktop')
-                        ? Icons.computer_rounded
-                        : Icons.devices_rounded;
-                    final stateLabel = isThis
-                        ? 'This device'
-                        : isOnline
-                        ? 'Online'
-                        : isNearby
-                        ? 'Nearby'
-                        : 'Offline';
-                    return ListTile(
-                      leading: Icon(
-                        icon,
-                        color: isOnline || isThis
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      title: Text('${device['name']}'),
-                      subtitle: Text(stateLabel),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!isThis)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isOnline
-                                    ? Colors.green
-                                    : Theme.of(context).colorScheme.outline
-                                          .withValues(alpha: .5),
-                              ),
-                            ),
-                          if (!isThis && !isOnline)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 20,
-                              ),
-                              tooltip: 'Remove device',
-                              onPressed: () =>
-                                  model.forgetSyncDevice('${device['id']}'),
-                            ),
-                        ],
-                      ),
-                    );
-                  }).toList();
-                }(),
+                const SizedBox(height: AppSpace.m),
               ],
-            ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpace.l),
+                child: Column(
+                  children: [
+                    _field('code', 'Pairing code', lines: 1),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.tonal(
+                            onPressed: () => model.call('joinSync', {
+                              'code': _fields['code']?.text ?? '',
+                            }),
+                            child: const Text('Join a group'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpace.m),
+                        Expanded(
+                          child: FilledButton.tonal(
+                            onPressed: () => model.call('newSyncGroup'),
+                            child: const Text('Start a new group'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpace.m),
+              const Divider(height: 1),
+              ...() {
+                final devList = rows(row(model.state['syncStatus'])['devices']);
+                final thisDev = devList
+                    .where((d) => d['thisDevice'] == true)
+                    .toList();
+                final others =
+                    devList.where((d) => d['thisDevice'] != true).toList()
+                      ..sort((a, b) {
+                        final aOn = a['online'] == true ? 1 : 0;
+                        final bOn = b['online'] == true ? 1 : 0;
+                        if (aOn != bOn) return bOn.compareTo(aOn);
+                        return '${a['name']}'.compareTo('${b['name']}');
+                      });
+                final allDevices = [...thisDev, ...others];
+                if (allDevices.isEmpty) {
+                  return [
+                    const Padding(
+                      padding: EdgeInsets.all(AppSpace.l),
+                      child: _Footnote(
+                        'No devices registered yet. Connect your devices using your pairing code.',
+                      ),
+                    ),
+                  ];
+                }
+                return allDevices.map((device) {
+                  final isThis = device['thisDevice'] == true;
+                  final isOnline = device['online'] == true;
+                  final isNearby = device['nearby'] == true;
+                  final platform = '${device['platform'] ?? ''}'.toLowerCase();
+                  final icon = isThis
+                      ? Icons.phone_android_rounded
+                      : platform.contains('iphone') || platform.contains('ios')
+                      ? Icons.phone_iphone_rounded
+                      : platform.contains('mac') ||
+                            platform.contains('linux') ||
+                            platform.contains('windows') ||
+                            platform.contains('desktop')
+                      ? Icons.computer_rounded
+                      : Icons.devices_rounded;
+                  final stateLabel = isThis
+                      ? 'This device'
+                      : isOnline
+                      ? 'Online'
+                      : isNearby
+                      ? 'Nearby'
+                      : 'Offline';
+                  return ListTile(
+                    leading: Icon(
+                      icon,
+                      color: isOnline || isThis
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text('${device['name']}'),
+                    subtitle: Text(stateLabel),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isThis)
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isOnline
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.outline
+                                        .withValues(alpha: .5),
+                            ),
+                          ),
+                        if (!isThis && !isOnline)
+                          IconButton(
+                            color: Theme.of(context).colorScheme.error,
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 20,
+                            ),
+                            tooltip: 'Remove device',
+                            onPressed: () =>
+                                model.forgetSyncDevice('${device['id']}'),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList();
+              }(),
+            ],
           ),
           const SectionTitle('Sync options'),
-          Card.outlined(
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('Sync favourites'),
-                  subtitle: const Text('Songs favoured on another device'),
-                  value: _draft['favourites'] == true,
-                  onChanged: (v) => _commit('favourites', v),
-                ),
-                SwitchListTile(
-                  title: const Text('Sync playlists'),
-                  subtitle: const Text(
-                    'Playlists set to keep their songs here',
-                  ),
-                  value: _draft['playlists'] == true,
-                  onChanged: (v) => _commit('playlists', v),
-                ),
-                SwitchListTile(
-                  title: const Text('Keep all music here'),
-                  subtitle: const Text('Every song your other devices hold'),
-                  value: _draft['everything'] == true,
-                  onChanged: (v) => _commit('everything', v),
-                ),
-                SwitchListTile(
-                  title: const Text('Transfer over mobile data'),
-                  subtitle: const Text('Without it, songs move only on Wi-Fi'),
-                  value: _draft['meteredAllowed'] == true,
-                  onChanged: (v) => _commit('meteredAllowed', v),
-                ),
-              ],
-            ),
+          _Group(
+            children: [
+              SwitchListTile(
+                title: const Text('Sync favourites'),
+                subtitle: const Text('Songs favoured on another device'),
+                value: _draft['favourites'] == true,
+                onChanged: (v) => _commit('favourites', v),
+              ),
+              SwitchListTile(
+                title: const Text('Sync playlists'),
+                subtitle: const Text('Playlists set to keep their songs here'),
+                value: _draft['playlists'] == true,
+                onChanged: (v) => _commit('playlists', v),
+              ),
+              SwitchListTile(
+                title: const Text('Keep all music here'),
+                subtitle: const Text('Every song your other devices hold'),
+                value: _draft['everything'] == true,
+                onChanged: (v) => _commit('everything', v),
+              ),
+              SwitchListTile(
+                title: const Text('Transfer over mobile data'),
+                subtitle: const Text('Without it, songs move only on Wi-Fi'),
+                value: _draft['meteredAllowed'] == true,
+                onChanged: (v) => _commit('meteredAllowed', v),
+              ),
+            ],
           ),
           if (rows(row(model.state['syncStatus'])['transfers']).isNotEmpty) ...[
             const SectionTitle('Transfers'),
-            Card.outlined(
-              margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  for (final transfer in rows(
-                    row(model.state['syncStatus'])['transfers'],
-                  )) ...[
-                    () {
-                      final artistName = '${transfer['artist'] ?? ''}';
-                      final fromDevice = '${transfer['from'] ?? ''}';
-                      final size = integer(transfer['size']);
-                      final received = integer(transfer['received']);
-                      final progress = size > 0
-                          ? (received / size).clamp(0.0, 1.0)
-                          : null;
-                      final subtitleText = [
-                        if (artistName.isNotEmpty) artistName,
-                        if (fromDevice.isNotEmpty) 'from $fromDevice',
-                        if (size > 0)
-                          '${(received / 1048576).toStringAsFixed(1)} / ${(size / 1048576).toStringAsFixed(1)} MB',
-                      ].join(' · ');
-                      return ListTile(
-                        leading: const Icon(Icons.download_rounded),
-                        title: Text(
-                          '${transfer['title'] ?? 'Transferring song'}',
-                        ),
-                        subtitle: subtitleText.isNotEmpty
-                            ? Text(subtitleText)
-                            : null,
-                        trailing: progress != null
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  value: progress,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
+            _Group(
+              children: [
+                for (final transfer in rows(
+                  row(model.state['syncStatus'])['transfers'],
+                )) ...[
+                  () {
+                    final artistName = '${transfer['artist'] ?? ''}';
+                    final fromDevice = '${transfer['from'] ?? ''}';
+                    final size = integer(transfer['size']);
+                    final received = integer(transfer['received']);
+                    final progress = size > 0
+                        ? (received / size).clamp(0.0, 1.0)
+                        : null;
+                    final subtitleText = [
+                      if (artistName.isNotEmpty) artistName,
+                      if (fromDevice.isNotEmpty) 'from $fromDevice',
+                      if (size > 0)
+                        '${(received / 1048576).toStringAsFixed(1)} / ${(size / 1048576).toStringAsFixed(1)} MB',
+                    ].join(' · ');
+                    return ListTile(
+                      leading: const Icon(Icons.download_rounded),
+                      title: Text(
+                        '${transfer['title'] ?? 'Transferring song'}',
+                      ),
+                      subtitle: subtitleText.isNotEmpty
+                          ? Text(subtitleText)
+                          : null,
+                      trailing: progress != null
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 2,
                               ),
-                      );
-                    }(),
-                  ],
+                            )
+                          : const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                    );
+                  }(),
                 ],
-              ),
+              ],
             ),
           ],
           const SectionTitle('Songs received from your devices'),
-          Card.outlined(
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Songs from your other devices are saved in this folder and added to your library.',
-                    style: TextStyle(fontSize: 13),
-                  ),
+          _Group(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpace.l,
+                  AppSpace.l,
+                  AppSpace.l,
+                  AppSpace.s,
                 ),
-                ...rows(model.state['folders'])
-                    .where(
-                      (folder) =>
-                          folder['readable'] == true &&
-                          folder['writable'] == true,
-                    )
-                    .map(
-                      (folder) => ListTile(
-                        leading: const Icon(Icons.folder_outlined),
-                        title: Text('${folder['name']}'),
-                        trailing: model.state['syncFolder'] == folder['uri']
-                            ? const Icon(
-                                Icons.check_rounded,
-                                color: Colors.green,
-                              )
-                            : null,
-                        onTap: () =>
-                            model.call('syncFolder', {'uri': folder['uri']}),
-                      ),
+                child: _Footnote(
+                  'Songs from your other devices are saved in this folder and added to your library.',
+                ),
+              ),
+              ...rows(model.state['folders'])
+                  .where(
+                    (folder) =>
+                        folder['readable'] == true &&
+                        folder['writable'] == true,
+                  )
+                  .map(
+                    (folder) => ListTile(
+                      leading: const Icon(Icons.folder_outlined),
+                      title: Text('${folder['name']}'),
+                      trailing: model.state['syncFolder'] == folder['uri']
+                          ? Icon(
+                              Icons.check_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () =>
+                          model.call('syncFolder', {'uri': folder['uri']}),
                     ),
-              ],
-            ),
+                  ),
+            ],
           ),
           if (model.state['syncNotice'] != null)
             Padding(
-              padding: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.only(top: AppSpace.l),
               child: Card.filled(
                 color: Theme.of(context).colorScheme.errorContainer,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppSpace.l),
                   child: Row(
                     children: [
                       Icon(
                         Icons.warning_rounded,
                         color: Theme.of(context).colorScheme.error,
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpace.m),
                       Expanded(
                         child: Text(
                           '${model.state['syncNotice']}',
@@ -3168,11 +3242,8 @@ class _AccountPaneState extends State<AccountPane> {
               ),
             ),
         ],
-        const SizedBox(height: 24),
-        const Text(
-          'Credentials stay encrypted in Android Keystore.',
-          style: TextStyle(fontSize: 12),
-        ),
+        const SizedBox(height: AppSpace.xl),
+        const _Footnote('Credentials stay encrypted in Android Keystore.'),
       ],
     );
   }

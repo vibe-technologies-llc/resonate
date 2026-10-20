@@ -13,11 +13,50 @@ const mint = Color(0xFF9AE5CD);
 abstract final class AppGeometry {
   static const pageInset = 24.0;
   static const pageTop = 20.0;
+  static const heroRadius = 24.0;
   static const cardRadius = 20.0;
   static const controlRadius = 16.0;
-  static const chromeRadius = 24.0;
+  static const chromeRadius = 32.0;
+  static const coverRadius = 10.0;
+  static const thumbRadius = 8.0;
   static const touchTarget = 48.0;
+  static const barHeight = 64.0;
+  static const rowArt = 56.0;
+  static const songArt = 48.0;
+  static const miniArt = 40.0;
+  static const carouselCover = 140.0;
+  static const artistCircle = 96.0;
+  static const headerCover = 220.0;
+  static const headerCoverAtMost = 300.0;
 }
+
+abstract final class AppSpace {
+  static const xs = 4.0;
+  static const s = 8.0;
+  static const m = 12.0;
+  static const l = 16.0;
+  static const xl = 24.0;
+  static const xxl = 32.0;
+}
+
+abstract final class AppGradients {
+  static const favourites = [Color(0xFFE0569B), Color(0xFF8E5CD9)];
+  static const allSongs = [Color(0xFFF2994A), Color(0xFFE0483E)];
+  static const madeForYou = [Color(0xFF2FB5A8), Color(0xFF3D7BE0)];
+  static const statistics = [Color(0xFF6A5BE2), Color(0xFF3E7BE0)];
+  static const online = [Color(0xFF6EA8FE), Color(0xFF63D29B)];
+
+  static LinearGradient of(List<Color> colors) => LinearGradient(
+    colors: colors,
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+}
+
+RoundedRectangleBorder roundedShape(double radius) =>
+    RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius));
+
+const tabularFigures = [ui.FontFeature.tabularFigures()];
 
 EdgeInsets pageInsets(
   BuildContext context, {
@@ -238,7 +277,7 @@ class Artwork extends StatefulWidget {
     required this.model,
     required this.track,
     this.size,
-    this.radius = 16,
+    this.radius = 12,
     this.onColors,
   });
   final PlayerModel model;
@@ -365,7 +404,7 @@ class PlaylistCover extends StatelessWidget {
     required this.model,
     required this.covers,
     this.size,
-    this.radius = 12,
+    this.radius = AppGeometry.coverRadius,
   });
   final PlayerModel model;
   final Object? covers;
@@ -428,28 +467,21 @@ class PlaylistCover extends StatelessWidget {
 }
 
 class CoverFallback extends StatelessWidget {
-  const CoverFallback({super.key});
+  const CoverFallback({super.key, this.icon = Icons.music_note_rounded});
+  final IconData icon;
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF60538B), Color(0xFF243B47)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-    child: Center(
-      child: FractionallySizedBox(
-        widthFactor: .42,
-        child: FittedBox(
-          child: Icon(
-            Icons.graphic_eq_rounded,
-            color: Colors.white.withValues(alpha: .65),
-          ),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: .4,
+          child: FittedBox(child: Icon(icon, color: scheme.onSurfaceVariant)),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class ArtworkAtmosphere extends StatefulWidget {
@@ -717,18 +749,419 @@ class ActionIcon extends StatelessWidget {
 }
 
 class SectionTitle extends StatelessWidget {
-  const SectionTitle(this.title, {super.key, this.action});
+  const SectionTitle(
+    this.title, {
+    super.key,
+    this.action,
+    this.onSeeAll,
+    this.padding = const EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.s),
+  });
   final String title;
   final Widget? action;
+  final VoidCallback? onSeeAll;
+  final EdgeInsetsGeometry padding;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 26, bottom: 12),
+    padding: padding,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: AppGeometry.touchTarget),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+            ),
+          ),
+          ?action,
+          if (onSeeAll != null)
+            TextButton(onPressed: onSeeAll, child: const Text('See all')),
+        ],
+      ),
+    ),
+  );
+}
+
+class LargeTitle extends StatelessWidget {
+  const LargeTitle(this.title, {super.key, this.actions = const []});
+  final String title;
+  final List<Widget> actions;
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: AppGeometry.touchTarget),
     child: Row(
       children: [
         Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+          child: Semantics(
+            header: true,
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.headlineLarge,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ),
-        ?action,
+        ...actions,
+      ],
+    ),
+  );
+}
+
+class SheetTitle extends StatelessWidget {
+  const SheetTitle(this.title, {super.key, this.detail, this.trailing});
+  final String title;
+  final String? detail;
+  final Widget? trailing;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      AppGeometry.pageInset,
+      0,
+      AppGeometry.pageInset,
+      AppSpace.m,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              if (detail != null) ...[
+                const SizedBox(height: AppSpace.xs),
+                Text(detail!, style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ],
+          ),
+        ),
+        ?trailing,
+      ],
+    ),
+  );
+}
+
+class CollectionRow extends StatelessWidget {
+  const CollectionRow({
+    super.key,
+    required this.leading,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.chevron = true,
+  });
+  final Widget leading;
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool chevron;
+  @override
+  Widget build(BuildContext context) => ListTile(
+    onTap: onTap,
+    minTileHeight: AppGeometry.rowArt + AppSpace.l,
+    leading: SizedBox.square(dimension: AppGeometry.rowArt, child: leading),
+    title: DefaultTextStyle.merge(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      child: title,
+    ),
+    subtitle: subtitle == null
+        ? null
+        : DefaultTextStyle.merge(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            child: subtitle!,
+          ),
+    trailing:
+        trailing ??
+        (chevron
+            ? Icon(
+                Icons.chevron_right_rounded,
+                color: Theme.of(context).colorScheme.outline,
+              )
+            : null),
+  );
+}
+
+class IconTile extends StatelessWidget {
+  const IconTile({
+    super.key,
+    required this.icon,
+    this.colors,
+    this.size = AppGeometry.rowArt,
+    this.circle = false,
+  });
+  final IconData icon;
+  final List<Color>? colors;
+  final double size;
+  final bool circle;
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final gradient = colors;
+    return SizedBox.square(
+      dimension: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: circle ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: circle
+              ? null
+              : BorderRadius.circular(AppGeometry.coverRadius),
+          color: gradient == null ? scheme.secondaryContainer : null,
+          gradient: gradient == null ? null : AppGradients.of(gradient),
+        ),
+        child: Icon(
+          icon,
+          size: size * .46,
+          color: gradient == null ? scheme.onSecondaryContainer : Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+double shelfCaptionHeight(BuildContext context) {
+  final text = Theme.of(context).textTheme;
+  final scaler = MediaQuery.textScalerOf(context);
+  double line(TextStyle? style) =>
+      scaler.scale(style?.fontSize ?? 14) * (style?.height ?? 1.4);
+  return AppSpace.s + line(text.titleSmall) + line(text.bodySmall) + 2;
+}
+
+class Shelf extends StatelessWidget {
+  const Shelf({
+    super.key,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.itemWidth = AppGeometry.carouselCover,
+    this.coverHeight = AppGeometry.carouselCover,
+  });
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+  final double itemWidth;
+  final double coverHeight;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: coverHeight + shelfCaptionHeight(context),
+    child: ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: AppGeometry.pageInset),
+      scrollDirection: Axis.horizontal,
+      itemCount: itemCount,
+      separatorBuilder: (_, _) => const SizedBox(width: AppSpace.l),
+      itemBuilder: (context, index) =>
+          SizedBox(width: itemWidth, child: itemBuilder(context, index)),
+    ),
+  );
+}
+
+class AlbumCard extends StatelessWidget {
+  const AlbumCard({
+    super.key,
+    required this.model,
+    required this.album,
+    required this.onTap,
+    this.detail,
+    this.titleRanges = const [],
+    this.detailRanges = const [],
+  });
+  final PlayerModel model;
+  final RowData album;
+  final VoidCallback onTap;
+  final String? detail;
+  final List<int> titleRanges;
+  final List<int> detailRanges;
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final name = '${album['title'] ?? ''}';
+    final shownDetail = detail ?? '${album['artist'] ?? ''}';
+    return Semantics(
+      button: true,
+      label: shownDetail.isEmpty ? name : '$name, $shownDetail',
+      child: ExcludeSemantics(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppGeometry.coverRadius),
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 1,
+                child: Artwork(
+                  model: model,
+                  track: model.trackById(album['artworkTrack']),
+                  radius: AppGeometry.coverRadius,
+                ),
+              ),
+              const SizedBox(height: AppSpace.s),
+              LitText(name, ranges: titleRanges, style: text.titleSmall),
+              LitText(shownDetail, ranges: detailRanges, style: text.bodySmall),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ArtistCard extends StatelessWidget {
+  const ArtistCard({
+    super.key,
+    required this.model,
+    required this.artist,
+    required this.onTap,
+    this.nameRanges = const [],
+  });
+  final PlayerModel model;
+  final RowData artist;
+  final VoidCallback onTap;
+  final List<int> nameRanges;
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final name = '${artist['name'] ?? ''}'.isEmpty
+        ? 'Unknown artist'
+        : '${artist['name']}';
+    final songs = '${artist['songs']} songs';
+    return Semantics(
+      button: true,
+      label: '$name, $songs',
+      child: ExcludeSemantics(
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Column(
+            children: [
+              SizedBox.square(
+                dimension: AppGeometry.artistCircle,
+                child: ClipOval(
+                  child: Artwork(
+                    model: model,
+                    track: model.trackById(artist['artworkTrack']),
+                    size: AppGeometry.artistCircle,
+                    radius: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpace.s),
+              LitText(name, ranges: nameRanges, style: text.titleSmall),
+              Text(songs, style: text.bodySmall, maxLines: 1),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PlayShuffle extends StatelessWidget {
+  const PlayShuffle({super.key, required this.onPlay, required this.onShuffle});
+  final VoidCallback? onPlay;
+  final VoidCallback? onShuffle;
+  @override
+  Widget build(BuildContext context) {
+    const height = Size.fromHeight(52);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 440),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: height),
+              onPressed: onPlay,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Play'),
+            ),
+          ),
+          const SizedBox(width: AppSpace.m),
+          Expanded(
+            child: FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(minimumSize: height),
+              onPressed: onShuffle,
+              icon: const Icon(Icons.shuffle_rounded),
+              label: const Text('Shuffle'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class Pill extends StatelessWidget {
+  const Pill(this.text, {super.key, this.icon});
+  final String text;
+  final IconData? icon;
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600);
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: scheme.onSurface.withValues(alpha: .08),
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 12, color: scheme.onSurfaceVariant),
+              const SizedBox(width: AppSpace.xs),
+            ],
+            Flexible(
+              child: Text(
+                text,
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ChoiceRow extends StatelessWidget {
+  const ChoiceRow({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+    this.padding = EdgeInsets.zero,
+  });
+  final List<String> labels;
+  final String selected;
+  final ValueChanged<String> onSelected;
+  final EdgeInsetsGeometry padding;
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: padding,
+    child: Row(
+      children: [
+        for (final label in labels)
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpace.s),
+            child: ChoiceChip(
+              label: Text(label),
+              selected: selected == label,
+              onSelected: (_) => onSelected(label),
+              showCheckmark: false,
+            ),
+          ),
       ],
     ),
   );
@@ -772,13 +1205,12 @@ class EmptyState extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpace.s),
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                height: 1.5,
               ),
             ),
             if (action != null)
@@ -958,8 +1390,8 @@ class ScanProgress extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Glass(
-          radius: 16,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          radius: AppGeometry.cardRadius,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
               const SizedBox(
@@ -971,10 +1403,7 @@ class ScanProgress extends StatelessWidget {
               Expanded(
                 child: Text(
                   text,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.labelLarge,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1013,12 +1442,12 @@ class SyncProgressBanner extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Glass(
-          radius: 16,
+          radius: AppGeometry.cardRadius,
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppGeometry.cardRadius),
             onTap: () => open('sync'),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   SizedBox(
@@ -1037,25 +1466,15 @@ class SyncProgressBanner extends StatelessWidget {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.labelLarge,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (detail != null)
                           Text(
                             detail,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontFeatures: const [
-                                ui.FontFeature.tabularFigures(),
-                              ],
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontFeatures: tabularFigures),
                           ),
                       ],
                     ),
@@ -1090,25 +1509,22 @@ class StatusCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Glass(
-          radius: 16,
+          radius: AppGeometry.cardRadius,
           padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
           child: Row(
             children: [
               if (isFailure) ...[
-                const Icon(
+                Icon(
                   Icons.warning_amber_rounded,
-                  color: Colors.orange,
+                  color: Theme.of(context).colorScheme.error,
                   size: 20,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpace.m),
               ],
               Expanded(
                 child: Text(
                   message,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.labelLarge,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1123,10 +1539,7 @@ class StatusCard extends StatelessWidget {
                   ),
                 ),
                 onPressed: model.dismissNotice,
-                child: const Text(
-                  'Dismiss',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
+                child: const Text('Dismiss'),
               ),
             ],
           ),

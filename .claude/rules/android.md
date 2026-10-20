@@ -229,7 +229,27 @@ splits history from up next by row, a repeated song included
 
 Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
 rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
-theme follows day/night. Android 13 is
+theme follows day/night.
+
+**One visual system, iOS's, lives in `visuals.dart` and the theme in `main.dart`; pages take it
+rather than literals.** `AppGeometry` holds the radii (24 the expanded cover and dialogs, 20 cards,
+header covers and banners, 16 controls, menus and inputs, 10 the 56-pixel row art, carousel covers
+and gradient tiles, 8 the 48-pixel song art and the mini-player's 40) and sizes (`rowArt`,
+`songArt`, `carouselCover` 140, `artistCircle` 96, `headerCover` 220 up to 300, `barHeight` 64);
+`AppSpace` the gaps (4, 8, 12, 16, 24, 32); `AppGradients` the Library tiles' and the online
+card's pairs. Text takes the theme's roles, iOS's scale: `headlineLarge` the large titles,
+`headlineSmall` the player's and a collection's title, `titleLarge` section headers, `titleSmall`
+carousel captions, `bodyLarge` row titles, `bodyMedium` secondary lines, `bodySmall` footnotes in
+`onSurfaceVariant`; no inline font size outside painters. Buttons, chips and segmented controls are
+capsules; a list row is 24 pixels from the page edge, as the page's content is. The shared pieces
+are one per kind, as iOS's are: `LargeTitle` (a root's heading and its actions), `SectionTitle`
+(every section header, with an optional *See all*), `SheetTitle` (every sheet's heading),
+`CollectionRow` (an album, artist, playlist or online result: 56-pixel art and a chevron),
+`SongTile` (48-pixel art; the playing title in the accent), `Shelf` with `AlbumCard` and
+`ArtistCard` (the horizontal carousels Library, Search and the artist page share), `IconTile` (a
+gradient or tonal tile standing for a collection without art), `PlayShuffle` (the two capsules every
+collection header ends with) and `Pill` (the format and quality badges). Missing art is a quiet
+`surfaceContainerHighest` square with a note, as iOS's placeholder. Android 13 is
 the minimum app version, so there is no older-platform palette branch; `POST_NOTIFICATIONS` is asked only from a button in Settings.
 The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 33 governs
 installation, and native code currently needs no newer platform symbols.
@@ -249,9 +269,12 @@ are URI-encoded and carried in saved navigation history, so punctuation and nest
 which collection was opened.
 
 The navigation roots are Library, Settings and Search, as iOS's tab bar: Songs is a page (`songs`) that
-Library's *All songs* tile opens, and the queue is Now Playing's Queue mode alone. Library's header has a
-*More* menu (Add music folder, Rescan library, Library tools) and, under the Favourites card, the *All songs*,
-*Made for you* and *Statistics* tiles; Now Playing's options sheet adds Equaliser, Audio output and
+Library's *All songs* row opens, and the queue is Now Playing's Queue mode alone. Search stands apart, as
+iOS 26 sets its search tab beside the bar: Library and Settings share one capsule and Search is a round
+button of the bar's height beside it, the three keeping tab indices 0, 1 and 2 and the tab semantics role.
+Library's header has a *More* menu (Add music folder, Rescan library, Library tools) and, first under
+the category chips, one card of four gradient-tiled rows (*Favourites*, *All songs*, *Made for you*,
+*Statistics*), as iOS's library; Now Playing's options sheet adds Equaliser, Audio output and
 Visualizer to the song's own entries. A saved root beyond the three reads as Library. Search switches between the
 native library search (songs, albums and artists) and online results. The last ten queries
 (`recent-searches`, a JSON list in `library-features`) are kept by Kotlin (`keepRecentSearches`) and
@@ -301,13 +324,13 @@ page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork
 of the album color strength, so bright covers cannot compete with labels. Cards have opaque
 neutral surfaces; secondary text retains its own contrasting color. Root headings align with
 their actions and omit decorative captions.
-The mini-player keeps 40-pixel artwork and 48-pixel touch targets; standard navigation is 80
-pixels high. When the tabs leave less than 80 pixels each or text is enlarged, compact navigation
-is 72 pixels high, shows only the selected label, and gives its pill eight pixels of space above
-and on both sides within its tab. Inactive icons center in the full tab height. A fixed internal
+The mini-player is a capsule with 40-pixel artwork and 48-pixel touch targets, its progress a
+two-pixel line along its foot. The navigation capsule and the Search button are 64 pixels high; each
+tab draws its pill six pixels inside it, the icon in the pill and the label beneath, the label's text
+scale clamped at 1.2 so it fits the bar. When text is enlarged (12 sp past 16 pixels) only the
+selected tab keeps its label and the others' icons centre in the full height. A fixed internal
 layout keeps these gaps equal as display scale changes; the Material bar's fixed-width pill spills
-into neighboring tabs and centers variable
-label heights differently.
+into neighboring tabs and centers variable label heights differently.
 Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
 push the page heading down. Each is a `LiveRegion` for TalkBack: the notice card announces its
 message as it appears or changes, and the scan and sync banners carry a fixed label (*Reading music
@@ -342,9 +365,9 @@ tabs stay mounted in an `IndexedStack`, so scroll position, song filters, settin
 search text survive switching; the incoming tab fades in with a slow diagonal drift while
 the outgoing tab hides at once, keeping one heavy list alive through the switch. Pushed pages fade
 with a short trailing-edge slide over a static parent, keeping the system predictive-back gesture;
-the compact tab keeps one fixed layout where the pill fades, the icon glides between the pill and
-the tab center, and the label swaps instantly with no opacity or transform of its own, so text
-never renders mid-animation. Artwork
+a tab keeps one fixed layout where the pill fades, the icon glides between the pill and the tab
+center where its label is hidden, and the label swaps instantly with no opacity or transform of its
+own, so text never renders mid-animation. Artwork
 is loaded through the native cache as JPEG bytes at the size drawn: Dart asks for the bucket (96,
 192, 384, 512, 768 or 1024 px, `artworkBucket`) that holds its logical size at the display's
 density, the colour sample asks for 96, and Kotlin keeps decoded bitmaps and encoded bytes by

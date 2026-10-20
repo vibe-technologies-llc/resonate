@@ -46,67 +46,71 @@ class ResonateApp extends StatelessWidget {
     final text = ThemeData(brightness: brightness).textTheme
         .copyWith(
           headlineLarge: const TextStyle(
-            fontSize: 30,
+            fontSize: 32,
             height: 1.2,
             fontWeight: FontWeight.w700,
-            letterSpacing: -.6,
+            letterSpacing: -.5,
           ),
           headlineMedium: const TextStyle(
             fontSize: 26,
-            height: 1.25,
+            height: 1.2,
             fontWeight: FontWeight.w700,
             letterSpacing: -.4,
           ),
           headlineSmall: const TextStyle(
             fontSize: 22,
-            height: 1.3,
-            fontWeight: FontWeight.w600,
+            height: 1.25,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.2,
           ),
           titleLarge: const TextStyle(
-            fontSize: 18,
+            fontSize: 20,
             height: 1.3,
             fontWeight: FontWeight.w600,
           ),
           titleMedium: const TextStyle(
-            fontSize: 16,
-            height: 1.4,
+            fontSize: 17,
+            height: 1.35,
             fontWeight: FontWeight.w600,
           ),
-          bodyLarge: const TextStyle(fontSize: 16, height: 1.4),
-          bodyMedium: const TextStyle(fontSize: 14, height: 1.4),
-          bodySmall: TextStyle(
-            fontSize: 12,
-            height: 1.4,
-            color: scheme.onSurfaceVariant,
+          titleSmall: const TextStyle(
+            fontSize: 15,
+            height: 1.35,
+            fontWeight: FontWeight.w500,
           ),
+          bodyLarge: const TextStyle(fontSize: 17, height: 1.35),
+          bodyMedium: const TextStyle(fontSize: 15, height: 1.35),
+          bodySmall: const TextStyle(fontSize: 13, height: 1.35),
           labelLarge: const TextStyle(
             fontSize: 14,
+            height: 1.3,
             fontWeight: FontWeight.w600,
           ),
           labelMedium: const TextStyle(
             fontSize: 12,
+            height: 1.3,
             fontWeight: FontWeight.w500,
           ),
           labelSmall: const TextStyle(
             fontSize: 11,
+            height: 1.3,
             fontWeight: FontWeight.w500,
           ),
         )
-        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface)
-        .copyWith(
-          bodySmall: TextStyle(
-            fontSize: 12,
-            height: 1.4,
-            color: scheme.onSurfaceVariant,
-          ),
-        );
-    final controlShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(AppGeometry.controlRadius),
+        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
+    final secondary = text.copyWith(
+      bodySmall: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
     );
+    const capsule = StadiumBorder();
+    final chosen = Color.alphaBlend(
+      scheme.primary.withValues(alpha: dark ? .32 : .2),
+      scheme.surfaceContainer,
+    );
+    const buttonSize = Size(AppGeometry.touchTarget, AppGeometry.touchTarget);
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      textTheme: text,
+      textTheme: secondary,
       scaffoldBackgroundColor: dark
           ? const Color(0xFF111218)
           : const Color(0xFFF8F9FC),
@@ -118,7 +122,7 @@ class ResonateApp extends StatelessWidget {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleSpacing: 8,
-        titleTextStyle: text.titleLarge,
+        titleTextStyle: text.titleMedium,
         actionsPadding: const EdgeInsets.only(right: 8),
       ),
       cardTheme: CardThemeData(
@@ -170,20 +174,62 @@ class ResonateApp extends StatelessWidget {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(48, 48),
-          shape: controlShape,
+          minimumSize: buttonSize,
+          shape: capsule,
+          textStyle: text.labelLarge,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(48, 48),
-          shape: controlShape,
+          minimumSize: buttonSize,
+          shape: capsule,
+          textStyle: text.labelLarge,
+          side: BorderSide(color: scheme.outlineVariant),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          minimumSize: const Size(48, 48),
-          shape: controlShape,
+          minimumSize: buttonSize,
+          shape: capsule,
+          textStyle: text.labelLarge,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: capsule,
+        side: BorderSide.none,
+        showCheckmark: false,
+        backgroundColor: scheme.surfaceContainer,
+        selectedColor: chosen,
+        labelStyle: text.labelLarge,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          shape: capsule,
+          selectedBackgroundColor: chosen,
+          side: BorderSide(color: scheme.outlineVariant),
+          textStyle: text.labelLarge,
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppGeometry.heroRadius),
+          ),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        shape: roundedShape(AppGeometry.heroRadius),
+        titleTextStyle: text.headlineSmall,
+        contentTextStyle: text.bodyMedium?.copyWith(
+          color: scheme.onSurfaceVariant,
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -193,25 +239,16 @@ class ResonateApp extends StatelessWidget {
       ),
       listTileTheme: ListTileThemeData(
         minTileHeight: 64,
-        minVerticalPadding: 12,
-        horizontalTitleGap: 16,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        minVerticalPadding: 8,
+        horizontalTitleGap: 14,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppGeometry.pageInset,
+          vertical: 2,
+        ),
+        iconColor: scheme.onSurfaceVariant,
         titleTextStyle: text.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
         subtitleTextStyle: text.bodyMedium?.copyWith(
           color: scheme.onSurfaceVariant,
-        ),
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        indicatorColor: scheme.primary.withValues(alpha: .16),
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => text.labelMedium?.copyWith(
-            color: states.contains(WidgetState.selected)
-                ? scheme.onSurface
-                : scheme.onSurfaceVariant,
-            fontWeight: states.contains(WidgetState.selected)
-                ? FontWeight.w600
-                : FontWeight.w500,
-          ),
         ),
       ),
       dividerTheme: DividerThemeData(
@@ -386,6 +423,8 @@ const _navigationRoots = <(IconData, IconData, String)>[
   (Icons.search_rounded, Icons.search_rounded, 'Search'),
 ];
 
+const _searchTab = 2;
+
 class AppBottomBar extends StatelessWidget {
   const AppBottomBar({
     super.key,
@@ -406,25 +445,27 @@ class AppBottomBar extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.m,
+              AppSpace.m,
+              AppSpace.m,
+              AppSpace.s,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 StatusBanner(model: model, open: open, noticeOnly: !isRoot),
                 if (model.current.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: AppSpace.s),
                     child: MiniPlayer(
                       model: model,
                       onOpen: () => open('player'),
                     ),
                   ),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final tabWidth =
-                        constraints.maxWidth / _navigationRoots.length;
-                    final compact =
-                        tabWidth < 80 ||
+                Builder(
+                  builder: (context) {
+                    final enlarged =
                         MediaQuery.textScalerOf(context).scale(12) > 16;
                     void selectTab(int index) {
                       AppShell.currentTab.value = index;
@@ -434,29 +475,24 @@ class AppBottomBar extends StatelessWidget {
                       }
                     }
 
-                    return Glass(
-                      radius: AppGeometry.chromeRadius,
-                      child: compact
-                          ? _CompactNavigationBar(
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Glass(
+                            radius: AppGeometry.chromeRadius,
+                            child: _TabPill(
                               selectedIndex: currentTab,
                               onDestinationSelected: selectTab,
-                            )
-                          : NavigationBar(
-                              backgroundColor: Colors.transparent,
-                              elevation: 0,
-                              height: 80,
-                              selectedIndex: currentTab,
-                              onDestinationSelected: selectTab,
-                              destinations: [
-                                for (final (icon, selectedIcon, label)
-                                    in _navigationRoots)
-                                  NavigationDestination(
-                                    icon: Icon(icon),
-                                    selectedIcon: Icon(selectedIcon),
-                                    label: label,
-                                  ),
-                              ],
+                              onlySelectedLabel: enlarged,
                             ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpace.m),
+                        _SearchButton(
+                          selected: currentTab == _searchTab,
+                          onPressed: () => selectTab(_searchTab),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -469,14 +505,16 @@ class AppBottomBar extends StatelessWidget {
   );
 }
 
-class _CompactNavigationBar extends StatelessWidget {
-  const _CompactNavigationBar({
+class _TabPill extends StatelessWidget {
+  const _TabPill({
     required this.selectedIndex,
     required this.onDestinationSelected,
+    required this.onlySelectedLabel,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final bool onlySelectedLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -484,102 +522,185 @@ class _CompactNavigationBar extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: SizedBox(
-        height: 72,
+        height: AppGeometry.barHeight,
         child: Row(
           children: [
-            for (var index = 0; index < _navigationRoots.length; index++)
+            for (var index = 0; index < _searchTab; index++)
               Expanded(
-                child: Semantics(
-                  container: true,
-                  role: SemanticsRole.tab,
-                  selected: index == selectedIndex,
+                child: _Tab(
+                  icon: index == selectedIndex
+                      ? _navigationRoots[index].$2
+                      : _navigationRoots[index].$1,
                   label: _navigationRoots[index].$3,
+                  selected: index == selectedIndex,
+                  showLabel: !onlySelectedLabel || index == selectedIndex,
+                  scheme: scheme,
                   onTap: () => onDestinationSelected(index),
-                  child: ExcludeSemantics(
-                    child: Tooltip(
-                      message: _navigationRoots[index].$3,
-                      child: InkWell(
-                        onTap: () => onDestinationSelected(index),
-                        splashFactory: NoSplash.splashFactory,
-                        splashColor: Colors.transparent,
-                        highlightColor: Colors.transparent,
-                        hoverColor: Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: SizedBox(
-                            height: 56,
-                            child: Stack(
-                              children: [
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  height: 32,
-                                  child: AnimatedOpacity(
-                                    duration: motion(context, 400),
-                                    curve: Curves.fastOutSlowIn,
-                                    opacity: index == selectedIndex ? 1 : 0,
-                                    child: DecoratedBox(
-                                      decoration: ShapeDecoration(
-                                        color: scheme.primary.withValues(
-                                          alpha: .16,
-                                        ),
-                                        shape: const StadiumBorder(),
-                                      ),
-                                      child: const SizedBox.expand(),
-                                    ),
-                                  ),
-                                ),
-                                AnimatedAlign(
-                                  duration: motion(context, 400),
-                                  curve: Curves.fastOutSlowIn,
-                                  alignment: index == selectedIndex
-                                      ? const Alignment(0, -0.75)
-                                      : Alignment.center,
-                                  child: Icon(
-                                    index == selectedIndex
-                                        ? _navigationRoots[index].$2
-                                        : _navigationRoots[index].$1,
-                                    color: index == selectedIndex
-                                        ? scheme.onSurface
-                                        : scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                Positioned(
-                                  bottom: 0,
-                                  left: 0,
-                                  right: 0,
-                                  height: 20,
-                                  child: index == selectedIndex
-                                      ? Center(
-                                          child: Text(
-                                            _navigationRoots[index].$3,
-                                            maxLines: 1,
-                                            softWrap: false,
-                                            overflow: TextOverflow.ellipsis,
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelMedium
-                                                ?.copyWith(
-                                                  color: scheme.onSurface,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          ),
-                                        )
-                                      : const SizedBox.shrink(),
-                                ),
-                              ],
-                            ),
-                          ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Tab extends StatelessWidget {
+  const _Tab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.showLabel,
+    required this.scheme,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final bool showLabel;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  static const _inset = 6.0;
+  static const _pillHeight = 30.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = selected ? scheme.onSurface : scheme.onSurfaceVariant;
+    return Semantics(
+      container: true,
+      role: SemanticsRole.tab,
+      selected: selected,
+      label: label,
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: onTap,
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.transparent,
+            hoverColor: Colors.transparent,
+            borderRadius: BorderRadius.circular(AppGeometry.chromeRadius),
+            child: Padding(
+              padding: const EdgeInsets.all(_inset),
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: _pillHeight,
+                    child: AnimatedOpacity(
+                      duration: motion(context, 400),
+                      curve: Curves.fastOutSlowIn,
+                      opacity: selected ? 1 : 0,
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: scheme.primary.withValues(alpha: .18),
+                          shape: const StadiumBorder(),
                         ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                  AnimatedAlign(
+                    duration: motion(context, 400),
+                    curve: Curves.fastOutSlowIn,
+                    alignment: showLabel
+                        ? Alignment.topCenter
+                        : Alignment.center,
+                    child: SizedBox(
+                      height: _pillHeight,
+                      child: Center(child: Icon(icon, color: colour)),
+                    ),
+                  ),
+                  if (showLabel)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.2,
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: colour,
+                                height: 1.2,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchButton extends StatelessWidget {
+  const _SearchButton({required this.selected, required this.onPressed});
+
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = _navigationRoots[_searchTab].$3;
+    return Semantics(
+      container: true,
+      role: SemanticsRole.tab,
+      selected: selected,
+      label: label,
+      onTap: onPressed,
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: label,
+          child: SizedBox.square(
+            dimension: AppGeometry.barHeight,
+            child: Glass(
+              radius: AppGeometry.barHeight / 2,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onPressed,
+                  child: AnimatedContainer(
+                    duration: motion(context, 300),
+                    curve: Curves.fastOutSlowIn,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected
+                          ? scheme.primary.withValues(alpha: .18)
+                          : Colors.transparent,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        _navigationRoots[_searchTab].$2,
+                        size: 26,
+                        color: selected
+                            ? scheme.onSurface
+                            : scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
+            ),
+          ),
         ),
       ),
     );
