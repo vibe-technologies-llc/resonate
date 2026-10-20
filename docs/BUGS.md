@@ -30,6 +30,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [L] The key is the PCM alone: two tracks of the same samples at another rate, count or mask
   (digital silence) share an object, and a standing object is taken on its size alone; needs a
   migration
-- [M] Blanking a Matroska file stops at an element of unknown size or after 65 536 elements and
-  lands what it blanked so far as stripped; a `TrackEntry` name, chapters and an MP4's track-level
-  `meta` are never blanked; an MP4 past 4 096 boxes keeps every tag

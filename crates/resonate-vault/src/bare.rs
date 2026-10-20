@@ -7,7 +7,7 @@ use resonate_codec::{Container, MediaStream};
 use resonate_core::MediaLocation;
 
 use crate::{
-    blanks::{self, Blank},
+    blanks::{self, Blank, Walked},
     chunks::{self, Layout},
     error::{Error, Result},
     key::{KEY_BYTES, VaultKey},
@@ -118,16 +118,27 @@ pub(crate) fn declared_digest(stream: &mut Box<dyn MediaStream>) -> Option<Vault
 
 fn blanked(
     stream: &mut Box<dyn MediaStream>,
-    walk: impl FnOnce(&mut dyn MediaStream) -> Option<Vec<Blank>>,
+    walk: impl FnOnce(&mut dyn MediaStream) -> Walked,
 ) -> Option<Bare> {
-    let blanks = walk(stream.as_mut());
+    let walked = walk(stream.as_mut());
     stream.seek(SeekFrom::Start(0)).ok()?;
+    let blanks = match walked {
+        Ok(blanks) if blanks.is_empty() => return None,
+        Ok(blanks) => blanks,
+        Err(unwalked) => {
+            tracing::debug!(
+                ?unwalked,
+                "a container walked short of its end is kept whole, every tag in it"
+            );
+            return None;
+        }
+    };
     Some(Bare {
         head: Vec::new(),
         until: None,
         renumbering: None,
         left_out: Vec::new(),
-        blanks: blanks?,
+        blanks,
     })
 }
 

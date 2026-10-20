@@ -78,8 +78,14 @@ engine, library, `ureq` (CI `refuse`).
     the rest with pad byte (not CAF), rewrites the header size. Unreadable walk: copied whole; a data
     chunk declaring more than the file holds reads to the end. RF64, BW64, Wave64 kept whole (`ds64`).
   - **MP4, Matroska: tags blanked in place** so nothing indexing the audio moves: `udta`, `meta`
-    become same-length `free` boxes (`blanks::blanked_movie`); `Tags`, `Attachments`, `Title`
-    same-length EBML `Void`s (`blanks::blanked_segment`).
+    (file, movie and track level) become same-length `free` boxes (`blanks::blanked_movie`);
+    `Tags`, `Attachments`, `Chapters`, the `Info` `Title` and each `TrackEntry` `Name` same-length
+    EBML `Void`s (`blanks::blanked_segment`). An element of unknown size (a live `Cluster`) is
+    walked through its children to the next Segment-level ID. **A walk that cannot reach the end
+    blanks nothing**: an `Unwalked` reason (a box or tag-bearing element running past its parent,
+    a misformed header, an unknown size inside an unknown size, past `BOXES_WALKED_AT_MOST` (2^20)
+    or `ELEMENTS_WALKED_AT_MOST` (2^24)) keeps the file whole rather than landing part of its tags as
+    stripped; a last element cut short with nothing to blank in it ends the walk as complete.
   - Ogg Vorbis, Opus, Ogg FLAC: rewritten (below).
   - A tag claiming more than the file holds, or leaving no frames: kept whole.
 

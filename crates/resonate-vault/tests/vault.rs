@@ -1681,6 +1681,8 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
             "title=Echoes",
             "-metadata",
             "artist=Pink Floyd",
+            "-metadata:s:a:0",
+            "title=Narration",
             "-metadata",
         ])
         .arg(format!("comment={}", "a long note ".repeat(4_000)))
@@ -1701,6 +1703,10 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
     assert!(
         !object.windows(6).any(|window| window == b"Echoes"),
         "a tag was kept"
+    );
+    assert!(
+        !object.windows(9).any(|window| window == b"Narration"),
+        "a track's name was kept"
     );
     assert!(
         !object.windows(9).any(|window| window == b"long note"),
