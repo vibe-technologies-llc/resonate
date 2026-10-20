@@ -54,7 +54,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   track's last block neither keeps nor replaces it, so the track the decoder selected is the one
   asked); declared length is counted from each packet's TOC byte (`Segment::opus_music`, for the
   counted track only), trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
-  predicts band energy from the previous frame) and discard those frames.
+  predicts band energy from the previous frame) and discard those frames. **AAC seeks start
+  early too** (`AAC_PRE_ROLL`, four packets: the MDCT overlaps the previous packet, so a landing
+  with no lead-in plays a fade-in), and every jump of a spliced M4A is a seek. The roll is taken in
+  timestamps (`Timeline::rolled_back`), so it may reach into the priming but never before the
+  track's start; a non-sample-accurate timeline rolls back in music frames. An AAC decoder keeps
+  small state across `reset`, so a seeked decode agrees with playing through to within about
+  -30 dB, not sample for sample.
 - **WavPack Hybrid is billed as the lossy codec it decodes as** (`wavpack::HYBRID_CODEC_ID`,
   `Codec::WavPackHybrid`, not `is_lossless`); `wavpack.rs` rewrites packets because
   `symphonia-codec-wavpack` mishandles extended bits of 32-bit/float blocks; `.wvc` files are not
@@ -84,6 +90,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   heard frame through `Splices::place_of`. The list is read once at open into one `Arc<[Edit]>`;
   walking it allocates nothing. A source that cannot seek skips ahead to a cut and ends at an edit
   reaching back. Splices reaching past the samples `stts` holds play the first stretch alone.
+  **The list is kept in the media's ticks and rescaled to the decoder's rate on asking**
+  (`Edited::priming_at`), so a track whose `mdhd` timescale is not its sample rate (HE-AAC's core
+  rate) is still honoured; only an `iTunSMPB` declaration, which counts output frames, is declined
+  where the timescale disagrees. **The whole `elst` is read** (the box up to `MAX_EDIT_LIST_BYTES`,
+  1 MiB; a count the box cannot hold declines the list rather than reading a prefix). **An edit's
+  media rate is honoured: a dwell (rate 0) holds one frame, which for audio is no sound, so it is
+  an empty edit** (silence for its segment, and dropped where leading or trailing); **any other
+  non-unity rate declines the whole list**, since the player has no varispeed and a window claimed
+  at normal speed would be wrong.
   **Fragmented MP4 length is in the fragments, not `moov`** (`mvex/mehd`, else the top-level `sidx`
   boxes added up, one a DASH segment, those naming the sound track's id or else the first one's:
   `Movie::fragmented_length`; the walk goes on past `MAX_CHILD_BOXES` top-level boxes once a `sidx`

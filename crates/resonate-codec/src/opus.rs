@@ -8,7 +8,7 @@ use symphonia::core::{
     codecs::{
         CodecInfo,
         audio::{
-            AudioCodecId, AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult,
+            AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult,
             well_known::CODEC_ID_OPUS,
         },
         registry::{RegisterableAudioDecoder, SupportedAudioCodec},
@@ -18,7 +18,7 @@ use symphonia::core::{
 };
 
 pub(crate) const OPUS_RATE: u32 = 48_000;
-const PRE_ROLL: Frames = Frames(19_200);
+pub(crate) const PRE_ROLL: Frames = Frames(19_200);
 
 const LONGEST_PACKET_FRAMES: usize = 5_760;
 const MOST_CHANNELS: usize = 8;
@@ -97,14 +97,6 @@ const VORBIS_ORDER: [&[Position]; MOST_CHANNELS] = [
         Position::LFE1,
     ],
 ];
-
-pub(crate) fn pre_roll(codec: AudioCodecId) -> Frames {
-    if codec == CODEC_ID_OPUS {
-        PRE_ROLL
-    } else {
-        Frames::ZERO
-    }
-}
 
 pub(crate) fn rate_of(params: &AudioCodecParameters) -> Option<u32> {
     if params.codec == CODEC_ID_OPUS {

@@ -38,6 +38,15 @@ impl Timeline {
         self.music_at.checked_add(Ticks::new(frames.get()))
     }
 
+    pub fn rolled_back(&self, ts: Timestamp, lead_in: Frames) -> Timestamp {
+        if ts.is_negative() {
+            return ts;
+        }
+
+        ts.saturating_sub(Ticks::new(lead_in.get()))
+            .max(Timestamp::ZERO)
+    }
+
     pub fn frames(&self, ts: Timestamp) -> Frames {
         let elapsed = u64::try_from(ts.saturating_delta(self.music_at).get()).unwrap_or(0);
         self.span(Ticks::new(elapsed))
@@ -85,6 +94,28 @@ mod tests {
             Timestamp::ZERO,
             SampleRate::new(rate).expect("a supported rate"),
         )
+    }
+
+    #[test]
+    fn a_lead_in_reaches_back_into_the_priming_but_not_before_the_start() {
+        let timeline = Timeline::new(
+            TimeBase::try_from_recip(44_100),
+            Timestamp::new(1_024),
+            SampleRate::HZ_44100,
+        );
+
+        assert_eq!(
+            timeline.rolled_back(Timestamp::new(5_000), Frames(4_096)),
+            Timestamp::new(904)
+        );
+        assert_eq!(
+            timeline.rolled_back(Timestamp::new(1_024), Frames(4_096)),
+            Timestamp::ZERO
+        );
+        assert_eq!(
+            timeline.rolled_back(Timestamp::new(-300), Frames(4_096)),
+            Timestamp::new(-300)
+        );
     }
 
     #[test]

@@ -2540,6 +2540,84 @@ fn a_spliced_m4a_plays_every_edit_in_the_order_its_list_names_them() {
     }
 }
 
+const AAC_RESIDUE_AT_MOST: i64 = 1 << 26;
+
+fn furthest_apart(heard: &[i32], wanted: &[i32]) -> i64 {
+    assert_eq!(heard.len(), wanted.len(), "the two did not last as long");
+
+    heard
+        .iter()
+        .zip(wanted)
+        .map(|(played, expected)| (i64::from(*played) - i64::from(*expected)).abs())
+        .max()
+        .unwrap_or(0)
+}
+
+#[test]
+fn a_seek_in_an_aac_m4a_hears_what_playing_through_to_there_hears() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "seek.m4a", &["-c:a", "aac", "-b:a", "192k"]) else {
+        return;
+    };
+    let whole = decode(&path).samples;
+    let lanes = usize::from(CHANNELS);
+
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("an aac m4a opens");
+    for target in [20_000_usize, 20_480, 30_001, 5_000, 0] {
+        assert_eq!(
+            decoder.seek(Frames(target as u64)).expect("a seek inside"),
+            Frames(target as u64)
+        );
+        let rest = drain(&mut decoder, info.spec);
+        let apart = furthest_apart(&rest, &whole[target * lanes..]);
+        assert!(
+            apart <= AAC_RESIDUE_AT_MOST,
+            "a seek to {target} landed on a packet with no lead-in, {apart} from what playing through hears"
+        );
+    }
+}
+
+#[test]
+fn every_jump_of_a_spliced_aac_m4a_lands_with_the_lead_in_it_would_have_played_through() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "whole.m4a", &["-c:a", "aac", "-b:a", "192k"]) else {
+        return;
+    };
+    let lanes = usize::from(CHANNELS);
+    let mut media = vec![0; AAC_PRIMING as usize * lanes];
+    media.extend(decode(&path).samples);
+
+    let listed = [
+        Listed {
+            frames: 22_050,
+            media_time: 44_100,
+        },
+        Listed {
+            frames: 11_025,
+            media_time: 4_410,
+        },
+        Listed {
+            frames: 17_640,
+            media_time: 26_150,
+        },
+    ];
+    let spliced = tree.at("spliced.m4a");
+    fs::write(
+        &spliced,
+        with_edit_list(&fs::read(&path).expect("the fixture reads"), &listed),
+    )
+    .expect("a writable temporary file");
+    let heard = heard_through(&media, &listed);
+
+    let decoded = decode(&spliced);
+    let apart = furthest_apart(&decoded.samples, &heard);
+    assert!(
+        apart <= AAC_RESIDUE_AT_MOST,
+        "a jump landed on a packet with no lead-in, {apart} from what playing through hears"
+    );
+}
+
 #[test]
 fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
     let Some(root) = env::var_os(REAL_FIXTURES) else {

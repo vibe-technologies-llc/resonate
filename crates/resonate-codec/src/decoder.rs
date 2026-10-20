@@ -1143,9 +1143,14 @@ impl Decoder {
             }
             Held::Coded(coded) => coded,
         };
-        let to = to.saturating_sub(crate::opus::pre_roll(info.codec));
-
-        let asked = timeline.timestamp(to);
+        let lead_in = pre_roll(info.codec);
+        let asked = timeline
+            .timestamp(to)
+            .map(|ts| timeline.rolled_back(ts, lead_in));
+        let to = match asked {
+            Some(_) => to,
+            None => to.saturating_sub(lead_in),
+        };
         let seek_to = match asked {
             Some(ts) => SeekTo::Timestamp {
                 ts,
@@ -1175,6 +1180,16 @@ impl Decoder {
             at: timeline.frames(landed.actual_ts),
             short_of_the_music,
         })
+    }
+}
+
+const AAC_PRE_ROLL: Frames = Frames(4 * 1_024);
+
+fn pre_roll(codec: AudioCodecId) -> Frames {
+    match Codec::from_id(codec) {
+        Codec::Opus => crate::opus::PRE_ROLL,
+        Codec::Aac => AAC_PRE_ROLL,
+        _ => Frames::ZERO,
     }
 }
 

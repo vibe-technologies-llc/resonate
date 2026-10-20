@@ -18,7 +18,7 @@ const TO_END: u32 = 0;
 const MAX_TOP_LEVEL_BOXES: usize = 256;
 const MAX_CHILD_BOXES: usize = 256;
 const MAX_LEAF_BYTES: u64 = 1 << 16;
-const MAX_EDIT_ENTRIES: usize = 64;
+const MAX_EDIT_LIST_BYTES: u64 = 1 << 20;
 const EDIT_ROUNDING_TICKS: u64 = 1;
 const MAX_INDEX_ROUNDS: usize = 64;
 const MAX_TIME_TO_SAMPLE_ENTRIES: usize = 8_191;
@@ -32,6 +32,10 @@ const ENTRY_COUNT_AT: usize = 4;
 const ENTRIES_AT: usize = 8;
 const EDIT_ENTRY_BYTES: usize = 12;
 const WIDE_EDIT_ENTRY_BYTES: usize = 20;
+const EDIT_RATE_AT: usize = 8;
+const WIDE_EDIT_RATE_AT: usize = 16;
+const UNITY_EDIT_RATE: u32 = 0x0001_0000;
+const DWELL_EDIT_RATE: u32 = 0;
 const TIME_TO_SAMPLE_ENTRY_BYTES: usize = 8;
 const FRAGMENT_DURATION_AT: usize = 4;
 const INDEX_REFERENCE_AT: usize = 4;
@@ -221,6 +225,7 @@ fn read_at<const N: usize, S: Read + Seek + ?Sized>(file: &mut S, at: u64) -> Op
 pub(crate) struct Movie {
     timescale: Option<NonZeroU32>,
     priming: Option<Priming>,
+    edited: Option<Edited>,
     fragmented: Option<Ticks>,
     pub(crate) chapters: Vec<Marked>,
     pub(crate) sound_check: Option<String>,
@@ -228,9 +233,13 @@ pub(crate) struct Movie {
 
 impl Movie {
     pub(crate) fn priming_at(&self, rate: SampleRate) -> Option<Priming> {
-        (self.timescale?.get() == rate.hz())
-            .then(|| self.priming.clone())
-            .flatten()
+        if self.priming.is_some() {
+            return (self.timescale?.get() == rate.hz())
+                .then(|| self.priming.clone())
+                .flatten();
+        }
+
+        self.edited.as_ref()?.priming_at(rate)
     }
 
     pub(crate) fn fragmented_length(&self, rate: SampleRate) -> Option<Frames> {
@@ -342,13 +351,19 @@ fn scan_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Movie> {
     let decoded =
         descend(source, mdia, &[MINF, STBL, STTS]).and_then(|table| decoded_frames(source, table));
 
+    let priming = free_form(source, moov, GAPLESS_ITEM)
+        .as_deref()
+        .and_then(gapless_fields)
+        .filter(|held| held.fits_within(decoded));
+    let edited = match priming {
+        Some(_) => None,
+        None => edit_list(source, moov, trak, media, decoded),
+    };
+
     Some(Movie {
         timescale: Some(media.timescale),
-        priming: free_form(source, moov, GAPLESS_ITEM)
-            .as_deref()
-            .and_then(gapless_fields)
-            .or_else(|| edit_priming(source, moov, trak, media, decoded))
-            .filter(|held| held.fits_within(decoded)),
+        priming,
+        edited,
         sound_check: free_form(source, moov, SOUND_CHECK_ITEM),
         fragmented: extended_length(source, moov)
             .or_else(|| indexed_length(source, &top, end, trak)),
@@ -699,31 +714,93 @@ enum Listed {
     Empty { lasting: u64 },
 }
 
-fn edit_priming<S: Read + Seek + ?Sized>(
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Edited {
+    timescale: NonZeroU32,
+    listed: Vec<Listed>,
+    whole: u64,
+    decoded: Option<u64>,
+}
+
+impl Edited {
+    fn priming_at(&self, rate: SampleRate) -> Option<Priming> {
+        let to = NonZeroU32::new(rate.hz())?;
+        let rescale = |ticks: u64| rescaled(ticks, self.timescale, to);
+
+        let mut listed = Vec::with_capacity(self.listed.len());
+        for edit in &self.listed {
+            listed.push(match *edit {
+                Listed::Media { from, lasting } => Listed::Media {
+                    from: rescale(from)?,
+                    lasting: rescale(lasting)?,
+                },
+                Listed::Empty { lasting } => Listed::Empty {
+                    lasting: rescale(lasting)?,
+                },
+            });
+        }
+        let decoded = match self.decoded {
+            Some(ticks) => Some(rescale(ticks)?),
+            None => None,
+        };
+        let whole = match decoded {
+            Some(frames) => frames,
+            None => rescale(self.whole)?,
+        };
+
+        let &Listed::Media { from, lasting } = listed.first()? else {
+            return None;
+        };
+        let first = Priming {
+            delay: u32::try_from(from).ok()?,
+            padding: frames_past(whole, from.saturating_add(lasting)),
+            playable: Some(Frames(lasting)),
+            splices: None,
+        };
+        let held = match listed.len() {
+            1 => Some(first),
+            _ => spliced_priming(&listed, whole)
+                .filter(|spliced| spliced.fits_within(decoded))
+                .or(Some(first)),
+        };
+
+        held.filter(|held| held.fits_within(decoded))
+    }
+}
+
+fn edit_list<S: Read + Seek + ?Sized>(
     source: &mut S,
     moov: Extent,
     trak: Extent,
     media: Header,
     decoded: Option<u64>,
-) -> Option<Priming> {
+) -> Option<Edited> {
     let mvhd = child(source, moov, MVHD)?;
     let movie = header_of(source, mvhd)?;
     let elst = descend(source, trak, &[EDTS, ELST])?;
-    let bytes = leaf(source, elst)?;
+    let bytes = leaf_up_to(source, elst, MAX_EDIT_LIST_BYTES)?;
     let version = *bytes.first()?;
-    let entries = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MAX_EDIT_ENTRIES);
+    let entry_bytes = match version {
+        0 => EDIT_ENTRY_BYTES,
+        _ => WIDE_EDIT_ENTRY_BYTES,
+    };
+    let entries = be32(&bytes, ENTRY_COUNT_AT)? as usize;
+    if entries > (bytes.len().saturating_sub(ENTRIES_AT)) / entry_bytes {
+        return None;
+    }
 
     let mut listed = Vec::with_capacity(entries);
     for entry in 0..entries {
-        let (segment, media_time) = edit_entry(&bytes, version, entry)?;
+        let (segment, media_time, rate) = edit_entry(&bytes, version, entry)?;
         let lasting = rescaled(segment, movie.timescale, media.timescale)?;
         if lasting == 0 {
             continue;
         }
 
-        let edit = match u64::try_from(media_time) {
-            Ok(from) => Listed::Media { from, lasting },
-            Err(_) => Listed::Empty { lasting },
+        let edit = match (u64::try_from(media_time), rate) {
+            (Ok(from), UNITY_EDIT_RATE) => Listed::Media { from, lasting },
+            (Ok(_), DWELL_EDIT_RATE) | (Err(_), _) => Listed::Empty { lasting },
+            (Ok(_), _) => return None,
         };
         joined(&mut listed, edit);
     }
@@ -731,23 +808,12 @@ fn edit_priming<S: Read + Seek + ?Sized>(
         listed.pop();
     }
 
-    let whole = decoded.unwrap_or(media.frames);
-    let Some(&Listed::Media { from, lasting }) = listed.first() else {
-        return None;
-    };
-    let first = Priming {
-        delay: u32::try_from(from).ok()?,
-        padding: frames_past(whole, from.saturating_add(lasting)),
-        playable: Some(Frames(lasting)),
-        splices: None,
-    };
-    if listed.len() == 1 {
-        return Some(first);
-    }
-
-    spliced_priming(&listed, whole)
-        .filter(|spliced| spliced.fits_within(decoded))
-        .or(Some(first))
+    Some(Edited {
+        timescale: media.timescale,
+        listed,
+        whole: media.frames,
+        decoded,
+    })
 }
 
 fn joined(listed: &mut Vec<Listed>, edit: Listed) {
@@ -808,17 +874,22 @@ fn frames_past(whole: u64, reach: u64) -> u32 {
     u32::try_from(whole.saturating_sub(reach)).unwrap_or(u32::MAX)
 }
 
-fn edit_entry(bytes: &[u8], version: u8, entry: usize) -> Option<(u64, i64)> {
+fn edit_entry(bytes: &[u8], version: u8, entry: usize) -> Option<(u64, i64, u32)> {
     if version == 0 {
         let at = ENTRIES_AT + entry.checked_mul(EDIT_ENTRY_BYTES)?;
         return Some((
             u64::from(be32(bytes, at)?),
             i64::from(be32(bytes, at + 4)? as i32),
+            be32(bytes, at + EDIT_RATE_AT)?,
         ));
     }
 
     let at = ENTRIES_AT + entry.checked_mul(WIDE_EDIT_ENTRY_BYTES)?;
-    Some((be64(bytes, at)?, be64(bytes, at + 8)? as i64))
+    Some((
+        be64(bytes, at)?,
+        be64(bytes, at + 8)? as i64,
+        be32(bytes, at + WIDE_EDIT_RATE_AT)?,
+    ))
 }
 
 fn rescaled(ticks: u64, from: NonZeroU32, to: NonZeroU32) -> Option<u64> {
@@ -928,8 +999,12 @@ fn children<S: Read + Seek + ?Sized>(source: &mut S, within: Extent) -> Vec<Chil
 }
 
 fn leaf<S: Read + Seek + ?Sized>(source: &mut S, held: Extent) -> Option<Vec<u8>> {
+    leaf_up_to(source, held, MAX_LEAF_BYTES)
+}
+
+fn leaf_up_to<S: Read + Seek + ?Sized>(source: &mut S, held: Extent, most: u64) -> Option<Vec<u8>> {
     let bytes = held.end.checked_sub(held.at)?;
-    if bytes > MAX_LEAF_BYTES {
+    if bytes > most {
         return None;
     }
 
@@ -1133,13 +1208,32 @@ mod tests {
     }
 
     fn edit_list(entries: &[(u32, i32)]) -> Vec<u8> {
+        let paced = entries
+            .iter()
+            .map(|&(segment, media_time)| (segment, media_time, UNITY_EDIT_RATE))
+            .collect::<Vec<_>>();
+
+        edit_list_paced(&paced)
+    }
+
+    fn edit_list_paced(entries: &[(u32, i32, u32)]) -> Vec<u8> {
         let mut payload = (entries.len() as u32).to_be_bytes().to_vec();
-        for (segment, media_time) in entries {
+        for (segment, media_time, rate) in entries {
             payload.extend_from_slice(&segment.to_be_bytes());
             payload.extend_from_slice(&media_time.to_be_bytes());
-            payload.extend_from_slice(&0x0001_0000_u32.to_be_bytes());
+            payload.extend_from_slice(&rate.to_be_bytes());
         }
         atom(b"edts", &full_atom(b"elst", 0, &payload))
+    }
+
+    fn wide_edit_list_paced(entries: &[(u64, i64, u32)]) -> Vec<u8> {
+        let mut payload = (entries.len() as u32).to_be_bytes().to_vec();
+        for (segment, media_time, rate) in entries {
+            payload.extend_from_slice(&segment.to_be_bytes());
+            payload.extend_from_slice(&media_time.to_be_bytes());
+            payload.extend_from_slice(&rate.to_be_bytes());
+        }
+        atom(b"edts", &full_atom(b"elst", 1, &payload))
     }
 
     fn time_to_sample(entries: &[(u32, u32)]) -> Vec<u8> {
@@ -1179,12 +1273,21 @@ mod tests {
     }
 
     fn track(handled: &[u8; 4], edits: &[Vec<u8>], samples: &[(u32, u32)]) -> Vec<u8> {
+        track_scaled(RATE, handled, edits, samples)
+    }
+
+    fn track_scaled(
+        timescale: u32,
+        handled: &[u8; 4],
+        edits: &[Vec<u8>],
+        samples: &[(u32, u32)],
+    ) -> Vec<u8> {
         let stbl = atom(b"stbl", &time_to_sample(samples));
         let minf = atom(b"minf", &stbl);
         let mdia = atom(
             b"mdia",
             &[
-                header_atom(b"mdhd", RATE, PRIMING + MUSIC),
+                header_atom(b"mdhd", timescale, PRIMING + MUSIC),
                 handler(handled),
                 minf,
             ]
@@ -1494,14 +1597,122 @@ mod tests {
     }
 
     #[test]
-    fn a_rate_the_media_timescale_disagrees_with_declines_the_whole_declaration() {
+    fn a_declared_gapless_tag_is_declined_at_a_rate_the_media_timescale_disagrees_with() {
+        let declared = format!(" 00000000 {:08X} {:08X} {:016X}", PRIMING, REMAINDER, MUSIC);
         let held = read_movie(&mut Cursor::new(movie(
-            &[sound(&[edit_list(&[(MUSIC, PRIMING as i32)])])],
-            &[],
+            &[sound(&[])],
+            &[user_data(&[gapless_item(&declared)])],
         )));
 
         assert!(held.priming_at(SampleRate::HZ_44100).is_some());
         assert_eq!(held.priming_at(SampleRate::HZ_48000), None);
+    }
+
+    #[test]
+    fn an_edit_list_is_rescaled_to_the_rate_the_media_timescale_differs_from() {
+        let core = RATE / 2;
+        let bytes = movie(
+            &[track_scaled(
+                core,
+                b"soun",
+                &[edit_list(&[(MUSIC, (PRIMING / 2) as i32)])],
+                &[(PACKETS, PACKET / 2)],
+            )],
+            &[],
+        );
+        let held = read_movie(&mut Cursor::new(bytes))
+            .priming_at(SampleRate::HZ_44100)
+            .expect("an edit list in the media's own timescale");
+
+        assert_eq!(held.delay, PRIMING);
+        assert_eq!(held.padding, REMAINDER);
+        assert_eq!(
+            held.window().and_then(FrameSpan::frames),
+            Some(Frames(u64::from(MUSIC)))
+        );
+    }
+
+    #[test]
+    fn an_edit_that_dwells_is_heard_as_silence_the_segment_lasts() {
+        let quarter = MUSIC / 4;
+        let held = priming_of(&movie(
+            &[sound(&[edit_list_paced(&[
+                (quarter, PRIMING as i32, UNITY_EDIT_RATE),
+                (512, (PRIMING + quarter) as i32, DWELL_EDIT_RATE),
+                (quarter, (PRIMING + quarter) as i32, UNITY_EDIT_RATE),
+            ])])],
+            &[],
+        ))
+        .expect("an edit list the reader can act on");
+
+        assert_eq!(
+            held.splices.as_ref().map(Splices::edits),
+            Some([music(0, quarter), silence(512), music(quarter, quarter)].as_slice())
+        );
+    }
+
+    #[test]
+    fn a_dwell_in_a_wide_edit_list_is_read_from_its_own_offset() {
+        let quarter = u64::from(MUSIC / 4);
+        let held = priming_of(&movie(
+            &[sound(&[wide_edit_list_paced(&[
+                (quarter, i64::from(PRIMING), UNITY_EDIT_RATE),
+                (512, i64::from(PRIMING), DWELL_EDIT_RATE),
+                (quarter, i64::from(PRIMING), UNITY_EDIT_RATE),
+            ])])],
+            &[],
+        ))
+        .expect("a wide edit list the reader can act on");
+
+        assert_eq!(
+            held.splices.as_ref().map(Splices::edits),
+            Some([music(0, MUSIC / 4), silence(512), music(0, MUSIC / 4)].as_slice())
+        );
+    }
+
+    #[test]
+    fn an_edit_playing_at_another_speed_declines_the_whole_list() {
+        let double = 0x0002_0000;
+        let slow = 0x0000_8000;
+
+        for rate in [double, slow, 0x8000_0000] {
+            let held = priming_of(&movie(
+                &[sound(&[edit_list_paced(&[
+                    (MUSIC / 2, PRIMING as i32, UNITY_EDIT_RATE),
+                    (MUSIC / 2, (PRIMING + MUSIC / 2) as i32, rate),
+                ])])],
+                &[],
+            ));
+
+            assert_eq!(held, None, "rate {rate:#x}");
+        }
+    }
+
+    #[test]
+    fn an_edit_list_longer_than_sixty_four_entries_is_read_whole() {
+        let stretch = 16;
+        let entries = (0..200)
+            .map(|each| (stretch, (PRIMING + 2 * each * stretch) as i32))
+            .collect::<Vec<_>>();
+        let held = priming_of(&movie(&[sound(&[edit_list(&entries)])], &[]))
+            .expect("an edit list the reader can act on");
+
+        let edits = held
+            .splices
+            .as_ref()
+            .map(Splices::edits)
+            .unwrap_or_default();
+        assert_eq!(edits.len(), 200);
+        assert_eq!(edits.last().copied(), Some(music(398 * stretch, stretch)));
+    }
+
+    #[test]
+    fn an_edit_list_declaring_more_entries_than_its_box_holds_is_declined() {
+        let mut payload = u32::MAX.to_be_bytes().to_vec();
+        payload.extend_from_slice(&[0; 12]);
+        let hostile = atom(b"edts", &full_atom(b"elst", 0, &payload));
+
+        assert_eq!(priming_of(&movie(&[sound(&[hostile])], &[])), None);
     }
 
     fn fragmented(extends: &[Vec<u8>], index: &[Vec<u8>]) -> Movie {
