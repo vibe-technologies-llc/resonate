@@ -26,7 +26,10 @@ engine, library, `ureq` (CI `refuse`).
   x row frames / file frames); no smaller: `Refusal::NoSmaller`. `Kept::was` is that weight and what
   `was_bytes` counts. **Weighing precedes landing**: `landed_or_standing` weighs the staged object or
   the one under its key and answers `Landing::NoSmaller` without renaming, so concurrent imports of
-  one key never delete what the other's row names. **A standing object is taken only where its head
+  one key never delete what the other's row names
+  (`imports_of_one_flac_key_racing_land_one_object_and_leave_nothing_staged`, its `_wave_` sibling and
+  `dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_sweep`: eight threads over
+  a barrier, forty rounds, one landing, the rest deduped, nothing left staged). **A standing object is taken only where its head
   declares what went in, never on its size alone** (`standing_holding`, `holds_the_sound`): a FLAC's
   STREAMINFO (`standing::of_a_flac`: rate, channels, frames and the samples' MD5), a packed WAVE's
   RIFF header (`standing::of_a_packed_wave`: rate, channels, frames), a kept object's size against
