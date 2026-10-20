@@ -1,8 +1,8 @@
-use std::iter;
+use std::{iter, num::NonZeroU16};
 
 use libspa::{
     param::{
-        audio::{AudioFormat, AudioInfoRaw},
+        audio::{AudioFormat, AudioInfoRaw, AudioInfoRawFlags},
         format::{MediaSubtype, MediaType},
         format_utils,
     },
@@ -13,7 +13,10 @@ use libspa::{
 use resonate_core::{ChannelCount, ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 use smallvec::{SmallVec, smallvec};
 
-use crate::{CardProfile, HardwareVolume, Plugged, ProfileIndex, SinkPort, StreamEvent, Words};
+use crate::{
+    CardProfile, HardwareVolume, Plugged, ProfileIndex, SinkPort, StreamEvent, Words,
+    process::Taken,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum WireWord {
@@ -28,10 +31,6 @@ impl WireWord {
             AudioFormat::S24LE => Self::Packed,
             _ => Self::Padded,
         }
-    }
-
-    pub(crate) const fn is_packed(self) -> bool {
-        matches!(self, Self::Packed)
     }
 }
 
@@ -281,9 +280,65 @@ impl Negotiated {
             words: words_of(self.spec.format, self.word),
         }
     }
+
+    pub(crate) fn taken_against(self, asked: StreamSpec) -> Taken {
+        if self.spec == asked {
+            return Taken::AsAsked(self.word);
+        }
+        let samples = u16::from(self.spec.channel_count().get());
+        let word = match self.word {
+            WireWord::Packed => PACKED_WORD_BYTES,
+            WireWord::Padded => u16::from(self.spec.format.bytes_per_sample().get()),
+        };
+        NonZeroU16::new(samples.saturating_mul(word)).map_or(Taken::AsAsked(self.word), |frame| {
+            Taken::Otherwise { frame }
+        })
+    }
 }
 
-pub(crate) fn negotiated(param: &Pod) -> Option<Negotiated> {
+const PACKED_WORD_BYTES: u16 = 3;
+
+const NAMED_LAYOUTS: [ChannelLayout; 7] = [
+    ChannelLayout::Mono,
+    ChannelLayout::Stereo,
+    ChannelLayout::Quad,
+    ChannelLayout::Surround50,
+    ChannelLayout::Surround51,
+    ChannelLayout::Surround61,
+    ChannelLayout::Surround71,
+];
+
+fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> ChannelLayout {
+    let count = usize::from(channels.get());
+    let unspoken = info.flags().contains(AudioInfoRawFlags::UNPOSITIONED)
+        || info
+            .position()
+            .iter()
+            .take(count)
+            .all(|channel| *channel == 0);
+    if unspoken {
+        return if asked.channel_count() == channels {
+            asked.channels
+        } else {
+            ChannelLayout::from_count(channels)
+        };
+    }
+
+    let answered = info.position();
+    NAMED_LAYOUTS
+        .into_iter()
+        .filter(|layout| layout.count() == channels)
+        .find(|layout| {
+            spa_position(*layout)
+                .iter()
+                .zip(answered.iter())
+                .take(count)
+                .all(|(named, said)| named == said)
+        })
+        .unwrap_or(ChannelLayout::Discrete(channels))
+}
+
+pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
     let (media_type, media_subtype) = format_utils::parse_format(param)
         .inspect_err(|error| tracing::debug!(%error, "a stream format pod named no media type"))
         .ok()?;
@@ -302,7 +357,7 @@ pub(crate) fn negotiated(param: &Pod) -> Option<Negotiated> {
     let channels = ChannelCount::new(u16::try_from(info.channels()).ok()?).ok()?;
 
     Some(Negotiated {
-        spec: StreamSpec::new(rate, ChannelLayout::from_count(channels), format),
+        spec: StreamSpec::new(rate, placed(&info, channels, asked), format),
         word: WireWord::of(raw),
     })
 }
@@ -1307,7 +1362,10 @@ mod tests {
             WireWord::of(spa_format(SampleFormat::S24, WireWord::Padded)),
             WireWord::Padded
         );
-        assert!(!WireWord::of(AudioFormat(sys::SPA_AUDIO_FORMAT_S32_LE)).is_packed());
+        assert_eq!(
+            WireWord::of(AudioFormat(sys::SPA_AUDIO_FORMAT_S32_LE)),
+            WireWord::Padded
+        );
     }
 
     #[test]

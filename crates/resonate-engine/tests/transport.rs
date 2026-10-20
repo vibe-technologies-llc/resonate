@@ -970,6 +970,105 @@ fn a_surround_sink_is_handed_every_channel_the_file_carries() -> Result<()> {
     Ok(())
 }
 
+const FRONT_THREE_AND_REAR_PAIR: u32 = 0x37;
+const KSDATAFORMAT_SUBTYPE_PCM: [u8; 16] = [
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+];
+
+fn five_point_oh(frames: usize) -> Pcm {
+    const FIVE: u16 = 5;
+    const BITS: u16 = 16;
+
+    let block_align = FIVE * BITS / 8;
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+    fmt.extend_from_slice(&FIVE.to_le_bytes());
+    fmt.extend_from_slice(&RATE.to_le_bytes());
+    fmt.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    fmt.extend_from_slice(&block_align.to_le_bytes());
+    fmt.extend_from_slice(&BITS.to_le_bytes());
+    fmt.extend_from_slice(&22_u16.to_le_bytes());
+    fmt.extend_from_slice(&BITS.to_le_bytes());
+    fmt.extend_from_slice(&FRONT_THREE_AND_REAR_PAIR.to_le_bytes());
+    fmt.extend_from_slice(&KSDATAFORMAT_SUBTYPE_PCM);
+
+    let stream: Vec<u8> = (0..frames * usize::from(FIVE))
+        .flat_map(|n| ((n % 30_000) as i16).to_le_bytes())
+        .collect();
+
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &fmt);
+    chunk(&mut body, b"data", &stream);
+
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    Pcm { file, stream }
+}
+
+#[test]
+fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone() -> Result<()> {
+    let tree = Tree::new();
+    let source = five_point_oh(FRAMES);
+    let path = tree.write("five.wav", &source.file);
+
+    let five = SinkInfo {
+        formats: vec![SinkFormats {
+            format: SampleFormat::S16,
+            words: Words::Whole,
+            rates: vec![SampleRate::HZ_44100],
+            channels: vec![ChannelLayout::Stereo, ChannelLayout::Surround50],
+        }],
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+    };
+    let (player, graph) = player(vec![five])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let asked = graph.lock().requests[0].spec;
+    assert_eq!(asked.channels, ChannelLayout::Surround50);
+
+    graph
+        .lock()
+        .events
+        .as_ref()
+        .expect("an open stream")
+        .send(StreamEvent::FormatChanged {
+            spec: asked,
+            words: Words::Whole,
+        })
+        .expect("the engine hears the stream");
+    wait_for(
+        &player,
+        |player| player.state().output.and_then(|output| output.words) == Some(Words::Whole),
+        "the settled format to be heard",
+    );
+
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * 5 * 2,
+        |_, graph| graph.played.len() >= wanted,
+        "the whole 5.0 track to reach the graph",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.opens, 1,
+        "a graph answering the layout it was asked for had the stream rebuilt"
+    );
+    assert_eq!(
+        graph.played, source.stream,
+        "a sink that takes 5.0 was handed something else"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_sink_that_cannot_take_the_source_rate_is_asked_for_a_converted_stream() -> Result<()> {
     let tree = Tree::new();

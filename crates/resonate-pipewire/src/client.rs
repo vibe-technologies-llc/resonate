@@ -47,7 +47,7 @@ use crate::{
         packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
         parse_rate, parse_route, route_change, running_rate, spa_format, spa_position,
     },
-    process::{Cycle, Hearing},
+    process::{Cycle, Hearing, Taking},
     props::StreamLevels,
 };
 
@@ -1416,6 +1416,10 @@ fn format_pod(spec: StreamSpec, word: WireWord, id: u32) -> Result<Vec<u8>> {
     }
     info.set_position(position);
 
+    pod_of(info, id)
+}
+
+fn pod_of(info: AudioInfoRaw, id: u32) -> Result<Vec<u8>> {
     let object = Value::Object(Object {
         type_: sys::SPA_TYPE_OBJECT_Format,
         id,
@@ -1508,8 +1512,8 @@ fn build_stream(
     let stream = StreamRc::new(core.clone(), &request.media_name, properties)
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
-    let packed = Arc::new(AtomicBool::new(false));
-    let cycle = Cycle::new(spec, Arc::clone(&packed), Arc::clone(clock));
+    let taking = Arc::new(Taking::default());
+    let cycle = Cycle::new(spec, Arc::clone(&taking), Arc::clone(clock));
     let listener = stream
         .add_local_listener_with_user_data(source)
         .process(move |stream, source| cycle.run(stream, source.as_mut()))
@@ -1529,14 +1533,14 @@ fn build_stream(
         })
         .param_changed({
             let events = events.clone();
-            let packed = Arc::clone(&packed);
+            let taking = Arc::clone(&taking);
             let mut levels = StreamLevels::default();
             move |_stream, _source, id, param| match id {
                 sys::SPA_PARAM_Format => {
-                    let Some(taken) = param.and_then(negotiated) else {
+                    let Some(taken) = param.and_then(|param| negotiated(param, spec)) else {
                         return;
                     };
-                    packed.store(taken.word.is_packed(), Ordering::Relaxed);
+                    taking.store(taken.taken_against(spec));
                     let _ = events.try_send(taken.changed());
                 }
                 sys::SPA_PARAM_Props => {
@@ -1626,7 +1630,7 @@ fn build_capture_stream(
                 if id != sys::SPA_PARAM_Format {
                     return;
                 }
-                if let Some(taken) = param.and_then(negotiated) {
+                if let Some(taken) = param.and_then(|param| negotiated(param, spec)) {
                     let _ = events.try_send(taken.changed());
                 }
             }
@@ -1662,8 +1666,140 @@ fn stream_state(state: &pipewire::stream::StreamState) -> StreamState {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU16;
+
+    use resonate_core::{ChannelCount, ChannelLayout, SampleFormat};
+
     use super::*;
-    use crate::{HardwareVolume, Plugged};
+    use crate::{
+        HardwareVolume, Plugged,
+        format::{Negotiated, WireWord},
+        process::Taken,
+    };
+
+    fn asked(channels: ChannelLayout, format: SampleFormat) -> StreamSpec {
+        StreamSpec::new(SampleRate::HZ_48000, channels, format)
+    }
+
+    fn read_back(bytes: &[u8], asked: StreamSpec) -> Negotiated {
+        let pod = Pod::from_bytes(bytes).expect("a format pod");
+        negotiated(pod, asked).expect("a raw audio format")
+    }
+
+    fn channels(count: u16) -> ChannelCount {
+        ChannelCount::new(count).expect("a channel count in range")
+    }
+
+    #[test]
+    fn every_layout_asked_for_reads_back_as_itself_once_the_graph_settles_on_it() {
+        for layout in [
+            ChannelLayout::Mono,
+            ChannelLayout::Stereo,
+            ChannelLayout::Quad,
+            ChannelLayout::Surround50,
+            ChannelLayout::Surround51,
+            ChannelLayout::Surround61,
+            ChannelLayout::Surround71,
+            ChannelLayout::Discrete(channels(3)),
+            ChannelLayout::Discrete(channels(5)),
+            ChannelLayout::Discrete(channels(6)),
+        ] {
+            for word in [WireWord::Padded, WireWord::Packed] {
+                let spec = asked(layout, SampleFormat::S24);
+                let settled = format_pod(spec, word, sys::SPA_PARAM_Format).expect("a pod");
+                let taken = read_back(&settled, spec);
+
+                assert_eq!(taken.spec, spec, "{layout} read back as another layout");
+                assert_eq!(taken.word, word);
+                assert_eq!(
+                    taken.taken_against(spec),
+                    Taken::AsAsked(word),
+                    "{layout} was taken as a format the ring is not laid out in"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_layout_other_than_the_one_asked_for_is_taken_as_another_frame() {
+        let stereo = asked(ChannelLayout::Stereo, SampleFormat::S16);
+        let five = asked(ChannelLayout::Surround50, SampleFormat::S16);
+        let settled = format_pod(five, WireWord::Padded, sys::SPA_PARAM_Format).expect("a pod");
+        let taken = read_back(&settled, stereo);
+
+        assert_eq!(taken.spec, five);
+        assert_eq!(
+            taken.taken_against(stereo),
+            Taken::Otherwise {
+                frame: NonZeroU16::new(5 * 2).expect("a five-channel frame")
+            }
+        );
+
+        let six_one = asked(ChannelLayout::Surround61, SampleFormat::S24);
+        let settled = format_pod(six_one, WireWord::Packed, sys::SPA_PARAM_Format).expect("a pod");
+
+        assert_eq!(
+            read_back(&settled, stereo).taken_against(stereo),
+            Taken::Otherwise {
+                frame: NonZeroU16::new(7 * 3).expect("a packed 6.1 frame")
+            }
+        );
+    }
+
+    #[test]
+    fn a_graph_naming_no_positions_leaves_the_layout_asked_for_where_the_count_agrees() {
+        let mut info = AudioInfoRaw::new();
+        info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
+        info.set_rate(SampleRate::HZ_48000.hz());
+        info.set_channels(5);
+        let unplaced = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
+
+        assert_eq!(
+            read_back(
+                &unplaced,
+                asked(ChannelLayout::Surround50, SampleFormat::F32)
+            )
+            .spec
+            .channels,
+            ChannelLayout::Surround50
+        );
+        assert_eq!(
+            read_back(&unplaced, asked(ChannelLayout::Stereo, SampleFormat::F32))
+                .spec
+                .channels,
+            ChannelLayout::Discrete(channels(5)),
+            "a count the ask did not name was given a layout nobody said"
+        );
+    }
+
+    #[test]
+    fn positions_naming_no_layout_read_as_unnamed_channels() {
+        let mut info = AudioInfoRaw::new();
+        info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
+        info.set_rate(SampleRate::HZ_48000.hz());
+        info.set_channels(6);
+        let mut position = [0; MAX_CHANNELS];
+        for (slot, channel) in position.iter_mut().zip([
+            sys::SPA_AUDIO_CHANNEL_FL,
+            sys::SPA_AUDIO_CHANNEL_FR,
+            sys::SPA_AUDIO_CHANNEL_FC,
+            sys::SPA_AUDIO_CHANNEL_RC,
+            sys::SPA_AUDIO_CHANNEL_SL,
+            sys::SPA_AUDIO_CHANNEL_SR,
+        ]) {
+            *slot = channel;
+        }
+        info.set_position(position);
+        let six_oh = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
+
+        assert_eq!(
+            read_back(&six_oh, asked(ChannelLayout::Surround51, SampleFormat::F32))
+                .spec
+                .channels,
+            ChannelLayout::Discrete(channels(6)),
+            "a 6.0 answer was read as the 5.1 its count suggests"
+        );
+    }
 
     #[test]
     fn a_stream_its_asker_gave_up_on_is_not_kept_and_one_kept_is_still_waited_for() {

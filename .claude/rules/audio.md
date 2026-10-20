@@ -839,6 +839,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `process::pack` reads the low three bytes of the word at `4i`, writes them at `3i`, never reaching
   an unread word; the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
+- **The settled layout is read from the format's positions, never its count** (`format::placed`):
+  the `position` array is matched against `spa_position` of each named layout, else `Discrete`; a
+  format naming no positions keeps the layout asked for where the count agrees, else `from_count`.
+  So a 5.0 or 6.1 stream reads back as itself and is not rebuilt
+  (`every_layout_asked_for_reads_back_as_itself_once_the_graph_settles_on_it`,
+  `a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone`); one that truly
+  differs plays silence until the rebuild (`realtime.md`). A hosted daemon cannot prove this: with
+  no session manager nothing links, so no `Format` is ever set.
 
 ## Fixtures
 
