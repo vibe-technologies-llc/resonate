@@ -39,6 +39,8 @@ const FRAMES: usize = 20_000;
 const BLOCK_FRAMES: usize = 1_024;
 const SHORT_PULL_FRAMES: usize = 64;
 const PATIENCE: Duration = Duration::from_secs(20);
+const PULL_TIMES_REAL_TIME_AT_MOST: u32 = 8;
+const SHORTEST_PAUSE_BETWEEN_PULLS: Duration = Duration::from_millis(1);
 const SECOND_ROW: Frames = Frames(RATE as u64 * 15 / 75);
 const A_SHORT_DOZE: Duration = Duration::from_millis(150);
 const A_LONG_DOZE: Duration = Duration::from_secs(30);
@@ -169,6 +171,17 @@ struct Graph {
 }
 
 impl Graph {
+    fn pause_after_pulling(&self, bytes: usize) -> Duration {
+        let Some(request) = self.requests.last() else {
+            return SHORTEST_PAUSE_BETWEEN_PULLS;
+        };
+        let spec = request.spec;
+        let frames = spec.bytes_to_frames(bytes as u64).get();
+        let heard_for = Duration::from_secs_f64(frames as f64 / f64::from(spec.rate.hz()));
+
+        (heard_for / PULL_TIMES_REAL_TIME_AT_MOST).max(SHORTEST_PAUSE_BETWEEN_PULLS)
+    }
+
     fn pull(&mut self, bytes: usize) -> usize {
         if !self.active {
             return 0;
@@ -778,15 +791,15 @@ fn play_until(
 ) {
     let deadline = Instant::now() + PATIENCE;
     while Instant::now() < deadline {
-        let settled = {
+        let (settled, pause) = {
             let mut held = graph.lock();
             held.pull(block);
-            done(player, &held)
+            (done(player, &held), held.pause_after_pulling(block))
         };
         if settled {
             return;
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(pause);
     }
     panic!(
         "timed out waiting for {what}; {}, {}",

@@ -925,6 +925,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   stream by its node's id (`the_playback_node`, read off `pw-cli ls Node`): the application name
   is the client's as well as the node's, and `pw-cli` resolves a name to the client, which refuses
   `set-param` yet exits zero.
+- **A test graph pulls at most eight times real time** (`Graph::pause_after_pulling`, in `play_until`):
+  a ring dry mid-track pads the quantum with silence into what the graph played, so a graph drinking
+  a 200 ms ring faster than the engine's 4 ms tick refills it turned a late tick on a loaded machine
+  into dropped or padded frames in the byte-exact tests.
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**

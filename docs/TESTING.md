@@ -78,11 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Testing
 - [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
   mobile network and a Linux desktop, have not been driven against a live server
-- [M] `transport.rs`'s
-  `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once when
-  the whole workspace's tests ran at once, passed alone eight times after; its frame counts assume
-  the engine thread keeps pace with the test's pulls;
-  `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start` did the same once
 - [L] No frame is pulled through a stream in S16, S32, packed or padded S24, 5.1 or 7.1, or with
   `NO_CONVERT`, nor recorded from a microphone node: the desktop's sink is stereo F32 and a hosted
   daemon links nothing (no session manager; a hosted WirePlumber would reach the real cards)
