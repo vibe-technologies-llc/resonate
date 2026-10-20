@@ -96,7 +96,7 @@ pub struct Track {
     pub queue_id: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Transport {
     Stopped,
     Loading,

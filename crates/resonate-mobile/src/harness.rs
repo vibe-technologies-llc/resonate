@@ -15,11 +15,13 @@ use std::{
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, Backend, Error as SinkError, Opener, SinkChange, SinkId, SinkInfo, SinkResult,
-    SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, Error as SinkError, NodeName, Opener, SinkChange, SinkFormats, SinkId,
+    SinkInfo, SinkResult, SinkStream, StreamClock, StreamRequest, Surveyor, Words,
 };
 use resonate_codec::Sources;
-use resonate_core::{Frames, Gain, Resumable, Resumption, SampleRate, TrackId};
+use resonate_core::{
+    ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId,
+};
 use resonate_engine::{Command, EngineConfig, Player};
 
 use crate::{
@@ -94,6 +96,87 @@ impl Backend for Silent {
     }
 }
 
+struct Sounding {
+    _announces: Sender<SinkChange>,
+    changes: Receiver<SinkChange>,
+}
+
+struct Heard;
+
+fn speakers() -> SinkInfo {
+    let rate = SampleRate::new(RATE).expect("a rate");
+    SinkInfo {
+        id: SinkId::new(1),
+        name: NodeName::new("test.speakers"),
+        description: "Test speakers".to_owned(),
+        is_default: true,
+        is_hardware: true,
+        port: None,
+        profile: None,
+        formats: vec![SinkFormats {
+            format: SampleFormat::S16,
+            words: Words::offered_for(SampleFormat::S16),
+            rates: vec![rate],
+            channels: vec![ChannelLayout::Stereo],
+        }],
+        allowed_rates: vec![rate],
+        current_rate: Some(rate),
+    }
+}
+
+impl Surveyor for Heard {
+    fn enumerate_sinks(&self, _: Duration) -> SinkResult<Vec<SinkInfo>> {
+        Ok(vec![speakers()])
+    }
+}
+
+impl Opener for Heard {
+    fn open(&self, _: &StreamRequest, source: Box<dyn AudioSource>) -> SinkResult<SinkStream> {
+        let (events, incoming) = unbounded();
+        let held = Mutex::new((events, source));
+        Ok(SinkStream::new(
+            incoming,
+            Arc::new(StreamClock::behind_by(Frames(0))),
+            Box::new(move |_| {
+                let _kept = &held;
+                Ok(())
+            }),
+        ))
+    }
+}
+
+impl Backend for Sounding {
+    fn subscribe_sinks(&self) -> Receiver<SinkChange> {
+        self.changes.clone()
+    }
+
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Heard)
+    }
+
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(Heard)
+    }
+
+    fn set_device_volume(&self, _: SinkId, _: Gain) -> SinkResult<()> {
+        Ok(())
+    }
+
+    fn set_device_mute(&self, _: SinkId, _: bool) -> SinkResult<()> {
+        Ok(())
+    }
+
+    fn shutdown(self: Box<Self>) -> SinkResult<()> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Device {
+    None,
+    Speakers,
+}
+
 pub(crate) struct Harness {
     pub(crate) player: MobilePlayer,
     pub(crate) songs: Vec<Track>,
@@ -111,6 +194,14 @@ impl Drop for Harness {
 
 impl Harness {
     pub(crate) fn new() -> Self {
+        Self::over(Device::None)
+    }
+
+    pub(crate) fn sounding() -> Self {
+        Self::over(Device::Speakers)
+    }
+
+    fn over(device: Device) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let folder = env::temp_dir().join(format!(
             "resonate-mobile-queue-{}-{}",
@@ -126,15 +217,25 @@ impl Harness {
         let sources = Arc::new(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         )));
-        let engine =
-            Player::with_sources_and_backend(EngineConfig::default(), Arc::clone(&sources), |_| {
+        let engine = Player::with_sources_and_backend(
+            EngineConfig::default(),
+            Arc::clone(&sources),
+            move |_| {
                 let (announces, changes) = unbounded();
-                Ok(Box::new(Silent {
-                    _announces: announces,
-                    changes,
-                }))
-            })
-            .expect("an engine with no device");
+                let backend: Box<dyn Backend> = match device {
+                    Device::None => Box::new(Silent {
+                        _announces: announces,
+                        changes,
+                    }),
+                    Device::Speakers => Box::new(Sounding {
+                        _announces: announces,
+                        changes,
+                    }),
+                };
+                Ok(backend)
+            },
+        )
+        .expect("an engine over the backend");
         let player = MobilePlayer {
             player: Mutex::new(Some(engine)),
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),

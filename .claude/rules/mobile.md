@@ -229,7 +229,8 @@ reads them by name (`position`, `listen_id`), never by index, since the next mig
 ## Checks
 
 `cargo test -p resonate-mobile` runs on the host. The queue edit tests drive a real engine over
-a backend with no device (a paused queue never binds a stream) and WAVE documents through the
+a backend with no device (a paused queue never binds a stream; `Harness::sounding` lists one sink
+whose stream nothing pulls, for a queue that plays) and WAVE documents through the
 `content` provider; that `Harness` (`harness.rs`, test-only) is shared by the organise, inspector,
 analysis, snapshot and listening tests. A listen counted for a song the catalog no longer holds
 stores nothing and settles nothing: `store_counting` keeps no visit unless the insert changed a row

@@ -55,8 +55,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   arguments against `FlutterBridge.dispatch` (`FlutterWireTest` covers encodings alone)
 
 ## Phones
-- [S] `documents_moved` is not driven with a queue that is *playing*: the harness's backend binds no
-  stream, so the queue stops at paused and the `Command::Play` after the requeue is never sent
 - [S] `tracks` and `validate_download` are exported for the instrumented tests alone; the apps read
   `filtered_tracks` and the download calls
 

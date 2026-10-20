@@ -503,6 +503,33 @@ mod tests {
         }
 
         #[test]
+        fn a_moved_song_in_a_queue_that_is_playing_leaves_it_playing_at_the_same_row() {
+            use crate::Transport;
+
+            let harness = Harness::sounding();
+            harness.resumed("abcd", 2, 500);
+            harness.player.play().expect("play");
+            harness.settled(|snapshot| snapshot.transport == Transport::Playing);
+            let id = harness.song('c').id;
+
+            let moving = moved(&harness, 'c', "e.wav");
+            harness
+                .player
+                .documents_moved(vec![moving])
+                .expect("documents moved");
+
+            let after = harness.settled(|snapshot| {
+                snapshot.transport == Transport::Playing && snapshot.current.is_some()
+            });
+            assert_eq!(after.queue_index, 2);
+            assert_eq!(harness.queued(), "abcd");
+            assert_eq!(
+                harness.player.catalog.track(id).expect("the song").uri,
+                format!("{FOLDER}e.wav")
+            );
+        }
+
+        #[test]
         fn a_moved_song_the_queue_does_not_hold_leaves_the_queue_as_it_stood() {
             let harness = Harness::new();
             harness.resumed("ab", 1, 500);
