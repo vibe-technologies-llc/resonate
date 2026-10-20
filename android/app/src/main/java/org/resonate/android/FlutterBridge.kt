@@ -438,8 +438,6 @@ class FlutterBridge(
                     android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
                 )
             }
-            "equaliserGains" ->
-                return library.preferences.value?.equaliser?.let { tenBandGains(it) }
             "sync" ->
                 features.syncConfig.value?.let { current ->
                     features.saveSync(
