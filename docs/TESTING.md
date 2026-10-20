@@ -77,10 +77,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] The hosted hifi-api and Monochrome token endpoints are hardcoded: nothing hermetic covers the
   hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
 
-## Build and checks
-- [M] `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in
-  `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
-
 ## Testing
 - [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
   mobile network and a Linux desktop, have not been driven against a live server

@@ -147,6 +147,19 @@ here, add it there.
   **`objc2-audio-toolbox`** / **`objc2-core-audio-types`** 0.3.2: iOS-target-only, pure-Rust
   framework bindings for the RemoteIO output, only the features it calls.
 
+## C-backed crates kept, and duplicates third parties force
+
+- **`zstd`** (via `zstd-sys`): `resonate-vault`'s alone. The WAVE form packs at `ARCHIVED_AT` (19) in
+  pledged frames, and `the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs` pins the
+  encoder's output; the pure-Rust `ruzstd` encodes to roughly level 11 at best, so a switch would
+  weigh every vaulted WAVE again at a worse ratio. The decoder side (`Unpacking`) is the same crate.
+- **`ring`** (C and assembly): the provider rustls runs on for `ureq` (`resonate-fetch`) and `quinn`,
+  linked whether or not `resonate-sync` names it; `resonate-sync` uses the same crate directly for
+  sealing, HKDF, SHA-256, randomness and the peer signature check rather than link a second provider.
+- **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder` and `flacenc` take it; **`miniz_oxide`
+  0.8** beside 0.9: `png` and `exr` (under `image`, and `gpui`'s) take it while `flate2` takes 0.9.
+  Neither is ours to move; each goes when its dependent moves.
+
 ## Pins held against `cargo update`
 
 - **`libc`** `=0.2.189` on `resonate-ui` (imports nothing from it): 0.2.190 removed `ENOATTR` on
