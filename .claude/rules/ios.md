@@ -1308,7 +1308,10 @@ into this module; what it must keep out is anything that calls `AVAudioSession`,
 other status is a failure, a blank write deletes, an update that finds nothing adds); `Secrets`
 under `AccountStore`; a suite name given to `PlaybackPreferencesStore`, `AccountStore` and
 `DownloadJournal` (a `UserDefaults` is not `Sendable`, so the structs keep the name); the places,
-suites and a count of keychain deletions handed to `Erasure.everything`. A test lists the suite
+suites and a count of keychain deletions handed to `Erasure.everything`. `NowPlaying`'s decisions (`InterruptionPolicy`, `SessionRelease`, `CommandAvailability`,
+`NowPlayingShown.rewrites`), `BackgroundHold`'s hold, expire and launch machine (`HoldMachine`, which
+returns the `HoldEffect`s the class performs) and the sync landing's journal (`LandingJournal`) are
+the module's, the classes only performing what they say. A test lists the suite
 names the sources use and refuses one `Erasure.suites` lacks. A name the module exports can meet a C function of the same name in a file
 importing both (`clock(_:)` and Darwin's `clock()`), so a function used as a value is written
 `ResonateLogic.clock`.

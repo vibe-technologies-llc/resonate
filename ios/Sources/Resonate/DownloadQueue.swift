@@ -404,7 +404,7 @@ final class BackgroundHold {
     private let continued: String?
     private let expired: @MainActor () -> Void
     private var identifier = UIBackgroundTaskIdentifier.invalid
-    private var request: String?
+    private var machine: HoldMachine
     private var task: BGContinuedProcessingTask?
     private var shown = ContinuedProgress()
 
@@ -412,6 +412,7 @@ final class BackgroundHold {
         self.name = name
         self.continued = continued
         self.expired = expired
+        machine = HoldMachine(continues: continued != nil)
     }
 
     static func register() {
@@ -421,15 +422,9 @@ final class BackgroundHold {
     }
 
     func hold(_ busy: Bool) {
-        if busy {
-            if identifier == .invalid, task == nil {
-                identifier = UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: Self.expiry(of: self))
-            }
-            askToContinue()
-        } else {
-            endPlain()
-            finishContinued(success: true)
-        }
+        let active = UIApplication.shared.applicationState == .active
+        let continued = continued
+        perform(machine.hold(busy, active: active) { "\(continued ?? "").\(UUID().uuidString)" })
     }
 
     func progress(_ progress: ContinuedProgress) {
@@ -437,14 +432,36 @@ final class BackgroundHold {
         show()
     }
 
-    private func askToContinue() {
-        guard let continued, request == nil, task == nil, UIApplication.shared.applicationState == .active else { return }
-        let id = "\(continued).\(UUID().uuidString)"
+    private func perform(_ effects: [HoldEffect]) {
+        for effect in effects {
+            switch effect {
+            case .beginPlain:
+                identifier = UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: Self.expiry(of: self))
+            case .endPlain:
+                guard identifier != .invalid else { continue }
+                UIApplication.shared.endBackgroundTask(identifier)
+                identifier = .invalid
+            case .submit(let id):
+                submit(id)
+            case .forgetAsked(let id):
+                Self.asked[id] = nil
+            case .complete(let success):
+                task?.setTaskCompleted(success: success)
+                task = nil
+            case .notifyExpired:
+                expired()
+            case .show:
+                show()
+            }
+        }
+    }
+
+    private func submit(_ id: String) {
         let asking = BGContinuedProcessingTaskRequest(identifier: id, title: name, subtitle: shown.subtitle)
         asking.strategy = .fail
         do {
             try BGTaskScheduler.shared.submit(asking)
-            request = id
+            machine.submitted(id, accepted: true)
             Self.asked[id] = self
         } catch {
             Logger(subsystem: "org.resonate.ios", category: "background")
@@ -453,11 +470,9 @@ final class BackgroundHold {
     }
 
     private func began(_ given: BGContinuedProcessingTask) {
-        request = nil
         task = given
         given.expirationHandler = Self.expiry(of: self)
-        endPlain()
-        show()
+        perform(machine.began())
     }
 
     private func show() {
@@ -467,29 +482,14 @@ final class BackgroundHold {
         task.updateTitle(name, subtitle: shown.subtitle)
     }
 
-    private func endPlain() {
-        guard identifier != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(identifier)
-        identifier = .invalid
-    }
-
-    private func finishContinued(success: Bool) {
-        if let request { Self.asked[request] = nil }
-        request = nil
-        task?.setTaskCompleted(success: success)
-        task = nil
-    }
-
     private func expire() {
-        expired()
-        endPlain()
-        finishContinued(success: false)
+        perform(machine.expired())
     }
 
     private static func started(_ given: BGTask) {
         guard let given = given as? BGContinuedProcessingTask,
             let hold = asked.removeValue(forKey: given.identifier),
-            hold.request == given.identifier
+            hold.machine.accepts(given.identifier)
         else {
             given.setTaskCompleted(success: false)
             return

@@ -9,7 +9,6 @@ import UIKit
 final class NowPlaying {
     private static let scaleWithoutAScreen: CGFloat = 3
     private static let secondsPerMillisecond = 0.001
-    private static let driftBeforeRewriteMs: Double = 1500
     private static let rateSettles: [Duration] = [.milliseconds(250), .milliseconds(750), .seconds(2)]
     static let followsSongRateKey = "follow-song-rate"
     static let playbackSettings = UserDefaults(suiteName: "playback") ?? .standard
@@ -18,21 +17,11 @@ final class NowPlaying {
         playbackSettings.object(forKey: followsSongRateKey) == nil || playbackSettings.bool(forKey: followsSongRateKey)
     }
 
-    private struct Shown: Equatable {
-        let track: Track
-        let transport: Transport
-        let durationMs: UInt64
-        let queueIndex: Int
-        let queueCount: Int
-        let shuffle: Bool
-        let repeatMode: UInt32
-        let artRevision: UInt64
-        let artworkReady: Bool
-    }
+    private typealias Shown = NowPlayingShown
 
     private unowned let library: Library
     private var native: MobilePlayer?
-    private var resumeAfterInterruption = false
+    private var interruptions = InterruptionPolicy()
     private var artworkFor: (track: UInt64, revision: UInt64)?
     private var artwork: MPMediaItemArtwork?
     private var lockScreen: LockScreenArtwork?
@@ -46,8 +35,7 @@ final class NowPlaying {
     private var settling: Task<Void, Never>?
     private var routeAsks = 0
     private var rebindOwed = false
-    private var lastTransport: Transport?
-    private var wasSleeping = false
+    private var release = SessionRelease()
 
     private struct Activation: Sendable {
         let refusal: (any Swift.Error)?
@@ -212,23 +200,21 @@ final class NowPlaying {
     }
 
     private func interrupted(_ type: AVAudioSession.InterruptionType?, _ options: AVAudioSession.InterruptionOptions?) {
-        switch type {
-        case .began:
-            resumeAfterInterruption = library.transport == .playing || library.transport == .loading
-            library.pause()
-        case .ended:
-            if resumeAfterInterruption, options?.contains(.shouldResume) == true {
-                library.resume()
+        let heard: SessionInterruption? =
+            switch type {
+            case .began: .began
+            case .ended: .ended(shouldResume: options?.contains(.shouldResume) == true)
+            default: nil
             }
-            resumeAfterInterruption = false
-        default:
-            break
+        switch interruptions.heard(heard, transport: library.transport) {
+        case .pause: library.pause()
+        case .resume: library.resume()
+        case .nothing: break
         }
     }
 
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason?) {
-        if reason == .oldDeviceUnavailable {
-            resumeAfterInterruption = false
+        if reason == .oldDeviceUnavailable, interruptions.lostTheDevice() == .pause {
             library.pause()
         }
         guard !listening else { return }
@@ -304,8 +290,7 @@ final class NowPlaying {
     private func enableCommands(for shown: Shown?) {
         let commands = MPRemoteCommandCenter.shared()
         let loaded = shown != nil
-        let lastRow = (shown?.queueIndex ?? 0) + 1 >= (shown?.queueCount ?? 0)
-        let wraps = shown.map { RepeatMode(engineValue: $0.repeatMode) == .all } ?? false
+        let available = CommandAvailability(shown)
 
         for command in [
             commands.playCommand, commands.pauseCommand, commands.togglePlayPauseCommand, commands.stopCommand,
@@ -314,7 +299,7 @@ final class NowPlaying {
         ] {
             command.isEnabled = loaded
         }
-        commands.nextTrackCommand.isEnabled = loaded && (!lastRow || wraps)
+        commands.nextTrackCommand.isEnabled = available.next
         commands.likeCommand.isActive = shown?.track.favourite ?? false
         commands.likeCommand.localizedTitle = shown?.track.favourite == true ? "Remove from favourites" : "Add to favourites"
         commands.changeShuffleModeCommand.currentShuffleType = shown?.shuffle == true ? .items : .off
@@ -338,12 +323,7 @@ final class NowPlaying {
     }
 
     private func releaseSessionIfDone(_ snapshot: Snapshot) {
-        let sleeping = snapshot.sleepRemainingMs != nil
-        let stopped = snapshot.transport == .stopped && lastTransport != nil && lastTransport != .stopped
-        let sleptOff = snapshot.transport == .paused && lastTransport == .playing && wasSleeping && !sleeping
-        lastTransport = snapshot.transport
-        wasSleeping = sleeping
-        guard (stopped || sleptOff), !listening, let native else { return }
+        guard release.owed(by: snapshot, listening: listening), let native else { return }
         Work.enqueueInOrder {
             guard let now = try? native.transport(), now != .playing, now != .loading else { return }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -392,7 +372,7 @@ final class NowPlaying {
             ratedTrack = track.id
             askRate(of: track)
         }
-        guard forced || next != shown || drift > Self.driftBeforeRewriteMs else { return }
+        guard next.rewrites(over: shown, forced: forced, drift: drift) else { return }
         write(next, position: snapshot.positionMs, at: now)
     }
 
@@ -414,10 +394,7 @@ final class NowPlaying {
         ]
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
 
-        if next.track.favourite != shown?.track.favourite || next.queueIndex != shown?.queueIndex
-            || next.queueCount != shown?.queueCount || next.shuffle != shown?.shuffle
-            || next.repeatMode != shown?.repeatMode || shown == nil
-        {
+        if next.commandsChanged(from: shown) {
             enableCommands(for: next)
         }
         let center = MPNowPlayingInfoCenter.default()

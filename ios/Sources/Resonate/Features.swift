@@ -28,7 +28,6 @@ struct WantedSaving: Sendable {
 @MainActor
 @Observable
 final class Features {
-    private static let landingJournalKey = "unfinished-sync-landing"
     private static let scrobbleEvery: Duration = .seconds(30)
     private static let syncForeground: Duration = .seconds(2)
     private static let syncBackground: Duration = .seconds(30)
@@ -154,6 +153,7 @@ final class Features {
         }
     }
     @ObservationIgnored private var landingBackoff = LandingBackoff()
+    @ObservationIgnored private let landingJournal = LandingJournal()
     @ObservationIgnored private var leftAt: Date?
 
     init(library: Library) {
@@ -199,12 +199,11 @@ final class Features {
     private func begin(_ native: MobilePlayer) {
         downloads.recover(native)
         downloads.wantsChanged()
-        if let left = settings.string(forKey: Self.landingJournalKey) {
+        if let left = landingJournal.left {
             let folders = library.folders
             Task { [weak self] in
                 _ = try? await Work.aside { folders.delete(left) }
-                guard let self, settings.string(forKey: Self.landingJournalKey) == left else { return }
-                settings.removeObject(forKey: Self.landingJournalKey)
+                self?.landingJournal.finish(ifStill: left)
             }
         }
         submitting?.cancel()
@@ -711,17 +710,17 @@ final class Features {
                     return made
                 }
                 created = uri
-                settings.set(uri, forKey: Self.landingJournalKey)
+                landingJournal.begin(uri)
                 _ = try await Work.aside { try native.syncReceive(id: received.id, descriptor: descriptor, uri: uri) }
                 created = nil
                 folders.written(uri)
-                settings.removeObject(forKey: Self.landingJournalKey)
+                landingJournal.finish()
                 landed += 1
                 landingBackoff.landed(received.id)
             } catch {
                 if let created {
                     _ = try? await Work.aside { folders.delete(created) }
-                    settings.removeObject(forKey: Self.landingJournalKey)
+                    landingJournal.finish()
                 }
                 await refuseLanding(native, received.id)
                 let explanation = explained(error)

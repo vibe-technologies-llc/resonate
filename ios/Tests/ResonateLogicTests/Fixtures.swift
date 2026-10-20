@@ -49,6 +49,7 @@ func snapshot(
     durationMs: UInt64 = 0,
     shuffle: Bool = false,
     repeat repeatMode: UInt32 = 0,
+    sleepRemainingMs: UInt64? = nil,
     queueRevision: UInt64 = 1,
     catalogRevision: UInt64 = 1
 ) -> Snapshot {
@@ -65,7 +66,7 @@ func snapshot(
         underruns: 0,
         failure: nil,
         sleep: nil,
-        sleepRemainingMs: nil,
+        sleepRemainingMs: sleepRemainingMs,
         queueRevision: queueRevision,
         catalogRevision: catalogRevision
     )

@@ -17,9 +17,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
-- [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
-  launch machine and `landReceived`'s journal are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
-  `SecItem*` directly, so none can be driven without a seam
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
