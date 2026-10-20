@@ -7,8 +7,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::Receiver;
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
-use resonate_pipewire::{CaptureRequest, CaptureStream, Capturing, Microphone, NodeName, PipeWire};
+use resonate_pipewire::{
+    CaptureRequest, CaptureStream, Capturing, Microphone, NodeName, PipeWire, StreamEvent,
+    StreamState,
+};
 
 use crate::{
     CaptureOp, Clip, Error, Result,
@@ -127,41 +131,57 @@ impl Listener {
             media_name: STREAM_NAME.to_owned(),
         };
         let opened = pipewire
-            .capture(&request, Box::new(Recorder(Arc::clone(&recording))))
+            .capture(
+                &request,
+                Box::new(Recorder::admitting(Arc::clone(&recording))),
+            )
             .map_err(|source| Error::capture(CaptureOp::Open, source))?;
 
         let capturing = Capture {
             pipewire: &pipewire,
             request: &request,
             recording: &recording,
+            channels,
         };
-        let left = capturing.until_full(opened, length, channels, hearing);
+        let left = capturing.until_full(opened, length, hearing);
         let stopped = left
             .map(CaptureStream::stop)
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
         let _ = pipewire.shutdown();
-        stopped?;
 
-        if hearing.stopped() {
-            return Err(Error::Stopped);
-        }
-        let samples = recording.taken();
-        if samples.is_empty() {
-            return Err(Error::NothingHeard);
-        }
-        Ok(Clip {
-            rate: HEARD_AT,
-            channels: u16::from(spec.channel_count().get()),
-            samples,
-        })
+        finished(stopped, hearing.stopped(), recording.taken(), spec)
     }
+}
+
+fn finished(
+    stopped: Result<Option<()>>,
+    asked_to_stop: bool,
+    samples: Vec<f32>,
+    spec: StreamSpec,
+) -> Result<Clip> {
+    if asked_to_stop {
+        return Err(Error::Stopped);
+    }
+    if samples.is_empty() {
+        stopped?;
+        return Err(Error::NothingHeard);
+    }
+    if let Err(error) = stopped {
+        tracing::warn!(%error, "the capture would not stop cleanly; the clip heard is kept");
+    }
+    Ok(Clip {
+        rate: spec.rate,
+        channels: u16::from(spec.channel_count().get()),
+        samples,
+    })
 }
 
 struct Capture<'a> {
     pipewire: &'a PipeWire,
     request: &'a CaptureRequest,
     recording: &'a Arc<Recording>,
+    channels: usize,
 }
 
 impl Capture<'_> {
@@ -169,51 +189,73 @@ impl Capture<'_> {
         &self,
         opened: CaptureStream,
         length: Duration,
-        channels: usize,
         hearing: &Hearing,
     ) -> Option<CaptureStream> {
         let started = Instant::now();
-        let mut deadline = length + GIVES_UP_AFTER_MORE_THAN_ASKED;
+        let deadline = length + GIVES_UP_AFTER_MORE_THAN_ASKED;
         let mut stream = Some(opened);
         let mut lost_since = None;
+        let mut filled_at_reopen = None;
         while !self.recording.is_full() && !hearing.stopped() && started.elapsed() < deadline {
             thread::sleep(LOOKS_EVERY);
             hearing.heard.store(
-                (self.recording.filled() / channels) as u64,
+                (self.recording.filled() / self.channels) as u64,
                 Ordering::Relaxed,
             );
 
-            if stream.as_ref().is_some_and(was_lost) {
-                tracing::warn!("the capture went with the PipeWire daemon; opening it again");
+            if stream
+                .as_ref()
+                .is_some_and(|stream| was_lost(stream.events()))
+            {
+                if filled_at_reopen.take() == Some(self.recording.filled()) {
+                    tracing::debug!("the capture reopened was lost before it heard anything");
+                } else {
+                    tracing::warn!("the capture was lost; opening it again");
+                }
                 stream = None;
-                lost_since = Some(Instant::now());
+                lost_since.get_or_insert_with(Instant::now);
             }
             if stream.is_none() {
-                stream = self.again();
-                if stream.is_some()
-                    && let Some(since) = lost_since.take()
-                {
-                    deadline += since.elapsed();
+                let since = lost_since.unwrap_or_else(Instant::now);
+                stream = self.again(since);
+                if stream.is_some() {
+                    lost_since = None;
+                    filled_at_reopen = Some(self.recording.filled());
                 }
             }
         }
         stream
     }
 
-    fn again(&self) -> Option<CaptureStream> {
-        self.pipewire
-            .capture(self.request, Box::new(Recorder(Arc::clone(self.recording))))
-            .inspect(|_| tracing::info!("the capture carries on where it was lost"))
+    fn again(&self, lost_since: Instant) -> Option<CaptureStream> {
+        let (recorder, admitting) = Recorder::held_back(Arc::clone(self.recording));
+        let stream = self
+            .pipewire
+            .capture(self.request, Box::new(recorder))
             .inspect_err(|error| tracing::debug!(%error, "the capture cannot open again yet"))
-            .ok()
+            .ok()?;
+        self.recording
+            .silence_for(frames_in(lost_since.elapsed()), self.channels);
+        admitting.store(true, Ordering::Release);
+        tracing::info!("the capture carries on after a gap of silence");
+        Some(stream)
     }
 }
 
-fn was_lost(stream: &CaptureStream) -> bool {
+fn frames_in(elapsed: Duration) -> usize {
+    (elapsed.as_secs_f64() * f64::from(HEARD_AT.hz())).round() as usize
+}
+
+fn was_lost(events: &Receiver<StreamEvent>) -> bool {
+    let mut failed = false;
     loop {
-        match stream.events().try_recv() {
+        match events.try_recv() {
+            Ok(StreamEvent::StateChanged {
+                to: StreamState::Failed,
+                ..
+            }) => failed = true,
             Ok(_) => {}
-            Err(error) => return error.is_disconnected(),
+            Err(error) => return failed || error.is_disconnected(),
         }
     }
 }
@@ -232,5 +274,102 @@ mod tests {
             assert_eq!(Listening::named(&listening.written()), listening);
         }
         assert_eq!(Listening::named(""), Listening::Desktop);
+    }
+
+    fn events_after(
+        events: &[StreamEvent],
+    ) -> (
+        Receiver<StreamEvent>,
+        crossbeam_channel::Sender<StreamEvent>,
+    ) {
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        for event in events {
+            sender.send(event.clone()).expect("an open channel");
+        }
+        (receiver, sender)
+    }
+
+    fn changed(from: StreamState, to: StreamState) -> StreamEvent {
+        StreamEvent::StateChanged { from, to }
+    }
+
+    #[test]
+    fn a_stream_that_failed_is_lost_though_its_channel_is_open() {
+        let (events, _kept_open) = events_after(&[
+            changed(StreamState::Connecting, StreamState::Streaming),
+            changed(StreamState::Streaming, StreamState::Failed),
+            StreamEvent::Drained,
+        ]);
+
+        assert!(was_lost(&events));
+    }
+
+    #[test]
+    fn a_stream_that_streams_and_pauses_is_not_lost() {
+        let (events, _kept_open) = events_after(&[
+            changed(StreamState::Connecting, StreamState::Streaming),
+            changed(StreamState::Streaming, StreamState::Paused),
+        ]);
+
+        assert!(!was_lost(&events));
+    }
+
+    #[test]
+    fn a_stream_whose_channel_closed_is_lost() {
+        let (events, kept_open) = events_after(&[]);
+        assert!(!was_lost(&events));
+
+        drop(kept_open);
+        assert!(was_lost(&events));
+    }
+
+    fn stereo() -> StreamSpec {
+        StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32)
+    }
+
+    #[test]
+    fn a_clip_survives_a_stop_that_failed() {
+        let failed = Err(Error::capture(
+            CaptureOp::Stop,
+            resonate_pipewire::Error::Disconnected,
+        ));
+
+        let clip = finished(failed, false, vec![0.5, -0.5], stereo()).expect("the clip heard");
+        assert_eq!(clip.samples, vec![0.5, -0.5]);
+        assert_eq!(clip.channels, 2);
+    }
+
+    #[test]
+    fn a_stop_that_failed_with_nothing_heard_is_the_error_it_was() {
+        let failed = Err(Error::capture(
+            CaptureOp::Stop,
+            resonate_pipewire::Error::Disconnected,
+        ));
+
+        assert!(matches!(
+            finished(failed, false, Vec::new(), stereo()),
+            Err(Error::Capture {
+                op: CaptureOp::Stop,
+                ..
+            })
+        ));
+        assert!(matches!(
+            finished(Ok(Some(())), false, Vec::new(), stereo()),
+            Err(Error::NothingHeard)
+        ));
+    }
+
+    #[test]
+    fn a_listener_who_stopped_it_hears_no_clip() {
+        assert!(matches!(
+            finished(Ok(Some(())), true, vec![0.5, 0.5], stereo()),
+            Err(Error::Stopped)
+        ));
+    }
+
+    #[test]
+    fn a_gap_counts_the_frames_of_the_time_that_passed() {
+        assert_eq!(frames_in(Duration::from_millis(500)), 24_000);
+        assert_eq!(frames_in(Duration::ZERO), 0);
     }
 }

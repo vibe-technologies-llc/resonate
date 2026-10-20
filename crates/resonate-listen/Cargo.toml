@@ -10,6 +10,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+crossbeam-channel.workspace = true
 resonate-pipewire.workspace = true
 
 [lints]
