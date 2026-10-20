@@ -988,6 +988,27 @@ mod tests {
     }
 
     #[test]
+    fn a_song_on_the_most_releases_leads_a_hundred_answers_however_far_down_they_put_it() {
+        let asked = songs_asked("bohemian rapsody").expect("words worth asking");
+        let mut answer: Vec<RecordingMatch> = (0..99)
+            .map(|n| {
+                on_releases(
+                    n,
+                    "Bohemian Rhapsody",
+                    &format!("Cover Band {n}"),
+                    1 + n % 3,
+                )
+            })
+            .collect();
+        answer.insert(63, on_releases(500, "Bohemian Rhapsody", "Queen", 354));
+
+        let found = found_among(answer, Some(&asked), |_| false);
+
+        assert_eq!(found.len(), FOUND_ELSEWHERE_AT_MOST);
+        assert_eq!(found[0].artist, "Queen");
+    }
+
+    #[test]
     fn a_word_typed_without_its_apostrophe_or_mistyped_still_answers_a_found_song() {
         let creep = songs_asked("creep").expect("words worth asking");
         let found = found_among(
