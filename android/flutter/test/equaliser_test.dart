@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -42,7 +43,16 @@ RowData preset(String name, String detail, double preamp, List<double> gains) =>
 final presets = [
   preset('Flat', 'An uncoloured starting point.', 0, []),
   preset('Bass boost', 'More weight and punch in the low end.', -6, [
-    4, 4, 2, 0, -1, -1, 0, 0, 0, 0,
+    4,
+    4,
+    2,
+    0,
+    -1,
+    -1,
+    0,
+    0,
+    0,
+    0,
   ]),
   preset(
     'Bass only',
@@ -51,22 +61,76 @@ final presets = [
     [4, 4, 2, 0, 0, 0, 0, 0, 0, 0],
   ),
   preset('Bass cut', 'Less rumble, with the rest left clear.', 0, [
-    -5, -4, -3, -1, 0, 0, 0, 0, 0, 0,
+    -5,
+    -4,
+    -3,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
   ]),
   preset('Vocals', 'Bring voices and lead instruments forward.', -5, [
-    -2, -1, 0, 1, 2, 3, 3, 1, 0, -1,
+    -2,
+    -1,
+    0,
+    1,
+    2,
+    3,
+    3,
+    1,
+    0,
+    -1,
   ]),
   preset('Warm', 'Fuller lows and a softer top end.', -5, [
-    2, 3, 2, 1, 0, 0, -1, -2, -2, -2,
+    2,
+    3,
+    2,
+    1,
+    0,
+    0,
+    -1,
+    -2,
+    -2,
+    -2,
   ]),
   preset('Bright', 'A little more sparkle and detail.', -5, [
-    -1, -1, 0, 0, 0, 1, 2, 3, 3, 2,
+    -1,
+    -1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    3,
+    3,
+    2,
   ]),
   preset('Rock', 'Punchy lows, crisp guitars and drums.', -5, [
-    3, 2, 0, -1, -2, 0, 2, 3, 3, 2,
+    3,
+    2,
+    0,
+    -1,
+    -2,
+    0,
+    2,
+    3,
+    3,
+    2,
   ]),
   preset('Electronic', 'Deep bass with a lively, open top end.', -6, [
-    4, 3, 1, 0, -2, -1, 1, 2, 3, 3,
+    4,
+    3,
+    1,
+    0,
+    -2,
+    -1,
+    1,
+    2,
+    3,
+    3,
   ]),
 ];
 
@@ -317,6 +381,118 @@ void main() {
       'bands': importedBands,
     });
     expect(tester.takeException(), isNull);
+  });
+
+  final graph = find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == '_EqualiserGraph',
+  );
+
+  Future<void> showGraph(WidgetTester tester) async {
+    preferences['equaliser'] = {
+      'name': 'My headphones',
+      'preampDb': -4.0,
+      'bands': importedBands,
+    };
+    await mount(tester);
+    await tester.ensureVisible(find.text('Advanced'));
+    await tester.tap(find.text('Advanced'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(graph);
+    await tester.pumpAndSettle();
+  }
+
+  Offset handle(WidgetTester tester, double hertz, double decibels) {
+    const span = 15.0;
+    const height = 240.0;
+    final width = tester.getSize(graph).width;
+    return tester.getTopLeft(graph) +
+        Offset(
+          math.log(hertz / 20) / math.ln10 / 3 * width,
+          (span - decibels) / (2 * span) * height,
+        );
+  }
+
+  testWidgets('a handle dragged on the graph is committed once, on release', (
+    tester,
+  ) async {
+    await showGraph(tester);
+    calls.clear();
+
+    final held = await tester.startGesture(handle(tester, 100, -1));
+    for (var i = 0; i < 40; i++) {
+      await held.moveBy(const Offset(2, -1));
+    }
+    await tester.pump();
+    expect(calls.where((call) => call.method == 'equaliser'), isEmpty);
+
+    await held.up();
+    await tester.pumpAndSettle();
+    final committed = calls.where((call) => call.method == 'equaliser');
+    expect(committed, hasLength(1));
+    final curve = row(committed.single.arguments);
+    final bands = rows(curve['bands']);
+    expect(curve['name'], '');
+    expect(bands, hasLength(2));
+    expect(decimal(bands.first['frequencyHz']), greaterThan(100));
+    expect(decimal(bands.first['gainDb']), greaterThan(3));
+    expect(bands.first['filter'], 'LOW_SHELF');
+    expect(bands.first['q'], 0.7);
+    expect(bands.last, importedBands.last);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a gainless band moves along the graph and keeps its gain', (
+    tester,
+  ) async {
+    await showGraph(tester);
+    calls.clear();
+
+    await tester.dragFrom(handle(tester, 2000, -4), const Offset(60, -40));
+    await tester.pumpAndSettle();
+
+    final bands = rows(
+      row(
+        calls.singleWhere((call) => call.method == 'equaliser').arguments,
+      )['bands'],
+    );
+    expect(decimal(bands.last['frequencyHz']), greaterThan(2000));
+    expect(bands.last['gainDb'], importedBands.last['gainDb']);
+    expect(bands.first, importedBands.first);
+  });
+
+  testWidgets('a drag that begins away from every handle moves none', (
+    tester,
+  ) async {
+    await showGraph(tester);
+    calls.clear();
+
+    await tester.dragFrom(handle(tester, 8000, 10), const Offset(60, 40));
+    await tester.pumpAndSettle();
+
+    expect(calls.where((call) => call.method == 'equaliser'), isEmpty);
+    expect(preferences['equaliser'], {
+      'name': 'My headphones',
+      'preampDb': -4.0,
+      'bands': importedBands,
+    });
+  });
+
+  testWidgets('a press on a handle selects its band and changes nothing', (
+    tester,
+  ) async {
+    await showGraph(tester);
+    calls.clear();
+
+    await tester.tapAt(handle(tester, 2000, -4));
+    await tester.pumpAndSettle();
+
+    expect(calls.where((call) => call.method == 'equaliser'), isEmpty);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '2 · 2.00 kHz'))
+          .selected,
+      isTrue,
+    );
   });
 
   testWidgets('fit the preamp asks the native peak and keeps every band', (

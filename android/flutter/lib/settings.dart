@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -1893,6 +1894,7 @@ class _EqualiserGraphState extends State<_EqualiserGraph> {
         final bands = _eqBands(widget.curve);
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
           onPanStart: (details) {
             final point = details.localPosition;
             final current = _span ?? _currentSpan();
