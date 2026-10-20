@@ -3,24 +3,11 @@ import ResonateNative
 import SwiftUI
 
 extension AlbumHit {
-    var shownTitle: String { title.isEmpty ? "Unknown album" : title }
-    var shownArtist: String { artist.isEmpty ? "Unknown artist" : artist }
     var destination: Destination { .album(key) }
-
-    var detail: String {
-        [shownArtist, year.map(String.init) ?? "", counted(Int(songs), "song")]
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
-    }
 }
 
 extension ArtistHit {
-    var shownName: String { name.isEmpty ? "Unknown artist" : name }
     var destination: Destination { .artist(name) }
-
-    var detail: String {
-        albums > 0 ? "\(counted(Int(albums), "album")) · \(counted(Int(songs), "song"))" : counted(Int(songs), "song")
-    }
 }
 
 struct SearchResults: View {

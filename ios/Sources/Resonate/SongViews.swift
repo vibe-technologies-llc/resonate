@@ -3,17 +3,7 @@ import ResonateNative
 import SwiftUI
 
 extension Track {
-    var shownTitle: String { title.isEmpty ? name : title }
-    var shownArtist: String { artist.isEmpty ? "Unknown artist" : artist }
-    var groupingArtist: String { albumArtist.isEmpty ? artist : albumArtist }
     var albumPage: Destination? { albumKey(album: album, artist: artist, albumArtist: albumArtist).map(Destination.album) }
-
-    var quality: String {
-        var parts = [codec]
-        if let bits { parts.append("\(bits)-bit") }
-        if rate > 0 { parts.append(String(format: "%g kHz", Double(rate) / 1000)) }
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
 }
 
 enum Grouping: String, CaseIterable, Identifiable {
@@ -273,71 +263,6 @@ struct FilterButton: View {
             navigation.filters = true
         }
         .accessibilityValue(filtering ? "On" : "Off")
-    }
-}
-
-enum FilterChip: Identifiable {
-    case favourites
-    case unplayed
-    case played
-    case hiRes
-    case depth(UInt32)
-    case genre(String)
-    case artist(String)
-    case album(String)
-    case order(TrackOrder, descending: Bool)
-
-    static let orderNames: [(TrackOrder, String)] = [
-        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"), (.played, "Last played"),
-    ]
-
-    static func of(_ filter: TrackFilter) -> [FilterChip] {
-        var chips: [FilterChip] = []
-        if filter.favourites { chips.append(.favourites) }
-        if filter.unplayed { chips.append(.unplayed) }
-        if filter.played { chips.append(.played) }
-        if filter.minimumRate > 0 { chips.append(.hiRes) }
-        if filter.minimumBits > 0 { chips.append(.depth(filter.minimumBits)) }
-        if !filter.genre.isEmpty { chips.append(.genre(filter.genre)) }
-        if !filter.artist.isEmpty { chips.append(.artist(filter.artist)) }
-        if !filter.album.isEmpty { chips.append(.album(filter.album)) }
-        if filter.order != .title || filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
-        return chips
-    }
-
-    var id: String { label }
-
-    var label: String {
-        switch self {
-        case .favourites: "Favourites"
-        case .unplayed: "Unplayed"
-        case .played: "Played"
-        case .hiRes: "Hi-res"
-        case .depth(let bits): "\(bits)-bit or more"
-        case .genre(let genre): "Genre: \(genre)"
-        case .artist(let artist): "Artist: \(artist)"
-        case .album(let album): "Album: \(album)"
-        case .order(let order, let descending):
-            "Sorted by \(Self.orderNames.first { $0.0 == order }?.1.lowercased() ?? "title")\(descending ? ", descending" : "")"
-        }
-    }
-
-    func cleared(from filter: TrackFilter) -> TrackFilter {
-        var cleared = filter
-        switch self {
-        case .favourites: cleared.favourites = false
-        case .unplayed: cleared.unplayed = false
-        case .played: cleared.played = false
-        case .hiRes: cleared.minimumRate = 0
-        case .depth: cleared.minimumBits = 0
-        case .genre: cleared.genre = ""
-        case .artist: cleared.artist = ""
-        case .album: cleared.album = ""
-        case .order:
-            cleared.order = .title
-            cleared.descending = false
-        }
-        return cleared
     }
 }
 

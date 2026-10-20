@@ -3,26 +3,6 @@ import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct PlaylistEntry: Identifiable, Equatable {
-    struct Key: Hashable {
-        let song: UInt64
-        let occurrence: Int
-    }
-
-    let id: Key
-    let position: Int
-    let track: Track
-
-    static func of(_ rows: [Track]) -> [PlaylistEntry] {
-        var seen: [UInt64: Int] = [:]
-        return rows.enumerated().map { position, track in
-            let occurrence = seen[track.id, default: 0]
-            seen[track.id] = occurrence + 1
-            return PlaylistEntry(id: Key(song: track.id, occurrence: occurrence), position: position, track: track)
-        }
-    }
-}
-
 @MainActor
 final class PlaylistEntries {
     private var rows: [Track] = []
@@ -340,22 +320,6 @@ struct PlaylistRow: View, Equatable {
 
     nonisolated static func == (shown: PlaylistRow, other: PlaylistRow) -> Bool {
         shown.entry == other.entry && shown.count == other.count
-    }
-}
-
-struct SongKeys: Sendable {
-    let tracks: [Track]
-    let keys: [String]
-
-    static let empty = SongKeys(tracks: [], keys: [])
-
-    static func of(_ tracks: [Track]) -> SongKeys {
-        SongKeys(tracks: tracks, keys: tracks.map { "\($0.shownTitle)\u{1f}\($0.artist)\u{1f}\($0.album)".searchFolded })
-    }
-
-    func matching(_ folded: String) -> [Track] {
-        guard !folded.isEmpty else { return tracks }
-        return zip(tracks, keys).filter { $0.1.contains(folded) }.map(\.0)
     }
 }
 

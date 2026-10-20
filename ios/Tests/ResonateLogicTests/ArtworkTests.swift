@@ -119,7 +119,10 @@ import Testing
             )
             try await Task.sleep(for: .milliseconds(30))
         }
-        for _ in 1...3 { await slots.release() }
+        for turn in 1...3 {
+            await slots.release()
+            while await order.granted.count < turn { try await Task.sleep(for: .milliseconds(5)) }
+        }
         for waiter in waiters { try await waiter.value }
 
         #expect(await order.granted == [1, 2, 3])

@@ -18,16 +18,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
 - [M] More pure Swift is unproved beside the list above: polling (`NowPlaying.Written.expected`),
-  lists and search (`lit`, `LetterRun.runs`, `SearchModel`'s generations, `QueueParts`,
-  `ListeningBar.grouped`, `PlaylistEntry.of`, `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`),
-  `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
-  192-byte stride against the shader's `Field`
+  the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`' 192-byte stride against
+  the shader's `Field`
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
   launch machine and `landReceived`'s journal are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
 - [M] Pure Swift in the views is unproved too: `LyricClock`, `EqualiserScale` and
   `EqualiserResponse`'s coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against
-  the desktop's lyrics tests, `OnlineFound.landing`/`awaited`, `FieldBlend.show` mid-fade,
+  the desktop's lyrics tests, `FieldBlend.show` mid-fade,
   `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
 
 ## Identification

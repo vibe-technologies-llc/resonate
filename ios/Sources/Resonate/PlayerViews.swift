@@ -1252,24 +1252,6 @@ struct QueueHeading: View {
     }
 }
 
-struct QueueParts {
-    let history: Range<Int>
-    let next: Range<Int>
-    let rest: Range<Int>
-    let beyond: Int
-
-    init(rows: Int, playing: Int, next asked: Range<Int>?, heardAtMost: Int? = nil, aheadAtMost: Int? = nil) {
-        let after = min(playing + 1, rows)
-        let heard = min(playing, rows)
-        let shownTo = aheadAtMost.map { min(after + $0, rows) } ?? rows
-        history = (heardAtMost.map { max(heard - $0, 0) } ?? 0)..<heard
-        let nextEnd = asked.map { min(max($0.upperBound, after), shownTo) } ?? after
-        next = after..<nextEnd
-        rest = nextEnd..<max(shownTo, nextEnd)
-        beyond = rows - max(shownTo, nextEnd)
-    }
-}
-
 struct QueueRow: View {
     @Environment(Library.self) private var library
     let row: Track

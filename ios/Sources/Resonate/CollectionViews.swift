@@ -589,34 +589,6 @@ struct CollectionQueueActions: View {
     }
 }
 
-struct AlbumDisc: Identifiable {
-    let number: UInt32
-    var tracks: [Track]
-
-    var id: UInt32 { number }
-
-    static func of(_ tracks: [Track]) -> [AlbumDisc] {
-        var discs: [AlbumDisc] = []
-        for track in tracks {
-            let number = track.discNumber ?? 1
-            if discs.last?.number == number {
-                discs[discs.count - 1].tracks.append(track)
-            } else {
-                discs.append(AlbumDisc(number: number, tracks: [track]))
-            }
-        }
-        return discs
-    }
-}
-
-func sharedQuality(_ tracks: [Track]) -> String? {
-    guard let first = tracks.first,
-        tracks.allSatisfy({ $0.codec == first.codec && $0.bits == first.bits && $0.rate == first.rate })
-    else { return nil }
-    let quality = first.quality
-    return quality.isEmpty ? nil : quality
-}
-
 struct ReadFailure: View {
     let text: String
     let retry: () -> Void
