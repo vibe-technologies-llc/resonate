@@ -53,7 +53,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    pub(crate) fn take_in(&self, events: Vec<Event>, rows: &[QueueItem]) {
+    pub(crate) fn take_in(&self, events: Vec<Event>, rows: &[Arc<QueueItem>]) {
         for event in events {
             if let Some(told) = crate::failure::waiting_told(&event) {
                 *self.waiting.lock() = Some(told);
