@@ -1291,6 +1291,22 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   and the lock screen follow. Tracks are read whole, page by page, on `Work.aside`
   (`Library.everyPage`), the snapshot on `Work.inOrder`.
 
+## The logic module and its host tests
+
+`ios/Sources/ResonateLogic` is the app's logic that needs neither SwiftUI nor UIKit nor an Apple
+framework, a SwiftPM target of its own (`Resonate` depends on it; what it holds is `public` and a
+file using it says `import ResonateLogic`), so it builds and runs on the Linux host:
+`python3 ios/test-logic.py [swift test arguments]` builds the host `resonate-mobile` library into
+`ios/.cargo-target/debug` and runs `swift test` with `RESONATE_HOST_TESTS` set, which makes
+`Package.swift` leave the `Resonate` target and its product out (`swift test` would otherwise build
+the SwiftUI sources) and link `ResonateNative` against that library instead of the iOS archive.
+`ios/Generated` must exist (`build-native.py`). The tests are Swift Testing, in
+`ios/Tests/ResonateLogicTests`. A decision worth proving moves out of a view or a platform class
+into this module; what it must keep out is anything that calls `AVAudioSession`, `BGTaskScheduler`,
+`SecItem*` or a view. A name the module exports can meet a C function of the same name in a file
+importing both (`clock(_:)` and Darwin's `clock()`), so a function used as a value is written
+`ResonateLogic.clock`.
+
 ## Checks
 
 `python3 ios/build-native.py` then `cd ios && xtool dev build && python3 app-intents.py --ipa` must

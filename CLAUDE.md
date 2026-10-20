@@ -154,7 +154,7 @@ Invariants the layering protects (the rules files have the rest):
 
 - `python3 -m unittest discover -s ios`: the icon drawing, what declares the icons and the reading of
   the build's output, on the host; `python3 ios/check-build.py`: a clean `xtool dev build` that fails
-  on any warning.
+  on any warning; `python3 ios/test-logic.py`: the Swift logic's tests on the host (`ios.md`).
 
 - `python3 ios/build-native.py`, then `cd ios && xtool dev build && python3 app-intents.py --ipa`:
   the iOS staticlib, Swift bindings, app, its App Intents metadata (Siri, written on Linux in place of

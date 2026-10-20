@@ -1,4 +1,5 @@
 import AVFoundation
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers

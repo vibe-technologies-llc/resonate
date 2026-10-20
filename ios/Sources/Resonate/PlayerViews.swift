@@ -1,5 +1,6 @@
 import AVKit
 import MediaPlayer
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 

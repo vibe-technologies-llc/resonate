@@ -32,7 +32,7 @@ built = subprocess.run([xtool(), "dev", "build", "-c", args.configuration], cwd=
 output = built.stdout + built.stderr
 warnings = building.warnings_in(output)
 if built.returncode != 0 or not building.completed(output):
-    raise SystemExit(output + f"\ncheck-build.py: the build failed with exit status {built.returncode}")
+    raise SystemExit("\n".join(building.errors_in(output) or [output]) + f"\ncheck-build.py: the build failed with exit status {built.returncode}")
 if warnings:
     raise SystemExit("\n".join(warnings) + f"\ncheck-build.py: the build gave {len(warnings)} warnings")
 print("The build gave no warnings")

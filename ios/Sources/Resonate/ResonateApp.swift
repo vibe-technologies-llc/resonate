@@ -1,4 +1,5 @@
 import AppIntents
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers

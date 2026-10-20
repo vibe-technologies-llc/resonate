@@ -33,6 +33,19 @@ class Output(unittest.TestCase):
     def test_a_word_that_only_contains_warning_is_not_one(self):
         self.assertEqual(building.warnings_in("Compiling Warnings.swift\nnote: a warning-free file\n"), [])
 
+    def test_a_compiler_error_is_found_once_by_its_header_and_not_by_its_excerpt(self):
+        failed = (
+            "/ios/Sources/Resonate/Library.swift:12:5: \x1b[1;31merror: \x1b[1;39mcannot find 'x' in scope\x1b[0;0m\n"
+            "\x1b[0;36m12 |\x1b[0;0m   x\n"
+            "    \x1b[0;36m|\x1b[0;0m   `- \x1b[1;31merror: \x1b[1;39mcannot find 'x' in scope\x1b[0;0m\n"
+            "error: Build failed\n"
+        )
+
+        self.assertEqual(
+            building.errors_in(failed),
+            ["/ios/Sources/Resonate/Library.swift:12:5: error: cannot find 'x' in scope", "error: Build failed"],
+        )
+
     def test_a_build_that_stopped_before_completing_is_not_complete(self):
         self.assertFalse(building.completed("Building for debugging...\nerror: something broke\n"))
 

@@ -2,6 +2,7 @@ import BackgroundTasks
 import Foundation
 import OSLog
 import Observation
+import ResonateLogic
 import ResonateNative
 import UIKit
 

@@ -1,4 +1,5 @@
 import Observation
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 import UIKit
@@ -369,7 +370,7 @@ final class LyricLayerView: UIView {
             element.accessibilityFrameInContainerSpace = frame
             element.isAccessibilityElement = !row.look.blank
             element.accessibilityLabel = row.look.text
-            element.accessibilityValue = row.moment.map(clock)
+            element.accessibilityValue = row.moment.map(ResonateLogic.clock)
             element.accessibilityTraits = row.moment == nil ? (row.lit ? .selected : []) : (row.lit ? [.button, .selected] : .button)
             let moment = row.moment
             let seek = seek

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import ResonateLogic
 import ResonateNative
 import UIKit
 

@@ -2,6 +2,7 @@ import re
 
 STYLE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;;[^\x1b]*\x1b\\")
 WARNING = re.compile(r"^(?:\S.*?:\d+:\d+: |ld: )?warning: ")
+ERROR = re.compile(r"^(?:\S.*?:\d+:\d+: |ld: )?error: ")
 COMPLETE = re.compile(r"^Build complete!", re.MULTILINE)
 
 
@@ -11,6 +12,10 @@ def plain(output):
 
 def warnings_in(output):
     return [line for line in plain(output).splitlines() if WARNING.search(line)]
+
+
+def errors_in(output):
+    return [line for line in plain(output).splitlines() if ERROR.search(line)]
 
 
 def completed(output):

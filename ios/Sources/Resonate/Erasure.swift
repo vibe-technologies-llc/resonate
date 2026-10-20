@@ -1,4 +1,5 @@
 import Foundation
+import ResonateLogic
 import Security
 
 struct ErasureLeftovers: Equatable {

@@ -1,6 +1,7 @@
 import Accessibility
 import Foundation
 import Observation
+import ResonateLogic
 import ResonateNative
 import UIKit
 

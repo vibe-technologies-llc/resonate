@@ -21,9 +21,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
-- [S] `explained` digs the sentence out of the generated `ResonateNative.Error` with `Mirror` (one
-  level for a `String` payload, two for `message:`), and nothing holds the shape: a UniFFI upgrade
-  changing the flat error falls back to `String(reflecting:)`, and every banner shows a debug print
 - [M] More pure Swift is unproved beside the list above: `Folders.file` (the root-prefix guard,
   existing-destination refusal, the `.lrc` move, `prune`, the *Put files back* list), polling
   (`QueueListed.isDue`, `pollInterval`, `Library.steady`, `NowPlaying.Written.expected`,
