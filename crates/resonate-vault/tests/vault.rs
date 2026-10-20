@@ -758,6 +758,62 @@ fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
 }
 
 #[test]
+fn an_animated_cover_is_kept_as_it_came_with_every_frame() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let mut animated = Vec::new();
+    {
+        let mut encoder = image::codecs::gif::GifEncoder::new(&mut animated);
+        for shade in [10_u8, 120, 240] {
+            let frame = image::RgbaImage::from_fn(40, 30, |x, y| {
+                image::Rgba([shade, (x * 6) as u8, (y * 8) as u8, 255])
+            });
+            encoder
+                .encode_frame(image::Frame::new(frame))
+                .expect("a written frame");
+        }
+    }
+    let art = CoverArt {
+        format: ImageFormat::Gif,
+        bytes: animated,
+    };
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("gif"));
+    assert_eq!((held.width, held.height), (40, 30));
+    assert_eq!(fs::read(&held.path).expect("the kept cover"), art.bytes);
+}
+
+#[test]
+fn a_sixteen_bit_cover_lands_as_a_jxl_holding_every_bit() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let picture = image::DynamicImage::ImageRgb16(image::ImageBuffer::from_fn(48, 32, |x, y| {
+        let grain = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503)) >> 27;
+        image::Rgb([
+            (x * 1_000 + grain) as u16,
+            (y * 1_500 + grain) as u16,
+            ((x + y) * 700 + grain) as u16,
+        ])
+    }));
+    let mut written = Cursor::new(Vec::new());
+    picture
+        .write_to(&mut written, image::ImageFormat::Png)
+        .expect("a written picture");
+    let art = CoverArt {
+        format: ImageFormat::Png,
+        bytes: written.into_inner(),
+    };
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
+    assert!(vault.verify_cover(&held.path).expect("a readable cover"));
+    assert!(held.bytes < art.bytes.len() as u64);
+}
+
+#[test]
 fn a_cover_is_drawn_once_and_a_forgotten_one_is_not_drawn_again_from_memory() {
     let tree = Tree::new();
     let vault = tree.vault();

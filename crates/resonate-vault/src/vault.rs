@@ -576,16 +576,21 @@ impl Vault {
             });
         }
 
-        let drawn = cover::as_jxl(art)?;
-        if art.bytes.len() <= drawn.bytes.len() {
-            return self.kept_as_it_came(key, art, &drawn);
-        }
+        let drawn = match cover::as_jxl(art)? {
+            cover::Drawing::Lossless(drawn) if drawn.bytes.len() < art.bytes.len() => drawn,
+            cover::Drawing::Lossless(drawn) => {
+                return self.kept_as_it_came(key, art, (drawn.width, drawn.height));
+            }
+            cover::Drawing::AsItCame { width, height } => {
+                return self.kept_as_it_came(key, art, (width, height));
+            }
+        };
         let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
         self.written_inside(&staging, &drawn.bytes)?;
 
-        let read_back = cover::pixels_of_jxl(&drawn.bytes)?;
-        if read_back != cover::read(art)? {
+        let written = self.read_inside(&staging)?;
+        if !drawn.held_by(&written).unwrap_or(false) {
             self.discard(&staging)?;
             return Err(Error::PictureUnconfirmed {
                 width: drawn.width,
@@ -608,7 +613,7 @@ impl Vault {
         &self,
         key: VaultKey,
         art: &CoverArt,
-        drawn: &cover::Drawn,
+        (width, height): (u32, u32),
     ) -> Result<KeptCover> {
         let extension = art.format.extension();
         let target = self.cover_path(key, extension);
@@ -616,10 +621,7 @@ impl Vault {
         self.written_inside(&staging, &art.bytes)?;
         if self.read_inside(&staging)? != art.bytes {
             self.discard(&staging)?;
-            return Err(Error::PictureUnconfirmed {
-                width: drawn.width,
-                height: drawn.height,
-            });
+            return Err(Error::PictureUnconfirmed { width, height });
         }
 
         let bytes = self.landed(&staging, &target)?;
@@ -627,8 +629,8 @@ impl Vault {
             key,
             path: target,
             bytes,
-            width: drawn.width,
-            height: drawn.height,
+            width,
+            height,
             deduped: false,
         })
     }
@@ -712,7 +714,7 @@ impl Vault {
                 digest.note(&bytes);
                 digest.settled() == key && cover::size_of(&bytes, Some(format)).is_ok()
             }
-            None => cover::pixels_of_jxl(&bytes).is_ok(),
+            None => cover::lossless_of_jxl(&bytes).is_ok(),
         })
     }
 

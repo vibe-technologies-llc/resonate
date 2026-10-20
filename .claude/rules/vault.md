@@ -158,8 +158,16 @@ lands. Unreadable sources (`Unreadable`, `SourceGone`) are stamped nothing
 
 ## Covers
 
-`image` decode, lossless JXL by `zune-jpegxl` at highest effort, read back with `jxl-oxide`, compared
-pixel for pixel before landing. Opaque: three channels; transparent: four.
+`image` decode at the picture's own layout (grey or colour, with or without alpha, 8 or 16 bits per
+sample), lossless JXL by `zune-jpegxl` at highest effort in that layout, an alpha every pixel of which
+is opaque dropped. **Validation reads the staged file, not the bytes in memory**, through `jxl-oxide`
+at the depth its header declares, and compares it sample for sample with the source's own decode
+(`Drawn::held_by`), so a quantised or misread JXL never lands
+(`a_sixteen_bit_picture_reads_back_at_sixteen_bits_and_is_not_held_by_its_eight_bit_shadow`).
+**What a JXL of its first frame's pixels would lose is kept as it came** (`Drawing::AsItCame`): an
+ICC profile, a second frame (APNG, animated WebP or GIF), a float layout, a side under two pixels
+(`a_picture_carrying_a_colour_profile_or_more_than_one_frame_is_kept_as_it_came`,
+`an_animated_cover_is_kept_as_it_came_with_every_frame`).
 
 **A cover is kept as it came where that is no larger than its JXL** (lossless pixels of a lossy JPEG
 can weigh several times the JPEG): `keep_cover` encodes the JXL first and, where the bytes it was
