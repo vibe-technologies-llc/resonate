@@ -242,8 +242,10 @@ mod tests {
 
     use crossbeam_channel::bounded;
     use parking_lot::Mutex;
+    #[cfg(feature = "online")]
+    use signal_hook::consts::{SIGALRM, SIGVTALRM};
     use signal_hook::{
-        consts::{SIGALRM, SIGIO, SIGPROF, SIGUSR1, SIGUSR2, SIGVTALRM, SIGWINCH},
+        consts::{SIGIO, SIGPROF, SIGUSR1, SIGUSR2, SIGWINCH},
         low_level::raise,
     };
 

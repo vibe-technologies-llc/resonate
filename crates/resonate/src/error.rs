@@ -455,6 +455,7 @@ pub enum Error {
          with `resonate tidal` once it can",
         path = path.display()
     )]
+    #[cfg(feature = "online")]
     TidalTokenNotKept {
         path: PathBuf,
         #[source]
@@ -465,6 +466,7 @@ pub enum Error {
         "TIDAL rotated the refresh token and there is no settings file to write it to; sign in \
          again with `resonate tidal`"
     )]
+    #[cfg(feature = "online")]
     TidalTokenHasNoSettings,
 
     #[error("cannot create {path}", path = path.display())]

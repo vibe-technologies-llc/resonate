@@ -473,7 +473,7 @@ impl Config {
         self.online.unwrap_or(true)
     }
 
-    #[cfg(any(feature = "online", feature = "ui", test))]
+    #[cfg(any(feature = "online", feature = "ui"))]
     pub fn hosted_services_allowed(&self) -> bool {
         self.hosted_services.unwrap_or(false)
     }

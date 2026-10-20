@@ -19,6 +19,7 @@ use crate::{
     error::{Error, Result},
 };
 
+#[cfg(any(feature = "mcp", test))]
 pub fn registered(config: &Config, settings: Option<PathBuf>) -> Providers {
     registered_keeping(config, settings).0
 }
