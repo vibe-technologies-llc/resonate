@@ -152,7 +152,9 @@ Invariants the layering protects (the rules files have the rest):
   Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
 
-- `python3 -m unittest discover -s ios`: the icon drawing and what declares the icons, on the host.
+- `python3 -m unittest discover -s ios`: the icon drawing, what declares the icons and the reading of
+  the build's output, on the host; `python3 ios/check-build.py`: a clean `xtool dev build` that fails
+  on any warning.
 
 - `python3 ios/build-native.py`, then `cd ios && xtool dev build && python3 app-intents.py --ipa`:
   the iOS staticlib, Swift bindings, app, its App Intents metadata (Siri, written on Linux in place of

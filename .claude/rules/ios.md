@@ -1295,5 +1295,8 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 `python3 ios/build-native.py` then `cd ios && xtool dev build && python3 app-intents.py --ipa` must
 produce `ios/xtool/Resonate.ipa` with no Swift warning (the package builds in Swift 6 mode, so a data
-race is an error); with a device attached, `xtool install xtool/Resonate.app` installs it (the
+race is an error). `python3 ios/check-build.py [-c debug|release] [--xtool PATH]` is that check: it
+removes `ios/.build`, so every file is compiled and warns, runs `xtool dev build` (the one on PATH,
+else `install.py`'s kept AppImage), strips the compiler's styling and fails on any `warning:` line
+(`ios/building.py`, held by `ios/test_building.py`). With a device attached, `xtool install xtool/Resonate.app` installs it (the
 `run-ios` skill).
