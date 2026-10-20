@@ -344,6 +344,118 @@ fn an_arriving_name_another_playlist_holds_is_aliased_and_never_renamed_back() {
 }
 
 #[test]
+fn a_saved_query_made_on_one_device_arrives_as_text_and_is_not_sent_back() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_query("Recent", "added:<30d");
+
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(
+        phone.shelf.query_named("Recent").map(|(_, text)| text),
+        Some(Some("added:<30d".to_owned()))
+    );
+    assert!(phone.shelf.playlist_names().is_empty());
+    let echoed = phone.send();
+    assert!(
+        echoed
+            .iter()
+            .all(|change| !matches!(change, Change::Query(_))),
+        "{echoed:?}"
+    );
+}
+
+#[test]
+fn a_saved_query_revised_renamed_and_dropped_follows_on_the_other_device() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    let recent = desk.shelf.make_query("Recent", "added:<30d");
+    sync(&mut desk, &mut phone);
+
+    desk.shelf.revise_query(recent, "Recent", "added:<7d");
+    sync(&mut desk, &mut phone);
+    assert_eq!(
+        phone.shelf.query_named("Recent").map(|(_, text)| text),
+        Some(Some("added:<7d".to_owned()))
+    );
+
+    desk.shelf.revise_query(recent, "Lately", "added:<7d");
+    sync(&mut desk, &mut phone);
+    assert_eq!(phone.shelf.query_names(), ["Lately"]);
+
+    desk.shelf.drop_query(recent);
+    sync(&mut desk, &mut phone);
+    assert!(phone.shelf.query_names().is_empty());
+}
+
+#[test]
+fn saved_queries_of_one_name_meeting_for_the_first_time_become_one_the_synced_text_standing() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_query("Recent", "added:<30d");
+    phone.shelf.make_query("recent", "plays:0");
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(phone.shelf.query_names().len(), 1);
+    assert_eq!(desk.shelf.query_names(), ["Recent"]);
+    assert_eq!(
+        phone.shelf.query_named("Recent").map(|(_, text)| text),
+        Some(Some("added:<30d".to_owned()))
+    );
+}
+
+#[test]
+fn a_query_and_a_list_never_stand_for_one_another() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_query("Mix", "added:<30d");
+    phone.shelf.make_playlist("Mix", &["A"]);
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(phone.shelf.playlist_names(), ["Mix"]);
+    assert_eq!(phone.shelf.query_names(), ["Mix"]);
+    assert_eq!(desk.shelf.playlist_names(), ["Mix"]);
+    assert_eq!(desk.shelf.query_names(), ["Mix"]);
+}
+
+#[test]
+fn a_device_keeping_no_queries_passes_them_on_untouched() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut pocket = Device::new("Pocket", &["A"]);
+    let mut tablet = Device::new("Tablet", &["A"]);
+    pocket.shelf.inside.lock().without_queries = true;
+    desk.shelf.make_query("Recent", "added:<30d");
+
+    sync(&mut desk, &mut pocket);
+    let snapshot = pocket.ledger.snapshot().expect("snapshot");
+    tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
+
+    assert!(pocket.shelf.query_names().is_empty());
+    assert_eq!(tablet.shelf.query_names(), ["Recent"]);
+}
+
+#[test]
+fn a_snapshot_brings_a_new_device_its_saved_queries_and_not_the_dropped_ones() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_query("Recent", "added:<30d");
+    let gone = desk.shelf.make_query("Gone", "plays:0");
+    sync(&mut desk, &mut phone);
+    desk.shelf.drop_query(gone);
+    sync(&mut desk, &mut phone);
+
+    let mut tablet = Device::new("Tablet", &["A"]);
+    let snapshot = phone.ledger.snapshot().expect("snapshot");
+    tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
+
+    assert_eq!(tablet.shelf.query_names(), ["Recent"]);
+}
+
+#[test]
 fn the_later_edit_wins_where_two_devices_edit_one_playlist() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);

@@ -5,12 +5,14 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
-    catalog::{Catalog, LocalPlaylist, LocalPlaylistId, Refused, RemoteListen, Resumed},
+    catalog::{
+        Catalog, LocalPlaylist, LocalPlaylistId, LocalQuery, Refused, RemoteListen, Resumed,
+    },
     change::{
         Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, Stamp, wall_nanos,
+        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp, wall_nanos,
     },
-    merge::{DIGEST_BYTES, Synced, names_alike, projection_digest, spliced},
+    merge::{DIGEST_BYTES, Synced, names_alike, projection_digest, query_digest, spliced},
     wire::{
         decoded_recording, decoded_recordings, encoded_change, encoded_recording,
         encoded_recordings,
@@ -98,11 +100,32 @@ const V3: &str = "
 ALTER TABLE state ADD COLUMN serverless INTEGER NOT NULL DEFAULT 0;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3];
+const V4: &str = "
+CREATE TABLE queries (
+    key BLOB PRIMARY KEY,
+    local_id INTEGER,
+    local_created INTEGER,
+    name TEXT NOT NULL,
+    alias TEXT,
+    text TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    reading INTEGER NOT NULL DEFAULT 0,
+    max_rows INTEGER,
+    gone INTEGER NOT NULL DEFAULT 0,
+    nanos INTEGER NOT NULL,
+    stamped_by BLOB NOT NULL,
+    owed INTEGER NOT NULL DEFAULT 0,
+    seen BLOB
+) STRICT;
+CREATE UNIQUE INDEX queries_by_local ON queries(local_id, local_created) WHERE local_id IS NOT NULL;
+";
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
 UPDATE playlists SET owed = 1;
+UPDATE queries SET owed = 1;
 UPDATE favourites SET owed = 1;
 UPDATE listens SET owed = 1;
 UPDATE handoffs SET owed = 1;
@@ -111,6 +134,7 @@ UPDATE handoffs SET owed = 1;
 const FORGET_THE_SPACE: &str = "
 DELETE FROM devices;
 DELETE FROM playlists;
+DELETE FROM queries;
 DELETE FROM favourites;
 DELETE FROM listens;
 DELETE FROM handoffs;
@@ -164,6 +188,16 @@ struct StoredPlaylist {
     alias: Option<String>,
     entries: Vec<Recording>,
     here: Vec<bool>,
+    gone: bool,
+    stamp: Stamp,
+    seen: Option<Vec<u8>>,
+}
+
+struct StoredQuery {
+    key: PlaylistKey,
+    local: Option<LocalPlaylistId>,
+    body: QueryBody,
+    alias: Option<String>,
     gone: bool,
     stamp: Stamp,
     seen: Option<Vec<u8>>,
@@ -371,6 +405,7 @@ impl Ledger {
     pub fn look(&mut self, catalog: &dyn Catalog, me: &Me) -> Result<Looked> {
         self.look_at_me(me)?;
         self.look_at_playlists(catalog)?;
+        self.look_at_queries(catalog)?;
         self.look_at_favourites(catalog)?;
         self.look_at_listens(catalog)?;
         self.look_at_resumption(catalog)?;
@@ -571,6 +606,149 @@ impl Ledger {
                     stamp.nanos,
                     self.device.0.as_slice(),
                     digest.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn look_at_queries(&mut self, catalog: &dyn Catalog) -> Result<()> {
+        if !catalog.keeps_queries() {
+            return Ok(());
+        }
+        let locals = catalog.queries().map_err(Error::Catalog)?;
+        let stored = self.stored_queries()?;
+        let mut by_local = BTreeMap::new();
+        for (at, query) in stored.iter().enumerate() {
+            if let Some(local) = query.local {
+                by_local.insert(local, at);
+            }
+        }
+
+        let mut still_here = vec![false; stored.len()];
+        for local in &locals {
+            let digest = query_digest(&local.body);
+            match by_local.get(&local.at) {
+                Some(&at) => {
+                    still_here[at] = true;
+                    let synced = &stored[at];
+                    if synced.seen.as_deref() == Some(digest.as_slice()) {
+                        continue;
+                    }
+                    self.query_edited_here(synced, local, &digest)?;
+                }
+                None => {
+                    if let Some((at, synced)) = stored.iter().enumerate().find(|(at, synced)| {
+                        synced.local.is_none()
+                            && !synced.gone
+                            && !still_here[*at]
+                            && names_alike(&synced.body.name, &local.body.name)
+                    }) {
+                        still_here[at] = true;
+                        self.query_adopted_here(catalog, synced, local)?;
+                        continue;
+                    }
+                    self.query_made_here(local, &digest)?;
+                }
+            }
+        }
+
+        for (at, synced) in stored.iter().enumerate() {
+            if synced.local.is_some() && !synced.gone && !still_here[at] {
+                let stamp = self.clock.now(self.device);
+                self.connection
+                    .execute(
+                        "UPDATE queries SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL WHERE key = ?1",
+                        params![synced.key.0.as_slice(), stamp.nanos, self.device.0.as_slice()],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Write, source))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn query_made_here(&mut self, local: &LocalQuery, digest: &[u8; DIGEST_BYTES]) -> Result<()> {
+        let key = PlaylistKey::minted()?;
+        let stamp = self.clock.now(self.device);
+        self.connection
+            .execute(
+                "INSERT INTO queries (key, local_id, local_created, name, text, sort, reading, max_rows, nanos, stamped_by, owed, seen)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11)",
+                params![
+                    key.0.as_slice(),
+                    local.at.id,
+                    local.at.created,
+                    local.body.name,
+                    local.body.text,
+                    local.body.sort,
+                    local.body.reading,
+                    local.body.rows,
+                    stamp.nanos,
+                    self.device.0.as_slice(),
+                    digest.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn query_edited_here(
+        &mut self,
+        synced: &StoredQuery,
+        local: &LocalQuery,
+        digest: &[u8; DIGEST_BYTES],
+    ) -> Result<()> {
+        let aliased = synced
+            .alias
+            .as_ref()
+            .is_some_and(|alias| *alias == local.body.name);
+        let (name, alias) = if aliased {
+            (synced.body.name.clone(), synced.alias.clone())
+        } else {
+            (local.body.name.clone(), None)
+        };
+        let stamp = self.clock.now(self.device);
+        self.connection
+            .execute(
+                "UPDATE queries SET name = ?2, alias = ?3, text = ?4, sort = ?5, reading = ?6, max_rows = ?7, nanos = ?8, stamped_by = ?9, owed = 1, seen = ?10 WHERE key = ?1",
+                params![
+                    synced.key.0.as_slice(),
+                    name,
+                    alias,
+                    local.body.text,
+                    local.body.sort,
+                    local.body.reading,
+                    local.body.rows,
+                    stamp.nanos,
+                    self.device.0.as_slice(),
+                    digest.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn query_adopted_here(
+        &mut self,
+        catalog: &dyn Catalog,
+        synced: &StoredQuery,
+        local: &LocalQuery,
+    ) -> Result<()> {
+        let written = match catalog.write_query(Some(local.at), &synced.body) {
+            Ok(written) => written,
+            Err(Refused::Unwritable) => return Ok(()),
+            Err(refused) => return Err(Error::Catalog(refused)),
+        };
+        let alias = (written.body.name != synced.body.name).then(|| written.body.name.clone());
+        self.connection
+            .execute(
+                "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
+                params![
+                    synced.key.0.as_slice(),
+                    written.at.id,
+                    written.at.created,
+                    alias,
+                    query_digest(&written.body).as_slice()
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -810,6 +988,7 @@ impl Ledger {
             .connection
             .query_row(
                 "SELECT (SELECT count(*) FROM devices WHERE owed = 1) + (SELECT count(*) FROM playlists WHERE owed = 1)
+                      + (SELECT count(*) FROM queries WHERE owed = 1)
                       + (SELECT count(*) FROM favourites WHERE owed = 1) + (SELECT count(*) FROM listens WHERE owed = 1)
                       + (SELECT count(*) FROM handoffs WHERE owed = 1)",
                 [],
@@ -827,6 +1006,7 @@ impl Ledger {
                 .into_iter()
                 .map(Change::Playlist),
         );
+        changes.extend(self.query_notes("owed = 1")?.into_iter().map(Change::Query));
         changes.extend(
             self.favourite_notes("owed = 1")?
                 .into_iter()
@@ -849,6 +1029,7 @@ impl Ledger {
         let mut changes = Vec::new();
         changes.extend(self.device_changes_where("1")?);
         changes.extend(self.playlist_notes("1")?.into_iter().map(Change::Playlist));
+        changes.extend(self.query_notes("1")?.into_iter().map(Change::Query));
         changes.extend(
             self.favourite_notes("1")?
                 .into_iter()
@@ -873,6 +1054,10 @@ impl Ledger {
                 ),
                 Change::Playlist(note) => transaction.execute(
                     "UPDATE playlists SET owed = 0 WHERE key = ?1 AND nanos = ?2 AND stamped_by = ?3",
+                    params![note.key.0.as_slice(), note.stamp.nanos, note.stamp.device.0.as_slice()],
+                ),
+                Change::Query(note) => transaction.execute(
+                    "UPDATE queries SET owed = 0 WHERE key = ?1 AND nanos = ?2 AND stamped_by = ?3",
                     params![note.key.0.as_slice(), note.stamp.nanos, note.stamp.device.0.as_slice()],
                 ),
                 Change::Favourite(note) => transaction.execute(
@@ -915,6 +1100,7 @@ impl Ledger {
                     false
                 }
                 Change::Playlist(note) => self.playlist_arrived(catalog, note)?,
+                Change::Query(note) => self.query_arrived(catalog, note)?,
                 Change::Favourite(note) => self.favourite_arrived(catalog, note)?,
                 Change::Listen(listen) => self.listen_arrived(catalog, listen)?,
                 Change::Handoff(handoff) => {
@@ -1138,6 +1324,104 @@ impl Ledger {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(true)
+    }
+
+    fn query_arrived(&mut self, catalog: &dyn Catalog, note: &QueryNote) -> Result<bool> {
+        let stored = self.stored_query(note.key)?;
+        if stored
+            .as_ref()
+            .is_some_and(|stored| stored.stamp >= note.stamp)
+        {
+            return Ok(false);
+        }
+
+        let mut local = stored.as_ref().and_then(|stored| stored.local);
+        let Some(body) = &note.body else {
+            if let (Some(at), true) = (local, catalog.keeps_queries()) {
+                catalog.remove_playlist(at).map_err(Error::Catalog)?;
+            }
+            self.connection
+                .execute(
+                    "INSERT INTO queries (key, name, gone, nanos, stamped_by) VALUES (?1, '', 1, ?2, ?3)
+                     ON CONFLICT (key) DO UPDATE SET local_id = NULL, local_created = NULL, alias = NULL, text = NULL,
+                         gone = 1, nanos = ?2, stamped_by = ?3, owed = 0, seen = NULL",
+                    params![
+                        note.key.0.as_slice(),
+                        note.stamp.nanos,
+                        note.stamp.device.0.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            return Ok(local.is_some());
+        };
+
+        let mut written = None;
+        if catalog.keeps_queries() {
+            if local.is_none() {
+                local = catalog
+                    .queries()
+                    .map_err(Error::Catalog)?
+                    .into_iter()
+                    .filter(|query| names_alike(&query.body.name, &body.name))
+                    .find(|query| !self.maps_local_query(query.at).unwrap_or(true))
+                    .map(|query| query.at);
+            }
+            let aliased = stored
+                .as_ref()
+                .filter(|stored| stored.body.name == body.name)
+                .and_then(|stored| stored.alias.clone());
+            let wanted = match aliased {
+                Some(alias) => QueryBody {
+                    name: alias,
+                    ..body.clone()
+                },
+                None => body.clone(),
+            };
+            written = match catalog.write_query(local, &wanted) {
+                Ok(written) => Some(written),
+                Err(Refused::Unwritable) => None,
+                Err(refused) => return Err(Error::Catalog(refused)),
+            };
+        }
+
+        let alias = written
+            .as_ref()
+            .filter(|written| written.body.name != body.name)
+            .map(|written| written.body.name.clone());
+        let digest = written.as_ref().map(|written| query_digest(&written.body));
+        self.connection
+            .execute(
+                "INSERT INTO queries (key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, owed, seen)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, 0, ?12)
+                 ON CONFLICT (key) DO UPDATE SET local_id = ?2, local_created = ?3, name = ?4, alias = ?5, text = ?6, sort = ?7,
+                     reading = ?8, max_rows = ?9, gone = 0, nanos = ?10, stamped_by = ?11, owed = 0, seen = ?12",
+                params![
+                    note.key.0.as_slice(),
+                    written.as_ref().map(|written| written.at.id),
+                    written.as_ref().map(|written| written.at.created),
+                    body.name,
+                    alias,
+                    body.text,
+                    body.sort,
+                    body.reading,
+                    body.rows,
+                    note.stamp.nanos,
+                    note.stamp.device.0.as_slice(),
+                    digest.as_ref().map(<[u8; DIGEST_BYTES]>::as_slice)
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(written.is_some())
+    }
+
+    fn maps_local_query(&self, at: LocalPlaylistId) -> Result<bool> {
+        self.connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM queries WHERE local_id = ?1 AND local_created = ?2)",
+                params![at.id, at.created],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
     fn maps_local(&self, at: LocalPlaylistId) -> Result<bool> {
@@ -1545,6 +1829,90 @@ impl Ledger {
                 }),
             })
             .collect())
+    }
+
+    fn query_notes(&self, condition: &str) -> Result<Vec<QueryNote>> {
+        Ok(self
+            .stored_queries_where(condition)?
+            .into_iter()
+            .map(|stored| QueryNote {
+                key: stored.key,
+                stamp: stored.stamp,
+                body: (!stored.gone).then_some(stored.body),
+            })
+            .collect())
+    }
+
+    fn stored_query(&self, key: PlaylistKey) -> Result<Option<StoredQuery>> {
+        let mut found = self.stored_queries_query("key = ?1", params![key.0.as_slice()])?;
+        Ok(found.pop())
+    }
+
+    fn stored_queries(&self) -> Result<Vec<StoredQuery>> {
+        self.stored_queries_where("1")
+    }
+
+    fn stored_queries_where(&self, condition: &str) -> Result<Vec<StoredQuery>> {
+        self.stored_queries_query(condition, params![])
+    }
+
+    fn stored_queries_query(
+        &self,
+        condition: &str,
+        arguments: &[&dyn rusqlite::ToSql],
+    ) -> Result<Vec<StoredQuery>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, seen
+                 FROM queries WHERE {condition}"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map(arguments, |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, u8>(6)?,
+                    row.get::<_, u8>(7)?,
+                    row.get::<_, Option<u32>>(8)?,
+                    row.get::<_, bool>(9)?,
+                    row.get::<_, i64>(10)?,
+                    row.get::<_, Vec<u8>>(11)?,
+                    row.get::<_, Option<Vec<u8>>>(12)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut queries = Vec::new();
+        for row in rows {
+            let (key, id, created, name, alias, text, sort, reading, rows, gone, nanos, by, seen) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            queries.push(StoredQuery {
+                key: playlist_key_from(&key),
+                local: id
+                    .zip(created)
+                    .map(|(id, created)| LocalPlaylistId { id, created }),
+                body: QueryBody {
+                    name,
+                    text,
+                    sort,
+                    reading,
+                    rows,
+                },
+                alias,
+                gone,
+                stamp: Stamp {
+                    nanos,
+                    device: device_from(&by),
+                },
+                seen,
+            });
+        }
+        Ok(queries)
     }
 
     fn favourite_notes(&self, condition: &str) -> Result<Vec<FavouriteNote>> {
