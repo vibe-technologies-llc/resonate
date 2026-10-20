@@ -8,7 +8,6 @@ use resonate_core::MediaLocation;
 use crate::{
     Result,
     sheet::{self, Listed, Sheet, SheetRow, Timed},
-    store,
 };
 
 const DECLARATION: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
@@ -111,7 +110,7 @@ impl Base {
 
         match sheet::scheme_of(folder) {
             Some(_) => match sheet::local_file(folder) {
-                Some(named) => Self::Beside(PathBuf::from(named)),
+                Some(named) => Self::Beside(named),
                 None => Self::Elsewhere,
             },
             None => match sheet::unescaped(folder) {
@@ -402,15 +401,13 @@ fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
     }
 
     Some(sheet::resolved(
-        PathBuf::from(sheet::unescaped(&sheet::forward_escaped(
-            sheet::path_of_reference(reference),
-        ))?),
+        sheet::unescaped(&sheet::forward_escaped(sheet::path_of_reference(reference)))?,
         base.beside()?,
     ))
 }
 
 fn uri(named: &Path) -> Result<String> {
-    let escaped = sheet::escaped(store::path_text(named)?);
+    let escaped = sheet::escaped(named);
     if named.is_absolute() {
         return Ok(format!("file://{escaped}"));
     }

@@ -256,12 +256,26 @@ rows read via `Player::media` like any unscanned row.
     row already belongs to an album of the same title, none of its other names finds an album, and
     its folder's key names another album or none, the row stays and `lend_the_free_names` gives the
     album whichever of its keys nobody holds.
-- **A scan says what went wrong with a file.** `ScanStats::failed` = `Failures`, four counts;
-  `Failure` decides: `Unnamed` (non-UTF-8 path: the catalog keys on text paths, so such a file is
-  counted and never catalogued, whether or not a sheet cuts it, and a sheet with such a name still cuts), `Misnamed` (`UnrecognisedContainer`,
+- **A scan says what went wrong with a file.** `ScanStats::failed` = `Failures`, three counts;
+  `Failure` decides: `Misnamed` (`UnrecognisedContainer`,
   `NoAudioTrack`), `Undecodable` (`NoDecoder`, `DsdCompressed`, unrepresentable properties or
   packets), `Unreadable` for the rest (`Io`, `Symphonia` residual: where a corrupt file lands). The
   match on `resonate_codec::Error` is exhaustive, so a new codec variant fails to compile here.
+- **A path is stored as text through `resonate_core::path_text`, so a name that is not UTF-8 is
+  catalogued and comes back byte for byte.** `store::path_text(&Path)` is the one way a path becomes
+  a bound text (`Cow`, borrowed for every UTF-8 path, so existing rows and the sort order are as
+  they were; no migration) and `store::path_of(&str)` the one way a column becomes a `PathBuf`; a
+  read that builds a `PathBuf` or `MediaLocation::local` from a `String` column without it is the
+  defect. Each invalid byte is written `U+FDD0` (a noncharacter) and two hex digits, a genuine
+  `U+FDD0` doubled, so two paths never share a text and a folder's text is still a prefix of what
+  lies in it (`walked_from`'s range scans hold). Comparing two stored texts (file names in
+  `moves`, trailing components) needs no decode; anything touching the filesystem decodes first. A
+  cue sheet text is UTF-8 and cannot name such a file, so one is scanned whole. A playlist file
+  writes such a path as a `file://` URI of its raw bytes (`sheet::escaped` takes a `Path`;
+  `sheet::unescaped` answers a `PathBuf`), the only form a text sheet can hold.
+  `Error::NonUtf8Path` remains for the one path SQLite is handed as a filename, the catalog's own
+  kept copy (`VACUUM INTO`).
+  (`a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has`)
 - **Hidden is not music.** `scan::is_passed_over` drops every dot-name (`.Trash-1000`,
   `.stversions`, AppleDouble `._`, a tag write's staged copy) and `$RECYCLE.BIN`, `System Volume
   Information`, `lost+found` from the walk and `audio_below`. A dot-named root is still walked.
@@ -984,6 +998,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   name with no `ItemKey`, so `counted.rs` converts it into the format's own tag, sets the count
   there, saves, and reads it back off the same concrete tag. `TagSink::rated` reads what the file
   holds, not the `TagSet`: a count-keeping format is parsed by its own reader (`Counted::read`).
+  **The preview opens a file once:** `TagSink::standing` answers the tags and the rating together
+  (`Standing`, the rating its own `Result` so an unreadable one still previews the tags); its
+  default is `read` then `rated`, `FileTags` shares one handle (the symphonia read and the lofty
+  parse each rewind it) unless the sources stand in for the row.
   `Rated::differs_from` weighs the favourite always, plays wherever the tag keeps a count (RIFF
   `INFO` keeps none). Undo keeps both in one integer: favourite's plays as is, an unfavoured row's
   negated less one. `RetagStats::ratings` counts them.

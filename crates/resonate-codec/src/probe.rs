@@ -8,7 +8,7 @@ use crate::{
     MediaInfo, Result,
     container::{self, Pictures},
     cue,
-    source::Sources,
+    source::{Media, Sources},
 };
 
 const MAX_COVER_BYTES: usize = 24 * 1024 * 1024;
@@ -140,7 +140,16 @@ pub fn probe_pictured(
     if let Some(info) = stood_in(sources, location, None) {
         return Ok((info, Pictured::StoodIn));
     }
-    let mut opened = container::open_media(sources, location)?;
+    probe_pictured_from(sources, sources.open(location)?, location, picturing)
+}
+
+pub(crate) fn probe_pictured_from(
+    sources: &Sources,
+    media: Media,
+    location: &MediaLocation,
+    picturing: Picturing,
+) -> Result<(MediaInfo, Pictured)> {
+    let mut opened = container::open_media_from(sources, media, location)?;
     let info = opened.media_info(location)?;
     let pictured = match picturing {
         Picturing::Whether if carries_cover_art(opened.pictures_mut()) => Pictured::Carried,

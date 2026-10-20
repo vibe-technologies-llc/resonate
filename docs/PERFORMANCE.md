@@ -34,8 +34,7 @@ are in [ROADMAP.md](ROADMAP.md).
   `next_pow2(frames × 4)` complex values; nothing bounds a long response at a high rate in bytes
 - [M] Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
   `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
-- [M] Retag's preview opens each file twice (`tags.read`, then `tags.rated`); the organise planner
-  keeps every library path and folder listing for the whole run
+- [M] The organise planner keeps every library path and folder listing for the whole run
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

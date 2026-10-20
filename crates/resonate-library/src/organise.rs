@@ -2266,7 +2266,7 @@ pub(crate) fn staging(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
     tx.execute(
         "INSERT INTO staged_writes (path, pid) VALUES (?1, ?2)
          ON CONFLICT (path) DO UPDATE SET pid = excluded.pid",
-        params![store::path_text(staged)?, process::id()],
+        params![store::path_text(staged), process::id()],
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
     Ok(())
@@ -2275,7 +2275,7 @@ pub(crate) fn staging(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
 pub(crate) fn staged_away(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
     tx.execute(
         "DELETE FROM staged_writes WHERE path = ?1",
-        params![store::path_text(staged)?],
+        params![store::path_text(staged)],
     )
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
     Ok(())
@@ -2323,8 +2323,8 @@ fn noted_from(tx: &Transaction<'_>, landed: &[Move], first_unit: usize) -> Resul
                     unit as i64,
                     part,
                     i64::from(rows),
-                    store::path_text(from)?,
-                    store::path_text(to)?
+                    store::path_text(from),
+                    store::path_text(to)
                 ])
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
@@ -2342,8 +2342,8 @@ pub(crate) fn last_organised(connection: &Connection) -> Result<Vec<Move>> {
                 row.get::<_, i64>(0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, i64>(2)?,
-                PathBuf::from(row.get::<_, String>(3)?),
-                PathBuf::from(row.get::<_, String>(4)?),
+                store::path_of(&row.get::<_, String>(3)?),
+                store::path_of(&row.get::<_, String>(4)?),
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -2381,7 +2381,7 @@ pub(crate) fn staged_writes(connection: &Connection) -> Result<Vec<StagedWrite>>
     statement
         .query_map([], |row| {
             Ok(StagedWrite {
-                path: PathBuf::from(row.get::<_, String>(0)?),
+                path: store::path_of(&row.get::<_, String>(0)?),
                 pid: row.get(1)?,
             })
         })
@@ -2705,8 +2705,8 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut queued = prepared(tx, "UPDATE resume_rows SET uri = ?2 WHERE uri = ?1")?;
 
     for (from_path, to_path) in landed.iter().flat_map(Move::files) {
-        let from = store::path_text(from_path)?;
-        let to = store::path_text(to_path)?;
+        let from = store::path_text(from_path);
+        let to = store::path_text(to_path);
 
         for statement in [
             &mut stale_lyrics,
@@ -2801,7 +2801,7 @@ fn sleeved_albums(tx: &Transaction<'_>, landed: &[Move]) -> Result<Vec<Sleeved>>
     let mut moved: Vec<i64> = Vec::new();
     let mut counted: AHashSet<i64> = AHashSet::new();
     for (_, to) in landed.iter().flat_map(Move::files) {
-        let to = store::path_text(to)?;
+        let to = store::path_text(to);
         let found = naming
             .query_map(params![to], |row| row.get::<_, i64>(0))
             .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -2863,7 +2863,7 @@ fn the_one_folder_holding(tx: &Transaction<'_>, album: i64) -> Result<Option<Pat
 
     let mut agreed: Option<PathBuf> = None;
     for (path, root) in rows {
-        let Some(sleeve) = scan::sleeve(Path::new(&path), Path::new(&root)) else {
+        let Some(sleeve) = scan::sleeve(&store::path_of(&path), &store::path_of(&root)) else {
             return Ok(None);
         };
         match agreed {
@@ -4096,7 +4096,7 @@ mod tests {
             aside
                 .execute(
                     "UPDATE staged_writes SET pid = ?2 WHERE path = ?1",
-                    params![store::path_text(left).expect("a path"), pid],
+                    params![store::path_text(left), pid],
                 )
                 .expect("the pid a run wrote under");
         }
@@ -4141,7 +4141,7 @@ mod tests {
             .expect("the same catalog")
             .execute(
                 "UPDATE staged_writes SET pid = ?2 WHERE path = ?1",
-                params![store::path_text(&killed).expect("a path"), u32::MAX],
+                params![store::path_text(&killed), u32::MAX],
             )
             .expect("the pid a poll wrote under");
 

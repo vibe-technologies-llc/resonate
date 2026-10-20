@@ -47,7 +47,9 @@ pub fn held(connection: &Connection) -> Result<Vec<PathBuf>> {
         .prepare("SELECT path FROM volumes ORDER BY path")
         .and_then(|mut statement| {
             statement
-                .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+                .query_map([], |row| {
+                    row.get::<_, String>(0).map(|path| store::path_of(&path))
+                })
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         })
         .map_err(|source| Error::store(StoreOp::Query, source))
@@ -186,7 +188,7 @@ pub fn note(tx: &Transaction<'_>, volumes: &[PathBuf]) -> Result<()> {
         store::cached(
             tx,
             "INSERT OR IGNORE INTO volumes (path) VALUES (?1)",
-            params![store::path_text(volume)?],
+            params![store::path_text(volume)],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
@@ -227,7 +229,7 @@ fn holds_a_listed_row(connection: &Connection, volume: &Path) -> Result<bool> {
 }
 
 fn holds_in(connection: &Connection, volume: &Path, question: &str) -> Result<bool> {
-    let (from, past) = walked_from(store::path_text(volume)?);
+    let (from, past) = walked_from(&store::path_text(volume));
     connection
         .query_row(question, params![from, past], |row| row.get(0))
         .map_err(|source| Error::store(StoreOp::Query, source))
@@ -246,7 +248,7 @@ pub fn retire_at_or_under(tx: &Transaction<'_>, folder: &Path) -> Result<()> {
 fn forget(tx: &Transaction<'_>, volume: &Path) -> Result<()> {
     tx.execute(
         "DELETE FROM volumes WHERE path = ?1",
-        params![store::path_text(volume)?],
+        params![store::path_text(volume)],
     )
     .map(drop)
     .map_err(|source| Error::store(StoreOp::Delete, source))

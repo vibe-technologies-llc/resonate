@@ -2303,7 +2303,6 @@ fn a_failed_file_is_counted_as_what_went_wrong_with_it() -> Result<()> {
          got {:?}",
         stats.failed
     );
-    assert_eq!(stats.failed.unnamed, 0);
     Ok(())
 }
 
@@ -2338,36 +2337,73 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
 }
 
 #[test]
-fn a_file_with_a_name_that_is_not_text_is_counted_unnamed_and_the_rest_are_scanned() -> Result<()> {
+fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has() -> Result<()>
+{
     let tree = Tree::new();
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
     let bytes = |name: &[u8]| {
         tree.path()
             .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(name))
     };
-    fs::write(
-        bytes(b"caf\xe9.wav"),
-        Wav::new().text(TITLE, "cafe").build(),
-    )
-    .expect("a file with a name that is not text");
+    let cafe = bytes(b"caf\xe9.wav");
+    let inside = bytes(b"dir\xff").join("inside.wav");
+    fs::write(&cafe, Wav::new().text(TITLE, "cafe").build())
+        .expect("a file with a name that is not text");
     fs::create_dir(bytes(b"dir\xff")).expect("a folder with a name that is not text");
-    fs::write(
-        bytes(b"dir\xff").join("inside.wav"),
-        Wav::new().text(TITLE, "inside").build(),
-    )
-    .expect("a file inside it");
+    fs::write(&inside, Wav::new().text(TITLE, "inside").build()).expect("a file inside it");
 
     let library = Library::open_in_memory()?;
-    for _ in 0..2 {
-        let stats = scan(&library, &options(&tree))?;
+    let first = scan(&library, &options(&tree))?;
+    let second = scan(&library, &options(&tree))?;
 
-        assert_eq!(
-            stats.failed.unnamed, 2,
-            "a name that is not text was not counted as such, got {:?}",
-            stats.failed
+    assert_eq!(first.added, 3, "got {:?}", first);
+    assert_eq!(second.added, 0, "got {:?}", second);
+    assert_eq!(second.failed.total(), 0, "got {:?}", second.failed);
+    assert_eq!(titles(&all(&library)?), vec!["cafe", "good", "inside"]);
+
+    for (title, path) in [("cafe", &cafe), ("inside", &inside)] {
+        let tracks = all(&library)?;
+        let track = tracks
+            .iter()
+            .find(|track| track.title == title)
+            .expect("the track was catalogued");
+
+        assert_eq!(track.location.as_path(), Some(path.as_path()));
+        assert!(
+            resonate_codec::probe(&Sources::local(), &track.location).is_ok(),
+            "{title} did not open"
         );
-        assert_eq!(titles(&all(&library)?), vec!["good"]);
+        assert_eq!(
+            library.track_at(path, None)?.map(|found| found.id),
+            Some(track.id)
+        );
+        assert_eq!(
+            MediaLocation::from_uri(&track.location.to_uri()),
+            Some(track.location.clone())
+        );
     }
+    Ok(())
+}
+
+#[test]
+fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<()> {
+    let tree = Tree::new();
+    let cafe = tree
+        .path()
+        .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+            b"caf\xe9.wav",
+        ));
+    fs::write(&cafe, Wav::new().text(TITLE, "cafe").build()).expect("a file");
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(all(&library)?.len(), 1);
+
+    fs::remove_file(&cafe).expect("the file goes");
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.removed, 1, "got {stats:?}");
+    assert!(all(&library)?.is_empty());
     Ok(())
 }
 
@@ -2388,15 +2424,15 @@ fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Re
     for _ in 0..2 {
         let stats = scan(&library, &options(&tree))?;
 
-        assert_eq!(stats.failed.unnamed, 0, "got {:?}", stats.failed);
+        assert_eq!(stats.failed.total(), 0, "got {:?}", stats.failed);
         assert_eq!(all(&library)?.len(), 3, "the sheet did not cut its file");
     }
     Ok(())
 }
 
 #[test]
-fn a_cue_sheet_naming_a_file_whose_name_is_not_text_cuts_nothing_and_the_file_is_counted_unnamed()
--> Result<()> {
+fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_whole() -> Result<()>
+{
     let tree = Tree::new();
     fs::write(
         tree.path()
@@ -2412,8 +2448,8 @@ fn a_cue_sheet_naming_a_file_whose_name_is_not_text_cuts_nothing_and_the_file_is
     for _ in 0..2 {
         let stats = scan(&library, &options(&tree))?;
 
-        assert_eq!(stats.failed.unnamed, 1, "got {:?}", stats.failed);
-        assert!(all(&library)?.is_empty());
+        assert_eq!(stats.failed.total(), 0, "got {:?}", stats.failed);
+        assert_eq!(all(&library)?.len(), 1);
     }
     Ok(())
 }

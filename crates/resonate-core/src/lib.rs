@@ -13,6 +13,7 @@ mod identity;
 mod link;
 mod media;
 pub mod naming;
+pub mod path_text;
 mod presence;
 mod print;
 mod quantise;

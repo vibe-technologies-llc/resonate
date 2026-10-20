@@ -57,7 +57,7 @@ impl Vaulted {
 
 impl StandIn for Vaulted {
     fn stands_in(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<StoodIn> {
-        let path = path_text(location.as_path()?).ok()?.to_owned();
+        let path = path_text(location.as_path()?).into_owned();
         let (start, frames) = store::span_columns(span);
 
         let found = self.inner.read(|connection| {

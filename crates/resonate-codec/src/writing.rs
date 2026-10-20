@@ -40,8 +40,9 @@ use crate::{
     },
     overlay::{Landing, Overlay},
     padded::Head,
+    probe::probe_pictured_from,
     probe_pictured,
-    source::Sources,
+    source::{FormatHint, Media, Reading, Sources},
     tags::{TagSource, Tagged},
 };
 
@@ -407,6 +408,18 @@ pub trait TagSink: TagSource {
     fn writes(&self, location: &MediaLocation) -> bool;
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()>;
     fn rated(&self, location: &MediaLocation) -> Result<Rated>;
+
+    fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {
+        Ok(Standing {
+            tagged: self.read(location, picturing)?,
+            rated: self.rated(location),
+        })
+    }
+}
+
+pub struct Standing {
+    pub tagged: Tagged,
+    pub rated: Result<Rated>,
 }
 
 pub struct FileTags {
@@ -505,6 +518,40 @@ impl TagSink for FileTags {
 
     fn rated(&self, location: &MediaLocation) -> Result<Rated> {
         self.rating_of(location)
+    }
+
+    fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {
+        let opened_once = self
+            .sources
+            .stood_in(location, None)
+            .is_none()
+            .then(|| self.writable(location).ok())
+            .flatten();
+        let Some(path) = opened_once else {
+            return Ok(Standing {
+                tagged: self.read(location, picturing)?,
+                rated: self.rating_of(location),
+            });
+        };
+
+        let io = |source| Error::Io {
+            location: location.clone(),
+            source,
+        };
+        let file = File::open(path).map_err(io)?;
+        let media = Media {
+            stream: Box::new(Reading::new(file.try_clone().map_err(io)?)),
+            hint: FormatHint::of(location),
+        };
+        let (info, picture) = probe_pictured_from(&self.sources, media, location, picturing)?;
+
+        Ok(Standing {
+            tagged: Tagged {
+                tags: info.tags,
+                picture,
+            },
+            rated: rating_in(file, location),
+        })
     }
 }
 
@@ -629,52 +676,63 @@ impl FileTags {
 
     fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
         let path = self.writable(location)?;
-        let probed = guessed_for_its_tags(path, location)?;
-        let file_type = probed.file_type().ok_or_else(|| Error::Unwritable {
+        let file = File::open(path).map_err(|source| Error::TagsUnread {
             location: location.clone(),
+            source: source.into(),
         })?;
-        let kind = file_type.primary_tag_type();
-        if !rates(kind) {
-            return Ok(Rated::Unrateable);
-        }
-        let unread = |source| Error::TagsUnread {
-            location: location.clone(),
-            source,
-        };
-        let (counted, primary) = if counts(kind) {
-            let counted = Counted::read(path, file_type).map_err(unread)?;
-            let primary = counted.as_ref().map(Counted::tag);
-            (counted, primary)
-        } else {
-            let tagged = probed.read().map_err(unread)?;
-            (None, tagged.primary_tag().cloned())
-        };
-        let ours = primary.and_then(|tag| {
-            tag.get_strings(ItemKey::Popularimeter)
-                .filter_map(Popularimeter::read)
-                .find(|popularimeter| popularimeter.is_ours(kind))
-                .map(|popularimeter| (popularimeter.stars, popularimeter.plays))
-        });
-        let favourite = match counted.as_ref().and_then(Counted::favoured_in_ape) {
-            Some(favoured) => favoured,
-            None => ours.is_some_and(|(stars, _)| stars == FAVOURITE_STARS),
-        };
-        let popularimeter_plays = ours
-            .filter(|_| kind == TagType::Id3v2 && favourite)
-            .map(|(_, plays)| plays);
-        let plays = counts(kind).then(|| {
-            counted
-                .as_ref()
-                .and_then(Counted::plays)
-                .or(popularimeter_plays)
-                .unwrap_or(0)
-        });
-        Ok(if favourite {
-            Rated::Favourite { plays }
-        } else {
-            Rated::Unrated { plays }
-        })
+        rating_in(file, location)
     }
+}
+
+fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rated> {
+    let unread = |source| Error::TagsUnread {
+        location: location.clone(),
+        source,
+    };
+    file.rewind().map_err(|source| unread(source.into()))?;
+    let reading = file.try_clone().map_err(|source| unread(source.into()))?;
+    let probed = guessed_for_its_tags(reading, location)?;
+    let file_type = probed.file_type().ok_or_else(|| Error::Unwritable {
+        location: location.clone(),
+    })?;
+    let kind = file_type.primary_tag_type();
+    if !rates(kind) {
+        return Ok(Rated::Unrateable);
+    }
+    let (counted, primary) = if counts(kind) {
+        file.rewind().map_err(|source| unread(source.into()))?;
+        let counted = Counted::read_in(&mut file, file_type).map_err(unread)?;
+        let primary = counted.as_ref().map(Counted::tag);
+        (counted, primary)
+    } else {
+        let tagged = probed.read().map_err(unread)?;
+        (None, tagged.primary_tag().cloned())
+    };
+    let ours = primary.and_then(|tag| {
+        tag.get_strings(ItemKey::Popularimeter)
+            .filter_map(Popularimeter::read)
+            .find(|popularimeter| popularimeter.is_ours(kind))
+            .map(|popularimeter| (popularimeter.stars, popularimeter.plays))
+    });
+    let favourite = match counted.as_ref().and_then(Counted::favoured_in_ape) {
+        Some(favoured) => favoured,
+        None => ours.is_some_and(|(stars, _)| stars == FAVOURITE_STARS),
+    };
+    let popularimeter_plays = ours
+        .filter(|_| kind == TagType::Id3v2 && favourite)
+        .map(|(_, plays)| plays);
+    let plays = counts(kind).then(|| {
+        counted
+            .as_ref()
+            .and_then(Counted::plays)
+            .or(popularimeter_plays)
+            .unwrap_or(0)
+    });
+    Ok(if favourite {
+        Rated::Favourite { plays }
+    } else {
+        Rated::Unrated { plays }
+    })
 }
 
 struct Popularimeter<'a> {
@@ -1345,9 +1403,9 @@ fn opened(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFi
     opened_as(path, location, ParseOptions::new())
 }
 
-fn guessed_for_its_tags(path: &Path, location: &MediaLocation) -> Result<Probe<BufReader<File>>> {
-    guessed_as(
-        path,
+fn guessed_for_its_tags(file: File, location: &MediaLocation) -> Result<Probe<BufReader<File>>> {
+    guessed_in(
+        file,
         location,
         ParseOptions::new()
             .read_properties(false)
@@ -1373,12 +1431,19 @@ fn guessed_as(
     location: &MediaLocation,
     options: ParseOptions,
 ) -> Result<Probe<BufReader<File>>> {
-    let opened = Probe::open(path)
-        .map(|probe| probe.options(options))
-        .map_err(|source| Error::TagsUnread {
-            location: location.clone(),
-            source,
-        })?;
+    let file = File::open(path).map_err(|source| Error::TagsUnread {
+        location: location.clone(),
+        source: source.into(),
+    })?;
+    guessed_in(file, location, options)
+}
+
+fn guessed_in(
+    file: File,
+    location: &MediaLocation,
+    options: ParseOptions,
+) -> Result<Probe<BufReader<File>>> {
+    let opened = Probe::new(BufReader::new(file)).options(options);
     let probed = opened.guess_file_type().map_err(|source| Error::Io {
         location: location.clone(),
         source,
@@ -2201,6 +2266,43 @@ mod tests {
                 tags.rated(&location).expect("a readable file"),
                 Rated::Unrated { plays: Some(12) },
                 "{name} kept the rating it was unfavoured of"
+            );
+        }
+    }
+
+    #[test]
+    fn what_stands_in_a_file_is_read_with_its_rating_in_one_open_and_agrees_with_two() {
+        let folder = Folder::new();
+        let tags = FileTags::default();
+        for (name, bytes) in [
+            ("echoes.flac", flac()),
+            ("echoes.aiff", aiff()),
+            ("echoes.wav", wave()),
+        ] {
+            let location = folder.holding(name, &bytes);
+            tags.write(
+                &location,
+                rating(Popularity {
+                    favourite: true,
+                    plays: 3,
+                }),
+            )
+            .expect("a rated file");
+
+            let standing = tags
+                .standing(&location, Picturing::Whether)
+                .expect("a readable file");
+
+            assert_eq!(
+                standing.tagged,
+                tags.read(&location, Picturing::Whether)
+                    .expect("a readable file"),
+                "{name}"
+            );
+            assert_eq!(
+                standing.rated.expect("a readable rating"),
+                Rated::Favourite { plays: Some(3) },
+                "{name}"
             );
         }
     }

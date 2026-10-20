@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cmp::Reverse,
     collections::HashMap,
     path::{Path, PathBuf},
@@ -13,7 +14,7 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId,
+    StreamSpec, TrackId, path_text,
 };
 pub use resonate_core::{folded_letters, is_lettered};
 use resonate_vault::{Form, VaultKey};
@@ -1046,7 +1047,7 @@ fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result
     let (Some(existing), Some(span)) = (record.existing, record.span) else {
         return Ok(());
     };
-    let path = path_text(&record.path)?;
+    let path = path_text(&record.path);
     let (span_start, _) = span_columns(Some(span));
     let id = existing.get() as i64;
     let held: Option<(i64, Option<i64>, Option<String>)> = queried(
@@ -1099,7 +1100,7 @@ const CUT_FOLLOWERS: [&str; 4] = [
 ];
 
 fn delivered_at(tx: &Transaction<'_>, record: &TrackRecord) -> Result<bool> {
-    let path = path_text(&record.path)?;
+    let path = path_text(&record.path);
     let (span_start, _) = span_columns(record.span);
     tx.prepare_cached(
         "SELECT EXISTS (SELECT 1 FROM tracks
@@ -1121,7 +1122,7 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
         });
     }
 
-    let text = path_text(canonical)?;
+    let text = path_text(canonical);
     cached(
         tx,
         "INSERT INTO roots (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
@@ -1154,10 +1155,7 @@ fn roots_held(tx: &Transaction<'_>) -> Result<Vec<(i64, PathBuf)>> {
 
     statement
         .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                PathBuf::from(row.get::<_, String>(1)?),
-            ))
+            Ok((row.get::<_, i64>(0)?, path_of(&row.get::<_, String>(1)?)))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))
@@ -1294,7 +1292,7 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
 
     let mut removed = 0;
     for (id, path) in unseen {
-        if !Path::new(&path).exists() {
+        if !path_of(&path).exists() {
             continue;
         }
         removed += tx
@@ -1379,7 +1377,7 @@ pub fn sized_files_under(connection: &Connection, root: i64) -> Result<Vec<(Path
 
     Ok(found
         .into_iter()
-        .map(|(path, size)| (PathBuf::from(path), size))
+        .map(|(path, size)| (path_of(&path), size))
         .collect())
 }
 
@@ -1405,7 +1403,7 @@ pub fn rooted_paths_at(
 
     Ok(found
         .into_iter()
-        .map(|(root, path)| (root, PathBuf::from(path)))
+        .map(|(root, path)| (root, path_of(&path)))
         .collect())
 }
 
@@ -1421,7 +1419,7 @@ pub fn forget_paths(tx: &Transaction<'_>, root: i64, paths: &[PathBuf]) -> Resul
         let mut bound: Vec<Value> = Vec::with_capacity(batch.len() + 1);
         bound.push(Value::Integer(root));
         for path in batch {
-            bound.push(Value::Text(path_text(path)?.to_owned()));
+            bound.push(Value::Text(path_text(path).into_owned()));
         }
         forgotten += statement
             .execute(params_from_iter(bound))
@@ -1927,7 +1925,7 @@ fn kept_where_it_was(
 }
 
 fn album_of_the_row(tx: &Transaction<'_>, record: &TrackRecord) -> Result<Option<i64>> {
-    let path = path_text(&record.path)?;
+    let path = path_text(&record.path);
     let (span_start, _) = span_columns(record.span);
     tx.prepare_cached("SELECT album_id FROM tracks WHERE path = ?1 AND span_start = ?2")
         .and_then(|mut statement| {
@@ -2269,7 +2267,7 @@ fn track(
         album_peak,
     } = record.tags.heard_gain();
     let now = to_nanos(SystemTime::now());
-    let path = path_text(&record.path)?;
+    let path = path_text(&record.path);
     let (span_start, span_frames) = span_columns(record.span);
 
     queried(
@@ -2622,10 +2620,12 @@ fn title(record: &TrackRecord) -> String {
     })
 }
 
-pub fn path_text(path: &Path) -> Result<&str> {
-    path.to_str().ok_or_else(|| Error::NonUtf8Path {
-        path: path.to_path_buf(),
-    })
+pub fn path_text(path: &Path) -> Cow<'_, str> {
+    path_text::encoded(path)
+}
+
+pub fn path_of(text: &str) -> PathBuf {
+    path_text::decoded(text)
 }
 
 pub fn year(date: &str) -> Option<i64> {

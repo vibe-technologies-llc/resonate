@@ -69,23 +69,16 @@ pub struct ScanOptions {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Failure {
-    Unnamed,
     Misnamed,
     Undecodable,
     Unreadable,
 }
 
 impl Failure {
-    pub const ALL: [Self; 4] = [
-        Self::Unnamed,
-        Self::Misnamed,
-        Self::Undecodable,
-        Self::Unreadable,
-    ];
+    pub const ALL: [Self; 3] = [Self::Misnamed, Self::Undecodable, Self::Unreadable];
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Unnamed => "unnamed",
             Self::Misnamed => "misnamed",
             Self::Undecodable => "undecodable",
             Self::Unreadable => "unreadable",
@@ -144,7 +137,6 @@ impl Failure {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Failures {
-    pub unnamed: u64,
     pub misnamed: u64,
     pub undecodable: u64,
     pub unreadable: u64,
@@ -152,12 +144,11 @@ pub struct Failures {
 
 impl Failures {
     pub const fn total(self) -> u64 {
-        self.unnamed + self.misnamed + self.undecodable + self.unreadable
+        self.misnamed + self.undecodable + self.unreadable
     }
 
     pub const fn counted(self, failure: Failure) -> u64 {
         match failure {
-            Failure::Unnamed => self.unnamed,
             Failure::Misnamed => self.misnamed,
             Failure::Undecodable => self.undecodable,
             Failure::Unreadable => self.unreadable,
@@ -178,7 +169,6 @@ pub struct ScanStats {
 
 #[derive(Debug, Default)]
 struct FailureCounts {
-    unnamed: AtomicU64,
     misnamed: AtomicU64,
     undecodable: AtomicU64,
     unreadable: AtomicU64,
@@ -187,7 +177,6 @@ struct FailureCounts {
 impl FailureCounts {
     fn add(&self, failure: Failure, rows: u64) {
         let counted = match failure {
-            Failure::Unnamed => &self.unnamed,
             Failure::Misnamed => &self.misnamed,
             Failure::Undecodable => &self.undecodable,
             Failure::Unreadable => &self.unreadable,
@@ -197,7 +186,6 @@ impl FailureCounts {
 
     fn snapshot(&self) -> Failures {
         Failures {
-            unnamed: self.unnamed.load(Ordering::Relaxed),
             misnamed: self.misnamed.load(Ordering::Relaxed),
             undecodable: self.undecodable.load(Ordering::Relaxed),
             unreadable: self.unreadable.load(Ordering::Relaxed),
@@ -354,7 +342,7 @@ impl Known {
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
             for root in roots {
-                let (from, past) = walked_from(store::path_text(&root.path)?);
+                let (from, past) = walked_from(&store::path_text(&root.path));
                 let rows = statement
                     .query_map(params![from, past], |row| {
                         Ok((
@@ -400,14 +388,11 @@ impl Known {
     }
 
     fn cuts_in(&self, folder: &Path) -> Vec<Cut> {
-        let Some(text) = folder.to_str() else {
-            return Vec::new();
-        };
-        let (from, past) = walked_from(text);
+        let (from, past) = walked_from(&store::path_text(folder));
         self.rows
             .range(from..past)
             .filter_map(|(file, rows)| {
-                let file = PathBuf::from(file);
+                let file = store::path_of(file);
                 let folders_below = file
                     .parent()?
                     .strip_prefix(folder)
@@ -433,11 +418,9 @@ impl Known {
     }
 
     fn at_or_under(&self, path: &Path) -> Vec<TrackId> {
-        let Some(text) = path.to_str() else {
-            return Vec::new();
-        };
-        let (from, past) = walked_from(text);
-        self.rows(text)
+        let text = store::path_text(path);
+        let (from, past) = walked_from(&text);
+        self.rows(&text)
             .iter()
             .chain(self.rows.range(from..past).flat_map(|(_, rows)| rows))
             .map(|held| held.id)
@@ -481,15 +464,9 @@ fn forget_at_or_under(
     };
     let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
     for path in named {
-        let Some(text) = path.to_str() else {
-            tracing::debug!(
-                path = %path.display(),
-                "a path the catalog cannot store names no row to forget"
-            );
-            continue;
-        };
-        let (from, past) = walked_from(text);
-        for (root, held) in store::rooted_paths_at(transaction, text, &from, &past)? {
+        let text = store::path_text(path);
+        let (from, past) = walked_from(&text);
+        for (root, held) in store::rooted_paths_at(transaction, &text, &from, &past)? {
             if !held.exists() && !volumes::is_on_an_absent_one(&held, &absent) {
                 gone.entry(root).or_default().push(held);
             }
@@ -715,7 +692,7 @@ fn every_root(inner: &Inner) -> Result<Vec<Root>> {
             .query_map([], |row| {
                 Ok(Root {
                     id: row.get(0)?,
-                    path: PathBuf::from(row.get::<_, String>(1)?),
+                    path: store::path_of(&row.get::<_, String>(1)?),
                 })
             })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -1256,16 +1233,12 @@ fn sheet_job(
     progress
         .discovered
         .fetch_add(tracks as u64, Ordering::Relaxed);
-    let Some(text) = file.to_str() else {
-        tracing::warn!(path = %file.display(), "skipping a path that is not UTF-8");
-        progress.failed.add(Failure::Unnamed, tracks as u64);
-        return Ok(true);
-    };
+    let text = store::path_text(file);
 
     let file_size = metadata.len();
     let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
 
-    let rows = known.rows(text);
+    let rows = known.rows(&text);
     let unchanged = rows.len() == tracks
         && rows
             .iter()
@@ -1307,16 +1280,12 @@ fn whole_file_job(walking: &Walking<'_>, path: &Path, metadata: &Metadata) -> Re
         ..
     } = walking;
     progress.discovered.fetch_add(1, Ordering::Relaxed);
-    let Some(text) = path.to_str() else {
-        tracing::warn!(path = %path.display(), "skipping a path that is not UTF-8");
-        progress.failed.add(Failure::Unnamed, 1);
-        return Ok(true);
-    };
+    let text = store::path_text(path);
 
     let file_size = metadata.len();
     let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
 
-    let rows = known.rows(text);
+    let rows = known.rows(&text);
     let unchanged = !rows.is_empty()
         && rows
             .iter()

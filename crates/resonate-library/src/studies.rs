@@ -303,7 +303,7 @@ pub(crate) fn study_of(
     let Some(path) = location.as_path() else {
         return Ok(None);
     };
-    let path = store::path_text(path)?;
+    let path = store::path_text(path);
     let (span_start, _) = store::span_columns(span);
     connection
         .query_row(
@@ -366,7 +366,7 @@ pub(crate) fn track_held(
     let Some(path) = location.as_path() else {
         return Ok(None);
     };
-    let path = store::path_text(path)?;
+    let path = store::path_text(path);
     let (span_start, _) = store::span_columns(span);
     connection
         .query_row(
@@ -427,7 +427,7 @@ pub(crate) fn studied(connection: &Connection, filter: StudyFilter) -> Result<Ve
                     id: TrackId::new(id as u64)?,
                     title,
                     artist,
-                    location: MediaLocation::local(path),
+                    location: MediaLocation::local(store::path_of(&path)),
                     span: store::span(span_start, span_frames),
                     studied,
                 })
@@ -467,7 +467,7 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
         .map(|(id, path, span_start, span_frames, print_held)| {
             Ok(ToStudy {
                 id: TrackId::new(id as u64)?,
-                location: MediaLocation::local(path),
+                location: MediaLocation::local(store::path_of(&path)),
                 span: store::span(span_start, span_frames),
                 print_held,
             })

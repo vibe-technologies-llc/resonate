@@ -3,6 +3,7 @@ use std::{
     ffi::{OsStr, OsString},
     fs::{self, File, OpenOptions},
     io::{self, Read as _, Write as _},
+    os::unix::ffi::{OsStrExt as _, OsStringExt as _},
     path::{self, Component, Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -12,7 +13,7 @@ use std::{
 use resonate_codec::carries_what_the_file_did;
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, text};
 
-use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf};
+use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, xspf};
 
 const LARGEST_PLAYLIST_FILE: u64 = 64 * 1024 * 1024;
 
@@ -272,7 +273,7 @@ fn forward_separated(named: &str) -> Cow<'_, str> {
 
 pub fn from_uri(named: &str) -> Option<MediaLocation> {
     let file = local_file(named)?;
-    Some(MediaLocation::local(settled(Path::new(&file))))
+    Some(MediaLocation::local(settled(&file)))
 }
 
 pub fn resolved(file: PathBuf, beside: &Path) -> MediaLocation {
@@ -315,7 +316,7 @@ pub fn scheme_of(line: &str) -> Option<&str> {
     named.then_some(scheme)
 }
 
-pub fn local_file(line: &str) -> Option<String> {
+pub fn local_file(line: &str) -> Option<PathBuf> {
     let (scheme, rest) = line.split_once(':')?;
     if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
         return None;
@@ -349,7 +350,7 @@ pub fn forward_escaped(encoded: &str) -> Cow<'_, str> {
     Cow::Borrowed(encoded)
 }
 
-pub fn unescaped(encoded: &str) -> Option<String> {
+pub fn unescaped(encoded: &str) -> Option<PathBuf> {
     let mut decoded = Vec::with_capacity(encoded.len());
     let mut bytes = encoded.bytes();
 
@@ -366,13 +367,13 @@ pub fn unescaped(encoded: &str) -> Option<String> {
         return None;
     }
 
-    String::from_utf8(decoded).ok()
+    Some(PathBuf::from(OsString::from_vec(decoded)))
 }
 
-pub fn escaped(path: &str) -> String {
-    let mut encoded = String::with_capacity(path.len());
+pub fn escaped(path: &Path) -> String {
+    let mut encoded = String::with_capacity(path.as_os_str().len());
 
-    for byte in path.bytes() {
+    for &byte in path.as_os_str().as_bytes() {
         let character = byte as char;
         if character.is_ascii_alphanumeric() || UNRESERVED.contains(&character) || character == '/'
         {
@@ -391,12 +392,13 @@ pub fn beside_or_absolute(file: &Path, beside: &Path) -> PathBuf {
 
 pub fn as_a_row(file: &Path, beside: &Path) -> Result<String> {
     let named = beside_or_absolute(file, beside);
-    let row = store::path_text(&named)?;
-    if reads_back_as_itself(row) {
+    if let Some(row) = named.to_str()
+        && reads_back_as_itself(row)
+    {
         return Ok(row.to_owned());
     }
 
-    Ok(format!("{FILE_SCHEME}{}", escaped(store::path_text(file)?)))
+    Ok(format!("{FILE_SCHEME}{}", escaped(file)))
 }
 
 fn reads_back_as_itself(row: &str) -> bool {
@@ -676,6 +678,20 @@ mod tests {
             row.starts_with(FILE_SCHEME),
             "{row} reads back as a Windows path"
         );
+        assert_eq!(
+            located(&row, beside).and_then(|held| held.as_path().map(Path::to_path_buf)),
+            Some(file.to_path_buf())
+        );
+    }
+
+    #[test]
+    fn a_file_whose_name_is_not_text_is_written_as_a_uri_that_reads_back_byte_for_byte() {
+        let beside = Path::new("/music");
+        let file = Path::new(OsStr::from_bytes(b"/music/caf\xe9.wav"));
+
+        let row = as_a_row(file, beside).expect("a row");
+
+        assert_eq!(row, "file:///music/caf%E9.wav");
         assert_eq!(
             located(&row, beside).and_then(|held| held.as_path().map(Path::to_path_buf)),
             Some(file.to_path_buf())

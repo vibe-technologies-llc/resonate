@@ -56,7 +56,7 @@ pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BT
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?
             .ok_or(Error::UnknownTrack(track))?;
-        files.insert(PathBuf::from(path));
+        files.insert(store::path_of(&path));
     }
     Ok(files)
 }
@@ -154,7 +154,7 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
         vault_keys: AHashSet::new(),
     };
     for path in files {
-        let named = store::path_text(path)?;
+        let named = store::path_text(path);
         let offered = MediaLocation::local(path).to_uri();
 
         let mut keys = tx

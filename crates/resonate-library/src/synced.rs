@@ -575,7 +575,7 @@ fn lasts_alike(held: Option<Duration>, wanted: Option<Duration>) -> bool {
 
 fn cut_at(row: &SqlRow<'_>) -> rusqlite::Result<Cut> {
     Ok(Cut {
-        location: MediaLocation::local(row.get::<_, String>(0)?),
+        location: MediaLocation::local(store::path_of(&row.get::<_, String>(0)?)),
         span: store::span(row.get(1)?, row.get(2)?),
     })
 }
@@ -592,7 +592,7 @@ pub(crate) fn recording_of(
     let Some(path) = location.as_path() else {
         return Ok(None);
     };
-    let text = store::path_text(path)?.to_owned();
+    let text = store::path_text(path).into_owned();
     let (start, _) = store::span_columns(span);
     inner.read(|connection| {
         connection
@@ -768,7 +768,7 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
             .into_iter()
             .filter_map(|(path, size, recording)| {
                 recording.map(|recording| {
-                    let path = PathBuf::from(path);
+                    let path = store::path_of(&path);
                     HeldSong {
                         recording,
                         extension: extension_of(&path),

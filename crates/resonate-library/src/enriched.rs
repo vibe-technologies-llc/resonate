@@ -1867,7 +1867,7 @@ impl RawTrackToAsk {
             album_answered: self.album_answered,
             owner: self.owner,
             owner_mbid: owner_mbid_held(self.owner_mbid.as_deref()),
-            location: MediaLocation::local(self.path),
+            location: MediaLocation::local(store::path_of(&self.path)),
             span: store::span(self.span_start, self.span_frames),
             length: self
                 .duration

@@ -59,50 +59,53 @@ impl Counted {
     }
 
     pub(crate) fn read(path: &Path, kind: FileType) -> Result<Option<Self>, FileParseError> {
-        let mut file = File::open(path)?;
+        Self::read_in(&mut File::open(path)?, kind)
+    }
+
+    pub(crate) fn read_in(file: &mut File, kind: FileType) -> Result<Option<Self>, FileParseError> {
         let options = ParseOptions::new()
             .read_properties(false)
             .read_cover_art(false);
         Ok(match kind {
-            FileType::Flac => FlacFile::read_from(&mut file, options)?
+            FileType::Flac => FlacFile::read_from(file, options)?
                 .vorbis_comments()
                 .cloned()
                 .map(Self::Commented),
             FileType::Vorbis => Some(Self::Commented(
-                VorbisFile::read_from(&mut file, options)?
+                VorbisFile::read_from(file, options)?
                     .vorbis_comments()
                     .clone(),
             )),
             FileType::Opus => Some(Self::Commented(
-                OpusFile::read_from(&mut file, options)?
+                OpusFile::read_from(file, options)?
                     .vorbis_comments()
                     .clone(),
             )),
-            FileType::Ape => ApeFile::read_from(&mut file, options)?
+            FileType::Ape => ApeFile::read_from(file, options)?
                 .ape()
                 .cloned()
                 .map(Self::Ape),
-            FileType::WavPack => WavPackFile::read_from(&mut file, options)?
+            FileType::WavPack => WavPackFile::read_from(file, options)?
                 .ape()
                 .cloned()
                 .map(Self::Ape),
-            FileType::Mp4 => Mp4File::read_from(&mut file, options)?
+            FileType::Mp4 => Mp4File::read_from(file, options)?
                 .ilst()
                 .cloned()
                 .map(Self::Atoms),
-            FileType::Mpeg => MpegFile::read_from(&mut file, options)?
+            FileType::Mpeg => MpegFile::read_from(file, options)?
                 .id3v2()
                 .cloned()
                 .map(Self::Framed),
-            FileType::Aac => AacFile::read_from(&mut file, options)?
+            FileType::Aac => AacFile::read_from(file, options)?
                 .id3v2()
                 .cloned()
                 .map(Self::Framed),
-            FileType::Aiff => AiffFile::read_from(&mut file, options)?
+            FileType::Aiff => AiffFile::read_from(file, options)?
                 .id3v2()
                 .cloned()
                 .map(Self::Framed),
-            FileType::Wav => WavFile::read_from(&mut file, options)?
+            FileType::Wav => WavFile::read_from(file, options)?
                 .id3v2()
                 .cloned()
                 .map(Self::Framed),
