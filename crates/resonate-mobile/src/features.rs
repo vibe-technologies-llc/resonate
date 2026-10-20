@@ -607,8 +607,8 @@ impl MobilePlayer {
                     .unwrap_or_default()
                     .as_secs()
                     .min(i64::MAX as u64) as i64;
-                connection.execute("INSERT INTO listens(track, began, heard_ms, counted) SELECT id, ?2, ?3, 1 FROM documents WHERE uri = ?1", params![crate::documents::document_uri(&played.location)?, now.saturating_sub(played.heard.as_secs() as i64), milliseconds(played.heard).min(i64::MAX as u64) as i64]).map_err(|source| Error::store(StoreOp::Write, source))?;
-                *visit = Some(connection.last_insert_rowid());
+                let inserted = connection.execute("INSERT INTO listens(track, began, heard_ms, counted) SELECT id, ?2, ?3, 1 FROM documents WHERE uri = ?1", params![crate::documents::document_uri(&played.location)?, now.saturating_sub(played.heard.as_secs() as i64), milliseconds(played.heard).min(i64::MAX as u64) as i64]).map_err(|source| Error::store(StoreOp::Write, source))?;
+                *visit = (inserted > 0).then(|| connection.last_insert_rowid());
             }
             Some(Counting::Hears(played) | Counting::Settles(played)) => {
                 if let Some(id) = visit {
@@ -796,5 +796,271 @@ mod tests {
         assert_eq!((asked.disc, asked.position), (Some(1), Some(2)));
         assert_eq!(asked.artist_id, "87c5dedd-371d-4a53-9f7f-80522fb7f3cb");
         assert_ne!(unasked.album, "Jóga");
+    }
+
+    mod counting {
+        use resonate_core::{ChannelLayout, Frames, SampleFormat, SampleRate, StreamSpec, TrackId};
+        use resonate_engine::{PlaybackState, PlayerState, QueueRows, TrackState};
+
+        use crate::harness::Harness;
+
+        const RATE: SampleRate = SampleRate::HZ_44100;
+
+        fn seconds(count: f64) -> Frames {
+            Frames((f64::from(RATE.hz()) * count) as u64)
+        }
+
+        fn rows(harness: &Harness) -> QueueRows {
+            harness
+                .player
+                .player
+                .lock()
+                .as_ref()
+                .expect("an open player")
+                .queued()
+                .rows
+        }
+
+        fn at(rows: &QueueRows, row: usize, position: f64, whole: Option<f64>) -> PlayerState {
+            let id: TrackId = rows.get(row).expect("a queue row").id;
+
+            PlayerState {
+                playback: PlaybackState::Playing,
+                current: Some(TrackState {
+                    id,
+                    source: StreamSpec::new(RATE, ChannelLayout::Stereo, SampleFormat::S16),
+                    position: seconds(position),
+                    duration: whole.map(seconds),
+                }),
+                queue_position: Some(row),
+                ..PlayerState::default()
+            }
+        }
+
+        fn heard(harness: &Harness) -> Vec<(Option<i64>, i64, i64)> {
+            let connection = harness.player.catalog.0.lock();
+            let mut query = connection
+                .prepare("SELECT track, heard_ms, counted FROM listens ORDER BY id")
+                .expect("a query");
+            query
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .expect("listens")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("rows")
+        }
+
+        fn walked(
+            harness: &Harness,
+            rows: &QueueRows,
+            row: usize,
+            positions: &[f64],
+            whole: Option<f64>,
+        ) {
+            for position in positions {
+                harness
+                    .player
+                    .count_listening(&at(rows, row, *position, whole), rows)
+                    .expect("a listen counted");
+            }
+        }
+
+        #[test]
+        fn half_a_song_heard_is_one_counted_listen_and_what_is_heard_after_it_settles_on_leaving() {
+            let harness = Harness::new();
+            harness.resumed("ab", 0, 0);
+            let rows = rows(&harness);
+            let song = harness.song('a').id as i64;
+
+            walked(&harness, &rows, 0, &[0.0, 0.5, 1.0], Some(2.0));
+            assert_eq!(heard(&harness), [(Some(song), 1_000, 1)]);
+
+            walked(&harness, &rows, 0, &[1.5, 2.0], Some(2.0));
+            harness.player.finish_listening().expect("a listen settled");
+
+            assert_eq!(heard(&harness), [(Some(song), 2_000, 1)]);
+        }
+
+        #[test]
+        fn a_stretch_heard_without_being_counted_is_a_pass_naming_no_song() {
+            let harness = Harness::new();
+            harness.resumed("ab", 0, 0);
+            let rows = rows(&harness);
+
+            walked(&harness, &rows, 0, &[0.0, 1.0, 2.0, 3.0], None);
+            harness.player.finish_listening().expect("a pass stored");
+
+            assert_eq!(heard(&harness), [(None, 3_000, 0)]);
+        }
+
+        #[test]
+        fn a_listen_is_told_again_as_it_grows_and_never_makes_a_second_row() {
+            let harness = Harness::new();
+            harness.resumed("ab", 0, 0);
+            let rows = rows(&harness);
+            let song = harness.song('a').id as i64;
+            let positions: Vec<f64> = (0..=300).step_by(4).map(f64::from).collect();
+
+            walked(&harness, &rows, 0, &positions, None);
+
+            let stored = heard(&harness);
+            assert_eq!(stored.len(), 1, "{stored:?}");
+            assert_eq!(stored[0].0, Some(song));
+            assert_eq!(stored[0].2, 1);
+            assert!(stored[0].1 >= 270_000, "{stored:?}");
+        }
+
+        #[test]
+        fn a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen() {
+            let harness = Harness::new();
+            harness.resumed("ab", 0, 0);
+            let rows = rows(&harness);
+            let (kept, lost) = (harness.song('a').id as i64, harness.song('b').id);
+
+            walked(&harness, &rows, 0, &[0.0, 0.5, 1.0], Some(2.0));
+            harness.player.finish_listening().expect("a listen settled");
+            assert_eq!(heard(&harness), [(Some(kept), 1_000, 1)]);
+
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute("DELETE FROM documents WHERE id = ?1", [lost as i64])
+                .expect("a song forgotten");
+            walked(&harness, &rows, 1, &[0.0, 0.5, 1.0], Some(2.0));
+            walked(&harness, &rows, 1, &[1.5, 2.0], Some(2.0));
+            harness.player.finish_listening().expect("a listen settled");
+
+            assert_eq!(heard(&harness), [(Some(kept), 1_000, 1)]);
+        }
+    }
+
+    mod reports {
+        use std::{fs, thread, time::Instant};
+
+        use crate::harness::{Harness, LOOKED_AGAIN_AFTER, SETTLED_WITHIN, silence};
+
+        fn with_info(wave: &[u8], entries: &[(&[u8; 4], &str)]) -> Vec<u8> {
+            let mut list = b"INFO".to_vec();
+            for (id, text) in entries {
+                let mut value = text.as_bytes().to_vec();
+                value.push(0);
+                list.extend_from_slice(*id);
+                list.extend_from_slice(&(value.len() as u32).to_le_bytes());
+                list.extend_from_slice(&value);
+                if value.len() % 2 == 1 {
+                    list.push(0);
+                }
+            }
+            let mut chunk = b"LIST".to_vec();
+            chunk.extend_from_slice(&(list.len() as u32).to_le_bytes());
+            chunk.extend_from_slice(&list);
+
+            let data_at = wave
+                .windows(4)
+                .position(|window| window == b"data")
+                .expect("a data chunk");
+            let mut whole = wave[..data_at].to_vec();
+            whole.extend_from_slice(&chunk);
+            whole.extend_from_slice(&wave[data_at..]);
+            let riff = (whole.len() - 8) as u32;
+            whole[4..8].copy_from_slice(&riff.to_le_bytes());
+            whole
+        }
+
+        #[test]
+        fn the_inspector_reads_the_container_the_sample_word_and_the_tags_the_file_declares() {
+            let harness = Harness::new();
+            let song = harness.song('a').clone();
+            fs::write(
+                harness.folder.join("a.wav"),
+                with_info(
+                    &silence(),
+                    &[
+                        (b"ISFT", "Exact Audio Copy"),
+                        (b"ICOP", "(c) 1971 Harvest"),
+                        (b"ICMT", "ripped from the 1994 remaster"),
+                    ],
+                ),
+            )
+            .expect("a tagged song");
+
+            let inspected = harness.player.inspector(song.id).expect("an inspector");
+
+            assert_eq!(inspected.track.id, song.id);
+            assert!(!inspected.container.is_empty());
+            assert!(!inspected.sample_format.is_empty());
+            assert!(inspected.seekable);
+            assert_eq!(inspected.encoder, "Exact Audio Copy");
+            assert_eq!(inspected.copyright, "(c) 1971 Harvest");
+            assert_eq!(inspected.comment, "ripped from the 1994 remaster");
+            assert_eq!(inspected.isrc, "");
+        }
+
+        #[test]
+        fn a_file_declaring_nothing_inspects_with_blank_tags_and_a_song_the_catalog_lacks_is_refused()
+         {
+            let harness = Harness::new();
+            let song = harness.song('b').id;
+
+            let inspected = harness.player.inspector(song).expect("an inspector");
+
+            assert_eq!(
+                (
+                    inspected.encoder,
+                    inspected.copyright,
+                    inspected.comment,
+                    inspected.isrc
+                ),
+                (String::new(), String::new(), String::new(), String::new())
+            );
+            assert!(harness.player.inspector(song + 1_000).is_err());
+        }
+
+        #[test]
+        fn an_analysis_reports_the_levels_and_is_served_again_from_memory_once_the_file_is_gone() {
+            let harness = Harness::new();
+            let song = harness.song('c').id;
+
+            let report = harness.player.analyse_track(song).expect("a report");
+
+            assert_eq!(report.track_id, song);
+            assert!(!report.verdict.is_empty());
+            assert_eq!(report.peak, 0.0);
+            assert_eq!(report.rms, 0.0);
+            assert_eq!(report.loudness_lufs, None);
+            assert!(report.waveform.len() <= 512);
+            assert!(report.waveform.iter().all(|height| *height == 0.0));
+
+            fs::remove_file(harness.folder.join("c.wav")).expect("a file gone");
+            let again = harness.player.analyse_track(song).expect("a cached report");
+
+            assert_eq!(again.verdict, report.verdict);
+            assert_eq!(harness.player.services.analyses.lock().len(), 1);
+            let gone = harness.song('d').id;
+            fs::remove_file(harness.folder.join("d.wav")).expect("a file gone");
+            assert!(harness.player.analyse_track(gone).is_err());
+            assert!(harness.player.analyse_track(song + 1_000).is_err());
+        }
+
+        #[test]
+        fn a_failure_the_engine_reports_is_told_by_one_snapshot_and_by_no_other() {
+            let harness = Harness::new();
+            let ids = harness.ids("ab");
+            fs::remove_file(harness.folder.join("a.wav")).expect("a file gone");
+
+            harness.player.load(ids, 0, false).expect("a queue loaded");
+            let began = Instant::now();
+            let told = loop {
+                if let Some(told) = harness.player.snapshot().expect("a snapshot").failure {
+                    break told;
+                }
+                assert!(began.elapsed() < SETTLED_WITHIN, "no failure was told");
+                thread::sleep(LOOKED_AGAIN_AFTER);
+            };
+
+            assert!(!told.is_empty());
+            assert_eq!(harness.player.snapshot().expect("a snapshot").failure, None);
+        }
     }
 }

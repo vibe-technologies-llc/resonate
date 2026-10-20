@@ -453,4 +453,148 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&folder);
     }
+
+    mod through_the_queue {
+        use std::fs;
+
+        use super::*;
+        use crate::harness::{FOLDER, Harness};
+
+        fn moved(harness: &Harness, name: char, to: &str) -> MovedDocument {
+            let song = harness.song(name);
+            fs::rename(
+                harness.folder.join(format!("{name}.wav")),
+                harness.folder.join(to),
+            )
+            .expect("a file moved");
+            MovedDocument {
+                id: song.id,
+                uri: format!("{FOLDER}{to}"),
+            }
+        }
+
+        #[test]
+        fn a_moved_song_in_the_queue_is_requeued_at_its_row_and_position_under_its_new_name() {
+            let harness = Harness::new();
+            harness.resumed("abcd", 1, 500);
+            let before = harness.playing();
+            let id = harness.song('b').id;
+
+            let moving = moved(&harness, 'b', "e.wav");
+            harness
+                .player
+                .documents_moved(vec![moving])
+                .expect("documents moved");
+
+            assert_eq!(
+                harness.player.catalog.track(id).expect("the song").uri,
+                format!("{FOLDER}e.wav")
+            );
+            let began = std::time::Instant::now();
+            while harness.player.queue().is_err() {
+                assert!(
+                    began.elapsed() < crate::harness::SETTLED_WITHIN,
+                    "the queue never named the moved song"
+                );
+                std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
+            }
+            assert_eq!(harness.queued(), "abcd");
+            assert_eq!(harness.playing(), before);
+        }
+
+        #[test]
+        fn a_moved_song_the_queue_does_not_hold_leaves_the_queue_as_it_stood() {
+            let harness = Harness::new();
+            harness.resumed("ab", 1, 500);
+            let revision = harness
+                .player
+                .snapshot()
+                .expect("a snapshot")
+                .queue_revision;
+
+            let moving = moved(&harness, 'd', "e.wav");
+            harness
+                .player
+                .documents_moved(vec![moving])
+                .expect("documents moved");
+
+            assert_eq!(harness.queued(), "ab");
+            assert_eq!(
+                harness
+                    .player
+                    .snapshot()
+                    .expect("a snapshot")
+                    .queue_revision,
+                revision
+            );
+        }
+
+        #[test]
+        fn nothing_moved_changes_nothing() {
+            let harness = Harness::new();
+            harness.resumed("ab", 0, 0);
+            let revision = harness
+                .player
+                .snapshot()
+                .expect("a snapshot")
+                .queue_revision;
+
+            harness
+                .player
+                .documents_moved(Vec::new())
+                .expect("documents moved");
+
+            assert_eq!(
+                harness
+                    .player
+                    .snapshot()
+                    .expect("a snapshot")
+                    .queue_revision,
+                revision
+            );
+        }
+
+        #[test]
+        fn a_song_taking_the_place_of_its_hidden_twin_lets_the_twins_analysis_go() {
+            let harness = Harness::new();
+            let (taker, twin) = (harness.song('a').id, harness.song('d').id);
+            harness.player.analyse_track(taker).expect("an analysis");
+            harness.player.analyse_track(twin).expect("an analysis");
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET title = 'Same', artist = 'Band' WHERE id IN (?1, ?2)",
+                    [taker as i64, twin as i64],
+                )
+                .expect("twins named alike");
+            harness
+                .player
+                .catalog
+                .mark_missing(&[twin as i64], &[])
+                .expect("hidden");
+            let twin_uri = harness.player.catalog.track(twin).expect("the twin").uri;
+
+            harness
+                .player
+                .documents_moved(vec![MovedDocument {
+                    id: taker,
+                    uri: twin_uri,
+                }])
+                .expect("documents moved");
+
+            let held: Vec<u64> = harness
+                .player
+                .services
+                .analyses
+                .lock()
+                .keys()
+                .copied()
+                .collect();
+            assert_eq!(held, [taker]);
+            assert!(harness.player.catalog.track(twin).is_err());
+        }
+    }
 }

@@ -230,7 +230,10 @@ reads them by name (`position`, `listen_id`), never by index, since the next mig
 
 `cargo test -p resonate-mobile` runs on the host. The queue edit tests drive a real engine over
 a backend with no device (a paused queue never binds a stream) and WAVE documents through the
-`content` provider. The enrichment tests drive the pass over a fake `Reference` through `Asking`
+`content` provider; that `Harness` (`harness.rs`, test-only) is shared by the organise, inspector,
+analysis, snapshot and listening tests. A listen counted for a song the catalog no longer holds
+stores nothing and settles nothing: `store_counting` keeps no visit unless the insert changed a row
+(`a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen`). The enrichment tests drive the pass over a fake `Reference` through `Asking`
 (the reference and the client whose switch it reads): one cover per album, a miss left alone until
 its wait is over, a prompt stop, the mark kept on closing, the album key and the artwork fallback;
 a V6 catalog migrates keeping ids, favourites and resumption. Its documents tests cover both

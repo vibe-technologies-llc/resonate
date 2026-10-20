@@ -9,6 +9,8 @@ mod equaliser;
 mod error;
 mod failure;
 mod features;
+#[cfg(test)]
+mod harness;
 mod listening;
 mod logging;
 mod loves;
