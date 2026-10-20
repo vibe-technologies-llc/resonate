@@ -36,6 +36,16 @@ rows read via `Player::media` like any unscanned row.
   on rows the new probe bills differently (first: every WavPack, `codec = 11`). An incremental scan
   treats a marked row as changed despite unmoved size/mtime; upsert clears the mark; vault links and
   lookup results stay. Never a whole-catalog rescan.
+- **A scan keeps what its open had to walk, so playback need not.** `tracks.walked` is the text of
+  `resonate_codec::Walked` (the VBR MP3 frame count, the Matroska cluster tally), written by every
+  upsert from `MediaInfo::walked` (each cut of a file carries its file's); `Hinted::walked` answers
+  it by path with the row's `file_size`, which the codec weighs against the source's own length
+  before believing it (`audio.md`), so a tag write that moves the size and the row's `file_size`
+  together keeps the count and a file rewritten behind the catalog's back is walked again. The step
+  adding the column marks every MP3 and Matroska row (`.mp3`, `.mkv`, `.mka`, `.webm`) `probe_again`,
+  so the next scan walks each once more and keeps the result
+  (`a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback`,
+  `a_catalog_carried_forward_reads_again_the_files_whose_frames_a_walk_counts`).
 - **Transport state = three tables, each moving at its own rate.** `resume`: singleton (queue's row,
   frame, shuffled, taken, `next_first`/`next_last`). `resume_rows`: one row per *loaded*-order
   position. `resume_order`: one per *playing*-order position. `Keeping` (`resonate-engine`

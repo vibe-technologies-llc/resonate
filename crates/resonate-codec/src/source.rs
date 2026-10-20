@@ -12,7 +12,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackHints};
 
-use crate::{Error, Result, TagSet};
+use crate::{Error, Result, TagSet, walked::Walked};
 
 pub trait MediaStream: Read + Seek + Send + Sync {
     fn is_seekable(&self) -> bool;
@@ -175,6 +175,10 @@ pub trait StandIn: Send + Sync {
 
 pub trait Hinting: Send + Sync {
     fn hints(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TrackHints;
+
+    fn walked(&self, _location: &MediaLocation) -> Option<Walked> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -250,6 +254,12 @@ impl Sources {
     pub fn hinted_by(mut self, hinting: Arc<dyn Hinting>) -> Self {
         self.hinting = Some(hinting);
         self
+    }
+
+    pub fn walked(&self, location: &MediaLocation) -> Option<Walked> {
+        self.hinting
+            .as_ref()
+            .and_then(|hinting| hinting.walked(location))
     }
 
     pub fn hints(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TrackHints {
@@ -709,6 +719,64 @@ mod tests {
                 hint: None,
             })
         }
+    }
+
+    struct Walks(Option<Walked>);
+
+    impl Hinting for Walks {
+        fn hints(&self, _: &MediaLocation, _: Option<FrameSpan>) -> TrackHints {
+            TrackHints::default()
+        }
+
+        fn walked(&self, _: &MediaLocation) -> Option<Walked> {
+            self.0.clone()
+        }
+    }
+
+    fn a_variable_rate_stream() -> Vec<u8> {
+        let mut file = Vec::new();
+        for (header, length, count) in [
+            ([0xff, 0xfb, 0x10, 0x00], 104, 40),
+            ([0xff, 0xfb, 0xe0, 0x00], 1_044, 60),
+        ] {
+            for _ in 0..count {
+                file.extend_from_slice(&header);
+                file.resize(file.len() + length - header.len(), 0);
+            }
+        }
+        file
+    }
+
+    fn duration_through(bytes: &[u8], walked: Option<Walked>) -> Option<resonate_core::Frames> {
+        let source = named("elsewhere");
+        let location = MediaLocation::new(source.clone(), "a track");
+        let sources = Sources::local()
+            .and(Arc::new(Bytes {
+                source,
+                bytes: bytes.to_vec(),
+            }))
+            .hinted_by(Arc::new(Walks(walked)));
+
+        crate::probe(&sources, &location)
+            .expect("a stream of frames probes")
+            .duration
+    }
+
+    #[test]
+    fn a_walk_the_catalog_kept_is_what_an_open_reads_in_place_of_walking_the_frames() {
+        let bytes = a_variable_rate_stream();
+        let length = bytes.len() as u64;
+        let walked = duration_through(&bytes, None);
+        let kept = |frames: &str| Walked::read(&format!("1 {frames} - - - - -"), length);
+
+        let told_the_same = duration_through(&bytes, kept("115200"));
+        let told_less = duration_through(&bytes, kept("57600"));
+        let told_of_another_size = duration_through(&bytes, Walked::read("1 57600 - - - - -", 1));
+
+        assert!(walked.is_some());
+        assert_eq!(told_the_same, walked);
+        assert!(told_less < walked);
+        assert_eq!(told_of_another_size, walked);
     }
 
     fn noise(len: usize) -> Vec<u8> {

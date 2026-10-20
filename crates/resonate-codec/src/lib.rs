@@ -30,6 +30,7 @@ mod sylt;
 mod tags;
 mod timeline;
 mod vorbis;
+mod walked;
 mod wavpack;
 mod wide;
 mod writing;
@@ -71,6 +72,7 @@ pub use crate::{
         Credits, LISTED_APART_BY, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged,
     },
     timeline::Timeline,
+    walked::Walked,
     writing::{
         FileTags, Popularity, RATED_BY, Rated, Standing, TagEdit, TagField, TagSink, Writing,
         carries_what_the_file_did,

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use resonate_codec::Hinting;
+use resonate_codec::{Hinting, Walked};
 use resonate_core::{
     Decibels, FrameSpan, Gain, MeasuredGain, MediaLocation, TrackHints, eq::Frequency,
 };
+use rusqlite::OptionalExtension;
 
-use crate::{db::Inner, studies};
+use crate::{Error, StoreOp, db::Inner, store, studies};
 
 const REPLAY_GAIN_REFERENCE_LUFS: f64 = -18.0;
 
@@ -20,6 +21,30 @@ impl Hinted {
 }
 
 impl Hinting for Hinted {
+    fn walked(&self, location: &MediaLocation) -> Option<Walked> {
+        let path = store::path_text(location.as_path()?);
+        let kept = self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT walked, file_size FROM tracks
+                      WHERE path = ?1 AND walked IS NOT NULL
+                      LIMIT 1",
+                    [path.as_ref()],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        });
+        match kept {
+            Ok(Some((written, size))) => Walked::read(&written, u64::try_from(size).ok()?),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::debug!(%error, %location, "the catalog could not say what it walked of a row");
+                None
+            }
+        }
+    }
+
     fn hints(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TrackHints {
         let studied = self.inner.read(|connection| {
             let Some((track, studied)) = studies::study_of(connection, location, span)? else {

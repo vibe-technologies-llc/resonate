@@ -421,6 +421,7 @@ pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> M
         packing: Packing::DopMarked(layout.rate),
         tags,
         cue: None,
+        walked: None,
     }
 }
 

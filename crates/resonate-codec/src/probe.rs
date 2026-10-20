@@ -177,7 +177,7 @@ const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 pub fn probe_scanned(sources: &Sources, location: &MediaLocation) -> Result<Scanned> {
-    let mut opened = container::open_media(sources, location)?;
+    let mut opened = container::open_media_afresh(sources, location)?;
     let info = opened.media_info(location)?;
     let carries_a_picture = carries_cover_art(opened.pictures_mut());
     let packets = opened

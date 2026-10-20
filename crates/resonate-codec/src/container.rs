@@ -44,6 +44,7 @@ use crate::{
     spool::{Refusal, SPOOLED_ON_DISC_AT_MOST, Spool},
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
+    walked::Walked,
 };
 
 const MP3_DECODER_DELAY: u32 = 529;
@@ -212,10 +213,23 @@ pub(crate) fn open_media(sources: &Sources, location: &MediaLocation) -> Result<
     open_media_from(sources, sources.open(location)?, location)
 }
 
+pub(crate) fn open_media_afresh(sources: &Sources, location: &MediaLocation) -> Result<Opened> {
+    open_media_walking(sources, sources.open(location)?, location, None)
+}
+
 pub(crate) fn open_media_from(
     sources: &Sources,
     media: Media,
     location: &MediaLocation,
+) -> Result<Opened> {
+    open_media_walking(sources, media, location, sources.walked(location))
+}
+
+fn open_media_walking(
+    sources: &Sources,
+    media: Media,
+    location: &MediaLocation,
+    walked: Option<Walked>,
 ) -> Result<Opened> {
     open_spooling_within(
         media,
@@ -225,6 +239,7 @@ pub(crate) fn open_media_from(
             in_memory: SPOOLED_AT_MOST,
             on_disc: SPOOLED_ON_DISC_AT_MOST,
             within: SPOOLED_WITHIN,
+            walked,
         },
     )
 }
@@ -246,6 +261,7 @@ pub(crate) fn open_spooling(
             in_memory: spooled_at_most,
             on_disc: SPOOLED_ON_DISC_AT_MOST,
             within: SPOOLED_WITHIN,
+            walked: None,
         },
     )
 }
@@ -256,6 +272,7 @@ struct Spooling {
     in_memory: u64,
     on_disc: u64,
     within: Duration,
+    walked: Option<Walked>,
 }
 
 fn open_spooling_within(
@@ -270,13 +287,13 @@ fn open_spooling_within(
     let mut seekable = bytes.is_seekable();
     let mut spool = None;
     let mut prescan = if seekable {
-        Prescan::buffered(bytes.as_mut())
+        Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
     } else {
         match spooled(bytes.as_mut(), at_most.in_memory, at_most.within) {
             Spooled::Whole(held) => {
                 bytes = Box::new(Reading::new(Cursor::new(held)));
                 seekable = true;
-                Prescan::buffered(bytes.as_mut())
+                Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
             }
             Spooled::Head(head) if let Some(container) = read_by_seeking(&head) => {
                 bytes = match spooled_whole_on_disc(
@@ -302,7 +319,7 @@ fn open_spooling_within(
                     }
                 };
                 seekable = true;
-                Prescan::buffered(bytes.as_mut())
+                Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
             }
             Spooled::Head(head) => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
@@ -570,6 +587,7 @@ pub(crate) fn coded_info(
         is_seekable: opened.seekable,
         packing: Packing::Samples,
         cue: embedded_cue(opened, track, &tags).or_else(|| chaptered(opened, spec.rate, &tags)),
+        walked: prescan.walked.clone(),
         tags,
     })
 }
@@ -1037,6 +1055,7 @@ mod tests {
             in_memory: 1_024,
             on_disc,
             within: SPOOLED_WITHIN,
+            walked: None,
         }
     }
 
@@ -1128,6 +1147,7 @@ mod tests {
                 in_memory: SPOOLED_AT_MOST,
                 on_disc: SPOOLED_ON_DISC_AT_MOST,
                 within: WAITED_AT_MOST,
+                walked: None,
             },
         )
         .expect("a slow stream opens")

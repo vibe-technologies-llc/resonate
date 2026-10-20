@@ -539,6 +539,10 @@ const MIGRATIONS: &[&str] = &[
          VALUES ('delete', old.id, old.folded);
          INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
      END;",
+    "ALTER TABLE tracks ADD COLUMN walked TEXT;
+     UPDATE tracks SET probe_again = 1
+      WHERE root_id IS NOT NULL
+        AND (path LIKE '%.mp3' OR path LIKE '%.mkv' OR path LIKE '%.mka' OR path LIKE '%.webm');",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -2098,6 +2102,47 @@ mod tests {
                 ("delivered.flac".to_owned(), 0),
                 ("digested.flac".to_owned(), 0),
                 ("undigested.flac".to_owned(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_reads_again_the_files_whose_frames_a_walk_counts() {
+        let connection = opened();
+        let walking = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("ADD COLUMN walked"))
+            .expect("the step that adds what a walk found");
+        lay_out_through(&connection, V1, &MIGRATIONS[..walking])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO tracks (root_id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'a.mp3', 'A', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (1, 'b.MKV', 'B', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (1, 'c.flac', 'C', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (NULL, 'd.mp3', 'D', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the tracks are stored");
+
+        lay_out_through(&connection, V1, &MIGRATIONS[..=walking]).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64, Option<String>)> = connection
+            .prepare("SELECT path, probe_again, walked FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        assert_eq!(
+            marked,
+            [
+                ("a.mp3".to_owned(), 1, None),
+                ("b.MKV".to_owned(), 1, None),
+                ("c.flac".to_owned(), 0, None),
+                ("d.mp3".to_owned(), 0, None),
             ]
         );
     }
