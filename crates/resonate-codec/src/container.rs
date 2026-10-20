@@ -209,8 +209,16 @@ impl MediaSource for Probed {
 }
 
 pub(crate) fn open_media(sources: &Sources, location: &MediaLocation) -> Result<Opened> {
+    open_media_from(sources, sources.open(location)?, location)
+}
+
+pub(crate) fn open_media_from(
+    sources: &Sources,
+    media: Media,
+    location: &MediaLocation,
+) -> Result<Opened> {
     open_spooling_within(
-        sources.open(location)?,
+        media,
         location,
         Spooling {
             folder: sources.spool_folder().map(PathBuf::from),

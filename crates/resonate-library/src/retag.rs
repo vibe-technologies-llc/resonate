@@ -12,8 +12,8 @@ use std::{
 
 use ahash::AHashMap;
 use resonate_codec::{
-    CoverArt, ImageFormat, Pictured, Picturing, Popularity, Rated, TagEdit, TagField, TagSet,
-    TagSink, Writing,
+    CoverArt, ImageFormat, Pictured, Picturing, Popularity, Rated, Standing, TagEdit, TagField,
+    TagSet, TagSink, Writing,
 };
 use resonate_core::{AlbumId, MediaLocation, TrackId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
@@ -377,8 +377,8 @@ fn planned(
             Some(_) => Picturing::Copied,
             None => Picturing::Whether,
         };
-        let held = match tags.read(&location, picturing) {
-            Ok(held) => held,
+        let standing = match tags.standing(&location, picturing) {
+            Ok(standing) => standing,
             Err(source) => {
                 tracing::debug!(
                     path = %row.path.display(),
@@ -390,9 +390,14 @@ fn planned(
             }
         };
 
+        let Standing {
+            tagged: held,
+            rated,
+        } = standing;
+
         let edits = wanted(row, &held.tags);
         let (picture, replaced) = offered_picture(held.picture, sleeved);
-        let (popularity, rated) = rated_otherwise(tags, &location, row.popularity);
+        let (popularity, rated) = rated_otherwise(rated, &location, row.popularity);
         if edits.is_empty() && picture.is_none() && popularity.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;
@@ -422,11 +427,11 @@ fn planned(
 }
 
 fn rated_otherwise(
-    tags: &dyn TagSink,
+    held: resonate_codec::Result<Rated>,
     location: &MediaLocation,
     wanted: Popularity,
 ) -> (Option<Popularity>, Option<Rated>) {
-    match tags.rated(location) {
+    match held {
         Ok(held) => (held.differs_from(wanted).then_some(wanted), Some(held)),
         Err(source) => {
             tracing::debug!(
@@ -853,7 +858,7 @@ pub(crate) fn files_retagged(
 ) -> Result<()> {
     let unwritten = unlanded.unwritten;
     for path in unlanded.unconfirmed {
-        let path = store::path_text(path)?;
+        let path = store::path_text(path);
         tx.prepare_cached("UPDATE retagged_fields SET wrote_known = 0 WHERE path = ?1")
             .and_then(|mut statement| statement.execute(params![path]))
             .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -1021,7 +1026,7 @@ pub(crate) fn walked_back(tx: &Transaction<'_>, written: &[PathBuf], finished: b
 
 fn note_again(tx: &Transaction<'_>, kept: &[KeptRetag]) -> Result<()> {
     for held in kept {
-        let path = store::path_text(&held.path)?;
+        let path = store::path_text(&held.path);
         tx.prepare_cached(
             "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture_id)
              VALUES (?1, ?2, ?3, ?4)",
@@ -1066,7 +1071,7 @@ fn forget_the_notes_of(tx: &Transaction<'_>, unwritten: &[PathBuf]) -> Result<()
         .prepare_cached("DELETE FROM retagged_fields WHERE path = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     for path in unwritten {
-        let path = store::path_text(path)?;
+        let path = store::path_text(path);
         for statement in [&mut noted, &mut fields] {
             statement
                 .execute(params![path])
@@ -1114,7 +1119,7 @@ pub(crate) fn note_what_was_there(
         pictures.recent.clear();
     }
     for held in undoing {
-        let path = store::path_text(&held.path)?;
+        let path = store::path_text(&held.path);
         let picture = held
             .was
             .picture

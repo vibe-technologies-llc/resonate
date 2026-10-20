@@ -193,7 +193,7 @@ fn wholes_moved(
         generation,
     )?
     .into_iter()
-    .filter(|row| !Path::new(&row.path).exists())
+    .filter(|row| !store::path_of(&row.path).exists())
     .collect();
     if gone.is_empty() {
         return Ok(Vec::new());
@@ -216,7 +216,7 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
         generation,
     )?)
     .into_iter()
-    .filter(|cut| !Path::new(&cut.path).exists())
+    .filter(|cut| !store::path_of(&cut.path).exists())
     .collect();
     if gone.is_empty() {
         return Ok(Vec::new());
@@ -368,7 +368,7 @@ fn sounds_alike(from: &Row, to: &Row, heard: &dyn Fn(&Path) -> Option<String>) -
     let Some(studied) = from.print.as_deref() else {
         return false;
     };
-    heard(Path::new(&to.path)).as_deref() == Some(studied)
+    heard(&store::path_of(&to.path)).as_deref() == Some(studied)
 }
 
 fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>) {
@@ -443,8 +443,8 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
     let moves: Vec<Move> = paired
         .iter()
         .map(|pair| Move {
-            from: PathBuf::from(&pair.from.path),
-            to: PathBuf::from(&pair.to.path),
+            from: store::path_of(&pair.from.path),
+            to: store::path_of(&pair.to.path),
             rows: u32::try_from(pair.rows()).unwrap_or(u32::MAX),
             companions: Vec::new(),
             sidecars: Vec::new(),

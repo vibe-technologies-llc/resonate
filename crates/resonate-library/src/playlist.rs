@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     ffi::OsStr,
     fs,
@@ -1473,7 +1474,7 @@ fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldName
 }
 
 fn paths_with_rates(row: &SqlRow<'_>) -> rusqlite::Result<(PathBuf, u32)> {
-    Ok((PathBuf::from(row.get::<_, String>(0)?), row.get(1)?))
+    Ok((store::path_of(&row.get::<_, String>(0)?), row.get(1)?))
 }
 
 fn first_catalogued(connection: &Connection, named: &[PathBuf]) -> Result<Option<Catalogued>> {
@@ -1482,11 +1483,10 @@ fn first_catalogued(connection: &Connection, named: &[PathBuf]) -> Result<Option
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     for (at, candidate) in named.iter().enumerate() {
-        let Some(text) = candidate.to_str() else {
-            continue;
-        };
         let rate = statement
-            .query_row(params![text], |row| row.get::<_, u32>(0))
+            .query_row(params![store::path_text(candidate)], |row| {
+                row.get::<_, u32>(0)
+            })
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         if let Some(rate) = rate {
@@ -1738,7 +1738,9 @@ fn root_paths(connection: &Connection) -> Result<Vec<PathBuf>> {
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     statement
-        .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+        .query_map([], |row| {
+            row.get::<_, String>(0).map(|path| store::path_of(&path))
+        })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
@@ -1840,7 +1842,7 @@ impl Row {
         let (start, frames) = store::span_columns(cut.span);
 
         Ok(Self {
-            path: local_path(&cut.location)?.to_owned(),
+            path: local_path(&cut.location)?.into_owned(),
             start,
             frames,
         })
@@ -1860,7 +1862,7 @@ impl Row {
 
     pub(crate) fn into_cut(self) -> Cut {
         Cut {
-            location: MediaLocation::local(self.path),
+            location: MediaLocation::local(store::path_of(&self.path)),
             span: store::span(self.start, self.frames),
         }
     }
@@ -1993,11 +1995,11 @@ fn touch(transaction: &Transaction<'_>, id: PlaylistId) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn local_path(location: &MediaLocation) -> Result<&str> {
+pub(crate) fn local_path(location: &MediaLocation) -> Result<Cow<'_, str>> {
     let path = location.as_path().ok_or_else(|| Error::NotALocalFile {
         location: Box::new(location.clone()),
     })?;
-    store::path_text(path)
+    Ok(store::path_text(path))
 }
 
 fn wanted_name(name: &str) -> Result<PlaylistName> {

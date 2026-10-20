@@ -84,9 +84,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: lofty] `.caf`, `.mka` and the DSD containers have no writer (lofty 0.25.4 has no
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
-## Catalog
-- [M] A file whose name is not UTF-8 is counted `Unnamed` and never catalogued
-
 ## Providers and network
 - [M] A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here,
   so a song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome

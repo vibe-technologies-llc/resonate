@@ -893,10 +893,12 @@ impl Inner {
 
     pub(crate) fn in_the_vault(&self, within: &str) -> Result<PathBuf> {
         let vault = self.opened_vault()?;
-        vault.at(Path::new(within)).map_err(|source| Error::Vault {
-            path: PathBuf::from(within),
-            source: Box::new(source),
-        })
+        vault
+            .at(&store::path_of(within))
+            .map_err(|source| Error::Vault {
+                path: store::path_of(within),
+                source: Box::new(source),
+            })
     }
 
     pub(crate) fn within_the_vault(&self, path: &Path) -> Result<String> {
@@ -905,7 +907,7 @@ impl Inner {
             path: path.to_path_buf(),
             source: Box::new(source),
         })?;
-        store::path_text(&within).map(str::to_owned)
+        Ok(store::path_text(&within).into_owned())
     }
 
     pub(crate) fn walk_the_tree(self: &Arc<Self>) -> Result<Walk> {
@@ -1405,7 +1407,8 @@ impl Library {
     pub(crate) fn root_reaching(&self, path: &Path) -> Result<Option<PathBuf>> {
         let roots = self.inner.read(|connection| {
             rows(connection, "SELECT path FROM roots", Vec::new(), |row| {
-                row.get::<_, String>(0).map(|path| Ok(PathBuf::from(path)))
+                row.get::<_, String>(0)
+                    .map(|path| Ok(store::path_of(&path)))
             })
         })?;
         Ok(roots
@@ -1635,7 +1638,7 @@ impl Library {
     }
 
     pub fn track_at(&self, path: &Path, span: Option<FrameSpan>) -> Result<Option<Track>> {
-        let text = store::path_text(path)?;
+        let text = store::path_text(path);
         let (start, _) = store::span_columns(span);
         let raw = self.inner.read(|connection| {
             connection
@@ -1761,7 +1764,7 @@ impl Library {
         let Some(path) = location.as_path() else {
             return Ok(None);
         };
-        let text = store::path_text(path)?;
+        let text = store::path_text(path);
         let (start, _) = store::span_columns(span);
 
         let raw = self.inner.write(|transaction| {
@@ -1851,8 +1854,8 @@ impl Library {
         let Some(path) = location.as_path() else {
             return Ok(None);
         };
-        let text = store::path_text(path)?;
-        scrobble::billed_as(&self.inner, text, store::span_columns(span).0)
+        let text = store::path_text(path);
+        scrobble::billed_as(&self.inner, &text, store::span_columns(span).0)
     }
 
     pub fn age_the_history(&self, kept: HistoryKept) -> Result<Aged> {
@@ -2113,7 +2116,7 @@ impl Library {
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-            Ok(found.into_iter().map(PathBuf::from).collect())
+            Ok(found.iter().map(|path| store::path_of(path)).collect())
         })
     }
 
@@ -2141,7 +2144,7 @@ impl Library {
             let Some(id) = transaction
                 .query_row(
                     "SELECT id FROM roots WHERE path = ?1",
-                    params![store::path_text(&canonical)?],
+                    params![store::path_text(&canonical)],
                     |row| row.get::<_, i64>(0),
                 )
                 .optional()
@@ -2167,7 +2170,7 @@ impl Library {
         let forgotten_at = store::to_nanos(SystemTime::now());
 
         self.inner.write(|transaction| {
-            let path = store::path_text(path)?;
+            let path = store::path_text(path);
             transaction
                 .execute(REMEMBER_THE_DELIVERY_FORGOTTEN, params![path, forgotten_at])
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
@@ -2691,7 +2694,7 @@ impl Library {
         let mut binds = rooted(roots)?;
         let sql = paged_under_roots(TRACKS_TO_TAG, binds.len(), after.is_some());
         if let Some(after) = after {
-            binds.push(Value::Text(store::path_text(after)?.to_owned()));
+            binds.push(Value::Text(store::path_text(after).into_owned()));
         }
         binds.push(Value::Integer(i64::try_from(at_most).unwrap_or(i64::MAX)));
 
@@ -2918,7 +2921,7 @@ impl Library {
         let sql = and_roots(TRACKS_IN_THE_VAULT, named.len());
         let vaulted: Vec<(i64, PathBuf)> = self.inner.read(|connection| {
             rows(connection, &sql, named.clone(), |row| {
-                Ok(Ok((row.get(0)?, PathBuf::from(row.get::<_, String>(1)?))))
+                Ok(Ok((row.get(0)?, store::path_of(&row.get::<_, String>(1)?))))
             })
         })?;
         let (standing, stranded): (Vec<_>, Vec<_>) =
@@ -2968,7 +2971,7 @@ impl Library {
                     connection,
                     "SELECT id, path FROM tracks WHERE vault_key = ?1",
                     vec![Value::Text(named.clone())],
-                    |row| Ok(Ok((row.get(0)?, PathBuf::from(row.get::<_, String>(1)?)))),
+                    |row| Ok(Ok((row.get(0)?, store::path_of(&row.get::<_, String>(1)?)))),
                 )
             })?);
         }
@@ -3024,7 +3027,7 @@ impl Library {
     pub(crate) fn note_vaulted(&self, row: &TrackToVault, kept: &VaultKept) -> Result<()> {
         let key = kept.key.to_string();
         let held = self.inner.within_the_vault(&kept.path)?;
-        let taken_from = store::path_text(&row.path)?.to_owned();
+        let taken_from = store::path_text(&row.path).into_owned();
         let took = store::to_nanos(SystemTime::now());
         let encoding = weighed_under(kept, row.renewing);
 
@@ -3103,7 +3106,7 @@ impl Library {
     ) -> Result<Option<TrackId>> {
         let key = kept.key.to_string();
         let held = self.inner.within_the_vault(&kept.path)?;
-        let path = store::path_text(&kept.path)?.to_owned();
+        let path = store::path_text(&kept.path).into_owned();
         let offered = from.to_uri();
         let now = SystemTime::now();
         let took = store::to_nanos(now);
@@ -3215,7 +3218,7 @@ impl Library {
     ) -> Result<Option<TrackId>> {
         let key = kept.key.to_string();
         let held = self.inner.within_the_vault(&kept.path)?;
-        let path = store::path_text(&kept.path)?.to_owned();
+        let path = store::path_text(&kept.path).into_owned();
         let now = SystemTime::now();
         let took = store::to_nanos(now);
         let modified = std::fs::metadata(&kept.path)
@@ -3357,8 +3360,8 @@ impl Library {
                 let (path, root, album, disc) =
                     read_filing(row).map_err(|source| Error::store(StoreOp::Query, source))?;
                 each(Filing {
-                    path: PathBuf::from(path),
-                    root: PathBuf::from(root),
+                    path: store::path_of(&path),
+                    root: store::path_of(&root),
                     album: album.map(|id| AlbumId::new(id as u64)).transpose()?,
                     disc: disc
                         .and_then(|number| u32::try_from(number).ok())
@@ -3379,7 +3382,7 @@ impl Library {
         let mut binds = rooted(roots)?;
         let sql = paged_under_roots(TRACKS_TO_FILE, binds.len(), after.is_some());
         if let Some(after) = after {
-            binds.push(Value::Text(store::path_text(after)?.to_owned()));
+            binds.push(Value::Text(store::path_text(after).into_owned()));
         }
         binds.push(Value::Integer(i64::try_from(at_most).unwrap_or(i64::MAX)));
         self.filed_rows(&sql, binds, discs)
@@ -3407,7 +3410,7 @@ impl Library {
             vec!["?"; files.len()].join(", ")
         ));
         for file in files {
-            binds.push(Value::Text(store::path_text(file)?.to_owned()));
+            binds.push(Value::Text(store::path_text(file).into_owned()));
         }
         let sql = format!(
             "{TRACKS_TO_FILE} WHERE {}{FILED_IN_ORDER}",
@@ -4605,7 +4608,7 @@ impl Library {
         let (start, _) = store::span_columns(span);
 
         self.inner
-            .read(|connection| sung::kept(connection, path, start))
+            .read(|connection| sung::kept(connection, &path, start))
     }
 
     pub fn keep_lyrics(
@@ -4618,7 +4621,7 @@ impl Library {
         let (start, _) = store::span_columns(span);
 
         self.inner
-            .write(|transaction| sung::keep(transaction, path, start, told, SystemTime::now()))
+            .write(|transaction| sung::keep(transaction, &path, start, told, SystemTime::now()))
     }
 
     pub fn lyrics_ahead(
@@ -4630,7 +4633,7 @@ impl Library {
         let (start, _) = store::span_columns(span);
 
         self.inner
-            .read(|connection| sung::ahead(connection, path, start))
+            .read(|connection| sung::ahead(connection, &path, start))
     }
 
     pub fn hold_lyrics_ahead(
@@ -4643,7 +4646,7 @@ impl Library {
         let (start, _) = store::span_columns(span);
 
         self.inner
-            .write(|transaction| sung::hold_ahead(transaction, path, start, ahead))
+            .write(|transaction| sung::hold_ahead(transaction, &path, start, ahead))
     }
 
     pub fn lyrics_to_ask(&self, refresh: bool) -> Result<Vec<TrackId>> {
@@ -4736,7 +4739,7 @@ impl Library {
                     continue;
                 };
                 let held = match location.as_path().map(store::path_text) {
-                    Some(Ok(path)) => held
+                    Some(path) => held
                         .query_row(params![path, store::span_columns(span).0], |read| {
                             read.get::<_, i64>(0)
                         })
@@ -6413,7 +6416,7 @@ const fn weighed_under(kept: &VaultKept, renewing: bool) -> Encoding {
 fn rooted(roots: &[PathBuf]) -> Result<Vec<Value>> {
     let mut named = Vec::with_capacity(roots.len());
     for root in roots {
-        named.push(Value::Text(store::path_text(root)?.to_owned()));
+        named.push(Value::Text(store::path_text(root).into_owned()));
     }
     Ok(named)
 }
@@ -6579,7 +6582,7 @@ impl RawToTag {
         let seat = self.disc_number.unwrap_or(FIRST_DISC);
         Ok(TrackToTag {
             id: TrackId::new(self.id as u64)?,
-            path: PathBuf::from(self.path),
+            path: store::path_of(&self.path),
             album_id: self.album.map(|id| AlbumId::new(id as u64)).transpose()?,
             cut: store::span(self.span_start, self.span_frames).is_some(),
             vaulted: self.vaulted,
@@ -6656,8 +6659,8 @@ impl RawFiled {
     fn into_filed(self, discs: &AHashMap<i64, u32>) -> Result<TrackToFile> {
         Ok(TrackToFile {
             id: TrackId::new(self.id as u64)?,
-            path: PathBuf::from(self.path),
-            root: PathBuf::from(self.root),
+            path: store::path_of(&self.path),
+            root: store::path_of(&self.root),
             title: self.title,
             artist: self.artist,
             album: self.album_title,
@@ -7092,7 +7095,7 @@ impl RawTrack {
 
         Ok(Track {
             id,
-            location: MediaLocation::local(self.path),
+            location: MediaLocation::local(store::path_of(&self.path)),
             title: self.title,
             artist: self.artist,
             artist_id: self
@@ -7190,7 +7193,7 @@ impl RawToVault {
         let id = TrackId::new(self.id as u64)?;
         Ok(TrackToVault {
             id,
-            path: PathBuf::from(self.path),
+            path: store::path_of(&self.path),
             span: store::span(self.span_start, self.span_frames),
             file_size: self.file_size as u64,
             codec: store::codec_from_code(self.codec, id)?,
@@ -7277,7 +7280,7 @@ impl RawVaultObject {
                 store::vault_format_of(key, self.sample_format)?,
             ),
             frames: self.frames.map(|held| Frames(held as u64)),
-            taken_from: PathBuf::from(self.taken_from),
+            taken_from: store::path_of(&self.taken_from),
             took: store::from_nanos(self.took),
             was_bytes: self.was_bytes as u64,
             was_codec: store::vault_codec_of(key, self.was_codec)?,
