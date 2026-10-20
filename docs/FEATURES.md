@@ -108,10 +108,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, devices on
   different networks meet only through a self-hosted `resonate-server`
 
-## Command line and bus
-- [S] A window started from another settings file than a `resonate eq` or `resonate tidal` run
-  writes is not told of the change
-
 ## Equaliser and DSP
 - [S] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred
   for a single device

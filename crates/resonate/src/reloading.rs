@@ -65,13 +65,13 @@ fn kept_by_running(players: &[String]) -> Option<String> {
 
     Some(if rest.is_empty() {
         format!(
-            "{first} is running and keeps the settings it started with; it hears this once it \
-             is started again"
+            "{first} is running and keeps the settings it started with; it hears this only if it \
+             reads this settings file, once it is started again"
         )
     } else {
         format!(
-            "{} are running and keep the settings they started with; they hear this once they \
-             are started again",
+            "{} are running and keep the settings they started with; they hear this only if \
+             they read this settings file, once they are started again",
             players.join(", ")
         )
     })
@@ -93,7 +93,8 @@ mod tests {
             one.as_deref(),
             Some(
                 "org.mpris.MediaPlayer2.resonate is running and keeps the settings it started \
-                 with; it hears this once it is started again"
+                 with; it hears this only if it reads this settings file, once it is started \
+                 again"
             )
         );
         assert!(two.is_some_and(|told| told.contains("are running and keep the settings they")));
