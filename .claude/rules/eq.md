@@ -13,6 +13,7 @@ paths:
   - "crates/resonate-mobile/src/equaliser.rs"
   - "crates/resonate-mobile/src/room.rs"
   - "ios/Sources/Resonate/RoomCorrection.swift"
+  - "android/app/src/main/java/org/resonate/android/RoomCorrectionState.kt"
   - "ios/Sources/Resonate/EqualiserGraph.swift"
 ---
 
@@ -132,7 +133,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the kept response or none, answering its channels, rate and length; `kept_room_correction` answers the same description without sending anything, so a page shows the response with correction off; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
   `playback` suite and applies the response at start, a missing file turning correction off with a notice (`RoomCorrectionState`, the equaliser page's
-  *Room correction* section, `fileImporter` of audio).
+  *Room correction* section, `fileImporter` of audio); Android keeps the same two keys in its
+  `playback` preferences and does the same (`RoomCorrectionState.kt`, `RoomCorrectionSection`, the
+  system audio document picker).
 
 ## The binding
 

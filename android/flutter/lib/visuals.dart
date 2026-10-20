@@ -619,6 +619,68 @@ class Ambient extends StatelessWidget {
   }
 }
 
+List<InlineSpan> litSpans(
+  String text,
+  List<int> ranges,
+  TextStyle base,
+  ColorScheme colours,
+) {
+  final matched = base.copyWith(
+    color: colours.onSurface,
+    fontWeight: FontWeight.w800,
+  );
+  final unmatched = base.copyWith(color: colours.onSurfaceVariant);
+  final spans = <InlineSpan>[];
+  var at = 0;
+  for (var i = 0; i + 1 < ranges.length; i += 2) {
+    final start = ranges[i].clamp(at, text.length);
+    final end = ranges[i + 1].clamp(start, text.length);
+    if (end == start) continue;
+    if (start > at) {
+      spans.add(TextSpan(text: text.substring(at, start), style: unmatched));
+    }
+    spans.add(TextSpan(text: text.substring(start, end), style: matched));
+    at = end;
+  }
+  if (at < text.length) {
+    spans.add(TextSpan(text: text.substring(at), style: unmatched));
+  }
+  return spans;
+}
+
+class LitText extends StatelessWidget {
+  const LitText(
+    this.text, {
+    super.key,
+    this.ranges = const [],
+    this.style,
+    this.maxLines = 1,
+  });
+  final String text;
+  final List<int> ranges;
+  final TextStyle? style;
+  final int maxLines;
+  @override
+  Widget build(BuildContext context) {
+    if (ranges.length < 2) {
+      return Text(
+        text,
+        style: style,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    final base = DefaultTextStyle.of(context).style.merge(style);
+    return Text.rich(
+      TextSpan(
+        children: litSpans(text, ranges, base, Theme.of(context).colorScheme),
+      ),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
 class ActionIcon extends StatelessWidget {
   const ActionIcon({
     super.key,
@@ -795,6 +857,23 @@ class _SignalPainter extends CustomPainter {
       values != old.values || color != old.color;
 }
 
+class LiveRegion extends StatelessWidget {
+  const LiveRegion({super.key, this.label, this.onTap, required this.child});
+  final String? label;
+  final VoidCallback? onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    container: true,
+    label: label,
+    button: onTap != null,
+    onTap: onTap,
+    child: label == null ? child : ExcludeSemantics(child: child),
+  );
+}
+
 class NoticeFooter extends StatelessWidget {
   const NoticeFooter({super.key, required this.model, required this.child});
   final PlayerModel model;
@@ -872,31 +951,34 @@ class ScanProgress extends StatelessWidget {
         (scanned > 0
             ? 'Reading music folder… $scanned ${scanned == 1 ? 'song' : 'songs'}'
             : 'Reading music folder…');
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Glass(
-        radius: 16,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                text,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return LiveRegion(
+      label: 'Reading music folder',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Glass(
+          radius: 16,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -921,63 +1003,69 @@ class SyncProgressBanner extends StatelessWidget {
         ? '${(activity.fraction! * 100).round()}%'
         : null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Glass(
-        radius: 16,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => open('sync'),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    value: activity.fraction,
-                    strokeWidth: 2.2,
+    return LiveRegion(
+      label: activity.isFetching
+          ? 'Fetching songs from your devices'
+          : 'Syncing with your devices',
+      onTap: () => open('sync'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Glass(
+          radius: 16,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => open('sync'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      value: activity.fraction,
+                      strokeWidth: 2.2,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (detail != null)
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          detail,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                            fontFeatures: const [
-                              ui.FontFeature.tabularFigures(),
-                            ],
+                          title,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
+                        if (detail != null)
+                          Text(
+                            detail,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              fontFeatures: const [
+                                ui.FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -996,48 +1084,50 @@ class StatusCard extends StatelessWidget {
     if (message == null) return const SizedBox.shrink();
     final isFailure = model.failure != null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Glass(
-        radius: 16,
-        padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-        child: Row(
-          children: [
-            if (isFailure) ...[
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 20,
+    return LiveRegion(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Glass(
+          radius: 16,
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+          child: Row(
+            children: [
+              if (isFailure) ...[
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                ),
+                onPressed: model.dismissNotice,
+                child: const Text(
+                  'Dismiss',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
             ],
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-              ),
-              onPressed: model.dismissNotice,
-              child: const Text(
-                'Dismiss',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

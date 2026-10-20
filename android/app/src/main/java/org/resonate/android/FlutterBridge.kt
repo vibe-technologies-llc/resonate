@@ -122,6 +122,8 @@ class FlutterBridge(
             )
             watch("recognitionBusy", features.recognitionBusy)
             watch("recognitionKey", features.recognitionKey)
+            watch("recentSearches", features.recentSearches)
+            watch("room", features.room.view.map { it.wire() })
         }
     }
 
@@ -307,6 +309,8 @@ class FlutterBridge(
             "stopEnrichment" -> features.enrichment.stop()
             "recognise" -> features.recognise(id())
             "recognitionKey" -> features.saveRecognitionKey(text("value"))
+            "recentSearches" ->
+                features.keepRecentSearches((args["values"] as List<*>).map { it.toString() })
             "searchOnline" -> features.searchOnline(text("text"))
             "searchAlbums" -> features.searchAlbums(text("text"))
             "searchArtists" -> features.searchArtists(text("text"))
@@ -465,6 +469,30 @@ class FlutterBridge(
             "forgetSyncDevice" ->
                 withContext(Dispatchers.IO) {
                     library.native().syncForgetDevice(text("id"))
+                }
+            "chooseRoomResponse" -> activity.chooseRoomResponse()
+            "roomCorrection" -> features.room.turn(flag("enabled"))
+            "forgetRoomCorrection" -> features.room.forget()
+            "shareLink" -> {
+                val shared = track()
+                val link =
+                    withContext(Dispatchers.IO) { library.native().shareLink(shared.id) }
+                val name = shared.title.ifEmpty { shared.name }
+                if (link == null) library.notice("There is no link to share for “$name”")
+                else activity.shareLink(name, link)
+            }
+            "highlights" ->
+                return withContext(Dispatchers.Default) {
+                    val query = text("query")
+                    (args["items"] as List<*>).map { entry ->
+                        val item = entry as Map<*, *>
+                        highlights(
+                                query,
+                                item["text"].toString(),
+                                SearchColumn.valueOf(item["column"].toString()),
+                            )
+                            .flatMap { listOf(it.start.toLong(), it.end.toLong()) }
+                    }
                 }
             "searchLibrary" ->
                 return withContext(Dispatchers.IO) {

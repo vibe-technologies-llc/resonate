@@ -162,6 +162,7 @@ class LibraryRepository(private val context: Context) {
             previous?.join()
             var opened: MobilePlayer? = null
             try {
+                Logcat.install()
                 val native =
                     MobilePlayer(
                         context.filesDir.absolutePath,
@@ -486,6 +487,7 @@ class LibraryRepository(private val context: Context) {
             features.refreshFolders()
             features.enrichment.begin()
             mutableStatus.value = scanSummary(indexed, failed)
+            if (failed == 0) features.forgetMissing(afterScan = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

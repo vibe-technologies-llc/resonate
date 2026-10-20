@@ -10,9 +10,12 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.LruCache
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONArray
+import org.json.JSONException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +44,7 @@ import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricSheet
+import org.resonate.android.nativecore.MissingSongs
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.ReceivedSong
@@ -98,6 +102,9 @@ data class RefusedLanding(val until: Long, val tries: Int)
 
 private const val LANDING_PAUSE_MS = 60000L
 private const val LANDING_TRIES_AT_MOST = 3
+private const val MISSING_CHECKED_EVERY_MS = 300000L
+private const val RECENT_SEARCHES_KEY = "recent-searches"
+private const val RECENT_SEARCHES_KEPT = 10
 
 private fun mimeOf(extension: String) =
     when (extension) {
@@ -122,6 +129,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val scrobbleAccount = MutableStateFlow<ScrobbleAccount?>(null)
     val scrobbleStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
+    private var missingChecked = -MISSING_CHECKED_EVERY_MS
+    private var hidingFailure: String? = null
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
     val actualOutput = MutableStateFlow(0)
@@ -136,6 +145,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val lyricFrame = MutableStateFlow<LyricFrame?>(null)
     val lyricsLoading = MutableStateFlow(false)
     val recognitionKey = MutableStateFlow("")
+    val recentSearches = MutableStateFlow(readRecentSearches())
     val recognition =
         MutableStateFlow<List<org.resonate.android.nativecore.RecognitionCandidate>>(emptyList())
     val recognitionBusy = MutableStateFlow(false)
@@ -166,6 +176,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val mutableArtChanges = MutableSharedFlow<List<ULong>>(extraBufferCapacity = 16)
     val artChanges: SharedFlow<List<ULong>> = mutableArtChanges.asSharedFlow()
     val enrichment = ArtworkEnrichment(library, settings, scope, ::artworkChangedFor)
+    val room = RoomCorrectionState(context, library, scope, context.contentResolver)
     private val lyricRequest = AtomicLong()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
@@ -207,6 +218,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     @Volatile private var lyricWatchers = 0
 
     fun initialize(native: MobilePlayer) {
+        room.restore(native)
         providerAccount.value =
             try {
                 accounts.read()
@@ -352,9 +364,24 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scope.launch { settings.edit().putString("sync-folder", folder.uri.toString()).commit() }
     }
 
+    private fun readRecentSearches(): List<String> =
+        try {
+            val stored = JSONArray(settings.getString(RECENT_SEARCHES_KEY, null) ?: "[]")
+            List(stored.length()) { stored.getString(it) }
+        } catch (failure: JSONException) {
+            emptyList()
+        }
+
+    fun keepRecentSearches(values: List<String>) {
+        val kept = values.take(RECENT_SEARCHES_KEPT)
+        settings.edit().putString(RECENT_SEARCHES_KEY, JSONArray(kept).toString()).apply()
+        recentSearches.value = kept
+    }
+
     fun foreground(visible: Boolean) {
         foreground = visible
         enrichment.foreground(visible)
+        if (visible) forgetMissing(afterScan = false)
     }
 
     fun loadPlaylistSync(id: ULong) = work { native ->
@@ -658,6 +685,75 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    private fun readablePrefixes(): List<String> {
+        val granted =
+            context.contentResolver.persistedUriPermissions
+                .filter { it.isReadPermission }
+                .map { it.uri }
+        val trees = granted.filter { treeAnswers(it) }
+        val downloads = if (downloadsEnabled()) listOf(MusicDocuments.downloads) else emptyList()
+        return (trees + downloads).map { MusicDocuments.prefix(it) }
+    }
+
+    private fun treeAnswers(tree: Uri): Boolean =
+        try {
+            val root =
+                DocumentsContract.buildDocumentUriUsingTree(
+                    tree,
+                    DocumentsContract.getTreeDocumentId(tree),
+                )
+            context.contentResolver
+                .query(
+                    root,
+                    arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                    null,
+                    null,
+                    null,
+                )
+                ?.use { it.moveToFirst() } ?: false
+        } catch (failure: Exception) {
+            false
+        }
+
+    fun forgetMissing(afterScan: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (!afterScan && now - missingChecked < MISSING_CHECKED_EVERY_MS) return
+        if (!afterScan && library.scanning.value) return
+        missingChecked = now
+        scope.launch {
+            try {
+                val native = library.native()
+                val prefixes = readablePrefixes()
+                if (prefixes.isEmpty()) return@launch
+                val changed = native.hideMissingSongs(prefixes)
+                hidingFailure = null
+                afterHiding(native, changed)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (failure.message != hidingFailure) library.report(failure)
+                hidingFailure = failure.message
+            }
+        }
+    }
+
+    private suspend fun afterHiding(native: MobilePlayer, changed: MissingSongs) {
+        if (changed.hidden == 0u && changed.restored == 0u) return
+        library.refresh()
+        openPlaylist.value?.let { id ->
+            if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
+        }
+        if (changed.hidden > 0u) {
+            val fetching =
+                syncConfig.value?.let { it.enabled && (it.everything || it.favourites || it.playlists) }
+                    ?: false
+            val gone =
+                if (changed.hidden == 1u) "1 song whose file is gone was hidden"
+                else "${changed.hidden} songs whose files are gone were hidden"
+            library.notice(gone + if (fetching) " · fetching from your devices" else "")
+        }
+    }
+
     fun removeFolder(folder: MusicFolder) {
         scope.launch {
             try {
@@ -682,6 +778,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     .remove("folder-name:${folder.uri}")
                     .commit()
                 refreshFolders()
+                if (folder.uri != MusicDocuments.downloads) {
+                    val native = library.native()
+                    afterHiding(native, native.hideSongsUnder(MusicDocuments.prefix(folder.uri)))
+                }
             } catch (failure: Exception) {
                 library.report(failure)
             }

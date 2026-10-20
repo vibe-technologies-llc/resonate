@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import 'model.dart';
 import 'visuals.dart';
@@ -50,6 +51,8 @@ class LyricsPage extends StatelessWidget {
   );
 }
 
+const _lyricCacheExtent = 900.0;
+
 class LyricsPane extends StatefulWidget {
   const LyricsPane({super.key, required this.model, required this.track});
   final PlayerModel model;
@@ -64,6 +67,7 @@ class _LyricsPaneState extends State<LyricsPane> {
   bool _touching = false;
   Timer? _resume;
   final Map<int, GlobalKey> _keys = {};
+  final Map<int, _LyricLine> _built = {};
   @override
   void initState() {
     super.initState();
@@ -82,6 +86,7 @@ class _LyricsPaneState extends State<LyricsPane> {
     _touching = false;
     _resume?.cancel();
     _keys.clear();
+    _built.clear();
     if (widget.track.isNotEmpty) {
       widget.model.call('lyrics', {'id': widget.track['id']});
     }
@@ -126,20 +131,17 @@ class _LyricsPaneState extends State<LyricsPane> {
         _followed = followed;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || _touching) return;
-          final target = _keys[followed]?.currentContext;
-          if (target != null) {
-            Scrollable.ensureVisible(
-              target,
-              alignment: .35,
-              duration: motion(context, 500),
-              curve: Curves.easeOutCubic,
-            );
-          }
+          _reveal(followed, lines.length, motion(context, 500));
         });
       }
       final wipes = {
         for (final wipe in rows(frame['wipes'])) integer(wipe['line']): wipe,
       };
+      final unsynced = sheet['detail'] == 'UNSYNCED';
+      final blurAway =
+          !MediaQuery.accessibleNavigationOf(context) &&
+          !unsynced &&
+          followed != null;
       return Stack(
         children: [
           ShaderMask(
@@ -175,87 +177,52 @@ class _LyricsPaneState extends State<LyricsPane> {
                 }
                 return false;
               },
-              child: SingleChildScrollView(
+              child: ListView.builder(
                 controller: _scroll,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 48),
-                    for (var i = 0; i < lines.length; i++)
-                      Padding(
-                        key: _keys.putIfAbsent(i, GlobalKey.new),
-                        padding: EdgeInsets.symmetric(
-                          vertical: lines[i]['blank'] == true ? 16 : 12,
-                        ),
-                        child: InkWell(
-                          onTap: isCurrent && lines[i]['atMs'] != null
-                              ? () => widget.model.call('seek', {
-                                  'position': integer(lines[i]['atMs']),
-                                })
-                              : null,
-                          child: AnimatedScale(
-                            alignment: integer(lines[i]['voice']) == 2
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            scale: active.contains(i) ? 1 : .96,
-                            duration: motion(context, 350),
-                            curve: Curves.easeOutCubic,
-                            child: ImageFiltered(
-                              enabled:
-                                  !MediaQuery.accessibleNavigationOf(context) &&
-                                  sheet['detail'] != 'UNSYNCED' &&
-                                  followed != null &&
-                                  (i - followed).abs() > 2,
-                              imageFilter: ui.ImageFilter.blur(
-                                sigmaX: .65,
-                                sigmaY: .65,
-                              ),
-                              child: AnimatedDefaultTextStyle(
-                                duration: motion(context, 260),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium!
-                                    .copyWith(
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -.7,
-                                      height: 1.4,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(
-                                            alpha:
-                                                active.contains(i) ||
-                                                    sheet['detail'] ==
-                                                        'UNSYNCED'
-                                                ? 1
-                                                : .35,
-                                          ),
-                                    ),
-                                child: LyricWords(
-                                  text: '${lines[i]['text']}',
-                                  wipe: active.contains(i) ? wipes[i] : null,
-                                  align: integer(lines[i]['voice']) == 2
-                                      ? TextAlign.right
-                                      : TextAlign.left,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 30),
-                    Text(
-                      '${sheet['origin'] ?? ''}',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                    const SizedBox(height: 100),
-                  ],
+                scrollCacheExtent: const ScrollCacheExtent.pixels(
+                  _lyricCacheExtent,
                 ),
+                padding: const EdgeInsets.only(top: 48),
+                itemCount: lines.length + 1,
+                itemBuilder: (context, i) {
+                  if (i == lines.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 30, bottom: 100),
+                      child: Text(
+                        '${sheet['origin'] ?? ''}',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    );
+                  }
+                  final line = lines[i];
+                  final lit = active.contains(i);
+                  final fresh = _LyricLine(
+                    model: widget.model,
+                    text: '${line['text']}',
+                    blank: line['blank'] == true,
+                    rightVoice: integer(line['voice']) == 2,
+                    lit: lit,
+                    unsynced: unsynced,
+                    blurred: blurAway && (i - followed).abs() > 2,
+                    seekMs: isCurrent && line['atMs'] != null
+                        ? integer(line['atMs'])
+                        : null,
+                    wipe: lit ? LyricWipe.of(wipes[i]) : null,
+                  );
+                  final kept = _built[i];
+                  final shown = kept != null && kept.sameAs(fresh)
+                      ? kept
+                      : fresh;
+                  _built[i] = shown;
+                  return KeyedSubtree(
+                    key: _keys.putIfAbsent(i, GlobalKey.new),
+                    child: shown,
+                  );
+                },
               ),
             ),
           ),
-          if (_touching && isCurrent && sheet['detail'] != 'UNSYNCED')
+          if (_touching && isCurrent && !unsynced)
             Positioned(
               bottom: 12,
               right: 0,
@@ -278,6 +245,154 @@ class _LyricsPaneState extends State<LyricsPane> {
       );
     },
   );
+
+  void _reveal(int line, int count, Duration duration, [int attempts = 3]) {
+    final target = _keys[line]?.currentContext;
+    if (target != null) {
+      Scrollable.ensureVisible(
+        target,
+        alignment: .35,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+    if (attempts == 0 || count == 0 || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    position.jumpTo(
+      (position.maxScrollExtent * line / count).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_touching) {
+        _reveal(line, count, duration, attempts - 1);
+      }
+    });
+  }
+}
+
+class LyricWipe {
+  const LyricWipe({
+    required this.sung,
+    required this.blendStart,
+    required this.blendEnd,
+    required this.share,
+  });
+
+  static LyricWipe? of(RowData? wipe) {
+    if (wipe == null) return null;
+    final blend = row(wipe['blend']);
+    return LyricWipe(
+      sung: integer(wipe['sungUtf16']),
+      blendStart: integer(blend['startUtf16']),
+      blendEnd: integer(blend['endUtf16']),
+      share: decimal(blend['share']),
+    );
+  }
+
+  final int sung;
+  final int blendStart;
+  final int blendEnd;
+  final double share;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricWipe &&
+      other.sung == sung &&
+      other.blendStart == blendStart &&
+      other.blendEnd == blendEnd &&
+      other.share == share;
+
+  @override
+  int get hashCode => Object.hash(sung, blendStart, blendEnd, share);
+}
+
+class _LyricLine extends StatelessWidget {
+  const _LyricLine({
+    required this.model,
+    required this.text,
+    required this.blank,
+    required this.rightVoice,
+    required this.lit,
+    required this.unsynced,
+    required this.blurred,
+    required this.seekMs,
+    required this.wipe,
+  });
+  final PlayerModel model;
+  final String text;
+  final bool blank;
+  final bool rightVoice;
+  final bool lit;
+  final bool unsynced;
+  final bool blurred;
+  final int? seekMs;
+  final LyricWipe? wipe;
+
+  bool sameAs(_LyricLine other) =>
+      other.model == model &&
+      other.text == text &&
+      other.blank == blank &&
+      other.rightVoice == rightVoice &&
+      other.lit == lit &&
+      other.unsynced == unsynced &&
+      other.blurred == blurred &&
+      other.seekMs == seekMs &&
+      other.wipe == wipe;
+
+  @override
+  Widget build(BuildContext context) {
+    final bright = lit || unsynced;
+    return RepaintBoundary(
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: blank ? 16 : 12),
+        child: InkWell(
+          onTap: seekMs == null
+              ? null
+              : () => model.call('seek', {'position': seekMs}),
+          child: AnimatedScale(
+            alignment: rightVoice
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
+            scale: lit ? 1 : .96,
+            duration: motion(context, 350),
+            curve: Curves.easeOutCubic,
+            child: ImageFiltered(
+              enabled: blurred,
+              imageFilter: ui.ImageFilter.blur(sigmaX: .65, sigmaY: .65),
+              child: AnimatedDefaultTextStyle(
+                duration: motion(context, 260),
+                style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -.7,
+                  height: 1.4,
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: bright ? 1 : .35),
+                ),
+                child: LyricWords(
+                  text: text,
+                  wipe: wipe == null
+                      ? null
+                      : {
+                          'sungUtf16': wipe!.sung,
+                          'blend': {
+                            'startUtf16': wipe!.blendStart,
+                            'endUtf16': wipe!.blendEnd,
+                            'share': wipe!.share,
+                          },
+                        },
+                  align: rightVoice ? TextAlign.right : TextAlign.left,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LyricWords extends StatelessWidget {

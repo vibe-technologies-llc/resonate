@@ -29,6 +29,7 @@ resonate-eq.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 uniffi.workspace = true
 unicode-normalization.workspace = true
 

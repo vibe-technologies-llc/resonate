@@ -504,7 +504,9 @@ class SongTile extends StatelessWidget {
     this.trailing,
     this.number,
     this.semanticNumber,
+    this.lit = Lit.none,
   });
+  final Lit lit;
   final PlayerModel model;
   final RowData track;
   final VoidCallback onTap;
@@ -536,19 +538,17 @@ class SongTile extends StatelessWidget {
                   ),
                 ),
               ),
-        title: Text(
+        title: LitText(
           title(track),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          ranges: lit.of('TITLE', title(track)),
           style: TextStyle(
             fontWeight: FontWeight.w600,
             color: playing ? Theme.of(context).colorScheme.primary : null,
           ),
         ),
-        subtitle: Text(
+        subtitle: LitText(
           artist(track),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          ranges: lit.of('ARTIST', '${track['artist'] ?? ''}'),
         ),
         trailing:
             trailing ??
@@ -588,8 +588,9 @@ Future<void> songActions(
   BuildContext context,
   PlayerModel model,
   RowData track,
-  OpenPage open,
-) {
+  OpenPage open, {
+  Object? queueId,
+}) {
   final favourite = model.isFavourite(track);
   return showModalBottomSheet<void>(
     context: context,
@@ -668,6 +669,17 @@ Future<void> songActions(
                 label: 'Song details',
                 action: () => open('inspector', track),
               ),
+              (
+                icon: Icons.share_rounded,
+                label: 'Share link',
+                action: () => model.call('shareLink', {'id': track['id']}),
+              ),
+              if (queueId != null)
+                (
+                  icon: Icons.remove_circle_outline_rounded,
+                  label: 'Remove from queue',
+                  action: () => model.call('removeFromQueue', {'id': queueId}),
+                ),
             ].map(
               (action) => ListTile(
                 leading: Icon(action.icon),

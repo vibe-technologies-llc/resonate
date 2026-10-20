@@ -77,6 +77,25 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    fun chooseRoomResponse() {
+        startActivityForResult(
+            Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("audio/*")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+            ROOM_REQUEST,
+        )
+    }
+
+    fun shareLink(title: String, link: String) {
+        val send =
+            Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, title)
+                .putExtra(Intent.EXTRA_TEXT, link)
+        startActivity(Intent.createChooser(send, title))
+    }
+
     fun allowNotifications() {
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST)
     }
@@ -110,8 +129,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != FOLDER_REQUEST || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        if (requestCode == ROOM_REQUEST) {
+            library.features.room.choose(uri)
+            return
+        }
+        if (requestCode != FOLDER_REQUEST) return
         try {
             val writable = data.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
             contentResolver.takePersistableUriPermission(
@@ -152,5 +176,6 @@ class MainActivity : FlutterActivity() {
         const val FOLDER_REQUEST = 41
         const val NOTIFICATION_REQUEST = 42
         const val AUDIO_REQUEST = 43
+        const val ROOM_REQUEST = 44
     }
 }

@@ -95,6 +95,16 @@ next ask rebuild), and a playlist file or a link's matches take the lock per son
 `folded(name)`, `folded(title)` and `recording` indexes
 (`a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog`).
 
+## Logging
+
+`logging.rs` is the phones' `tracing` subscriber, safe code only: `keep_log(logbook)` installs once
+per process (`false` when a subscriber already stands) a `fmt` subscriber at `WARN` whose writer
+hands each finished line, with its `LogLevel`, to the front end's `Logbook` callback, so there is no
+`liblog` binding and no unsafe. Android installs it before the player opens (`Logcat.install`, tag
+`ResonateNative`, mapped to `Log.e`/`w`/`i`/`d`), so an engine, library or sync warning reaches
+logcat; iOS installs none yet
+(`a_warning_reaches_the_logbook_with_its_level_and_a_debug_line_does_not`).
+
 ## The surface is the same on every target
 
 Every export exists on every target, so bindings generated from the host library match the device

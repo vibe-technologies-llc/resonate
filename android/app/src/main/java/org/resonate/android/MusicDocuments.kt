@@ -11,6 +11,13 @@ import android.provider.MediaStore
 object MusicDocuments {
     val downloads: Uri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
+    fun prefix(folder: Uri): String =
+        if (folder == downloads) {
+            "${MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)}/"
+        } else {
+            "$folder/document/"
+        }
+
     fun downloadedAudio(context: Context): List<ScannedAudio> {
         val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val columns =
