@@ -247,7 +247,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
   device (one for every device); `eq --find`/`--suggest` take `--measurer` over it and the
   equaliser pane's search and suggestion take it over the fixed ranking
-  (`EqualiserModel::prefer`); read at start, no pane control.
+  (`EqualiserModel::prefer`); the Equaliser category's *Measured corrections* group chooses it as
+  chips (*Best ranked*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
+  `Setting::EqualiserMeasurer` and worn at once on `ResonateApp::measurer` and the model
+  (`RootView::prefer_a_measurer`), and the group's mark removes the key.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is

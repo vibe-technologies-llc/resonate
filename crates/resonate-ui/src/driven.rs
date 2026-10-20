@@ -2732,6 +2732,34 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once(
+        cx: &mut TestAppContext,
+    ) {
+        let worn = |driven: &mut Driven| {
+            driven.read(|root, cx| {
+                (
+                    cx.global::<ResonateApp>().measurer.clone(),
+                    root.equaliser.read(cx).measurer().map(str::to_owned),
+                )
+            })
+        };
+        let mut driven = Driven::open(cx, catalog());
+        driven.click("tab-settings");
+        driven.click("category-Equaliser");
+
+        driven.click("measurer-rtings");
+
+        assert_eq!(
+            worn(&mut driven),
+            (Some("rtings".to_owned()), Some("rtings".to_owned()))
+        );
+
+        driven.click("measurer-best-ranked");
+
+        assert_eq!(worn(&mut driven), (None, None));
+    }
+
+    #[gpui::test]
     fn a_shorter_history_is_armed_by_the_first_press_and_kept_by_the_second(
         cx: &mut TestAppContext,
     ) {

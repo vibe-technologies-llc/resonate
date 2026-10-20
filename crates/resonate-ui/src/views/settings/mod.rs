@@ -572,6 +572,7 @@ impl RootView {
             Group::SyncedSongs => self.follow_songs(resonate_core::SyncedSongs::default(), cx),
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),
+            Group::Measured => self.wear_the_measurer(None, cx),
             Group::Recognition => {
                 self.clear_acoustid_key(cx);
                 self.clear_audd_token(cx);
@@ -640,6 +641,7 @@ impl RootView {
         let remember_settings_category = cx.global::<ResonateApp>().remember_settings_category;
         let presence = cx.global::<ResonateApp>().presence.clone();
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
+        let measurer_given = cx.global::<ResonateApp>().measurer.is_some();
         let contact_given = !self.contact.read(cx).text().trim().is_empty();
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
         let token_given = !self.audd.read(cx).text().trim().is_empty();
@@ -682,6 +684,7 @@ impl RootView {
             lyrics,
             lyrics_by_the_locale,
             contact_given,
+            measurer_given,
             key_given,
             token_given,
             submitting_given,

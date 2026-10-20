@@ -250,7 +250,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `--find` or `--suggest`; a device it did not measure keeps the ranking and `--suggest` says so
   (`a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking`).
   `equaliser-measurer` keeps one for every device: the flag outranks it, and the pane's search and
-  suggestion read it too (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
+  suggestion read it too, and the *Measured corrections* group chooses it live (`prefer_a_measurer`: the
+  global, the model and a search standing are changed together, then the file;
+  `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`)
+  (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
   `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is

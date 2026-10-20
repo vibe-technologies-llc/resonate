@@ -193,6 +193,7 @@ pub enum SettingKey {
     Equaliser,
     EqualiserFor,
     EqualiserProfile,
+    EqualiserMeasurer,
     Convolution,
     Resume,
     HistoryKept,
@@ -250,7 +251,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 95] = [
+    pub const ALL: [Self; 96] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -292,6 +293,7 @@ impl SettingKey {
         Self::Equaliser,
         Self::EqualiserFor,
         Self::EqualiserProfile,
+        Self::EqualiserMeasurer,
         Self::Convolution,
         Self::Resume,
         Self::HistoryKept,
@@ -395,6 +397,7 @@ pub enum Setting {
         binding: Option<Binding>,
     },
     EqualiserProfile(Option<Binding>),
+    EqualiserMeasurer(Option<String>),
     Convolution(Option<PathBuf>),
     Resume(bool),
     HistoryKept(HistoryKept),
@@ -495,6 +498,7 @@ impl Setting {
             Self::Equaliser(_) => SettingKey::Equaliser,
             Self::EqualiserFor { .. } => SettingKey::EqualiserFor,
             Self::EqualiserProfile(_) => SettingKey::EqualiserProfile,
+            Self::EqualiserMeasurer(_) => SettingKey::EqualiserMeasurer,
             Self::Convolution(_) => SettingKey::Convolution,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
