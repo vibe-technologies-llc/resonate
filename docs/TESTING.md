@@ -17,13 +17,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
   fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
   `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
-- [M] The tag editor's mixed fields are unproved beside the list above
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
   launch machine and `landReceived`'s journal are unproved; each calls `AVAudioSession`, `BGTaskScheduler` or
   `SecItem*` directly, so none can be driven without a seam
-- [M] Pure Swift in the views is unproved too: `LyricClock`, `EqualiserScale` and
-  `EqualiserResponse`'s coalescing, `LyricWords.cut` across surrogate pairs, `LyricTurn`/`LyricLeg`/`LyricGlide` against
-  the desktop's lyrics tests, `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic, which differ
+- [M] Pure Swift in the views is unproved too: `EqualiserScale` and `EqualiserResponse`'s
+  coalescing, `SettingsView.matches`, and the playlist and queue `onMove` destination arithmetic,
+  which differ
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

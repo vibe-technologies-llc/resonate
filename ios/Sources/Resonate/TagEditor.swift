@@ -13,53 +13,6 @@ struct TagEditing: Identifiable {
     let tracks: [Track]
 }
 
-enum TagName: CaseIterable, Hashable {
-    case title, artist, album, albumArtist, genre, date, trackNumber, trackTotal, discNumber, discTotal, composer
-
-    var label: String {
-        switch self {
-        case .title: "Title"
-        case .artist: "Artist"
-        case .album: "Album"
-        case .albumArtist: "Album artist"
-        case .genre: "Genre"
-        case .date: "Year or date"
-        case .trackNumber: "Track"
-        case .trackTotal: "of"
-        case .discNumber: "Disc"
-        case .discTotal: "of"
-        case .composer: "Composer"
-        }
-    }
-
-    var numbered: Bool {
-        switch self {
-        case .trackNumber, .trackTotal, .discNumber, .discTotal: true
-        default: false
-        }
-    }
-
-    var eachSongsOwn: Bool {
-        self == .title || self == .trackNumber
-    }
-
-    var path: WritableKeyPath<SongTags, String?> {
-        switch self {
-        case .title: \.title
-        case .artist: \.artist
-        case .album: \.album
-        case .albumArtist: \.albumArtist
-        case .genre: \.genre
-        case .date: \.date
-        case .trackNumber: \.trackNumber
-        case .trackTotal: \.trackTotal
-        case .discNumber: \.discNumber
-        case .discTotal: \.discTotal
-        case .composer: \.composer
-        }
-    }
-}
-
 struct TagEditorSheet: View {
     private static let readAtMost = 500
 
@@ -149,16 +102,11 @@ struct TagEditorSheet: View {
     }
 
     private var changed: [TagName] {
-        TagName.allCases.filter { name in
-            let now = shown[name] ?? ""
-            return mixed.contains(name) ? !now.isEmpty : now != (read[name] ?? "")
-        }
+        TagDiff.changed(shown: shown, read: read, mixed: mixed)
     }
 
     private var change: SongTags {
-        changed.reduce(into: SongTags()) { tags, name in
-            tags[keyPath: name.path] = shown[name] ?? ""
-        }
+        TagDiff.change(shown: shown, changed: changed)
     }
 
     private func load(_ writable: [Track]) async {
@@ -171,16 +119,7 @@ struct TagEditorSheet: View {
             return
         }
         failure = nil
-        var common: [TagName: String] = [:]
-        var differing: Set<TagName> = []
-        for name in TagName.allCases {
-            let values = Set(all.map { $0[keyPath: name.path] ?? "" })
-            if values.count == 1, let only = values.first {
-                common[name] = only
-            } else if values.count > 1 {
-                differing.insert(name)
-            }
-        }
+        let (common, differing) = TagDiff.common(of: all)
         read = common
         shown = common
         mixed = differing
