@@ -14,7 +14,8 @@ use resonate_core::{
 };
 
 const FIRST_MAGIC: &[u8; 8] = b"RSUNDO01";
-const MAGIC: &[u8; 8] = b"RSUNDO02";
+const SECOND_MAGIC: &[u8; 8] = b"RSUNDO02";
+const MAGIC: &[u8; 8] = b"RSUNDO03";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
 const WHOLE_SUFFIX: &str = ".resonate-whole";
 const TORN_SUFFIX: &str = ".resonate-torn";
@@ -51,6 +52,25 @@ impl Undo {
         lands: u64,
         changes: &[Change<'_>],
     ) -> io::Result<Self> {
+        Self::kept(track, stood, lands, 0, changes)
+    }
+
+    pub(crate) fn kept_shifting(
+        track: &Path,
+        stood: u64,
+        shifted: u64,
+        changes: &[Change<'_>],
+    ) -> io::Result<Self> {
+        Self::kept(track, stood, stood + shifted, shifted, changes)
+    }
+
+    fn kept(
+        track: &Path,
+        stood: u64,
+        lands: u64,
+        shifted: u64,
+        changes: &[Change<'_>],
+    ) -> io::Result<Self> {
         let name = track
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
@@ -59,7 +79,7 @@ impl Undo {
 
         let written = Held::made(&journal).and_then(|held| {
             let mut file = held.file();
-            file.write_all(&encoded(name, stood, lands, changes))?;
+            file.write_all(&encoded(name, stood, lands, shifted, changes))?;
             file.sync_all()?;
             File::open(folder)?.sync_all()?;
             Ok(held)
@@ -576,13 +596,14 @@ fn hashed(bytes: &[u8]) -> u64 {
     })
 }
 
-fn encoded(track: &OsStr, stood: u64, lands: u64, changes: &[Change<'_>]) -> Vec<u8> {
+fn encoded(track: &OsStr, stood: u64, lands: u64, shifted: u64, changes: &[Change<'_>]) -> Vec<u8> {
     let name = track.as_bytes();
     let mut bytes = MAGIC.to_vec();
     bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
     bytes.extend_from_slice(name);
     bytes.extend_from_slice(&stood.to_le_bytes());
     bytes.extend_from_slice(&lands.to_le_bytes());
+    bytes.extend_from_slice(&shifted.to_le_bytes());
     bytes.extend_from_slice(&(changes.len() as u64).to_le_bytes());
     for change in changes {
         bytes.extend_from_slice(&change.start.to_le_bytes());
@@ -600,6 +621,7 @@ struct Kept {
     track: PathBuf,
     stood: u64,
     lands: u64,
+    shifted: u64,
     changes: Vec<(u64, Vec<u8>, Vec<u8>)>,
 }
 
@@ -633,11 +655,13 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
     }
 
     let mut reader = Reader { bytes: body };
-    let first = match reader.taken(MAGIC.len())? {
-        magic if magic == MAGIC => false,
-        magic if magic == FIRST_MAGIC => true,
+    let version = match reader.taken(MAGIC.len())? {
+        magic if magic == MAGIC => Version::Shifting,
+        magic if magic == SECOND_MAGIC => Version::Landing,
+        magic if magic == FIRST_MAGIC => Version::First,
         _ => return None,
     };
+    let first = version == Version::First;
     let length = reader.counted()?;
     let name = OsStr::from_bytes(reader.taken(length)?);
     if Path::new(name).file_name() != Some(name) {
@@ -645,6 +669,11 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
     }
     let stood = reader.number()?;
     let lands = if first { stood } else { reader.number()? };
+    let shifted = if version == Version::Shifting {
+        reader.number()?
+    } else {
+        0
+    };
     let count = reader.counted()?;
 
     let mut changes = Vec::new();
@@ -664,8 +693,16 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
         track: folder.join(name),
         stood,
         lands,
+        shifted,
         changes,
     })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Version {
+    First,
+    Landing,
+    Shifting,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -673,6 +710,7 @@ pub enum Mended {
     WrittenBack,
     Unplaced,
     RolledBack,
+    CarriedOn,
     Finished,
     Untouched,
     ChangedSince,
@@ -765,6 +803,10 @@ fn rolled_back(kept: &Kept) -> io::Result<Mended> {
         return Ok(Mended::ChangedSince);
     }
 
+    if kept.shifted > 0 {
+        return carried_on(&file, kept, length);
+    }
+
     let mut all_before = length == kept.stood;
     let mut all_after = length == kept.lands;
     for (start, before, after) in &kept.changes {
@@ -796,6 +838,54 @@ fn rolled_back(kept: &Kept) -> io::Result<Mended> {
     }
     file.sync_data()?;
     Ok(Mended::RolledBack)
+}
+
+fn carried_on(file: &File, kept: &Kept, length: u64) -> io::Result<Mended> {
+    if length != kept.stood && length != kept.lands {
+        return Ok(Mended::ChangedSince);
+    }
+    let opened = length == kept.lands;
+
+    let mut all_before = true;
+    let mut all_after = true;
+    for (start, before, after) in &kept.changes {
+        let mut opened_before = if opened {
+            vec![0; usize::try_from(kept.shifted).unwrap_or_default()]
+        } else {
+            Vec::new()
+        };
+        opened_before.extend_from_slice(before);
+
+        let reaching = opened_before.len().max(after.len());
+        let present = usize::try_from(length.saturating_sub(*start))
+            .map_or(reaching, |held| held.min(reaching));
+        let mut standing = vec![0; present];
+        file.read_exact_at(&mut standing, *start)?;
+        let ours = standing
+            .iter()
+            .enumerate()
+            .all(|(at, byte)| opened_before.get(at) == Some(byte) || after.get(at) == Some(byte));
+        if !ours {
+            return Ok(Mended::ChangedSince);
+        }
+        all_before &= standing == opened_before;
+        all_after &= standing == *after;
+    }
+
+    if !opened {
+        return Ok(match all_before {
+            true => Mended::Untouched,
+            false => Mended::ChangedSince,
+        });
+    }
+    if all_after {
+        return Ok(Mended::Finished);
+    }
+    for (start, _, after) in &kept.changes {
+        file.write_all_at(after, *start)?;
+    }
+    file.sync_data()?;
+    Ok(Mended::CarriedOn)
 }
 
 fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended> {
@@ -926,7 +1016,7 @@ mod tests {
             ".{}.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}",
             name.to_string_lossy()
         ));
-        fs::write(&journal, encoded(name, stood, lands, changes)).expect("a journal");
+        fs::write(&journal, encoded(name, stood, lands, 0, changes)).expect("a journal");
         journal
     }
 
@@ -1316,6 +1406,43 @@ mod tests {
             mend_a_cut_short_write(&journal).expect("a mend"),
             Mended::Finished
         );
+    }
+
+    #[test]
+    fn a_journal_the_second_build_kept_is_still_read_and_a_grown_tail_cut_back() {
+        let folder = Folder::new("second");
+        let track = folder.0.join("Time.flac");
+        let name = track.file_name().expect("a named track");
+        let was = vec![1_u8; 16];
+        fs::write(&track, &was).expect("a track");
+
+        let mut bytes = SECOND_MAGIC.to_vec();
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.extend_from_slice(&16_u64.to_le_bytes());
+        bytes.extend_from_slice(&20_u64.to_le_bytes());
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&12_u64.to_le_bytes());
+        bytes.extend_from_slice(&4_u64.to_le_bytes());
+        bytes.extend_from_slice(&8_u64.to_le_bytes());
+        bytes.extend_from_slice(&[1; 4]);
+        bytes.extend_from_slice(&[2; 8]);
+        let check = hashed(&bytes);
+        bytes.extend_from_slice(&check.to_le_bytes());
+        let journal =
+            track.with_file_name(format!(".Time.flac.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}"));
+        fs::write(&journal, bytes).expect("a journal");
+
+        let mut torn = was.clone();
+        torn.resize(20, 0);
+        torn[12..14].fill(2);
+        torn[16..20].fill(2);
+        fs::write(&track, &torn).expect("a write cut short");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::RolledBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), was);
     }
 
     #[test]
