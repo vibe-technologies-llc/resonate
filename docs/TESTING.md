@@ -82,8 +82,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   mobile network and a Linux desktop, have not been driven against a live server
 - [M] The MPRIS bus tests skip without a session bus and CI's `cargo test` gives them none, so all
   but the `dbus-run-session` ones pass having run nothing
-- [M] Loudness and the print have no reference: no test against `ffmpeg -af ebur128` or EBU
-  3341/3342, K-weighting checked at 48 kHz alone, the print asserted only to begin `AQA`
 - [M] Nothing races two imports of one key, or a dedup hit or renewal against a sweep, though
   `landed_or_standing` exists for it
 - [M] The Output and Processing settings panes have no test pressing their controls
