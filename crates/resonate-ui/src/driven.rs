@@ -3000,4 +3000,200 @@ mod tests {
         driven.click("listen-keep-track");
         assert!(!driven.read(|root, cx| root.listen.read(cx).keeps_listening()));
     }
+
+    fn pressed_until(
+        driven: &mut Driven,
+        id: &'static str,
+        index: usize,
+        holds: impl Fn(&resonate_engine::OutputSettings) -> bool,
+    ) {
+        driven.click(named(id, index));
+        driven.until(|root, cx| holds(root.player.read(cx).output_settings()));
+    }
+
+    fn flipped_until(
+        driven: &mut Driven,
+        id: &'static str,
+        read: impl Fn(&resonate_engine::OutputSettings) -> bool,
+    ) {
+        let before = driven.read(|root, cx| read(root.player.read(cx).output_settings()));
+
+        let track = named(id, "track");
+        driven.click(track);
+        driven.until(|root, cx| read(root.player.read(cx).output_settings()) != before);
+        driven.click(track);
+        driven.until(|root, cx| read(root.player.read(cx).output_settings()) == before);
+    }
+
+    #[gpui::test]
+    fn every_choice_and_switch_of_the_processing_category_reaches_the_engine(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_core::Trim;
+        use resonate_engine::{
+            DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode, Restoration,
+        };
+
+        let trim = |millibels| Trim::from_millibels(millibels).expect("a trim");
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Processing);
+
+        for (index, held) in [
+            Quality::Fast,
+            Quality::Balanced,
+            Quality::High,
+            Quality::VeryHigh,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "quality", index, |settings| {
+                settings.quality == held
+            });
+        }
+        for (index, held) in [
+            FilterPhase::Linear,
+            FilterPhase::Intermediate,
+            FilterPhase::Minimum,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "filter-phase", index, |settings| {
+                settings.filter_phase == held
+            });
+        }
+        for (index, held) in [Restoration::Off, Restoration::Repair, Restoration::Extend]
+            .into_iter()
+            .enumerate()
+        {
+            pressed_until(&mut driven, "restore-lossy", index, |settings| {
+                settings.restoration == held
+            });
+        }
+        for (index, held) in [
+            DitherKind::None,
+            DitherKind::Rectangular,
+            DitherKind::Triangular,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "dither", index, |settings| {
+                settings.dither == held
+            });
+        }
+        for (index, held) in [
+            NoiseShaping::None,
+            NoiseShaping::Lipshitz,
+            NoiseShaping::Threshold,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "noise-shaping", index, |settings| {
+                settings.noise_shaping == held
+            });
+        }
+        for (index, held) in [
+            ReplayGainMode::Off,
+            ReplayGainMode::Track,
+            ReplayGainMode::Album,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "replay-gain", index, |settings| {
+                settings.replay_gain == held
+            });
+        }
+        for (index, millibels) in [-600, -300, 0, 300, 600].into_iter().enumerate() {
+            pressed_until(&mut driven, "pre-amp", index, |settings| {
+                settings.levelling.pre_amp == trim(millibels)
+            });
+        }
+        for (index, millibels) in [0, -300, -600, -900].into_iter().enumerate() {
+            pressed_until(&mut driven, "untagged", index, |settings| {
+                settings.levelling.untagged == trim(millibels)
+            });
+        }
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).output_settings().levelling),
+            Levelling {
+                pre_amp: trim(600),
+                untagged: trim(-900),
+            },
+            "one level setting undid the other"
+        );
+
+        flipped_until(&mut driven, "true-peak", |settings| settings.true_peak);
+    }
+
+    #[gpui::test]
+    fn every_choice_and_switch_of_the_output_category_reaches_the_engine(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Output);
+
+        pressed_until(&mut driven, "sample-rate", 1, |settings| {
+            !settings.prefer_bit_perfect
+        });
+        pressed_until(&mut driven, "sample-rate", 0, |settings| {
+            settings.prefer_bit_perfect
+        });
+        pressed_until(&mut driven, "graph-rate", 0, |settings| {
+            settings.force_graph_rate
+        });
+        pressed_until(&mut driven, "graph-rate", 1, |settings| {
+            !settings.force_graph_rate
+        });
+        for (index, millis) in [100, 250, 500, 1_000].into_iter().enumerate() {
+            pressed_until(&mut driven, "buffer", index, |settings| {
+                settings.buffer == Duration::from_millis(millis)
+            });
+        }
+
+        flipped_until(&mut driven, "device-volume", |settings| {
+            settings.device_volume
+        });
+        flipped_until(&mut driven, "dop", |settings| settings.dop);
+        flipped_until(&mut driven, "dsd-like-pcm", |settings| {
+            settings.dsd_like_pcm
+        });
+    }
+
+    #[gpui::test]
+    fn the_bluetooth_choices_appear_with_the_switch_and_each_reaches_the_engine(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Output);
+        let wake = |driven: &mut Driven| {
+            driven.read(|root, cx| root.player.read(cx).output_settings().bluetooth)
+        };
+        assert!(!wake(&mut driven).on);
+
+        driven.click("bluetooth-wake-track");
+        driven.until(|root, cx| root.player.read(cx).output_settings().bluetooth.on);
+        driven.scroll("settings", 600.0);
+
+        for (index, millis) in [250, 500, 750, 1_000, 1_500].into_iter().enumerate() {
+            pressed_until(&mut driven, "bluetooth-lead", index, |settings| {
+                settings.bluetooth.lead == Duration::from_millis(millis)
+            });
+        }
+        for (index, seconds) in [60, 300, 900, 3_600].into_iter().enumerate() {
+            pressed_until(&mut driven, "bluetooth-awake", index, |settings| {
+                settings.bluetooth.awake_for == Duration::from_secs(seconds)
+            });
+        }
+        assert!(
+            wake(&mut driven).on,
+            "a choice under the switch turned it off"
+        );
+        assert_eq!(wake(&mut driven).lead, Duration::from_millis(1_500));
+
+        driven.scroll("settings", -600.0);
+        driven.click("bluetooth-wake-track");
+        driven.until(|root, cx| !root.player.read(cx).output_settings().bluetooth.on);
+    }
 }
