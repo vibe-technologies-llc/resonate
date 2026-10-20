@@ -128,7 +128,7 @@ symphonia = {
 symphonia-codec-wavpack = { version = "0.1.1", default-features = false }
 ape-decoder = { version = "0.3.2", default-features = false }
 
-opus-rs = { version = "0.1.37", default-features = false, features = ["std", "heap"] }
+opus-rs = { version = "0.1.39", default-features = false, features = ["std", "heap"] }
 
 lofty = { version = "0.25.4", default-features = false, features = ["id3v2_compression_support"] }
 
@@ -155,13 +155,13 @@ rusqlite = {
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
-crc32fast = { version = "1.5.2", default-features = false, features = ["std"] }
+crc32fast = { version = "1.5.3", default-features = false, features = ["std"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.1", default-features = false, features = ["std"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
-webpki-root-certs = { version = "1.0.9", default-features = false }
+webpki-root-certs = { version = "1.0.10", default-features = false }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 mdns-sd = { version = "0.21.6", default-features = false, features = ["async"] }
