@@ -25,9 +25,6 @@ are in [ROADMAP.md](ROADMAP.md).
   order: rows shared across publishes (an `Arc` a row, or a persistent vector) reach every reader of
   `Queued::rows` in resonate-ui, -mpris, -mcp, -mobile and the binary; the stamps are order-dependent
   SipHash, so they cannot be kept incrementally either
-- [M] Search over the unheld discography `instr`s a concatenation per row and `LIKE '%…%'`s
-  `release_tracks`, `artist_releases` and `artists.key`, growing with every enriched artist
-- [M] The organise planner keeps every library path and folder listing for the whole run
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

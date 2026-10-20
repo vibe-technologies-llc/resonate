@@ -491,6 +491,54 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN track_total INTEGER;
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
     "ALTER TABLE albums ADD COLUMN pressing_fit INTEGER;",
+    "CREATE VIRTUAL TABLE artist_releases_fts USING fts5(
+         folded, content = 'artist_releases', content_rowid = 'rowid', tokenize = 'trigram'
+     );
+     CREATE VIRTUAL TABLE artists_key_fts USING fts5(
+         key, content = 'artists', content_rowid = 'id', tokenize = 'trigram'
+     );
+     CREATE VIRTUAL TABLE release_tracks_fts USING fts5(
+         folded, content = 'release_tracks', content_rowid = 'id', tokenize = 'trigram'
+     );
+     INSERT INTO artist_releases_fts (artist_releases_fts) VALUES ('rebuild');
+     INSERT INTO artists_key_fts (artists_key_fts) VALUES ('rebuild');
+     INSERT INTO release_tracks_fts (release_tracks_fts) VALUES ('rebuild');
+     CREATE TRIGGER artist_releases_fts_added AFTER INSERT ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
+     END;
+     CREATE TRIGGER artist_releases_fts_gone AFTER DELETE ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
+         VALUES ('delete', old.rowid, old.folded);
+     END;
+     CREATE TRIGGER artist_releases_fts_refolded AFTER UPDATE OF folded ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
+         VALUES ('delete', old.rowid, old.folded);
+         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
+     END;
+     CREATE TRIGGER artists_key_fts_added AFTER INSERT ON artists BEGIN
+         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
+     END;
+     CREATE TRIGGER artists_key_fts_gone AFTER DELETE ON artists BEGIN
+         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
+         VALUES ('delete', old.id, old.key);
+     END;
+     CREATE TRIGGER artists_key_fts_rekeyed AFTER UPDATE OF key ON artists BEGIN
+         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
+         VALUES ('delete', old.id, old.key);
+         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
+     END;
+     CREATE TRIGGER release_tracks_fts_added AFTER INSERT ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;
+     CREATE TRIGGER release_tracks_fts_gone AFTER DELETE ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+     END;
+     CREATE TRIGGER release_tracks_fts_refolded AFTER UPDATE OF folded ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1540,6 +1588,123 @@ mod tests {
             marked,
             [("packed.wv".to_owned(), 1), ("song.flac".to_owned(), 0)]
         );
+    }
+
+    fn trigram_hits(connection: &Connection, index: &str, column: &str, piece: &str) -> Vec<i64> {
+        connection
+            .prepare(&format!(
+                "SELECT rowid FROM {index} WHERE {column} LIKE ?1 ESCAPE '\\' ORDER BY rowid"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([format!("%{piece}%")], |row| row.get(0))?
+                    .collect()
+            })
+            .expect("the index reads back")
+    }
+
+    fn unfinished_indexes(connection: &Connection) -> Vec<String> {
+        [
+            "artist_releases_fts",
+            "artists_key_fts",
+            "release_tracks_fts",
+        ]
+        .into_iter()
+        .filter(|index| {
+            connection
+                .execute(
+                    &format!("INSERT INTO {index} ({index}) VALUES ('integrity-check')"),
+                    [],
+                )
+                .is_err()
+        })
+        .map(str::to_owned)
+        .collect()
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_indexes_the_discography_it_already_holds() {
+        let connection = opened();
+        let indexing = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("artist_releases_fts"))
+            .expect("the step that indexes the discography");
+        lay_out_through(&connection, V1, &MIGRATIONS[..indexing])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
+                 INSERT INTO artist_releases (artist_id, mbid, title, folded)
+                 VALUES (1, 'a', 'Agaetis Byrjun', 'agaetis byrjun');
+                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'Takk', 1);
+                 INSERT INTO release_tracks (id, album_id, disc, position, title, folded)
+                 VALUES (4, 1, 1, 1, 'Glosoli', 'glosoli');",
+            )
+            .expect("the rows are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        assert_eq!(
+            trigram_hits(&connection, "artist_releases_fts", "folded", "byrj"),
+            [1]
+        );
+        assert_eq!(
+            trigram_hits(&connection, "artists_key_fts", "key", "ros"),
+            [1]
+        );
+        assert_eq!(
+            trigram_hits(&connection, "release_tracks_fts", "folded", "oso"),
+            [4]
+        );
+        assert!(unfinished_indexes(&connection).is_empty());
+    }
+
+    #[test]
+    fn the_discography_index_follows_every_row_added_renamed_or_removed() {
+        let connection = opened();
+        lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
+                 INSERT INTO artist_releases (artist_id, mbid, title, folded)
+                 VALUES (1, 'a', 'Agaetis Byrjun', 'agaetis byrjun');
+                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'Takk', 1);
+                 INSERT INTO release_tracks (id, album_id, disc, position, title, folded)
+                 VALUES (4, 1, 1, 1, 'Glosoli', 'glosoli');",
+            )
+            .expect("the rows are stored");
+
+        connection
+            .execute_batch(
+                "UPDATE artists SET key = 'sigur rosa' WHERE id = 1;
+                 UPDATE artist_releases SET folded = 'valtari' WHERE mbid = 'a';
+                 UPDATE release_tracks SET folded = 'hoppipolla' WHERE id = 4;",
+            )
+            .expect("the rows are renamed");
+
+        assert_eq!(
+            trigram_hits(&connection, "artists_key_fts", "key", "rosa"),
+            [1]
+        );
+        assert_eq!(
+            trigram_hits(&connection, "artist_releases_fts", "folded", "valt"),
+            [1]
+        );
+        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "byrj").is_empty());
+        assert_eq!(
+            trigram_hits(&connection, "release_tracks_fts", "folded", "hoppi"),
+            [4]
+        );
+        assert!(trigram_hits(&connection, "release_tracks_fts", "folded", "oso").is_empty());
+
+        connection
+            .execute_batch("DELETE FROM artists WHERE id = 1; DELETE FROM albums WHERE id = 1;")
+            .expect("the rows cascade away");
+
+        assert!(trigram_hits(&connection, "artists_key_fts", "key", "rosa").is_empty());
+        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "valt").is_empty());
+        assert!(trigram_hits(&connection, "release_tracks_fts", "folded", "hoppi").is_empty());
+        assert!(unfinished_indexes(&connection).is_empty());
     }
 
     #[test]

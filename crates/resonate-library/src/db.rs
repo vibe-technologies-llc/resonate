@@ -456,8 +456,6 @@ macro_rules! held_or_wanted {
 const SHORT_OF_WHAT_IS_HELD_OR_WANTED: &str =
     concat!(" WHERE rt.track_id IS NULL AND ", held_or_wanted!());
 
-const UNHELD_HOLDS_THE_NAME: &str = " AND rt.folded LIKE ? ESCAPE '\\'";
-
 const UNHELD_MATCHING_IN_ORDER: &str = concat!(
     " ORDER BY w.id IS NULL, ",
     album_title!(),
@@ -645,9 +643,6 @@ const DISMISSED_MISSING_ROWS: &str = "SELECT count(*) FROM release_tracks rt
 const DISMISSED_UNHELD_RELEASES: &str = "SELECT count(*) FROM artist_releases r
        JOIN dismissed_releases d ON d.artist_id = r.artist_id AND d.mbid = r.mbid
       WHERE NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)";
-
-const UNHELD_HOLDS_THE_WORD: &str =
-    " AND (r.folded LIKE ? ESCAPE '\\' OR ar.key LIKE ? ESCAPE '\\')";
 
 const UNHELD_OF_ARTIST: &str = concat!(
     "SELECT count(*) FROM artist_releases r WHERE r.artist_id = ?1 AND ",
@@ -3391,6 +3386,33 @@ impl Library {
         })
     }
 
+    pub(crate) fn tracks_among(
+        &self,
+        roots: &[PathBuf],
+        paths: &[&Path],
+    ) -> Result<AHashSet<PathBuf>> {
+        let named = rooted(roots)?;
+        let mut tracked = AHashSet::new();
+
+        for chunk in paths.chunks(PATHS_ASKED_AT_ONCE) {
+            let mut binds = named.clone();
+            binds.extend(
+                chunk
+                    .iter()
+                    .map(|path| Value::Text(store::path_text(path).into_owned())),
+            );
+            let sql = tracks_among(named.len(), chunk.len());
+            let found = self.inner.read(|connection| {
+                rows(connection, &sql, binds, |row| {
+                    row.get::<_, String>(0).map(Ok)
+                })
+            })?;
+            tracked.extend(found.iter().map(|path| store::path_of(path)));
+        }
+
+        Ok(tracked)
+    }
+
     pub(crate) fn tracks_to_file_after(
         &self,
         roots: &[PathBuf],
@@ -3645,10 +3667,10 @@ impl Library {
         let mut binds = Vec::with_capacity(words.len() + 1);
         for word in &words {
             for piece in word.split_whitespace() {
-                sql.push_str(UNHELD_HOLDS_THE_NAME);
-                binds.push(Value::Text(playlist::anywhere(&store::folded_letters(
-                    piece,
-                ))));
+                sql.push_str(" AND ");
+                sql.push_str(
+                    &Infix::OF_A_MISSING_TRACK.holding(&store::folded_letters(piece), &mut binds),
+                );
             }
         }
         sql.push_str(UNHELD_MATCHING_IN_ORDER);
@@ -4435,13 +4457,16 @@ impl Library {
         if words.is_empty() {
             return Ok(Vec::new());
         }
-        let sought = vec!["instr(r.folded || ' ' || ar.key, ?) > 0"; words.len()].join(" AND ");
-        let sql = format!("{UNHELD_ALBUMS_KEPT}{sought}{UNHELD_ALBUMS_KEPT_IN_ORDER}");
-        let binds: Vec<Value> = elsewhere::ALBUM_KINDS
+        let mut binds: Vec<Value> = elsewhere::ALBUM_KINDS
             .into_iter()
             .map(|kind| Value::Text(kind.to_owned()))
-            .chain(words.into_iter().map(Value::Text))
             .collect();
+        let sought = words
+            .iter()
+            .map(|word| Infix::held_by_a_release_or_its_artist(word, &mut binds))
+            .collect::<Vec<String>>()
+            .join(" AND ");
+        let sql = format!("{UNHELD_ALBUMS_KEPT}{sought}{UNHELD_ALBUMS_KEPT_IN_ORDER}");
 
         let kept = self.inner.read(|connection| {
             rows(connection, &sql, binds, |row| {
@@ -5809,14 +5834,65 @@ fn scoped_missing(narrowing: Option<&str>) -> Option<Scoped> {
     narrowed_onto(narrowing, "album_id", "a.id", MusicFilters::default())
 }
 
+struct Infix {
+    column: &'static str,
+    owner: &'static str,
+    index: &'static str,
+    indexed_column: &'static str,
+}
+
+impl Infix {
+    const FEWEST_LETTERS_INDEXED: usize = 3;
+
+    const OF_A_MISSING_TRACK: Infix = Infix {
+        column: "rt.folded",
+        owner: "rt.id",
+        index: "release_tracks_fts",
+        indexed_column: "folded",
+    };
+
+    const OF_A_RELEASE: Infix = Infix {
+        column: "r.folded",
+        owner: "r.rowid",
+        index: "artist_releases_fts",
+        indexed_column: "folded",
+    };
+
+    const OF_AN_ARTIST: Infix = Infix {
+        column: "ar.key",
+        owner: "r.artist_id",
+        index: "artists_key_fts",
+        indexed_column: "key",
+    };
+
+    fn holding(&self, folded: &str, binds: &mut Vec<Value>) -> String {
+        binds.push(Value::Text(playlist::anywhere(folded)));
+        if folded.chars().count() < Self::FEWEST_LETTERS_INDEXED {
+            return format!("{} LIKE ? ESCAPE '\\'", self.column);
+        }
+
+        format!(
+            "{} IN (SELECT rowid FROM {} WHERE {} LIKE ? ESCAPE '\\')",
+            self.owner, self.index, self.indexed_column
+        )
+    }
+
+    fn held_by_a_release_or_its_artist(folded: &str, binds: &mut Vec<Value>) -> String {
+        let release = Self::OF_A_RELEASE.holding(folded, binds);
+        let artist = Self::OF_AN_ARTIST.holding(folded, binds);
+        format!("({release} OR {artist})")
+    }
+}
+
 fn unheld_holding(narrowing: Option<&str>) -> (String, Vec<Value>) {
     let mut held = String::new();
     let mut binds = Vec::new();
     for word in playlist::words_of(narrowing) {
-        let anywhere = playlist::anywhere(&store::folded_letters(&word));
-        held.push_str(UNHELD_HOLDS_THE_WORD);
-        binds.push(Value::Text(anywhere.clone()));
-        binds.push(Value::Text(anywhere));
+        held.push_str(" AND ");
+        held.push_str(&Infix::held_by_a_release_or_its_artist(
+            &store::folded_letters(&word),
+            &mut binds,
+        ));
     }
 
     (held, binds)
@@ -6438,6 +6514,23 @@ fn rooted(roots: &[PathBuf]) -> Result<Vec<Value>> {
         named.push(Value::Text(store::path_text(root).into_owned()));
     }
     Ok(named)
+}
+
+const PATHS_ASKED_AT_ONCE: usize = 512;
+
+fn tracks_among(roots: usize, paths: usize) -> String {
+    let among = vec!["?"; paths].join(", ");
+    match roots {
+        0 => format!(
+            "SELECT DISTINCT tracks.path FROM tracks JOIN roots ON roots.id = tracks.root_id
+              WHERE tracks.path IN ({among})"
+        ),
+        held => format!(
+            "SELECT DISTINCT tracks.path FROM tracks JOIN roots ON roots.id = tracks.root_id
+              WHERE roots.path IN ({}) AND tracks.path IN ({among})",
+            vec!["?"; held].join(", ")
+        ),
+    }
 }
 
 fn and_roots(select: &str, roots: usize) -> String {
@@ -8796,6 +8889,41 @@ mod tests {
             "the other process's edit failed rather than waiting its turn"
         );
         assert_eq!(here.roots().expect("the roots read back").len(), 2);
+    }
+
+    #[test]
+    fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_asked()
+    -> Result<()> {
+        let library = Library::open_in_memory()?;
+        titled(&library, "Echoes");
+        titled(&library, "Days");
+
+        let echoes = PathBuf::from("/music/Echoes.wav");
+        let days = PathBuf::from("/music/Days.wav");
+        let absent = PathBuf::from("/music/Absent.wav");
+        let asked = [echoes.as_path(), days.as_path(), absent.as_path()];
+
+        let everywhere = library.tracks_among(&[], &asked)?;
+        let under_music = library.tracks_among(&[PathBuf::from("/music")], &asked)?;
+        let under_nothing = library.tracks_among(&[PathBuf::from("/nowhere")], &asked)?;
+
+        assert_eq!(
+            everywhere,
+            AHashSet::from_iter([echoes.clone(), days.clone()])
+        );
+        assert_eq!(under_music, everywhere);
+        assert!(under_nothing.is_empty());
+
+        let many: Vec<PathBuf> = (0..PATHS_ASKED_AT_ONCE * 2 + 1)
+            .map(|at| PathBuf::from(format!("/music/{at}.wav")))
+            .chain([echoes.clone()])
+            .collect();
+        let many: Vec<&Path> = many.iter().map(PathBuf::as_path).collect();
+        assert_eq!(
+            library.tracks_among(&[], &many)?,
+            AHashSet::from_iter([echoes])
+        );
+        Ok(())
     }
 
     #[test]
