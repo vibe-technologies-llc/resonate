@@ -1,5 +1,6 @@
 use std::{
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -500,7 +501,11 @@ impl RootView {
         menu::opens_a_menu(control, move |_, at, _| sleep_menu(at, sleeping), cx)
     }
 
-    pub(crate) fn queued_row(&self, state: &PlayerState, cx: &Context<Self>) -> Option<QueueItem> {
+    pub(crate) fn queued_row(
+        &self,
+        state: &PlayerState,
+        cx: &Context<Self>,
+    ) -> Option<Arc<QueueItem>> {
         let current = state.current?;
         let queue = self.player.read(cx).queue();
         let item = queue.get(state.queue_position?)?;
@@ -948,7 +953,7 @@ impl RootView {
         let row = self.queued_row(&state, cx)?;
 
         Some((
-            row.location,
+            row.location.clone(),
             Called {
                 title: playing.title.clone(),
                 artist: playing.artist.clone(),

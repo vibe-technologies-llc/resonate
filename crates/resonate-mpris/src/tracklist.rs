@@ -33,7 +33,7 @@ pub(crate) enum Change {
     Replaced,
 }
 
-pub(crate) fn change(before: &[QueueItem], after: &[QueueItem]) -> Change {
+pub(crate) fn change(before: &[Arc<QueueItem>], after: &[Arc<QueueItem>]) -> Change {
     if before == after {
         return Change::Unchanged;
     }
@@ -92,7 +92,7 @@ pub(crate) fn change(before: &[QueueItem], after: &[QueueItem]) -> Change {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Sample<'a> {
-    pub(crate) rows: &'a [QueueItem],
+    pub(crate) rows: &'a [Arc<QueueItem>],
     pub(crate) revision: u64,
 }
 
@@ -131,12 +131,12 @@ pub(crate) struct TrackList {
 }
 
 impl TrackList {
-    fn row_of(queue: &[QueueItem], path: &str) -> Option<usize> {
+    fn row_of(queue: &[Arc<QueueItem>], path: &str) -> Option<usize> {
         let track = track_of(path)?;
         queue.iter().position(|item| item.id == track)
     }
 
-    pub(crate) fn landing(queue: &[QueueItem], after: &ObjectPath<'_>) -> fdo::Result<usize> {
+    pub(crate) fn landing(queue: &[Arc<QueueItem>], after: &ObjectPath<'_>) -> fdo::Result<usize> {
         if after.as_str() == NO_TRACK {
             return Ok(0);
         }
@@ -202,7 +202,7 @@ impl TrackList {
             .shared
             .host
             .held_as(&location, span)
-            .unwrap_or_else(|| unclaimed_id(&queue));
+            .unwrap_or_else(|| unclaimed_id(queue.iter().map(Arc::as_ref)));
         self.shared.settle(Command::Insert {
             items: vec![QueueItem { id, location, span }],
             at: Placement::At(at),
@@ -270,7 +270,7 @@ impl TrackList {
     ) -> zbus::Result<()>;
 }
 
-pub(crate) fn after_row(queue: &[QueueItem], at: usize) -> OwnedObjectPath {
+pub(crate) fn after_row(queue: &[Arc<QueueItem>], at: usize) -> OwnedObjectPath {
     at.checked_sub(1)
         .and_then(|before| queue.get(before))
         .map_or_else(no_track, |item| track_path(item.id))
@@ -282,12 +282,14 @@ mod tests {
 
     use super::*;
 
-    fn queue(ids: &[u64]) -> Vec<QueueItem> {
+    fn queue(ids: &[u64]) -> Vec<Arc<QueueItem>> {
         ids.iter()
-            .map(|id| QueueItem {
-                id: TrackId::new(*id).expect("track ids start at one"),
-                location: MediaLocation::local(format!("/music/{id}.flac")),
-                span: None,
+            .map(|id| {
+                Arc::new(QueueItem {
+                    id: TrackId::new(*id).expect("track ids start at one"),
+                    location: MediaLocation::local(format!("/music/{id}.flac")),
+                    span: None,
+                })
             })
             .collect()
     }

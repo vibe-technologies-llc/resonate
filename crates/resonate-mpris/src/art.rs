@@ -115,7 +115,7 @@ impl Pictures {
         self.laid_down(None, art, Kept::Playing)
     }
 
-    pub(crate) fn keep_rows(&self, queue: &[QueueItem]) {
+    pub(crate) fn keep_rows(&self, queue: &[Arc<QueueItem>]) {
         let mut laid = self.drawn.lock();
         if laid.queued.is_empty() {
             return;
@@ -410,12 +410,14 @@ mod tests {
         pictures.forget();
     }
 
-    fn queued(ids: &[u64]) -> Vec<QueueItem> {
+    fn queued(ids: &[u64]) -> Vec<Arc<QueueItem>> {
         ids.iter()
-            .map(|id| QueueItem {
-                id: track(*id),
-                location: MediaLocation::local(format!("/music/{id}.flac")),
-                span: None,
+            .map(|id| {
+                Arc::new(QueueItem {
+                    id: track(*id),
+                    location: MediaLocation::local(format!("/music/{id}.flac")),
+                    span: None,
+                })
             })
             .collect()
     }

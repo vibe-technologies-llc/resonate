@@ -334,8 +334,8 @@ struct Collection {
 }
 
 struct Watched {
-    queue: Arc<Vec<QueueItem>>,
-    listed: Arc<Vec<QueueItem>>,
+    queue: Arc<[Arc<QueueItem>]>,
+    listed: Arc<[Arc<QueueItem>]>,
     rows_revision: u64,
     playlists: Collection,
     playback: PlaybackState,
@@ -535,7 +535,7 @@ impl Reading {
     fn again(
         shared: &Shared,
         state: &PlayerState,
-        queue: &[QueueItem],
+        queue: &[Arc<QueueItem>],
         before: Option<&Self>,
     ) -> Self {
         let of = state.current.map(|current| current.id);
@@ -589,7 +589,7 @@ fn snapshot(
         {
             Arc::clone(&held.listed)
         }
-        _ => Arc::new(queued.in_list_order()),
+        _ => Arc::from(queued.in_list_order()),
     };
     let queue = queued.rows;
     let heard = Reading::again(shared, &state, &queue, before.map(|held| &held.heard));
@@ -798,8 +798,11 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
     if owed.is_empty() {
         return;
     }
-    let rows: AHashMap<TrackId, &QueueItem> =
-        now.queue.iter().map(|item| (item.id, item)).collect();
+    let rows: AHashMap<TrackId, &QueueItem> = now
+        .queue
+        .iter()
+        .map(|item| (item.id, item.as_ref()))
+        .collect();
     let state = shared.player.state();
     let digest = shared.player.digest();
     let playing = shared.art(&state, digest.as_ref());

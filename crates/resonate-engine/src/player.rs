@@ -159,7 +159,7 @@ impl Player {
         Arc::clone(&self.published.settings.read())
     }
 
-    pub fn queue(&self) -> Arc<Vec<QueueItem>> {
+    pub fn queue(&self) -> Arc<[Arc<QueueItem>]> {
         Arc::clone(&self.published.queue.read().rows)
     }
 

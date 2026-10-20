@@ -832,6 +832,10 @@ fn stand_still(player: &Player) {
     wait_for(player, paused, "the transport to stand still");
 }
 
+fn unshared(rows: &[Arc<QueueItem>]) -> Vec<QueueItem> {
+    rows.iter().map(|row| QueueItem::clone(row)).collect()
+}
+
 #[test]
 fn a_track_whose_sink_takes_its_format_reaches_the_graph_byte_for_byte() -> Result<()> {
     for bits in [16_u16, 24] {
@@ -4234,7 +4238,7 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
     );
     stand_still(&player);
 
-    assert_eq!(player.queue().as_slice(), items.as_slice());
+    assert_eq!(unshared(&player.queue()), items);
     assert_eq!(player.state().queue_position, Some(0));
 
     player
@@ -4292,8 +4296,8 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
     );
     let unshuffled = player.state();
     assert_eq!(
-        player.queue().as_slice(),
-        items.as_slice(),
+        unshared(&player.queue()),
+        items,
         "the load order did not come back"
     );
     assert_eq!(

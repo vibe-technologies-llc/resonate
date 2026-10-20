@@ -697,7 +697,7 @@ impl RootView {
         });
 
         Some(Wanted {
-            location: item.location,
+            location: item.location.clone(),
             span: item.span,
             rate: Some(current.source.rate),
             title: title.or_else(|| scanned.as_ref().map(|track| track.title.clone())),

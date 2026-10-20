@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TrackId};
 
@@ -73,7 +73,7 @@ pub struct Listening {
 }
 
 impl Listening {
-    pub fn heard(&mut self, state: &PlayerState, queue: &[QueueItem]) -> Option<Counting> {
+    pub fn heard(&mut self, state: &PlayerState, queue: &[Arc<QueueItem>]) -> Option<Counting> {
         let Some(track) = state.current.as_ref() else {
             return self.ends();
         };
@@ -136,7 +136,7 @@ impl Listening {
 
 fn playing(
     state: &PlayerState,
-    queue: &[QueueItem],
+    queue: &[Arc<QueueItem>],
     track: TrackId,
     heard: Duration,
 ) -> Option<Played> {
@@ -183,12 +183,14 @@ mod tests {
         TrackId::new(number).expect("track ids start at one")
     }
 
-    fn queued(count: u64) -> Vec<QueueItem> {
+    fn queued(count: u64) -> Vec<Arc<QueueItem>> {
         (1..=count)
-            .map(|number| QueueItem {
-                id: track(number),
-                location: MediaLocation::local(format!("/music/{number}.flac")),
-                span: None,
+            .map(|number| {
+                Arc::new(QueueItem {
+                    id: track(number),
+                    location: MediaLocation::local(format!("/music/{number}.flac")),
+                    span: None,
+                })
             })
             .collect()
     }

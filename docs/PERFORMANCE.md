@@ -19,13 +19,12 @@ are in [ROADMAP.md](ROADMAP.md).
   `MAX_ELEMENTS_COUNTED`), and of a VBR MP3 naming no length every frame header (up to
   `MOST_FRAMES_WALKED`), scan and playback alike; a count persisted beside the catalog's duration
   would spare playback the walk
-- [L] Queue edits are O(n) on the engine thread: `one_id_each` hashes every id an insert,
-  `rows_changed` rehashes every location, a consumed play-next row is three `retain` passes, and
-  `publish_queue` clones every row (a `PathBuf` allocation each) whenever the revision moves. The
-  publish dominates and cannot shrink while `Queued::rows` is an owned `Vec<QueueItem>` in play
-  order: rows shared across publishes (an `Arc` a row, or a persistent vector) reach every reader of
-  `Queued::rows` in resonate-ui, -mpris, -mcp, -mobile and the binary; the stamps are order-dependent
-  SipHash, so they cannot be kept incrementally either
+- [M] Queue edits still walk the queue on the engine thread, though none allocates a row: a
+  publish copies a pointer a row into a fresh `Arc<[Arc<QueueItem>]>` and rebuilds `loaded_at` and
+  `listed`; a removal, and a heard play-next row leaving, rehash every location for `Queued::stamp`
+  (order-dependent SipHash over the load order, so only an append extends it); a heard play-next row
+  shifts every index above it in `order`, `unshuffled` and `next`. Edits costing what they move need
+  rows keyed stably (a slab, not positions) and a persistent vector for the published play order
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

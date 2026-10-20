@@ -100,7 +100,7 @@ pub enum Transport {
     Paused,
 }
 
-fn row_being_opened(state: &PlayerState, rows: &[QueueItem]) -> Option<TrackId> {
+fn row_being_opened(state: &PlayerState, rows: &[Arc<QueueItem>]) -> Option<TrackId> {
     let opening = matches!(
         state.playback,
         PlaybackState::Buffering | PlaybackState::Paused

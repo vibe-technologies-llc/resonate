@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
+use std::{borrow::Borrow, cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use gpui::{
@@ -132,10 +132,10 @@ struct Standing {
     moved: NamesMoved,
 }
 
-fn named_again(
+fn named_again<Row: Borrow<QueueItem>>(
     library: &Library,
     player: &Player,
-    rows: &[QueueItem],
+    rows: &[Row],
     standing: Option<Standing>,
 ) -> Arc<[Named]> {
     let known: AHashMap<&QueueItem, &Named> = standing
@@ -150,6 +150,7 @@ fn named_again(
         .collect();
     let unknown: Vec<QueueItem> = rows
         .iter()
+        .map(Borrow::borrow)
         .filter(|item| !known.contains_key(item))
         .cloned()
         .collect();
@@ -168,6 +169,7 @@ fn named_again(
         .collect();
 
     rows.iter()
+        .map(Borrow::borrow)
         .map(|item| {
             known
                 .get(item)
@@ -367,14 +369,14 @@ pub(crate) struct TakenOut {
 }
 
 impl TakenOut {
-    fn of(queue: &[QueueItem], rows: Span) -> Option<Self> {
+    fn of(queue: &[Arc<QueueItem>], rows: Span) -> Option<Self> {
         let taken = queue.get(rows.range())?;
         if taken.is_empty() {
             return None;
         }
 
         Some(Self {
-            rows: taken.to_vec(),
+            rows: taken.iter().map(|row| QueueItem::clone(row)).collect(),
             at: rows.first(),
             after: rows
                 .first()
@@ -384,12 +386,12 @@ impl TakenOut {
         })
     }
 
-    fn stands_over(&self, queue: &[QueueItem]) -> bool {
+    fn stands_over(&self, queue: &[Arc<QueueItem>]) -> bool {
         let taken: AHashSet<TrackId> = self.rows.iter().map(|taken| taken.id).collect();
         queue.iter().all(|item| !taken.contains(&item.id))
     }
 
-    fn landing_in(&self, queue: &[QueueItem]) -> usize {
+    fn landing_in(&self, queue: &[Arc<QueueItem>]) -> usize {
         match self.after {
             None => 0,
             Some(after) => queue
@@ -399,7 +401,7 @@ impl TakenOut {
         }
     }
 
-    fn standing_in(&self, queue: &[QueueItem]) -> Option<Span> {
+    fn standing_in(&self, queue: &[Arc<QueueItem>]) -> Option<Span> {
         let first = self.rows.first()?;
         let at = queue.iter().position(|item| item.id == first.id)?;
         let held = queue.get(at..at + self.rows.len())?;
@@ -422,7 +424,7 @@ pub(crate) struct TakenBack {
 }
 
 impl TakenBack {
-    pub(crate) fn keeping_all(&mut self, queue: &[QueueItem], runs: &[Span]) -> Option<usize> {
+    pub(crate) fn keeping_all(&mut self, queue: &[Arc<QueueItem>], runs: &[Span]) -> Option<usize> {
         let taken: Vec<TakenOut> = runs
             .iter()
             .filter_map(|rows| TakenOut::of(queue, *rows))
@@ -446,31 +448,31 @@ impl TakenBack {
         self.steps.push(taken);
     }
 
-    fn standing(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
+    fn standing(&self, queue: &[Arc<QueueItem>]) -> Option<&TakenOut> {
         self.steps.last().filter(|taken| taken.stands_over(queue))
     }
 
-    fn standing_again(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
+    fn standing_again(&self, queue: &[Arc<QueueItem>]) -> Option<&TakenOut> {
         self.put_back
             .last()
             .filter(|taken| taken.standing_in(queue).is_some())
     }
 
-    fn offered(&self, queue: &[QueueItem]) -> Option<Offer> {
+    fn offered(&self, queue: &[Arc<QueueItem>]) -> Option<Offer> {
         self.standing(queue).map(|taken| Offer {
             rows: taken.rows.len(),
             behind: self.steps.len().saturating_sub(1),
         })
     }
 
-    fn offered_again(&self, queue: &[QueueItem]) -> Option<Offer> {
+    fn offered_again(&self, queue: &[Arc<QueueItem>]) -> Option<Offer> {
         self.standing_again(queue).map(|taken| Offer {
             rows: taken.rows.len(),
             behind: self.put_back.len().saturating_sub(1),
         })
     }
 
-    pub(crate) fn take(&mut self, queue: &[QueueItem]) -> Option<PuttingBack> {
+    pub(crate) fn take(&mut self, queue: &[Arc<QueueItem>]) -> Option<PuttingBack> {
         self.standing(queue)?;
         let taken = self.steps.pop()?;
         let putting = PuttingBack {
@@ -481,7 +483,7 @@ impl TakenBack {
         Some(putting)
     }
 
-    pub(crate) fn take_again(&mut self, queue: &[QueueItem]) -> Option<Span> {
+    pub(crate) fn take_again(&mut self, queue: &[Arc<QueueItem>]) -> Option<Span> {
         let rows = self.standing_again(queue)?.standing_in(queue)?;
         let taken = self.put_back.pop()?;
         self.stack(taken);
@@ -501,14 +503,14 @@ struct Reaching {
 }
 
 impl Reaching {
-    fn of(queue: &[QueueItem], rows: Span) -> Self {
+    fn of(queue: &[Arc<QueueItem>], rows: Span) -> Self {
         Self {
             rows,
             holding: queue
                 .get(rows.range())
                 .unwrap_or_default()
                 .iter()
-                .map(queued_cut)
+                .map(|item| queued_cut(item))
                 .collect(),
         }
     }
@@ -850,7 +852,7 @@ impl RootView {
             .into_any_element()
     }
 
-    fn holds_what_was_taken_out(&self, queue: &[QueueItem]) -> bool {
+    fn holds_what_was_taken_out(&self, queue: &[Arc<QueueItem>]) -> bool {
         self.took_out.offered(queue).is_some()
     }
 
@@ -915,7 +917,7 @@ impl RootView {
         }));
     }
 
-    fn queue_heading(&mut self, queue: &[QueueItem], cx: &mut Context<Self>) -> Div {
+    fn queue_heading(&mut self, queue: &[Arc<QueueItem>], cx: &mut Context<Self>) -> Div {
         let position = self.player.read(cx).state().queue_position;
         let total = self.queue_length(cx);
         let mut under: format::Parts<String> =
@@ -1022,7 +1024,7 @@ impl RootView {
                                                 .read(cx)
                                                 .queue()
                                                 .iter()
-                                                .map(queued_cut)
+                                                .map(|item| queued_cut(item))
                                                 .collect();
                                             this.hold_for_a_playlist(Held::of(queued), window, cx);
                                         },
@@ -1182,7 +1184,7 @@ impl RootView {
 fn ordered_rows(
     library: &Library,
     player: &Player,
-    rows: &[QueueItem],
+    rows: &[Arc<QueueItem>],
     order: RowOrder,
     reading: Direction,
 ) -> Vec<usize> {
@@ -1397,6 +1399,8 @@ fn takes_out_again(offer: Option<Offer>) -> SharedString {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use resonate_core::{MediaLocation, Span, TrackId};
     use resonate_library::{Library, NamesMoved};
 
@@ -1420,7 +1424,12 @@ mod tests {
         let folded: Vec<&str> = named.iter().map(|named| named.folded.as_str()).collect();
 
         assert_eq!(folded, ["kept 2", "3", "kept 1"]);
-        assert!(named.iter().map(|named| &named.item).eq(rows.iter()));
+        assert!(
+            named
+                .iter()
+                .map(|named| &named.item)
+                .eq(rows.iter().map(Arc::as_ref))
+        );
     }
 
     #[test]
@@ -1448,43 +1457,45 @@ mod tests {
                 .map(|item| Named {
                     folded: format!("kept {}", item.id.get()),
                     track: Some(item.id),
-                    item,
+                    item: QueueItem::clone(&item),
                 })
                 .collect(),
             moved,
         }
     }
 
-    fn queued(ids: &[u64]) -> Vec<QueueItem> {
+    fn queued(ids: &[u64]) -> Vec<Arc<QueueItem>> {
         ids.iter()
-            .map(|id| QueueItem {
-                id: TrackId::new(*id).expect("a namable track"),
-                location: MediaLocation::local(format!("/music/{id}.flac")),
-                span: None,
+            .map(|id| {
+                Arc::new(QueueItem {
+                    id: TrackId::new(*id).expect("a namable track"),
+                    location: MediaLocation::local(format!("/music/{id}.flac")),
+                    span: None,
+                })
             })
             .collect()
     }
 
-    fn without(queue: &[QueueItem], rows: Span) -> Vec<QueueItem> {
+    fn without(queue: &[Arc<QueueItem>], rows: Span) -> Vec<Arc<QueueItem>> {
         let mut left = queue.to_vec();
         left.drain(rows.range());
         left
     }
 
-    fn back(kept: &mut TakenBack, queue: &mut Vec<QueueItem>, rows: Span) {
+    fn back(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>, rows: Span) {
         kept.keeping_all(queue, &[rows]);
         *queue = without(queue, rows);
     }
 
-    fn put_back(kept: &mut TakenBack, queue: &mut Vec<QueueItem>) -> bool {
+    fn put_back(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>) -> bool {
         let Some(taken) = kept.take(queue) else {
             return false;
         };
-        queue.splice(taken.at..taken.at, taken.rows);
+        queue.splice(taken.at..taken.at, taken.rows.into_iter().map(Arc::new));
         true
     }
 
-    fn take_again(kept: &mut TakenBack, queue: &mut Vec<QueueItem>) -> bool {
+    fn take_again(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>) -> bool {
         let Some(rows) = kept.take_again(queue) else {
             return false;
         };

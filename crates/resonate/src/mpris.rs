@@ -148,7 +148,7 @@ impl Host for Desktop {
 
     fn open(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Opened {
         let queue = self.player.queue();
-        let mut minting = Unclaimed::beside(&queue);
+        let mut minting = Unclaimed::beside(queue.iter().map(Arc::as_ref));
 
         let items = match location.as_path().filter(|_| names_a_sheet(location)) {
             Some(sheet) => sheet_items(&self.sources, sheet, &mut minting),
