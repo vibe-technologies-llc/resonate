@@ -54,7 +54,9 @@ upgrade (`backup=` / `%config(noreplace)`), and leave the certificate and key to
 spec reads the player's source archive (`resonate-<version>.tar.gz`) and is held to the workspace's
 version like the player's (`the_server_spec_builds_the_version_cargo_declares`);
 `every_server_package_installs_the_unit_and_its_environment` holds both recipes to the two files.
-Neither is built by CI.
+CI builds the PKGBUILD (`server-package`: `makepkg` as a build user, `source` pointed at the runner's
+checkout, `check()` included); `rpm-release.yml`'s own job, `fedora-server-rpm`, builds the spec on a
+release or manual run apart from the player's, so one failing leaves the other's RPM.
 
 **`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the player's PKGBUILD beside it**, committed
 because the AUR reads it. Regenerate it when publishing to the AUR; no test holds it, since the VCS

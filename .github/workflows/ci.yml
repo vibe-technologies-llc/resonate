@@ -202,6 +202,25 @@ jobs:
             resonate-pipewire pipewire libspa gpui resonate-mpris resonate-discord oboe
           exit "$failed"
 
+  server-package:
+    name: Sync server package
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed base-devel git rustup
+      - uses: actions/checkout@v4
+      - name: Build the package from this checkout
+        run: |
+          useradd --create-home builder
+          cp -r "$GITHUB_WORKSPACE" /home/builder/checkout
+          sed -i 's|git+$url.git|git+file:///home/builder/checkout|' /home/builder/checkout/packaging/server/PKGBUILD
+          chown -R builder:builder /home/builder
+          runuser -u builder -- rustup toolchain install stable --profile minimal
+          cd /home/builder/checkout/packaging/server
+          runuser -u builder -- makepkg -f --noconfirm
+
   fuzz:
     name: Fuzz targets build
     runs-on: ubuntu-latest

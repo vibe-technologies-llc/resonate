@@ -185,6 +185,8 @@ Invariants the layering protects (the rules files have the rest):
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo test -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's
   key); `cargo test -p resonate-sync` holds the ledger, wire and sealing.
+- `cd packaging/server && makepkg -f`: the sync server's package, cloned from the repository's
+  remote (CI points `source` at its own checkout).
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
 
