@@ -317,7 +317,7 @@ mod tests {
         );
     }
 
-    const STAMP_THE_PINS_WERE_TAKEN_AT: u16 = 6;
+    const STAMP_THE_PINS_WERE_TAKEN_AT: u16 = 8;
     const FLAC_OF_THE_NOISE: &str = "5a50edbaf266bb9d43f93957cfa2894c";
     const ZSTD_OF_THE_NOISE: &str = "a5df14a15f07cc00fae2bf2e3ac3ac26";
 

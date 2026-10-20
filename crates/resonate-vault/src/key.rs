@@ -1,10 +1,73 @@
 use std::fmt;
 
-use crate::error::{Error, Result};
+use resonate_codec::Speakers;
+use resonate_core::{SampleFormat, StreamSpec};
+
+use crate::{
+    error::{Error, Result},
+    form::Form,
+    pcm::Digest,
+};
 
 pub(crate) const KEY_BYTES: usize = 16;
 const KEY_LETTERS: usize = KEY_BYTES * 2;
 const FANOUT_LETTERS: usize = 2;
+const SOUND_KEYED_AS: &[u8] = b"resonate-vault sound";
+const MASK_PAST_WAVE: u32 = u32::MAX;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Sound {
+    rate: u32,
+    channels: u8,
+    format: SampleFormat,
+    speakers: Speakers,
+}
+
+impl Sound {
+    pub(crate) fn placed(spec: StreamSpec, speakers: Speakers, form: Form) -> Self {
+        let channels = spec.channel_count().get();
+        let speakers = if speakers.is_named() {
+            speakers
+        } else {
+            match form {
+                Form::Flac => Speakers::in_flac_order(channels),
+                Form::Wave | Form::Kept => Speakers::in_wave_order(channels),
+            }
+            .unwrap_or(Speakers::UNNAMED)
+        };
+        Self {
+            rate: spec.rate.hz(),
+            channels,
+            format: spec.format,
+            speakers,
+        }
+    }
+
+    pub(crate) fn keyed(self, pcm: VaultKey) -> VaultKey {
+        let mut digest = Digest::default();
+        digest.note(SOUND_KEYED_AS);
+        digest.note(pcm.as_bytes());
+        digest.note(&self.rate.to_le_bytes());
+        digest.note(&[self.channels, format_code(self.format)]);
+        digest.note(
+            &self
+                .speakers
+                .wave_mask()
+                .unwrap_or(MASK_PAST_WAVE)
+                .to_le_bytes(),
+        );
+        digest.settled()
+    }
+}
+
+const fn format_code(format: SampleFormat) -> u8 {
+    match format {
+        SampleFormat::S16 => 16,
+        SampleFormat::S24 => 24,
+        SampleFormat::S32 => 32,
+        SampleFormat::F32 => 0xf3,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VaultKey([u8; KEY_BYTES]);
@@ -48,6 +111,78 @@ impl fmt::Display for VaultKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_same_samples_at_another_rate_count_depth_or_placing_are_keyed_apart() {
+        use resonate_core::{ChannelCount, ChannelLayout, SampleRate};
+
+        let silence = VaultKey::of([0x5a; KEY_BYTES]);
+        let spec = |rate: u32, channels: u8, format: SampleFormat| {
+            StreamSpec::new(
+                SampleRate::new(rate).expect("a rate"),
+                ChannelLayout::from_count(ChannelCount::new(u16::from(channels)).expect("a count")),
+                format,
+            )
+        };
+        let keyed = |spec: StreamSpec, speakers: Speakers, form: Form| {
+            Sound::placed(spec, speakers, form).keyed(silence)
+        };
+        let stereo = keyed(
+            spec(44_100, 2, SampleFormat::S16),
+            Speakers::UNNAMED,
+            Form::Flac,
+        );
+
+        assert_ne!(stereo, silence);
+        assert_ne!(
+            stereo,
+            keyed(
+                spec(48_000, 2, SampleFormat::S16),
+                Speakers::UNNAMED,
+                Form::Flac
+            )
+        );
+        assert_ne!(
+            stereo,
+            keyed(
+                spec(44_100, 1, SampleFormat::S16),
+                Speakers::UNNAMED,
+                Form::Flac
+            )
+        );
+        assert_ne!(
+            keyed(
+                spec(44_100, 2, SampleFormat::S32),
+                Speakers::UNNAMED,
+                Form::Wave
+            ),
+            keyed(
+                spec(44_100, 2, SampleFormat::F32),
+                Speakers::UNNAMED,
+                Form::Wave
+            )
+        );
+        assert_ne!(
+            keyed(
+                spec(44_100, 4, SampleFormat::S16),
+                Speakers::UNNAMED,
+                Form::Flac
+            ),
+            keyed(
+                spec(44_100, 4, SampleFormat::S16),
+                Speakers::UNNAMED,
+                Form::Wave
+            )
+        );
+        assert_eq!(
+            stereo,
+            keyed(
+                spec(44_100, 2, SampleFormat::S16),
+                Speakers::in_flac_order(2).expect("a stereo placing"),
+                Form::Flac
+            )
+        );
+    }
 
     #[test]
     fn a_key_written_out_reads_back_as_itself() {

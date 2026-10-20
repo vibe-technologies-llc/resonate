@@ -27,9 +27,10 @@ use crate::{
     files::VaultFiles,
     flac,
     form::{Form, WIDEST_FLAC_BITS},
-    key::VaultKey,
+    key::{Sound, VaultKey},
     ogg,
     pcm::{self, Digest},
+    standing,
     unpacking::{self, Unpacking},
     wave,
 };
@@ -144,6 +145,19 @@ pub struct Taking<'a> {
 pub struct Replacing {
     pub key: VaultKey,
     pub bytes: u64,
+    pub keyed_by_the_pcm_alone: bool,
+}
+
+impl Replacing {
+    const fn outweighed_by(self, bytes: u64) -> bool {
+        bytes > self.bytes || (bytes == self.bytes && !self.keyed_by_the_pcm_alone)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Expected<'a> {
+    Sound(Form, &'a Heard),
+    Bytes,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -549,7 +563,7 @@ impl Vault {
         };
         let kept = match (kept, taking.replacing) {
             (Keeping::Kept(kept), Some(standing))
-                if kept.key != standing.key && kept.bytes >= standing.bytes =>
+                if kept.key != standing.key && standing.outweighed_by(kept.bytes) =>
             {
                 Keeping::Refused(Refusal::NoSmaller)
             }
@@ -576,16 +590,21 @@ impl Vault {
             });
         }
 
-        let drawn = cover::as_jxl(art)?;
-        if art.bytes.len() <= drawn.bytes.len() {
-            return self.kept_as_it_came(key, art, &drawn);
-        }
+        let drawn = match cover::as_jxl(art)? {
+            cover::Drawing::Lossless(drawn) if drawn.bytes.len() < art.bytes.len() => drawn,
+            cover::Drawing::Lossless(drawn) => {
+                return self.kept_as_it_came(key, art, (drawn.width, drawn.height));
+            }
+            cover::Drawing::AsItCame { width, height } => {
+                return self.kept_as_it_came(key, art, (width, height));
+            }
+        };
         let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
         self.written_inside(&staging, &drawn.bytes)?;
 
-        let read_back = cover::pixels_of_jxl(&drawn.bytes)?;
-        if read_back != cover::read(art)? {
+        let written = self.read_inside(&staging)?;
+        if !drawn.held_by(&written).unwrap_or(false) {
             self.discard(&staging)?;
             return Err(Error::PictureUnconfirmed {
                 width: drawn.width,
@@ -608,7 +627,7 @@ impl Vault {
         &self,
         key: VaultKey,
         art: &CoverArt,
-        drawn: &cover::Drawn,
+        (width, height): (u32, u32),
     ) -> Result<KeptCover> {
         let extension = art.format.extension();
         let target = self.cover_path(key, extension);
@@ -616,10 +635,7 @@ impl Vault {
         self.written_inside(&staging, &art.bytes)?;
         if self.read_inside(&staging)? != art.bytes {
             self.discard(&staging)?;
-            return Err(Error::PictureUnconfirmed {
-                width: drawn.width,
-                height: drawn.height,
-            });
+            return Err(Error::PictureUnconfirmed { width, height });
         }
 
         let bytes = self.landed(&staging, &target)?;
@@ -627,8 +643,8 @@ impl Vault {
             key,
             path: target,
             bytes,
-            width: drawn.width,
-            height: drawn.height,
+            width,
+            height,
             deduped: false,
         })
     }
@@ -689,8 +705,10 @@ impl Vault {
                 }
                 Ok(digest.settled() == key)
             }
-            Form::Flac => Ok(read_back(path, None, Halt::NEVER)?.key == key),
-            Form::Wave => Ok(self.read_back_packed(path, None, Halt::NEVER)?.key == key),
+            Form::Flac => Ok(read_back(path, None, Halt::NEVER)?.answers_to(key, form)),
+            Form::Wave => Ok(self
+                .read_back_packed(path, None, Halt::NEVER)?
+                .answers_to(key, form)),
         }
     }
 
@@ -712,7 +730,7 @@ impl Vault {
                 digest.note(&bytes);
                 digest.settled() == key && cover::size_of(&bytes, Some(format)).is_ok()
             }
-            None => cover::pixels_of_jxl(&bytes).is_ok(),
+            None => cover::lossless_of_jxl(&bytes).is_ok(),
         })
     }
 
@@ -745,7 +763,10 @@ impl Vault {
             wave::PACKED_FRAME_BYTES,
             Halt::NEVER,
         )?;
-        if self.read_back_packed(&staging, None, Halt::NEVER)?.key != key {
+        if !self
+            .read_back_packed(&staging, None, Halt::NEVER)?
+            .answers_to(key, Form::Wave)
+        {
             return Ok(Reframing::NotHeld);
         }
 
@@ -868,28 +889,34 @@ impl Vault {
         } else {
             None
         };
-        let Some(declared) = declared.or(taking.foretold) else {
+        let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
+        let sound = Sound::placed(spec, info.speakers, Form::Flac);
+        let Some(foretold) = declared.map(|pcm| sound.keyed(pcm)).or(taking.foretold) else {
             return Ok(Foretold::Unforetold);
         };
-        let target = self.object_path(declared, FLAC_EXTENSION);
-        let Some(standing) = self.standing(&target)? else {
+        let target = self.object_path(foretold, FLAC_EXTENSION);
+        if !target.is_file() {
             return Ok(Foretold::Unforetold);
-        };
+        }
 
         let heard = pcm_of(decoder, info, Some(format), taking.halt)?;
-        if heard.key != declared {
+        if heard.key(Form::Flac) != foretold {
             return Ok(Foretold::Misdeclared);
         }
+        let Some(standing) = self.standing_holding(&target, Expected::Sound(Form::Flac, &heard))?
+        else {
+            return Ok(Foretold::Misdeclared);
+        };
         if !weighing.fits(standing) {
             return Ok(Foretold::Settled(Keeping::Refused(Refusal::NoSmaller)));
         }
         Ok(Foretold::Settled(Landing::Deduped(standing).kept(Kept {
-            key: declared,
+            key: foretold,
             form: Form::Flac,
             path: target,
             bytes: 0,
             was: 0,
-            spec: StreamSpec::new(info.spec.rate, info.spec.channels, format),
+            spec,
             frames: heard.frames,
             codec: Codec::from_id(info.codec),
             deduped: false,
@@ -930,17 +957,28 @@ impl Vault {
             self.discard(&staging)?;
             return Ok(Keeping::Refused(Refusal::Empty));
         }
-        let target = self.object_path(encoded.key, FLAC_EXTENSION);
-        if encoded.outgrew || (!weighing.renewing && target.is_file()) {
+        let went_in = Heard {
+            pcm: encoded.key,
+            frames: encoded.frames,
+            spec,
+            speakers,
+        };
+        let key = went_in.key(Form::Flac);
+        let target = self.object_path(key, FLAC_EXTENSION);
+        let standing = match encoded.outgrew || (!weighing.renewing && target.is_file()) {
+            true => self.standing_holding(&target, Expected::Sound(Form::Flac, &went_in))?,
+            false => None,
+        };
+        if encoded.outgrew || standing.is_some() {
             self.discard(&staging)?;
-            let Some(standing) = self.standing(&target)? else {
+            let Some(standing) = standing else {
                 return Ok(Keeping::Refused(Refusal::NoSmaller));
             };
             if !weighing.fits(standing) {
                 return Ok(Keeping::Refused(Refusal::NoSmaller));
             }
             return Ok(Landing::Deduped(standing).kept(Kept {
-                key: encoded.key,
+                key,
                 form: Form::Flac,
                 path: target,
                 bytes: 0,
@@ -958,11 +996,7 @@ impl Vault {
         self.settled(
             weighing,
             &staging,
-            Heard {
-                key: encoded.key,
-                frames: encoded.frames,
-                speakers,
-            },
+            went_in,
             FLAC_EXTENSION,
             Form::Flac,
             spec,
@@ -1001,14 +1035,24 @@ impl Vault {
             return Ok(Keeping::Refused(Refusal::Empty));
         }
 
-        let target = self.object_path(tallied.key, &compressed_name(WAVE_EXTENSION));
-        if target.is_file() && !weighing.renewing {
-            let bytes = self.sized(&target)?;
+        let went_in = Heard {
+            pcm: tallied.key,
+            frames: tallied.frames,
+            spec,
+            speakers,
+        };
+        let key = went_in.key(Form::Wave);
+        let target = self.object_path(key, &compressed_name(WAVE_EXTENSION));
+        let standing = match weighing.renewing {
+            true => None,
+            false => self.standing_holding(&target, Expected::Sound(Form::Wave, &went_in))?,
+        };
+        if let Some(bytes) = standing {
             if !weighing.fits(bytes) {
                 return Ok(Keeping::Refused(Refusal::NoSmaller));
             }
             return Ok(Keeping::Kept(Kept {
-                key: tallied.key,
+                key,
                 form: Form::Wave,
                 bytes,
                 was: bytes,
@@ -1043,20 +1087,20 @@ impl Vault {
             wave::Packed::Differed => return Ok(Keeping::Refused(Refusal::NotValidated)),
         }
 
-        let went_in = Heard {
-            key: tallied.key,
-            frames: tallied.frames,
-            speakers,
-        };
         let holds = held_unless_halted(self.read_back_packed(&packed, Some(format), taking.halt))?
             .is_some_and(|read| went_in.held_by(read));
         if !holds {
             return Ok(Keeping::Refused(Refusal::NotValidated));
         }
-        let landing = self.landed_or_standing(&packed, &target, weighing)?;
+        let landing = self.landed_or_standing(
+            &packed,
+            &target,
+            weighing,
+            Expected::Sound(Form::Wave, &went_in),
+        )?;
 
         Ok(landing.kept(Kept {
-            key: tallied.key,
+            key,
             form: Form::Wave,
             path: target,
             bytes: 0,
@@ -1111,7 +1155,12 @@ impl Vault {
         let extension = named_extension(taking.location);
         let key = copied.key;
         let target = self.object_path(key, &extension);
-        let landing = self.landed_or_standing(&copied.staging, &target, Weighing::AS_IT_STANDS)?;
+        let landing = self.landed_or_standing(
+            &copied.staging,
+            &target,
+            Weighing::AS_IT_STANDS,
+            Expected::Bytes,
+        )?;
 
         Ok(landing.kept(Kept {
             key,
@@ -1224,7 +1273,8 @@ impl Vault {
         format: SampleFormat,
         halt: Halt<'_>,
     ) -> Result<Keeping> {
-        let Heard { key, frames, .. } = went_in;
+        let key = went_in.key(form);
+        let frames = went_in.frames;
         let holds = held_unless_halted(read_back(staging, Some(format), halt))?
             .is_some_and(|read| went_in.held_by(read));
         if !holds {
@@ -1233,7 +1283,8 @@ impl Vault {
         }
 
         let target = self.object_path(key, extension);
-        let landing = self.landed_or_standing(staging, &target, weighing)?;
+        let landing =
+            self.landed_or_standing(staging, &target, weighing, Expected::Sound(form, &went_in))?;
 
         Ok(landing.kept(Kept {
             key,
@@ -1256,12 +1307,23 @@ impl Vault {
         staging: &Path,
         target: &Path,
         weighing: Weighing,
+        expected: Expected<'_>,
     ) -> Result<Landing> {
         let _landing = self.landing.lock();
         let staged = self.sized(staging)?;
         let landing = if target.is_file() {
             let standing = self.sized(target)?;
-            if weighing.renewing && staged < standing && weighing.fits(staged) {
+            let sound = match expected {
+                Expected::Sound(form, heard) => holds_the_sound(target, form, heard),
+                Expected::Bytes => standing == staged,
+            };
+            if !sound {
+                tracing::warn!(path = %target.display(), "an object under this key holds something else and is replaced");
+                match weighing.fits(staged) {
+                    true => Landing::Landed(self.landed(staging, target)?),
+                    false => Landing::NoSmaller,
+                }
+            } else if weighing.renewing && staged < standing && weighing.fits(staged) {
                 Landing::Replaced(self.landed(staging, target)?)
             } else if weighing.fits(standing) {
                 Landing::Deduped(standing)
@@ -1279,9 +1341,15 @@ impl Vault {
         Ok(landing)
     }
 
-    fn standing(&self, target: &Path) -> Result<Option<u64>> {
+    fn standing_holding(&self, target: &Path, expected: Expected<'_>) -> Result<Option<u64>> {
         let _landing = self.landing.lock();
-        match target.is_file() {
+        let holds = match expected {
+            Expected::Sound(form, heard) => {
+                target.is_file() && holds_the_sound(target, form, heard)
+            }
+            Expected::Bytes => target.is_file(),
+        };
+        match holds {
             true => self.sized(target).map(Some),
             false => Ok(None),
         }
@@ -1462,22 +1530,49 @@ struct Copied {
 impl Copied {
     fn holds_what(&self, went_in: Heard) -> bool {
         self.came_out.is_some_and(|came_out| {
-            went_in.key == came_out.key && went_in.frames == came_out.frames
+            went_in.pcm == came_out.pcm && went_in.frames == came_out.frames
         })
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Heard {
-    key: VaultKey,
+    pcm: VaultKey,
     frames: Frames,
+    spec: StreamSpec,
     speakers: Speakers,
 }
 
 impl Heard {
-    fn held_by(self, read: Self) -> bool {
-        self.key == read.key && self.frames == read.frames && self.speakers.held_by(read.speakers)
+    fn key(&self, form: Form) -> VaultKey {
+        Sound::placed(self.spec, self.speakers, form).keyed(self.pcm)
     }
+
+    fn answers_to(&self, key: VaultKey, form: Form) -> bool {
+        key == self.key(form) || key == self.pcm
+    }
+
+    fn held_by(self, read: Self) -> bool {
+        self.pcm == read.pcm
+            && self.frames == read.frames
+            && self.spec.rate == read.spec.rate
+            && self.spec.channel_count() == read.spec.channel_count()
+            && self.speakers.held_by(read.speakers)
+    }
+}
+
+fn holds_the_sound(target: &Path, form: Form, heard: &Heard) -> bool {
+    let declared = match form {
+        Form::Flac => standing::of_a_flac(target),
+        Form::Wave => standing::of_a_packed_wave(target),
+        Form::Kept => return true,
+    };
+    declared.is_some_and(|declared| {
+        declared.rate == heard.spec.rate.hz()
+            && declared.channels == heard.spec.channel_count().get()
+            && declared.frames == heard.frames
+            && declared.digest.is_none_or(|digest| digest == heard.pcm)
+    })
 }
 
 fn read_back(path: &Path, format: Option<SampleFormat>, halt: Halt<'_>) -> Result<Heard> {
@@ -1565,8 +1660,9 @@ fn pcm_of(
     }
 
     Ok(Heard {
-        key: digest.settled(),
+        pcm: digest.settled(),
         frames: Frames(frames),
+        spec,
         speakers: info.speakers,
     })
 }
@@ -1858,8 +1954,11 @@ mod tests {
         let other_object = fs::read(&other.path).expect("the other object");
         let copy = root.join("copy.flac");
         let lying = root.join("lying.flac");
-        fs::write(&copy, padded_declaring(&object, landed.key)).expect("a copy");
-        fs::write(&lying, padded_declaring(&other_object, landed.key)).expect("a lying copy");
+        let samples_alone = crate::standing::of_a_flac(&landed.path)
+            .and_then(|declared| declared.digest)
+            .expect("the object's own digest");
+        fs::write(&copy, padded_declaring(&object, samples_alone)).expect("a copy");
+        fs::write(&lying, padded_declaring(&other_object, samples_alone)).expect("a lying copy");
 
         let before = encodes_begun();
         let deduped = kept_from(&vault, &copy);
@@ -1869,6 +1968,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
 
         assert_eq!(landed.form, Form::Flac);
+        assert_ne!(landed.key, samples_alone);
         assert!(!landed.deduped);
         assert!(deduped.deduped);
         assert_eq!(deduped.key, landed.key);

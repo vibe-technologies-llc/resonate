@@ -14,13 +14,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
-## Later: The vault
-- [M] A cover's lossless JXL is read back from memory, not the staged file; a 16-bit PNG is
-  quantised to 8 bits, an animated picture keeps its first frame and an ICC profile is dropped
-  (compared against the same lossy decode, so it passes)
-- [L] The key is the PCM alone: two tracks of the same samples at another rate, count or mask
-  (digital silence) share an object, and a standing object is taken on its size alone; needs a
-  migration
-- [M] Blanking a Matroska file stops at an element of unknown size or after 65 536 elements and
-  lands what it blanked so far as stripped; a `TrackEntry` name, chapters and an MP4's track-level
-  `meta` are never blanked; an MP4 past 4 096 boxes keeps every tag

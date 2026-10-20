@@ -251,6 +251,41 @@ fn wave(bits: u16, float: bool, data: &[u8], extra: Option<&[u8]>) -> Vec<u8> {
     whole
 }
 
+fn pcm_wave(samples: &[i16], rate: u32, channels: u16) -> Vec<u8> {
+    let block_align = channels * 2;
+    let mut format = Vec::new();
+    format.extend_from_slice(&1_u16.to_le_bytes());
+    format.extend_from_slice(&channels.to_le_bytes());
+    format.extend_from_slice(&rate.to_le_bytes());
+    format.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&block_align.to_le_bytes());
+    format.extend_from_slice(&16_u16.to_le_bytes());
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WAVE");
+    chunk(&mut body, b"fmt ", &format);
+    chunk(&mut body, b"data", &data);
+
+    let mut whole = Vec::new();
+    whole.extend_from_slice(b"RIFF");
+    whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    whole.extend_from_slice(&body);
+    whole
+}
+
+fn metaflac_digest(path: &Path) -> VaultKey {
+    const DIGEST_AT: usize = 26;
+    let held = fs::read(path).expect("a FLAC object");
+    let digest: [u8; 16] = held[DIGEST_AT..DIGEST_AT + 16]
+        .try_into()
+        .expect("a STREAMINFO digest");
+    VaultKey::of(digest)
+}
+
 fn sixteen_bit(samples: &[i32], extra: Option<&[u8]>) -> Vec<u8> {
     let data: Vec<u8> = samples
         .iter()
@@ -411,6 +446,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
         renewed(Replacing {
             key: elsewhere,
             bytes: first.bytes,
+            keyed_by_the_pcm_alone: false,
         }),
         Ok(Keeping::Refused(Refusal::NoSmaller))
     ));
@@ -418,6 +454,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
         renewed(Replacing {
             key: elsewhere,
             bytes: first.bytes + 1,
+            keyed_by_the_pcm_alone: false,
         }),
         Ok(Keeping::Kept(_))
     ));
@@ -425,9 +462,105 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
         renewed(Replacing {
             key: first.key,
             bytes: 1,
+            keyed_by_the_pcm_alone: false,
         }),
         Ok(Keeping::Kept(_))
     ));
+}
+
+#[test]
+fn a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_weight() {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let sources = Sources::local();
+    let vault = tree.vault();
+    let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
+    let first = kept(&vault, &sources, &location);
+    let pcm_alone = metaflac_digest(&first.path);
+
+    let renewed = vault
+        .keep(&Taking {
+            sources: &sources,
+            location: &location,
+            span: None,
+            renewing: true,
+            foretold: None,
+            replacing: Some(Replacing {
+                key: pcm_alone,
+                bytes: first.bytes,
+                keyed_by_the_pcm_alone: true,
+            }),
+            halt: Halt::NEVER,
+        })
+        .expect("a renewal");
+
+    let Keeping::Kept(renewed) = renewed else {
+        panic!("a renewal off a key of the samples alone was refused: {renewed:?}");
+    };
+    assert_eq!(renewed.key, first.key);
+    assert_ne!(renewed.key, pcm_alone);
+}
+
+#[test]
+fn the_same_samples_at_another_rate_or_count_land_as_objects_of_their_own() {
+    let tree = Tree::new();
+    let sources = Sources::local();
+    let vault = tree.vault();
+    let silence = vec![0_i16; FRAMES * usize::from(CHANNELS)];
+    let stereo = tree.write("stereo.wav", &pcm_wave(&silence, RATE, CHANNELS));
+    let faster = tree.write("faster.wav", &pcm_wave(&silence, RATE * 2, CHANNELS));
+    let mono = tree.write("mono.wav", &pcm_wave(&silence, RATE, 1));
+
+    let stereo = kept(&vault, &sources, &MediaLocation::local(&stereo));
+    let faster = kept(&vault, &sources, &MediaLocation::local(&faster));
+    let mono = kept(&vault, &sources, &MediaLocation::local(&mono));
+
+    assert!(!faster.deduped && !mono.deduped);
+    assert_ne!(stereo.key, faster.key);
+    assert_ne!(stereo.key, mono.key);
+    assert_eq!(
+        probe(&sources, &MediaLocation::local(&mono.path))
+            .expect("a mono object")
+            .spec
+            .channel_count()
+            .get(),
+        1
+    );
+    assert_eq!(
+        probe(&sources, &MediaLocation::local(&faster.path))
+            .expect("a faster object")
+            .spec
+            .rate
+            .hz(),
+        RATE * 2
+    );
+    assert!(
+        vault
+            .verify(&stereo.path, Form::Flac)
+            .expect("a verified object")
+    );
+}
+
+#[test]
+fn an_object_under_the_key_that_holds_something_else_is_not_taken_for_it() {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let sources = Sources::local();
+    let vault = tree.vault();
+    let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
+    let first = kept(&vault, &sources, &location);
+    let other = tree.write("other.wav", &sixteen_bit(&signal(FRAMES / 2), None));
+    let other = kept(&vault, &sources, &MediaLocation::local(&other));
+    fs::copy(&other.path, &first.path).expect("an object put where another stood");
+
+    let again = kept(&vault, &sources, &location);
+
+    assert_eq!(again.key, first.key);
+    assert!(
+        !again.deduped,
+        "an object of the same size alone was taken as a dedup hit"
+    );
+    assert_eq!(decoded(&first.path, SampleFormat::S16), samples);
 }
 
 #[test]
@@ -755,6 +888,62 @@ fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
     let again = vault.keep_cover(&art).expect("a kept cover");
     assert!(again.deduped);
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
+}
+
+#[test]
+fn an_animated_cover_is_kept_as_it_came_with_every_frame() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let mut animated = Vec::new();
+    {
+        let mut encoder = image::codecs::gif::GifEncoder::new(&mut animated);
+        for shade in [10_u8, 120, 240] {
+            let frame = image::RgbaImage::from_fn(40, 30, |x, y| {
+                image::Rgba([shade, (x * 6) as u8, (y * 8) as u8, 255])
+            });
+            encoder
+                .encode_frame(image::Frame::new(frame))
+                .expect("a written frame");
+        }
+    }
+    let art = CoverArt {
+        format: ImageFormat::Gif,
+        bytes: animated,
+    };
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("gif"));
+    assert_eq!((held.width, held.height), (40, 30));
+    assert_eq!(fs::read(&held.path).expect("the kept cover"), art.bytes);
+}
+
+#[test]
+fn a_sixteen_bit_cover_lands_as_a_jxl_holding_every_bit() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let picture = image::DynamicImage::ImageRgb16(image::ImageBuffer::from_fn(48, 32, |x, y| {
+        let grain = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503)) >> 27;
+        image::Rgb([
+            (x * 1_000 + grain) as u16,
+            (y * 1_500 + grain) as u16,
+            ((x + y) * 700 + grain) as u16,
+        ])
+    }));
+    let mut written = Cursor::new(Vec::new());
+    picture
+        .write_to(&mut written, image::ImageFormat::Png)
+        .expect("a written picture");
+    let art = CoverArt {
+        format: ImageFormat::Png,
+        bytes: written.into_inner(),
+    };
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
+    assert!(vault.verify_cover(&held.path).expect("a readable cover"));
+    assert!(held.bytes < art.bytes.len() as u64);
 }
 
 #[test]
@@ -1625,6 +1814,8 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
             "title=Echoes",
             "-metadata",
             "artist=Pink Floyd",
+            "-metadata:s:a:0",
+            "title=Narration",
             "-metadata",
         ])
         .arg(format!("comment={}", "a long note ".repeat(4_000)))
@@ -1645,6 +1836,10 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
     assert!(
         !object.windows(6).any(|window| window == b"Echoes"),
         "a tag was kept"
+    );
+    assert!(
+        !object.windows(9).any(|window| window == b"Narration"),
+        "a track's name was kept"
     );
     assert!(
         !object.windows(9).any(|window| window == b"long note"),
