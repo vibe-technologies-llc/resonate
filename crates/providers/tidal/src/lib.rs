@@ -20,6 +20,13 @@ use ureq::{
     http::header::{ACCEPT, AUTHORIZATION},
 };
 
+#[cfg(fuzzing)]
+pub fn read_a_manifest(bytes: &[u8]) {
+    for mime in ["application/vnd.tidal.bts", "application/dash+xml"] {
+        let _ = crate::manifest::read_document(mime, bytes);
+    }
+}
+
 pub use crate::{
     account::{Account, Endpoints, MediaHosts},
     hifi::HifiApi,

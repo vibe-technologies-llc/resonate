@@ -10,12 +10,16 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = { version = "0.4.11", default-features = false, features = ["link_libfuzzer"] }
+resonate-analysis.path = "../crates/resonate-analysis"
 resonate-core.path = "../crates/resonate-core"
 resonate-codec.path = "../crates/resonate-codec"
 resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
 resonate-mcp.path = "../crates/resonate-mcp"
+resonate-online.path = "../crates/resonate-online"
+resonate-tidal.path = "../crates/providers/tidal"
+resonate-vault.path = "../crates/resonate-vault"
 resonate-sync.path = "../crates/resonate-sync"
 
 [workspace]
@@ -103,6 +107,69 @@ bench = false
 [[bin]]
 name = "sync"
 path = "fuzz_targets/sync.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rewriter"
+path = "fuzz_targets/rewriter.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "unpacking"
+path = "fuzz_targets/unpacking.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "padding"
+path = "fuzz_targets/padding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal"
+path = "fuzz_targets/journal.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "overlay"
+path = "fuzz_targets/overlay.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pages"
+path = "fuzz_targets/pages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest"
+path = "fuzz_targets/manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kept"
+path = "fuzz_targets/kept.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cover"
+path = "fuzz_targets/cover.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" profiles="urn:mpeg:dash:profile:isoff-main:2011" type="static" minBufferTime="PT3.993S" mediaPresentationDuration="PT12.26S">
+  <Period id="0">
+    <AdaptationSet id="0" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
+      <Representation id="FLAC,44100,16" codecs="flac" bandwidth="1004547" audioSamplingRate="44100">
+        <SegmentTemplate timescale="44100" initialization="https://sp-ad-fa.audio.tidal.com/mediatracks/abc/0.mp4?token=t&amp;x=1" media="https://sp-ad-fa.audio.tidal.com/mediatracks/abc/$Number$.mp4?token=t&amp;x=1" startNumber="1">
+          <SegmentTimeline>
+            <S d="176128" r="2"/>
+            <S d="12345"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

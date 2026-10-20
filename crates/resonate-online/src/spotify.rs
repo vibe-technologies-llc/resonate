@@ -61,6 +61,11 @@ pub(crate) fn playlist_named(client: &Client, playlist: &str) -> Result<Option<L
     Ok(held.and_then(|held| embedded(&String::from_utf8_lossy(&held))))
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_embedded(page: &str) -> Option<LinkedPlaylist> {
+    embedded(page)
+}
+
 fn embedded(page: &str) -> Option<LinkedPlaylist> {
     let document: Embedded = serde_json::from_str(next_data(page)?)
         .inspect_err(|error| tracing::debug!(%error, "Spotify's page data did not read"))

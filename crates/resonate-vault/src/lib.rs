@@ -8,6 +8,8 @@ mod error;
 mod files;
 mod flac;
 mod form;
+#[cfg(fuzzing)]
+mod fuzzing;
 mod key;
 mod ogg;
 mod pcm;
@@ -16,6 +18,8 @@ mod unpacking;
 mod vault;
 mod wave;
 
+#[cfg(fuzzing)]
+pub use crate::fuzzing::{bare_a_file, unpack_a_file};
 pub use crate::{
     encoding::Encoding,
     error::{Error, FlacOp, PictureOp, Result, VaultOp},

@@ -590,7 +590,7 @@ impl Record {
     }
 }
 
-fn hashed(bytes: &[u8]) -> u64 {
+pub(crate) fn hashed(bytes: &[u8]) -> u64 {
     bytes.iter().fold(FNV_OFFSET, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
     })
@@ -617,7 +617,7 @@ fn encoded(track: &OsStr, stood: u64, lands: u64, shifted: u64, changes: &[Chang
     bytes
 }
 
-struct Kept {
+pub(crate) struct Kept {
     track: PathBuf,
     stood: u64,
     lands: u64,
@@ -648,7 +648,7 @@ impl<'b> Reader<'b> {
     }
 }
 
-fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
+pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
     let (body, check) = bytes.split_last_chunk::<8>()?;
     if hashed(body) != u64::from_le_bytes(*check) {
         return None;

@@ -12,6 +12,11 @@ mod spectrum;
 mod verdict;
 mod watch;
 
+#[cfg(fuzzing)]
+pub fn read_a_kept_analysis(bytes: &[u8]) {
+    let _ = crate::kept::read(bytes);
+}
+
 pub use crate::{
     analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},

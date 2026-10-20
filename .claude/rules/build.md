@@ -45,8 +45,14 @@ metadata, so no Linux sound server or GUI libraries are needed for the Android b
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Twelve targets: `probe`, `boxes`,
-  `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`.
+  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-one targets: `probe`, `boxes`,
+  `cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
+  `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
+  indexing and the reader), `padding` (the tag writer's padded heads), `journal` (an undo journal,
+  sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
+  driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings),
+  `pages` (the shared-page, Spotify, YouTube and song.link readers), `manifest` (TIDAL's BTS and
+  DASH documents), `kept` (the analysis cache reader).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
   `cue`): the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length,
@@ -59,7 +65,7 @@ metadata, so no Linux sound server or GUI libraries are needed for the Android b
   block to what a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in
   one block); the same test replays `fuzz/seeds/probe`.
   `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same. `lrc`,
-  `lyricsfile`, `playlist` and `mcp` use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
+  `lyricsfile`, `playlist`, `mcp` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.
 - **`fuzz/seeds/<target>`** holds the smallest file of each thing a target reads, a second corpus
   folder; a grown `corpus/` is gitignored. Seeds are added by hand; nothing but a person runs the

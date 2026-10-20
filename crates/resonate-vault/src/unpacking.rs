@@ -252,7 +252,10 @@ fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
             packed_at,
             unpacked_at,
         });
-        unpacked_at += content;
+        let Some(next) = unpacked_at.checked_add(content) else {
+            return Ok(None);
+        };
+        unpacked_at = next;
     }
     Ok(Some(framed))
 }
@@ -446,6 +449,24 @@ mod tests {
             zstd::encode_all(whole.as_slice(), 3).expect("packed"),
         )
         .expect("written");
+
+        let framed = frames_of(&path).expect("a walk");
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(framed, None);
+    }
+
+    #[test]
+    fn frames_naming_more_content_between_them_than_a_count_holds_are_not_indexed() {
+        let folder = env::temp_dir().join(format!("resonate-unpacking-overflow-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let path = folder.join("held.wav.zst");
+
+        let mut frame = FRAME_MAGIC.to_le_bytes().to_vec();
+        frame.extend_from_slice(&[0xC0, 0]);
+        frame.extend_from_slice(&(1_u64 << 63).to_le_bytes());
+        frame.extend_from_slice(&[LAST_BLOCK as u8, 0, 0]);
+        fs::write(&path, [frame.clone(), frame].concat()).expect("written");
 
         let framed = frames_of(&path).expect("a walk");
         let _ = fs::remove_dir_all(&folder);

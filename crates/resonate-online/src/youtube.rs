@@ -27,6 +27,11 @@ pub(crate) fn playlist_named(client: &Client, list: &str) -> Result<Option<Linke
     Ok(held.and_then(|held| listed(&String::from_utf8_lossy(&held))))
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_listed(page: &str) -> Option<LinkedPlaylist> {
+    listed(page)
+}
+
 fn listed(page: &str) -> Option<LinkedPlaylist> {
     let from = page.find(PAGE_DATA_OPENS)? + PAGE_DATA_OPENS.len();
     let rest = page.get(from..)?;

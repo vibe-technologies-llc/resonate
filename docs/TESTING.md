@@ -78,10 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   hosted flow end to end, nor proves it still answers without the dropped `Origin` and `Referer`
 
 ## Build and checks
-- [M] No fuzz target reaches the vault's rewriters (`blanks`, `ogg`, `chunks`, `bare`,
-  `unpacking::frames_in`), tag writing (`padded`, `Overlay`, `journal::decoded`), cover decoding
-  (`artwork::Drawing::of`), the remote document readers (`shared`, `spotify`, `youtube`, `linked`,
-  the DASH manifest) or the analysis cache reader
 - [M] `zstd` (via `zstd-sys`) and `ring` (via `rustls`) are C-backed with no reason recorded in
   `dependencies.md`; `md-5` 0.10 and `miniz_oxide` 0.8 build beside the workspace's versions
 

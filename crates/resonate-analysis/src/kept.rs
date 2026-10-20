@@ -349,7 +349,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.0
 }
 
-fn read(bytes: &[u8]) -> Option<Analysis> {
+pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let mut reader = Reader(bytes);
     if reader.taken(MAGIC.len())? != MAGIC
         || reader.u8()? != WRITTEN_AS
@@ -399,6 +399,10 @@ fn read(bytes: &[u8]) -> Option<Analysis> {
     let spectrum_levels = reader.levels()?;
     let typical = reader.levels()?;
     let spectrum = Spectrum::new(bin_hz, spectrum_levels, reader.duration()?).with_typical(typical);
+    let reaches_hz = spectrum.nyquist_hz();
+    if !reaches_hz.is_finite() || reaches_hz > examined.rate.hz() as f32 {
+        return None;
+    }
 
     let print = reader.maybe(|reader| {
         let encoded = std::str::from_utf8(reader.bytes()?).ok()?.to_owned();
@@ -595,6 +599,22 @@ mod tests {
         assert_eq!(read(&bytes), Some(analysis));
         assert_eq!(read(&bytes[..bytes.len() - 1]), None);
         assert_eq!(read(b"RSAN\x01"), None);
+    }
+
+    #[test]
+    fn a_spectrum_reaching_past_its_rate_or_to_no_number_is_not_read_back() {
+        let analysis = analysed();
+        let bin_hz_at = written(&analysis)
+            .windows(4)
+            .position(|window| window == analysis.study.spectrum.bin_hz().to_le_bytes())
+            .expect("the bin width is written");
+
+        for bin_hz in [f32::MAX, f32::INFINITY, f32::NAN] {
+            let mut bytes = written(&analysis);
+            bytes[bin_hz_at..bin_hz_at + 4].copy_from_slice(&bin_hz.to_le_bytes());
+
+            assert_eq!(read(&bytes), None);
+        }
     }
 
     #[test]

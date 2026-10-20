@@ -78,6 +78,12 @@ fn page_at(client: &Client, page: &str) -> Result<Option<String>> {
         .map(|held| String::from_utf8_lossy(&held).into_owned()))
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_pages(page: &str) {
+    let _ = Song::read(page);
+    let _ = Album::read(page);
+}
+
 fn page_data(page: &str) -> Option<PageData> {
     let document: NextData = serde_json::from_str(next_data(page)?)
         .inspect_err(|error| tracing::debug!(%error, "song.link's page data did not read"))
