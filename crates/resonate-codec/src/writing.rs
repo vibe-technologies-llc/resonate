@@ -2051,6 +2051,75 @@ mod tests {
         );
     }
 
+    fn wave_long_with_a_title_after_the_audio(title: &str) -> Vec<u8> {
+        const AUDIO_BYTES: usize = 40 << 20;
+
+        let mut format = Vec::new();
+        format.extend_from_slice(&1_u16.to_le_bytes());
+        format.extend_from_slice(&CHANNELS.to_le_bytes());
+        format.extend_from_slice(&RATE.to_le_bytes());
+        let align = CHANNELS * BITS / 8;
+        format.extend_from_slice(&(RATE * u32::from(align)).to_le_bytes());
+        format.extend_from_slice(&align.to_le_bytes());
+        format.extend_from_slice(&BITS.to_le_bytes());
+
+        let mut list = b"INFO".to_vec();
+        let mut terminated = title.as_bytes().to_vec();
+        terminated.push(0);
+        riff_chunk(&mut list, b"INAM", &terminated);
+
+        let mut body = b"WAVE".to_vec();
+        riff_chunk(&mut body, b"fmt ", &format);
+        riff_chunk(&mut body, b"data", &vec![0; AUDIO_BYTES]);
+        riff_chunk(&mut body, b"LIST", &list);
+
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(
+            &u32::try_from(body.len())
+                .expect("a file under four gigabytes")
+                .to_le_bytes(),
+        );
+        file.extend_from_slice(&body);
+        file
+    }
+
+    #[test]
+    fn a_tag_after_the_audio_of_a_wave_file_is_rewritten_in_place_whatever_the_size_of_the_file() {
+        let folder = Folder::new();
+        let location = folder.holding(
+            "echoes.wav",
+            &wave_long_with_a_title_after_the_audio("Echoes"),
+        );
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        let standing = fs::metadata(&path).expect("the file");
+
+        let longer = "Echoes (Live at Pompeii, the director's cut)";
+        assert!(
+            retitled(&path, &location, longer).expect("an edit in place"),
+            "a tag after the audio grew the file and was not landed in place"
+        );
+        let grown = fs::metadata(&path).expect("the file");
+        assert_eq!(grown.ino(), standing.ino());
+        assert!(grown.len() > standing.len());
+        assert_eq!(titled(&tags, &location).as_deref(), Some(longer));
+
+        assert!(
+            retitled(&path, &location, "Echo").expect("an edit in place"),
+            "a tag after the audio shrank the file and was not landed in place"
+        );
+        let shrunk = fs::metadata(&path).expect("the file");
+        assert_eq!(shrunk.ino(), standing.ino());
+        assert!(shrunk.len() < grown.len());
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Echo"));
+
+        assert_eq!(
+            fs::read_dir(&folder.root).expect("the folder").count(),
+            1,
+            "an edit in place left a copy or a journal beside the file"
+        );
+    }
+
     fn mp3() -> Vec<u8> {
         const FRAME_BYTES: usize = 417;
         const FRAMES_HELD: usize = 8;

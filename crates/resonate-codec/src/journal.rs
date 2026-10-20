@@ -13,7 +13,8 @@ use resonate_core::{
     writer::{self, Held, Writer},
 };
 
-const MAGIC: &[u8; 8] = b"RSUNDO01";
+const FIRST_MAGIC: &[u8; 8] = b"RSUNDO01";
+const MAGIC: &[u8; 8] = b"RSUNDO02";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
 const WHOLE_SUFFIX: &str = ".resonate-whole";
 const TORN_SUFFIX: &str = ".resonate-torn";
@@ -47,6 +48,7 @@ impl Undo {
     pub(crate) fn kept_beside(
         track: &Path,
         stood: u64,
+        lands: u64,
         changes: &[Change<'_>],
     ) -> io::Result<Self> {
         let name = track
@@ -57,7 +59,7 @@ impl Undo {
 
         let written = Held::made(&journal).and_then(|held| {
             let mut file = held.file();
-            file.write_all(&encoded(name, stood, changes))?;
+            file.write_all(&encoded(name, stood, lands, changes))?;
             file.sync_all()?;
             File::open(folder)?.sync_all()?;
             Ok(held)
@@ -71,11 +73,8 @@ impl Undo {
         }
     }
 
-    pub(crate) fn roll_back(self, file: &File, changes: &[Change<'_>]) {
-        let rolled = changes
-            .iter()
-            .try_for_each(|change| file.write_all_at(&change.before, change.start))
-            .and_then(|()| file.sync_data());
+    pub(crate) fn roll_back(self, file: &File, stood: u64, changes: &[Change<'_>]) {
+        let rolled = restored(file, stood, changes);
         match rolled {
             Ok(()) => self.done(),
             Err(error) => {
@@ -90,6 +89,14 @@ impl Undo {
         }
         drop(self.held);
     }
+}
+
+fn restored(file: &File, stood: u64, changes: &[Change<'_>]) -> io::Result<()> {
+    file.set_len(stood)?;
+    changes
+        .iter()
+        .try_for_each(|change| file.write_all_at(&change.before, change.start))?;
+    file.sync_data()
 }
 
 fn folder_of(track: &Path) -> &Path {
@@ -252,7 +259,15 @@ impl WholeCopy {
 
     pub(crate) fn written_back(self) -> Result<(), Unsettled> {
         let laid = File::open(&self.copy)
-            .and_then(|copy| Ok((copy, OpenOptions::new().write(true).open(&self.track)?)))
+            .and_then(|copy| {
+                Ok((
+                    copy,
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(&self.track)?,
+                ))
+            })
             .map_err(Laying::Unstarted)
             .and_then(|(copy, track)| laid_over(&copy, self.length, &track));
         match laid {
@@ -302,6 +317,7 @@ impl Laying {
 
 fn laid_over(copy: &File, length: u64, track: &File) -> Result<(), Laying> {
     let mut chunk = vec![0_u8; PAGE_BYTES * PAGES_LAID_AT_ONCE];
+    let mut standing = vec![0_u8; chunk.len()];
     let mut at = 0;
     while at < length {
         let bytes = usize::try_from(length - at).map_or(chunk.len(), |left| left.min(chunk.len()));
@@ -310,13 +326,53 @@ fn laid_over(copy: &File, length: u64, track: &File) -> Result<(), Laying> {
                 0 => Laying::Unstarted(error),
                 _ => Laying::Partway(error),
             })?;
-        track
-            .write_all_at(&chunk[..bytes], at)
-            .map_err(Laying::Partway)?;
+        let held = read_as_far_as_it_goes(track, &mut standing[..bytes], at).unwrap_or(0);
+        differing_runs(&chunk[..bytes], &standing[..held]).try_for_each(|run| {
+            track
+                .write_all_at(&chunk[run.clone()], at + run.start as u64)
+                .map_err(Laying::Partway)
+        })?;
         at += bytes as u64;
     }
     track.set_len(length).map_err(Laying::Partway)?;
     track.sync_all().map_err(Laying::Partway)
+}
+
+fn read_as_far_as_it_goes(file: &File, into: &mut [u8], at: u64) -> io::Result<usize> {
+    let mut read = 0;
+    while read < into.len() {
+        match file.read_at(&mut into[read..], at + read as u64)? {
+            0 => break,
+            more => read += more,
+        }
+    }
+    Ok(read)
+}
+
+fn differing_runs<'b>(
+    wanted: &'b [u8],
+    standing: &'b [u8],
+) -> impl Iterator<Item = std::ops::Range<usize>> + 'b {
+    let mut page = 0;
+    std::iter::from_fn(move || {
+        let pages = wanted.len().div_ceil(PAGE_BYTES);
+        let differs = |page: usize| {
+            let from = page * PAGE_BYTES;
+            let to = (from + PAGE_BYTES).min(wanted.len());
+            standing.get(from..to) != Some(&wanted[from..to])
+        };
+        while page < pages && !differs(page) {
+            page += 1;
+        }
+        if page >= pages {
+            return None;
+        }
+        let first = page;
+        while page < pages && differs(page) {
+            page += 1;
+        }
+        Some(first * PAGE_BYTES..(page * PAGE_BYTES).min(wanted.len()))
+    })
 }
 
 fn page_bytes(length: u64, at: u64) -> usize {
@@ -520,15 +576,17 @@ fn hashed(bytes: &[u8]) -> u64 {
     })
 }
 
-fn encoded(track: &OsStr, stood: u64, changes: &[Change<'_>]) -> Vec<u8> {
+fn encoded(track: &OsStr, stood: u64, lands: u64, changes: &[Change<'_>]) -> Vec<u8> {
     let name = track.as_bytes();
     let mut bytes = MAGIC.to_vec();
     bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
     bytes.extend_from_slice(name);
     bytes.extend_from_slice(&stood.to_le_bytes());
+    bytes.extend_from_slice(&lands.to_le_bytes());
     bytes.extend_from_slice(&(changes.len() as u64).to_le_bytes());
     for change in changes {
         bytes.extend_from_slice(&change.start.to_le_bytes());
+        bytes.extend_from_slice(&(change.before.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&(change.after.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&change.before);
         bytes.extend_from_slice(change.after);
@@ -541,6 +599,7 @@ fn encoded(track: &OsStr, stood: u64, changes: &[Change<'_>]) -> Vec<u8> {
 struct Kept {
     track: PathBuf,
     stood: u64,
+    lands: u64,
     changes: Vec<(u64, Vec<u8>, Vec<u8>)>,
 }
 
@@ -574,28 +633,37 @@ fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
     }
 
     let mut reader = Reader { bytes: body };
-    if reader.taken(MAGIC.len())? != MAGIC {
-        return None;
-    }
+    let first = match reader.taken(MAGIC.len())? {
+        magic if magic == MAGIC => false,
+        magic if magic == FIRST_MAGIC => true,
+        _ => return None,
+    };
     let length = reader.counted()?;
     let name = OsStr::from_bytes(reader.taken(length)?);
     if Path::new(name).file_name() != Some(name) {
         return None;
     }
     let stood = reader.number()?;
+    let lands = if first { stood } else { reader.number()? };
     let count = reader.counted()?;
 
     let mut changes = Vec::new();
     for _ in 0..count {
         let start = reader.number()?;
-        let length = reader.counted()?;
-        let before = reader.taken(length)?.to_vec();
-        let after = reader.taken(length)?.to_vec();
+        let before_length = reader.counted()?;
+        let after_length = if first {
+            before_length
+        } else {
+            reader.counted()?
+        };
+        let before = reader.taken(before_length)?.to_vec();
+        let after = reader.taken(after_length)?.to_vec();
         changes.push((start, before, after));
     }
     reader.bytes.is_empty().then(|| Kept {
         track: folder.join(name),
         stood,
+        lands,
         changes,
     })
 }
@@ -692,19 +760,23 @@ fn rolled_back(kept: &Kept) -> io::Result<Mended> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Mended::ChangedSince),
         Err(error) => return Err(error),
     };
-    if file.metadata()?.len() != kept.stood {
+    let length = file.metadata()?.len();
+    if length < kept.stood.min(kept.lands) || length > kept.stood.max(kept.lands) {
         return Ok(Mended::ChangedSince);
     }
 
-    let mut all_before = true;
-    let mut all_after = true;
+    let mut all_before = length == kept.stood;
+    let mut all_after = length == kept.lands;
     for (start, before, after) in &kept.changes {
-        let mut standing = vec![0; before.len()];
+        let reaching = before.len().max(after.len());
+        let present = usize::try_from(length.saturating_sub(*start))
+            .map_or(reaching, |held| held.min(reaching));
+        let mut standing = vec![0; present];
         file.read_exact_at(&mut standing, *start)?;
         let ours = standing
             .iter()
-            .zip(before.iter().zip(after))
-            .all(|(byte, (was, is))| byte == was || byte == is);
+            .enumerate()
+            .all(|(at, byte)| before.get(at) == Some(byte) || after.get(at) == Some(byte));
         if !ours {
             return Ok(Mended::ChangedSince);
         }
@@ -718,6 +790,7 @@ fn rolled_back(kept: &Kept) -> io::Result<Mended> {
         return Ok(Mended::Finished);
     }
 
+    file.set_len(kept.stood)?;
     for (start, before, _) in &kept.changes {
         file.write_all_at(before, *start)?;
     }
@@ -839,12 +912,21 @@ mod tests {
     }
 
     fn left_by_a_dead_writer(track: &Path, stood: u64, changes: &[Change<'_>]) -> PathBuf {
+        left_by_a_dead_writer_landing(track, stood, stood, changes)
+    }
+
+    fn left_by_a_dead_writer_landing(
+        track: &Path,
+        stood: u64,
+        lands: u64,
+        changes: &[Change<'_>],
+    ) -> PathBuf {
         let name = track.file_name().expect("a named track");
         let journal = track.with_file_name(format!(
             ".{}.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}",
             name.to_string_lossy()
         ));
-        fs::write(&journal, encoded(name, stood, changes)).expect("a journal");
+        fs::write(&journal, encoded(name, stood, lands, changes)).expect("a journal");
         journal
     }
 
@@ -1129,6 +1211,160 @@ mod tests {
 
         assert_eq!(fs::read(&track).expect("the track"), was);
         assert!(!journal.exists(), "the journal was left");
+    }
+
+    #[test]
+    fn a_write_that_grew_the_file_and_was_cut_short_is_rolled_back_to_its_length() {
+        let folder = Folder::new("grown");
+        let track = folder.0.join("Wish You Were Here.wav");
+        let was = vec![1_u8; 20];
+        let changes = [Change {
+            start: 16,
+            before: was[16..].to_vec(),
+            after: &[2; 12],
+        }];
+        let journal = left_by_a_dead_writer_landing(&track, 20, 28, &changes);
+
+        let mut torn = was.clone();
+        torn[16..].fill(2);
+        torn.extend_from_slice(&[2; 4]);
+        fs::write(&track, &torn).expect("a grown file");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::RolledBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), was);
+
+        let journal = left_by_a_dead_writer_landing(&track, 20, 28, &changes);
+        let mut finished = was.clone();
+        finished[16..].fill(2);
+        finished.extend_from_slice(&[2; 8]);
+        fs::write(&track, &finished).expect("a finished write");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::Finished
+        );
+        assert_eq!(fs::read(&track).expect("the track"), finished);
+    }
+
+    #[test]
+    fn a_write_that_shrank_the_file_and_was_cut_short_has_its_tail_put_back() {
+        let folder = Folder::new("shrunk");
+        let track = folder.0.join("Welcome to the Machine.wav");
+        let was: Vec<u8> = (0..32).collect();
+        let changes = [
+            Change {
+                start: 16,
+                before: was[16..24].to_vec(),
+                after: &[9; 4],
+            },
+            Change {
+                start: 24,
+                before: was[24..].to_vec(),
+                after: &[],
+            },
+        ];
+        let journal = left_by_a_dead_writer_landing(&track, 32, 20, &changes);
+
+        let mut torn = was.clone();
+        torn[16..20].fill(9);
+        fs::write(&track, &torn).expect("a file cut before its tail was");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::RolledBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), was);
+
+        let journal = left_by_a_dead_writer_landing(&track, 32, 20, &changes);
+        let mut finished = was[..20].to_vec();
+        finished[16..].fill(9);
+        fs::write(&track, &finished).expect("a finished write");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::Finished
+        );
+    }
+
+    #[test]
+    fn a_journal_the_first_build_kept_is_still_read() {
+        let folder = Folder::new("first");
+        let track = folder.0.join("Us and Them.flac");
+        let name = track.file_name().expect("a named track");
+        let was = vec![1_u8; 16];
+        fs::write(&track, &was).expect("a track");
+
+        let mut bytes = FIRST_MAGIC.to_vec();
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.extend_from_slice(&16_u64.to_le_bytes());
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&4_u64.to_le_bytes());
+        bytes.extend_from_slice(&4_u64.to_le_bytes());
+        bytes.extend_from_slice(&[1; 4]);
+        bytes.extend_from_slice(&[2; 4]);
+        let check = hashed(&bytes);
+        bytes.extend_from_slice(&check.to_le_bytes());
+        let journal = track.with_file_name(format!(
+            ".Us and Them.flac.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}"
+        ));
+        fs::write(&journal, bytes).expect("a journal");
+
+        let mut finished = was.clone();
+        finished[4..8].fill(2);
+        fs::write(&track, &finished).expect("a file");
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::Finished
+        );
+    }
+
+    #[test]
+    fn a_copy_laid_over_a_track_writes_only_the_pages_that_differ() {
+        let wanted = paged(6, 100, 10);
+        let mut standing = wanted.clone();
+        standing[PAGE_BYTES * 2 + 5] ^= 1;
+        standing[PAGE_BYTES * 3] ^= 1;
+        standing[PAGE_BYTES * 6 + 1] ^= 1;
+
+        let runs: Vec<_> = differing_runs(&wanted, &standing).collect();
+        assert_eq!(
+            runs,
+            [PAGE_BYTES * 2..PAGE_BYTES * 4, PAGE_BYTES * 6..wanted.len()]
+        );
+
+        let short = &standing[..PAGE_BYTES + 3];
+        let runs: Vec<_> = differing_runs(&wanted, short).collect();
+        assert_eq!(
+            runs,
+            [(PAGE_BYTES, wanted.len())]
+                .map(|(from, to)| from..to)
+                .to_vec()
+        );
+        assert_eq!(differing_runs(&wanted, &wanted).count(), 0);
+    }
+
+    #[test]
+    fn a_copy_laid_over_a_longer_track_cuts_it_and_leaves_the_pages_alike_alone() {
+        let folder = Folder::new("laid");
+        let was = paged(5, 10, 3);
+        let wanted = [&was[..PAGE_BYTES * 3], &[9; 100][..]].concat();
+        let track = folder.0.join("Brain Damage.wav");
+        let copy = folder.0.join("copy");
+        fs::write(&track, &was).expect("a track");
+        fs::write(&copy, &wanted).expect("a copy");
+
+        let laid = laid_over(
+            &File::open(&copy).expect("the copy"),
+            wanted.len() as u64,
+            &OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&track)
+                .expect("the track"),
+        );
+
+        assert!(laid.is_ok());
+        assert_eq!(fs::read(&track).expect("the track"), wanted);
     }
 
     #[test]
