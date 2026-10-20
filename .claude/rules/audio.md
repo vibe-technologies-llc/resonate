@@ -88,8 +88,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   reader stands it seeks there (a cut skips ahead, a reorder seeks back), an empty edit is handed
   out as silence, and `seek`, `confine` (a cue span over a spliced file) and a settled spool place a
   heard frame through `Splices::place_of`. The list is read once at open into one `Arc<[Edit]>`;
-  walking it allocates nothing. A source that cannot seek skips ahead to a cut and ends at an edit
-  reaching back. Splices reaching past the samples `stts` holds play the first stretch alone.
+  walking it allocates nothing. A source that cannot seek skips ahead to a cut and leaves out an edit
+  reaching back (it cannot go back; the rest of the list plays on, so the track runs shorter than
+  its `playable`). Splices reaching past the samples `stts` holds play the first stretch alone.
   **The list is kept in the media's ticks and rescaled to the decoder's rate on asking**
   (`Edited::priming_at`), so a track whose `mdhd` timescale is not its sample rate (HE-AAC's core
   rate) is still honoured; only an `iTunSMPB` declaration, which counts output frames, is declined
