@@ -13,8 +13,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 
 ## iOS
 - [M] `ResonateLogic`'s tests (`ios.md`) leave these unproved: `AccountStore` and `PlaybackPreferencesStore` migrations, `Erasure`
-  against the suites in use, `ArtworkBucket.fitting`,
-  `DecodeSlots`, `LyricClock`, `DownloadJob.follow` and the journal are unproved
+  against the suites in use, `LyricClock`, `DownloadJob.follow` and the journal are unproved
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
   host; `Routing`, `Drain` and `fill` are proved
 - [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
@@ -23,8 +22,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M] More pure Swift is unproved beside the list above: polling (`NowPlaying.Written.expected`), sync (`syncStanding`, `SyncTransfers.keyed`, `syncActivity`'s fraction,
   `answerSyncAsked`, `landable`, `SyncRoute.init`), lists and search (`lit`, `LetterRun.runs`,
   `SearchModel`'s generations, `QueueParts`, `ListeningBar.grouped`, `PlaylistEntry.of`,
-  `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `ArtworkCache`'s flights,
-  `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
+  `AlbumDisc.of`, `FilterChip`, `SongKeys.matching`), `OnlineAnswers.keep`, the tag editor's mixed fields, `AccentColours.ink` and `FieldUniforms`'
   192-byte stride against the shader's `Field`
 - [M] `NowPlaying`'s interruption, route and release decisions, `BackgroundHold`'s hold, expire and
   launch machine, `Keychain.read`'s not-found against failure and

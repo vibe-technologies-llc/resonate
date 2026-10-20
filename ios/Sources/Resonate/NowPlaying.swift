@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import ResonateLogic
 import ResonateNative
 import Synchronization
 import UIKit

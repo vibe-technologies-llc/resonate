@@ -1,53 +1,7 @@
 import Foundation
 import ImageIO
+import ResonateLogic
 import UIKit
-
-enum ArtworkBucket: Int, CaseIterable, Sendable {
-    case row = 96
-    case tile = 192
-    case card = 384
-    case shelf = 512
-    case page = 768
-    case full = 1024
-
-    static func fitting(points: CGFloat, scale: CGFloat) -> ArtworkBucket {
-        let pixels = (points * scale).rounded(.up)
-        return allCases.first { CGFloat($0.rawValue) >= pixels } ?? .full
-    }
-}
-
-enum ArtworkSubject: Hashable, Sendable {
-    case track(UInt64)
-    case portrait(String)
-    case picture(UInt64)
-}
-
-struct ArtworkRequest: Hashable, Sendable {
-    let subject: ArtworkSubject
-    let revision: UInt64
-    let generation: Int
-    let bucket: ArtworkBucket
-
-    var name: NSString {
-        switch subject {
-        case .track(let id): "track:\(id):\(revision):\(generation):\(bucket.rawValue)" as NSString
-        case .portrait(let mbid): "portrait:\(mbid):\(generation):\(bucket.rawValue)" as NSString
-        case .picture(let id): "picture:\(id):\(bucket.rawValue)" as NSString
-        }
-    }
-
-    var songName: NSString {
-        switch subject {
-        case .track(let id): "song:\(revision):\(generation):track:\(id)" as NSString
-        case .portrait(let mbid): "song:\(revision):\(generation):portrait:\(mbid)" as NSString
-        case .picture(let id): "song:\(revision):\(generation):picture:\(id)" as NSString
-        }
-    }
-
-    func of(picture: UInt64) -> ArtworkRequest {
-        ArtworkRequest(subject: .picture(picture), revision: 0, generation: 0, bucket: bucket)
-    }
-}
 
 final class PicturesOfSongs: @unchecked Sendable {
     private static let songsAtMost = 20_000
@@ -72,55 +26,6 @@ final class PicturesOfSongs: @unchecked Sendable {
 
     func keep(_ picture: UInt64?, for request: ArtworkRequest) {
         cache.setObject(Held(picture), forKey: request.songName)
-    }
-}
-
-actor DecodeSlots {
-    private struct Waiter {
-        let id: UInt64
-        let continuation: CheckedContinuation<Void, any Swift.Error>
-    }
-
-    private var free: Int
-    private var waiters: [Waiter] = []
-    private var issued: UInt64 = 0
-
-    init(_ count: Int) {
-        free = count
-    }
-
-    func acquire() async throws {
-        try Task.checkCancellation()
-        if free > 0 {
-            free -= 1
-            return
-        }
-        issued += 1
-        let id = issued
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Swift.Error>) in
-                if Task.isCancelled {
-                    continuation.resume(throwing: CancellationError())
-                } else {
-                    waiters.append(Waiter(id: id, continuation: continuation))
-                }
-            }
-        } onCancel: {
-            Task { await self.abandon(id) }
-        }
-    }
-
-    func release() {
-        if waiters.isEmpty {
-            free += 1
-        } else {
-            waiters.removeFirst().continuation.resume()
-        }
-    }
-
-    private func abandon(_ id: UInt64) {
-        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
-        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 }
 
@@ -150,17 +55,12 @@ actor ArtworkCache {
     private static let decodesAtOnce = 4
     private static let lookupsAtOnce = 4
 
-    private struct Flight {
-        let task: Task<UIImage?, Never>
-        var waiting: Int
-    }
-
     private let pictures = DecodedPictures()
     private let missing = NSCache<NSString, NSNull>()
     private let songs = PicturesOfSongs()
     private let slots = DecodeSlots(decodesAtOnce)
     private let lookups = DecodeSlots(lookupsAtOnce)
-    private var flights: [ArtworkRequest: Flight] = [:]
+    private var flights = Flights<UIImage>()
 
     nonisolated func cached(_ request: ArtworkRequest) -> UIImage? {
         guard case .track = request.subject else { return pictures.object(forKey: request.name) }
@@ -226,15 +126,14 @@ actor ArtworkCache {
         if let picture = pictures.object(forKey: name) { return picture }
         if missing.object(forKey: name) != nil { return nil }
 
-        let flight = flights[request] ?? Flight(task: decoding(request, reading: reading), waiting: 0)
-        flights[request] = Flight(task: flight.task, waiting: flight.waiting + 1)
+        let task = flights.join(request) { decoding(request, reading: reading) }
 
         let image = await withTaskCancellationHandler {
-            await flight.task.value
+            await task.value
         } onCancel: {
-            Task { await self.leave(request, flight.task) }
+            Task { await self.leave(request, task) }
         }
-        settle(request, flight.task)
+        flights.settle(request, task)
         return Task.isCancelled ? nil : image
     }
 
@@ -275,18 +174,7 @@ actor ArtworkCache {
     }
 
     private func leave(_ request: ArtworkRequest, _ task: Task<UIImage?, Never>) {
-        guard var flight = flights[request], flight.task == task else { return }
-        flight.waiting -= 1
-        if flight.waiting > 0 {
-            flights[request] = flight
-        } else {
-            flights[request] = nil
-            task.cancel()
-        }
-    }
-
-    private func settle(_ request: ArtworkRequest, _ task: Task<UIImage?, Never>) {
-        if flights[request]?.task == task { flights[request] = nil }
+        flights.leave(request, task)
     }
 }
 
