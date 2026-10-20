@@ -1298,7 +1298,11 @@ guard and re-keys a sleeve-keyed album after moves land.
   (except a file moved onto itself, same device and inode); the claims (`Claims`) are keyed
   case-folded where the destination's nearest standing folder holds a name and its case-flipped
   twin as one file (`case_blind_beside`), so a second destination differing in case is refused in
-  the preview; `InTheWay::MayGo` for a scanned row. **A
+  the preview (`a_casefold_folder_collides_names_differing_in_case_beside_one_that_does_not` reruns
+  its binary under `unshare --user --map-root-user --mount` on a tmpfs mounted `casefold`, one folder
+  with `chattr +F` beside one without, and skips where the kernel or the namespace refuses; a
+  casefold folder holding nothing is probed by its own name in its parent, which is the parent's
+  rule, so it reads as sensitive); `InTheWay::MayGo` for a scanned row. **A
   destination that is the track itself is reduced to its own name in its own folder**: on a
   case-insensitive volume a case-only layout difference changes only the file name's case.
   `Planner::order_the_chains`: a move waits on at most one other, so `walked` follows each chain to

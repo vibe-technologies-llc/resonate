@@ -3826,6 +3826,97 @@ mod tests {
         fs::remove_dir_all(&folder).expect("the folder goes");
     }
 
+    const CASEFOLD_AT: &str = "RESONATE_CASEFOLD_AT";
+    const NO_CASEFOLD_VOLUME: i32 = 77;
+    const MOUNT_CASEFOLD_VOLUME: &str = "mount -t tmpfs -o casefold tmpfs \"$1\" \
+        && mkdir \"$1/blind\" \"$1/plain\" \
+        && chattr +F \"$1/blind\" \
+        || exit 77; \
+        export RESONATE_CASEFOLD_AT=\"$1\"; shift; exec \"$@\"";
+
+    fn ran_on_a_casefold_volume(this_test: &str) -> bool {
+        if env::var_os(CASEFOLD_AT).is_some() {
+            return false;
+        }
+        let volume = a_folder_of_its_own();
+        let ran = std::process::Command::new("unshare")
+            .args(["--user", "--map-root-user", "--mount", "sh", "-c"])
+            .arg(MOUNT_CASEFOLD_VOLUME)
+            .arg("sh")
+            .arg(&volume)
+            .arg(env::current_exe().expect("the test binary"))
+            .args([this_test, "--exact", "--nocapture"])
+            .status();
+        fs::remove_dir_all(&volume).expect("the mount point goes");
+        match ran {
+            Ok(status) if status.code() == Some(0) => true,
+            Ok(status) if status.code() == Some(NO_CASEFOLD_VOLUME) => {
+                eprintln!("skipped: no casefold tmpfs to mount in a user namespace");
+                true
+            }
+            Ok(status) => {
+                let refused = std::process::Command::new("unshare")
+                    .args(["--user", "--map-root-user", "--mount", "true"])
+                    .status()
+                    .is_ok_and(|status| !status.success());
+                assert!(refused, "the run on a casefold volume failed: {status}");
+                eprintln!("skipped: no user namespace to mount a volume in");
+                true
+            }
+            Err(_) => {
+                eprintln!("skipped: no unshare to mount a casefold volume with");
+                true
+            }
+        }
+    }
+
+    fn rows_colliding_in_case_under(root: &Path) -> Vec<TrackToFile> {
+        let mut first = row(1, &format!("{}/a.wav", root.display()));
+        first.root = root.to_path_buf();
+        let mut second = row(2, &format!("{}/b.wav", root.display()));
+        second.root = root.to_path_buf();
+        second.title = "ECHOES".to_owned();
+        vec![first, second]
+    }
+
+    #[test]
+    fn a_casefold_folder_collides_names_differing_in_case_beside_one_that_does_not() {
+        if ran_on_a_casefold_volume(
+            "organise::tests::a_casefold_folder_collides_names_differing_in_case_beside_one_that_does_not",
+        ) {
+            return;
+        }
+        let volume = PathBuf::from(env::var_os(CASEFOLD_AT).expect("the casefold volume"));
+        let blind = volume.join("blind");
+        let sensitive = volume.join("plain");
+        for folder in [&blind, &sensitive] {
+            fs::write(folder.join("Echoes.wav"), b"").expect("a file");
+        }
+
+        assert!(case_blind_beside(&blind));
+        assert!(!case_blind_beside(&sensitive));
+
+        let in_the_blind = planned(
+            &rows_colliding_in_case_under(&blind),
+            &read(DEFAULT_LAYOUT),
+            &OrganiseProgress::default(),
+        );
+        let in_the_sensitive = planned(
+            &rows_colliding_in_case_under(&sensitive),
+            &read(DEFAULT_LAYOUT),
+            &OrganiseProgress::default(),
+        );
+
+        assert_eq!(in_the_blind.moves.len(), 1);
+        assert_eq!(in_the_blind.refused.len(), 1);
+        assert!(matches!(
+            in_the_blind.refused[0].refusal,
+            Refusal::Collided { .. }
+        ));
+        assert_eq!(in_the_sensitive.moves.len(), 2);
+        assert!(in_the_sensitive.refused.is_empty());
+    }
+
     #[test]
     fn the_rows_cut_out_of_one_file_file_it_by_their_folder_and_leave_it_the_name_it_has() {
         let mut first = row(1, &format!("{NOWHERE}/rips/Meddle.wav"));
