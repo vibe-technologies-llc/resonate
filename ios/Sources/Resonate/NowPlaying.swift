@@ -30,18 +30,6 @@ final class NowPlaying {
         let artworkReady: Bool
     }
 
-    private struct Written {
-        let positionMs: UInt64
-        let at: ContinuousClock.Instant
-        let rate: Double
-
-        func expected(at now: ContinuousClock.Instant) -> Double {
-            let elapsed = now - at
-            let elapsedMs = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) * 1e-15
-            return Double(positionMs) + elapsedMs * rate
-        }
-    }
-
     private unowned let library: Library
     private var native: MobilePlayer?
     private var resumeAfterInterruption = false
@@ -50,7 +38,7 @@ final class NowPlaying {
     private var lockScreen: LockScreenArtwork?
     private var artworkTrack: Track?
     private var shown: Shown?
-    private var written: Written?
+    private var written: WrittenPosition?
     private var observers: [NSObjectProtocol] = []
     private var ratedTrack: UInt64?
     private var listening = false
@@ -441,7 +429,7 @@ final class NowPlaying {
             case .stopped: .stopped
             }
         shown = next
-        written = Written(positionMs: position, at: now, rate: rate)
+        written = WrittenPosition(positionMs: position, at: now, rate: rate)
     }
 
     private func loadArtwork(_ track: Track) {
