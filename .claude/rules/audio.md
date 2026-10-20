@@ -468,8 +468,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 
 - **Positions index the play order, not the load order:** `PlayerState::queue_position`,
   `Command::JumpTo`, `Command::Insert`, `Command::Remove`'s `Span` = rows a queue pane draws (right
-  under shuffle). `Queue::position` = load-order index (`None` while a queued row is heard),
-  published as `PlayerState::loaded_position`.
+  under shuffle). `Queue::position` = the heard row's load-order place (`None` while a queued row
+  is heard), published as `PlayerState::loaded_position`; `QueueRows::loaded_at` gives every drawn
+  row's place on the same count, so the two agree (the UI's `playing_entry` matches them).
 - **`Command::Clear` removes every row but the playing one in one step** (every row where nothing
   is current): a clear made by position in two removals could land after the song had ended and
   take the row that had just begun, since advancing playback does not move the queue's revision.
@@ -492,15 +493,27 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   edit by edit (a removed or heard-next row releases its id; load and restore build it afresh), so an
   insert weighs only what arrives. `stamp_of` hashes location and span, not ids, so a renamed row
   still stamps as its playlist.
-- **A queue edit costs what it moves, short of the stamps and the publish.** A row is an
-  `Arc<QueueItem>` from the moment it arrives: `Queued::rows` (`Arc<[Arc<QueueItem>]>`, play order)
-  shares every row with the queue and every earlier publish, so a publish copies a pointer a row,
-  never a location (`a_row_published_twice_is_the_same_row_and_not_a_copy`); `Queue::relocate`
-  copies only a row a reader still holds (`Arc::make_mut`). Both stamps are order-dependent SipHash
-  over the rows in load order, kept as core `Stamping` hasher states: an insert appends to `items`, so
-  it feeds the arriving rows alone (to `playing_from` only where they land in `order`); a heard
-  queued-next row leaving was never in `playing_from` and rehashes the stamp alone; a removal, load or
-  restore rehashes both (`stamps_kept_edit_by_edit_agree_with_the_rows_stamped_afresh`).
+- **A queue edit costs what it moves.** A row is a `Held`: its `Arc<QueueItem>`, its *place*
+  (the load-order count it arrived at: a load or restore numbers its rows from 0, every arrival takes
+  the next, nothing renumbers) and its `RowStamp`. `order`, `unshuffled` and `next` are persistent
+  `imbl::Vector<Held>`s, never indices into a row list, so a removal takes its rows out where the
+  drawn positions say (a removed or heard-next row shifts nobody's index; a heard play-next row is
+  `pop_front`); with shuffle off `unshuffled` is `order`'s clone, an O(1) share. **The publish shares
+  the queue**: `Queue::published` splits `order` at `after` and appends `next` and the rest into a
+  `QueueRows` (O(log n), every node shared with the queue and earlier publishes:
+  `a_row_published_twice_is_the_same_row_and_not_a_copy`), and hands the list order over as the
+  `unshuffled` and `next` vectors themselves (`Listing`), which `Queued::in_list_order` reads on the
+  reader's thread. `QueueRows::in_load_order` ranks the places for `Keeping` there too. **The stamps
+  are sums**: core's `QueueStamp` is the wrapping sum of a `RowStamp` (SipHash of the row and its
+  place) a row, so a row arriving adds its term and one leaving takes its own away, and `Queued::stamp`
+  and `playing_from` (`order`'s rows alone) never rehash the queue
+  (`stamps_kept_edit_by_edit_agree_with_the_rows_stamped_afresh`). A place moves with nothing, so the
+  rows a playlist loaded stamp as `stamp_of` of that playlist (place `i` for row `i`) while rows
+  queued next come and go; a reorder leaves both stamps (only `Queue::split`, a move or reorder,
+  sums `playing_from` again). A stamp is only ever compared, never stored. `Queue::relocate` copies
+  only a row a reader still holds (`Arc::make_mut`) and keeps its stamp. What stays linear: a move
+  or reorder rebuilds the three vectors from every row, and under shuffle an insert or removal walks
+  `unshuffled` for where a row stands.
 - **What was queued is apart from what plays.** `order` = loaded album or playlist (only list
   shuffle, a `RepeatMode::Queue` wrap and unshuffling touch); `next` = rows somebody asked to hear,
   in asking order; drawn = `order[..after] ++ next ++ order[after..]`. `next` is exhausted before
@@ -589,8 +602,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   frames summed.
 - **One `Published` bundle, not a growing argument list:** `PlayerState`, `OutputSettings`,
   `StreamDigest`, queue, sink list, the visualiser's `Tapped`, each behind its own lock so a 60 Hz
-  poll clones a pointer. The queue is a `Queued` (rows in play order as shared `Arc<QueueItem>`s,
-  where each was loaded, revision) under one lock; queue and digest are written before the `PlayerState` advertising them.
+  poll clones a pointer. The queue is a `Queued` (rows in play order as a `QueueRows` sharing the
+  queue's own vectors, each row's load-order place, revision) under one lock; queue and digest are written before the `PlayerState` advertising them.
   `PlayerState::seeks` = token `Engine::seek` steps where the seek landed and nowhere else
   (`resonate-mpris` emits `Seeked` from it). `PlayerState::sleeping` carries what is left, so a front
   end keeps no clock. `OutputSettings` is the engine's whole configured output (a new `Arc` only when

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_core::{Frames, QueueStamp, Reordered, Resumable, Resumption, plays_in};
+use resonate_core::{Frames, QueueStamp, Reordered, Resumable, Resumption};
 
 use crate::{PlaybackState, PlayerState, QueueItem, Queued};
 
@@ -109,7 +109,7 @@ impl Keeping {
 }
 
 fn in_load_order(queued: &Queued) -> (Vec<Resumable>, Vec<usize>) {
-    let order = plays_in(&queued.loaded_at, queued.rows.len());
+    let order = queued.rows.in_load_order();
     let mut loaded: Vec<Option<Resumable>> = (0..queued.rows.len()).map(|_| None).collect();
     for (plays_at, item) in queued.rows.iter().enumerate() {
         loaded[order[plays_at]] = Some(resumable(item));
@@ -128,14 +128,12 @@ fn resumable(item: &QueueItem) -> Resumable {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use resonate_core::{
         ChannelLayout, MediaLocation, SampleFormat, SampleRate, StreamSpec, TrackId, Volume,
     };
 
     use super::*;
-    use crate::{PlaybackState, RepeatMode, Seeks, TrackState, queue::stamp_of};
+    use crate::{PlaybackState, QueueRows, RepeatMode, Seeks, TrackState, queue::stamp_of};
 
     const RATE: SampleRate = SampleRate::HZ_44100;
 
@@ -164,8 +162,7 @@ mod tests {
     fn drawn(queue: &[QueueItem], revision: u64) -> Queued {
         Queued {
             revision,
-            rows: queue.iter().cloned().map(Arc::new).collect(),
-            loaded_at: Arc::from((0..queue.len()).collect::<Vec<_>>()),
+            rows: queue.iter().cloned().collect(),
             next: None,
             stamp: stamp_of(queue),
             ..Queued::default()
@@ -184,8 +181,7 @@ mod tests {
 
         Queued {
             revision,
-            rows: queue.iter().cloned().map(Arc::new).collect(),
-            loaded_at: Arc::from(loaded_at),
+            rows: QueueRows::placed(loaded_at.into_iter().zip(queue.iter().cloned())),
             next: None,
             stamp: stamp_of(&in_load_order),
             ..Queued::default()

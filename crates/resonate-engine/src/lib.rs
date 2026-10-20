@@ -63,7 +63,7 @@ pub use crate::{
         plan_for, plan_output, resolve_replay_gain,
     },
     player::Player,
-    queue::{Placement, QueueItem, Queued, Unclaimed, stamp_of, unclaimed_id},
+    queue::{Placement, QueueItem, QueueRows, Queued, Unclaimed, stamp_of, unclaimed_id},
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     sleep::{Asleep, Until},
     state::{

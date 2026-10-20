@@ -6,7 +6,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, RecvTimeoutError};
 use parking_lot::Mutex;
-use resonate_engine::{Event, PlaybackState, Player, QueueItem};
+use resonate_engine::{Event, PlaybackState, Player, QueueRows};
 
 use crate::{Error, MobilePlayer, Result};
 
@@ -53,7 +53,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    pub(crate) fn take_in(&self, events: Vec<Event>, rows: &[Arc<QueueItem>]) {
+    pub(crate) fn take_in(&self, events: Vec<Event>, rows: &QueueRows) {
         for event in events {
             if let Some(told) = crate::failure::waiting_told(&event) {
                 *self.waiting.lock() = Some(told);

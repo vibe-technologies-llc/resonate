@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
+use std::{cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use gpui::{
@@ -6,7 +6,7 @@ use gpui::{
     uniform_list,
 };
 use resonate_core::{AlbumId, FrameSpan, MediaLocation, Span, TrackId};
-use resonate_engine::{Command, Placement, Player, QueueItem};
+use resonate_engine::{Command, Placement, Player, QueueItem, QueueRows};
 use resonate_library::{
     CatalogStamp, Cut, Direction, Favoured, Library, Lit, NamesMoved, RowOrder, Track,
     folded_letters,
@@ -115,7 +115,14 @@ impl RootView {
         self.queue_names.reading = Some(cx.spawn(async move |this, cx| {
             let names: Arc<[Named]> = cx
                 .background_executor()
-                .spawn(async move { named_again(&library, &player, &queued.rows, standing) })
+                .spawn(async move {
+                    named_again(
+                        &library,
+                        &player,
+                        queued.rows.iter().map(Arc::as_ref),
+                        standing,
+                    )
+                })
                 .await;
             let landed = this.update(cx, |this, cx| {
                 this.queue_names.named = Some((revision, names));
@@ -132,12 +139,13 @@ struct Standing {
     moved: NamesMoved,
 }
 
-fn named_again<Row: Borrow<QueueItem>>(
+fn named_again<'a>(
     library: &Library,
     player: &Player,
-    rows: &[Row],
+    rows: impl IntoIterator<Item = &'a QueueItem>,
     standing: Option<Standing>,
 ) -> Arc<[Named]> {
+    let rows: Vec<&QueueItem> = rows.into_iter().collect();
     let known: AHashMap<&QueueItem, &Named> = standing
         .iter()
         .flat_map(|standing| {
@@ -150,9 +158,8 @@ fn named_again<Row: Borrow<QueueItem>>(
         .collect();
     let unknown: Vec<QueueItem> = rows
         .iter()
-        .map(Borrow::borrow)
-        .filter(|item| !known.contains_key(item))
-        .cloned()
+        .filter(|item| !known.contains_key(*item))
+        .map(|item| QueueItem::clone(item))
         .collect();
     let read: AHashMap<&QueueItem, Named> = queued_rows(library, &unknown)
         .into_iter()
@@ -168,8 +175,7 @@ fn named_again<Row: Borrow<QueueItem>>(
         })
         .collect();
 
-    rows.iter()
-        .map(Borrow::borrow)
+    rows.into_iter()
         .map(|item| {
             known
                 .get(item)
@@ -369,8 +375,8 @@ pub(crate) struct TakenOut {
 }
 
 impl TakenOut {
-    fn of(queue: &[Arc<QueueItem>], rows: Span) -> Option<Self> {
-        let taken = queue.get(rows.range())?;
+    fn of(queue: &QueueRows, rows: Span) -> Option<Self> {
+        let taken = queue.run(rows)?;
         if taken.is_empty() {
             return None;
         }
@@ -386,12 +392,12 @@ impl TakenOut {
         })
     }
 
-    fn stands_over(&self, queue: &[Arc<QueueItem>]) -> bool {
+    fn stands_over(&self, queue: &QueueRows) -> bool {
         let taken: AHashSet<TrackId> = self.rows.iter().map(|taken| taken.id).collect();
         queue.iter().all(|item| !taken.contains(&item.id))
     }
 
-    fn landing_in(&self, queue: &[Arc<QueueItem>]) -> usize {
+    fn landing_in(&self, queue: &QueueRows) -> usize {
         match self.after {
             None => 0,
             Some(after) => queue
@@ -401,10 +407,10 @@ impl TakenOut {
         }
     }
 
-    fn standing_in(&self, queue: &[Arc<QueueItem>]) -> Option<Span> {
+    fn standing_in(&self, queue: &QueueRows) -> Option<Span> {
         let first = self.rows.first()?;
         let at = queue.iter().position(|item| item.id == first.id)?;
-        let held = queue.get(at..at + self.rows.len())?;
+        let held = queue.run(Span::between(at, at + self.rows.len() - 1))?;
         held.iter()
             .map(|item| item.id)
             .eq(self.rows.iter().map(|item| item.id))
@@ -424,7 +430,7 @@ pub(crate) struct TakenBack {
 }
 
 impl TakenBack {
-    pub(crate) fn keeping_all(&mut self, queue: &[Arc<QueueItem>], runs: &[Span]) -> Option<usize> {
+    pub(crate) fn keeping_all(&mut self, queue: &QueueRows, runs: &[Span]) -> Option<usize> {
         let taken: Vec<TakenOut> = runs
             .iter()
             .filter_map(|rows| TakenOut::of(queue, *rows))
@@ -448,31 +454,31 @@ impl TakenBack {
         self.steps.push(taken);
     }
 
-    fn standing(&self, queue: &[Arc<QueueItem>]) -> Option<&TakenOut> {
+    fn standing(&self, queue: &QueueRows) -> Option<&TakenOut> {
         self.steps.last().filter(|taken| taken.stands_over(queue))
     }
 
-    fn standing_again(&self, queue: &[Arc<QueueItem>]) -> Option<&TakenOut> {
+    fn standing_again(&self, queue: &QueueRows) -> Option<&TakenOut> {
         self.put_back
             .last()
             .filter(|taken| taken.standing_in(queue).is_some())
     }
 
-    fn offered(&self, queue: &[Arc<QueueItem>]) -> Option<Offer> {
+    fn offered(&self, queue: &QueueRows) -> Option<Offer> {
         self.standing(queue).map(|taken| Offer {
             rows: taken.rows.len(),
             behind: self.steps.len().saturating_sub(1),
         })
     }
 
-    fn offered_again(&self, queue: &[Arc<QueueItem>]) -> Option<Offer> {
+    fn offered_again(&self, queue: &QueueRows) -> Option<Offer> {
         self.standing_again(queue).map(|taken| Offer {
             rows: taken.rows.len(),
             behind: self.put_back.len().saturating_sub(1),
         })
     }
 
-    pub(crate) fn take(&mut self, queue: &[Arc<QueueItem>]) -> Option<PuttingBack> {
+    pub(crate) fn take(&mut self, queue: &QueueRows) -> Option<PuttingBack> {
         self.standing(queue)?;
         let taken = self.steps.pop()?;
         let putting = PuttingBack {
@@ -483,7 +489,7 @@ impl TakenBack {
         Some(putting)
     }
 
-    pub(crate) fn take_again(&mut self, queue: &[Arc<QueueItem>]) -> Option<Span> {
+    pub(crate) fn take_again(&mut self, queue: &QueueRows) -> Option<Span> {
         let rows = self.standing_again(queue)?.standing_in(queue)?;
         let taken = self.put_back.pop()?;
         self.stack(taken);
@@ -503,11 +509,11 @@ struct Reaching {
 }
 
 impl Reaching {
-    fn of(queue: &[Arc<QueueItem>], rows: Span) -> Self {
+    fn of(queue: &QueueRows, rows: Span) -> Self {
         Self {
             rows,
             holding: queue
-                .get(rows.range())
+                .run(rows)
                 .unwrap_or_default()
                 .iter()
                 .map(|item| queued_cut(item))
@@ -852,7 +858,7 @@ impl RootView {
             .into_any_element()
     }
 
-    fn holds_what_was_taken_out(&self, queue: &[Arc<QueueItem>]) -> bool {
+    fn holds_what_was_taken_out(&self, queue: &QueueRows) -> bool {
         self.took_out.offered(queue).is_some()
     }
 
@@ -891,7 +897,7 @@ impl RootView {
             let (total, unmeasured) = cx
                 .background_executor()
                 .spawn(async move {
-                    let rows = queued_rows(&library, &queued.rows);
+                    let rows = queued_rows(&library, queued.rows.iter().map(Arc::as_ref));
                     let lengths: Vec<Option<Duration>> = rows
                         .iter()
                         .map(|track| {
@@ -917,7 +923,7 @@ impl RootView {
         }));
     }
 
-    fn queue_heading(&mut self, queue: &[Arc<QueueItem>], cx: &mut Context<Self>) -> Div {
+    fn queue_heading(&mut self, queue: &QueueRows, cx: &mut Context<Self>) -> Div {
         let position = self.player.read(cx).state().queue_position;
         let total = self.queue_length(cx);
         let mut under: format::Parts<String> =
@@ -1163,7 +1169,7 @@ impl RootView {
         let library = self.library.read(cx).catalog();
 
         self.queue_ordered = Some(cx.spawn(async move |this, cx| {
-            let rows = Arc::clone(&queued.rows);
+            let rows = queued.rows.clone();
             let ordered: Vec<usize> = cx
                 .background_executor()
                 .spawn(async move { ordered_rows(&library, &player, &rows, order, reading) })
@@ -1184,11 +1190,11 @@ impl RootView {
 fn ordered_rows(
     library: &Library,
     player: &Player,
-    rows: &[Arc<QueueItem>],
+    rows: &QueueRows,
     order: RowOrder,
     reading: Direction,
 ) -> Vec<usize> {
-    let tracks = queued_rows(library, rows);
+    let tracks = queued_rows(library, rows.iter().map(Arc::as_ref));
     let albums: Vec<AlbumId> = tracks
         .iter()
         .flatten()
@@ -1405,8 +1411,8 @@ mod tests {
     use resonate_library::{Library, NamesMoved};
 
     use super::{
-        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, Run, Standing, TakenBack,
-        named_again, puts_back, runs_of, takes_out_again, took_out,
+        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, QueueRows, Run, Standing,
+        TakenBack, named_again, puts_back, runs_of, takes_out_again, took_out,
     };
 
     #[test]
@@ -1418,7 +1424,7 @@ mod tests {
         let named = named_again(
             &library,
             &player,
-            &rows,
+            rows.iter().map(Arc::as_ref),
             Some(standing(&[1, 2], NamesMoved::Nothing)),
         );
         let folded: Vec<&str> = named.iter().map(|named| named.folded.as_str()).collect();
@@ -1444,7 +1450,12 @@ mod tests {
             added: false,
         };
 
-        let named = named_again(&library, &player, &rows, Some(standing(&[1, 2, 3], moved)));
+        let named = named_again(
+            &library,
+            &player,
+            rows.iter().map(Arc::as_ref),
+            Some(standing(&[1, 2, 3], moved)),
+        );
         let folded: Vec<&str> = named.iter().map(|named| named.folded.as_str()).collect();
 
         assert_eq!(folded, ["kept 1", "2", "kept 3"]);
@@ -1476,6 +1487,10 @@ mod tests {
             .collect()
     }
 
+    fn rows_of(queue: &[Arc<QueueItem>]) -> QueueRows {
+        queue.iter().cloned().collect()
+    }
+
     fn without(queue: &[Arc<QueueItem>], rows: Span) -> Vec<Arc<QueueItem>> {
         let mut left = queue.to_vec();
         left.drain(rows.range());
@@ -1483,12 +1498,12 @@ mod tests {
     }
 
     fn back(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>, rows: Span) {
-        kept.keeping_all(queue, &[rows]);
+        kept.keeping_all(&rows_of(queue), &[rows]);
         *queue = without(queue, rows);
     }
 
     fn put_back(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>) -> bool {
-        let Some(taken) = kept.take(queue) else {
+        let Some(taken) = kept.take(&rows_of(queue)) else {
             return false;
         };
         queue.splice(taken.at..taken.at, taken.rows.into_iter().map(Arc::new));
@@ -1496,7 +1511,7 @@ mod tests {
     }
 
     fn take_again(kept: &mut TakenBack, queue: &mut Vec<Arc<QueueItem>>) -> bool {
-        let Some(rows) = kept.take_again(queue) else {
+        let Some(rows) = kept.take_again(&rows_of(queue)) else {
             return false;
         };
         queue.drain(rows.range());
@@ -1654,18 +1669,20 @@ mod tests {
 
         back(&mut kept, &mut queue, Span::between(0, 0));
         assert!(put_back(&mut kept, &mut queue));
-        let offer = kept.offered_again(&queue).expect("the put back is offered");
+        let offer = kept
+            .offered_again(&rows_of(&queue))
+            .expect("the put back is offered");
         assert_eq!((offer.rows, offer.behind), (1, 0));
 
         queue.insert(0, queued(&[9])[0].clone());
-        assert!(kept.offered_again(&queue).is_some());
+        assert!(kept.offered_again(&rows_of(&queue)).is_some());
         assert!(take_again(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[9, 2, 3]));
         assert!(put_back(&mut kept, &mut queue));
 
         back(&mut kept, &mut queue, Span::between(2, 2));
         assert_eq!(
-            kept.offered_again(&queue),
+            kept.offered_again(&rows_of(&queue)),
             None,
             "a fresh gesture kept what was put back before it"
         );
@@ -1676,14 +1693,18 @@ mod tests {
         let mut queue = queued(&[1, 2, 3, 4]);
         let mut kept = TakenBack::default();
 
-        assert_eq!(kept.offered(&queue), None);
+        assert_eq!(kept.offered(&rows_of(&queue)), None);
 
         back(&mut kept, &mut queue, Span::between(3, 3));
-        let offer = kept.offered(&queue).expect("the gesture is offered back");
+        let offer = kept
+            .offered(&rows_of(&queue))
+            .expect("the gesture is offered back");
         assert_eq!((offer.rows, offer.behind), (1, 0));
 
         back(&mut kept, &mut queue, Span::between(0, 1));
-        let offer = kept.offered(&queue).expect("the gesture is offered back");
+        let offer = kept
+            .offered(&rows_of(&queue))
+            .expect("the gesture is offered back");
         assert_eq!((offer.rows, offer.behind), (2, 1));
     }
 
@@ -1697,7 +1718,9 @@ mod tests {
         assert_eq!(queue, queued(&[4]));
         queue.insert(0, queued(&[9])[0].clone());
 
-        let offer = kept.offered(&queue).expect("the walk still stands");
+        let offer = kept
+            .offered(&rows_of(&queue))
+            .expect("the walk still stands");
         assert_eq!((offer.rows, offer.behind), (1, 1));
         assert!(put_back(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[1, 9, 4]));
@@ -1721,7 +1744,7 @@ mod tests {
         let mut kept = TakenBack::default();
         let runs = [Span::one(1), Span::between(3, 4)];
 
-        assert_eq!(kept.keeping_all(&queue, &runs), Some(3));
+        assert_eq!(kept.keeping_all(&rows_of(&queue), &runs), Some(3));
         queue = queued(&[1, 3]);
 
         assert!(put_back(&mut kept, &mut queue));
@@ -1739,8 +1762,8 @@ mod tests {
         back(&mut kept, &mut queue, Span::between(2, 2));
         queue.push(queued(&[3])[0].clone());
 
-        assert_eq!(kept.offered(&queue), None);
-        assert!(kept.take(&queue).is_none());
+        assert_eq!(kept.offered(&rows_of(&queue)), None);
+        assert!(kept.take(&rows_of(&queue)).is_none());
     }
 
     #[test]
@@ -1769,7 +1792,9 @@ mod tests {
             back(&mut kept, &mut queue, Span::between(0, 0));
         }
 
-        let offer = kept.offered(&queue).expect("the last gesture is offered");
+        let offer = kept
+            .offered(&rows_of(&queue))
+            .expect("the last gesture is offered");
         assert_eq!(offer.behind, KEPT_GESTURES - 1);
 
         let mut walked = 0;

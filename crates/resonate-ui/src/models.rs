@@ -1,5 +1,5 @@
 use std::{
-    borrow::{Borrow, Cow},
+    borrow::Cow,
     fs, mem,
     num::{NonZeroU32, NonZeroUsize},
     os::unix::fs::MetadataExt as _,
@@ -5731,11 +5731,12 @@ impl Named {
     }
 }
 
-pub(crate) fn queued_rows<Row: Borrow<QueueItem>>(
+pub(crate) fn queued_rows<'a>(
     library: &Library,
-    rows: &[Row],
+    rows: impl IntoIterator<Item = &'a QueueItem>,
 ) -> Vec<Option<Track>> {
-    let ids: Vec<TrackId> = rows.iter().map(|item| item.borrow().id).collect();
+    let rows: Vec<&QueueItem> = rows.into_iter().collect();
+    let ids: Vec<TrackId> = rows.iter().map(|item| item.id).collect();
     let by_id: AHashMap<TrackId, Track> = match library.tracks_with_ids(&ids) {
         Ok(read) => read.into_iter().map(|track| (track.id, track)).collect(),
         Err(error) => {
@@ -5744,8 +5745,7 @@ pub(crate) fn queued_rows<Row: Borrow<QueueItem>>(
         }
     };
 
-    rows.iter()
-        .map(Borrow::borrow)
+    rows.into_iter()
         .map(|item| match by_id.get(&item.id) {
             Some(track) if track.location == item.location => Some(track.clone()),
             _ => queued_at(library, item),

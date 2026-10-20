@@ -19,7 +19,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
-    PlaybackState, Player, PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
+    PlaybackState, Player, PlayerState, QueueRows, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
     TrackState,
 };
 use resonate_eq::Corrected;
@@ -471,8 +471,8 @@ impl PlayerModel {
         series
     }
 
-    pub fn queue(&self) -> Arc<[Arc<QueueItem>]> {
-        Arc::clone(&self.queued.rows)
+    pub fn queue(&self) -> QueueRows {
+        self.queued.rows.clone()
     }
 
     pub fn queued(&self) -> Queued {

@@ -1,38 +1,37 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct QueueStamp(u64);
 
 impl QueueStamp {
     pub fn of<Row: Hash>(rows: impl IntoIterator<Item = Row>) -> Self {
-        let mut stamping = Stamping::default();
-        stamping.extend(rows);
-        stamping.stamp()
+        rows.into_iter()
+            .enumerate()
+            .fold(Self::default(), |stamp, (place, row)| {
+                stamp.with(RowStamp::of(row, place))
+            })
+    }
+
+    #[must_use]
+    pub const fn with(self, row: RowStamp) -> Self {
+        Self(self.0.wrapping_add(row.0))
+    }
+
+    #[must_use]
+    pub const fn without(self, row: RowStamp) -> Self {
+        Self(self.0.wrapping_sub(row.0))
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Stamping(DefaultHasher);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RowStamp(u64);
 
-impl Stamping {
-    pub fn row<Row: Hash>(&mut self, row: Row) {
-        row.hash(&mut self.0);
-    }
-
-    pub fn extend<Row: Hash>(&mut self, rows: impl IntoIterator<Item = Row>) {
-        for row in rows {
-            self.row(row);
-        }
-    }
-
-    pub fn stamp(&self) -> QueueStamp {
-        QueueStamp(self.0.finish())
-    }
-}
-
-impl Default for QueueStamp {
-    fn default() -> Self {
-        Self::of([0u64; 0])
+impl RowStamp {
+    pub fn of<Row: Hash>(row: Row, place: usize) -> Self {
+        let mut hasher = DefaultHasher::new();
+        place.hash(&mut hasher);
+        row.hash(&mut hasher);
+        Self(hasher.finish())
     }
 }
 
@@ -51,22 +50,27 @@ mod tests {
     }
 
     #[test]
-    fn rows_stamped_as_they_arrive_stamp_as_the_whole_run_does() {
-        let mut stamping = Stamping::default();
-        stamping.extend([1, 2]);
-        let before = stamping.clone();
-        stamping.row(3);
-
-        assert_eq!(before.stamp(), QueueStamp::of([1, 2]));
-        assert_eq!(stamping.stamp(), QueueStamp::of([1, 2, 3]));
-    }
-
-    #[test]
     fn a_row_that_arrived_left_or_changed_places_stamps_otherwise() {
         let held = QueueStamp::of([1, 2, 3]);
 
         assert_ne!(QueueStamp::of([1, 2, 3, 4]), held);
         assert_ne!(QueueStamp::of([1, 3]), held);
         assert_ne!(QueueStamp::of([3, 2, 1]), held);
+        assert_ne!(QueueStamp::of([1, 1, 3]), held);
+    }
+
+    #[test]
+    fn a_row_taken_or_given_back_moves_the_stamp_by_that_row_alone() {
+        let held = QueueStamp::of([1, 2, 3]);
+        let without_the_middle = held.without(RowStamp::of(2, 1));
+
+        assert_eq!(held.without(RowStamp::of(3, 2)), QueueStamp::of([1, 2]));
+        assert_eq!(
+            QueueStamp::of([1, 2]).with(RowStamp::of(3, 2)),
+            QueueStamp::of([1, 2, 3])
+        );
+        assert_ne!(without_the_middle, held);
+        assert_ne!(without_the_middle, QueueStamp::of([1, 3]));
+        assert_eq!(without_the_middle.with(RowStamp::of(2, 1)), held);
     }
 }

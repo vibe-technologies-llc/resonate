@@ -582,7 +582,7 @@ impl MobilePlayer {
     pub(crate) fn count_listening(
         &self,
         state: &resonate_engine::PlayerState,
-        queue: &[std::sync::Arc<resonate_engine::QueueItem>],
+        queue: &resonate_engine::QueueRows,
     ) -> Result<()> {
         let mut listening = self.services.listening.lock();
         let counted = listening.0.heard(state, queue);

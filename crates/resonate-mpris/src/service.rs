@@ -15,8 +15,8 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::RwLock;
 use resonate_core::{Frames, TrackId, Volume};
 use resonate_engine::{
-    CoverArt, MediaInfo, PlaybackState, Player, PlayerState, QueueItem, RepeatMode, Seeks,
-    TagsRead, TrackState,
+    CoverArt, MediaInfo, PlaybackState, Player, PlayerState, QueueItem, QueueRows, RepeatMode,
+    Seeks, TagsRead, TrackState,
 };
 use zbus::{
     OwnedObjectPath, OwnedVariant,
@@ -334,7 +334,7 @@ struct Collection {
 }
 
 struct Watched {
-    queue: Arc<[Arc<QueueItem>]>,
+    queue: QueueRows,
     listed: Arc<[Arc<QueueItem>]>,
     rows_revision: u64,
     playlists: Collection,
@@ -535,7 +535,7 @@ impl Reading {
     fn again(
         shared: &Shared,
         state: &PlayerState,
-        queue: &[Arc<QueueItem>],
+        queue: &QueueRows,
         before: Option<&Self>,
     ) -> Self {
         let of = state.current.map(|current| current.id);
@@ -585,7 +585,7 @@ fn snapshot(
     let listed = match before {
         Some(held)
             if held.rows_revision == queued.rows_revision
-                && Arc::ptr_eq(&held.queue, &queued.rows) =>
+                && held.queue.is_the_same_as(&queued.rows) =>
         {
             Arc::clone(&held.listed)
         }
@@ -700,7 +700,7 @@ fn publish_tracks(
 ) {
     let emitter = tracks.signal_emitter();
 
-    if !Arc::ptr_eq(&before.queue, &now.queue) {
+    if !before.queue.is_the_same_as(&now.queue) {
         shared.pictures.keep_rows(&now.queue);
         publish_queue_moves(tracks, shared, before, now);
     }

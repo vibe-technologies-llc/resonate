@@ -1,8 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TrackId};
 
-use crate::{PlaybackState, PlayerState, QueueItem, Seeks, TrackState};
+use crate::{PlaybackState, PlayerState, QueueRows, Seeks, TrackState};
 
 pub const COUNTS_AS_HEARD: Duration = Duration::from_secs(240);
 
@@ -73,7 +73,7 @@ pub struct Listening {
 }
 
 impl Listening {
-    pub fn heard(&mut self, state: &PlayerState, queue: &[Arc<QueueItem>]) -> Option<Counting> {
+    pub fn heard(&mut self, state: &PlayerState, queue: &QueueRows) -> Option<Counting> {
         let Some(track) = state.current.as_ref() else {
             return self.ends();
         };
@@ -136,7 +136,7 @@ impl Listening {
 
 fn playing(
     state: &PlayerState,
-    queue: &[Arc<QueueItem>],
+    queue: &QueueRows,
     track: TrackId,
     heard: Duration,
 ) -> Option<Played> {
@@ -171,7 +171,7 @@ mod tests {
     use resonate_core::{ChannelLayout, QueueStamp, SampleFormat, SampleRate, StreamSpec, Volume};
 
     use super::*;
-    use crate::{RepeatMode, Seeks};
+    use crate::{QueueItem, RepeatMode, Seeks};
 
     const RATE: SampleRate = SampleRate::HZ_44100;
 
@@ -183,14 +183,12 @@ mod tests {
         TrackId::new(number).expect("track ids start at one")
     }
 
-    fn queued(count: u64) -> Vec<Arc<QueueItem>> {
+    fn queued(count: u64) -> QueueRows {
         (1..=count)
-            .map(|number| {
-                Arc::new(QueueItem {
-                    id: track(number),
-                    location: MediaLocation::local(format!("/music/{number}.flac")),
-                    span: None,
-                })
+            .map(|number| QueueItem {
+                id: track(number),
+                location: MediaLocation::local(format!("/music/{number}.flac")),
+                span: None,
             })
             .collect()
     }

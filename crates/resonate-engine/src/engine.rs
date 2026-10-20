@@ -27,7 +27,7 @@ use crate::{
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
-    queue::{self, Queue, QueueItem, Queued, Removal},
+    queue::{self, Queue, QueueItem, Removal},
     ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
     streaming::{Asked, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
@@ -3387,15 +3387,7 @@ impl Engine {
             return;
         }
         self.announced = Some(revision);
-        *self.published.queue.write() = Queued {
-            revision,
-            rows_revision: self.queue.rows_revision(),
-            rows: self.queue.in_play_order(),
-            loaded_at: self.queue.loaded_at(),
-            listed: self.queue.listed(),
-            next: self.queue.playing_next(),
-            stamp: self.queue.stamp(),
-        };
+        *self.published.queue.write() = self.queue.published();
     }
 
     fn publish_digest(&mut self) {

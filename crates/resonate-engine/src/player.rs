@@ -14,7 +14,7 @@ use resonate_pipewire::PipeWire;
 
 use crate::{
     Backend, Command, CoverArt, Engine, EngineConfig, Error, Event, Landing, MediaInfo, Outcome,
-    OutputSettings, PlayerState, Published, QueueItem, Queued, Request, Result, StreamDigest,
+    OutputSettings, PlayerState, Published, QueueRows, Queued, Request, Result, StreamDigest,
     Tapped,
     catalog::{ArtRead, Catalog, TagsRead},
 };
@@ -159,8 +159,8 @@ impl Player {
         Arc::clone(&self.published.settings.read())
     }
 
-    pub fn queue(&self) -> Arc<[Arc<QueueItem>]> {
-        Arc::clone(&self.published.queue.read().rows)
+    pub fn queue(&self) -> QueueRows {
+        self.published.queue.read().rows.clone()
     }
 
     pub fn queued(&self) -> Queued {

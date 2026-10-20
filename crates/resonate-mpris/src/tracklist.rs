@@ -6,7 +6,7 @@ use std::{
 
 use ahash::AHashMap;
 use resonate_core::TrackId;
-use resonate_engine::{Command, Placement, QueueItem, Span, unclaimed_id};
+use resonate_engine::{Command, Placement, QueueItem, QueueRows, Span, unclaimed_id};
 use zbus::{
     ObjectPath, OwnedObjectPath, OwnedVariant, fdo, interface, object_server::SignalEmitter,
 };
@@ -131,12 +131,12 @@ pub(crate) struct TrackList {
 }
 
 impl TrackList {
-    fn row_of(queue: &[Arc<QueueItem>], path: &str) -> Option<usize> {
+    fn row_of(queue: &QueueRows, path: &str) -> Option<usize> {
         let track = track_of(path)?;
         queue.iter().position(|item| item.id == track)
     }
 
-    pub(crate) fn landing(queue: &[Arc<QueueItem>], after: &ObjectPath<'_>) -> fdo::Result<usize> {
+    pub(crate) fn landing(queue: &QueueRows, after: &ObjectPath<'_>) -> fdo::Result<usize> {
         if after.as_str() == NO_TRACK {
             return Ok(0);
         }

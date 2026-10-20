@@ -44,8 +44,9 @@ the client a second `resonate` reaches a first through.
 
 `Tracks` = `Queued::in_list_order` as object paths, `AddTrack`/`RemoveTrack` =
 `Command::Insert`/`Remove`, four signals diffed from the 200 ms `POLL` that also drives `Player`
-property changes. **The list is the queue unshuffled, not the play order** (`Queued::listed`: the
-unshuffled order with rows queued next after the row heard), so shuffling moves nothing on the bus
+property changes. **The list is the queue unshuffled, not the play order** (`Queued::in_list_order`:
+the unshuffled order with rows queued next after the row heard, worked out on the bus thread from
+the vectors the publish shares), so shuffling moves nothing on the bus
 and play-order positions never reach a client; ids are found by id, not position
 (`a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it`). The order it does play
 in is `org.resonate.Player1`'s `PlayOrder` (`ao`, `Queued::rows` as paths, heard rows first), read on

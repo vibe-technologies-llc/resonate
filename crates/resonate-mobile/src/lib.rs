@@ -41,7 +41,7 @@ use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
 use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume};
 use resonate_engine::{
-    Command, EngineConfig, PlaybackState, Player, PlayerState, QueueItem, RepeatMode,
+    Command, EngineConfig, PlaybackState, Player, PlayerState, QueueItem, QueueRows, RepeatMode,
 };
 
 use crate::{
@@ -102,7 +102,7 @@ pub enum Transport {
     Paused,
 }
 
-fn row_being_opened(state: &PlayerState, rows: &[Arc<QueueItem>]) -> Option<TrackId> {
+fn row_being_opened(state: &PlayerState, rows: &QueueRows) -> Option<TrackId> {
     let opening = matches!(
         state.playback,
         PlaybackState::Buffering | PlaybackState::Paused

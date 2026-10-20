@@ -12,12 +12,10 @@ are in [ROADMAP.md](ROADMAP.md).
   for moved audio is all of them)
 
 ## Performance and scale
-- [M] Queue edits still walk the queue on the engine thread, though none allocates a row: a
-  publish copies a pointer a row into a fresh `Arc<[Arc<QueueItem>]>` and rebuilds `loaded_at` and
-  `listed`; a removal, and a heard play-next row leaving, rehash every location for `Queued::stamp`
-  (order-dependent SipHash over the load order, so only an append extends it); a heard play-next row
-  shifts every index above it in `order`, `unshuffled` and `next`. Edits costing what they move need
-  rows keyed stably (a slab, not positions) and a persistent vector for the published play order
+- [S] A queue drag (`Queue::move_rows`) rebuilds `order`, `next` and `unshuffled` from every row
+  (`flagged`, `split`) where a span could be spliced out of the persistent vectors and in again, and
+  under shuffle an insert or removal walks `unshuffled` to find where a row stands; a place-to-row
+  index beside the vectors would make both cost what they move
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

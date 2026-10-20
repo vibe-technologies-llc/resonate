@@ -26,11 +26,11 @@ use resonate_engine::{
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
     GraphTime, HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
     NoiseShaping, Opener, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
-    PreviousRestarts, Profile, Q, Quality, QueueItem, Reading, RepeatMode, ReplayGainMode,
-    Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats, SinkId,
-    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamClock,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Until,
-    Words, stamp_of,
+    PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
+    ReplayGainMode, Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats,
+    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources,
+    StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor,
+    Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -832,7 +832,7 @@ fn stand_still(player: &Player) {
     wait_for(player, paused, "the transport to stand still");
 }
 
-fn unshared(rows: &[Arc<QueueItem>]) -> Vec<QueueItem> {
+fn unshared(rows: &QueueRows) -> Vec<QueueItem> {
     rows.iter().map(|row| QueueItem::clone(row)).collect()
 }
 
@@ -6953,7 +6953,7 @@ fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -
 
     let loaded = player.queued();
     assert_eq!(
-        loaded.loaded_at.to_vec(),
+        loaded.rows.loaded_at().collect::<Vec<_>>(),
         (0..8).collect::<Vec<_>>(),
         "a queue nothing has reordered draws itself out of order"
     );
@@ -6968,7 +6968,7 @@ fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -
         "shuffling published the queue that was drawn before it"
     );
     assert_eq!(shuffled.rows.len(), 8);
-    for (row, loaded_at) in shuffled.loaded_at.iter().copied().enumerate() {
+    for (row, loaded_at) in shuffled.rows.loaded_at().enumerate() {
         assert_eq!(
             shuffled.rows[row].location,
             MediaLocation::local(&paths[loaded_at]),

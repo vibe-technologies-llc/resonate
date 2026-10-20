@@ -102,6 +102,10 @@ here, add it there.
   does not compile without it). Reading stays symphonia's: two disagreeing readers are worse.
 - **`opus-rs`**: `resonate-codec`'s; `std`, `heap`. Pure Rust: `forbid` rules out bindings and a C
   dependency is one more thing a package must link.
+- **`imbl`** (no default features): the engine's queue alone. `order`, `next`, `unshuffled` and
+  the published `QueueRows` are its persistent `Vector`s, so a publish shares the queue in
+  O(log n) and an edit copies only the path it touches (`audio.md`'s *A queue edit costs what it
+  moves*).
 - **`smallvec`** (`union`, `const_generics`): collections built repeatedly and nearly always small;
   queue, playlist and catalog reads stay `Vec`.
 - **`rustls-native-certs`**, **`webpki-root-certs`**, **`rustls`**: `resonate-fetch`'s, for a server

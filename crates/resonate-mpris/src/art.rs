@@ -16,7 +16,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_core::{MediaLocation, TrackId};
-use resonate_engine::{CoverArt, QueueItem};
+use resonate_engine::{CoverArt, QueueRows};
 
 const FOLDER: &str = "resonate-art";
 
@@ -115,7 +115,7 @@ impl Pictures {
         self.laid_down(None, art, Kept::Playing)
     }
 
-    pub(crate) fn keep_rows(&self, queue: &[Arc<QueueItem>]) {
+    pub(crate) fn keep_rows(&self, queue: &QueueRows) {
         let mut laid = self.drawn.lock();
         if laid.queued.is_empty() {
             return;
@@ -313,7 +313,7 @@ fn write_staged(staged: &Path, bytes: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use resonate_engine::ImageFormat;
+    use resonate_engine::{ImageFormat, QueueItem};
 
     use super::*;
 
@@ -410,14 +410,12 @@ mod tests {
         pictures.forget();
     }
 
-    fn queued(ids: &[u64]) -> Vec<Arc<QueueItem>> {
+    fn queued(ids: &[u64]) -> QueueRows {
         ids.iter()
-            .map(|id| {
-                Arc::new(QueueItem {
-                    id: track(*id),
-                    location: MediaLocation::local(format!("/music/{id}.flac")),
-                    span: None,
-                })
+            .map(|id| QueueItem {
+                id: track(*id),
+                location: MediaLocation::local(format!("/music/{id}.flac")),
+                span: None,
             })
             .collect()
     }

@@ -23,7 +23,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
-    RepeatMode, Unclaimed, stamp_of,
+    QueueRows, RepeatMode, Unclaimed, stamp_of,
 };
 use resonate_library::{
     ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry,
@@ -1555,7 +1555,7 @@ impl RootView {
         whole: bool,
         cx: &mut Context<Self>,
     ) {
-        let items = playlists::queue_items(entries, &[]);
+        let items = playlists::queue_items(entries, &QueueRows::default());
         if items.is_empty() {
             return;
         }

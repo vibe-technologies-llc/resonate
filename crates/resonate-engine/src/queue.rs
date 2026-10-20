@@ -1,7 +1,8 @@
-use std::{mem::take, ops::Range, sync::Arc};
+use std::{ops::Index, sync::Arc};
 
 use ahash::AHashSet;
-use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, Span, Stamping, TrackId};
+use imbl::Vector;
+use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, RowStamp, Span, TrackId};
 
 use crate::{RepeatMode, seed};
 
@@ -12,44 +13,6 @@ pub struct QueueItem {
     pub span: Option<FrameSpan>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Queued {
-    pub revision: u64,
-    pub rows_revision: u64,
-    pub rows: Arc<[Arc<QueueItem>]>,
-    pub loaded_at: Arc<[usize]>,
-    pub listed: Arc<[usize]>,
-    pub next: Option<Span>,
-    pub stamp: QueueStamp,
-}
-
-impl Default for Queued {
-    fn default() -> Self {
-        Self {
-            revision: 0,
-            rows_revision: 0,
-            rows: Arc::default(),
-            loaded_at: Arc::from(Vec::new()),
-            listed: Arc::from(Vec::new()),
-            next: None,
-            stamp: QueueStamp::default(),
-        }
-    }
-}
-
-impl Queued {
-    pub fn in_list_order(&self) -> Vec<Arc<QueueItem>> {
-        if self.listed.len() != self.rows.len() {
-            return self.rows.to_vec();
-        }
-        self.listed
-            .iter()
-            .filter_map(|at| self.rows.get(*at))
-            .cloned()
-            .collect()
-    }
-}
-
 impl QueueItem {
     pub const fn whole(id: TrackId, location: MediaLocation) -> Self {
         Self {
@@ -57,6 +20,176 @@ impl QueueItem {
             location,
             span: None,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Held {
+    place: usize,
+    stamp: RowStamp,
+    item: Arc<QueueItem>,
+}
+
+impl Held {
+    fn at(place: usize, item: Arc<QueueItem>) -> Self {
+        Self {
+            place,
+            stamp: row_stamp(&item, place),
+            item,
+        }
+    }
+}
+
+fn row_stamp(item: &QueueItem, place: usize) -> RowStamp {
+    RowStamp::of((&item.location, item.span), place)
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct QueueRows(Vector<Held>);
+
+impl QueueRows {
+    pub fn placed(rows: impl IntoIterator<Item = (usize, QueueItem)>) -> Self {
+        Self(
+            rows.into_iter()
+                .map(|(place, item)| Held::at(place, Arc::new(item)))
+                .collect(),
+        )
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, row: usize) -> Option<&Arc<QueueItem>> {
+        self.0.get(row).map(|held| &held.item)
+    }
+
+    pub fn first(&self) -> Option<&Arc<QueueItem>> {
+        self.0.front().map(|held| &held.item)
+    }
+
+    pub fn last(&self) -> Option<&Arc<QueueItem>> {
+        self.0.back().map(|held| &held.item)
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Arc<QueueItem>> + ExactSizeIterator {
+        self.0.iter().map(|held| &held.item)
+    }
+
+    pub fn run(&self, rows: Span) -> Option<Self> {
+        if rows.last() >= self.len() {
+            return None;
+        }
+        Some(Self(self.0.skip(rows.first()).take(rows.rows())))
+    }
+
+    pub fn to_vec(&self) -> Vec<Arc<QueueItem>> {
+        self.iter().cloned().collect()
+    }
+
+    pub fn is_the_same_as(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
+
+    pub fn loaded_at(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        self.0.iter().map(|held| held.place)
+    }
+
+    pub fn in_load_order(&self) -> Vec<usize> {
+        let mut by_place: Vec<usize> = (0..self.len()).collect();
+        by_place.sort_unstable_by_key(|row| self.0.get(*row).map_or(0, |held| held.place));
+
+        let mut loaded = vec![0; self.len()];
+        for (at, row) in by_place.into_iter().enumerate() {
+            if let Some(slot) = loaded.get_mut(row) {
+                *slot = at;
+            }
+        }
+        loaded
+    }
+}
+
+impl Index<usize> for QueueRows {
+    type Output = Arc<QueueItem>;
+
+    fn index(&self, row: usize) -> &Arc<QueueItem> {
+        &self.0[row].item
+    }
+}
+
+impl FromIterator<Arc<QueueItem>> for QueueRows {
+    fn from_iter<Rows: IntoIterator<Item = Arc<QueueItem>>>(rows: Rows) -> Self {
+        Self(
+            rows.into_iter()
+                .enumerate()
+                .map(|(place, item)| Held::at(place, item))
+                .collect(),
+        )
+    }
+}
+
+impl FromIterator<QueueItem> for QueueRows {
+    fn from_iter<Rows: IntoIterator<Item = QueueItem>>(rows: Rows) -> Self {
+        rows.into_iter().map(Arc::new).collect()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Listing {
+    shuffled: bool,
+    unshuffled: Vector<Held>,
+    waiting: Vector<Held>,
+    last_heard: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Queued {
+    pub revision: u64,
+    pub rows_revision: u64,
+    pub rows: QueueRows,
+    pub next: Option<Span>,
+    pub stamp: QueueStamp,
+    pub listing: Listing,
+}
+
+impl Queued {
+    pub fn in_list_order(&self) -> Vec<Arc<QueueItem>> {
+        self.listed()
+            .map(|listed| listed.iter().map(|held| Arc::clone(&held.item)).collect())
+            .unwrap_or_else(|| self.rows.to_vec())
+    }
+
+    fn listed(&self) -> Option<Vec<&Held>> {
+        let listing = &self.listing;
+        if !listing.shuffled {
+            return None;
+        }
+
+        let mut unlisted: AHashSet<usize> = self.rows.0.iter().map(|held| held.place).collect();
+        let place = listing
+            .last_heard
+            .and_then(|heard| {
+                listing
+                    .unshuffled
+                    .iter()
+                    .position(|held| held.place == heard)
+            })
+            .map_or(0, |at| at + 1)
+            .min(listing.unshuffled.len());
+        let listed: Vec<&Held> = listing
+            .unshuffled
+            .iter()
+            .take(place)
+            .chain(&listing.waiting)
+            .chain(listing.unshuffled.iter().skip(place))
+            .filter(|held| unlisted.remove(&held.place))
+            .collect();
+
+        (listed.len() == self.rows.len()).then_some(listed)
     }
 }
 
@@ -78,13 +211,7 @@ pub fn unclaimed_id<'a>(queue: impl IntoIterator<Item = &'a QueueItem>) -> Track
 }
 
 pub fn stamp_of<'a>(items: impl IntoIterator<Item = &'a QueueItem>) -> QueueStamp {
-    let mut stamping = Stamping::default();
-    stamp_onto(&mut stamping, items);
-    stamping.stamp()
-}
-
-fn stamp_onto<'a>(stamping: &mut Stamping, items: impl IntoIterator<Item = &'a QueueItem>) {
-    stamping.extend(items.into_iter().map(|item| (&item.location, item.span)));
+    QueueStamp::of(items.into_iter().map(|item| (&item.location, item.span)))
 }
 
 fn one_id_each(items: Vec<QueueItem>, minting: &mut Unclaimed) -> Vec<Arc<QueueItem>> {
@@ -163,14 +290,26 @@ enum Row {
     Next(usize),
 }
 
-type Flagged = Vec<(usize, bool)>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Waits {
+    InOrder,
+    Next,
+}
+
+type Flagged = Vec<(Held, Waits)>;
+
+fn spliced(into: &mut Vector<Held>, at: usize, run: Vector<Held>) {
+    let rest = into.split_off(at.min(into.len()));
+    into.append(run);
+    into.append(rest);
+}
 
 pub struct Queue {
-    items: Vec<Arc<QueueItem>>,
+    order: Vector<Held>,
+    unshuffled: Vector<Held>,
+    next: Vector<Held>,
+    places: usize,
     ids: Unclaimed,
-    order: Vec<usize>,
-    unshuffled: Vec<usize>,
-    next: Vec<usize>,
     after: usize,
     seat: Seat,
     repeat: RepeatMode,
@@ -178,20 +317,18 @@ pub struct Queue {
     shuffler: Shuffler,
     revision: u64,
     rows_revision: u64,
-    stamping: Stamping,
     stamp: QueueStamp,
-    stamping_what_plays: Stamping,
     playing_from: QueueStamp,
 }
 
 impl Queue {
     pub fn new() -> Self {
         Self {
-            items: Vec::new(),
+            order: Vector::new(),
+            unshuffled: Vector::new(),
+            next: Vector::new(),
+            places: 0,
             ids: Unclaimed::beside([]),
-            order: Vec::new(),
-            unshuffled: Vec::new(),
-            next: Vec::new(),
             after: 0,
             seat: Seat::Nowhere,
             repeat: RepeatMode::Off,
@@ -199,9 +336,7 @@ impl Queue {
             shuffler: Shuffler::new(),
             revision: 0,
             rows_revision: 0,
-            stamping: Stamping::default(),
             stamp: QueueStamp::default(),
-            stamping_what_plays: Stamping::default(),
             playing_from: QueueStamp::default(),
         }
     }
@@ -210,20 +345,21 @@ impl Queue {
         let kept: Vec<Arc<QueueItem>> = self
             .waiting()
             .iter()
-            .filter_map(|index| self.items.get(*index))
-            .cloned()
+            .map(|held| Arc::clone(&held.item))
             .collect();
         let mut minting = Unclaimed::beside(kept.iter().map(Arc::as_ref));
         let loaded = one_id_each(items, &mut minting);
         let count = loaded.len();
 
-        self.items = loaded;
-        self.items.extend(kept);
+        self.places = 0;
+        let order: Vector<Held> = loaded.into_iter().map(|item| self.held(item)).collect();
+        let next: Vector<Held> = kept.into_iter().map(|item| self.held(item)).collect();
         self.ids = minting;
-        self.order = (0..count).collect();
-        self.unshuffled.clone_from(&self.order);
-        self.next = (count..self.items.len()).collect();
-        self.rows_changed();
+        self.unshuffled = order.clone();
+        self.order = order;
+        self.next = next;
+        self.stamp_afresh();
+        self.rows_moved();
 
         let Some(last) = count.checked_sub(1) else {
             self.after = 0;
@@ -232,7 +368,7 @@ impl Queue {
             } else {
                 Seat::Next
             };
-            return self.heard();
+            return self.heard_place();
         };
         let start = start_at.min(last);
 
@@ -242,7 +378,7 @@ impl Queue {
             self.after = start + 1;
         }
         self.seat = Seat::InOrder;
-        self.heard()
+        self.heard_place()
     }
 
     pub fn restore(&mut self, resumption: Resumption) -> Option<usize> {
@@ -252,18 +388,20 @@ impl Queue {
         let next = resumption.next.filter(|next| next.last() < drawn.len());
         let mut minting = Unclaimed::beside([]);
 
-        self.items = resumption
+        self.places = 0;
+        let rows: Vec<Held> = resumption
             .rows
             .into_iter()
             .map(|row| {
-                Arc::new(QueueItem {
+                let item = Arc::new(QueueItem {
                     id: row
                         .held
                         .and_then(|held| minting.claim(held))
                         .unwrap_or_else(|| minting.mint()),
                     location: row.location,
                     span: row.span,
-                })
+                });
+                self.held(item)
             })
             .collect();
         self.ids = minting;
@@ -294,17 +432,26 @@ impl Queue {
                 )
             }
         };
+        let of = |loaded: &[usize]| -> Vector<Held> {
+            loaded
+                .iter()
+                .filter_map(|index| rows.get(*index))
+                .cloned()
+                .collect()
+        };
 
-        self.unshuffled = order.clone();
+        let mut unshuffled = order.clone();
         if shuffle {
-            self.unshuffled.sort_unstable();
+            unshuffled.sort_unstable();
         }
-        self.order = order;
-        self.next = waiting;
+        self.unshuffled = of(&unshuffled);
+        self.order = of(&order);
+        self.next = of(&waiting);
         self.after = after;
         self.seat = seat;
-        self.rows_changed();
-        self.heard()
+        self.stamp_afresh();
+        self.rows_moved();
+        self.heard_place()
     }
 
     pub fn insert(&mut self, items: Vec<QueueItem>, at: Placement) -> Option<usize> {
@@ -312,23 +459,14 @@ impl Queue {
             return None;
         }
         let arrived = one_id_each(items, &mut self.ids);
-        let first = self.items.len();
-        let landed = first..first + arrived.len();
         let row = self.landing(at);
+        let landed: Vector<Held> = arrived.into_iter().map(|item| self.held(item)).collect();
 
-        stamp_onto(&mut self.stamping, arrived.iter().map(Arc::as_ref));
-        if let Row::InOrder(_) = row {
-            stamp_onto(
-                &mut self.stamping_what_plays,
-                arrived.iter().map(Arc::as_ref),
-            );
+        for held in &landed {
+            self.joined(held, row_waits(row));
         }
-        self.items.extend(arrived);
-
         match row {
-            Row::Next(at) => {
-                self.next.splice(at..at, landed);
-            }
+            Row::Next(at) => spliced(&mut self.next, at, landed),
             Row::InOrder(at) => self.land_in_order(at, landed),
         }
         self.rows_moved();
@@ -336,23 +474,24 @@ impl Queue {
     }
 
     pub fn insert_to_hear(&mut self, items: Vec<QueueItem>, at: Placement) -> Option<usize> {
-        let first = self.items.len();
+        let first = self.places;
         let run = first..first + items.len();
         let row = self.insert(items, at)?;
         let heard = self.jump_to(row);
 
-        if self.seat == Seat::Next {
-            let head = self.next[0];
-            let rest: Vec<usize> = self
+        if self.seat == Seat::Next
+            && let Some(head) = self.next.front().map(|held| held.place)
+        {
+            let rest: Vector<Held> = self
                 .next
                 .iter()
                 .skip(1)
-                .copied()
-                .filter(|index| run.contains(index))
+                .filter(|held| run.contains(&held.place))
+                .cloned()
                 .collect();
             self.next
-                .retain(|index| *index == head || !run.contains(index));
-            self.next.splice(1..1, rest);
+                .retain(|held| held.place == head || !run.contains(&held.place));
+            spliced(&mut self.next, 1, rest);
             self.revision = self.revision.wrapping_add(1);
         }
         heard
@@ -363,51 +502,48 @@ impl Queue {
     }
 
     pub fn remove_all(&mut self, runs: &[Span]) -> Result<Removal, Span> {
-        let len = self.items.len();
+        let len = self.len();
         if let Some(outside) = runs.iter().copied().find(|rows| rows.last() >= len) {
             return Err(outside);
         }
 
-        let heard = self.heard();
-        let mut dropping = vec![false; len];
+        let heard = self.heard_place();
+        let mut from_order = Vec::new();
+        let mut from_next = Vec::new();
         for row in runs.iter().flat_map(|rows| rows.range()) {
-            if let Some(index) = self.item_at(row) {
-                dropping[index] = true;
+            match self.row(row) {
+                Some(Row::InOrder(at)) => from_order.push(at),
+                Some(Row::Next(at)) => from_next.push(at),
+                None => {}
             }
         }
-        let heard_before = self.order[..self.after]
-            .iter()
-            .filter(|index| dropping[**index])
-            .count();
-        let mut reseated = Vec::with_capacity(dropping.len());
-        let mut kept = 0;
-        for dropped in &dropping {
-            reseated.push(kept);
-            kept += usize::from(!dropped);
+        for positions in [&mut from_order, &mut from_next] {
+            positions.sort_unstable();
+            positions.dedup();
         }
-        let reseat = |held: Vec<usize>| -> Vec<usize> {
-            held.into_iter()
-                .filter(|index| !dropping[*index])
-                .map(|index| reseated[index])
-                .collect()
-        };
+        let heard_before = from_order.iter().filter(|at| **at < self.after).count();
 
-        self.order = reseat(take(&mut self.order));
-        self.unshuffled = reseat(take(&mut self.unshuffled));
-        self.next = reseat(take(&mut self.next));
-        let mut kept_items = Vec::with_capacity(kept);
-        for (item, dropped) in take(&mut self.items).into_iter().zip(&dropping) {
-            if *dropped {
-                self.ids.release(item.id);
-            } else {
-                kept_items.push(item);
-            }
+        let mut dropped = AHashSet::with_capacity(from_order.len() + from_next.len());
+        for at in from_order.into_iter().rev() {
+            let held = self.order.remove(at);
+            self.left(&held, Waits::InOrder);
+            dropped.insert(held.place);
         }
-        self.items = kept_items;
+        for at in from_next.into_iter().rev() {
+            let held = self.next.remove(at);
+            self.left(&held, Waits::Next);
+            dropped.insert(held.place);
+        }
+        if self.shuffle {
+            self.unshuffled
+                .retain(|held| !dropped.contains(&held.place));
+        } else {
+            self.unshuffled = self.order.clone();
+        }
         self.after -= heard_before;
-        self.rows_changed();
+        self.rows_moved();
 
-        if heard.is_some_and(|index| dropping[index]) {
+        if heard.is_some_and(|place| dropped.contains(&place)) {
             self.hand_on();
             return Ok(Removal::Playing);
         }
@@ -415,7 +551,7 @@ impl Queue {
     }
 
     pub fn move_rows(&mut self, rows: Span, to: usize) -> Option<()> {
-        let last = self.items.len().checked_sub(1)?;
+        let last = self.len().checked_sub(1)?;
         if rows.last() > last || to > last {
             return None;
         }
@@ -423,20 +559,21 @@ impl Queue {
             return Some(());
         }
 
-        let heard = self.heard();
+        let heard = self.heard_place();
         let mut drawn = self.flagged();
         let landing = rows.landing(to);
         let moved: Flagged = drawn.drain(rows.range()).collect();
         let carries_the_heard =
-            heard.is_some_and(|heard| moved.iter().any(|(index, _)| *index == heard));
+            heard.is_some_and(|heard| moved.iter().any(|(held, _)| held.place == heard));
         let moved = if carries_the_heard {
             moved
         } else {
             let waits = landing
                 .checked_sub(1)
                 .and_then(|before| drawn.get(before))
-                .is_some_and(|(index, waits)| *waits || Some(*index) == heard);
-            moved.into_iter().map(|(index, _)| (index, waits)).collect()
+                .is_some_and(|(held, waits)| *waits == Waits::Next || Some(held.place) == heard);
+            let waits = if waits { Waits::Next } else { Waits::InOrder };
+            moved.into_iter().map(|(held, _)| (held, waits)).collect()
         };
         drawn.splice(landing..landing, moved);
         self.split(drawn, heard);
@@ -445,7 +582,7 @@ impl Queue {
     }
 
     pub fn reorder(&mut self, rows: &[usize]) -> Option<()> {
-        if rows.len() != self.items.len() {
+        if rows.len() != self.len() {
             return None;
         }
 
@@ -462,29 +599,31 @@ impl Queue {
         let reordered = rows
             .iter()
             .filter_map(|row| drawn.get(*row))
-            .copied()
+            .cloned()
             .collect();
-        self.split(reordered, self.heard());
+        self.split(reordered, self.heard_place());
 
         Some(())
     }
 
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.order.len() + self.next.len()
     }
 
     pub fn relocate(&mut self, moved: &[(MediaLocation, MediaLocation)]) -> bool {
-        let mut relocated = false;
-        for item in &mut self.items {
-            if let Some(to) = landed_at(&item.location, moved) {
-                Arc::make_mut(item).location = to;
-                relocated = true;
-            }
+        let mut relocated = relocated_in(&mut self.order, moved);
+        relocated |= relocated_in(&mut self.next, moved);
+        if !relocated {
+            return false;
         }
-        if relocated {
-            self.revision = self.revision.wrapping_add(1);
+
+        if self.shuffle {
+            relocated_in(&mut self.unshuffled, moved);
+        } else {
+            self.unshuffled = self.order.clone();
         }
-        relocated
+        self.revision = self.revision.wrapping_add(1);
+        true
     }
 
     pub const fn repeat(&self) -> RepeatMode {
@@ -497,7 +636,7 @@ impl Queue {
 
     pub fn position(&self) -> Option<usize> {
         match self.seat {
-            Seat::InOrder => self.last_heard(),
+            Seat::InOrder => self.last_heard().map(|held| held.place),
             Seat::Nowhere | Seat::Next => None,
         }
     }
@@ -514,10 +653,6 @@ impl Queue {
         self.revision
     }
 
-    pub const fn stamp(&self) -> QueueStamp {
-        self.stamp
-    }
-
     pub const fn playing_from(&self) -> QueueStamp {
         self.playing_from
     }
@@ -527,56 +662,32 @@ impl Queue {
         Some(Span::between(self.after, self.after + last))
     }
 
-    pub fn in_play_order(&self) -> Arc<[Arc<QueueItem>]> {
-        self.drawn()
-            .filter_map(|index| self.items.get(index))
-            .cloned()
-            .collect()
+    pub fn in_play_order(&self) -> QueueRows {
+        let mut drawn = self.order.clone();
+        let rest = drawn.split_off(self.after.min(drawn.len()));
+        drawn.append(self.next.clone());
+        drawn.append(rest);
+        QueueRows(drawn)
     }
 
-    pub fn loaded_at(&self) -> Arc<[usize]> {
-        self.drawn().collect()
-    }
-
-    pub const fn rows_revision(&self) -> u64 {
-        self.rows_revision
-    }
-
-    pub fn listed(&self) -> Arc<[usize]> {
-        let drawn: Vec<usize> = self.drawn().collect();
-        let as_drawn = || (0..drawn.len()).collect();
-        if !self.shuffle {
-            return as_drawn();
-        }
-
-        let mut drawn_at = vec![None; self.items.len()];
-        for (at, index) in drawn.iter().enumerate() {
-            if let Some(slot) = drawn_at.get_mut(*index) {
-                *slot = Some(at);
-            }
-        }
-        let place = self
-            .last_heard()
-            .and_then(|heard| self.unshuffled.iter().position(|held| *held == heard))
-            .map_or(0, |at| at + 1)
-            .min(self.unshuffled.len());
-        let (before, after) = self.unshuffled.split_at(place);
-        let mut listed = Vec::with_capacity(drawn.len());
-        for index in before.iter().chain(&self.next).chain(after) {
-            if let Some(at) = drawn_at.get_mut(*index).and_then(Option::take) {
-                listed.push(at);
-            }
-        }
-
-        if listed.len() == drawn.len() {
-            listed.into()
-        } else {
-            as_drawn()
+    pub fn published(&self) -> Queued {
+        Queued {
+            revision: self.revision,
+            rows_revision: self.rows_revision,
+            rows: self.in_play_order(),
+            next: self.playing_next(),
+            stamp: self.stamp,
+            listing: Listing {
+                shuffled: self.shuffle,
+                unshuffled: self.unshuffled.clone(),
+                waiting: self.next.clone(),
+                last_heard: self.last_heard().map(|held| held.place),
+            },
         }
     }
 
     pub fn current(&self) -> Option<&QueueItem> {
-        self.items.get(self.heard()?).map(Arc::as_ref)
+        self.heard().map(|held| held.item.as_ref())
     }
 
     pub fn set_repeat(&mut self, repeat: RepeatMode) {
@@ -588,7 +699,7 @@ impl Queue {
             return;
         }
         self.shuffle = shuffle;
-        let last_heard = self.last_heard();
+        let last_heard = self.last_heard().map(|held| held.place);
 
         if shuffle {
             match (self.seat, last_heard) {
@@ -598,13 +709,13 @@ impl Queue {
             return;
         }
 
-        self.order.clone_from(&self.unshuffled);
+        self.order = self.unshuffled.clone();
         self.after = match (self.seat, last_heard) {
             (Seat::Nowhere, _) => self.order.len(),
             (_, Some(heard)) => self
                 .order
                 .iter()
-                .position(|index| *index == heard)
+                .position(|held| held.place == heard)
                 .map_or(0, |at| at + 1),
             (_, None) => 0,
         };
@@ -630,7 +741,7 @@ impl Queue {
             return None;
         }
         if natural && self.repeat == RepeatMode::Track {
-            return self.heard();
+            return self.heard_place();
         }
         if self.seat == Seat::Next {
             self.let_go_of_what_was_heard();
@@ -646,7 +757,7 @@ impl Queue {
         } else {
             self.seat = Seat::Nowhere;
         }
-        self.heard()
+        self.heard_place()
     }
 
     pub fn retreat(&mut self) -> Option<usize> {
@@ -663,22 +774,22 @@ impl Queue {
             }
             Seat::InOrder | Seat::Next => {}
         }
-        self.heard()
+        self.heard_place()
     }
 
     pub fn jump_to(&mut self, at: usize) -> Option<usize> {
         match self.row(at)? {
             Row::Next(0) if self.seat == Seat::Next => {}
             Row::Next(waiting) => {
-                let mut wanted = *self.next.get(waiting)?;
-                if self.seat == Seat::Next
-                    && let Some(gone) = self.let_go_of_what_was_heard()
-                    && wanted > gone
-                {
+                let mut wanted = waiting;
+                if self.seat == Seat::Next && self.let_go_of_what_was_heard().is_some() {
                     wanted -= 1;
                 }
-                self.next.retain(|index| *index != wanted);
-                self.next.insert(0, wanted);
+                if wanted >= self.next.len() {
+                    return None;
+                }
+                let held = self.next.remove(wanted);
+                self.next.push_front(held);
                 self.seat = Seat::Next;
                 self.revision = self.revision.wrapping_add(1);
             }
@@ -690,7 +801,28 @@ impl Queue {
                 self.seat = Seat::InOrder;
             }
         }
-        self.heard()
+        self.heard_place()
+    }
+
+    fn held(&mut self, item: Arc<QueueItem>) -> Held {
+        let place = self.places;
+        self.places += 1;
+        Held::at(place, item)
+    }
+
+    fn joined(&mut self, held: &Held, waits: Waits) {
+        self.stamp = self.stamp.with(held.stamp);
+        if waits == Waits::InOrder {
+            self.playing_from = self.playing_from.with(held.stamp);
+        }
+    }
+
+    fn left(&mut self, held: &Held, waited: Waits) {
+        self.ids.release(held.item.id);
+        self.stamp = self.stamp.without(held.stamp);
+        if waited == Waits::InOrder {
+            self.playing_from = self.playing_from.without(held.stamp);
+        }
     }
 
     fn landing(&self, at: Placement) -> Row {
@@ -714,12 +846,16 @@ impl Queue {
         }
     }
 
-    fn land_in_order(&mut self, at: usize, landed: Range<usize>) {
+    fn land_in_order(&mut self, at: usize, landed: Vector<Held>) {
         let count = landed.len();
-        let unshuffled_at = self.unshuffled_landing(at);
-        self.unshuffled
-            .splice(unshuffled_at..unshuffled_at, landed.clone());
-        self.order.splice(at..at, landed);
+        if self.shuffle {
+            let unshuffled_at = self.unshuffled_landing(at);
+            spliced(&mut self.unshuffled, unshuffled_at, landed.clone());
+            spliced(&mut self.order, at, landed);
+        } else {
+            spliced(&mut self.order, at, landed);
+            self.unshuffled = self.order.clone();
+        }
 
         match self.seat {
             Seat::Nowhere => {
@@ -754,91 +890,69 @@ impl Queue {
     }
 
     fn split(&mut self, drawn: Flagged, heard: Option<usize>) {
-        let mut order = Vec::with_capacity(drawn.len());
-        let mut next = Vec::new();
+        let mut order = Vector::new();
+        let mut next = Vector::new();
         let mut after = None;
 
-        for (index, waits) in drawn {
-            if Some(index) == heard {
+        for (held, waits) in drawn {
+            if Some(held.place) == heard {
                 match self.seat {
                     Seat::Next => {
                         after = Some(order.len());
-                        next.insert(0, index);
+                        next.push_front(held);
                     }
                     Seat::Nowhere | Seat::InOrder => {
-                        order.push(index);
+                        order.push_back(held);
                         after = Some(order.len());
                     }
                 }
-            } else if waits {
-                next.push(index);
+            } else if waits == Waits::Next {
+                next.push_back(held);
             } else {
-                order.push(index);
+                order.push_back(held);
             }
         }
 
         if self.shuffle {
             self.unshuffle_alongside(&order, &next);
         } else {
-            self.unshuffled.clone_from(&order);
+            self.unshuffled = order.clone();
         }
         self.after = after.unwrap_or(order.len());
         self.order = order;
         self.next = next;
         self.revision = self.revision.wrapping_add(1);
-        self.stamp_what_is_playing_from();
+        self.playing_from = stamped(&self.order);
     }
 
-    fn unshuffle_alongside(&mut self, order: &[usize], next: &[usize]) {
-        let mut held = vec![false; self.items.len()];
-        let mut waits = vec![false; self.items.len()];
-        for index in next {
-            waits[*index] = true;
-        }
-        self.unshuffled.retain(|index| !waits[*index]);
-        for index in &self.unshuffled {
-            held[*index] = true;
-        }
+    fn unshuffle_alongside(&mut self, order: &Vector<Held>, next: &Vector<Held>) {
+        let waits: AHashSet<usize> = next.iter().map(|held| held.place).collect();
+        self.unshuffled.retain(|held| !waits.contains(&held.place));
+        let mut listed: AHashSet<usize> = self.unshuffled.iter().map(|held| held.place).collect();
 
-        for (at, index) in order.iter().enumerate() {
-            if held[*index] {
+        for (at, held) in order.iter().enumerate() {
+            if listed.contains(&held.place) {
                 continue;
             }
-            let landing = match at.checked_sub(1) {
+            let landing = match at.checked_sub(1).and_then(|before| order.get(before)) {
                 None => 0,
                 Some(_) if at + 1 == order.len() => self.unshuffled.len(),
                 Some(before) => self
                     .unshuffled
                     .iter()
-                    .position(|held| *held == order[before])
-                    .map_or(self.unshuffled.len(), |held| held + 1),
+                    .position(|listed| listed.place == before.place)
+                    .map_or(self.unshuffled.len(), |listed| listed + 1),
             };
-            self.unshuffled.insert(landing, *index);
-            held[*index] = true;
+            self.unshuffled.insert(landing, held.clone());
+            listed.insert(held.place);
         }
     }
 
     fn let_go_of_what_was_heard(&mut self) -> Option<usize> {
-        let heard = *self.next.first()?;
-        if heard >= self.items.len() {
-            return Some(heard);
-        }
-
-        let gone = self.items.remove(heard);
-        self.ids.release(gone.id);
-        self.next.remove(0);
-        for held in [&mut self.order, &mut self.unshuffled, &mut self.next] {
-            for index in held.iter_mut() {
-                if *index > heard {
-                    *index -= 1;
-                }
-            }
-        }
-
-        self.stamping = Stamping::default();
-        stamp_onto(&mut self.stamping, self.items.iter().map(Arc::as_ref));
+        let heard = self.next.pop_front()?;
+        self.left(&heard, Waits::Next);
         self.rows_moved();
-        Some(heard)
+        Some(heard.place)
     }
 
     fn seat_after(&mut self, after: usize) {
@@ -848,37 +962,42 @@ impl Queue {
         self.after = after;
     }
 
-    fn waiting(&self) -> &[usize] {
+    fn waiting(&self) -> Vector<Held> {
         match self.seat {
-            Seat::Next => self.next.get(1..).unwrap_or_default(),
-            Seat::Nowhere | Seat::InOrder => &self.next,
+            Seat::Next => self.next.skip(1),
+            Seat::Nowhere | Seat::InOrder => self.next.clone(),
         }
     }
 
-    fn heard(&self) -> Option<usize> {
+    fn heard(&self) -> Option<&Held> {
         match self.seat {
             Seat::Nowhere => None,
             Seat::InOrder => self.last_heard(),
-            Seat::Next => self.next.first().copied(),
+            Seat::Next => self.next.front(),
         }
     }
 
-    fn last_heard(&self) -> Option<usize> {
-        self.order.get(self.after.checked_sub(1)?).copied()
+    fn heard_place(&self) -> Option<usize> {
+        self.heard().map(|held| held.place)
     }
 
-    fn drawn(&self) -> impl Iterator<Item = usize> + '_ {
-        let (heard, rest) = self.order.split_at(self.after.min(self.order.len()));
-        heard.iter().chain(&self.next).chain(rest).copied()
+    fn last_heard(&self) -> Option<&Held> {
+        self.order.get(self.after.checked_sub(1)?)
     }
 
     fn flagged(&self) -> Flagged {
-        let (heard, rest) = self.order.split_at(self.after.min(self.order.len()));
-        heard
+        let after = self.after.min(self.order.len());
+        self.order
             .iter()
-            .map(|index| (*index, false))
-            .chain(self.next.iter().map(|index| (*index, true)))
-            .chain(rest.iter().map(|index| (*index, false)))
+            .take(after)
+            .map(|held| (held.clone(), Waits::InOrder))
+            .chain(self.next.iter().map(|held| (held.clone(), Waits::Next)))
+            .chain(
+                self.order
+                    .iter()
+                    .skip(after)
+                    .map(|held| (held.clone(), Waits::InOrder)),
+            )
             .collect()
     }
 
@@ -892,14 +1011,6 @@ impl Queue {
         }
         let at = drawn - self.next.len();
         (at < self.order.len()).then_some(Row::InOrder(at))
-    }
-
-    fn item_at(&self, drawn: usize) -> Option<usize> {
-        match self.row(drawn)? {
-            Row::InOrder(at) => self.order.get(at),
-            Row::Next(at) => self.next.get(at),
-        }
-        .copied()
     }
 
     fn drawn_at(&self, row: Row) -> usize {
@@ -922,55 +1033,41 @@ impl Queue {
         }
         self.order
             .get(before)
-            .and_then(|index| self.unshuffled.iter().position(|held| held == index))
+            .and_then(|before| {
+                self.unshuffled
+                    .iter()
+                    .position(|held| held.place == before.place)
+            })
             .map_or(self.unshuffled.len(), |held| held + 1)
-    }
-
-    fn rows_changed(&mut self) {
-        self.stamping = Stamping::default();
-        stamp_onto(&mut self.stamping, self.items.iter().map(Arc::as_ref));
-        self.stamp_what_is_playing_from();
-        self.rows_moved();
     }
 
     fn rows_moved(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.rows_revision = self.rows_revision.wrapping_add(1);
-        self.stamp = self.stamping.stamp();
-        self.playing_from = self.stamping_what_plays.stamp();
     }
 
-    fn stamp_what_is_playing_from(&mut self) {
-        let mut waits = vec![false; self.items.len()];
-        for index in &self.next {
-            waits[*index] = true;
-        }
-        self.stamping_what_plays = Stamping::default();
-        stamp_onto(
-            &mut self.stamping_what_plays,
-            self.items
-                .iter()
-                .zip(waits)
-                .filter(|(_, waits)| !waits)
-                .map(|(item, _)| item.as_ref()),
-        );
-        self.playing_from = self.stamping_what_plays.stamp();
+    fn stamp_afresh(&mut self) {
+        self.playing_from = stamped(&self.order);
+        self.stamp = self
+            .next
+            .iter()
+            .fold(self.playing_from, |stamp, held| stamp.with(held.stamp));
     }
 
     fn reshuffle_keeping(&mut self, playing: usize) {
         self.reshuffle();
-        if let Some(at) = self.order.iter().position(|index| *index == playing) {
+        if let Some(at) = self.order.iter().position(|held| held.place == playing) {
             self.order.swap(0, at);
         }
         self.after = 1;
     }
 
     fn reshuffle_after_a_pass(&mut self) {
-        let last_heard = self.order.last().copied();
+        let last_heard = self.order.back().map(|held| held.place);
         self.reshuffle();
 
         let later = self.order.len().saturating_sub(1);
-        if later == 0 || self.order.first().copied() != last_heard {
+        if later == 0 || self.order.front().map(|held| held.place) != last_heard {
             return;
         }
         let elsewhere = 1 + self.shuffler.next_below(later);
@@ -992,6 +1089,29 @@ impl Default for Queue {
     fn default() -> Self {
         Self::new()
     }
+}
+
+const fn row_waits(row: Row) -> Waits {
+    match row {
+        Row::InOrder(_) => Waits::InOrder,
+        Row::Next(_) => Waits::Next,
+    }
+}
+
+fn stamped(rows: &Vector<Held>) -> QueueStamp {
+    rows.iter()
+        .fold(QueueStamp::default(), |stamp, held| stamp.with(held.stamp))
+}
+
+fn relocated_in(rows: &mut Vector<Held>, moved: &[(MediaLocation, MediaLocation)]) -> bool {
+    let mut relocated = false;
+    for held in rows.iter_mut() {
+        if let Some(to) = landed_at(&held.item.location, moved) {
+            Arc::make_mut(&mut held.item).location = to;
+            relocated = true;
+        }
+    }
+    relocated
 }
 
 pub(crate) fn landed_at(
@@ -1031,6 +1151,18 @@ mod tests {
         queue
     }
 
+    fn held_rows(queue: &Queue) -> Vec<Arc<QueueItem>> {
+        let mut held: Vec<&Held> = queue.order.iter().chain(&queue.next).collect();
+        held.sort_unstable_by_key(|held| held.place);
+        held.into_iter()
+            .map(|held| Arc::clone(&held.item))
+            .collect()
+    }
+
+    fn loaded_at(queue: &Queue) -> Vec<usize> {
+        queue.in_play_order().loaded_at().collect()
+    }
+
     fn current(queue: &Queue) -> Option<u64> {
         queue.current().map(|item| item.id.get())
     }
@@ -1049,8 +1181,8 @@ mod tests {
         ]);
 
         assert!(relocated);
-        assert_eq!(queue.items[0].location, second);
-        assert_eq!(queue.items[1].location, first);
+        assert_eq!(held_rows(&queue)[0].location, second);
+        assert_eq!(held_rows(&queue)[1].location, first);
     }
 
     #[test]
@@ -1221,11 +1353,11 @@ mod tests {
     }
 
     fn listed(queue: &Queue) -> Vec<u64> {
-        let drawn = queue.in_play_order();
         queue
-            .listed()
+            .published()
+            .in_list_order()
             .iter()
-            .map(|at| drawn[*at].id.get())
+            .map(|item| item.id.get())
             .collect()
     }
 
@@ -1233,7 +1365,7 @@ mod tests {
     fn the_list_a_shuffle_leaves_is_the_order_the_rows_stand_in_unshuffled() {
         let mut queue = loaded(32, 4);
         let before = listed(&queue);
-        let rows_were = queue.rows_revision();
+        let rows_were = queue.published().rows_revision;
         let drawn_was = queue.revision();
         assert_eq!(before, numbered(&queue));
 
@@ -1244,7 +1376,7 @@ mod tests {
             "thirty-two rows shuffled into place"
         );
         assert_eq!(listed(&queue), before, "a shuffle moved the list");
-        assert_eq!(queue.rows_revision(), rows_were);
+        assert_eq!(queue.published().rows_revision, rows_were);
         assert_ne!(queue.revision(), drawn_was);
 
         queue.advance(true).expect("32 rows outlast one advance");
@@ -1256,7 +1388,7 @@ mod tests {
             .position(|id| *id == playing)
             .expect("the playing row is listed");
         assert_eq!(list.get(at + 1), Some(&90), "{list:?}");
-        assert_ne!(queue.rows_revision(), rows_were);
+        assert_ne!(queue.published().rows_revision, rows_were);
         assert_eq!(list.len(), 33);
 
         queue.set_shuffle(false);
@@ -1805,25 +1937,25 @@ mod tests {
     #[test]
     fn the_stamp_moves_when_the_rows_do_and_a_reordering_leaves_it() {
         let mut queue = loaded(4, 0);
-        let loaded_at = queue.stamp();
-        assert_eq!(Queue::new().stamp(), QueueStamp::default());
+        let loaded_at = queue.published().stamp;
+        assert_eq!(Queue::new().published().stamp, QueueStamp::default());
 
         queue.move_rows(Span::one(0), 3);
         assert_eq!(
-            queue.stamp(),
+            queue.published().stamp,
             loaded_at,
             "a move took rows out of the queue"
         );
 
         queue.set_shuffle(true);
         assert_eq!(
-            queue.stamp(),
+            queue.published().stamp,
             loaded_at,
             "shuffling took rows out of the queue"
         );
 
         queue.insert(vec![item(90)], Placement::Queued);
-        let inserted_at = queue.stamp();
+        let inserted_at = queue.published().stamp;
         assert_ne!(inserted_at, loaded_at, "an arriving row stamped the same");
 
         let arrived = numbered(&queue)
@@ -1832,7 +1964,7 @@ mod tests {
             .expect("the queued row is drawn");
         queue.remove_rows(Span::one(arrived));
         assert_eq!(
-            queue.stamp(),
+            queue.published().stamp,
             loaded_at,
             "the rows it was loaded with stamp what they did"
         );
@@ -1874,7 +2006,7 @@ mod tests {
     fn a_queue_stamps_by_the_rows_it_holds_rather_than_the_ids_they_arrived_under() {
         let mut queue = Queue::new();
         queue.load(items(3), 0);
-        let loaded_at = queue.stamp();
+        let loaded_at = queue.published().stamp;
 
         let renamed: Vec<QueueItem> = items(3)
             .into_iter()
@@ -1888,7 +2020,7 @@ mod tests {
         again.load(renamed, 0);
 
         assert_eq!(
-            again.stamp(),
+            again.published().stamp,
             loaded_at,
             "the same files under other ids stamped as another queue"
         );
@@ -1901,7 +2033,7 @@ mod tests {
 
         queue.insert(batch, Placement::Queued);
 
-        let ids: AHashSet<u64> = queue.items.iter().map(|item| item.id.get()).collect();
+        let ids: AHashSet<u64> = held_rows(&queue).iter().map(|item| item.id.get()).collect();
         assert_eq!(ids.len(), 50_000);
         assert!(ids.contains(&1));
     }
@@ -1952,11 +2084,11 @@ mod tests {
     #[test]
     fn what_a_drawn_row_says_it_was_loaded_at_names_the_row_the_queue_holds() {
         let mut queue = loaded(8, 0);
-        assert_eq!(queue.loaded_at().to_vec(), (0..8).collect::<Vec<_>>());
+        assert_eq!(loaded_at(&queue), (0..8).collect::<Vec<_>>());
 
         queue.set_shuffle(true);
         let shown = queue.in_play_order();
-        for (row, loaded_at) in queue.loaded_at().iter().copied().enumerate() {
+        for (row, loaded_at) in loaded_at(&queue).into_iter().enumerate() {
             assert_eq!(
                 shown[row].id.get() as usize,
                 loaded_at + 1,
@@ -2035,7 +2167,7 @@ mod tests {
         );
         assert_eq!(emptied.len(), 0);
         assert_eq!(emptied.cursor(), None);
-        assert_eq!(emptied.stamp(), QueueStamp::default());
+        assert_eq!(emptied.published().stamp, QueueStamp::default());
     }
 
     #[test]
@@ -2064,9 +2196,8 @@ mod tests {
         queue.set_shuffle(true);
         queue.advance(true);
         let shown = drawn(&queue);
-        let order = queue.loaded_at().to_vec();
-        let rows: Vec<Resumable> = queue
-            .items
+        let order = loaded_at(&queue);
+        let rows: Vec<Resumable> = held_rows(&queue)
             .iter()
             .map(|item| Resumable {
                 location: item.location.clone(),
@@ -2140,7 +2271,7 @@ mod tests {
 
         queue.insert(vec![item(90), item(91)], Placement::Queued);
         assert_eq!(queue.playing_from(), playing_from);
-        assert_ne!(queue.stamp(), stamp_of(&items(3)));
+        assert_ne!(queue.published().stamp, stamp_of(&items(3)));
 
         queue.advance(true);
         queue.advance(true);
@@ -2358,17 +2489,14 @@ mod tests {
     }
 
     fn stamped_afresh(queue: &Queue) -> (QueueStamp, QueueStamp) {
-        let waiting: AHashSet<usize> = queue.next.iter().copied().collect();
-        let playing_from = stamp_of(
-            queue
-                .items
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| !waiting.contains(index))
-                .map(|(_, item)| item.as_ref()),
-        );
+        let afresh = |stamp: QueueStamp, rows: &Vector<Held>| {
+            rows.iter().fold(stamp, |stamp, held| {
+                stamp.with(row_stamp(&held.item, held.place))
+            })
+        };
+        let playing_from = afresh(QueueStamp::default(), &queue.order);
 
-        (stamp_of(queue.items.iter().map(Arc::as_ref)), playing_from)
+        (afresh(playing_from, &queue.next), playing_from)
     }
 
     #[test]
@@ -2417,11 +2545,24 @@ mod tests {
             edit(&mut queue);
 
             assert_eq!(
-                (queue.stamp(), queue.playing_from()),
+                (queue.published().stamp, queue.playing_from()),
                 stamped_afresh(&queue),
                 "edit {step} left a stamp the rows no longer give"
             );
         }
+    }
+
+    #[test]
+    fn a_row_keeps_the_place_it_was_loaded_at_when_rows_before_it_go() {
+        let mut queue = loaded(5, 3);
+
+        queue.remove_rows(Span::one(0));
+        let rows = queue.in_play_order();
+
+        assert_eq!(current(&queue), Some(4));
+        assert_eq!(queue.position(), Some(3));
+        assert_eq!(rows.loaded_at().collect::<Vec<_>>(), [1, 2, 3, 4]);
+        assert_eq!(rows.in_load_order(), [0, 1, 2, 3]);
     }
 
     #[test]
@@ -2443,7 +2584,7 @@ mod tests {
 
         queue.remove_rows(Span::one(2));
         queue.insert(vec![item(3)], Placement::Queued);
-        let ids: AHashSet<u64> = queue.items.iter().map(|row| row.id.get()).collect();
+        let ids: AHashSet<u64> = held_rows(&queue).iter().map(|row| row.id.get()).collect();
 
         assert!(ids.contains(&item(3).id.get()));
         assert_eq!(ids.len(), queue.len());
@@ -2459,7 +2600,7 @@ mod tests {
             queue.advance(false);
         }
 
-        let ids: AHashSet<u64> = queue.items.iter().map(|row| row.id.get()).collect();
+        let ids: AHashSet<u64> = held_rows(&queue).iter().map(|row| row.id.get()).collect();
         assert_eq!(ids.len(), queue.len());
     }
 }

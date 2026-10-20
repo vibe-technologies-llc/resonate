@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 ahash.workspace = true
 crossbeam-channel.workspace = true
+imbl.workspace = true
 parking_lot.workspace = true
 resonate-analysis.workspace = true
 resonate-codec.workspace = true

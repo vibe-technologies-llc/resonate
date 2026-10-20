@@ -55,7 +55,7 @@ pub use crate::{
     resume::{Reordered, Resumable, Resumption, plays_in},
     rt::{RtFault, Silence},
     span::Span,
-    stamp::{QueueStamp, Stamping},
+    stamp::{QueueStamp, RowStamp},
     synced::SyncedSongs,
     text::{LegacyEncoding, TextEncoding},
     time::{FrameSpan, Frames},

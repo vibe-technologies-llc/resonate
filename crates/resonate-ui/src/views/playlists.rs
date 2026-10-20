@@ -6,7 +6,7 @@ use gpui::{
     uniform_list,
 };
 use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
-use resonate_engine::{Command, Placement, QueueItem, Queued, Unclaimed};
+use resonate_engine::{Command, Placement, QueueItem, QueueRows, Queued, Unclaimed};
 use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
 use smallvec::smallvec;
 
@@ -303,7 +303,7 @@ const KEEPING: [(&str, bool, &str); 2] = [
 ];
 
 fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> Option<usize> {
-    let drawn = queued.loaded_at.iter().position(|at| *at == loaded)?;
+    let drawn = queued.rows.loaded_at().position(|at| at == loaded)?;
     let playing = queued.rows.get(drawn)?;
     let is_the_cut = |location: &MediaLocation, span: Option<FrameSpan>| {
         *location == playing.location && span == playing.span
@@ -311,8 +311,8 @@ fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> O
     let heard_before = queued
         .rows
         .iter()
-        .zip(queued.loaded_at.iter())
-        .filter(|(row, at)| **at < loaded && is_the_cut(&row.location, row.span))
+        .zip(queued.rows.loaded_at())
+        .filter(|(row, at)| *at < loaded && is_the_cut(&row.location, row.span))
         .count();
 
     let mut same: Vec<(usize, usize)> = entries
@@ -327,7 +327,7 @@ fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> O
         .map(|(_, index)| *index)
 }
 
-pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &[Arc<QueueItem>]) -> Vec<QueueItem> {
+pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &QueueRows) -> Vec<QueueItem> {
     let mut minting = Unclaimed::beside(beside.iter().map(Arc::as_ref));
 
     entries
@@ -2246,7 +2246,7 @@ mod tests {
     use std::{path::Path, sync::Arc, time::SystemTime};
 
     use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, Span};
-    use resonate_engine::{QueueItem, Queued};
+    use resonate_engine::{QueueItem, QueueRows, Queued};
     use resonate_library::{Cut, Playlist, PlaylistEntry};
 
     use super::{Offered, Reaching};
@@ -2308,7 +2308,7 @@ mod tests {
     fn a_row_a_sheet_cut_is_queued_as_the_cut_rather_than_the_file_it_came_out_of() {
         let cut = FrameSpan::between(Frames(882_000), Frames(1_764_000));
         let entries = vec![cut_at(0, Some(cut)), cut_at(1, None)];
-        let items = super::queue_items(&entries, &[]);
+        let items = super::queue_items(&entries, &QueueRows::default());
 
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].span, Some(cut), "a cue row was queued whole");
@@ -2321,8 +2321,7 @@ mod tests {
 
     fn queued_as(rows: Vec<QueueItem>, loaded_at: Vec<usize>) -> Queued {
         Queued {
-            rows: rows.into_iter().map(Arc::new).collect(),
-            loaded_at: loaded_at.into(),
+            rows: QueueRows::placed(loaded_at.into_iter().zip(rows)),
             ..Queued::default()
         }
     }
@@ -2330,7 +2329,7 @@ mod tests {
     #[test]
     fn the_playing_mark_follows_the_song_however_the_view_is_narrowed_or_ordered() {
         let entries = listed(5);
-        let items = super::queue_items(&entries, &[]);
+        let items = super::queue_items(&entries, &QueueRows::default());
         let queued = queued_as(items, vec![0, 1, 2, 3, 4]);
 
         assert_eq!(super::playing_entry(&queued, 3, &entries), Some(3));
@@ -2358,7 +2357,7 @@ mod tests {
     #[test]
     fn a_file_listed_twice_is_marked_at_the_listing_that_plays() {
         let entries = vec![cut_at(0, None), cut_at(1, None), cut_at(2, None)];
-        let items = super::queue_items(&entries, &[]);
+        let items = super::queue_items(&entries, &QueueRows::default());
         let shuffled = queued_as(
             vec![items[2].clone(), items[0].clone(), items[1].clone()],
             vec![2, 0, 1],

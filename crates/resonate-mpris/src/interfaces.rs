@@ -4,8 +4,8 @@ use ahash::AHashSet;
 use parking_lot::Mutex;
 use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
 use resonate_engine::{
-    ArtRead, Command, Placement, Player, PlayerState, QueueItem, StreamDigest, TrackState,
-    unclaimed_id,
+    ArtRead, Command, Placement, Player, PlayerState, QueueItem, QueueRows, StreamDigest,
+    TrackState, unclaimed_id,
 };
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
@@ -106,7 +106,7 @@ impl Shared {
         }
     }
 
-    pub(crate) fn heard(&self, state: &PlayerState, queue: &[Arc<QueueItem>]) -> Option<Heard> {
+    pub(crate) fn heard(&self, state: &PlayerState, queue: &QueueRows) -> Option<Heard> {
         let current = state.current?;
         let playing = queue.iter().find(|item| item.id == current.id)?;
 
