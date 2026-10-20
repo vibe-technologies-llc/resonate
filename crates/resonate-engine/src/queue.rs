@@ -226,6 +226,7 @@ fn one_id_each(items: Vec<QueueItem>, minting: &mut Unclaimed) -> Vec<Arc<QueueI
         .collect()
 }
 
+#[derive(Clone)]
 pub struct Unclaimed {
     taken: AHashSet<u64>,
     next: u64,
@@ -262,6 +263,7 @@ impl Unclaimed {
     }
 }
 
+#[derive(Clone)]
 struct Shuffler(u64);
 
 impl Shuffler {
@@ -298,12 +300,27 @@ enum Waits {
 
 type Flagged = Vec<(Held, Waits)>;
 
+struct Lifted {
+    passed: Vector<Held>,
+    queued: Vector<Held>,
+    upcoming: Vector<Held>,
+    kept_passed: usize,
+}
+
+impl Lifted {
+    fn carries(&self, place: usize) -> bool {
+        self.passed.back().is_some_and(|held| held.place == place)
+            || self.queued.front().is_some_and(|held| held.place == place)
+    }
+}
+
 fn spliced(into: &mut Vector<Held>, at: usize, run: Vector<Held>) {
     let rest = into.split_off(at.min(into.len()));
     into.append(run);
     into.append(rest);
 }
 
+#[cfg_attr(test, derive(Clone))]
 pub struct Queue {
     order: Vector<Held>,
     unshuffled: Vector<Held>,
@@ -560,23 +577,109 @@ impl Queue {
         }
 
         let heard = self.heard_place();
-        let mut drawn = self.flagged();
         let landing = rows.landing(to);
-        let moved: Flagged = drawn.drain(rows.range()).collect();
-        let carries_the_heard =
-            heard.is_some_and(|heard| moved.iter().any(|(held, _)| held.place == heard));
-        let moved = if carries_the_heard {
-            moved
-        } else {
-            let waits = landing
-                .checked_sub(1)
-                .and_then(|before| drawn.get(before))
-                .is_some_and(|(held, waits)| *waits == Waits::Next || Some(held.place) == heard);
-            let waits = if waits { Waits::Next } else { Waits::InOrder };
-            moved.into_iter().map(|(held, _)| (held, waits)).collect()
+        let lifted = self.lift(rows);
+        let carries_the_heard = heard.is_some_and(|heard| lifted.carries(heard));
+        let waits = (!carries_the_heard).then(|| self.waits_beside(landing, &lifted, heard));
+        let kept_passed = lifted.kept_passed;
+        let kept_queued = self.next.len();
+        let passed_len = lifted.passed.len();
+
+        let into_order = match waits {
+            Some(Waits::Next) => 0,
+            Some(Waits::InOrder) => passed_len + lifted.queued.len() + lifted.upcoming.len(),
+            None => passed_len + lifted.upcoming.len(),
         };
-        drawn.splice(landing..landing, moved);
-        self.split(drawn, heard);
+        let crosses = match waits {
+            Some(Waits::Next) => passed_len + lifted.upcoming.len() > 0,
+            Some(Waits::InOrder) => !lifted.queued.is_empty(),
+            None => false,
+        };
+
+        match waits {
+            Some(Waits::Next) => {
+                for held in lifted.passed.iter().chain(&lifted.upcoming) {
+                    self.playing_from = self.playing_from.without(held.stamp);
+                }
+            }
+            Some(Waits::InOrder) => {
+                for held in &lifted.queued {
+                    self.playing_from = self.playing_from.with(held.stamp);
+                }
+            }
+            None => {}
+        }
+
+        let order_at = if landing <= kept_passed {
+            landing
+        } else if landing <= kept_passed + kept_queued {
+            kept_passed
+        } else {
+            landing - kept_queued
+        };
+        let next_at = landing.saturating_sub(kept_passed).min(kept_queued);
+
+        let after = match heard {
+            None => self.order.len() + into_order,
+            Some(_) if carries_the_heard => order_at + passed_len,
+            Some(_) if self.seat == Seat::Next => {
+                kept_passed
+                    + if landing <= kept_passed {
+                        into_order
+                    } else {
+                        0
+                    }
+            }
+            Some(_) => {
+                kept_passed
+                    + if order_at < kept_passed {
+                        into_order
+                    } else {
+                        0
+                    }
+            }
+        };
+
+        let Lifted {
+            mut passed,
+            queued,
+            upcoming,
+            ..
+        } = lifted;
+        let (order_run, next_run) = match waits {
+            None => {
+                passed.append(upcoming);
+                (passed, queued)
+            }
+            Some(waits) => {
+                passed.append(queued);
+                passed.append(upcoming);
+                match waits {
+                    Waits::InOrder => (passed, Vector::new()),
+                    Waits::Next => (Vector::new(), passed),
+                }
+            }
+        };
+
+        if !order_run.is_empty() {
+            spliced(&mut self.order, order_at, order_run);
+        }
+        if !next_run.is_empty() {
+            spliced(&mut self.next, next_at, next_run);
+        }
+        if carries_the_heard && self.seat == Seat::Next && next_at > 0 {
+            let held = self.next.remove(next_at);
+            self.next.push_front(held);
+        }
+
+        if !self.shuffle {
+            self.unshuffled = self.order.clone();
+        } else if crosses {
+            let (order, next) = (self.order.clone(), self.next.clone());
+            self.unshuffle_alongside(&order, &next);
+        }
+        self.after = after;
+        self.revision = self.revision.wrapping_add(1);
 
         Some(())
     }
@@ -887,6 +990,47 @@ impl Queue {
         }
         self.after = 1;
         self.seat = Seat::InOrder;
+    }
+
+    fn lift(&mut self, rows: Span) -> Lifted {
+        let passed = self.after.min(self.order.len());
+        let queued = self.next.len();
+        let end = self.order.len() + queued;
+        let (first, past) = (rows.first(), rows.last() + 1);
+        let within = |from: usize, to: usize, offset: usize| {
+            first.clamp(from, to) - offset..past.clamp(from, to) - offset
+        };
+
+        let upcoming = self.order.slice(within(passed + queued, end, queued));
+        let lifted_passed = self.order.slice(within(0, passed, 0));
+        let lifted_queued = self.next.slice(within(passed, passed + queued, passed));
+
+        Lifted {
+            kept_passed: passed - lifted_passed.len(),
+            passed: lifted_passed,
+            queued: lifted_queued,
+            upcoming,
+        }
+    }
+
+    fn waits_beside(&self, landing: usize, lifted: &Lifted, heard: Option<usize>) -> Waits {
+        let Some(before) = landing.checked_sub(1) else {
+            return Waits::InOrder;
+        };
+        let kept_queued = self.next.len();
+        let held = if before < lifted.kept_passed {
+            self.order.get(before)
+        } else if before < lifted.kept_passed + kept_queued {
+            return Waits::Next;
+        } else {
+            self.order.get(before - kept_queued)
+        };
+
+        if held.is_some_and(|held| Some(held.place) == heard) {
+            Waits::Next
+        } else {
+            Waits::InOrder
+        }
     }
 
     fn split(&mut self, drawn: Flagged, heard: Option<usize>) {
@@ -2602,5 +2746,230 @@ mod tests {
 
         let ids: AHashSet<u64> = held_rows(&queue).iter().map(|row| row.id.get()).collect();
         assert_eq!(ids.len(), queue.len());
+    }
+
+    fn moved_by_rebuilding(queue: &mut Queue, rows: Span, to: usize) -> Option<()> {
+        let last = queue.len().checked_sub(1)?;
+        if rows.last() > last || to > last {
+            return None;
+        }
+        if rows.holds(to) {
+            return Some(());
+        }
+
+        let heard = queue.heard_place();
+        let mut drawn = queue.flagged();
+        let landing = rows.landing(to);
+        let moved: Flagged = drawn.drain(rows.range()).collect();
+        let carries_the_heard =
+            heard.is_some_and(|heard| moved.iter().any(|(held, _)| held.place == heard));
+        let moved = if carries_the_heard {
+            moved
+        } else {
+            let waits = landing
+                .checked_sub(1)
+                .and_then(|before| drawn.get(before))
+                .is_some_and(|(held, waits)| *waits == Waits::Next || Some(held.place) == heard);
+            let waits = if waits { Waits::Next } else { Waits::InOrder };
+            moved.into_iter().map(|(held, _)| (held, waits)).collect()
+        };
+        drawn.splice(landing..landing, moved);
+        queue.split(drawn, heard);
+
+        Some(())
+    }
+
+    fn places(rows: &Vector<Held>) -> Vec<usize> {
+        rows.iter().map(|held| held.place).collect()
+    }
+
+    fn drag_states() -> Vec<Queue> {
+        let mut states = Vec::new();
+
+        for shuffle in [false, true] {
+            for start in [0, 2, 5] {
+                for queued in 0..=2u64 {
+                    for heard_next in [false, true] {
+                        if heard_next && queued == 0 {
+                            continue;
+                        }
+                        let mut queue = loaded(6, start);
+                        if shuffle {
+                            queue.set_shuffle(true);
+                        }
+                        queue.insert(
+                            (0..queued).map(|n| item(90 + n)).collect(),
+                            Placement::Queued,
+                        );
+                        if heard_next {
+                            queue.advance(false);
+                        }
+                        states.push(queue);
+                    }
+                }
+            }
+        }
+
+        let mut ended = loaded(6, 0);
+        while ended.advance(false).is_some() {}
+        states.push(ended);
+
+        states
+    }
+
+    #[test]
+    fn a_drag_spliced_in_the_vectors_leaves_every_queue_the_rebuild_would() {
+        for state in drag_states() {
+            let len = state.len();
+            for first in 0..len {
+                for last in first..len {
+                    for to in 0..len {
+                        let rows = Span::between(first, last);
+                        let mut spliced = state.clone();
+                        let mut rebuilt = state.clone();
+
+                        let answered = spliced.move_rows(rows, to);
+                        let expected = moved_by_rebuilding(&mut rebuilt, rows, to);
+
+                        let case = format!(
+                            "{rows} to {to} in a queue of {len} at {:?} after {}, shuffled {}",
+                            state.seat, state.after, state.shuffle
+                        );
+                        assert_eq!(answered, expected, "{case}");
+                        assert_eq!(places(&spliced.order), places(&rebuilt.order), "{case}");
+                        assert_eq!(places(&spliced.next), places(&rebuilt.next), "{case}");
+                        assert_eq!(
+                            places(&spliced.unshuffled),
+                            places(&rebuilt.unshuffled),
+                            "{case}"
+                        );
+                        assert_eq!(spliced.after, rebuilt.after, "{case}");
+                        assert_eq!(spliced.seat, rebuilt.seat, "{case}");
+                        assert_eq!(spliced.revision, rebuilt.revision, "{case}");
+                        assert_eq!(spliced.stamp, rebuilt.stamp, "{case}");
+                        assert_eq!(spliced.playing_from, rebuilt.playing_from, "{case}");
+                        assert_eq!(spliced.heard_place(), rebuilt.heard_place(), "{case}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_span_dragged_forward_lands_after_the_rows_it_passed() {
+        let mut queue = loaded(8, 0);
+
+        queue.move_rows(Span::between(1, 2), 6);
+
+        assert_eq!(numbered(&queue), [1, 4, 5, 6, 7, 2, 3, 8]);
+        assert_eq!(current(&queue), Some(1));
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+    }
+
+    #[test]
+    fn a_span_dragged_backward_lands_before_the_rows_it_passed() {
+        let mut queue = loaded(8, 0);
+
+        queue.move_rows(Span::between(5, 6), 1);
+
+        assert_eq!(numbered(&queue), [1, 6, 7, 2, 3, 4, 5, 8]);
+        assert_eq!(current(&queue), Some(1));
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+    }
+
+    #[test]
+    fn a_span_dragged_across_the_playing_row_leaves_the_song_playing_and_the_cursor_on_it() {
+        let mut queue = loaded(8, 3);
+
+        queue.move_rows(Span::between(0, 1), 6);
+        assert_eq!(numbered(&queue), [3, 4, 5, 6, 7, 1, 2, 8]);
+        assert_eq!(current(&queue), Some(4));
+        assert_eq!(queue.cursor(), Some(1));
+
+        queue.move_rows(Span::between(5, 6), 0);
+        assert_eq!(numbered(&queue), [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(current(&queue), Some(4));
+        assert_eq!(queue.cursor(), Some(3));
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+    }
+
+    #[test]
+    fn a_span_holding_the_playing_row_takes_the_cursor_with_it() {
+        let mut queue = loaded(8, 3);
+
+        queue.move_rows(Span::between(2, 4), 7);
+
+        assert_eq!(numbered(&queue), [1, 2, 6, 7, 8, 3, 4, 5]);
+        assert_eq!(current(&queue), Some(4));
+        assert_eq!(queue.cursor(), Some(6));
+    }
+
+    #[test]
+    fn a_span_dragged_among_the_rows_played_next_joins_them_and_leaves_with_a_drag_out() {
+        let mut queue = loaded(6, 1);
+        queue.insert(vec![item(90), item(91)], Placement::Queued);
+        let playing_from = queue.playing_from();
+        let stamp = queue.stamp;
+
+        queue.move_rows(Span::between(5, 6), 3);
+        assert_eq!(numbered(&queue), [1, 2, 90, 4, 5, 91, 3, 6]);
+        assert_eq!(queue.playing_next(), Some(Span::between(2, 5)));
+        assert_ne!(queue.playing_from(), playing_from);
+        assert_eq!(queue.stamp, stamp);
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+
+        queue.move_rows(Span::between(3, 4), 7);
+        assert_eq!(numbered(&queue), [1, 2, 90, 91, 3, 6, 4, 5]);
+        assert_eq!(queue.playing_next(), Some(Span::between(2, 3)));
+        assert_eq!(queue.playing_from(), playing_from);
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+    }
+
+    #[test]
+    fn the_row_playing_next_is_dragged_past_its_neighbours_and_stays_the_one_heard() {
+        let mut queue = loaded(4, 0);
+        queue.insert(vec![item(90), item(91)], Placement::Queued);
+        queue.advance(false);
+        assert_eq!(current(&queue), Some(90));
+
+        queue.move_rows(Span::one(1), 4);
+
+        assert_eq!(current(&queue), Some(90));
+        assert_eq!(queue.cursor(), Some(3));
+        assert_eq!(numbered(&queue), [1, 2, 3, 90, 91, 4]);
+        assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
+    }
+
+    #[test]
+    fn a_shuffled_drag_inside_the_play_order_leaves_the_list_order_alone() {
+        let mut queue = loaded(12, 0);
+        queue.set_shuffle(true);
+        let listed = places(&queue.unshuffled);
+        let played = places(&queue.order);
+
+        queue.move_rows(Span::between(3, 5), 9);
+
+        assert_eq!(places(&queue.unshuffled), listed);
+        assert_ne!(places(&queue.order), played);
+        let mut drawn = places(&queue.order);
+        drawn.sort_unstable();
+        assert_eq!(drawn, (0..12).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_shuffled_drag_into_the_rows_played_next_takes_them_out_of_the_list_order() {
+        let mut queue = loaded(8, 0);
+        queue.set_shuffle(true);
+        queue.insert(vec![item(90)], Placement::Queued);
+        let moved = queue.order.get(4).map(|held| held.place).expect("a row");
+
+        queue.move_rows(Span::one(5), 1);
+
+        assert_eq!(queue.next.front().map(|held| held.place), Some(moved));
+        assert!(!places(&queue.unshuffled).contains(&moved));
+
+        queue.move_rows(Span::one(1), 5);
+        assert!(places(&queue.unshuffled).contains(&moved));
+        assert_eq!(queue.next.len(), 1);
     }
 }

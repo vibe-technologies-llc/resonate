@@ -12,10 +12,10 @@ are in [ROADMAP.md](ROADMAP.md).
   for moved audio is all of them)
 
 ## Performance and scale
-- [S] A queue drag (`Queue::move_rows`) rebuilds `order`, `next` and `unshuffled` from every row
-  (`flagged`, `split`) where a span could be spliced out of the persistent vectors and in again, and
-  under shuffle an insert or removal walks `unshuffled` to find where a row stands; a place-to-row
-  index beside the vectors would make both cost what they move
+- [M] Under shuffle a queue insert, a removal and a drag that moves rows between the play order and
+  the rows played next walk `unshuffled` for where a row stands; a position index beside the vector
+  (order-maintenance labels or a counted tree, neither in `imbl`) would make them cost what they
+  move
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

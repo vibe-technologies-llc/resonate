@@ -511,9 +511,21 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rows a playlist loaded stamp as `stamp_of` of that playlist (place `i` for row `i`) while rows
   queued next come and go; a reorder leaves both stamps (only `Queue::split`, a move or reorder,
   sums `playing_from` again). A stamp is only ever compared, never stored. `Queue::relocate` copies
-  only a row a reader still holds (`Arc::make_mut`) and keeps its stamp. What stays linear: a move
-  or reorder rebuilds the three vectors from every row, and under shuffle an insert or removal walks
-  `unshuffled` for where a row stands.
+  only a row a reader still holds (`Arc::make_mut`) and keeps its stamp. **A drag splices**:
+  `Queue::move_rows` cuts the span out of `order` and `next` where its drawn positions fall
+  (`Queue::lift`, `Vector::slice`, O(log n)), reads which side of the rows played next it lands on
+  from the row before its landing (`waits_beside`: a row heard or played next before it makes it
+  play next, a span holding the heard row keeps every row's own side), splices the runs back at the
+  landing and derives `after` from where the heard row stands; a row that changes side adds or takes
+  away its stamp from `playing_from`, and with shuffle off `unshuffled` is `order`'s clone again.
+  Under shuffle a drag inside the play order leaves `unshuffled` untouched.
+  `a_drag_spliced_in_the_vectors_leaves_every_queue_the_rebuild_would` holds it to the rebuild
+  (`flagged`, `split`, which `reorder` still is) for every span and landing over every seat and
+  shuffle state. What stays linear: `reorder` rebuilds the three vectors from every row, and under
+  shuffle an insert, a removal and a drag that moves rows between the play order and the rows played
+  next walk `unshuffled` for where a row stands (the list order has no key a row's position could be
+  found by: a place-to-position index needs order-maintenance labels or a counted tree, which
+  `imbl` does not carry).
 - **What was queued is apart from what plays.** `order` = loaded album or playlist (only list
   shuffle, a `RepeatMode::Queue` wrap and unshuffling touch); `next` = rows somebody asked to hear,
   in asking order; drawn = `order[..after] ++ next ++ order[after..]`. `next` is exhausted before
