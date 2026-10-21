@@ -390,9 +390,9 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
         trackHeight = 4.dp,
     )
     val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.Top) {
         Text(clock(shown.toLong()), style = times, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
             val line = playing?.waiting ?: playing?.track?.quality.orEmpty()
             if (line.isNotEmpty()) {
                 Surface(
