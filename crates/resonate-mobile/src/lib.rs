@@ -520,12 +520,13 @@ impl MobilePlayer {
         self.configure_online(false);
         self.cancel_analysis();
         self.downloads.cancel_every_job();
-        self.finish_listening()?;
-        self.save()?;
-        if let Some(player) = self.player.lock().take() {
-            player.shutdown()?;
-        }
-        Ok(())
+        let finished = self.finish_listening();
+        let saved = self.save();
+        let stopped = match self.player.lock().take() {
+            Some(player) => player.shutdown().map_err(Error::from),
+            None => Ok(()),
+        };
+        finished.and(saved).and(stopped)
     }
 }
 

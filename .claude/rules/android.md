@@ -120,7 +120,7 @@ since the last read (`QueueReads`, as iOS's `catalogRereadAfter`), since every e
 upsert and favourite moves the catalog.
 Native shutdown stops sync, then the enrichment pass
 (leaving its mark to carry on), analysis, downloads and the shared online client before releasing
-playback. Long analysis, enrichment and HTTP work run on
+playback; a failed final listen or save is answered after the player has stopped, never in its place. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
 
 Oboe opens a shared stereo float stream at 48 kHz in `PerformanceMode::PowerSaving` with

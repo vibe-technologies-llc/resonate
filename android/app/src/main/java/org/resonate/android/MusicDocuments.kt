@@ -93,9 +93,17 @@ object MusicDocuments {
 
     fun delete(context: Context, uri: Uri) {
         if (uri.authority == MediaStore.AUTHORITY) {
-            context.contentResolver.delete(uri, null, null)
+            val removed = context.contentResolver.delete(uri, null, null)
+            check(removed > 0 || !rowStands(context, uri)) { "The song could not be removed" }
         } else {
-            DocumentsContract.deleteDocument(context.contentResolver, uri)
+            check(DocumentsContract.deleteDocument(context.contentResolver, uri)) {
+                "The song could not be removed"
+            }
         }
     }
+
+    private fun rowStands(context: Context, uri: Uri): Boolean =
+        context.contentResolver
+            .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+            ?.use { it.moveToFirst() } ?: false
 }

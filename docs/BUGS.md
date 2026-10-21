@@ -15,10 +15,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Android
-- [S] `MobilePlayer::shutdown` returns on a failed `finish_listening` or `save` before it stops the
-  player, so a full disk skips the clean engine stop and only `native.close()` ends it
-- [S] `MusicDocuments.delete` ignores the count `ContentResolver.delete` answers, so a MediaStore row
-  that was not removed is taken as removed
 - [S] The release variant is never built in CI, so R8, the release packaging and 16 KB alignment
   are unchecked, and the emulator job runs API 36 alone though the minimum is 33
 
