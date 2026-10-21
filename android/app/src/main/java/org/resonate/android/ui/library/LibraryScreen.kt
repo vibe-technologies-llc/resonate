@@ -147,7 +147,6 @@ fun LibraryScreen() {
                                         end = below.calculateEndPadding(direction),
                                         bottom = below.calculateBottomPadding() + 88.dp,
                                     ),
-                                    newPlaylist,
                                 )
                         }
                     }

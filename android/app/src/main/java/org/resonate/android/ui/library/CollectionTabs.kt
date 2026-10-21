@@ -162,7 +162,7 @@ fun ArtistsTab(model: LibraryViewModel, padding: PaddingValues) {
 }
 
 @Composable
-fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues, onNew: () -> Unit) {
+fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
     val navigator = LocalNavigator.current
     val playlists by model.playlists.collectAsStateWithLifecycle()
     val favourites by model.favourites.collectAsStateWithLifecycle()
@@ -183,7 +183,7 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues, onNew: () -> U
                 modifier = Modifier.padding(top = 8.dp).testTag("favourites"),
             )
         }
-        item("heading") { SectionHeader("Your playlists", action = "New", onAction = onNew) }
+        item("heading") { SectionHeader("Your playlists") }
         if (playlists.isEmpty()) {
             item("none") {
                 Text(

@@ -20,8 +20,10 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -72,6 +74,7 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
                 CountHeader(
                     title = counted(songs.size, "song"),
                     detail = songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) },
+                    onPlay = if (songs.isEmpty()) null else ({ resonate.playInOrder(songs) }),
                     onShuffle = if (songs.isEmpty()) null else ({ resonate.playShuffled(songs) }),
                 )
             }
@@ -114,7 +117,13 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
 }
 
 @Composable
-fun CountHeader(title: String, detail: String?, onShuffle: (() -> Unit)?, modifier: Modifier = Modifier) {
+fun CountHeader(
+    title: String,
+    detail: String?,
+    onPlay: (() -> Unit)?,
+    onShuffle: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier.fillMaxWidth().padding(start = Sizes.gutter, end = Sizes.gutter, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -131,7 +140,15 @@ fun CountHeader(title: String, detail: String?, onShuffle: (() -> Unit)?, modifi
                 )
             }
         }
+        if (onPlay != null) {
+            Button(onClick = onPlay, modifier = Modifier.testTag("play-all")) {
+                Icon(Icons.Rounded.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("Play")
+            }
+        }
         if (onShuffle != null) {
+            Spacer(Modifier.width(8.dp))
             FilledTonalButton(onClick = onShuffle, modifier = Modifier.testTag("shuffle-all")) {
                 Icon(Icons.Rounded.Shuffle, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -154,7 +171,8 @@ private fun FilterChips(
     var sorting by remember { mutableStateOf(false) }
     LazyRow(
         contentPadding = PaddingValues(horizontal = Sizes.gutter, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         item("sort") {
