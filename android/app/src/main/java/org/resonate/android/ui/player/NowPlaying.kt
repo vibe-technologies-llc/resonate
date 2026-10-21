@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.BedtimeOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -112,11 +111,16 @@ private enum class Pane {
 fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     val playing by model.playing.collectAsStateWithLifecycle()
     val track = playing?.track
+    val strength =
+        LocalResonate.current.features.appearance.appearance
+            .collectAsStateWithLifecycle()
+            .value
+            .backgroundStrength
     val scope = rememberCoroutineScope()
     var height by remember { mutableFloatStateOf(1f) }
     var dragged by remember { mutableFloatStateOf(0f) }
     var queueOpen by rememberSaveable { mutableStateOf(false) }
-    var sleepOpen by rememberSaveable { mutableStateOf(false) }
+    val sheets = LocalSheets.current
     var pane by rememberSaveable { mutableStateOf(Pane.ARTWORK) }
     PredictiveBackHandler(enabled = expansion.expanded) { events ->
         try {
@@ -151,7 +155,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                 Modifier.fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0f to scheme.primaryContainer.copy(alpha = 0.7f),
+                            0f to scheme.primaryContainer.copy(alpha = strength),
                             0.55f to scheme.surfaceContainerLow,
                             1f to scheme.surfaceContainerLow,
                         )
@@ -199,7 +203,6 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                                 pane = if (pane == Pane.LYRICS) Pane.ARTWORK else Pane.LYRICS
                             },
                             onQueue = { queueOpen = true },
-                            onSleep = { sleepOpen = true },
                         )
                     }
                     if (wide) {
@@ -232,7 +235,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
             }
         }
         if (queueOpen) QueueSheet(model, onDismiss = { queueOpen = false })
-        if (sleepOpen) SleepTimerSheet(model, onDismiss = { sleepOpen = false })
+        if (sheets.sleeping) SleepTimerSheet(model, onDismiss = { sheets.sleeping = false })
     }
 }
 
@@ -297,7 +300,6 @@ private fun ColumnScope.Controls(
     pane: Pane,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
-    onSleep: () -> Unit,
 ) {
     val track = playing?.track
     val resonate = LocalResonate.current
@@ -318,7 +320,17 @@ private fun ColumnScope.Controls(
                     shown?.shownTitle.orEmpty(),
                     style = MaterialTheme.typography.headlineSmall,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(),
+                    modifier =
+                        Modifier.clickable(
+                                enabled = shown != null && shown.album.isNotBlank(),
+                                onClickLabel = "Go to album",
+                            ) {
+                                shown?.let {
+                                    expansion.collapse()
+                                    navigator.openAlbumOf(it)
+                                }
+                            }
+                            .basicMarquee(),
                 )
                 Text(
                     shown?.shownArtist.orEmpty(),
@@ -358,7 +370,7 @@ private fun ColumnScope.Controls(
     Spacer(Modifier.height(16.dp))
     Volume(model, playing)
     Spacer(Modifier.height(8.dp))
-    PlayerActions(model, pane, playing, onLyrics, onQueue, onSleep)
+    PlayerActions(model, pane, playing, onLyrics, onQueue)
     Spacer(Modifier.height(8.dp))
 }
 
@@ -375,9 +387,10 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
         range = 0f..duration.coerceAtLeast(1L).toFloat(),
         enabled = duration > 0,
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Song progress" },
+        trackHeight = 4.dp,
     )
     val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(clock(shown.toLong()), style = times, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             val line = playing?.waiting ?: playing?.track?.quality.orEmpty()
@@ -417,7 +430,7 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
 @Composable
 private fun Transport(model: PlayerViewModel, playing: Playing?) {
     val active = playing?.active == true
-    val corner by animateDpAsState(if (active) 28.dp else 44.dp, label = "play shape")
+    val corner by animateDpAsState(if (active) 20.dp else 32.dp, label = "play shape")
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -430,22 +443,22 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
         ) {
             Icon(Icons.Rounded.Shuffle, contentDescription = "Shuffle")
         }
-        IconButton(onClick = model::previous, modifier = Modifier.size(64.dp)) {
-            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
+        IconButton(onClick = model::previous, modifier = Modifier.size(56.dp)) {
+            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
         }
         FilledIconButton(
             onClick = model::toggle,
             shape = RoundedCornerShape(corner),
-            modifier = Modifier.size(width = 96.dp, height = 88.dp).testTag("play-pause"),
+            modifier = Modifier.size(width = 72.dp, height = 64.dp).testTag("play-pause"),
         ) {
             Icon(
                 if (active) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                 contentDescription = if (active) "Pause" else "Play",
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(32.dp),
             )
         }
-        IconButton(onClick = model::next, modifier = Modifier.size(64.dp)) {
-            Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+        IconButton(onClick = model::next, modifier = Modifier.size(56.dp)) {
+            Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
         }
         val repeat = playing?.repeat ?: Repeat.OFF
         IconToggleButton(
@@ -487,6 +500,7 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
             value = playing?.volume ?: 1f,
             onCommit = model::volume,
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "Volume" },
+            trackHeight = 4.dp,
         )
         Icon(
             Icons.AutoMirrored.Rounded.VolumeUp,
@@ -504,8 +518,8 @@ private fun PlayerActions(
     playing: Playing?,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
-    onSleep: () -> Unit,
 ) {
+    val sheets = LocalSheets.current
     val remaining by model.sleepRemaining.collectAsStateWithLifecycle()
     Row(
         Modifier.fillMaxWidth(),
@@ -513,14 +527,16 @@ private fun PlayerActions(
     ) {
         ActionToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, onLyrics, Modifier.weight(1f))
         ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, Modifier.weight(1f))
-        ActionToggle(
-            if (playing?.sleep != null) Icons.Rounded.Bedtime else Icons.Rounded.BedtimeOff,
-            remaining?.let { clock(it) } ?: "Sleep",
-            playing?.sleep != null,
-            onSleep,
-            Modifier.weight(1f),
-            description = "Sleep timer",
-        )
+        if (playing?.sleep != null) {
+            ActionToggle(
+                Icons.Rounded.Bedtime,
+                remaining?.let { clock(it) } ?: "Sleep",
+                true,
+                { sheets.sleeping = true },
+                Modifier.weight(1f),
+                description = "Sleep timer",
+            )
+        }
     }
 }
 

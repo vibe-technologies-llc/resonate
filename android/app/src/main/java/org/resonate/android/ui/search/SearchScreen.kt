@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,16 +81,16 @@ private const val CROWDED_FONT_SCALE = 1.5f
 @Composable
 fun SearchScreen() {
     val model = resonateViewModel { SearchViewModel(it) }
-    val place by model.place.collectAsStateWithLifecycle()
     val trail by model.trail.collectAsStateWithLifecycle()
+    val typed by model.typed.collectAsStateWithLifecycle()
+    val onlinePage = trail.nested || isLink(typed)
     val libraryGrid = rememberLazyListState()
     val onlineScroll = remember { OnlineScroll() }
     var acting by remember { mutableStateOf<SearchSong?>(null) }
     var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
-    val scrolled =
-        if (place == SearchPlace.LIBRARY) libraryGrid.canScrollBackward else onlineScroll.scrolled
+    val scrolled = if (onlinePage) onlineScroll.scrolled else libraryGrid.canScrollBackward
     val scrolling by remember {
         derivedStateOf { libraryGrid.isScrollInProgress || onlineScroll.moving }
     }
@@ -99,7 +100,7 @@ fun SearchScreen() {
             focus.clearFocus()
         }
     }
-    BackHandler(enabled = place == SearchPlace.ONLINE && trail.nested) { model.back() }
+    BackHandler(enabled = trail.nested) { model.back() }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -107,21 +108,21 @@ fun SearchScreen() {
         topBar = { SearchHeader(model, scrolled) },
     ) { padding ->
         AnimatedContent(
-            place,
+            onlinePage,
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
             label = "search place",
             modifier = Modifier.fillMaxSize(),
         ) { shown ->
             val content = PaddingValues(top = padding.calculateTopPadding(), bottom = 16.dp)
-            when (shown) {
-                SearchPlace.LIBRARY -> LibraryResults(model, libraryGrid, content)
-                SearchPlace.ONLINE ->
-                    OnlineResults(
-                        model = model,
-                        scroll = onlineScroll,
-                        padding = content,
-                        act = { acting = it },
-                    )
+            if (shown) {
+                OnlineResults(
+                    model = model,
+                    scroll = onlineScroll,
+                    padding = content,
+                    act = { acting = it },
+                )
+            } else {
+                LibraryResults(model, libraryGrid, content, act = { acting = it })
             }
         }
     }
@@ -154,8 +155,6 @@ fun SearchScreen() {
 @Composable
 private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
     val navigator = LocalNavigator.current
-    val place by model.place.collectAsStateWithLifecycle()
-    val online by model.online.collectAsStateWithLifecycle()
     val library by model.libraryShown.collectAsStateWithLifecycle()
     val container by
         animateColorAsState(
@@ -163,7 +162,7 @@ private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
             else MaterialTheme.colorScheme.surface,
             label = "search header",
         )
-    val busy = place == SearchPlace.LIBRARY && (library as? LibraryShown.Answered)?.asking == true
+    val busy = (library as? LibraryShown.Answered)?.asking == true
     Surface(color = container) {
         Column(
             Modifier.fillMaxWidth()
@@ -177,15 +176,7 @@ private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
                     Modifier.padding(start = Sizes.gutter, end = 4.dp, top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SearchField(model, place, Modifier.weight(1f))
-                    if (place == SearchPlace.ONLINE) {
-                        IconButton(
-                            onClick = { navigator.open(Screen.Wanted) },
-                            modifier = Modifier.testTag("open-wanted"),
-                        ) {
-                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Saved for later")
-                        }
-                    }
+                    SearchField(model, Modifier.weight(1f))
                     IconButton(
                         onClick = LocalSheets.current::listen,
                         modifier = Modifier.testTag("listen"),
@@ -193,30 +184,6 @@ private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
                         Icon(Icons.Rounded.Hearing, contentDescription = "Listen")
                     }
                     SettingsAction()
-                }
-                SingleChoiceSegmentedButtonRow(
-                    Modifier.fillMaxWidth()
-                        .padding(horizontal = Sizes.gutter)
-                        .padding(top = 12.dp, bottom = 8.dp)
-                ) {
-                    PlaceButton(
-                        model,
-                        SearchPlace.LIBRARY,
-                        place,
-                        "Your library",
-                        Icons.Rounded.LibraryMusic,
-                        index = 0,
-                        enabled = true,
-                    )
-                    PlaceButton(
-                        model,
-                        SearchPlace.ONLINE,
-                        place,
-                        "Online",
-                        Icons.Rounded.Public,
-                        index = 1,
-                        enabled = online,
-                    )
                 }
             }
             Box(Modifier.fillMaxWidth().height(4.dp)) {
@@ -229,32 +196,7 @@ private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
 }
 
 @Composable
-private fun androidx.compose.material3.SingleChoiceSegmentedButtonRowScope.PlaceButton(
-    model: SearchViewModel,
-    place: SearchPlace,
-    chosen: SearchPlace,
-    label: String,
-    icon: ImageVector,
-    index: Int,
-    enabled: Boolean,
-) {
-    SegmentedButton(
-        selected = place == chosen,
-        onClick = { model.choose(place) },
-        shape = SegmentedButtonDefaults.itemShape(index, SearchPlace.entries.size),
-        enabled = enabled,
-        modifier = Modifier.testTag("place-${place.name.lowercase()}"),
-        icon = {
-            if (LocalDensity.current.fontScale < CROWDED_FONT_SCALE) {
-                SegmentedButtonDefaults.Icon(place == chosen, inactiveContent = { Icon(icon, null) })
-            }
-        },
-        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-    )
-}
-
-@Composable
-private fun SearchField(model: SearchViewModel, place: SearchPlace, modifier: Modifier) {
+private fun SearchField(model: SearchViewModel, modifier: Modifier) {
     val typed by model.typed.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     val scheme = MaterialTheme.colorScheme
@@ -263,8 +205,7 @@ private fun SearchField(model: SearchViewModel, place: SearchPlace, modifier: Mo
         modifier = modifier.heightIn(min = 56.dp).testTag("search-field"),
         placeholder = {
             Text(
-                if (place == SearchPlace.ONLINE) "Songs, albums, artists or a link"
-                else "Songs, albums and artists",
+                "Songs, albums, artists or a link",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

@@ -69,9 +69,14 @@ fun rememberArtwork(song: ULong?, revision: ULong, edgePx: Int): Bitmap? {
     val clock = LocalArtworkClock.current
     val stamp = song?.let { clock.stamps[it] } ?: 0
     val bucket = ArtworkSizes.edgeFor(edgePx)
+    val generation = clock.generation
+    val cached =
+        remember(song, revision, generation, stamp, bucket) {
+            song?.let { features.cachedArtwork(it, bucket, generation, stamp) }
+        }
     val bitmap by
-        produceState<Bitmap?>(null, song, revision, clock.generation, stamp, bucket) {
-            value = song?.let { features.artworkBitmap(it, bucket) }
+        produceState(cached, song, revision, generation, stamp, bucket) {
+            value = song?.let { features.artworkBitmap(it, bucket, generation, stamp) }
         }
     return bitmap
 }

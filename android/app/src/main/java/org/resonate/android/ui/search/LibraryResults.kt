@@ -85,6 +85,7 @@ import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistHit
 import org.resonate.android.nativecore.LibrarySearch
 import org.resonate.android.nativecore.SearchColumn
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Mix
 import org.resonate.android.ui.components.ArtistPortrait
@@ -102,12 +103,18 @@ import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
 
 @Composable
-fun LibraryResults(model: SearchViewModel, state: LazyListState, padding: PaddingValues) {
+fun LibraryResults(
+    model: SearchViewModel,
+    state: LazyListState,
+    padding: PaddingValues,
+    act: (SearchSong) -> Unit,
+) {
     val shown by model.libraryShown.collectAsStateWithLifecycle()
     val chosen by model.scope.collectAsStateWithLifecycle()
     val playing by model.playing.collectAsStateWithLifecycle()
     val recent by model.recent.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
+    val onlineFound by model.onlineTop.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val showing =
@@ -132,6 +139,7 @@ fun LibraryResults(model: SearchViewModel, state: LazyListState, padding: Paddin
             contentPadding = padding,
             modifier = Modifier.widthIn(max = ContentWidth).fillMaxSize().testTag("library-results"),
         ) {
+            item(key = "download") { DownloadCard(model.downloads) }
             when (val current = shown) {
                 LibraryShown.Idle ->
                     browse(
@@ -162,6 +170,8 @@ fun LibraryResults(model: SearchViewModel, state: LazyListState, padding: Paddin
                         chosen = chosen,
                         playing = playing,
                         online = online,
+                        onlineFound = onlineFound,
+                        act = act,
                         columns = columns,
                         model = model,
                         openAlbum = { album ->
@@ -258,8 +268,8 @@ private fun LazyListScope.browse(
     browseTiles.chunked(tileColumns).forEachIndexed { row, tiles ->
         item(key = "browse-$row") {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 tiles.forEach { tile ->
                     BrowseCard(tile, Modifier.weight(1f)) { open(tile.screen) }
@@ -310,9 +320,17 @@ private fun BrowseCard(tile: BrowseTile, modifier: Modifier, onClick: () -> Unit
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             ),
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Icon(tile.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(20.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                tile.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(10.dp))
             Text(tile.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -345,6 +363,8 @@ private fun LazyListScope.answered(
     chosen: LibraryScope,
     playing: ULong?,
     online: Boolean,
+    onlineFound: OnlineTop?,
+    act: (SearchSong) -> Unit,
     columns: Int,
     model: SearchViewModel,
     openAlbum: (AlbumHit) -> Unit,
@@ -356,15 +376,16 @@ private fun LazyListScope.answered(
     hints(answer, model::search)
     if (matchedNothing(found)) {
         item(key = "nothing") {
-            EmptyState(
-                Icons.Rounded.SearchOff,
-                "No matches for “${answer.query}”",
-                Modifier.fillParentMaxHeight(0.6f),
-                detail = "Check the spelling, or try fewer words.",
-                action = if (online) "Search online" else null,
-                onAction = if (online) ({ model.choose(SearchPlace.ONLINE) }) else null,
-            )
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.SearchOff, contentDescription = null) },
+                supportingContent = { Text("Check the spelling, or try fewer words.") },
+                modifier = Modifier.testTag("nothing-in-library"),
+            ) {
+                Text("No matches for “${answer.query}” in your library", maxLines = 2)
+            }
         }
+        onlineSection(online, onlineFound, model, act)
         return
     }
     item(key = "scopes") { ScopeChips(found, scope, model::choose) }
@@ -416,9 +437,7 @@ private fun LazyListScope.answered(
                     }
                 }
             }
-            if (online && found.trackCount < TOP_SONGS.toUInt()) {
-                item(key = "online-offer") { OnlineOffer(answer.query) { model.choose(SearchPlace.ONLINE) } }
-            }
+            onlineSection(online, onlineFound, model, act)
         }
         LibraryScope.SONGS -> {
             songs(answer, found.tracks, found.tracks, playing, model, more)
@@ -474,6 +493,21 @@ private fun LazyListScope.answered(
                         )
                     }
             }
+    }
+}
+
+private fun LazyListScope.onlineSection(
+    online: Boolean,
+    onlineFound: OnlineTop?,
+    model: SearchViewModel,
+    act: (SearchSong) -> Unit,
+) {
+    when {
+        !online -> {
+            item(key = "online-header") { SectionHeader("Online") }
+            item(key = "online-off") { OnlineOffCard(model::turnOnline) }
+        }
+        onlineFound != null -> onlineTop(onlineFound, model, act)
     }
 }
 
@@ -713,33 +747,6 @@ private fun ArtistTile(artist: ArtistHit, lit: Lit, onClick: () -> Unit) {
 private fun SeeAll(label: String, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         TextButton(onClick = onClick) { Text(label) }
-    }
-}
-
-@Composable
-private fun OnlineOffer(query: String, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 16.dp).testTag("online-offer"),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-    ) {
-        ListItem(
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            leadingContent = {
-                Surface(
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    shape = CircleShape,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.TravelExplore, contentDescription = null)
-                    }
-                }
-            },
-            supportingContent = { Text("Find releases, songs and downloads") },
-        ) { Text("Search online for “$query”", maxLines = 2, overflow = TextOverflow.Ellipsis) }
     }
 }
 

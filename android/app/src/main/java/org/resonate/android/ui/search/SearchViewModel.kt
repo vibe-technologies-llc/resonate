@@ -33,11 +33,6 @@ import org.resonate.android.nativecore.foldedText
 import org.resonate.android.nativecore.highlights
 import org.resonate.android.ui.Resonate
 
-enum class SearchPlace {
-    LIBRARY,
-    ONLINE,
-}
-
 data class LibraryAnswer(
     val query: String,
     val found: LibrarySearch,
@@ -72,6 +67,20 @@ sealed interface OnlineAnswer {
     ) : OnlineAnswer
 }
 
+sealed interface OnlineSection<out T> {
+    data object Loading : OnlineSection<Nothing>
+
+    data class Failed(val reason: String?) : OnlineSection<Nothing>
+
+    data class Ready<T>(val items: List<T>) : OnlineSection<T>
+}
+
+data class OnlineTop(
+    val songs: OnlineSection<SearchSong>,
+    val albums: OnlineSection<SearchAlbum>,
+    val artists: OnlineSection<SearchArtist>,
+)
+
 sealed interface OnlineShown {
     data object Idle : OnlineShown
 
@@ -99,7 +108,6 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     val downloads = Downloads(resonate, viewModelScope)
 
     private val query = MutableStateFlow("")
-    private val mutablePlace = MutableStateFlow(SearchPlace.LIBRARY)
     private val mutableScope = MutableStateFlow(LibraryScope.TOP)
     private val answer = MutableStateFlow<LibraryAnswer?>(null)
     private val asking = MutableStateFlow(false)
@@ -107,9 +115,8 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     private val mutableTrail = MutableStateFlow(OnlineTrail())
     private val fetched = MutableStateFlow<Map<OnlineRequest, Fetched>>(emptyMap())
     private val mutableMore = MutableStateFlow(false)
-    private val jobs = mutableMapOf<OnlineRequest, Job>()
+    private var chain: Job? = null
 
-    val place: StateFlow<SearchPlace> = mutablePlace.asStateFlow()
     val scope: StateFlow<LibraryScope> = mutableScope.asStateFlow()
     val trail: StateFlow<OnlineTrail> = mutableTrail.asStateFlow()
     val typed: StateFlow<String> = query.asStateFlow()
@@ -132,6 +139,18 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryShown.Idle)
+
+    val onlineTop: StateFlow<OnlineTop?> =
+        combine(query, fetched, features.online) { text, answers, enabled ->
+                if (!enabled || text.length < ONLINE_TEXT_AT_LEAST || isLink(text)) null
+                else
+                    OnlineTop(
+                        section(answers[OnlineRequest.Songs(text)]) { (it as? OnlineAnswer.Songs)?.songs },
+                        section(answers[OnlineRequest.Albums(text)]) { (it as? OnlineAnswer.Albums)?.albums },
+                        section(answers[OnlineRequest.Artists(text)]) { (it as? OnlineAnswer.Artists)?.artists },
+                    )
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val onlineShown: StateFlow<OnlineShown> =
         combine(mutableTrail, query, fetched, mutableMore) { trail, text, answers, more ->
@@ -157,22 +176,15 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
                 .collectLatest(::answerLibrary)
         }
         viewModelScope.launch {
-            query.debounce(ONLINE_SETTLE_MS).distinctUntilChanged().collect { text ->
-                root(text, forced = true)
-            }
+            query.debounce(ONLINE_SETTLE_MS).distinctUntilChanged().collect { text -> root(text) }
         }
         viewModelScope.launch {
-            features.online.collect { enabled ->
-                if (!enabled && mutablePlace.value == SearchPlace.ONLINE) {
-                    mutablePlace.value = SearchPlace.LIBRARY
-                }
-            }
+            features.online.drop(1).collect { enabled -> if (enabled) root(query.value) }
         }
         viewModelScope.launch {
             features.searchAsked.collect { text ->
                 if (text == null) return@collect
                 features.searchAsked.value = null
-                mutablePlace.value = SearchPlace.LIBRARY
                 search(text)
             }
         }
@@ -190,11 +202,10 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
             answer.value = null
             asking.value = false
         }
-        if (isLink(text) && features.online.value) mutablePlace.value = SearchPlace.ONLINE
     }
 
     private suspend fun answerLibrary(text: String) {
-        if (text.isEmpty()) {
+        if (text.isEmpty() || isLink(text)) {
             answer.value = null
             asking.value = false
             return
@@ -290,12 +301,6 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         mutableScope.value = scope
     }
 
-    fun choose(place: SearchPlace) {
-        if (place == SearchPlace.ONLINE && !features.online.value) return
-        mutablePlace.value = place
-        if (place == SearchPlace.ONLINE) fetch()
-    }
-
     fun turnOnline() {
         features.setOnline(true)
     }
@@ -303,11 +308,6 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     fun play(tracks: List<Track>, index: Int) {
         keep()
         resonate.playback.play(tracks, index)
-    }
-
-    fun choose(kind: OnlineKind) {
-        mutableTrail.value = mutableTrail.value.rooted(query.value, kind)
-        fetch()
     }
 
     fun open(view: OnlineView) {
@@ -324,7 +324,9 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     }
 
     fun retryOnline() {
-        shows(mutableTrail.value.top, query.value)?.let { issue(it, forced = true) }
+        val top = mutableTrail.value.top
+        if (top is OnlineView.Top) askTop(query.value, forced = true)
+        else shows(top, query.value)?.let { issue(it, forced = true) }
     }
 
     fun more() {
@@ -363,13 +365,29 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun submit() {
         keep()
-        if (mutablePlace.value == SearchPlace.ONLINE) root(query.value, forced = false)
+        root(query.value)
     }
 
-    private fun root(text: String, forced: Boolean) {
+    private fun root(text: String) {
         mutableTrail.value = mutableTrail.value.rooted(text)
-        if (mutablePlace.value != SearchPlace.ONLINE) return
-        shows(mutableTrail.value.top, text)?.let { issue(it, forced) }
+        if (!features.online.value) return
+        val top = mutableTrail.value.top
+        if (top is OnlineView.Top) askTop(text, forced = false)
+        else shows(top, text)?.let { issue(it, forced = false) }
+    }
+
+    private fun askTop(text: String, forced: Boolean) {
+        chain?.cancel()
+        if (!features.online.value || text.length < ONLINE_TEXT_AT_LEAST || isLink(text)) return
+        chain =
+            viewModelScope.launch {
+                listOf(
+                        OnlineRequest.Songs(text),
+                        OnlineRequest.Albums(text),
+                        OnlineRequest.Artists(text),
+                    )
+                    .forEach { ask(it, forced) }
+            }
     }
 
     private fun fetch() {
@@ -378,17 +396,30 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     }
 
     private fun issue(request: OnlineRequest, forced: Boolean) {
+        viewModelScope.launch { ask(request, forced) }
+    }
+
+    private suspend fun ask(request: OnlineRequest, forced: Boolean) {
         val known = fetched.value[request]
         if (known == Fetched.Loading) return
         if (!forced && known is Fetched.Ready) return
         settle(request, Fetched.Loading)
-        jobs[request] =
-            viewModelScope.launch {
-                val result = resonate.read { native -> withContext(Dispatchers.IO) { asked(native, request) } }
-                settle(request, result.fold({ Fetched.Ready(it) }, { Fetched.Failed(it.message) }))
-                jobs.remove(request)
-            }
+        try {
+            val result = resonate.read { native -> withContext(Dispatchers.IO) { asked(native, request) } }
+            settle(request, result.fold({ Fetched.Ready(it) }, { Fetched.Failed(it.message) }))
+        } catch (cancelled: CancellationException) {
+            fetched.value = fetched.value - request
+            throw cancelled
+        }
     }
+
+    private fun <T> section(found: Fetched?, items: (OnlineAnswer) -> List<T>?): OnlineSection<T> =
+        when (found) {
+            null,
+            Fetched.Loading -> OnlineSection.Loading
+            is Fetched.Failed -> OnlineSection.Failed(found.reason)
+            is Fetched.Ready -> OnlineSection.Ready(items(found.answer).orEmpty())
+        }
 
     private fun settle(request: OnlineRequest, value: Fetched) {
         val kept = fetched.value - request
@@ -406,7 +437,8 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
             }
         if (stale.isEmpty()) return
         fetched.value = fetched.value - stale.keys
-        if (mutablePlace.value == SearchPlace.ONLINE) fetch()
+        fetch()
+        askTop(query.value, forced = false)
     }
 
     private fun asked(native: MobilePlayer, request: OnlineRequest): OnlineAnswer =
@@ -424,9 +456,6 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
                 }
         }
 
-    override fun onCleared() {
-        jobs.values.forEach { it.cancel(CancellationException("Search closed")) }
-    }
 }
 
 private const val LIBRARY_SETTLE_MS = 150L

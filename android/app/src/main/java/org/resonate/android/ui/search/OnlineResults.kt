@@ -44,6 +44,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -95,9 +96,6 @@ fun OnlineResults(
 ) {
     val trail by model.trail.collectAsStateWithLifecycle()
     val shown by model.onlineShown.collectAsStateWithLifecycle()
-    val typed by model.typed.collectAsStateWithLifecycle()
-    val recent by model.recent.collectAsStateWithLifecycle()
-    val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         key(trail.views.size, trail.top) {
@@ -111,102 +109,33 @@ fun OnlineResults(
                 item(key = "download") { DownloadCard(model.downloads) }
                 val top = trail.top
                 if (trail.nested) item(key = "heading") { Heading(top, model::back) }
-                when {
-                    typed.isEmpty() && top is OnlineView.Found ->
-                        explore(
-                            recent = recent,
-                            search = model::search,
-                            forget = model::forget,
-                            forgetAll = model::forgetAll,
-                            wanted = { navigator.open(Screen.Wanted) },
+                when (val current = shown) {
+                    OnlineShown.Idle -> loading()
+                    OnlineShown.Loading -> loading()
+                    is OnlineShown.Failed ->
+                        item(key = "failed") {
+                            EmptyState(
+                                Icons.Rounded.CloudOff,
+                                "Couldn’t reach the music service",
+                                Modifier.fillParentMaxHeight(0.6f),
+                                detail = current.reason ?: "Check your connection and try again.",
+                                action = "Try again",
+                                onAction = model::retryOnline,
+                            )
+                        }
+                    is OnlineShown.Ready ->
+                        answer(
+                            top = top,
+                            answer = current.answer,
+                            loadingMore = current.more,
+                            model = model,
+                            act = act,
+                            import = { name, songs ->
+                                sheets.name("Import as playlist", name) { model.import(it, songs) }
+                            },
                         )
-                    else -> {
-                        if (top is OnlineView.Found) {
-                            item(key = "kinds") { KindChips(trail.kind, model::choose) }
-                        }
-                        when (val current = shown) {
-                            OnlineShown.Idle ->
-                                item(key = "short") {
-                                    EmptyState(
-                                        Icons.Rounded.TravelExplore,
-                                        "Keep typing",
-                                        Modifier.fillParentMaxHeight(0.5f),
-                                        detail = "Type at least two letters to search online.",
-                                    )
-                                }
-                            OnlineShown.Loading -> loading()
-                            is OnlineShown.Failed ->
-                                item(key = "failed") {
-                                    EmptyState(
-                                        Icons.Rounded.CloudOff,
-                                        "Couldn’t reach the music service",
-                                        Modifier.fillParentMaxHeight(0.6f),
-                                        detail = current.reason ?: "Check your connection and try again.",
-                                        action = "Try again",
-                                        onAction = model::retryOnline,
-                                    )
-                                }
-                            is OnlineShown.Ready ->
-                                answer(
-                                    top = top,
-                                    answer = current.answer,
-                                    loadingMore = current.more,
-                                    model = model,
-                                    act = act,
-                                    import = { name, songs ->
-                                        sheets.name("Import as playlist", name) { model.import(it, songs) }
-                                    },
-                                )
-                        }
-                    }
                 }
             }
-        }
-    }
-}
-
-private fun LazyListScope.explore(
-    recent: List<String>,
-    search: (String) -> Unit,
-    forget: (String) -> Unit,
-    forgetAll: () -> Unit,
-    wanted: () -> Unit,
-) {
-    item(key = "wanted") {
-        ListItem(
-            modifier = Modifier.padding(top = 4.dp).clickable(onClick = wanted).testTag("wanted-row"),
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            leadingContent = { IconTile(Icons.Outlined.BookmarkBorder) },
-            supportingContent = { Text("Songs you saved from online search") },
-        ) { Text("Saved for later") }
-    }
-    recentSearches(recent, search, forget, forgetAll)
-    item(key = "explore") {
-        EmptyState(
-            Icons.Rounded.TravelExplore,
-            "Find music online",
-            Modifier.padding(top = 24.dp),
-            detail =
-                "Search MusicBrainz for songs, albums and artists to save or download, " +
-                    "or paste a TIDAL, Spotify or MusicBrainz link to open it.",
-        )
-    }
-}
-
-@Composable
-private fun KindChips(kind: OnlineKind, choose: (OnlineKind) -> Unit) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = Sizes.gutter),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(vertical = 4.dp).testTag("online-kinds"),
-    ) {
-        items(OnlineKind.entries, key = { it.name }) { option ->
-            FilterChip(
-                selected = option == kind,
-                onClick = { choose(option) },
-                label = { Text(option.label) },
-                modifier = Modifier.testTag("kind-${option.name.lowercase()}"),
-            )
         }
     }
 }
@@ -215,6 +144,7 @@ private fun KindChips(kind: OnlineKind, choose: (OnlineKind) -> Unit) {
 private fun Heading(view: OnlineView, back: () -> Boolean) {
     val (title, detail, backLabel) =
         when (view) {
+            OnlineView.Top -> Triple("Online", "", "Back")
             is OnlineView.Found -> Triple(view.kind.label, "", "Back")
             is OnlineView.Discography -> Triple(view.name, "Albums and singles", "Back")
             is OnlineView.Editions -> Triple(view.title, editionsDetail(view), "Back")
@@ -455,4 +385,83 @@ private fun CollectionActions(
         }
     }
     Spacer(Modifier.height(4.dp))
+}
+
+private const val ONLINE_SONGS_SHOWN = 5
+private const val ONLINE_SHELF_SHOWN = 3
+
+fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (SearchSong) -> Unit) {
+    item(key = "online-header") { SectionHeader("Online") }
+    val sections = listOf(top.songs, top.albums, top.artists)
+    if (sections.all { it is OnlineSection.Failed }) {
+        item(key = "online-failed") {
+            val reason = (top.songs as OnlineSection.Failed).reason
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
+                supportingContent = { Text(reason ?: "Check your connection and try again.") },
+                trailingContent = { TextButton(onClick = model::retryOnline) { Text("Try again") } },
+            ) {
+                Text("Couldn’t reach the music service")
+            }
+        }
+        return
+    }
+    val songs = (top.songs as? OnlineSection.Ready)?.items.orEmpty()
+    val albums = (top.albums as? OnlineSection.Ready)?.items.orEmpty()
+    val artists = (top.artists as? OnlineSection.Ready)?.items.orEmpty()
+    if (songs.isNotEmpty()) {
+        item(key = "online-songs-header") {
+            SectionHeader(
+                "Songs",
+                action = if (songs.size > ONLINE_SONGS_SHOWN) "See all" else null,
+                onAction = { model.open(OnlineView.Found(OnlineKind.SONGS)) },
+            )
+        }
+        songs(songs.take(ONLINE_SONGS_SHOWN), numbered = false, act = act)
+    }
+    if (albums.isNotEmpty()) {
+        item(key = "online-albums-header") {
+            SectionHeader(
+                "Albums",
+                action = if (albums.size > ONLINE_SHELF_SHOWN) "See all" else null,
+                onAction = { model.open(OnlineView.Found(OnlineKind.ALBUMS)) },
+            )
+        }
+        albums(albums.take(ONLINE_SHELF_SHOWN), model)
+    }
+    if (artists.isNotEmpty()) {
+        item(key = "online-artists-header") {
+            SectionHeader(
+                "Artists",
+                action = if (artists.size > ONLINE_SHELF_SHOWN) "See all" else null,
+                onAction = { model.open(OnlineView.Found(OnlineKind.ARTISTS)) },
+            )
+        }
+        artists(artists.take(ONLINE_SHELF_SHOWN), model)
+    }
+    val awaited =
+        listOf("songs" to top.songs, "albums" to top.albums, "artists" to top.artists)
+            .firstOrNull { it.second is OnlineSection.Loading }
+    if (awaited != null) {
+        item(key = "online-waiting") {
+            ListItem(
+                modifier = Modifier.testTag("online-waiting"),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { LoadingIndicator(Modifier.size(24.dp)) },
+            ) {
+                Text("Searching online for ${awaited.first}…")
+            }
+        }
+    } else if (songs.isEmpty() && albums.isEmpty() && artists.isEmpty()) {
+        item(key = "online-nothing") {
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.SearchOff, contentDescription = null) },
+                supportingContent = { Text("Try a different title or artist.") },
+            ) {
+                Text("Nothing found online")
+            }
+        }
+    }
 }

@@ -430,10 +430,10 @@ fun Field(
 }
 
 @Composable
-fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun ButtonRow(modifier: Modifier = Modifier, start: Boolean = false, content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.FlowRow(
         modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, if (start) Alignment.Start else Alignment.End),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         content()

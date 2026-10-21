@@ -8,24 +8,26 @@ import org.junit.Test
 
 class OnlineTrailTest {
     @Test
-    fun aTrailStartsAtSongResults() {
+    fun aTrailStartsAtTheTopResults() {
         val trail = OnlineTrail()
 
-        assertEquals(OnlineView.Found(OnlineKind.SONGS), trail.top)
+        assertEquals(OnlineView.Top, trail.top)
         assertFalse(trail.nested)
         assertEquals(trail, trail.back())
     }
 
     @Test
     fun drillingDownAndBackRetracesTheSteps() {
+        val all = OnlineView.Found(OnlineKind.ALBUMS)
         val editions = OnlineView.Editions("group", "Lumen", "Aurora Fields")
         val release = OnlineView.Release("release", "Lumen", "2021 · GB")
 
-        val trail = OnlineTrail(OnlineKind.ALBUMS).opened(editions).opened(release)
+        val trail = OnlineTrail().opened(all).opened(editions).opened(release)
 
         assertEquals(release, trail.top)
         assertEquals(editions, trail.back().top)
-        assertEquals(OnlineView.Found(OnlineKind.ALBUMS), trail.back().back().top)
+        assertEquals(all, trail.back().back().top)
+        assertEquals(OnlineView.Top, trail.back().back().back().top)
         assertTrue(trail.nested)
     }
 
@@ -39,28 +41,20 @@ class OnlineTrailTest {
     }
 
     @Test
-    fun aNewQueryRootsTheTrailAndKeepsTheKind() {
-        val trail = OnlineTrail(OnlineKind.ARTISTS).opened(OnlineView.Discography("id", "Ivy Cole"))
+    fun aNewQueryRootsTheTrailAtTheTop() {
+        val trail = OnlineTrail().opened(OnlineView.Discography("id", "Ivy Cole"))
 
         val rooted = trail.rooted("night")
 
-        assertEquals(listOf<OnlineView>(OnlineView.Found(OnlineKind.ARTISTS)), rooted.views)
-        assertEquals(OnlineKind.ARTISTS, rooted.kind)
+        assertEquals(listOf<OnlineView>(OnlineView.Top), rooted.views)
     }
 
     @Test
-    fun aLinkRootsALinkViewAndTheKindSurvivesIt() {
-        val trail = OnlineTrail(OnlineKind.ALBUMS).rooted(" https://tidal.com/album/1 ")
+    fun aLinkRootsALinkViewAndTextRootsTheTopAgain() {
+        val trail = OnlineTrail().rooted(" https://tidal.com/album/1 ")
 
         assertEquals(OnlineView.Link("https://tidal.com/album/1"), trail.top)
-        assertEquals(OnlineView.Found(OnlineKind.ALBUMS), trail.rooted("night").top)
-    }
-
-    @Test
-    fun choosingAKindRootsThatKind() {
-        val trail = OnlineTrail().rooted("night", OnlineKind.ALBUMS)
-
-        assertEquals(OnlineView.Found(OnlineKind.ALBUMS), trail.top)
+        assertEquals(OnlineView.Top, trail.rooted("night").top)
     }
 
     @Test
@@ -72,6 +66,7 @@ class OnlineTrailTest {
         assertEquals(OnlineRequest.Editions("g"), shows(OnlineView.Editions("g", "t", "a"), ""))
         assertEquals(OnlineRequest.Release("r"), shows(OnlineView.Release("r", "t", ""), ""))
         assertEquals(OnlineRequest.Link("https://x"), shows(OnlineView.Link("https://x"), "other"))
+        assertNull(shows(OnlineView.Top, "night"))
     }
 
     @Test

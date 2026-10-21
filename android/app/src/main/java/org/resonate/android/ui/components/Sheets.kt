@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
@@ -92,6 +93,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var naming by mutableStateOf<NamingRequest?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
     var listening by mutableStateOf(false)
+    var sleeping by mutableStateOf(false)
 
     fun listen() {
         listening = true
@@ -233,6 +235,7 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             })
         }
         if (request.inPlayer) {
+            add(SheetAction(Icons.Rounded.Bedtime, "Sleep timer") { sheets.sleeping = true })
             add(SheetAction(Icons.Rounded.Equalizer, "Equaliser") { navigator.open(Screen.Equaliser) })
             add(SheetAction(Icons.Rounded.Speaker, "Audio output") { navigator.open(Screen.Output) })
             add(SheetAction(Icons.Rounded.GraphicEq, "Visualizer") {

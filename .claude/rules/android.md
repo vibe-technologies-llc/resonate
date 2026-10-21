@@ -271,10 +271,10 @@ player, and *Remove from queue* from a queue row.
 **The player** is one `PlayerExpansion`, a single `Animatable` the mini-player's tap or upward drag
 and the system's predictive back all drive: `NowPlaying` is drawn while it is above zero, so the
 mini-player and the page beneath are never two routes with two exit animations. The mini-player is
-a `surfaceContainerHighest` capsule with 48 dp artwork, the title, artist, play and next and a line
-of progress that says *Song progress* with its percentage. `NowPlaying` wears an `ArtworkTheme`
+a `surfaceContainerHighest` capsule with 48 dp artwork, the title, artist, previous, play and next and
+a line of progress, inset like the artwork, that says *Song progress* with its percentage. `NowPlaying` wears an `ArtworkTheme`
 seeded from a 96-pixel sample of the cover (`rememberSeedOf`; a cover with no colour keeps the
-app's primary), shows the cover or the lyrics, and opens the queue and the sleep timer as sheets.
+app's primary), shows the cover or the lyrics, and opens the queue as a sheet. Its action row is *Lyrics* and *Queue*; the sleep timer is *Sleep timer* in the player's song sheet (`Sheets.sleeping`) and its chip shows in the row only while a timer runs. The title opens the album and the artist the artist; sliders draw a 4 dp track (`CommitSlider`'s `trackHeight`). The cover's gradient strength is *Player background* in Settings › Appearance (`backgroundStrength`, 0.7 by default, kept in the `appearance` preferences).
 Album, artist and playlist pages wear the same theme from their first cover.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
@@ -290,14 +290,19 @@ queue, the snapshot and the open playlist in place (`setFavourite`) before the c
 again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecting one clears the
 previous rows at once).
 
-**Search** switches between the library (songs, albums and artists, `search_library`, at most 500,
-the *Songs* chip saying how many it lists, *Show more* reading on) and online results. The last ten queries are kept in
-`library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
-and never a link); a library search asks `highlights` once for every title, artist, album and
-artist name it shows, waited for with the answer so rows never light late, and `lit` draws the
+**Search is one page of the library and online**, as iOS's: the library's answer (songs, albums and
+artists, `search_library`, at most 500, the *Songs* chip saying how many it lists, *Show more* reading on)
+then an *Online* section of the best five songs and three albums and artists, each with *See all*
+(`OnlineView.Found`, a nested page with Back) and a line naming what is still awaited. Typing asks the three
+online kinds in a chain after 450 ms (`SearchViewModel.askTop`, an answer per spelling kept); a link shows
+the online page alone; with online off the section is one card that turns it on. The last ten queries are
+kept in `library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
+and never a link) unless *Remember recent searches* in Library tools is off (`remember-searches`, on by
+default; turning it off clears them); a library search asks `highlights` once for every title, artist, album
+and artist name it shows, waited for with the answer so rows never light late, and `lit` draws the
 UTF-16 ranges emphasised over the rest.
 
-**Artwork** is asked at the size drawn: `ArtworkSizes.edgeFor` picks the bucket (96, 192, 384, 512,
+**Artwork** is asked at the size drawn (a bitmap already decoded is drawn on the first frame, `cachedArtwork`, so a cover scrolled back into view never flashes its placeholder): `ArtworkSizes.edgeFor` picks the bucket (96, 192, 384, 512,
 768 or 1024 px) holding the composable's size in pixels, and `LibraryFeatures.artworkBitmap` decodes
 by *picture* and bucket into a 32 MiB `LruCache` (JPEGs for the session thumbnail in 16 MiB), so
 the twelve songs of an album decode one image and a picture never goes stale. A cover redraws when

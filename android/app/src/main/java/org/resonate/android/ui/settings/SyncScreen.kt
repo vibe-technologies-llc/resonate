@@ -496,7 +496,7 @@ private fun StatusRow(
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("sync-status"),
     )
     if (config.enabled) {
-        ButtonRow {
+        ButtonRow(Modifier.padding(start = 40.dp), start = true) {
             if (waitingForOnline) {
                 FilledTonalButton(onClick = onNearbyOnly) {
                     Icon(Icons.Rounded.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))

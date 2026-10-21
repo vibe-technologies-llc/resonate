@@ -69,6 +69,8 @@ enum class Setting(
             "MusicBrainz",
             "Lyrics",
             "AcoustID key",
+            "Recent searches",
+            "Search history",
         ),
     ),
     STATISTICS(

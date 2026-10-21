@@ -20,12 +20,17 @@ enum class Accent(val label: String, val hex: Int) {
     RED("Red", 0xE36F6F),
 }
 
-data class Appearance(val mode: ThemeMode = ThemeMode.SYSTEM, val accent: Accent? = null) {
+data class Appearance(
+    val mode: ThemeMode = ThemeMode.SYSTEM,
+    val accent: Accent? = null,
+    val backgroundStrength: Float = Appearance.STRENGTH_DEFAULT,
+) {
     val accentLabel: String
         get() = accent?.label ?: WALLPAPER
 
     companion object {
         const val WALLPAPER = "Wallpaper"
+        const val STRENGTH_DEFAULT = 0.7f
     }
 }
 
@@ -45,15 +50,24 @@ class AppearanceStore(private val storage: SharedPreferences) {
         edit.apply()
     }
 
+    fun chooseBackgroundStrength(strength: Float) {
+        val kept = strength.coerceIn(0f, 1f)
+        mutable.value = mutable.value.copy(backgroundStrength = kept)
+        storage.edit().putFloat(STRENGTH, kept).apply()
+    }
+
     private fun read() =
         Appearance(
             mode = ThemeMode.entries.find { it.name == storage.getString(MODE, null) }
                 ?: ThemeMode.SYSTEM,
             accent = Accent.entries.find { it.name == storage.getString(ACCENT, null) },
+            backgroundStrength =
+                storage.getFloat(STRENGTH, Appearance.STRENGTH_DEFAULT).coerceIn(0f, 1f),
         )
 
     private companion object {
         const val MODE = "theme"
         const val ACCENT = "accent"
+        const val STRENGTH = "background-strength"
     }
 }

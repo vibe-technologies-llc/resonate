@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -119,6 +120,9 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                             )
                         }
                     }
+                    IconButton(onClick = model::previous) {
+                        Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
+                    }
                     FilledIconButton(onClick = model::toggle) {
                         Icon(
                             if (playing?.active == true) Icons.Rounded.Pause
@@ -141,7 +145,7 @@ private fun MiniProgress(model: PlayerViewModel, durationMs: Long) {
     val position by model.position.collectAsStateWithLifecycle()
     val fraction = if (durationMs > 0) (position.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Box(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp).semantics {
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 8.dp).semantics {
             contentDescription = "Song progress"
             stateDescription = "${(fraction * 100).toInt()} percent"
         }

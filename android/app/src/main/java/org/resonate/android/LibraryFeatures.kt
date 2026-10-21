@@ -110,6 +110,7 @@ private const val LANDING_PAUSE_MS = 60000L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 300000L
 private const val RECENT_SEARCHES_KEY = "recent-searches"
+private const val REMEMBER_SEARCHES_KEY = "remember-searches"
 private const val RECENT_SEARCHES_KEPT = 10
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
@@ -190,7 +191,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val recognitionKey = MutableStateFlow("")
     val auddToken = MutableStateFlow("")
     val searchAsked = MutableStateFlow<String?>(null)
-    val recentSearches = MutableStateFlow(readRecentSearches())
+    val rememberSearches = MutableStateFlow(settings.getBoolean(REMEMBER_SEARCHES_KEY, true))
+    val recentSearches = MutableStateFlow(if (rememberSearches.value) readRecentSearches() else emptyList())
     val recognition =
         MutableStateFlow<List<org.resonate.android.nativecore.RecognitionCandidate>>(emptyList())
     val recognitionBusy = MutableStateFlow(false)
@@ -417,8 +419,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
             emptyList()
         }
 
+    fun setRememberSearches(enabled: Boolean) {
+        rememberSearches.value = enabled
+        settings.edit().putBoolean(REMEMBER_SEARCHES_KEY, enabled).apply()
+        if (!enabled) keepRecentSearches(emptyList())
+    }
+
     fun keepRecentSearches(values: List<String>) {
-        val kept = values.take(RECENT_SEARCHES_KEPT)
+        val kept = if (rememberSearches.value) values.take(RECENT_SEARCHES_KEPT) else emptyList()
         settings.edit().putString(RECENT_SEARCHES_KEY, JSONArray(kept).toString()).apply()
         recentSearches.value = kept
     }
@@ -858,11 +866,22 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? = artworkBitmap(track.id, edge)
 
-    suspend fun artworkBitmap(song: ULong, edge: Int): Bitmap? =
+    private class SeenPicture(val picture: ULong, val generation: Int, val stamp: Int)
+
+    private val seenPictures = java.util.concurrent.ConcurrentHashMap<ULong, SeenPicture>()
+
+    fun cachedArtwork(song: ULong, edge: Int, generation: Int, stamp: Int): Bitmap? {
+        val seen = seenPictures[song] ?: return null
+        if (seen.generation != generation || seen.stamp != stamp) return null
+        return pictures.get("${seen.picture}:$edge")
+    }
+
+    suspend fun artworkBitmap(song: ULong, edge: Int, generation: Int = 0, stamp: Int = 0): Bitmap? =
         withContext(Dispatchers.IO) {
             try {
                 val native = library.native()
                 val picture = native.artworkPicture(song) ?: return@withContext null
+                seenPictures[song] = SeenPicture(picture, generation, stamp)
                 bitmapOf(native, picture, edge)
             } catch (cancelled: CancellationException) {
                 throw cancelled

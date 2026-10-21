@@ -7,6 +7,8 @@ enum class OnlineKind(val label: String) {
 }
 
 sealed interface OnlineView {
+    data object Top : OnlineView
+
     data class Found(val kind: OnlineKind) : OnlineView
 
     data class Discography(val artist: String, val name: String) : OnlineView
@@ -37,6 +39,7 @@ sealed interface OnlineRequest {
 fun shows(view: OnlineView, query: String): OnlineRequest? {
     val text = query.trim()
     return when (view) {
+        OnlineView.Top -> null
         is OnlineView.Found ->
             if (text.length < ONLINE_TEXT_AT_LEAST || isLink(text)) null
             else
@@ -52,10 +55,7 @@ fun shows(view: OnlineView, query: String): OnlineRequest? {
     }
 }
 
-data class OnlineTrail(
-    val kind: OnlineKind = OnlineKind.SONGS,
-    val views: List<OnlineView> = listOf(OnlineView.Found(kind)),
-) {
+data class OnlineTrail(val views: List<OnlineView> = listOf(OnlineView.Top)) {
     init {
         require(views.isNotEmpty())
     }
@@ -71,9 +71,6 @@ data class OnlineTrail(
 
     fun back(): OnlineTrail = if (nested) copy(views = views.dropLast(1)) else this
 
-    fun rooted(query: String, kind: OnlineKind = this.kind): OnlineTrail =
-        OnlineTrail(
-            kind,
-            listOf(if (isLink(query)) OnlineView.Link(query.trim()) else OnlineView.Found(kind)),
-        )
+    fun rooted(query: String): OnlineTrail =
+        OnlineTrail(listOf(if (isLink(query)) OnlineView.Link(query.trim()) else OnlineView.Top))
 }

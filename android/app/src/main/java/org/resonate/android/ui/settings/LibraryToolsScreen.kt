@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.ImageSearch
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sync
@@ -63,6 +64,7 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     val coversAskedAgain = enrichment.coversAskedAgain
     val recognitionKey = features.recognitionKey
     val auddToken = features.auddToken
+    val rememberSearches = features.rememberSearches
     val scanning = library.scanning
     val songs = library.allTracks
 
@@ -95,6 +97,8 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     fun saveRecognitionKey(value: String) = features.saveRecognitionKey(value.trim())
 
     fun saveAuddToken(value: String) = features.saveAuddToken(value)
+
+    fun setRememberSearches(enabled: Boolean) = features.setRememberSearches(enabled)
 }
 
 private fun stoppedIcon(status: EnrichmentStatus?): ImageVector =
@@ -118,6 +122,7 @@ fun LibraryToolsScreen() {
     val covers by model.coversAskedAgain.collectAsStateWithLifecycle()
     val storedKey by model.recognitionKey.collectAsStateWithLifecycle()
     val auddToken by model.auddToken.collectAsStateWithLifecycle()
+    val rememberSearches by model.rememberSearches.collectAsStateWithLifecycle()
     val scanning by model.scanning.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
@@ -245,6 +250,17 @@ fun LibraryToolsScreen() {
             item(key = "recognition") { SectionHeader("Recognition") }
             item(key = "acoustid") { RecognitionKey(storedKey, model::saveRecognitionKey) }
             item(key = "audd") { AuddToken(auddToken, model::saveAuddToken) }
+            item(key = "search") { SectionHeader("Search") }
+            item(key = "remember-searches") {
+                SwitchRow(
+                    title = "Remember recent searches",
+                    checked = rememberSearches,
+                    onCheckedChange = model::setRememberSearches,
+                    icon = Icons.Rounded.History,
+                    supporting = "Turning this off also clears the searches kept so far",
+                    modifier = Modifier.testTag("remember-searches"),
+                )
+            }
         }
     }
     if (confirmRefresh) {
