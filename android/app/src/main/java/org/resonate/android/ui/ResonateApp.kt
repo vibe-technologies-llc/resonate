@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -92,9 +94,18 @@ fun ResonateApp(resonate: Resonate) {
         ) {
             FollowArtworkChanges(clock)
             val player = resonateViewModel { PlayerViewModel(it) }
+            val adaptive = currentWindowAdaptiveInfo()
+            val fitted = NavigationSuiteScaffoldDefaults.navigationSuiteType(adaptive)
+            val short = !adaptive.windowSizeClass.isHeightAtLeastBreakpoint(SHORT_WINDOW_BELOW_DP)
             val suite =
-                NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfo())
-            Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                if (short && fitted != NavigationSuiteType.WideNavigationRailCollapsed)
+                    NavigationSuiteType.NavigationRail
+                else fitted
+            Box(
+                Modifier.fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .semantics { testTagsAsResourceId = true }
+            ) {
                 NavigationSuiteScaffold(
                     navigationSuiteType = suite,
                     navigationItems = {
@@ -119,7 +130,10 @@ fun ResonateApp(resonate: Resonate) {
                     },
                 ) {
                     val bottom =
-                        if (suite == NavigationSuiteType.WideNavigationRailCollapsed)
+                        if (
+                            suite == NavigationSuiteType.WideNavigationRailCollapsed ||
+                                suite == NavigationSuiteType.NavigationRail
+                        )
                             Modifier.windowInsetsPadding(
                                 WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
                             )
@@ -153,3 +167,5 @@ fun ResonateApp(resonate: Resonate) {
         }
     }
 }
+
+private const val SHORT_WINDOW_BELOW_DP = 480

@@ -68,15 +68,16 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
         exit = shrinkVertically() + fadeOut(),
     ) {
         val scope = rememberCoroutineScope()
-        val travel =
-            with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+        val windowHeight = LocalConfiguration.current.screenHeightDp.dp
+        val short = windowHeight < SHORT_WINDOW_BELOW
+        val travel = with(LocalDensity.current) { windowHeight.toPx() }
         var dragged by remember { mutableFloatStateOf(0f) }
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = MaterialTheme.shapes.large,
             modifier =
                 Modifier.fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = if (short) 4.dp else 8.dp)
                     .testTag("mini-player")
                     .draggable(
                         orientation = Orientation.Vertical,
@@ -92,10 +93,15 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
         ) {
             Column {
                 Row(
-                    Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 6.dp),
+                    Modifier.padding(
+                        start = 8.dp,
+                        end = 4.dp,
+                        top = if (short) 4.dp else 8.dp,
+                        bottom = if (short) 2.dp else 6.dp,
+                    ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(track, 48.dp, shape = MaterialTheme.shapes.medium)
+                    Artwork(track, if (short) 36.dp else 48.dp, shape = MaterialTheme.shapes.medium)
                     Spacer(Modifier.width(12.dp))
                     AnimatedContent(
                         track,
@@ -159,3 +165,5 @@ private fun MiniProgress(model: PlayerViewModel, durationMs: Long) {
         )
     }
 }
+
+private val SHORT_WINDOW_BELOW = 480.dp
