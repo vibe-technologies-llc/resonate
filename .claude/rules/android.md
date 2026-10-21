@@ -276,7 +276,7 @@ player, and *Remove from queue* from a queue row.
 **The player** is one `PlayerExpansion`, a single `Animatable` the mini-player's tap or upward drag
 and the system's predictive back all drive: `NowPlaying` is drawn while it is above zero, so the
 mini-player and the page beneath are never two routes with two exit animations. The mini-player is
-a `surfaceContainerHighest` capsule with 48 dp artwork, the title, artist, previous, play and next and
+a `surfaceContainerHighest` capsule (16 dp corners) with 48 dp artwork inset 8 dp at the start and top, its corners the capsule's less the inset so the two curves are concentric (4 dp and 36 dp in a short window), the title, artist, previous, play and next and
 a line of progress, inset like the artwork, that says *Song progress* with its percentage. `NowPlaying` wears an `ArtworkTheme`
 seeded from a 96-pixel sample of the cover (`rememberSeedOf`; a cover with no colour keeps the
 app's primary), shows the cover or the lyrics, and opens the queue as a sheet. Its action row is *Lyrics* and *Queue*; the sleep timer is *Sleep timer* in the player's song sheet (`Sheets.sleeping`) and its chip shows in the row only while a timer runs. The title opens the album and the artist the artist; sliders draw a 4 dp track (`CommitSlider`'s `trackHeight`). The cover's gradient strength is *Player background* in Settings › Appearance (`backgroundStrength`, 0.7 by default, kept in the `appearance` preferences).

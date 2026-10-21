@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -72,9 +73,10 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
         val short = windowHeight < SHORT_WINDOW_BELOW
         val travel = with(LocalDensity.current) { windowHeight.toPx() }
         var dragged by remember { mutableFloatStateOf(0f) }
+        val inset = if (short) SHORT_ARTWORK_INSET else ARTWORK_INSET
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = MaterialTheme.shapes.large,
+            shape = RoundedCornerShape(CAPSULE_CORNER),
             modifier =
                 Modifier.fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = if (short) 4.dp else 8.dp)
@@ -94,14 +96,18 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
             Column {
                 Row(
                     Modifier.padding(
-                        start = 8.dp,
+                        start = inset,
                         end = 4.dp,
-                        top = if (short) 4.dp else 8.dp,
+                        top = inset,
                         bottom = if (short) 2.dp else 6.dp,
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(track, if (short) 36.dp else 48.dp, shape = MaterialTheme.shapes.medium)
+                    Artwork(
+                        track,
+                        if (short) 36.dp else 48.dp,
+                        shape = RoundedCornerShape(CAPSULE_CORNER - inset),
+                    )
                     Spacer(Modifier.width(12.dp))
                     AnimatedContent(
                         track,
@@ -167,3 +173,6 @@ private fun MiniProgress(model: PlayerViewModel, durationMs: Long) {
 }
 
 private val SHORT_WINDOW_BELOW = 480.dp
+private val CAPSULE_CORNER = 16.dp
+private val ARTWORK_INSET = 8.dp
+private val SHORT_ARTWORK_INSET = 4.dp
