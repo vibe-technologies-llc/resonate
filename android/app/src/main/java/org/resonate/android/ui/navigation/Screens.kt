@@ -60,6 +60,8 @@ sealed interface Screen : NavKey {
     @Serializable data object Scrobbling : Screen
 
     @Serializable data object Sync : Screen
+
+    @Serializable data object Appearance : Screen
 }
 
 val rootScreens = listOf(Screen.Home, Screen.Library, Screen.Search)

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
@@ -59,6 +60,7 @@ import org.resonate.android.ui.resonateViewModel
 
 class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val online = resonate.features.online
+    val appearance = resonate.features.appearance.appearance
 
     fun setOnline(enabled: Boolean) = resonate.features.setOnline(enabled)
 
@@ -81,6 +83,7 @@ private val Setting.icon: ImageVector
             Setting.PROVIDERS -> Icons.Rounded.CloudDownload
             Setting.SCROBBLING -> Icons.Rounded.History
             Setting.SYNC -> Icons.Rounded.Devices
+            Setting.APPEARANCE -> Icons.Rounded.Palette
             Setting.NOTIFICATIONS -> Icons.Rounded.Notifications
             Setting.VERSION -> Icons.Rounded.Info
         }
@@ -100,6 +103,7 @@ private val Setting.destination: Screen?
             Setting.PROVIDERS -> Screen.Providers
             Setting.SCROBBLING -> Screen.Scrobbling
             Setting.SYNC -> Screen.Sync
+            Setting.APPEARANCE -> Screen.Appearance
             Setting.ONLINE,
             Setting.NOTIFICATIONS,
             Setting.VERSION -> null
@@ -121,6 +125,7 @@ fun SettingsScreen() {
     val navigator = LocalNavigator.current
     val context = LocalContext.current
     val online by model.online.collectAsStateWithLifecycle()
+    val appearance by model.appearance.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var notifications by remember { mutableStateOf(notificationsAllowed(context)) }
     val version = remember { versionOf(context) }
@@ -161,6 +166,15 @@ fun SettingsScreen() {
                                 checked = online,
                                 onCheckedChange = model::setOnline,
                                 modifier = Modifier.testTag("setting-online"),
+                            )
+                        Setting.APPEARANCE ->
+                            SettingRow(
+                                title = setting.title,
+                                icon = setting.icon,
+                                supporting =
+                                    detail ?: "${appearance.mode.label} · ${appearance.accentLabel}",
+                                modifier = Modifier.testTag("setting-appearance"),
+                                onClick = { setting.destination?.let(navigator::open) },
                             )
                         Setting.NOTIFICATIONS ->
                             SettingRow(

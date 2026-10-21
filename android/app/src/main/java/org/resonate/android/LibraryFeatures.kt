@@ -131,6 +131,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         )
     private val accounts = ProviderAccountStore(context)
     private val settings = context.getSharedPreferences("library-features", Context.MODE_PRIVATE)
+    val appearance = AppearanceStore(context.getSharedPreferences("appearance", Context.MODE_PRIVATE))
     val tidalAuthorization = MutableStateFlow<TidalAuthorization?>(null)
     val tidalBusy = MutableStateFlow(false)
     private val artistRequest = AtomicLong()

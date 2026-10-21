@@ -224,6 +224,17 @@ splits history from up next by row, a repeated song included
 
 ## Appearance and playback tools
 
+**Theme and accent are Settings › Appearance** (`Appearance.kt`, `AppearanceScreen.kt`): `ThemeMode`
+(*System*, the default, *Light*, *Dark*) and an `Accent` or none, kept as `theme` and `accent` in the
+`appearance` preferences and published by `AppearanceStore` (`LibraryFeatures.appearance`). With no
+accent the scheme is the wallpaper's (`dynamicLightColorScheme`/`dynamicDarkColorScheme`); an accent is
+one of the desktop's seven (`resonate-ui`'s `RESONATE` flavour, held equal by `AppearanceTest`) seeding a
+MaterialKolor `TonalSpot` scheme. `ResonateTheme` builds one scheme and one `MaterialExpressiveTheme`
+whatever the choice, so changing it never rebuilds the content below; it provides `LocalDarkTheme`, which
+`ArtworkTheme` reads in place of the system's, and re-applies `enableEdgeToEdge` so the system bars' icon
+colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
+system.
+
 Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
 rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
 theme follows day/night.

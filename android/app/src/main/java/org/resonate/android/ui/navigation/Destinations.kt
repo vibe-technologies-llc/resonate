@@ -12,6 +12,7 @@ import org.resonate.android.ui.library.MixScreen
 import org.resonate.android.ui.library.PlaylistScreen
 import org.resonate.android.ui.search.SearchScreen
 import org.resonate.android.ui.search.WantedScreen
+import org.resonate.android.ui.settings.AppearanceScreen
 import org.resonate.android.ui.settings.FoldersScreen
 import org.resonate.android.ui.settings.LibraryToolsScreen
 import org.resonate.android.ui.settings.OutputScreen
@@ -55,5 +56,6 @@ fun ScreenContent(screen: Screen) {
         Screen.Providers -> ProvidersScreen()
         Screen.Scrobbling -> ScrobblingScreen()
         Screen.Sync -> SyncScreen()
+        Screen.Appearance -> AppearanceScreen()
     }
 }

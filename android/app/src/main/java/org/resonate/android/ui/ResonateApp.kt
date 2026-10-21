@@ -33,6 +33,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.NavDisplay
 import org.resonate.android.ui.components.ArtworkClock
 import org.resonate.android.ui.components.Banners
@@ -73,7 +75,8 @@ private val destinations =
 
 @Composable
 fun ResonateApp(resonate: Resonate) {
-    ResonateTheme {
+    val appearance by resonate.features.appearance.appearance.collectAsStateWithLifecycle()
+    ResonateTheme(appearance) {
         val navigator = rememberNavigator()
         val snackbar = remember { SnackbarHostState() }
         val sheets = remember { Sheets(snackbar) }
