@@ -47,6 +47,7 @@ class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
 }
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class LibraryRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var engine = CompletableDeferred<MobilePlayer>()
@@ -94,6 +95,7 @@ class LibraryRepository(private val context: Context) {
     val filter = MutableStateFlow<TrackFilter?>(null)
     val features = LibraryFeatures(context, this)
     val openedFiles = OpenedFiles(context, this)
+    val browse = LibraryBrowse(context, this)
 
     internal suspend fun native() = engine.await()
 

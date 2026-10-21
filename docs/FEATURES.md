@@ -16,8 +16,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   it shows)
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
-- [M] Android declares a `MediaBrowserService` whose default callback answers the library root as
-  unsupported, so Android Auto and car kits browse an empty service
+- [S] Android's browse tree carries no artwork: the folders and songs a car lists show a plain
+  tile, since a thumbnail per item would cross Binder for every row
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account and runs one download at a time; the boundary races

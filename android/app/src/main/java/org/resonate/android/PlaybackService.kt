@@ -10,6 +10,9 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
+import androidx.media3.common.MediaItem
+import androidx.media3.session.LibraryResult
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -26,17 +29,28 @@ private val closePlayback = SessionCommand("resonate.close", Bundle.EMPTY)
 
 private const val RESUMPTION_WAITS_AT_MOST_MS = 8_000L
 
+private val BROWSING_HOSTS =
+    setOf(
+        "com.google.android.projection.gearhead",
+        "com.google.android.googlequicksearchbox",
+        "com.google.android.carassistant",
+        "com.google.android.autosimulator",
+    )
+
 @UnstableApi
 private class TrustedControllers(
     private val close: () -> Unit,
     private val library: LibraryRepository,
+    private val browse: LibraryBrowse,
     private val scope: CoroutineScope,
 ) : MediaLibraryService.MediaLibrarySession.Callback {
     override fun onConnect(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
     ): MediaSession.ConnectionResult =
-        if (session.isMediaNotificationController(controller) || controller.isTrusted)
+        if (session.isMediaNotificationController(controller) ||
+            controller.isTrusted ||
+            controller.packageName in BROWSING_HOSTS)
             MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
@@ -45,6 +59,106 @@ private class TrustedControllers(
                 )
                 .build()
         else MediaSession.ConnectionResult.reject()
+
+    override fun onGetLibraryRoot(
+        session: MediaLibraryService.MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        params: MediaLibraryService.LibraryParams?,
+    ): ListenableFuture<LibraryResult<MediaItem>> =
+        answering { LibraryResult.ofItem(browse.root(), params) }
+
+    override fun onGetItem(
+        session: MediaLibraryService.MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        mediaId: String,
+    ): ListenableFuture<LibraryResult<MediaItem>> =
+        answering {
+            browse.item(mediaId)?.let { LibraryResult.ofItem(it, null) }
+                ?: LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+        }
+
+    override fun onGetChildren(
+        session: MediaLibraryService.MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        parentId: String,
+        page: Int,
+        pageSize: Int,
+        params: MediaLibraryService.LibraryParams?,
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+        answering {
+            browse.children(parentId, page, pageSize)?.let {
+                LibraryResult.ofItemList(ImmutableList.copyOf(it), params)
+            } ?: LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+        }
+
+    override fun onSearch(
+        session: MediaLibraryService.MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        query: String,
+        params: MediaLibraryService.LibraryParams?,
+    ): ListenableFuture<LibraryResult<Void>> =
+        answering {
+            session.notifySearchResultChanged(browser, query, browse.found(query).size, params)
+            LibraryResult.ofVoid()
+        }
+
+    override fun onGetSearchResult(
+        session: MediaLibraryService.MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        query: String,
+        page: Int,
+        pageSize: Int,
+        params: MediaLibraryService.LibraryParams?,
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+        answering {
+            val found = browse.search(query).drop(page * pageSize).take(pageSize)
+            LibraryResult.ofItemList(ImmutableList.copyOf(found), params)
+        }
+
+    override fun onSetMediaItems(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        val expanded = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+        scope.launch {
+            try {
+                expanded.set(
+                    browse.expanded(mediaItems, startIndex, startPositionMs)
+                        ?: MediaSession.MediaItemsWithStartPosition(
+                            mediaItems,
+                            startIndex,
+                            startPositionMs,
+                        )
+                )
+            } catch (cancelled: CancellationException) {
+                expanded.cancel(false)
+                throw cancelled
+            } catch (failure: Exception) {
+                expanded.setException(failure)
+            }
+        }
+        return expanded
+    }
+
+    private fun <T : Any> answering(
+        read: suspend () -> LibraryResult<T>
+    ): ListenableFuture<LibraryResult<T>> {
+        val answer = SettableFuture.create<LibraryResult<T>>()
+        scope.launch {
+            try {
+                answer.set(read())
+            } catch (cancelled: CancellationException) {
+                answer.cancel(false)
+                throw cancelled
+            } catch (failure: Exception) {
+                answer.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN))
+            }
+        }
+        return answer
+    }
 
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
@@ -112,7 +226,7 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, scope))
+            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope))
                 .setSessionActivity(openApp)
                 .setMediaButtonPreferences(
                     listOf(

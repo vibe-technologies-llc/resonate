@@ -106,6 +106,16 @@ A headset, Bluetooth or lock-screen play reaches a service that is gone through 
 queue it resumed paused (`resume_saved`) and answers that queue at its row and position, so the key
 plays where the listener left off (checked on the emulator by force-stopping the app and pressing
 `KEYCODE_MEDIA_PLAY`).
+**The library is browsable** (`LibraryBrowse`, the session's `onGetLibraryRoot`, `onGetChildren`,
+`onGetItem`, `onSearch`, `onGetSearchResult`): a root of Albums, Artists, Playlists and Favourites over
+`albums`, `artists`, `playlists`, `album_tracks`, `artist_tracks`, `playlist_tracks` and `filtered_tracks`
+(at most 500 songs a folder). A song is listed as `<id>@<folder id>`, so one the car picks arrives with
+the folder it was listed in and `onSetMediaItems` expands it to that folder's songs at its place, as
+the app's own tap does; a plain catalog id passes through. A voice request (`requestMetadata.searchQuery`,
+or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 100 songs. Android Auto, the
+Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
+(`BROWSING_HOSTS`), and `automotive_app_desc.xml` declares the media app
+(`BrowseIdsTest`, `LibraryBrowseTest`).
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue

@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import android.Manifest
+import android.app.SearchManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,6 +24,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import kotlinx.coroutines.launch
+import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Host
 import org.resonate.android.ui.Playback
 import org.resonate.android.ui.Resonate
@@ -30,7 +33,7 @@ import org.resonate.android.ui.ResonateApp
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : ComponentActivity(), Host {
     private var controller: MediaController? = null
-    private var waitingToPlay: Uri? = null
+    private var waitingToPlay: (suspend () -> List<Track>)? = null
     private val playback by lazy { Playback(library) { controller } }
     private val library
         get() = (application as ResonateApplication).library
@@ -78,19 +81,29 @@ class MainActivity : ComponentActivity(), Host {
     }
 
     private fun opening(intent: Intent) {
-        if (intent.action != Intent.ACTION_VIEW) return
-        waitingToPlay = intent.data ?: return
+        when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                val song = intent.data ?: return
+                waitingToPlay = { listOf(library.openedFiles.track(song)) }
+            }
+            MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH -> {
+                val asked = intent.getStringExtra(SearchManager.QUERY).orEmpty()
+                waitingToPlay = { library.browse.found(asked) }
+            }
+            else -> return
+        }
         playWhatWasOpened()
     }
 
     private fun playWhatWasOpened() {
         if (controller == null) return
-        val song = waitingToPlay ?: return
+        val tracks = waitingToPlay ?: return
         waitingToPlay = null
         lifecycleScope.launch {
             try {
-                val track = library.openedFiles.track(song)
-                playback.play(listOf(track))
+                val found = tracks()
+                if (found.isEmpty()) library.notice("Nothing in your library matches")
+                playback.play(found)
                 library.refresh()
             } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
                 throw cancelled
