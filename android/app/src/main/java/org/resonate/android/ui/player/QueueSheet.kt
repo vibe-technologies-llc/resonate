@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.resonate.android.nativecore.SleepTimer
 import org.resonate.android.nativecore.Track
@@ -74,9 +76,9 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val state = rememberBottomSheetState(SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     var devicesOpen by rememberSaveable { mutableStateOf(false) }
-    val list = rememberLazyListState()
     val handoffRows = if (queue.handoffs.isNotEmpty()) 1 else 0
     val historyRows = if (queue.history.isNotEmpty()) 1 + queue.history.size else 0
+    val list = rememberLazyListState()
     val currentRows = if (queue.current != null) 2 else 0
     val reorder =
         rememberReorder(
@@ -129,6 +131,10 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                 )
             }
             return@ModalBottomSheet
+        }
+        LaunchedEffect(list) {
+            snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
+            list.scrollToItem(handoffRows + historyRows)
         }
         LazyColumn(state = list, modifier = Modifier.fillMaxHeight().navigationBarsPadding()) {
             if (queue.handoffs.isNotEmpty()) {
