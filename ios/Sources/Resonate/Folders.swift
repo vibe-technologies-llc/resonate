@@ -139,9 +139,11 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func openDocument(uri: String) -> Int32 {
-        guard let (url, scoped) = try? resolved(uri) else { return -1 }
+        guard let (url, scoped) = try? resolved(uri) else { return documentNotFound() }
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        return Darwin.open(url.path, O_RDONLY | O_CLOEXEC)
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC)
+        if descriptor >= 0 { return descriptor }
+        return errno == ENOENT ? documentNotFound() : documentRefused()
     }
 
     func folders() -> [MusicFolder] {

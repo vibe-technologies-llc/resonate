@@ -140,7 +140,11 @@ A document is a URI the front end resolves to a descriptor through the `Document
 `resonate-folder` (iOS: `resonate-folder://<root>/<percent-encoded relative path>`, the root a
 security-scoped bookmark the app keeps, or `local` for its own Documents folder). The key is the URI
 after `scheme:` with its escaping kept exactly. Anything else, a bare path or a `file:` URI
-included, is `InvalidUri`.
+included, is `InvalidUri`. A negative descriptor says why: `document_not_found()` (no such
+document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENOENT`) reads as
+`NotFound`, `document_refused()` (any other failure) as `PermissionDenied`, and
+`hide_missing_songs` hides only a `NotFound`, so a provider's transient error leaves a song visible
+(`only_a_document_that_is_not_found_reads_as_not_found`).
 
 ## A day is the phone's zone's
 

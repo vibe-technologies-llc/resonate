@@ -428,6 +428,26 @@ mod tests {
     }
 
     #[test]
+    fn a_file_the_provider_refuses_is_not_a_file_that_is_gone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let harness = Harness::new();
+        harness.resumed("abcd", 2, 400);
+        let refused = harness.folder.join("b.wav");
+        fs::set_permissions(&refused, fs::Permissions::from_mode(0o000)).expect("a mode");
+
+        let changed = harness
+            .player
+            .hide_missing_songs(vec![FOLDER.into()])
+            .expect("a pass");
+
+        fs::set_permissions(&refused, fs::Permissions::from_mode(0o644)).expect("a mode");
+        assert_eq!(changed.hidden, 0);
+        assert_eq!(changed.left_the_queue, 0);
+        assert_eq!(harness.queued(), "abcd");
+    }
+
+    #[test]
     fn a_folder_removed_hides_its_songs_though_every_file_is_still_there() {
         let harness = Harness::new();
         harness.resumed("abcd", 2, 400);

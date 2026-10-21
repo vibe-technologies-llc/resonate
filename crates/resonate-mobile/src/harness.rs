@@ -1,6 +1,7 @@
 use std::{
     env,
     fs::{self, File},
+    io::ErrorKind,
     os::fd::IntoRawFd,
     path::{Path, PathBuf},
     process,
@@ -27,7 +28,7 @@ use resonate_engine::{Command, EngineConfig, Player};
 use crate::{
     Documents, MobilePlayer, PlaybackPreferences, Snapshot, Track,
     catalog::Catalog,
-    documents::{GrantedFiles, location},
+    documents::{DOCUMENT_NOT_FOUND, DOCUMENT_REFUSED, GrantedFiles, location},
     downloads::Downloads,
     features::Services,
     output::Routing,
@@ -45,9 +46,14 @@ pub(crate) struct Folder(PathBuf);
 
 impl Documents for Folder {
     fn open_document(&self, uri: String) -> i32 {
-        uri.strip_prefix(FOLDER)
-            .and_then(|name| File::open(self.0.join(name)).ok())
-            .map_or(-1, IntoRawFd::into_raw_fd)
+        let Some(name) = uri.strip_prefix(FOLDER) else {
+            return DOCUMENT_REFUSED;
+        };
+        match File::open(self.0.join(name)) {
+            Ok(file) => file.into_raw_fd(),
+            Err(error) if error.kind() == ErrorKind::NotFound => DOCUMENT_NOT_FOUND,
+            Err(_) => DOCUMENT_REFUSED,
+        }
     }
 }
 

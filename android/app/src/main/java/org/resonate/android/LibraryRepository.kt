@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
+import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,8 @@ import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.audioExtensions
 import org.resonate.android.nativecore.defaultTrackFilter
+import org.resonate.android.nativecore.documentNotFound
+import org.resonate.android.nativecore.documentRefused
 
 data class Favourited(val id: ULong, val enabled: Boolean)
 
@@ -175,9 +178,11 @@ class LibraryRepository(private val context: Context) {
                                     context.contentResolver
                                         .openFileDescriptor(Uri.parse(uri), "r")
                                         ?.detachFd() ?: -1
+                                } catch (gone: FileNotFoundException) {
+                                    documentNotFound()
                                 } catch (failure: Exception) {
                                     Log.w("Resonate", "Document grant could not be opened", failure)
-                                    -1
+                                    documentRefused()
                                 }
                         },
                     )

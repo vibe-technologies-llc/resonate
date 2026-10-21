@@ -10,6 +10,9 @@ pub trait Documents: Send + Sync {
     fn open_document(&self, uri: String) -> i32;
 }
 
+pub(crate) const DOCUMENT_REFUSED: i32 = -1;
+pub(crate) const DOCUMENT_NOT_FOUND: i32 = -2;
+
 pub(crate) const GRANTED_SCHEMES: [&str; 2] = ["content", "resonate-folder"];
 
 pub(crate) struct GrantedFiles {
@@ -41,9 +44,13 @@ impl MediaProvider for GrantedFiles {
             .documents
             .open_document(format!("{}:{key}", self.source.as_str()));
         if descriptor < 0 {
+            let kind = match descriptor {
+                DOCUMENT_NOT_FOUND => io::ErrorKind::NotFound,
+                _ => io::ErrorKind::PermissionDenied,
+            };
             return Err(resonate_codec::Error::Io {
                 location: location.clone(),
-                source: io::ErrorKind::PermissionDenied.into(),
+                source: kind.into(),
             });
         }
         let file = unsafe { File::from_raw_fd(descriptor) };
@@ -76,6 +83,16 @@ pub(crate) fn document_uri(location: &MediaLocation) -> Result<String> {
 }
 
 #[uniffi::export]
+pub fn document_refused() -> i32 {
+    DOCUMENT_REFUSED
+}
+
+#[uniffi::export]
+pub fn document_not_found() -> i32 {
+    DOCUMENT_NOT_FOUND
+}
+
+#[uniffi::export]
 pub fn audio_extensions() -> Vec<String> {
     AUDIO_EXTENSIONS
         .iter()
@@ -94,7 +111,33 @@ mod tests {
     impl Documents for Refused {
         fn open_document(&self, uri: String) -> i32 {
             self.0.lock().push(uri);
-            -1
+            DOCUMENT_REFUSED
+        }
+    }
+
+    struct Answering(i32);
+
+    impl Documents for Answering {
+        fn open_document(&self, _: String) -> i32 {
+            self.0
+        }
+    }
+
+    #[test]
+    fn only_a_document_that_is_not_found_reads_as_not_found() {
+        let at = location("content://documents/tree/a/document/a%2Fb.flac").expect("a location");
+
+        for (answer, kind) in [
+            (DOCUMENT_NOT_FOUND, io::ErrorKind::NotFound),
+            (DOCUMENT_REFUSED, io::ErrorKind::PermissionDenied),
+        ] {
+            let provider =
+                GrantedFiles::new(Arc::new(Answering(answer)), "content").expect("a provider");
+
+            assert!(matches!(
+                provider.open(&at),
+                Err(resonate_codec::Error::Io { source, .. }) if source.kind() == kind
+            ));
         }
     }
 

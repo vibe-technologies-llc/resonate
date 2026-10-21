@@ -52,7 +52,7 @@ use crate::{
     stamp::DocumentStamp,
 };
 pub use crate::{
-    documents::{Documents, audio_extensions},
+    documents::{Documents, audio_extensions, document_not_found, document_refused},
     equaliser::{
         EqualiserBand, EqualiserCurve, EqualiserFilter, EqualiserImport, EqualiserLimits,
         EqualiserPreset, equaliser_frequencies, equaliser_limits, equaliser_presets,

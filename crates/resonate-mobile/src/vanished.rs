@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, io};
 
 use resonate_core::{Recording, Span};
 use resonate_engine::Command;
@@ -14,6 +14,13 @@ use crate::{
 const REFERRING_TABLES: &str = "SELECT m.name, f.\"from\" FROM sqlite_master m, pragma_foreign_key_list(m.name) f WHERE m.type = 'table' AND f.\"table\" = 'documents'";
 const QUEUE_EDITS_AT_MOST: usize = 64;
 const DISPLACED_SCHEME: &str = "resonate-displaced";
+
+fn is_vanished(error: &resonate_codec::Error) -> bool {
+    matches!(
+        error,
+        resonate_codec::Error::Io { source, .. } if source.kind() == io::ErrorKind::NotFound
+    )
+}
 
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
@@ -38,7 +45,11 @@ impl MobilePlayer {
         let mut restore = Vec::new();
         for (id, uri, missing) in documents {
             let Ok(at) = location(&uri) else { continue };
-            let gone = self.sources.open(&at).is_err();
+            let gone = match self.sources.open(&at) {
+                Ok(_) => false,
+                Err(error) if is_vanished(&error) => true,
+                Err(_) => continue,
+            };
             if gone && !missing {
                 hide.push(id);
             } else if !gone && missing {

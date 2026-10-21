@@ -15,9 +15,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Android
-- [S] A pass that hides missing songs (`hide_missing_songs`) treats any exception from
-  `Documents.openDocument` as a vanished file, so a transient provider error hides songs until the
-  next pass restores them
 - [S] `MobilePlayer::shutdown` returns on a failed `finish_listening` or `save` before it stops the
   player, so a full disk skips the clean engine stop and only `native.close()` ends it
 - [S] `MusicDocuments.delete` ignores the count `ContentResolver.delete` answers, so a MediaStore row
