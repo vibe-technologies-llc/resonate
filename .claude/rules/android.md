@@ -383,6 +383,16 @@ grant never hides its songs. A pass that hid songs reads the catalog again, relo
 playlist and says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 
+**A file opened from elsewhere is played at once** (`OpenedFiles`): `MainActivity` takes `ACTION_VIEW` of
+a `content:` audio URI (`audio/*`, `application/ogg`), as iOS's `onOpenURL` does, and once the controller is
+connected plays it through `Playback`. A document that lies in a granted tree (the same authority and a
+tree document id holding it, the most specific tree winning, `OpenedNames.withinTree`) is indexed at the
+URI that tree reaches it by and played where it is; any other is copied into `files/opened` under its
+display name made safe (`safeName`; `name (2).ext` where taken) and indexed as
+`resonate-folder://local/<escaped name>`, a URI `Documents.openDocument` resolves to that file before it
+asks the resolver (iOS's `local` folder). The copy is kept as a song of the library; a temporary grant
+would not outlive the process.
+
 The song sheet holds *Share link* (`shareLink`: `share_link(id)` on the
 IO dispatcher, then the system `ACTION_SEND` chooser with the link as text; no link is a notice) and,
 from a queue row's *More* button, *Remove from queue* by `queueId`; the swipe stays.

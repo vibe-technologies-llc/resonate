@@ -93,6 +93,7 @@ class LibraryRepository(private val context: Context) {
     private val queryRequest = java.util.concurrent.atomic.AtomicLong()
     val filter = MutableStateFlow<TrackFilter?>(null)
     val features = LibraryFeatures(context, this)
+    val openedFiles = OpenedFiles(context, this)
 
     internal suspend fun native() = engine.await()
 
@@ -174,6 +175,9 @@ class LibraryRepository(private val context: Context) {
                         context.filesDir.absolutePath,
                         object : Documents {
                             override fun openDocument(uri: String): Int =
+                                openedFiles.descriptor(uri) ?: openGranted(uri)
+
+                            private fun openGranted(uri: String): Int =
                                 try {
                                     context.contentResolver
                                         .openFileDescriptor(Uri.parse(uri), "r")
