@@ -2,9 +2,8 @@ use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     App, BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
-    PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Task, Window,
-    canvas, div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb,
-    size,
+    PathPromptOptions, Pixels, Point, ScrollEvent, SharedString, Stateful, Task, Window, canvas,
+    div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
     MediaLocation, SampleRate,
@@ -303,7 +302,7 @@ impl RootView {
                     this.take_a_band_out_at(event.position, cx);
                 }),
             )
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                 if this.turn_a_q_at(event, cx) {
                     cx.stop_propagation();
                 }
@@ -732,7 +731,7 @@ impl RootView {
             .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.looking
-                    .update(cx, |looking, _| looking.take_focus(window));
+                    .update(cx, |looking, cx| looking.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.looking.clone())
@@ -1181,7 +1180,7 @@ impl RootView {
         }
     }
 
-    fn turn_a_q_at(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+    fn turn_a_q_at(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
         let plot = Plot::of(self.curve_plotted.get());
         let (x, y) = Self::at(event.position);
         let bands = self.equaliser.read(cx).shown_bands();
@@ -1254,7 +1253,7 @@ impl RootView {
         });
         self.figure.update(cx, |figure, cx| {
             figure.open_with(written, cx);
-            figure.take_focus(window);
+            figure.take_focus(window, cx);
         });
         cx.notify();
     }
@@ -1271,7 +1270,7 @@ impl RootView {
         if taken {
             self.figure
                 .update(cx, |figure, cx| figure.open_with(String::new(), cx));
-            self.controls.lets_go(window);
+            self.controls.lets_go(window, cx);
             self.tell_the_engine(cx);
         }
         cx.notify();
@@ -1284,7 +1283,7 @@ impl RootView {
         self.equaliser.update(cx, |model, _| model.leave_cell());
         self.figure
             .update(cx, |figure, cx| figure.open_with(String::new(), cx));
-        self.controls.lets_go(window);
+        self.controls.lets_go(window, cx);
         cx.notify();
     }
 
@@ -1431,7 +1430,7 @@ impl RootView {
     pub(crate) fn leave_looking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.looking.update(cx, |looking, cx| looking.clear(cx));
         self.look_for_a_device(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     fn read_the_catalogue(&mut self, cx: &mut Context<Self>) {

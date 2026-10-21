@@ -10,8 +10,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use gpui::{
-    App, AppContext as _, Application, Bounds, Context, Global, KeyBinding, Task, TitlebarOptions,
-    WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
+    App, AppContext as _, Bounds, Context, Global, KeyBinding, Task, TitlebarOptions, WindowBounds,
+    WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
     Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode, Spectral,
@@ -933,7 +933,7 @@ fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
         loop {
             match told.try_recv() {
                 Ok(followed) => {
-                    let applied = cx.update(|cx| {
+                    cx.update(|cx| {
                         for handle in cx.windows() {
                             let Some(root) = handle.downcast::<RootView>() else {
                                 continue;
@@ -942,9 +942,6 @@ fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
                                 root.update(cx, |root, _, cx| root.follow(followed.clone(), cx));
                         }
                     });
-                    if applied.is_err() {
-                        return;
-                    }
                 }
                 Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
                 Err(TryRecvError::Disconnected) => return,
@@ -960,14 +957,11 @@ fn raise_when_asked(asked: Receiver<()>, cx: &mut App) {
         loop {
             match asked.try_recv() {
                 Ok(()) => {
-                    let raised = cx.update(|cx| {
+                    cx.update(|cx| {
                         for handle in cx.windows() {
                             let _ = handle.update(cx, |_, window, _| window.activate_window());
                         }
                     });
-                    if raised.is_err() {
-                        return;
-                    }
                 }
                 Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
                 Err(TryRecvError::Disconnected) => return,
@@ -991,7 +985,7 @@ fn close_when_asked(asked: Receiver<()>, cx: &mut App) {
 
     cx.spawn(async move |cx| {
         if heard.await {
-            let _ = cx.update(close_every_window);
+            cx.update(close_every_window);
         }
     })
     .detach();
@@ -1004,7 +998,7 @@ fn close_every_window(cx: &mut App) {
 }
 
 fn quit_once_the_last_window_closes(cx: &mut App) {
-    cx.on_window_closed(|cx| {
+    cx.on_window_closed(|cx, _window| {
         if cx.windows().is_empty() {
             cx.quit();
         }
@@ -1030,7 +1024,7 @@ pub fn run(
     let failure = Rc::new(RefCell::new(None));
     let recorded = Rc::clone(&failure);
 
-    let application = Application::new().with_assets(icons::Embedded);
+    let application = gpui_platform::application().with_assets(icons::Embedded);
 
     application.run(move |cx: &mut App| {
         crate::fonts::settle(&cx.text_system().all_font_names());

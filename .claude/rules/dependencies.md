@@ -6,8 +6,7 @@ paths:
 # Dependencies and manifests
 
 - **Full versions, only used features**: `foo = { version = "1.2.3", default-features = false,
-  features = ["bar"] }`, never `"1"`/`"1.2"`. A declared dependency nothing imports is a defect (bar
-  the `libc` pin).
+  features = ["bar"] }`, never `"1"`/`"1.2"`. A declared dependency nothing imports is a defect.
 - **Shared deps in `[workspace.dependencies]`**; members write `foo.workspace = true`. New code goes
   in `crates/<name>/`, listed in `workspace.members`.
 - **Edition 2024, resolver 3** in the workspace; members inherit `edition.workspace`,
@@ -19,6 +18,15 @@ paths:
 The listener approved one exception: `resonate-mobile` admits UniFFI scaffolding, the
 owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`). Its explicit crate lints keep
 `result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
+
+## gpui
+
+- **gpui and `gpui_platform` are git dependencies of Zed's `main`, pinned by `rev`**, since the
+  published 0.2.2 is long stale. `gpui_platform` carries the platform backends (`wayland` only);
+  `resonate-ui` builds its `Application` through `gpui_platform::application()`. A bump moves both
+  revs together, and `cargo test -p resonate-ui` is the check: the test scheduler refuses a wake
+  from another thread, so `Driven::built_over` and the clipboard tests call
+  `executor().allow_parking()`.
 
 ## The layering
 
@@ -159,8 +167,3 @@ here, add it there.
 - **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder` and `flacenc` take it; **`miniz_oxide`
   0.8** beside 0.9: `png` and `exr` (under `image`, and `gpui`'s) take it while `flate2` takes 0.9.
   Neither is ours to move; each goes when its dependent moves.
-
-## Pins held against `cargo update`
-
-- **`libc`** `=0.2.189` on `resonate-ui` (imports nothing from it): 0.2.190 removed `ENOATTR` on
-  Linux, which `xattr` 0.2.3 (under gpui) names. Goes when gpui no longer reaches `xattr` 0.2.

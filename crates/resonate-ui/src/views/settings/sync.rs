@@ -936,7 +936,7 @@ impl RootView {
             cx,
         );
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn sync_device_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -952,7 +952,7 @@ impl RootView {
             Notice::Done("Your other devices learn the new name shortly".to_owned()),
             cx,
         );
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn sync_code_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -975,7 +975,7 @@ impl RootView {
             Notice::Done("This device joins those devices".to_owned()),
             cx,
         );
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn leave_sync_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -985,7 +985,7 @@ impl RootView {
         if !focused {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

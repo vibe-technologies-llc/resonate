@@ -208,7 +208,7 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_typed_root(window, cx)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.typed_root
-                    .update(cx, |typed, _| typed.take_focus(window));
+                    .update(cx, |typed, cx| typed.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.typed_root.clone())
@@ -817,7 +817,7 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_organising(window, cx)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.organising
-                    .update(cx, |organising, _| organising.take_focus(window));
+                    .update(cx, |organising, cx| organising.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.organising.clone())

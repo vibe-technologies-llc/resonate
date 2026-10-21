@@ -129,7 +129,7 @@ impl RootView {
         if self.minimum_length.read(cx).text().trim() != held.seconds().to_string() {
             self.minimum_length_given(window, cx);
         } else {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
         }
     }
 
@@ -150,7 +150,7 @@ impl RootView {
             return;
         };
         self.set_minimum_length(length, cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn set_minimum_length(

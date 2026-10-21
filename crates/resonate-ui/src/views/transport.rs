@@ -6,7 +6,7 @@ use std::{
 
 use gpui::{
     Animation, AnimationElement, AnimationExt as _, AnyElement, App, Context, Corners, Div,
-    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, ScrollWheelEvent, SharedString,
+    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, ScrollEvent, SharedString,
     Stateful, Svg, Window, div, img, prelude::*, px, rgb,
 };
 use resonate_core::{
@@ -123,7 +123,7 @@ const END_OF_QUEUE_READING: &str = "queue";
 
 const INSPECT_HINT: &str = "See the whole signal path in the inspector";
 
-fn notches_turned(event: &ScrollWheelEvent) -> f32 {
+fn notches_turned(event: &ScrollEvent) -> f32 {
     f32::from(event.delta.pixel_delta(px(PIXELS_A_NOTCH)).y) / PIXELS_A_NOTCH
 }
 
@@ -371,7 +371,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .flex_basis(px(theme::transport_centre()))
-                            .flex_shrink()
+                            .flex_shrink(1.0)
                             .min_w(px(CENTRE_AT_LEAST))
                             .items_center()
                             .gap_1p5()
@@ -1112,7 +1112,7 @@ impl RootView {
         div()
             .id("volume-bar")
             .when(wheeled, |bar| {
-                bar.on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+                bar.on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                     cx.stop_propagation();
                     this.volume_by(notches_turned(event) * VOLUME_A_NOTCH, cx);
                 }))

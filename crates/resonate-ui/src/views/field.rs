@@ -5,8 +5,8 @@ use gpui::{
     ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
     GlobalElementId, InputHandler, InspectorElementId, IntoElement, KeyBinding, LayoutId,
     LineLayout, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
-    Point, Render, ShapedLine, SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle,
-    Window, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
+    Point, Render, ShapedLine, SharedString, Style, Task, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 
 use crate::{
@@ -205,10 +205,7 @@ impl Field {
         if self.holds_focus {
             self.blink = cx.spawn(async move |this, cx| {
                 loop {
-                    let half = cx
-                        .update(|cx| cx.global::<ResonateApp>().caret.half())
-                        .ok()
-                        .flatten();
+                    let half = cx.update(|cx| cx.global::<ResonateApp>().caret.half());
                     cx.background_executor()
                         .timer(half.unwrap_or(STEADY_LOOKS_AGAIN_AFTER))
                         .await;
@@ -238,28 +235,28 @@ impl Field {
         self.focus.is_focused(window)
     }
 
-    pub(crate) fn take_focus(&self, window: &mut Window) {
-        window.focus(&self.focus);
+    pub(crate) fn take_focus(&self, window: &mut Window, cx: &mut App) {
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn take_focus_and_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.edit.select_all();
         self.touched(cx);
     }
 
     pub(crate) fn copies(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.put_on_clipboard(cx);
     }
 
     pub(crate) fn cuts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.cut_selection(&CutSelection, window, cx);
     }
 
     pub(crate) fn pastes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.paste_clipboard(&PasteClipboard, window, cx);
     }
 
@@ -377,7 +374,7 @@ impl Field {
     }
 
     fn press(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         let at = self.index_at(event.position);
 
         match event.click_count {
@@ -722,7 +719,7 @@ impl InputHandler for Composing {
             return;
         }
         self.search.update(cx, |field, cx| {
-            field.take_focus(window);
+            field.take_focus(window, cx);
             field.replace_text_in_range(replacement_range, text, window, cx);
         });
     }
@@ -739,7 +736,7 @@ impl InputHandler for Composing {
             return;
         }
         self.search.update(cx, |field, cx| {
-            field.take_focus(window);
+            field.take_focus(window, cx);
             if field.marked.is_none() {
                 field.edit.go(Motion::End, Anchor::Collapse);
             }
@@ -931,7 +928,14 @@ impl Element for Line {
             for selection in drawing.selection {
                 window.paint_quad(selection);
             }
-            if let Err(error) = drawing.line.paint(drawing.origin, line_height, window, cx) {
+            if let Err(error) = drawing.line.paint(
+                drawing.origin,
+                line_height,
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            ) {
                 tracing::warn!(%error, "the search field's text could not be painted");
             }
             if let Some(caret) = drawing.caret.filter(|_| focused) {

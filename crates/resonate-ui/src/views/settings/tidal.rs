@@ -239,7 +239,7 @@ impl RootView {
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.the_sources_moved(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

@@ -230,14 +230,14 @@ impl RootView {
             "Discord is told nothing until an application id is given"
         };
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn leave_discord_app(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.discord_app.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -262,14 +262,14 @@ impl RootView {
             "Discord draws no icon"
         };
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
     }
 
     pub(crate) fn leave_discord_icon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.discord_icon.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

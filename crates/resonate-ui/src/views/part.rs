@@ -84,19 +84,19 @@ impl Parts {
         }
     }
 
-    pub(crate) fn header(&self) -> AnyView {
+    pub(crate) fn header(&self) -> impl IntoElement {
         cached(&self.header, Region::Header)
     }
 
-    pub(crate) fn sidebar(&self) -> AnyView {
+    pub(crate) fn sidebar(&self) -> impl IntoElement {
         cached(&self.sidebar, Region::Sidebar)
     }
 
-    pub(crate) fn pane(&self) -> AnyView {
+    pub(crate) fn pane(&self) -> impl IntoElement {
         cached(&self.pane, Region::Pane)
     }
 
-    pub(crate) fn transport(&self) -> AnyView {
+    pub(crate) fn transport(&self) -> impl IntoElement {
         cached(&self.transport, Region::Transport)
     }
 
@@ -108,6 +108,6 @@ impl Parts {
     }
 }
 
-fn cached(part: &Entity<Part>, region: Region) -> AnyView {
+fn cached(part: &Entity<Part>, region: Region) -> impl IntoElement {
     AnyView::from(part.clone()).cached(region.laid_out())
 }

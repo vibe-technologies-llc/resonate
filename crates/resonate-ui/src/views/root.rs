@@ -850,7 +850,7 @@ impl RootView {
         .detach();
 
         let focus = cx.focus_handle();
-        window.focus(&focus);
+        window.focus(&focus, cx);
 
         let search =
             cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx).catching(is_a_followed_link));
@@ -1619,7 +1619,7 @@ impl RootView {
         self.adding = Some(holding);
         self.name.update(cx, |name, cx| {
             name.clear(cx);
-            name.take_focus(window);
+            name.take_focus(window, cx);
         });
         cx.notify();
     }
@@ -1648,7 +1648,7 @@ impl RootView {
         let held = found.map_or_else(String::new, |found| found.name);
         self.name.update(cx, |name, cx| {
             name.set_text(held, cx);
-            name.take_focus(window);
+            name.take_focus(window, cx);
         });
         cx.notify();
     }
@@ -1785,7 +1785,7 @@ impl RootView {
         self.naming = None;
         self.adding = None;
         self.name.update(cx, |name, cx| name.clear(cx));
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1833,7 +1833,7 @@ impl RootView {
 
     fn contact_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_contact(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1861,7 +1861,7 @@ impl RootView {
 
     fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_acoustid_key(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1895,7 +1895,7 @@ impl RootView {
             self.acoustid_key_given(window, cx);
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1907,7 +1907,7 @@ impl RootView {
 
     fn audd_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_audd_token(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1941,7 +1941,7 @@ impl RootView {
             self.audd_token_given(window, cx);
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -1953,7 +1953,7 @@ impl RootView {
 
     fn listenbrainz_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_listenbrainz_token(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -2014,7 +2014,7 @@ impl RootView {
             self.listenbrainz_token_given(window, cx);
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -2057,7 +2057,7 @@ impl RootView {
             self.contact_given(window, cx);
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -2071,7 +2071,7 @@ impl RootView {
         if !self.typed_root.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -2083,7 +2083,7 @@ impl RootView {
             self.layout_given(window, cx);
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -2111,7 +2111,7 @@ impl RootView {
         if !self.finding.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -3032,7 +3032,7 @@ impl RootView {
 
     fn let_the_control_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.disarm();
-        let let_go = self.controls.lets_go(window) | self.standing_controls.lets_go(window);
+        let let_go = self.controls.lets_go(window, cx) | self.standing_controls.lets_go(window, cx);
         if let_go {
             cx.notify();
         }
@@ -3435,6 +3435,7 @@ impl RootView {
                             offset: point(px(0.0), px(16.0)),
                             blur_radius: px(48.0),
                             spread_radius: px(0.0),
+                            inset: false,
                         }])
                         .child(img(art).size(side).object_fit(ObjectFit::Contain)),
                     "magnified-cover-arrives",
@@ -3536,7 +3537,7 @@ impl RootView {
     fn type_where_typing_goes(&mut self, typed: &str, window: &mut Window, cx: &mut Context<Self>) {
         if !self.typed_ahead(typed, cx) {
             self.search.update(cx, |search, cx| {
-                search.take_focus(window);
+                search.take_focus(window, cx);
                 search.append(typed, cx);
             });
         }
@@ -3674,6 +3675,7 @@ impl RootView {
                             offset: point(px(0.0), px(4.0)),
                             blur_radius: px(16.0),
                             spread_radius: px(0.0),
+                            inset: false,
                         }])
                         .child(kit::eyebrow(says))
                         .child(
@@ -3742,7 +3744,7 @@ impl RootView {
         if !self.search.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.reach = None;
         self.reach_row(Step::Below, cx);
         cx.notify();
@@ -3752,30 +3754,32 @@ impl RootView {
         if self.search.read(cx).is_focused(window) {
             self.go_to_the_results(window, cx);
         } else {
-            window.focus_next();
+            window.focus_next(cx);
         }
     }
 
     fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) {
-            self.search.read(cx).take_focus(window);
+            let search = self.search.focus_handle(cx);
+            search.focus(window, cx);
         }
-        window.focus_next();
+        window.focus_next(cx);
     }
 
     fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) {
-            self.search.read(cx).take_focus(window);
+            let search = self.search.focus_handle(cx);
+            search.focus(window, cx);
             return;
         }
-        window.focus_prev();
+        window.focus_prev(cx);
     }
 
     fn leave_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.search.read(cx).is_focused(window) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -3831,7 +3835,7 @@ impl RootView {
                 .minimum_length;
             self.minimum_length
                 .update(cx, |field, cx| field.hold(length.seconds().to_string(), cx));
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
@@ -3863,7 +3867,7 @@ impl RootView {
         }
 
         self.reach = None;
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         if self.search.read(cx).text().is_empty() {
             let scoped = self.library.read(cx).selection() != Selection::Everything;
             if scoped || self.goes_back_to_a_scope(cx) {
@@ -3896,7 +3900,7 @@ impl RootView {
     ) {
         self.show_everything(cx);
         self.search.update(cx, |search, cx| {
-            search.take_focus(window);
+            search.take_focus(window, cx);
             search.set_text(instead, cx);
         });
     }
@@ -4199,7 +4203,7 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_search(window, cx)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.search
-                    .update(cx, |search, _| search.take_focus(window));
+                    .update(cx, |search, cx| search.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.search.clone())
@@ -4256,7 +4260,7 @@ impl RootView {
             .names(CLEAR_SEARCH_HINT)
             .on_click(cx.listener(|this, _, window, cx| {
                 this.search.update(cx, |search, cx| {
-                    search.take_focus(window);
+                    search.take_focus(window, cx);
                     search.clear(cx);
                 });
             }))
@@ -4549,6 +4553,7 @@ impl RootView {
                     offset: point(px(0.0), px(12.0)),
                     blur_radius: px(32.0),
                     spread_radius: px(0.0),
+                    inset: false,
                 }])
                 .occlude()
                 .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -4803,6 +4808,7 @@ impl RootView {
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.keep_the_track(cx)))
             .child(
@@ -5896,8 +5902,10 @@ mod tests {
         impl Driven {
             fn focus_the_window(&mut self) {
                 let root = self.root.clone();
-                self.cx
-                    .update(|window, cx| window.focus(&root.read(cx).focus));
+                self.cx.update(|window, cx| {
+                    let focus = root.read(cx).focus.clone();
+                    window.focus(&focus, cx);
+                });
                 self.settle();
             }
 
@@ -5997,7 +6005,7 @@ mod tests {
                 root.update(cx, |root, cx| {
                     let rows: Arc<[Cut]> = Arc::from(Vec::new());
                     root.adding = Some(Held::of(rows));
-                    window.focus(&root.focus);
+                    window.focus(&root.focus, cx);
                     cx.notify();
                 });
             });
@@ -6019,7 +6027,7 @@ mod tests {
             driven.cx.update(|window, cx| {
                 root.update(cx, |root, cx| {
                     root.magnify(Magnified::File(location), cx);
-                    window.focus(&root.focus);
+                    window.focus(&root.focus, cx);
                 });
             });
             driven.settle();
@@ -6036,7 +6044,7 @@ mod tests {
             driven.cx.update(|window, cx| {
                 root.update(cx, |root, cx| {
                     root.listening_open = true;
-                    window.focus(&root.focus);
+                    window.focus(&root.focus, cx);
                     cx.notify();
                 });
             });
@@ -6060,7 +6068,7 @@ mod tests {
                         artist: None,
                         a_cut: false,
                     });
-                    window.focus(&root.focus);
+                    window.focus(&root.focus, cx);
                     cx.notify();
                 });
             });

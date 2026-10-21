@@ -45,7 +45,3 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its
   workflow job (`fedora-server-rpm`) fires on a release or a manual dispatch alone
-- [M · blocked: gpui] Gpui 0.2.2 pulls `stacksafe` 0.1 and with it `proc-macro-error2`, whose
-  `E0365` future-incompatibility warning becomes a hard error in a future rustc; `stacksafe` 1.x
-  dropped it and Zed's `main` uses that, so only a git gpui or a vendored `[patch]` of
-  `stacksafe-macro` fixes it

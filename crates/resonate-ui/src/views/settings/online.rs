@@ -373,7 +373,7 @@ impl RootView {
             .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .on_mouse_down_out(cx.listener(move |this, _, window, cx| leave(this, window, cx)))
             .on_click(cx.listener(move |_, _: &ClickEvent, window, cx| {
-                taking.update(cx, |key, _| key.take_focus(window));
+                taking.update(cx, |key, cx| key.take_focus(window, cx));
                 cx.notify();
             }))
             .child(field.clone())
@@ -398,7 +398,7 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_contact(window, cx)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.contact
-                    .update(cx, |contact, _| contact.take_focus(window));
+                    .update(cx, |contact, cx| contact.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.contact.clone())

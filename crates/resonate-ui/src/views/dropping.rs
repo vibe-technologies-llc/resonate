@@ -566,6 +566,7 @@ impl RootView {
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .child(
                 div()
@@ -667,6 +668,7 @@ impl RootView {
                             offset: point(px(0.0), px(4.0)),
                             blur_radius: px(16.0),
                             spread_radius: px(0.0),
+                            inset: false,
                         }])
                         .child(
                             div()

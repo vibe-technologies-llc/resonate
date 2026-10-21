@@ -133,8 +133,7 @@ fn copy_through(
             Answer::Late(heard) => heard.await.unwrap_or(false),
         };
         if !taken && claim.is_the_newest() {
-            let written = cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
-            let _ = written;
+            cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
         }
     })
     .detach();
@@ -302,6 +301,7 @@ mod tests {
 
     #[gpui::test]
     fn a_copy_hands_the_thread_its_text_and_waits_on_nothing(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
         let (release, released) = mpsc::channel::<()>();
         let (heard, hearing) = mpsc::channel();
 
@@ -324,6 +324,7 @@ mod tests {
     fn a_compositor_answering_late_is_refused_and_the_fallback_keeps_the_clipboard(
         cx: &mut TestAppContext,
     ) {
+        cx.executor().allow_parking();
         let (release, released) = mpsc::channel::<()>();
         let (claimed, claiming) = mpsc::channel();
 
@@ -352,6 +353,7 @@ mod tests {
 
     #[gpui::test]
     fn a_compositor_taking_the_copy_in_time_leaves_the_fallback_unwritten(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
         let (answered, answering) = mpsc::channel();
 
         cx.write_to_clipboard(ClipboardItem::new_string("Money".to_owned()));
@@ -376,6 +378,7 @@ mod tests {
 
     #[gpui::test]
     fn a_compositor_refusing_the_copy_is_answered_by_the_fallback_at_once(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
         let (answered, answering) = mpsc::channel();
 
         cx.update(|cx| {
@@ -398,6 +401,7 @@ mod tests {
     fn a_copy_outrun_by_a_later_one_neither_claims_the_compositor_nor_writes_the_fallback(
         cx: &mut TestAppContext,
     ) {
+        cx.executor().allow_parking();
         let (release, released) = mpsc::channel::<()>();
         let (claimed, claiming) = mpsc::channel();
         let (later, answering) = mpsc::channel();

@@ -2,9 +2,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, ElementId, Font, FontWeight,
-    HighlightStyle, Hsla, LineFragment, MouseMoveEvent, Pixels, Point, ScrollWheelEvent,
-    SharedString, StyledText, canvas, div, fill, linear_color_stop, linear_gradient, point,
-    prelude::*, px, rgb, size,
+    HighlightStyle, Hsla, IndentAdjustment, LineFragment, MouseMoveEvent, Pixels, Point,
+    ScrollEvent, SharedString, StyledText, canvas, div, fill, linear_color_stop, linear_gradient,
+    point, prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
 use resonate_library::LyricsAhead;
@@ -419,7 +419,7 @@ impl RootView {
             .id("lyric-sheet")
             .track_scroll(&scroll)
             .overflow_y_scroll()
-            .on_scroll_wheel(cx.listener(|this, _: &ScrollWheelEvent, _, cx| {
+            .on_scroll(cx.listener(|this, _: &ScrollEvent, _, cx| {
                 this.lyrics
                     .update(cx, |model, _| model.led_by_hand(Instant::now()));
                 cx.notify();
@@ -727,7 +727,11 @@ fn kept_with_its_marks(
     let mut wrapper = cx.text_system().line_wrapper(font, size);
     let mended = mended(text, |segment| {
         wrapper
-            .wrap_line(&[LineFragment::text(segment)], width)
+            .wrap_line(
+                &[LineFragment::text(segment)],
+                width,
+                IndentAdjustment::NoIndent,
+            )
             .map(|boundary| boundary.ix)
             .collect()
     });

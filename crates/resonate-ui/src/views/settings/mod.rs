@@ -213,7 +213,7 @@ impl RootView {
             )
             .on_click(cx.listener(|this, _, window, cx| {
                 this.finding
-                    .update(cx, |finding, _| finding.take_focus(window));
+                    .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             }))
     }
@@ -234,7 +234,7 @@ impl RootView {
             .on_click(cx.listener(|this, _, window, cx| {
                 this.finding.update(cx, |finding, cx| finding.clear(cx));
                 this.finding
-                    .update(cx, |finding, _| finding.take_focus(window));
+                    .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             }))
             .child(icons::lit_on_hover(
@@ -819,7 +819,7 @@ impl RootView {
             &handle,
             control,
             move |this, window, cx| {
-                window.focus(&this.focus);
+                window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
             cx,
@@ -853,7 +853,7 @@ impl RootView {
         self.in_the_pane_ring(
             control,
             move |this, window, cx| {
-                window.focus(&this.focus);
+                window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
             cx,
@@ -873,7 +873,7 @@ impl RootView {
             named,
             control,
             move |this, window, cx| {
-                window.focus(&this.focus);
+                window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
             cx,

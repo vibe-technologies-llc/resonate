@@ -245,6 +245,7 @@ fn shadow_rim(border: Pixels, corners: Corners<Pixels>) -> [Div; 4] {
             offset: point(px(0.0), px(SHADOW_DROP)),
             blur_radius: blur,
             spread_radius: px(0.0),
+            inset: false,
         }])
     };
     let across = || cast().left(border).right(border).h(rim);

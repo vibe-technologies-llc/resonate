@@ -161,7 +161,7 @@ impl RootView {
     ) {
         if LastfmAccount::TYPED_TO_SIGN_IN.contains(&account) {
             self.sign_in_to_lastfm(cx);
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             return;
         }
         self.keep_the_typed_application(cx);
@@ -171,7 +171,7 @@ impl RootView {
             "Kept for signing in to Last.fm"
         };
         self.report(Notice::Done(said.to_owned()), cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

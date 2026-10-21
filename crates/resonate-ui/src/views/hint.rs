@@ -61,6 +61,7 @@ impl Render for Hint {
                 offset: point(px(0.0), px(4.0)),
                 blur_radius: px(16.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .font_family(theme::ui_face())
             .text_size(px(theme::text_sm()))

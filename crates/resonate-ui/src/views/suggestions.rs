@@ -149,7 +149,7 @@ impl RootView {
                     .debug_selector(move || format!("suggestion-open-{index}"))
                     .flex()
                     .flex_col()
-                    .flex_grow()
+                    .flex_grow(1.0)
                     .cursor_pointer()
                     .names(OPEN_HINT)
                     .child(art)
@@ -334,7 +334,7 @@ impl RootView {
                             drawn
                         }),
                     )
-                    .track_scroll(self.suggestion_rows.clone())
+                    .track_scroll(&self.suggestion_rows)
                     .h_full()
                     .w_full(),
                 ),

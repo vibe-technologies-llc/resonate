@@ -84,7 +84,7 @@ impl Target {
 
     fn thumb(&self, axis: Axis, track: f32) -> Option<Thumb> {
         let handle = self.handle();
-        let furthest = axis.length(handle.max_offset());
+        let furthest = axis.along(handle.max_offset());
         let viewport = axis.length(handle.bounds().size);
         if furthest <= 0.0 || viewport <= 0.0 || track <= 0.0 {
             return None;
@@ -105,7 +105,7 @@ impl Target {
             return;
         }
         let handle = self.handle();
-        let reached = px(-(start / travel).clamp(0.0, 1.0) * axis.length(handle.max_offset()));
+        let reached = px(-(start / travel).clamp(0.0, 1.0) * axis.along(handle.max_offset()));
         let mut offset = handle.offset();
         match axis {
             Axis::Vertical => offset.y = reached,

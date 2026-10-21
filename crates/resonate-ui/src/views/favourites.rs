@@ -139,7 +139,7 @@ impl RootView {
                             drawn
                         }),
                     )
-                    .track_scroll(self.favourite_rows.clone())
+                    .track_scroll(&self.favourite_rows)
                     .h_full()
                     .w_full(),
                 ),

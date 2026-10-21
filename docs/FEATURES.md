@@ -102,8 +102,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
   alone; nothing adds a row with Control
-- [L · blocked: gpui] Nothing is exposed to a screen reader: published gpui 0.2.2 carries no
-  AccessKit, which only Zed's `main` has
+- [L] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
+  do not yet use
 
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;

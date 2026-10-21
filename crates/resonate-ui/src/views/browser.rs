@@ -344,7 +344,7 @@ impl RootView {
                                         },
                                     ),
                                 )
-                                .track_scroll(self.album_rows.clone())
+                                .track_scroll(&self.album_rows)
                                 .h_full()
                                 .w_full(),
                             )
@@ -484,6 +484,7 @@ impl RootView {
                             offset: gpui::point(px(0.0), px(8.0)),
                             blur_radius: px(24.0),
                             spread_radius: px(0.0),
+                            inset: false,
                         }])
                     })
                     .child(cover)
@@ -753,7 +754,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(self.artist_rows.clone())
+                        .track_scroll(&self.artist_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -932,7 +933,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(self.track_rows.clone())
+                        .track_scroll(&self.track_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -1024,7 +1025,7 @@ impl RootView {
                     track.artist_id.map(Selection::Artist),
                     cx,
                 )
-                .flex_shrink()
+                .flex_shrink(1.0)
                 .ends_in_an_ellipsis(),
             ))
             .when(fitted.format, |row| {
@@ -1277,7 +1278,7 @@ impl RootView {
                 listing::artist_cell(
                     self.performed_by(("missing-artist", index), artist, performer, cx)
                         .debug_selector(move || format!("unheld-artist-{index}"))
-                        .flex_shrink()
+                        .flex_shrink(1.0)
                         .ends_in_an_ellipsis(),
                 )
                 .text_color(rgb(theme::faint())),
@@ -1548,7 +1549,7 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(self.artist_rows.clone())
+                    .track_scroll(&self.artist_rows)
                     .h_full()
                     .w_full(),
                 )
@@ -2539,6 +2540,7 @@ impl RootView {
                                 offset: gpui::point(px(0.0), px(8.0)),
                                 blur_radius: px(24.0),
                                 spread_radius: px(0.0),
+                                inset: false,
                             }])
                         })
                     })
@@ -3426,6 +3428,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
             offset: point(px(0.0), px(6.0)),
             blur_radius: px(24.0),
             spread_radius: px(0.0),
+            inset: false,
         }])
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())

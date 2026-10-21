@@ -724,7 +724,7 @@ impl RootView {
                                                 drawn.artist_id.map(Selection::Artist),
                                                 cx,
                                             )
-                                            .flex_shrink()
+                                            .flex_shrink(1.0)
                                             .ends_in_an_ellipsis(),
                                         ))
                                         .when(fitted.format, |row| {
@@ -848,7 +848,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(scroll)
+                        .track_scroll(&scroll)
                         .h_full()
                         .w_full(),
                     )
@@ -1336,7 +1336,7 @@ fn part_heading(drawn: usize, run: Run, from: Option<SharedString>) -> AnyElemen
                 .when_some(from, |heading, from| {
                     heading.child(
                         div()
-                            .flex_shrink()
+                            .flex_shrink(1.0)
                             .min_w(px(0.0))
                             .text_size(px(theme::text_xs()))
                             .text_color(rgb(theme::muted()))

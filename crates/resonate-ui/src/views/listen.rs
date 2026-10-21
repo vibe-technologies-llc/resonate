@@ -113,6 +113,7 @@ impl RootView {
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_listener(cx)))
             .child(self.listen_heading(listening, cx))

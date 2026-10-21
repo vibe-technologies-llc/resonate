@@ -225,7 +225,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(self.missing_rows.clone())
+                        .track_scroll(&self.missing_rows)
                         .h_full()
                         .w_full()
                         .pt_1p5()

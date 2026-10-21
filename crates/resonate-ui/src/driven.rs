@@ -13,8 +13,8 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::{
-    Entity, Modifiers, MouseButton, Pixels, Point, ScrollDelta, ScrollWheelEvent, TestAppContext,
-    TouchPhase, VisualTestContext, point, px, size,
+    Entity, Modifiers, MouseButton, Pixels, Point, ScrollDelta, ScrollEvent, ScrollSource,
+    TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
     Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, TrackId,
@@ -340,6 +340,8 @@ impl Driven {
         lyricists: Lyricists,
         sinks: Vec<SinkInfo>,
     ) -> Self {
+        cx.executor().allow_parking();
+
         let (reference, register) = match reaching {
             Some(Reaching {
                 reference,
@@ -485,11 +487,12 @@ impl Driven {
     }
 
     pub(crate) fn scroll_at(&mut self, at: Point<Pixels>, down: f32) {
-        self.cx.simulate_event(ScrollWheelEvent {
+        self.cx.simulate_event(ScrollEvent {
             position: at,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-down))),
             modifiers: Modifiers::none(),
             touch_phase: TouchPhase::Moved,
+            source: ScrollSource::Pointer,
         });
         self.settle();
     }
@@ -591,8 +594,8 @@ impl Driven {
     ) {
         let root = self.root.clone();
         self.cx.update(|window, cx| {
-            let field = field(root.read(cx)).clone();
-            field.read(cx).take_focus(window);
+            let focus = gpui::Focusable::focus_handle(field(root.read(cx)).read(cx), cx);
+            focus.focus(window, cx);
         });
         self.settle();
     }
@@ -1774,12 +1777,12 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.settle();
 
-        let roomy = driven.read(|root, _| root.sidebar_scroll.max_offset().height);
+        let roomy = driven.read(|root, _| root.sidebar_scroll.max_offset().y);
 
         driven.cx.simulate_resize(size(px(WIDE), px(300.0)));
         driven.settle();
 
-        let squeezed = driven.read(|root, _| root.sidebar_scroll.max_offset().height);
+        let squeezed = driven.read(|root, _| root.sidebar_scroll.max_offset().y);
 
         let settings = driven.bounds_of("tab-settings");
 

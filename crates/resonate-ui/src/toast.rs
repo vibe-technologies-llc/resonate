@@ -137,7 +137,7 @@ fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
     };
     let fading = cx.spawn(async move |cx| {
         cx.background_executor().timer(lingers).await;
-        let _ = cx.update(withdraw);
+        cx.update(withdraw);
     });
 
     let toaster = cx.default_global::<Toaster>();
@@ -162,7 +162,7 @@ fn withdraw(cx: &mut App) {
 
     let fading = cx.spawn(async move |cx| {
         cx.background_executor().timer(WITHDRAWAL).await;
-        let _ = cx.update(|cx| {
+        cx.update(|cx| {
             let toaster = cx.default_global::<Toaster>();
             toaster.showing = None;
             if let Some(waiting) = toaster.waiting.pop_front() {
@@ -212,6 +212,7 @@ pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<Animatio
                     offset: point(px(0.0), px(4.0)),
                     blur_radius: px(16.0),
                     spread_radius: px(0.0),
+                    inset: false,
                 }])
                 .cursor_pointer()
                 .on_click(cx.listener(|_, _, _, cx| dismiss(cx)))

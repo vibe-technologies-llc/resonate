@@ -402,7 +402,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(self.all_playlist_rows.clone())
+                        .track_scroll(&self.all_playlist_rows)
                         .h_full()
                         .w_full(),
                     )
@@ -495,7 +495,7 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(self.all_playlist_rows.clone())
+                    .track_scroll(&self.all_playlist_rows)
                     .h_full()
                     .w_full(),
                 )
@@ -700,7 +700,7 @@ impl RootView {
             .cursor_text()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, window, cx| {
-                this.name.update(cx, |name, _| name.take_focus(window));
+                this.name.update(cx, |name, cx| name.take_focus(window, cx));
                 cx.notify();
             }))
             .child(self.name.clone())
@@ -753,7 +753,7 @@ impl RootView {
                     listed
                 }),
             )
-            .track_scroll(scroll.clone())
+            .track_scroll(&scroll)
             .h_full()
             .w_full();
 
@@ -1263,7 +1263,7 @@ impl RootView {
                     drawn.artist_id.map(Selection::Artist),
                     cx,
                 )
-                .flex_shrink()
+                .flex_shrink(1.0)
                 .ends_in_an_ellipsis(),
             ))
             .when(fitted.format, |row| {
@@ -1406,7 +1406,7 @@ impl RootView {
                     .collect()
             }),
         )
-        .track_scroll(self.picker_rows.clone())
+        .track_scroll(&self.picker_rows)
         .w_full()
         .h(theme::width(theme::row_height() * shown as f32));
 
@@ -1436,6 +1436,7 @@ impl RootView {
                         offset: gpui::point(px(0.0), px(12.0)),
                         blur_radius: px(40.0),
                         spread_radius: px(0.0),
+                        inset: false,
                     }])
                     .on_click(|_, _, cx| cx.stop_propagation())
                     .child(
@@ -1814,6 +1815,7 @@ impl RootView {
                             offset: gpui::point(px(0.0), px(8.0)),
                             blur_radius: px(24.0),
                             spread_radius: px(0.0),
+                            inset: false,
                         }])
                     })
                     .child(art)
@@ -1940,6 +1942,7 @@ impl RootView {
                 offset: gpui::point(px(0.0), px(4.0)),
                 blur_radius: px(12.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .names(PLAY_HINT)
             .child(icons::icon(

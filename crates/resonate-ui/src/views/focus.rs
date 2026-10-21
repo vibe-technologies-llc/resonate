@@ -51,10 +51,10 @@ impl Controls {
             .any(|handle| handle.is_focused(window))
     }
 
-    pub(crate) fn lets_go(&self, window: &mut Window) -> bool {
+    pub(crate) fn lets_go(&self, window: &mut Window, cx: &mut App) -> bool {
         let held = self.holds_the_caret(window);
         if held {
-            window.blur();
+            window.blur(cx);
         }
         held
     }

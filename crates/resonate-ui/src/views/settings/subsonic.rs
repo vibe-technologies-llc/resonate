@@ -157,7 +157,7 @@ impl RootView {
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.the_sources_moved(cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -173,7 +173,7 @@ impl RootView {
         if self.give_what_is_typed_of_the_account(window, cx) {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

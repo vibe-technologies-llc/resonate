@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, ScrollHandle, SharedString,
-    Stateful, canvas, div, point, prelude::*, px, rgb,
+    Stateful, TruncateFrom, canvas, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -143,7 +143,8 @@ pub(crate) fn cut_to_fit(
     }
     cx.text_system()
         .line_wrapper(font, size)
-        .truncate_line(text, room, ELLIPSIS, &mut Vec::new())
+        .truncate_line(text, room, ELLIPSIS, &[], TruncateFrom::End)
+        .0
 }
 
 pub(crate) fn width_of(text: &str, font: &Font, size: Pixels, cx: &App) -> Pixels {
