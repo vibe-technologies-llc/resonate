@@ -152,6 +152,10 @@ fun ResonateApp(resonate: Resonate) {
                                     fadeIn(tween(300)) togetherWith
                                         (slideOutHorizontally(tween(300)) { it / 6 } + fadeOut(tween(200)))
                                 },
+                                predictivePopTransitionSpec = {
+                                    slideInHorizontally(tween(300)) { -it / 6 } togetherWith
+                                        slideOutHorizontally(tween(300)) { it }
+                                },
                             )
                             SnackbarHost(
                                 snackbar,

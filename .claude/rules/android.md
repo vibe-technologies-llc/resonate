@@ -258,7 +258,7 @@ opened from the gear (`SettingsAction`) in each root's header. Each root has its
 back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
 current root pops it to its base, and Back at the base of a root other than Home returns to Home.
 Home stays composed beside the selected root. A pushed page slides a sixth of the width and fades
-(300 ms), and the pop reverses it; each page is a `Page`, a Scaffold with a large, medium or small
+(300 ms), and the pop reverses it; the system's back swipe (`predictivePopTransitionSpec`) slides the leaving page wholly off, opaque, over the one beneath shifting a sixth of the width, since a fading or shrinking leaving page shows the page beneath through it; each page is a `Page`, a Scaffold with a large, medium or small
 flexible top bar that stays `surface` when content scrolls under it (no scrolled container colour). Below the pages, above the bar, sit the banners and the mini-player, so they show
 on every page. The scaffold and the box beneath it paint `surface`, as the pages do, so the strip
 behind the banners is the page's colour. Each banner carries its own 8 dp above it and the column none,
