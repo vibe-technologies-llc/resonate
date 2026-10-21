@@ -36,6 +36,10 @@ interface Host {
     fun open(link: Uri)
 
     suspend fun confirmDelete(uris: List<Uri>): Boolean
+
+    suspend fun allowMicrophone(): Boolean
+
+    fun openAppSettings()
 }
 
 enum class Repeat {
@@ -107,6 +111,10 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
         get() = library.features
 
     val syncAskedAt = MutableStateFlow<Long?>(null)
+
+    fun listen() = features.listening.listen(host::allowMicrophone)
+
+    fun keepListening(keeps: Boolean) = features.listening.keepListening(keeps, host::allowMicrophone)
 
     fun deleteSongs(tracks: List<Track>) = features.deleteSongs(tracks, host::confirmDelete)
 

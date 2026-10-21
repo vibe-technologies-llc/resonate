@@ -91,6 +91,11 @@ class Sheets(val snackbar: SnackbarHostState) {
     var picker by mutableStateOf<List<Track>?>(null)
     var naming by mutableStateOf<NamingRequest?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
+    var listening by mutableStateOf(false)
+
+    fun listen() {
+        listening = true
+    }
 
     fun song(track: Track, queueId: ULong? = null, inPlayer: Boolean = false) {
         song = SongSheetRequest(track, queueId, inPlayer)
@@ -150,6 +155,7 @@ fun SheetHost() {
     sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
     sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
     sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
+    if (sheets.listening) ListenSheet { sheets.listening = false }
 }
 
 @Composable

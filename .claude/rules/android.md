@@ -629,7 +629,20 @@ otherwise `ByEar` sends a Shazam signature. Candidates are shown, never written 
 `recognise_heard(samples, rate, audd_token)` names a mono clip the front end recorded (`listening.rs`):
 Shazam, then AudD where a token is given, answering `HeardAnswer` (`Named` with a `HeardSong` whose
 `by` is the service's name and `key` its folded title and artist, `Missed`, `Silent`, `Unreached`
-naming the service); only iOS records one yet.
+naming the service); both phones record one.
+
+**Listen names the song playing around the phone** (`Listening`, `ListenPlan`, `ListenSheet`): the ear in
+Search's header and Library tools' *Listen* open a sheet that records at once. `Host.allowMicrophone` asks
+for `RECORD_AUDIO` (refused: the sheet says so and offers the app's settings), playback is paused, and
+`Microphone` reads 12 s of mono float PCM at 44.1 kHz from `AudioRecord` on the IO dispatcher
+(cancelled with the sheet) into `recognise_heard` with the AudD token. `ListenPlan.after` is iOS's
+`ListenNext`: a miss or silence is recorded again up to three times (*Try 2 of 3*), a service out of reach
+is said at once, and a found song is a card with *Find it* (the Search tab's library search, typed as title
+and artist through `searchAsked`), *Open* where the service gave a link and *Again*. *Keep listening*
+records another clip 20 s after a named song or the last miss and keeps a song whose `key` matches quietly;
+it ends where a clip cannot be asked. The last eight songs heard stay as *Heard earlier* for the run. The
+AudD token is kept encrypted beside the other keys (`audd-token`) and typed in Library tools'
+*Recognition* section; blank, only Shazam is asked (`ListenPlanTest`).
 
 AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load as the curve's
 bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,

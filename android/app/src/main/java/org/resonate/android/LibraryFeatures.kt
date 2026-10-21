@@ -170,6 +170,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
     val downloads = DownloadQueue(context, library, scope, settings, downloadSeams)
+    val listening = Listening(library, scope, { online.value }, { auddToken.value })
     val downloading: StateFlow<Boolean> =
         downloads.jobs
             .map { jobs -> jobs.any { !it.state.settled } }
@@ -187,6 +188,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val lyricFrame = MutableStateFlow<LyricFrame?>(null)
     val lyricsLoading = MutableStateFlow(false)
     val recognitionKey = MutableStateFlow("")
+    val auddToken = MutableStateFlow("")
+    val searchAsked = MutableStateFlow<String?>(null)
     val recentSearches = MutableStateFlow(readRecentSearches())
     val recognition =
         MutableStateFlow<List<org.resonate.android.nativecore.RecognitionCandidate>>(emptyList())
@@ -284,6 +287,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
         recognitionKey.value =
             try {
                 accounts.readRecognitionKey()
+            } catch (failure: Exception) {
+                library.report(failure)
+                ""
+            }
+        auddToken.value =
+            try {
+                accounts.readAuddToken()
             } catch (failure: Exception) {
                 library.report(failure)
                 ""
@@ -1094,6 +1104,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
         actualOutput.value = native.outputDevice()
         if (downloading.value) downloads.follow(native)
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
+    }
+
+    fun saveAuddToken(value: String) = work {
+        val token = value.trim()
+        accounts.writeAuddToken(token)
+        auddToken.value = token
+        library.notice(
+            if (token.isEmpty()) "AudD will no longer be asked"
+            else "AudD will be asked when Shazam does not know a song"
+        )
     }
 
     fun saveRecognitionKey(value: String) = work {

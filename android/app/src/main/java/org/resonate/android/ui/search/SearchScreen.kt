@@ -1,5 +1,7 @@
 package org.resonate.android.ui.search
 
+import org.resonate.android.ui.components.LocalSheets
+import androidx.compose.material.icons.rounded.Hearing
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -183,6 +185,12 @@ private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
                         ) {
                             Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Saved for later")
                         }
+                    }
+                    IconButton(
+                        onClick = LocalSheets.current::listen,
+                        modifier = Modifier.testTag("listen"),
+                    ) {
+                        Icon(Icons.Rounded.Hearing, contentDescription = "Listen")
                     }
                     SettingsAction()
                 }

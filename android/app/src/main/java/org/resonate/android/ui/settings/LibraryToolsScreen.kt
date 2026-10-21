@@ -1,5 +1,7 @@
 package org.resonate.android.ui.settings
 
+import org.resonate.android.ui.components.LocalSheets
+import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -60,6 +62,7 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     val status = enrichment.status
     val coversAskedAgain = enrichment.coversAskedAgain
     val recognitionKey = features.recognitionKey
+    val auddToken = features.auddToken
     val scanning = library.scanning
     val songs = library.allTracks
 
@@ -90,6 +93,8 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     fun rescan() = library.rescan()
 
     fun saveRecognitionKey(value: String) = features.saveRecognitionKey(value.trim())
+
+    fun saveAuddToken(value: String) = features.saveAuddToken(value)
 }
 
 private fun stoppedIcon(status: EnrichmentStatus?): ImageVector =
@@ -112,6 +117,7 @@ fun LibraryToolsScreen() {
     val status by model.status.collectAsStateWithLifecycle()
     val covers by model.coversAskedAgain.collectAsStateWithLifecycle()
     val storedKey by model.recognitionKey.collectAsStateWithLifecycle()
+    val auddToken by model.auddToken.collectAsStateWithLifecycle()
     val scanning by model.scanning.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
@@ -219,6 +225,15 @@ fun LibraryToolsScreen() {
                     modifier = Modifier.testTag("identical-songs"),
                 )
             }
+            item(key = "listen") {
+                SettingRow(
+                    title = "Listen",
+                    icon = Icons.Rounded.Hearing,
+                    supporting = "Name the song playing around you",
+                    onClick = LocalSheets.current::listen,
+                    modifier = Modifier.testTag("listen-tool"),
+                )
+            }
             item(key = "wanted") {
                 SettingRow(
                     title = "Saved for later",
@@ -229,6 +244,7 @@ fun LibraryToolsScreen() {
             }
             item(key = "recognition") { SectionHeader("Recognition") }
             item(key = "acoustid") { RecognitionKey(storedKey, model::saveRecognitionKey) }
+            item(key = "audd") { AuddToken(auddToken, model::saveAuddToken) }
         }
     }
     if (confirmRefresh) {
@@ -307,5 +323,36 @@ private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
             }
         }
         Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) { Text("Save key") }
+    }
+}
+
+@Composable
+private fun AuddToken(stored: String, onSave: (String) -> Unit) {
+    var draft by remember(stored) { mutableStateOf(stored) }
+    SettingRow(
+        title = "AudD token",
+        icon = Icons.Rounded.Hearing,
+        supporting = "Listen asks AudD when Shazam does not know a song. Without a token only Shazam is asked.",
+    )
+    Field(
+        value = draft,
+        onValueChange = { draft = it },
+        label = "AudD API token",
+        supporting = "Optional · kept encrypted on this device",
+        secret = true,
+        modifier = Modifier.testTag("audd-token"),
+    )
+    ButtonRow {
+        if (stored.isNotEmpty()) {
+            OutlinedButton(
+                onClick = {
+                    draft = ""
+                    onSave("")
+                }
+            ) {
+                Text("Forget token")
+            }
+        }
+        Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) { Text("Save token") }
     }
 }

@@ -60,6 +60,11 @@ class MainActivity : ComponentActivity(), Host {
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             deleteAnswer?.complete(result.resultCode == RESULT_OK)
         }
+    private var microphoneAnswer: CompletableDeferred<Boolean>? = null
+    private val microphonePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            microphoneAnswer?.complete(granted)
+        }
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -186,6 +191,22 @@ class MainActivity : ComponentActivity(), Host {
                 .build()
         withContext(Dispatchers.Main) { deleteConsent.launch(request) }
         return answer.await()
+    }
+
+    override suspend fun allowMicrophone(): Boolean {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+            return true
+        val answer = CompletableDeferred<Boolean>()
+        microphoneAnswer = answer
+        withContext(Dispatchers.Main) { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
+        return answer.await()
+    }
+
+    override fun openAppSettings() {
+        startActivity(
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.fromParts("package", packageName, null))
+        )
     }
 
     override fun allowNotifications() {

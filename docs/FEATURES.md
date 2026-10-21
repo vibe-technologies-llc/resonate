@@ -8,10 +8,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
 - [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
-- [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
-  microphone
-- [S] Android's browse tree carries no artwork: the folders and songs a car lists show a plain
-  tile, since a thumbnail per item would cross Binder for every row
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account: the boundary races every account, but Settings stores one

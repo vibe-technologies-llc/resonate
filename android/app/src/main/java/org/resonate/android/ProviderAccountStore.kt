@@ -74,6 +74,15 @@ class ProviderAccountStore(context: Context) {
 
     @Synchronized fun readRecognitionKey() = decrypt("acoustid-key")
 
+    @Synchronized fun readAuddToken() = decrypt("audd-token")
+
+    @Synchronized
+    fun writeAuddToken(value: String) {
+        check(storage.edit().putString("audd-token", encrypt(value)).commit()) {
+            "The AudD token could not be saved"
+        }
+    }
+
     @Synchronized
     fun writeRecognitionKey(value: String) {
         check(storage.edit().putString("acoustid-key", encrypt(value)).commit()) {

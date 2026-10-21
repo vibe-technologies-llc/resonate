@@ -169,6 +169,14 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
             }
         }
         viewModelScope.launch {
+            features.searchAsked.collect { text ->
+                if (text == null) return@collect
+                features.searchAsked.value = null
+                mutablePlace.value = SearchPlace.LIBRARY
+                search(text)
+            }
+        }
+        viewModelScope.launch {
             features.downloading.drop(1).collect { running ->
                 if (!running) forgetHeld()
             }
