@@ -36,10 +36,14 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -50,6 +54,7 @@ import org.resonate.android.ui.components.ArtworkClock
 import org.resonate.android.ui.components.Banners
 import org.resonate.android.ui.components.FollowArtworkChanges
 import org.resonate.android.ui.components.LocalArtworkClock
+import org.resonate.android.ui.components.LocalPageBottomPadding
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SheetHost
 import org.resonate.android.ui.components.Sheets
@@ -139,8 +144,10 @@ fun ResonateApp(resonate: Resonate) {
                                 WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
                             )
                         else Modifier
-                    Column(Modifier.fillMaxSize().then(bottom)) {
-                        Box(Modifier.weight(1f)) {
+                    var footerHeight by remember { mutableIntStateOf(0) }
+                    val footerPadding = with(LocalDensity.current) { footerHeight.toDp() }
+                    Box(Modifier.fillMaxSize().then(bottom)) {
+                        CompositionLocalProvider(LocalPageBottomPadding provides footerPadding) {
                             NavDisplay(
                                 entries = navigator.entries { ScreenContent(it) },
                                 onBack = navigator::back,
@@ -157,13 +164,17 @@ fun ResonateApp(resonate: Resonate) {
                                         slideOutHorizontally(tween(300)) { it }
                                 },
                             )
-                            SnackbarHost(
-                                snackbar,
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-                            )
                         }
-                        Banners()
-                        MiniPlayer(player, expansion)
+                        Column(
+                            Modifier.align(Alignment.BottomCenter),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
+                            Column(Modifier.onSizeChanged { footerHeight = it.height }) {
+                                Banners()
+                                MiniPlayer(player, expansion)
+                            }
+                        }
                     }
                 }
                 if (expansion.shown) NowPlaying(player, expansion)

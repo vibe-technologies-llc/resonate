@@ -2,10 +2,12 @@ package org.resonate.android.ui.components
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
@@ -22,6 +24,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -35,6 +38,8 @@ enum class TitleSize {
     MEDIUM,
     SMALL,
 }
+
+val LocalPageBottomPadding = compositionLocalOf { 0.dp }
 
 @Composable
 fun Page(
@@ -65,6 +70,7 @@ fun Page(
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
         floatingActionButton = floatingActionButton,
+        bottomBar = { Spacer(Modifier.height(LocalPageBottomPadding.current)) },
         topBar = {
             PageBar(title, subtitle, size, scrollBehavior, navigation, actions)
         },
