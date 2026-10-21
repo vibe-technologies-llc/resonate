@@ -23,17 +23,7 @@ data class RoomView(
     val name: String?,
     val kept: RoomCorrection?,
     val reading: Boolean,
-) {
-    fun wire(): Map<String, Any?> =
-        mapOf(
-            "on" to on,
-            "name" to name,
-            "reading" to reading,
-            "channels" to kept?.channels,
-            "rate" to kept?.rate,
-            "lengthMs" to kept?.lengthMs,
-        )
-}
+)
 
 class RoomCorrectionState(
     context: Context,

@@ -4,33 +4,51 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
+import org.resonate.android.ui.Host
+import org.resonate.android.ui.Playback
+import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.ResonateApp
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-class MainActivity : FlutterActivity() {
-    private var bridge: FlutterBridge? = null
+class MainActivity : ComponentActivity(), Host {
     private var controller: MediaController? = null
     private val library
         get() = (application as ResonateApplication).library
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        bridge =
-            FlutterBridge(this, library, flutterEngine.dartExecutor.binaryMessenger) { controller }
-    }
+    private val folderChooser =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult(), ::folderChosen)
+    private val roomChooser =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            result.data?.data?.takeIf { result.resultCode == RESULT_OK }?.let {
+                library.features.room.choose(it)
+            }
+        }
+    private val audioPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) library.features.useDownloadsAndScan()
+            else library.notice("Allow music access to read existing songs in Downloads")
+        }
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         startService(Intent(this, PlaybackService::class.java))
         val pending =
@@ -45,6 +63,8 @@ class MainActivity : FlutterActivity() {
             },
             ContextCompat.getMainExecutor(this),
         )
+        val resonate = Resonate(library, Playback(library) { controller }, this)
+        setContent { ResonateApp(resonate) }
     }
 
     private fun connected(pending: ListenableFuture<MediaController>) {
@@ -58,8 +78,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    fun chooseFolder() {
-        startActivityForResult(
+    override fun chooseFolder() {
+        folderChooser.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                 .putExtra(
                     DocumentsContract.EXTRA_INITIAL_URI,
@@ -72,22 +92,20 @@ class MainActivity : FlutterActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                         Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                ),
-            FOLDER_REQUEST,
+                )
         )
     }
 
-    fun chooseRoomResponse() {
-        startActivityForResult(
+    override fun chooseRoomResponse() {
+        roomChooser.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("audio/*")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-            ROOM_REQUEST,
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         )
     }
 
-    fun shareLink(title: String, link: String) {
+    override fun share(title: String, link: String) {
         val send =
             Intent(Intent.ACTION_SEND)
                 .setType("text/plain")
@@ -96,44 +114,30 @@ class MainActivity : FlutterActivity() {
         startActivity(Intent.createChooser(send, title))
     }
 
-    fun allowNotifications() {
-        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST)
+    override fun open(link: Uri) {
+        if (link.scheme == "https" || link.scheme == "http") {
+            startActivity(Intent(Intent.ACTION_VIEW, link))
+        }
     }
 
-    fun useDownloads() {
+    override fun allowNotifications() {
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    override fun useDownloads() {
         if (
             checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         ) {
             library.features.useDownloadsAndScan()
         } else {
-            requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_AUDIO), AUDIO_REQUEST)
+            audioPermission.launch(Manifest.permission.READ_MEDIA_AUDIO)
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != AUDIO_REQUEST) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            library.features.useDownloadsAndScan()
-        } else {
-            library.notice("Allow music access to read existing songs in Downloads")
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        if (requestCode == ROOM_REQUEST) {
-            library.features.room.choose(uri)
-            return
-        }
-        if (requestCode != FOLDER_REQUEST) return
+    private fun folderChosen(result: ActivityResult) {
+        val data = result.data ?: return
+        val uri = data.data?.takeIf { result.resultCode == RESULT_OK } ?: return
         try {
             val writable = data.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
             contentResolver.takePersistableUriPermission(
@@ -159,22 +163,9 @@ class MainActivity : FlutterActivity() {
         super.onStop()
     }
 
-    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        bridge?.close()
-        bridge = null
-        super.cleanUpFlutterEngine(flutterEngine)
-    }
-
     override fun onDestroy() {
         controller?.release()
         controller = null
         super.onDestroy()
-    }
-
-    private companion object {
-        const val FOLDER_REQUEST = 41
-        const val NOTIFICATION_REQUEST = 42
-        const val AUDIO_REQUEST = 43
-        const val ROOM_REQUEST = 44
     }
 }

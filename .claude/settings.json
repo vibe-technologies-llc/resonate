@@ -7,6 +7,7 @@
       "Bash(cargo tree:*)",
       "Bash(rust-formatter:*)",
       "Bash(python3 android/build-native.py:*)",
+      "Bash(android/gradlew -p android:*)",
       "Bash(python3 android/check-native.py:*)",
       "Bash(python3 ios/build-native.py:*)",
       "Bash(python3 ios/app-intents.py:*)",

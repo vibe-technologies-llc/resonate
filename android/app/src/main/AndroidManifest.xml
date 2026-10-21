@@ -15,8 +15,6 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Resonate"
         android:supportsRtl="true">
-        <meta-data android:name="flutterEmbedding" android:value="2" />
-        <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -24,7 +22,6 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
-            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/Theme.Resonate" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

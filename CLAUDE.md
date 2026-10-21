@@ -7,7 +7,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
-| `android.md` | Android Gradle project, the mobile boundary and binding tool | Flutter, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
+| `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target |
 | `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
@@ -39,8 +39,8 @@ playback is the guiding constraint.
   rates and **resamples itself at high quality**, so lossless sources stay bit-accurate where the
   hardware allows.
 - A **GPUI** front end, native on Wayland.
-- An **Android 13+ Flutter** front end, with the same Rust playback engine,
-  opened and run from the `android/` project in Android Studio; Dart lives in `android/flutter/`.
+- An **Android 13+ Jetpack Compose** front end (Material 3), with the same Rust playback engine,
+  opened and run from the `android/` project in Android Studio.
 - An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from
   Linux with xtool from the `ios/` package.
 
@@ -142,10 +142,6 @@ Invariants the layering protects (the rules files have the rest):
   lyrics, providers, studies, the equaliser's I/O, Discord.
 
 ## Commands
-
-- `cd android/flutter && flutter pub get && flutter analyze && flutter test`: Flutter dependencies,
-  analysis and presentation/bridge tests. CI pins Flutter 3.47.7; locate the SDK through
-  `FLUTTER_ROOT` or `flutter.sdk` in `android/local.properties`.
 
 - `android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`: Android APK, Kotlin/manifest
   checks; `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks native alignment and

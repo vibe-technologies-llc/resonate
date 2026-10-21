@@ -27,9 +27,8 @@ paths:
 
 ## Android
 
-The Android job installs Flutter 3.47.7, resolves Dart dependencies and runs Flutter analysis
-and widget tests. It builds the Flutter APK and runs Android lint, then instruments an API 36
-x86_64 emulator. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
+The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,
+then instruments an API 36 x86_64 emulator, Compose UI tests included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
 settings, NDK 28.2 and 16 KB ELF alignment. It runs the host binding tool against Android ELF
 metadata, so no Linux sound server or GUI libraries are needed for the Android build.
 

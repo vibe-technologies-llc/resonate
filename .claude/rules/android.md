@@ -7,39 +7,35 @@ paths:
 
 # Android
 
-The Android front end is Flutter, with Dart under `android/flutter/` and its native host in the
-Gradle project under `android/`. Android Studio opens `android/` and runs the shared
+The Android front end is Jetpack Compose with Material 3 (`material3` 1.5, expressive components),
+in the Gradle project under `android/`. Android Studio opens `android/` and runs the shared
 `Resonate Android` configuration in `.run/` (or the generated `app` Android configuration).
 The shared configuration targets `Resonate.app` and runs Gradle before deploying the default
-Activity, preserving app storage. The nested Dart package is built through that host, not a
-standalone Flutter Android runner; opening it and running `main.dart` searches for an absent
-second Android project under `android/flutter/android/`. Flutter 3.47.7 is
-pinned in CI. `flutter.sdk` in `android/local.properties` or `FLUTTER_ROOT` locates the SDK;
-settings pass the resolved path to Flutter's loader so an environment-only build needs no local
-properties file. Gradle builds Flutter assets, Rust and generated Kotlin bindings. Android 13
-(API 33) is the minimum. ARM64 phones and x86_64 emulators share the debug APK; SDK 36,
-build-tools 36 and NDK 28.2.13676358 are pinned. Python 3, Cargo and both Rust Android targets
-are build prerequisites. Host binding generation reads ELF metadata and needs no PipeWire.
+Activity, preserving app storage. Gradle builds Rust and the generated Kotlin bindings before
+Kotlin. Android 13 (API 33) is the minimum. ARM64 phones and x86_64 emulators share the debug APK;
+compile SDK 37 (the current Compose, Navigation 3 and MaterialKolor releases require it), target
+SDK 36, AGP 9.4, Gradle 9.8, Kotlin 2.4 (built-in Kotlin, with the Compose and serialization
+compiler plugins at the same version) and NDK 28.2.13676358 are pinned. Python 3, Cargo and both
+Rust Android targets are build prerequisites. Host binding generation reads ELF metadata and needs
+no PipeWire.
 
-The Flutter Gradle plugin uses the legacy AGP DSL, built-in Kotlin and KGP 2.2.20 on the plugin
-classpath. Flutter's automatic ABI filtering is disabled so the host's ARM64/x86_64 filters stay
-authoritative; an ARM32 Flutter engine without its Rust library must not admit an ARM32 install.
-Impeller is disabled in the manifest so the mature Skia OpenGL pipeline renders consistently
-without experimental OpenGLES fallback on devices lacking Vulkan.
-`MainActivity` is a `FlutterActivity`. `FlutterBridge` exposes explicit method-channel actions
-and state-flow patches; `FlutterWire` maps records to codec values without reflection. Unsigned
-64-bit identities, positions and revisions travel as decimal text. The bridge qualifies
-`kotlin.Exception`, since UniFFI exports an `Exception` that must not hide ordinary lookup or
-argument failures. Dart owns the screens; Kotlin retains SAF, encrypted accounts, workers,
-Media3 and services. Compact and album home-screen widgets use RemoteViews with rounded,
+`MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
+the `MediaController` connection and implements `ui.Host` (folder and room-response pickers,
+Downloads with its permission, notifications, sharing, opening a link) through activity-result
+launchers. The UI calls the repository and the generated bindings directly: there is no bridge,
+so the compiler holds the contract. `ui.Resonate` carries the repository, `Playback` (controller
+actions: play a list from a row, toggle, seek, jump, shuffle, repeat, volume) and the host, through
+`LocalResonate`; `attempt` runs a native call and says its failure on the status banner, `read`
+answers a `Result`. Each screen has a ViewModel (`resonateViewModel`, scoped to its navigation
+entry) exposing typed `StateFlow`s; no screen reads an untyped map or names an action by string.
+Kotlin retains SAF, encrypted accounts, workers, Media3 and services.
+Compact and album home-screen widgets use RemoteViews with rounded,
 artwork-tinted surfaces and system light/dark colors. Explicit, immutable PendingIntents send
 transport actions through a short-lived Media3 controller, preserving audio focus and the
 service lifecycle. Metadata and the bounded session thumbnail are kept in app preferences for
 launcher refresh after process death; that fallback is paused until a live session publishes.
 Widget updates deduplicate metadata, artwork and playing state instead of sending polling ticks
 to the launcher. No widget starts a second engine or decodes the original music file.
-Compose dependencies and the old screens are removed together
-with their Activity entry point and instrumentation selectors, so a build cannot mix the two UIs.
 
 Each APK variant owns its native build task. Release uses Cargo's release profile, including
 optimization and thin LTO, in a separate generated directory and packages ARM64 alone without
@@ -50,8 +46,8 @@ key or password stored in the repository: the `release` signing config exists on
 properties `resonate.signing.storeFile`, `.storePassword`, `.keyAlias` and `.keyPassword` (or the
 environment variables `RESONATE_SIGNING_STORE_FILE`, `_STORE_PASSWORD`, `_KEY_ALIAS` and
 `_KEY_PASSWORD`) name a keystore, and without them `assembleRelease` leaves the APK unsigned, never
-signed with the debug key. Flutter enables R8 for release and includes
-`app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
+signed with the debug key. Release enables R8 and resource shrinking with
+`proguard-android-optimize.txt` and `app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
 including names, fields, constructors and native entry points used through JNI and reflection.
 The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning
 suppressions; no missing Android or native-boundary type is suppressed.
@@ -78,8 +74,9 @@ shape; themed icons use the monochrome layer rather than a tinted full-color til
 
 ## Audio and lifecycle
 
-`MediaLibraryService` owns a Media3 adapter over the Rust player. Flutter reads published state
-and sends controller actions; it performs no file, decode, catalog or network work. The adapter
+`MediaLibraryService` owns a Media3 adapter over the Rust player. The UI reads published state
+and sends controller actions; it performs no file, decode, catalog or network work on the main
+thread. The adapter
 publishes metadata and transport state to notifications, media keys and lock-screen controls.
 The session activity opens or reuses the main Activity when its notification is tapped. Current
 artwork is decoded off the main thread and encoded into a thumbnail bounded at 384 pixels and
@@ -452,7 +449,7 @@ applied at start (`initialize`), a missing file turning correction off with a no
 applying, forgetting and restoring run one at a time under one mutex.
 
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
-and the existing fade into a pause. Snapshot polling carries the remaining time; Flutter keeps no
+and the existing fade into a pause. Snapshot polling carries the remaining time; the UI keeps no
 timer, so the countdown and pause continue with the Activity in the background. A timer is not
 restored into a later engine session.
 
@@ -522,7 +519,7 @@ as `org.resonate.playlist` (held by a test).
 
 Lyrics prefer saved embedded/sidecar text, fetch LRCLIB only when online, and retain a richer saved
 sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;
-Flutter reads its `read_at`, `active` and `wipes`) drives line/word highlights, scrolling, scale, opacity
+the lyric pane reads its `read_at`, `active` and `wipes`) drives line/word highlights, scrolling, scale, opacity
 and blur; tapping a timed line seeks the player.
 Analysis uses the shared whole-track pass for waveform, spectrum, lossless assessment, LUFS, DR,
 true peak, clipping and bit use. Eight full results are cached in memory, invalidated on rescan;
@@ -673,7 +670,7 @@ only when those choices and online permit it. Restricting an automatic pass to W
 when the network becomes metered. Explicit refresh confirms the library count, restarts with
 refresh enabled and offers Stop; retrying missing covers clears only the existing cover retry
 marks. Kotlin reads progress and artwork revisions every two seconds while the Activity is
-visible and a pass runs, updates Flutter's artwork generation and refreshes completed catalog
+visible and a pass runs, updates the artwork generation the UI keys covers by and refreshes completed catalog
 metadata. Leaving the Activity stops observation; native shutdown owns stopping the pass.
 The controller awaits the engine before taking its operation mutex, and repeated foreground
 notifications do nothing: the first Activity start can precede the service's engine creation,
@@ -730,8 +727,8 @@ foreground service retains the engine and offers cancellation; a download waits 
 that service to start and then fails with a notice, so one that never starts cannot hold the
 download slot (`DOWNLOAD_SERVICE_STARTS_WITHIN_MS`). Choosing Downloads writes its preference on the IO
 dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
-`CoroutineExceptionHandler` that logs and says the failure, and the bridge answers every call, a
-`LinkageError` from the native library included, so a Dart future never waits for ever.
+`CoroutineExceptionHandler` that logs and says the failure, and `Resonate.attempt` catches every
+native failure, a `LinkageError` included, so a screen never waits for ever.
 
 **A download is a job** (`downloads.rs`), several at once: `begin_download(song)` answers its
 number, `find_download(job, accounts)` races every account through `Providers::first` (registration

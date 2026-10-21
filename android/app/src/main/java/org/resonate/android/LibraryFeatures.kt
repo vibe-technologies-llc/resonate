@@ -822,11 +822,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
         mutableArtChanges.tryEmit(songs)
     }
 
-    suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? =
+    suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? = artworkBitmap(track.id, edge)
+
+    suspend fun artworkBitmap(song: ULong, edge: Int): Bitmap? =
         withContext(Dispatchers.IO) {
             try {
                 val native = library.native()
-                val picture = native.artworkPicture(track.id) ?: return@withContext null
+                val picture = native.artworkPicture(song) ?: return@withContext null
                 bitmapOf(native, picture, edge)
             } catch (cancelled: CancellationException) {
                 throw cancelled
