@@ -21,6 +21,7 @@ import org.resonate.android.ui.settings.ProvidersScreen
 import org.resonate.android.ui.settings.ScrobblingScreen
 import org.resonate.android.ui.settings.SettingsScreen
 import org.resonate.android.ui.settings.StatisticsScreen
+import org.resonate.android.ui.settings.IdenticalSongsScreen
 import org.resonate.android.ui.settings.SuggestionsScreen
 import org.resonate.android.ui.settings.SyncScreen
 import org.resonate.android.ui.tools.AnalysisScreen
@@ -52,6 +53,7 @@ fun ScreenContent(screen: Screen) {
         Screen.LibraryTools -> LibraryToolsScreen()
         Screen.Statistics -> StatisticsScreen()
         Screen.Suggestions -> SuggestionsScreen()
+        Screen.IdenticalSongs -> IdenticalSongsScreen()
         Screen.Wanted -> WantedScreen()
         Screen.Providers -> ProvidersScreen()
         Screen.Scrobbling -> ScrobblingScreen()

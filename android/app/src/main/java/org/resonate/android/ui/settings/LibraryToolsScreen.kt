@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -207,6 +208,15 @@ fun LibraryToolsScreen() {
                     icon = Icons.Rounded.AutoAwesome,
                     supporting = "Mixes from your music and listening",
                     onClick = { navigator.open(Screen.Suggestions) },
+                )
+            }
+            item(key = "identical") {
+                SettingRow(
+                    title = "Identical songs",
+                    icon = Icons.Rounded.ContentCopy,
+                    supporting = "Find songs stored twice and keep one file",
+                    onClick = { navigator.open(Screen.IdenticalSongs) },
+                    modifier = Modifier.testTag("identical-songs"),
                 )
             }
             item(key = "wanted") {

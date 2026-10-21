@@ -34,6 +34,8 @@ interface Host {
     fun share(title: String, link: String)
 
     fun open(link: Uri)
+
+    suspend fun confirmDelete(uris: List<Uri>): Boolean
 }
 
 enum class Repeat {
@@ -105,6 +107,11 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
         get() = library.features
 
     val syncAskedAt = MutableStateFlow<Long?>(null)
+
+    fun deleteSongs(tracks: List<Track>) = features.deleteSongs(tracks, host::confirmDelete)
+
+    suspend fun deleteCopies(sets: List<org.resonate.android.nativecore.IdenticalSongs>) =
+        features.deleteCopies(sets, host::confirmDelete)
 
     fun forceSync(scope: CoroutineScope): Job {
         syncAskedAt.value = SystemClock.elapsedRealtime()

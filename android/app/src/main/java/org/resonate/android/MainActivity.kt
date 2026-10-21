@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -23,7 +24,10 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Host
 import org.resonate.android.ui.Playback
@@ -50,6 +54,11 @@ class MainActivity : ComponentActivity(), Host {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) library.features.useDownloadsAndScan()
             else library.notice("Allow music access to read existing songs in Downloads")
+        }
+    private var deleteAnswer: CompletableDeferred<Boolean>? = null
+    private val deleteConsent =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            deleteAnswer?.complete(result.resultCode == RESULT_OK)
         }
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -165,6 +174,18 @@ class MainActivity : ComponentActivity(), Host {
         if (link.scheme == "https" || link.scheme == "http") {
             startActivity(Intent(Intent.ACTION_VIEW, link))
         }
+    }
+
+    override suspend fun confirmDelete(uris: List<Uri>): Boolean {
+        val answer = CompletableDeferred<Boolean>()
+        deleteAnswer = answer
+        val request =
+            IntentSenderRequest.Builder(
+                    MediaStore.createDeleteRequest(contentResolver, uris).intentSender
+                )
+                .build()
+        withContext(Dispatchers.Main) { deleteConsent.launch(request) }
+        return answer.await()
     }
 
     override fun allowNotifications() {

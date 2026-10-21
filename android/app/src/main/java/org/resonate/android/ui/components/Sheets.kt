@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -76,6 +79,7 @@ import org.resonate.android.ui.navigation.Navigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.DeletionSentences
 
 data class SongSheetRequest(val track: Track, val queueId: ULong? = null, val inPlayer: Boolean = false)
 
@@ -86,6 +90,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var song by mutableStateOf<SongSheetRequest?>(null)
     var picker by mutableStateOf<List<Track>?>(null)
     var naming by mutableStateOf<NamingRequest?>(null)
+    var deleting by mutableStateOf<List<Track>?>(null)
 
     fun song(track: Track, queueId: ULong? = null, inPlayer: Boolean = false) {
         song = SongSheetRequest(track, queueId, inPlayer)
@@ -144,6 +149,38 @@ fun SheetHost() {
     sheets.song?.let { request -> SongSheet(request) { sheets.song = null } }
     sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
     sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
+    sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
+}
+
+@Composable
+private fun DeleteSongsDialog(tracks: List<Track>, dismiss: () -> Unit) {
+    val resonate = LocalResonate.current
+    AlertDialog(
+        onDismissRequest = dismiss,
+        icon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
+        title = { Text(DeletionSentences.title(tracks.map { it.shownTitle })) },
+        text = {
+            Text(
+                if (tracks.size == 1)
+                    "Its file is deleted from your phone, and it leaves the queue, your playlists and favourites."
+                else
+                    "Their files are deleted from your phone, and they leave the queue, your playlists and favourites."
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    resonate.deleteSongs(tracks)
+                    dismiss()
+                },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.testTag("confirm-delete"),
+            ) {
+                Text(if (tracks.size == 1) "Delete song" else "Delete ${tracks.size} songs")
+            }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -184,6 +221,11 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             navigator.open(Screen.Details(track.id))
         })
         add(SheetAction(Icons.Rounded.Share, "Share link") { resonate.shareLink(track, scope) })
+        if (resonate.features.songDeletable(track)) {
+            add(SheetAction(Icons.Rounded.DeleteOutline, "Delete song", destructive = true) {
+                sheets.deleting = listOf(track)
+            })
+        }
         if (request.inPlayer) {
             add(SheetAction(Icons.Rounded.Equalizer, "Equaliser") { navigator.open(Screen.Equaliser) })
             add(SheetAction(Icons.Rounded.Speaker, "Audio output") { navigator.open(Screen.Output) })
@@ -217,7 +259,7 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             actions.forEach { action ->
-                SheetRow(action.icon, action.label) {
+                SheetRow(action.icon, action.label, destructive = action.destructive) {
                     dismiss()
                     action.run()
                 }
@@ -226,13 +268,24 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
     }
 }
 
-private class SheetAction(val icon: ImageVector, val label: String, val run: () -> Unit)
+private class SheetAction(
+    val icon: ImageVector,
+    val label: String,
+    val destructive: Boolean = false,
+    val run: () -> Unit,
+)
 
 @Composable
-fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun SheetRow(icon: ImageVector, label: String, destructive: Boolean = false, onClick: () -> Unit) {
+    val ink = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified
     ListItem(
         onClick = onClick,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        colors =
+            ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = if (destructive) ink else MaterialTheme.colorScheme.onSurface,
+                leadingContentColor = if (destructive) ink else MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
         leadingContent = { Icon(icon, contentDescription = null) },
     ) {
         Text(label)

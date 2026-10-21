@@ -50,6 +50,7 @@ import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.MissingSongs
+import org.resonate.android.nativecore.IdenticalSongs
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.ReceivedSong
@@ -936,6 +937,44 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
             null
         }
+
+    fun songDeletable(track: Track): Boolean =
+        track.uri.startsWith(OpenedNames.LOCAL_PREFIX) ||
+            folders.value.any { it.writable && track.uri.startsWith(MusicDocuments.prefix(it.uri)) }
+
+    fun songsLeft() = work { native ->
+        library.refresh()
+        playlists.value = native.playlists()
+        openPlaylist.value?.let { id ->
+            if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
+        }
+    }
+
+    fun deleteSongs(tracks: List<Track>, consent: suspend (List<Uri>) -> Boolean) {
+        scope.launch {
+            try {
+                val deleted = SongDeletion(context, library, consent).delete(tracks)
+                if (deleted.removed > 0) songsLeft()
+                tellDeleted(deleted)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
+        }
+    }
+
+    suspend fun deleteCopies(sets: List<IdenticalSongs>, consent: suspend (List<Uri>) -> Boolean) {
+        val deleted = SongDeletion(context, library, consent).foldCopies(sets)
+        if (deleted.folded > 0) songsLeft()
+        if (deleted.kept > 0) library.report(IllegalStateException(DeletionSentences.kept(deleted.kept)))
+        else if (deleted.folded > 0) library.notice(DeletionSentences.folded(deleted.folded))
+    }
+
+    private fun tellDeleted(deleted: Deleted) {
+        if (deleted.kept > 0) library.report(IllegalStateException(DeletionSentences.kept(deleted.kept)))
+        else library.notice(DeletionSentences.deleted(deleted.titles))
+    }
 
     fun loadPlaylists() = work { native -> playlists.value = native.playlists() }
 

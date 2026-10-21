@@ -483,7 +483,14 @@ left out. `fold_identical_songs(kept, copies)`, called after the copies' files a
 copy's favourite, playlist rows, listens, lyrics and studies to the one kept (`handed_over`, the
 missing-song merge) and drops its queue rows
 (`folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept`,
-`a_deleted_song_leaves_the_catalog_the_queue_and_its_playlists`). Only iOS calls them yet.
+`a_deleted_song_leaves_the_catalog_the_queue_and_its_playlists`). Both phones call them. **Android deletes
+through `SongDeletion`**: the song sheet's *Delete song* (shown where the song's folder is writable or it is
+a copy in `files/opened`, `songDeletable`; confirmed) and Library tools' *Identical songs* (a tap
+chooses the copy kept, *Delete copies*, confirmed) remove each file (`MusicDocuments.delete`: a SAF
+`deleteDocument`, a MediaStore delete, or the opened copy), and only the songs whose files went are
+forgotten or folded; a file the app does not own in MediaStore (a `SecurityException`) is collected and
+asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
+stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`).
 
 **A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
 `plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as

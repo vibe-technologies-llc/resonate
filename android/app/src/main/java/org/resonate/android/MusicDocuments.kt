@@ -103,7 +103,11 @@ object MusicDocuments {
     }
 
     private fun rowStands(context: Context, uri: Uri): Boolean =
-        context.contentResolver
-            .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
-            ?.use { it.moveToFirst() } ?: false
+        try {
+            context.contentResolver
+                .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                ?.use { it.moveToFirst() } ?: false
+        } catch (gone: SecurityException) {
+            false
+        }
 }

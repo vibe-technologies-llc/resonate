@@ -53,6 +53,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Suggestions : Screen
 
+    @Serializable data object IdenticalSongs : Screen
+
     @Serializable data object Wanted : Screen
 
     @Serializable data object Providers : Screen

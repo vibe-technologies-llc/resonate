@@ -4,9 +4,6 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [M] Android cannot delete a song or fold identical files: `forget_deleted_songs`,
-  `identical_songs` and `fold_identical_songs` are exported and only iOS calls them; a SAF document
-  is deleted through `DocumentsContract.deleteDocument` before the rows are forgotten
 - [M] Android does not organise its folders or bind a curve to an output; iOS does both (moves in
   Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
 - [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
