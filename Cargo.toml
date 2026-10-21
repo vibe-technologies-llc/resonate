@@ -71,7 +71,7 @@ thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }
 imbl = { version = "7.0.2", default-features = false }
 qrcode = { version = "0.14.1", default-features = false }
-parking_lot = { version = "0.12.5", default-features = false }
+parking_lot = { version = "0.13.0", default-features = false }
 notify = { version = "8.2.0", default-features = false }
 bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
@@ -158,7 +158,7 @@ md-5 = { version = "0.11.0", default-features = false }
 crc32fast = { version = "1.5.3", default-features = false, features = ["std"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.1", default-features = false, features = ["std"] }
-ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
+ureq = { version = "3.5.0", default-features = false, features = ["rustls", "gzip"] }
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
 webpki-root-certs = { version = "1.0.10", default-features = false }
@@ -170,7 +170,7 @@ quinn = {
     default-features = false,
     features = ["runtime-tokio", "rustls-ring"]
 }
-tokio = { version = "1.54.0", default-features = false }
+tokio = { version = "1.54.1", default-features = false }
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 ring = { version = "0.17.14", default-features = false }
 rustls-pki-types = { version = "1.15.1", default-features = false }
