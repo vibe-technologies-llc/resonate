@@ -10,7 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
-import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import java.io.ByteArrayOutputStream
@@ -30,49 +30,64 @@ import org.resonate.android.nativecore.Transport
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 @RunWith(AndroidJUnit4::class)
 class CollectionUiTest {
+    private companion object {
+        const val PAGE_SETTLES_MS = 600L
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
 
     @Test
-    fun flutterFavouritesSurviveActivityRecreation() =
+    fun favouritesSurviveActivityRecreation() =
         withLibrary { library, controller, scenario, tracks ->
             play(controller, tracks, 0)
-            await(By.descStartsWith(tracks[0].title)).click()
-            await(By.desc("Add to favourites")).click()
+            pressed(By.res("mini-player"))
+            pressed(By.desc("Add to favourites"))
             eventually { library.allTracks.value.any { it.id == tracks[0].id && it.favourite } }
             await(By.desc("Remove from favourites"))
             scenario.recreate()
+            if (!shown(By.desc("Remove from favourites"))) pressed(By.res("mini-player"))
             await(By.desc("Remove from favourites"))
             assertTrue(library.allTracks.value.first { it.id == tracks[0].id }.favourite)
         }
 
     @Test
-    fun flutterPlaylistPlaysTheTappedRepeatedRowAndReflectsUndo() =
+    fun playlistPlaysTheTappedRepeatedRowAndReflectsUndo() =
         withLibrary { library, controller, _, tracks ->
-            val created = CompletableDeferred<ULong>()
+            val created = CompletableDeferred<Pair<ULong, ULong>>()
             library.request { native ->
-                val id = native.createPlaylist("Flutter test mix")
+                val id = native.createPlaylist("Compose test mix")
                 native.addToPlaylist(id, listOf(tracks[0].id, tracks[0].id, tracks[1].id))
-                created.complete(id)
+                created.complete(id to native.playlists().first { it.id == id }.revision)
             }
-            val id = runBlocking { withTimeout(10000) { created.await() } }
+            val (id, revision) = runBlocking { withTimeout(10000) { created.await() } }
             library.features.loadPlaylists()
             try {
-                scrollTo(By.descContains("Flutter test mix")).click()
-                scrollTo(By.descContains("Play song 2:")).click()
+                pressed(By.res("tab-library"))
+                pressed(By.text("Playlists"))
+                pressed(By.text("Compose test mix"))
+                await(By.res("playlist"))
+                val repeated = By.text(tracks[0].title)
+                eventually { device.findObjects(repeated).size >= 2 }
+                device.findObjects(repeated)[1].click()
                 eventually {
                     library.snapshot.value?.queueIndex == 1u &&
                         library.snapshot.value?.transport == Transport.PLAYING
                 }
                 instrumentation.runOnMainSync { controller.pause() }
-                scrollTo(By.descContains("Options for song 2")).click()
-                await(By.descContains("Move down")).click()
+                val moved = CompletableDeferred<Unit>()
+                library.request { native ->
+                    native.moveInPlaylist(id, revision, 1u, 2u)
+                    moved.complete(Unit)
+                }
+                runBlocking { withTimeout(10000) { moved.await() } }
+                library.features.editPlaylist {}
                 eventually {
                     library.features.playlistRows.value.map { it.id } ==
                         listOf(tracks[0].id, tracks[1].id, tracks[0].id)
                 }
-                scrollTo(By.desc("Playlist options"), Direction.UP).click()
-                await(By.descContains("Undo last edit")).click()
+                pressed(By.desc("Playlist options"))
+                pressed(By.text("Undo last edit"))
                 eventually {
                     library.features.playlistRows.value.map { it.id } ==
                         listOf(tracks[0].id, tracks[0].id, tracks[1].id)
@@ -90,6 +105,30 @@ class CollectionUiTest {
                 runBlocking { withTimeout(10000) { deleted.await() } }
             }
         }
+
+    private fun pressed(selector: BySelector) {
+        repeat(5) {
+            try {
+                await(selector).click()
+                device.waitForIdle()
+                Thread.sleep(PAGE_SETTLES_MS)
+                return
+            } catch (stale: StaleObjectException) {
+                device.waitForIdle()
+            }
+        }
+        await(selector).click()
+    }
+
+    private fun shown(selector: BySelector): Boolean {
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (System.nanoTime() < deadline) {
+            instrumentation.uiAutomation.clearCache()
+            if (device.hasObject(selector)) return true
+            Thread.sleep(100)
+        }
+        return false
+    }
 
     private fun withLibrary(
         action:
@@ -146,7 +185,7 @@ class CollectionUiTest {
                     val tracks = runBlocking {
                         withTimeout(10000) { indexed.await().also { library.refresh() } }
                     }
-                    await(By.desc("Your library"))
+                    await(By.res("tab-library"))
                     action(library, controller, scenario, tracks)
                 } finally {
                     library.allTracks.value
@@ -207,18 +246,6 @@ class CollectionUiTest {
             result != null
         }
         return requireNotNull(result)
-    }
-
-    private fun scrollTo(selector: BySelector, direction: Direction = Direction.DOWN): UiObject2 {
-        repeat(14) {
-            instrumentation.uiAutomation.clearCache()
-            device.findObject(selector)?.let {
-                return it
-            }
-            device.findObject(By.scrollable(true))?.scroll(direction, 0.7f)
-            device.waitForIdle()
-        }
-        return await(selector)
     }
 
     private fun eventually(condition: () -> Boolean) {

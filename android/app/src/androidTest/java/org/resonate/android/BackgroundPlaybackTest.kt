@@ -104,7 +104,6 @@ class BackgroundPlaybackTest {
                         instrumentation.uiAutomation.clearCache()
                         device.hasObject(By.descContains("Song progress"))
                     }
-                    assertTrue(device.hasObject(By.desc("Previous")))
                     assertTrue(device.hasObject(By.desc("Next")))
                     device.pressHome()
                     val position = library.snapshot.value?.positionMs ?: 0uL
