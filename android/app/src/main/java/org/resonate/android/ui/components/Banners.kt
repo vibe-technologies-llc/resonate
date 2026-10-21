@@ -6,7 +6,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -64,7 +63,7 @@ fun Banners(modifier: Modifier = Modifier) {
         }
     }
     val activity = syncActivity(sync, asked, now)
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.fillMaxWidth()) {
         AnimatedVisibility(
             scanning,
             enter = expandVertically() + fadeIn(),
@@ -105,7 +104,7 @@ private fun ProgressBanner(icon: ImageVector, label: String, fraction: Float?, d
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.large,
         modifier =
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics {
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp).semantics {
                 liveRegion = LiveRegionMode.Polite
                 contentDescription = label
             },
@@ -147,7 +146,7 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
         shape = MaterialTheme.shapes.large,
         modifier =
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics {
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp).semantics {
                 liveRegion = LiveRegionMode.Polite
             },
     ) {

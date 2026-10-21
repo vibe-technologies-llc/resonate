@@ -261,7 +261,8 @@ Home stays composed beside the selected root. A pushed page slides a sixth of th
 (300 ms), and the pop reverses it; each page is a `Page`, a Scaffold with a large, medium or small
 flexible top bar that stays `surface` when content scrolls under it (no scrolled container colour). Below the pages, above the bar, sit the banners and the mini-player, so they show
 on every page. The scaffold and the box beneath it paint `surface`, as the pages do, so the strip
-behind the banners is the page's colour. The empty library's *Welcome* scrolls, so the banners
+behind the banners is the page's colour. Each banner carries its own 8 dp above it and the column none,
+so with no banner shown the mini player's gap above equals the one below. The empty library's *Welcome* scrolls, so the banners
 arriving on a first scan never squeeze its buttons.
 
 **Banners** are three, all `LiveRegion`s: *Reading music folder*, *Syncing with your devices* or

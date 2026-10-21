@@ -158,7 +158,7 @@ fun ResonateApp(resonate: Resonate) {
                                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
                             )
                         }
-                        Banners(Modifier.padding(top = 8.dp))
+                        Banners()
                         MiniPlayer(player, expansion)
                     }
                 }
