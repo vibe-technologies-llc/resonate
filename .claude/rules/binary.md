@@ -236,8 +236,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   only on request). Off whenever `online` is, unless `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window
   holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the latter).
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
-  on. `hosted-services` (default false) lets blank/absent fall back to the hosted services
-  (`tracks.monochrome.st`); without it nothing hosted is registered (`providers.md`).
+  on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
+  (`tracks.monochrome.st`); with it off nothing hosted is registered (`providers.md`).
 - **A rotated TIDAL refresh token that could not be written is told, not lost quietly.**
   `providers::Keeping::unkept` holds the last `TidalTokenNotKept` (the write failed) or
   `TidalTokenHasNoSettings` (no config directory and no `--config`); `resonate poll` ends with it

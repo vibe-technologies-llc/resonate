@@ -374,8 +374,8 @@ fetched whole and lands as a track row.
 
 `HifiApi`, same crate, is the second way to a TIDAL subscription. With `online` on,
 `providers::registry` registers it after `Tidal` as `hifi-api`: on a server the `hifi-api` setting
-names, else on the hosted service **only where `hosted-services` (default off) is on**, so nothing
-reaches a third party's service without the listener's say (`a_hifi_api_server_the_listener_named_is_registered_without_hosted_services`,
+names, else on the hosted service **only where `hosted-services` (default on) is on**, so the listener can
+turn every third party's service off with one switch (`a_hifi_api_server_the_listener_named_is_registered_without_hosted_services`,
 `the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services`). The hosted
 service holds no listener credential: its tokens are cached until shortly before expiry and sent
 only to their own issuer or API, asking in this build's name alone, never with another site's
@@ -405,7 +405,7 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 
 `resonate-monochrome` asks the track streamer behind Monochrome. With `online` on,
 `providers::registry` registers it after `hifi-api` as `monochrome`, asking the server the
-`monochrome` setting names, else `tracks.monochrome.st` only where `hosted-services` is on. The
+`monochrome` setting names, else `tracks.monochrome.st` only where `hosted-services` is on (the default). The
 binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services; `hosting` answers `None`
 for neither a name nor the opt-in. The settings pane's TIDAL group carries the switch *Ask the
 hosted services* (`Online::hosted_services`, `Setting::HostedServices`); *Forget* in that group

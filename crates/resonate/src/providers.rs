@@ -537,7 +537,10 @@ mod tests {
     #[cfg(feature = "online")]
     #[test]
     fn the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services() {
-        let unasked = Config::default();
+        let unasked = Config {
+            hosted_services: Some(false),
+            ..Config::default()
+        };
         assert!(!named(&unasked).contains(&"hifi-api".to_owned()));
         assert_eq!(hosting(None, false), None);
         assert_eq!(hosting(Some("  "), false), None);
@@ -581,8 +584,12 @@ mod tests {
     #[cfg(feature = "online")]
     #[test]
     fn the_hosted_monochrome_is_registered_after_hifi_api_only_when_hosted_services_are_allowed() {
-        assert!(!named(&Config::default()).contains(&"monochrome".to_owned()));
-        assert_eq!(Accounts::of(&Config::default()).monochrome, None);
+        let unasked = Config {
+            hosted_services: Some(false),
+            ..Config::default()
+        };
+        assert!(!named(&unasked).contains(&"monochrome".to_owned()));
+        assert_eq!(Accounts::of(&unasked).monochrome, None);
 
         let allowed = Config {
             hosted_services: Some(true),

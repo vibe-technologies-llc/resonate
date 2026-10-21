@@ -475,7 +475,7 @@ impl Config {
 
     #[cfg(any(feature = "online", feature = "ui"))]
     pub fn hosted_services_allowed(&self) -> bool {
-        self.hosted_services.unwrap_or(false)
+        self.hosted_services.unwrap_or(true)
     }
 
     #[cfg(any(feature = "sync", test))]

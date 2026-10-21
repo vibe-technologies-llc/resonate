@@ -89,8 +89,8 @@ const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, you
                           you run can replace it. Both use the same ISRC and whole-track checks. \
                           Monochrome's hosted service is asked too, by ISRC alone, for the whole \
                           FLAC; a Monochrome server you name can replace it. The hosted services \
-                          are asked only where Ask the hosted services is on; a server you name \
-                          is asked without it. Asked as soon as they are given, and only while \
+                          are asked unless Ask the hosted services is turned off; a server you name \
+                          is asked either way. Asked as soon as they are given, and only while \
                           Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
