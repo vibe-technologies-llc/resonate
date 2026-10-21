@@ -679,6 +679,22 @@ delivery `index_download` refuses as `WrongSong` is declined by every later find
 by the song's wanted identity and the place it was taken from, and each refusal written sweeps the
 rows past that age.
 
+**Android runs the jobs as a queue** (`DownloadQueue`, its arithmetic `DownloadPlan`): `download(songs,
+folder)` adds a job a song at a time (a song already waiting or running is not added again) and at most
+`AT_ONCE` (2) run together, each its own `begin_download`, `find_download`, document, `download_offer`,
+`index_download` and publish; the first to start asks for the foreground service and every job waits
+for it (10 s). A cancel stops one job, Cancel on the card all. The card, notification and `downloading`
+read the jobs: one says *Finding*, *Downloading* or *Downloaded name · KiB*, a batch *Downloading 2 of 3 ·
+…* and then *Downloaded 3 of 3 songs*, naming the first failure. Each created document is journalled in
+`unfinished-downloads` (a set; the old single `unfinished-download` is still recovered) until its job
+is done, so a crash deletes each half-made one. *Remember this folder* in the chooser keeps a folder
+(`download-folder`), after which a download goes straight there; **Saved for later** offers *Download N missing
+songs* and *Download saved songs automatically* (on unless switched off, `download-wants-automatically`).
+Automatic asking runs only while the Activity is visible, online is on and the network unmetered,
+a provider is set up and the remembered folder is readable and writable: it waits for
+`next_wanted_due` (30 s at least, 30 min at most), asks `poll_wanted_due`, and enqueues what is not already
+held, not asking one song again for 30 minutes (`DownloadPlanTest`, `DownloadQueueTest`).
+
 Only a fresh SAF document or pending Downloads row is opened for writing; its URI is journalled
 before streaming, bytes are bounded at 8 GiB, and codec probe/duration validation (within
 `LENGTHS_AGREE_WITHIN`) precedes

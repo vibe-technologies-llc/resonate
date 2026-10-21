@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import org.json.JSONException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +29,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -103,21 +106,10 @@ data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolea
 data class RefusedLanding(val until: Long, val tries: Int)
 
 private const val LANDING_PAUSE_MS = 60000L
-private const val DOWNLOAD_SERVICE_STARTS_WITHIN_MS = 10000L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 300000L
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val RECENT_SEARCHES_KEPT = 10
-
-private fun mimeOf(extension: String) =
-    when (extension) {
-        "flac" -> "audio/flac"
-        "mp3" -> "audio/mpeg"
-        "m4a" -> "audio/mp4"
-        "ogg",
-        "opus" -> "audio/ogg"
-        else -> "application/octet-stream"
-    }
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
     private val scope =
@@ -147,9 +139,46 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val selectedOutput = MutableStateFlow(0)
     val actualOutput = MutableStateFlow(0)
     val providerAccount = MutableStateFlow<DownloadAccount?>(null)
-    val downloading = MutableStateFlow(false)
-    val downloadedBytes = MutableStateFlow(0uL)
-    val downloadStatus = MutableStateFlow<String?>(null)
+    private val downloadSeams =
+        object : DownloadSeams {
+            override fun account() = providerAccount.value
+
+            override fun renewed(token: String) {
+                providerAccount.value?.let {
+                    val renewed = it.copy(refreshToken = token)
+                    accounts.write(renewed)
+                    providerAccount.value = renewed
+                }
+            }
+
+            override fun online() = online.value
+
+            override fun unmetered() = unmetered
+
+            override fun foreground() = foreground
+
+            override fun writable(folder: String?) =
+                folder != null &&
+                    folders.value.any { it.uri.toString() == folder && it.readable && it.writable }
+
+            override suspend fun landed() {
+                library.refresh()
+                refreshArtwork()
+                enrichment.begin()
+                refreshWanted(library.native())
+            }
+        }
+    val downloads = DownloadQueue(context, library, scope, settings, downloadSeams)
+    val downloading: StateFlow<Boolean> =
+        downloads.jobs
+            .map { jobs -> jobs.any { !it.state.settled } }
+            .stateIn(scope, SharingStarted.Eagerly, false)
+    val downloadedBytes: StateFlow<ULong> =
+        downloads.jobs
+            .map(DownloadPlan::received)
+            .stateIn(scope, SharingStarted.Eagerly, 0uL)
+    val downloadStatus: StateFlow<String?> =
+        downloads.jobs.map(DownloadPlan::summary).stateIn(scope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val statistics = MutableStateFlow<LibraryStatistics?>(null)
@@ -192,8 +221,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val lyricRequest = AtomicLong()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
-    private var downloadReady = CompletableDeferred<Unit>()
-    @Volatile private var downloadJob: ULong? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
@@ -216,7 +243,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val landingRefused = mutableMapOf<ULong, RefusedLanding>()
 
     fun downloadServiceReady() {
-        downloadReady.complete(Unit)
+        downloads.serviceStarted()
     }
 
     private val pictures =
@@ -301,15 +328,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
         native.configureOnline(online.value)
         enrichment.initialize(online.value)
-        if (!downloading.value)
-            settings.getString("unfinished-download", null)?.let { value ->
-                try {
-                    MusicDocuments.delete(context, Uri.parse(value))
-                    settings.edit().remove("unfinished-download").commit()
-                } catch (failure: Exception) {
-                    library.report(failure)
-                }
-            }
+        downloads.recover()
         settings.getString("unfinished-sync-landing", null)?.let { value ->
             try {
                 MusicDocuments.delete(context, Uri.parse(value))
@@ -346,6 +365,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             native.configureOnline(enabled)
             online.value = enabled
+            downloads.wantsChanged()
             enrichment.onlineChanged(enabled)
             settings.edit().putBoolean("online", enabled).commit()
             applySync(native)
@@ -395,6 +415,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun foreground(visible: Boolean) {
         foreground = visible
         enrichment.foreground(visible)
+        downloads.wantsChanged()
         if (visible) forgetMissing(afterScan = false)
     }
 
@@ -490,6 +511,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (free == unmetered) return
         unmetered = free
         enrichment.networkChanged(free)
+        downloads.wantsChanged()
         work { it.syncNetwork(free) }
     }
 
@@ -1031,10 +1053,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
             }
         actualOutput.value = native.outputDevice()
-        if (downloading.value)
-            downloadJob?.let(native::downloadProgress)?.let { progress ->
-                downloadedBytes.value = progress.received
-            }
+        if (downloading.value) downloads.follow(native)
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
     }
 
@@ -1217,78 +1236,23 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun saveProviderAccount(account: DownloadAccount) = work {
         accounts.write(account)
         providerAccount.value = account
+        downloads.wantsChanged()
         library.notice("Download provider saved")
     }
 
     fun download(song: SearchSong, folder: MusicFolder) {
-        if (downloading.value) return
-        val account = providerAccount.value ?: return
-        downloadJob = null
-        downloading.value = true
-        downloadReady = CompletableDeferred()
-        try {
-            context.startForegroundService(Intent(context, DownloadService::class.java))
-        } catch (failure: Exception) {
-            downloading.value = false
-            library.report(failure)
-            return
-        }
-        downloadedBytes.value = 0uL
-        downloadStatus.value = "Finding ${song.title}…"
-        work { native ->
-            var created: Uri? = null
-            try {
-                checkNotNull(
-                    withTimeoutOrNull(DOWNLOAD_SERVICE_STARTS_WITHIN_MS) { downloadReady.await() }
-                ) {
-                    "The download service did not start"
-                }
-                val job = native.beginDownload(song)
-                downloadJob = job
-                val offer = native.findDownload(job, listOf(account))
-                native.refreshedTidalToken()?.let { token ->
-                    val renewed = account.copy(refreshToken = token)
-                    accounts.write(renewed)
-                    providerAccount.value = renewed
-                }
-                val mime = mimeOf(offer.extension)
-                val uri = MusicDocuments.create(context, folder.uri, mime, offer.name)
-                created = uri
-                check(settings.edit().putString("unfinished-download", uri.toString()).commit()) {
-                    "The download could not be recorded"
-                }
-                downloadStatus.value = "Downloading ${song.title}…"
-                val descriptor =
-                    requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
-                val count = native.downloadOffer(job, descriptor)
-                native.indexDownload(job, uri.toString(), offer.name)
-                MusicDocuments.publish(context, uri)
-                refreshWanted(native)
-                created = null
-                settings.edit().remove("unfinished-download").commit()
-                downloadStatus.value = "Downloaded ${offer.name} · ${count / 1024uL} KiB"
-                library.refresh()
-                refreshArtwork()
-                enrichment.begin()
-            } catch (failure: Exception) {
-                downloadStatus.value = failure.message ?: "Download failed"
-                throw failure
-            } finally {
-                created?.let {
-                    try {
-                        MusicDocuments.delete(context, it)
-                        settings.edit().remove("unfinished-download").commit()
-                    } catch (failure: Exception) {
-                        library.report(failure)
-                    }
-                }
-                downloadJob = null
-                downloading.value = false
-            }
-        }
+        download(listOf(song), folder)
     }
 
-    fun cancelDownload() = work { native -> downloadJob?.let(native::cancelDownload) }
+    fun download(songs: List<SearchSong>, folder: MusicFolder) {
+        if (providerAccount.value == null) {
+            library.notice("Set up a download provider first")
+            return
+        }
+        downloads.enqueue(songs, folder.uri)
+    }
+
+    fun cancelDownload() = downloads.cancelAll()
 
     fun clearCollection() {
         onlineCollection.value = null

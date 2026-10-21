@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,15 +31,20 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -59,6 +65,7 @@ import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 
@@ -92,18 +99,44 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
 
     val running: StateFlow<Boolean> = features.downloading
 
+    val remembered: StateFlow<MusicFolder?> =
+        combine(features.downloads.rememberedFolder, features.folders) { chosen, all ->
+                all.firstOrNull { it.uri.toString() == chosen && it.readable && it.writable }
+            }
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val automatic: StateFlow<Boolean> = features.downloads.automatic
+
     fun refresh() {
         features.refreshFolders()
     }
 
-    fun into(song: SearchSong, folder: MusicFolder) {
-        dismissed.value = null
-        features.download(song, folder)
+    fun request(songs: List<SearchSong>, choose: () -> Unit) {
+        val folder = remembered.value
+        if (folder == null) choose() else into(songs, folder, remember = false)
     }
 
-    fun intoDownloads(song: SearchSong) {
+    fun into(songs: List<SearchSong>, folder: MusicFolder, remember: Boolean) {
         dismissed.value = null
-        resonate.attempt(scope) { features.download(song, features.useDownloads()) }
+        if (remember) features.downloads.remember(folder.uri)
+        features.download(songs, folder)
+    }
+
+    fun intoDownloads(songs: List<SearchSong>, remember: Boolean) {
+        dismissed.value = null
+        resonate.attempt(scope) {
+            val folder = features.useDownloads()
+            if (remember) features.downloads.remember(folder.uri)
+            features.download(songs, folder)
+        }
+    }
+
+    fun forgetFolder() {
+        features.downloads.remember(null)
+    }
+
+    fun automatically(enabled: Boolean) {
+        features.downloads.automatically(enabled)
     }
 
     fun cancel() {
@@ -112,6 +145,7 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
 
     fun dismiss() {
         dismissed.value = features.downloadStatus.value
+        features.downloads.clearSettled()
     }
 }
 
@@ -179,11 +213,16 @@ private fun DownloadedBytes(downloads: Downloads) {
 
 @Composable
 fun DownloadChooser(song: SearchSong, downloads: Downloads, dismiss: () -> Unit) {
+    DownloadChooser(listOf(song), downloads, dismiss)
+}
+
+@Composable
+fun DownloadChooser(songs: List<SearchSong>, downloads: Downloads, dismiss: () -> Unit) {
     val navigator = LocalNavigator.current
     val host = LocalResonate.current.host
     val folders by downloads.folders.collectAsStateWithLifecycle()
     val ready by downloads.ready.collectAsStateWithLifecycle()
-    val running by downloads.running.collectAsStateWithLifecycle()
+    var remember by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { downloads.refresh() }
     ModalBottomSheet(onDismissRequest = dismiss) {
         Column(
@@ -192,7 +231,8 @@ fun DownloadChooser(song: SearchSong, downloads: Downloads, dismiss: () -> Unit)
                 .testTag("download-chooser")
         ) {
             Text(
-                "Download “${song.title}”",
+                if (songs.size == 1) "Download “${songs.single().title}”"
+                else "Download ${counted(songs.size, "song")}",
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -200,11 +240,8 @@ fun DownloadChooser(song: SearchSong, downloads: Downloads, dismiss: () -> Unit)
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                when {
-                    !ready -> "Set up a download provider first."
-                    running -> "Another download is running. Wait for it to finish."
-                    else -> "Choose the music folder it should land in."
-                },
+                if (!ready) "Set up a download provider first."
+                else "Choose the music folder they should land in.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -216,21 +253,34 @@ fun DownloadChooser(song: SearchSong, downloads: Downloads, dismiss: () -> Unit)
                     navigator.open(Screen.Providers)
                 }
             } else {
-                val enabled = !running
                 ChooserRow(
                     Icons.Rounded.Download,
                     "Downloads",
                     "Save directly in your Downloads folder",
-                    enabled,
                 ) {
-                    downloads.intoDownloads(song)
+                    downloads.intoDownloads(songs, remember)
                     dismiss()
                 }
                 folders.forEach { folder ->
-                    ChooserRow(Icons.Rounded.Folder, folder.name, null, enabled) {
-                        downloads.into(song, folder)
+                    ChooserRow(Icons.Rounded.Folder, folder.name, null) {
+                        downloads.into(songs, folder, remember)
                         dismiss()
                     }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                ListItem(
+                    modifier =
+                        Modifier.toggleable(
+                                value = remember,
+                                role = Role.Switch,
+                                onValueChange = { remember = it },
+                            )
+                            .testTag("remember-folder"),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    supportingContent = { Text("Later downloads go straight to the folder you choose.") },
+                    trailingContent = { Switch(checked = remember, onCheckedChange = null) },
+                ) {
+                    Text("Remember this folder")
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 ChooserRow(Icons.Rounded.Add, "Add music folder", "Choose another folder to download into") {

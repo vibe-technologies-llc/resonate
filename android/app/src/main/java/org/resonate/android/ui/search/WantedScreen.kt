@@ -1,6 +1,7 @@
 package org.resonate.android.ui.search
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -8,8 +9,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,11 +42,13 @@ import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Page
+import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TitleSize
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.settings.SwitchRow
 
 fun wantedSummary(songs: List<WantedSong>): String? {
     if (songs.isEmpty()) return null
@@ -87,6 +93,47 @@ private fun allWanted(native: MobilePlayer): List<WantedSong> {
 private const val WANTED_PAGE = 500u
 
 @Composable
+private fun WantedControls(
+    downloads: Downloads,
+    missing: List<SearchSong>,
+    choose: (List<SearchSong>) -> Unit,
+) {
+    val automatic by downloads.automatic.collectAsStateWithLifecycle()
+    val remembered by downloads.remembered.collectAsStateWithLifecycle()
+    val ready by downloads.ready.collectAsStateWithLifecycle()
+    Column {
+        SwitchRow(
+            title = "Download saved songs automatically",
+            supporting =
+                when {
+                    !automatic -> "Saved songs wait until you download them"
+                    remembered == null -> "Remember a download folder to start"
+                    else -> "Matches are fetched into ${remembered?.name} on an unmetered network while Resonate is open"
+                },
+            checked = automatic,
+            onCheckedChange = downloads::automatically,
+            modifier = Modifier.testTag("wants-automatic"),
+        )
+        if (remembered != null) {
+            TextButton(
+                onClick = downloads::forgetFolder,
+                modifier = Modifier.padding(horizontal = 8.dp).testTag("forget-download-folder"),
+            ) {
+                Text("Forget ${remembered?.name}")
+            }
+        }
+        if (ready && missing.isNotEmpty()) {
+            FilledTonalButton(
+                onClick = { downloads.request(missing) { choose(missing) } },
+                modifier = Modifier.padding(horizontal = Sizes.gutter).testTag("download-missing"),
+            ) {
+                Text("Download ${counted(missing.size, "missing song")}")
+            }
+        }
+    }
+}
+
+@Composable
 fun WantedScreen() {
     val model = resonateViewModel { WantedViewModel(it) }
     val songs by model.shown.collectAsStateWithLifecycle()
@@ -94,7 +141,7 @@ fun WantedScreen() {
     val sheets = LocalSheets.current
     val scope = rememberCoroutineScope()
     var acting by remember { mutableStateOf<WantedSong?>(null) }
-    var choosing by remember { mutableStateOf<SearchSong?>(null) }
+    var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     LaunchedEffect(Unit) { model.downloads.refresh() }
 
     Page(
@@ -108,6 +155,13 @@ fun WantedScreen() {
                 modifier = Modifier.widthIn(max = ContentWidth).fillMaxSize().testTag("wanted-list"),
             ) {
                 item(key = "download") { DownloadCard(model.downloads) }
+                item(key = "controls") {
+                    WantedControls(
+                        model.downloads,
+                        songs.orEmpty().filter { !it.held }.map { it.song },
+                        choose = { choosing = it },
+                    )
+                }
                 val shown = songs
                 if (shown == null) loading()
                 else if (shown.isEmpty()) {
@@ -142,7 +196,7 @@ fun WantedScreen() {
             dismiss = { acting = null },
             actions =
                 wantedSongActions(
-                    download = { choosing = wanted.song },
+                    download = { model.downloads.request(listOf(wanted.song)) { choosing = listOf(wanted.song) } },
                     remove = {
                         model.remove(wanted)
                         scope.launch {
@@ -160,5 +214,5 @@ fun WantedScreen() {
                 ),
         )
     }
-    choosing?.let { song -> DownloadChooser(song, model.downloads) { choosing = null } }
+    choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }

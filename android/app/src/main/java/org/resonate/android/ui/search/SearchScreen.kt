@@ -83,7 +83,7 @@ fun SearchScreen() {
     val libraryGrid = rememberLazyListState()
     val onlineScroll = remember { OnlineScroll() }
     var acting by remember { mutableStateOf<SearchSong?>(null) }
-    var choosing by remember { mutableStateOf<SearchSong?>(null) }
+    var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val scrolled =
@@ -132,7 +132,7 @@ fun SearchScreen() {
             actions =
                 onlineSongActions(
                     save = { model.save(song) },
-                    download = { choosing = song },
+                    download = { model.downloads.request(listOf(song)) { choosing = listOf(song) } },
                     album =
                         song.releaseGroup
                             .takeIf { it.isNotBlank() }
@@ -146,7 +146,7 @@ fun SearchScreen() {
                 ),
         )
     }
-    choosing?.let { song -> DownloadChooser(song, model.downloads) { choosing = null } }
+    choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }
 
 @Composable

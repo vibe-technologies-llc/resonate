@@ -20,10 +20,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   tile, since a thumbnail per item would cross Binder for every row
 - [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
-- [M] Android keeps one download account and runs one download at a time; the boundary races
-  every account and runs jobs side by side, but Settings stores one and the screens show one job
-- [M] Android does not ask for its wants on its own: `poll_wanted_due` and `next_wanted_due` say
-  which are due and when, and only iOS calls them on a timer
+- [M] Android keeps one download account: the boundary races every account, but Settings stores one
+  and the screens show one
 - [S] The phones apply one curve to every channel: a filter an imported profile limits to some
   channels is passed over (and counted), where the desktop keeps it on those channels
 - [S] The phones choose providers explicitly and do not honour `hosted-services`
