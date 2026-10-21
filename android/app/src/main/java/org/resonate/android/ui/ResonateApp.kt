@@ -108,6 +108,7 @@ fun ResonateApp(resonate: Resonate) {
             ) {
                 NavigationSuiteScaffold(
                     navigationSuiteType = suite,
+                    containerColor = MaterialTheme.colorScheme.surface,
                     navigationItems = {
                         rootScreens.forEach { screen ->
                             val destination = destinations.getValue(screen)

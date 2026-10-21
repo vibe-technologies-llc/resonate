@@ -23,8 +23,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +53,8 @@ import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.theme.LocalDarkTheme
+import org.resonate.android.ui.theme.schemeOf
+import org.resonate.android.ui.theme.wallpaperSeed
 
 class AppearanceViewModel(resonate: Resonate) : ViewModel() {
     private val store = resonate.features.appearance
@@ -153,9 +153,8 @@ private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
 @Composable
 private fun Swatches(appearance: Appearance, onChoose: (Accent?) -> Unit) {
     val context = LocalContext.current
-    val wallpaper =
-        if (LocalDarkTheme.current) dynamicDarkColorScheme(context).primary
-        else dynamicLightColorScheme(context).primary
+    val dark = LocalDarkTheme.current
+    val wallpaper = remember(context, dark) { schemeOf(wallpaperSeed(context), dark).primary }
     FlowRow(
         Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

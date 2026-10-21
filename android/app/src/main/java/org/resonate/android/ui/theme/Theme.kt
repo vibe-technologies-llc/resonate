@@ -1,5 +1,6 @@
 package org.resonate.android.ui.theme
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -8,9 +9,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MotionScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -47,17 +47,8 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
     val accent = appearance.accent
     val scheme =
         remember(accent, dark, context) {
-            when {
-                accent != null ->
-                    dynamicColorScheme(
-                        seedColor = Color(0xFF000000.toInt() or accent.hex),
-                        isDark = dark,
-                        isAmoled = false,
-                        style = PaletteStyle.TonalSpot,
-                    )
-                dark -> dynamicDarkColorScheme(context)
-                else -> dynamicLightColorScheme(context)
-            }
+            val seed = accent?.let { Color(0xFF000000.toInt() or it.hex) } ?: wallpaperSeed(context)
+            schemeOf(seed, dark)
         }
     SystemBarsFollow(dark)
     CompositionLocalProvider(LocalDarkTheme provides dark) {
@@ -68,6 +59,17 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
         )
     }
 }
+
+fun wallpaperSeed(context: Context): Color =
+    Color(context.getColor(android.R.color.system_accent1_500))
+
+fun schemeOf(seed: Color, dark: Boolean): ColorScheme =
+    dynamicColorScheme(
+        seedColor = seed,
+        isDark = dark,
+        isAmoled = false,
+        style = PaletteStyle.TonalSpot,
+    )
 
 @Composable
 private fun SystemBarsFollow(dark: Boolean) {
